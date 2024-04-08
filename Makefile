@@ -27,12 +27,19 @@ CPU_FEATURES	=	-mno-red-zone \
 					-fno-stack-protector \
 					-fno-omit-frame-pointer \
 					-Wall \
-					-Wextra
+					-Wextra \
+					-fPIC
 
 CXX_FLAGS	=	-fno-rtti \
 				-fno-exceptions \
 				-fno-unwind-tables \
 				-fno-asynchronous-unwind-tables
+
+LD_FLAGS	=	-T linker_script.ld \
+				-nostdlib \
+				-static \
+				-pie \
+				--no-dynamic-linker
 
 DEPENDENCIES	=	nasm \
 					grub-pc-bin \
@@ -64,14 +71,14 @@ pre_install:
 
 kernel: $(OBJS)
 	@echo "Linking kernel..."
-	@$(LD) $(OBJS) -o $(NAME) -nostdlib -static -pie --no-dynamic-linker
+	@$(LD) $(OBJS) -o $(NAME) $(LD_FLAGS)
 	@grub-mkrescue -o $(ISO_FILENAME) iso
 
 debug: CPU_FEATURES += $(DEBUG)
 debug: kernel
 
 run:
-	@qemu-system-x86_64 -cdrom $(ISO_FILENAME)
+	@qemu-system-x86_64 -serial stdio -cdrom $(ISO_FILENAME)
 
 run_debug:
 	@qemu-system-x86_64 -cdrom $(ISO_FILENAME) $(QEMU_DEBUG)
