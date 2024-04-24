@@ -1,21 +1,6 @@
-/*
-** LAPLACE PROJECT, 2024
-** Laplace [LplKernel]
-** Author: MasterLaplace
-** Created: 2023-10-13
-** File description:
-** hello_world
-*/
+/* Copyright */
 
-#ifdef __cplusplus
-    #include <utility>
-    #include <type_traits>
-#endif
-
-#include <stdint.h>
-#include <stddef.h>
-
-int main(void)
+int main()
 {
     return 0;
 }
