@@ -79,13 +79,15 @@ static inline void terminal_delete_last_line(void);
 // Public functions of the terminal module API
 ////////////////////////////////////////////////////////////
 
-void terminal_initialize(void);
+KERNEL_EXTERN_C void terminal_initialize(void);
 
-void terminal_setcolor(uint8_t color);
+KERNEL_EXTERN_C void terminal_setcolor(uint8_t color);
 
-void terminal_putchar(char c);
+KERNEL_EXTERN_C void terminal_putchar(char c);
 
-void terminal_write_string(const char *data);
+KERNEL_EXTERN_C void terminal_write_number(long num, uint8_t base);
+
+KERNEL_EXTERN_C void terminal_write_string(const char *data);
 
 #endif /* !TERMINAL_H_ */
 
@@ -213,6 +215,32 @@ void terminal_putchar(char c)
         terminal_scroll(line);
     terminal_delete_last_line();
     terminal_row = VGA_HEIGHT - 1;
+}
+
+void terminal_write_number(long num, uint8_t base)
+{
+    if (num == 0)
+    {
+        terminal_putchar('0');
+        return;
+    }
+    else if (base == 10 && num < 0)
+    {
+        terminal_putchar('-');
+        num = -num;
+    }
+
+    uint8_t buffer[21];
+    int8_t i = 0;
+
+    for (; num != 0; i++)
+    {
+        buffer[i] = (num % base) + '0';
+        num /= base;
+    }
+
+    for (i--; i >= 0; i--)
+        terminal_putchar(buffer[i]);
 }
 
 void terminal_write_string(const char *data)
