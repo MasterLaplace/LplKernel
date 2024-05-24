@@ -1,3 +1,12 @@
+/*
+** LAPLACE&ME PROJECT, 2024
+** Laplace [LIB_C]
+** Author:
+** Master Laplace
+** File description:
+** LIB_C
+*/
+
 #ifndef LIB_C_H_
     #define LIB_C_H_
 

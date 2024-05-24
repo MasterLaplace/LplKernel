@@ -1,3 +1,12 @@
+/*
+** LAPLACE&ME PROJECT, 2024
+** Laplace [TERMINAL]
+** Author:
+** Master Laplace
+** File description:
+** TERMINAL
+*/
+
 #ifndef TERMINAL_H_
     #define TERMINAL_H_
 
@@ -44,7 +53,7 @@ const uint16_t VGA_HEIGHT = 25;
 uint16_t terminal_row = 0;
 uint16_t terminal_column = 0;
 uint8_t terminal_color = 0x0F;
-volatile uint16_t *terminal_buffer = (uint16_t*) 0xB8000;
+static volatile uint16_t *terminal_buffer = (uint16_t*) 0xB8000;
 
 
 ////////////////////////////////////////////////////////////
@@ -61,7 +70,9 @@ static inline void terminal_reset_pos(void);
 
 static inline void terminal_clear(void);
 
-static inline void terminal_scroll_up(void);
+static inline void terminal_scroll(int line);
+
+static inline void terminal_delete_last_line(void);
 
 
 ////////////////////////////////////////////////////////////
@@ -124,16 +135,27 @@ static inline void terminal_clear(void)
     }
 }
 
-static inline void terminal_scroll_up(void)
+static inline void terminal_scroll(int line)
 {
-    for (uint16_t y = 0; y < VGA_HEIGHT - 1; ++y)
+	int loop;
+	char c;
+
+	for(loop = line * (VGA_WIDTH * 2) + 0xB8000; loop < VGA_WIDTH * 2; loop++)
     {
-        for (uint16_t x = 0; x < VGA_WIDTH; ++x)
-        {
-            const uint16_t index = y * VGA_WIDTH + x;
-            terminal_buffer[index] = terminal_buffer[index + VGA_WIDTH];
-        }
-    }
+        c = *(char*)loop;
+        *(char*)(loop - (VGA_WIDTH * 2)) = c;
+	}
+}
+
+static inline void terminal_delete_last_line(void)
+{
+	int x;
+    char *ptr;
+
+	for(x = 0; x < VGA_WIDTH * 2; x++) {
+        ptr = (char *)(0xB8000 + (VGA_WIDTH * 2) * (VGA_HEIGHT - 1) + x);
+		*ptr = 0;
+	}
 }
 
 
@@ -178,14 +200,19 @@ void terminal_putchar(char c)
         break;
     }
 
-    if (terminal_column == VGA_WIDTH)
-    {
-        terminal_column = 0;
-        if (++terminal_row == VGA_HEIGHT)
-        {
-            terminal_row = 0;
-        }
-    }
+    if (terminal_column != VGA_WIDTH)
+        return;
+
+    terminal_column = 0;
+    ++terminal_row;
+
+    if (terminal_row != VGA_HEIGHT)
+        return;
+
+    for (int line = 1; line <= VGA_HEIGHT - 1; line++)
+        terminal_scroll(line);
+    terminal_delete_last_line();
+    terminal_row = VGA_HEIGHT - 1;
 }
 
 void terminal_write_string(const char *data)
