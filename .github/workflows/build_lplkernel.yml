@@ -1,0 +1,53 @@
+name: Build LplKernel CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install depencies
+      run: |
+        sudo apt update
+        sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo
+
+        mkdir -p ~/src
+        cd ~/src
+        wget http://ftp.gnu.org/gnu/binutils/binutils-2.36.tar.gz
+        tar -xvf binutils-2.36.tar.gz
+        wget http://ftp.gnu.org/gnu/gcc/gcc-10.2.0/gcc-10.2.0.tar.gz
+        tar -xvf gcc-10.2.0.tar.gz
+
+        mkdir -p ~/src/build-binutils
+        cd ~/src/build-binutils
+        ../binutils-2.36/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --disable-werror
+        make
+        sudo make install
+
+        mkdir -p ~/src/build-gcc
+        cd ~/src/build-gcc
+        ../gcc-10.2.0/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --enable-languages=c,c++ --without-headers
+        make all-gcc
+        make all-target-libgcc
+        sudo make install-gcc
+        sudo make install-target-libgcc
+
+        echo 'export PATH=/usr/local/i686-elf/bin:$PATH' >> ~/.bashrc
+        source ~/.bashrc
+        exit $(($? != 0))
+
+    - name: Build
+      run: ./iso.h
+
+    - name: Check if build succeeded
+      run: exit $(($? != 0))
