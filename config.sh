@@ -4,10 +4,9 @@ PROJECTS="libc kernel"
 export MAKE=${MAKE:-make}
 export HOST=${HOST:-$(./default-host.sh)}
 
-CLANG_TARGET="clang --target="
-export AR=${CLANG_TARGET}${HOST}-elf-ar
-export AS=${CLANG_TARGET}${HOST}-gnu-as
-export CC=${CLANG_TARGET}${HOST}-elf-gcc
+export AR=${HOST}-ar
+export AS=${HOST}-as
+export CC=${HOST}-gcc
 
 export PREFIX=/usr
 export EXEC_PREFIX=$PREFIX
