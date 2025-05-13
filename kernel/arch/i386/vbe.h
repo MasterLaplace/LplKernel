@@ -83,11 +83,10 @@ typedef struct vbe_mode_info {
 static vbe_mode_info_t vbe_mode_info;
 
 void vbe_initialize(void) {
-    // Assuming real-mode interrupt to set VBE mode and retrieve mode info
     __asm__ __volatile__ (
         "int $0x10"
-        : // no output
-        : "a"(0x4F01), "c"(0x118), "D"(&vbe_mode_info)
+        :
+        : "a"(0x4F02), "b"(0x117) /* Mode graphique 1024x768x16 bits */
         : "memory"
     );
 }

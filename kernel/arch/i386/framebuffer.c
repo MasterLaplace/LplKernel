@@ -31,17 +31,25 @@
 
 void framebuffer_initialize(void)
 {
-    // setMode(0x117);
-    // video_framebuffer = getFramebuffer();
-    // video_pitch = getPitch();
-    // video_width = getWidth();
-    // video_height = getHeight();
-    // video_depth = getDepth();
     vbe_initialize();
+
+    if (vbe_mode_info.framebuffer == 0) {
+        // Si le framebuffer n'est pas valide, afficher une erreur
+        terminal_write_string("Error: Invalid framebuffer address.\n");
+        for (;;); // Boucle infinie pour arrêter l'exécution
+    }
 }
 
 void framebuffer_set_pixel(uint32_t x, uint32_t y, uint32_t color) {
-    vbe_set_pixel(x, y, color);
+    uint32_t *framebuffer = (uint32_t *)vbe_mode_info.framebuffer;
+    uint32_t pitch = vbe_mode_info.pitch / 4; // Convertir le pitch en pixels 32 bits
+
+    if (x >= vbe_mode_info.width || y >= vbe_mode_info.height) {
+        // Ne pas écrire en dehors des limites de l'écran
+        return;
+    }
+
+    framebuffer[y * pitch + x] = color;
 }
 
 // void video_clear(void)

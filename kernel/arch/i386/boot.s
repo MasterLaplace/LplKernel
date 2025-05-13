@@ -5,6 +5,7 @@
 .set FLAGS,    ALIGN | MEMINFO | VBE /* this is the Multiboot 'flag' field */
 .set MAGIC,    0x1BADB002       /* 'magic number' lets bootloader find the header */
 .set CHECKSUM, -(MAGIC + FLAGS) /* checksum of above, to prove we are multiboot */
+.set VBE_MODE, 0x117 /* Mode graphique 1024x768x16 bits */
 
 .section .multiboot
 .align 4
@@ -14,6 +15,7 @@
 .long 0 # header_addr
 .long 0 # load_addr
 .long 12 # load_end_addr
+.long VBE_MODE # mode graphique demandé
 
 .section .bss
 .align 16
