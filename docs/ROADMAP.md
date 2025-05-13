@@ -4,9 +4,9 @@
   - [x] Adding Support for Newlines to Terminal Driver
 - [x] [Bare Bones II](https://wiki.osdev.org/User:Zesterer/Bare_Bones)
   - [x] Add Color Support To Your Terminal
-  - [ ] Add ANSI Support To Your Terminal
+  - [ ] [Add ANSI Support To Your Terminal](https://en.wikipedia.org/wiki/ANSI_escape_code)
   - [x] Add Scrolling To Your Terminal
-- [ ] [Meaty Skeleton](https://wiki.osdev.org/Meaty_Skeleton)
+- [x] [Meaty Skeleton](https://wiki.osdev.org/Meaty_Skeleton)
   - [x] Renaming MyOS to YourOS
   - [ ] [Improving the Build System](https://wiki.osdev.org/Hard_Build_System)
   - [ ] [Stack Smash Protector](https://wiki.osdev.org/Stack_Smashing_Protector)
