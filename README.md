@@ -51,7 +51,7 @@ cd LplKernel
 ## Run
 
 ```sh
-./qemu.sh
+./qemu.sh 4 # 4 cores to build
 ```
 
 ## References

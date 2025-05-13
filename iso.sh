@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-. ./build.sh
+. ./build.sh "$@"
 
 mkdir -p iso
 mkdir -p iso/boot
