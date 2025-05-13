@@ -17,7 +17,7 @@ static const uint16_t VGA_HEIGHT = 25u;
 static uint16_t terminal_row = 0u;
 static uint16_t terminal_column = 0u;
 static uint8_t terminal_color = 0x0Fu;
-static volatile uint16_t *const terminal_buffer = (uint16_t *) 0xB8000u;
+static volatile uint16_t *const terminal_buffer = (uint16_t *) 0xC03FF000;
 
 ////////////////////////////////////////////////////////////
 // Private functions of the terminal module
