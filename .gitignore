@@ -1,4 +1,5 @@
 *.iso
 iso
 sysroot
+.vscode/
 .Test/

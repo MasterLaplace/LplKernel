@@ -15,9 +15,9 @@
 #include <stdint.h>
 
 #if defined(__linux__)
-#error "You are not using a cross-compiler, you will most certainly run into trouble"
+#   error "You are not using a cross-compiler, you will most certainly run into trouble"
 #elif !defined(__i386__)
-#error "This tutorial needs to be compiled with a ix86-elf compiler"
+#   error "This tutorial needs to be compiled with a ix86-elf compiler"
 #endif
 
 ////////////////////////////////////////////////////////////
@@ -26,11 +26,11 @@
 
 void terminal_initialize(void);
 
-void terminal_setcolor(uint8_t color);
+void terminal_setcolor(const uint8_t color);
 
-void terminal_putchar(char c);
+void terminal_putchar(const char c);
 
-void terminal_write_number(long num, uint8_t base);
+void terminal_write_number(long num, const uint8_t base);
 
 void terminal_write_string(const char *data);
 
