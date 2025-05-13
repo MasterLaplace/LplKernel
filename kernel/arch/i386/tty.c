@@ -11,66 +11,59 @@
 // Private members of the terminal module
 ////////////////////////////////////////////////////////////
 
-static const uint16_t VGA_WIDTH = 80;
-static const uint16_t VGA_HEIGHT = 25;
+static const uint16_t VGA_WIDTH = 80u;
+static const uint16_t VGA_HEIGHT = 25u;
 
-static uint16_t terminal_row = 0;
-static uint16_t terminal_column = 0;
-static uint8_t terminal_color = 0x0F;
-static volatile uint16_t * const terminal_buffer = (uint16_t*) 0xB8000;
-
+static uint16_t terminal_row = 0u;
+static uint16_t terminal_column = 0u;
+static uint8_t terminal_color = 0x0Fu;
+static volatile uint16_t *const terminal_buffer = (uint16_t *) 0xB8000u;
 
 ////////////////////////////////////////////////////////////
 // Private functions of the terminal module
 ////////////////////////////////////////////////////////////
 
-static inline void terminal_putentryat(unsigned char c, uint8_t color, uint16_t x, uint16_t y)
+static inline void terminal_putentryat(const uint8_t c, const uint8_t color, const uint16_t row, const uint16_t col)
+
 {
-    const uint16_t index = y * VGA_WIDTH + x;
+    const uint16_t index = col * VGA_WIDTH + row;
     terminal_buffer[index] = vga_entry(c, color);
 }
 
 static inline void terminal_reset_pos(void)
 {
-    terminal_row = 0;
-    terminal_column = 0;
+    terminal_row = 0u;
+    terminal_column = 0u;
 }
 
 static inline void terminal_clear(void)
 {
-    for (uint16_t y = 0; y < VGA_HEIGHT; ++y)
+    for (uint16_t col = 0; col < VGA_HEIGHT; ++col)
     {
-        for (uint16_t x = 0; x < VGA_WIDTH; ++x)
+        for (uint16_t row = 0; row < VGA_WIDTH; ++row)
         {
-            const uint16_t index = y * VGA_WIDTH + x;
+            const uint16_t index = col * VGA_WIDTH + row;
             terminal_buffer[index] = vga_entry(' ', terminal_color);
         }
     }
 }
 
-static inline void terminal_scroll(int line)
+static inline void terminal_scroll(const uint16_t line)
 {
-	int loop;
-	char c;
-
-	for(loop = line * (VGA_WIDTH * 2) + 0xB8000; loop < VGA_WIDTH * 2; loop++)
+    for (uint32_t loop = line * (VGA_WIDTH * 2u) + 0xB8000u; loop < VGA_WIDTH * 2; ++loop)
     {
-        c = *(char*)loop;
-        *(char*)(loop - (VGA_WIDTH * 2)) = c;
-	}
+        uint8_t c = *(uint8_t *) loop;
+        *(uint8_t *) (loop - (VGA_WIDTH * 2u)) = c;
+    }
 }
 
 static inline void terminal_delete_last_line(void)
 {
-	int x;
-    char *ptr;
-
-	for(x = 0; x < VGA_WIDTH * 2; x++) {
-        ptr = (char *)(0xB8000 + (VGA_WIDTH * 2) * (VGA_HEIGHT - 1) + x);
-		*ptr = 0;
-	}
+    for (uint16_t row = 0u; row < VGA_WIDTH * 2u; ++row)
+    {
+        terminal_buffer[(VGA_WIDTH * 2u) * (VGA_HEIGHT - 1) + row] = 0u;
+    }
 }
-
 
 ////////////////////////////////////////////////////////////
 // Public functions of the terminal module API
@@ -78,9 +71,9 @@ static inline void terminal_delete_last_line(void)
 
 void terminal_initialize(void)
 {
-    for (uint16_t col = 0; col < VGA_HEIGHT; ++col)
+    for (uint16_t col = 0u; col < VGA_HEIGHT; ++col)
     {
-        for (uint16_t row = 0; row < VGA_WIDTH; ++row)
+        for (uint16_t row = 0u; row < VGA_WIDTH; ++row)
         {
             const uint16_t index = VGA_WIDTH * col + row;
             terminal_buffer[index] = vga_entry(' ', terminal_color);
@@ -88,25 +81,18 @@ void terminal_initialize(void)
     }
 }
 
-void terminal_setcolor(uint8_t color)
-{
-    terminal_color = color;
-}
+void terminal_setcolor(const uint8_t color) { terminal_color = color; }
 
-void terminal_putchar(char c)
+void terminal_putchar(const char c)
 {
     switch (c)
     {
     case '\n':
         ++terminal_row;
-        terminal_column = 0;
+        terminal_column = 0u;
         break;
-    case '\r':
-        terminal_column = 0;
-        break;
-    case '\t':
-        terminal_column += 4;
-        break;
+    case '\r': terminal_column = 0u; break;
+    case '\t': terminal_column += 4u; break;
     default:
         terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
         ++terminal_column;
@@ -116,21 +102,21 @@ void terminal_putchar(char c)
     if (terminal_column != VGA_WIDTH)
         return;
 
-    terminal_column = 0;
+    terminal_column = 0u;
     ++terminal_row;
 
     if (terminal_row != VGA_HEIGHT)
         return;
 
-    for (int line = 1; line <= VGA_HEIGHT - 1; line++)
+    for (uint16_t line = 1u; line < VGA_HEIGHT; ++line)
         terminal_scroll(line);
     terminal_delete_last_line();
-    terminal_row = VGA_HEIGHT - 1;
+    terminal_row = VGA_HEIGHT - 1u;
 }
 
-void terminal_write_number(long num, uint8_t base)
+void terminal_write_number(long num, const uint8_t base)
 {
-    if (base < 2 || base > 16)
+    if (base < 2u || base > 16u)
         return;
 
     if (num < 0)
@@ -139,7 +125,7 @@ void terminal_write_number(long num, uint8_t base)
         num = -num;
     }
 
-    if (num > base - 1)
+    if (num > (long) (base - 1u))
         terminal_write_number(num / base, base);
 
     terminal_putchar("0123456789ABCDEF"[num % base]);

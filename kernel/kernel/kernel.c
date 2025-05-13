@@ -1,8 +1,8 @@
 #define LAPLACE_KERNEL_PANIC
 #include <kernel/config.h>
 
-#include <stdio.h>
 #include <kernel/tty.h>
+#include <stdio.h>
 
 const char WELCOME_MESSAGE[] = ""
 "/==+--  _                                         ---+\n"
