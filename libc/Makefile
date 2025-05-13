@@ -27,6 +27,9 @@ CPPFLAGS:=$(CPPFLAGS) $(ARCH_CPPFLAGS)
 LIBK_CFLAGS:=$(LIBK_CFLAGS) $(KERNEL_ARCH_CFLAGS)
 LIBK_CPPFLAGS:=$(LIBK_CPPFLAGS) $(KERNEL_ARCH_CPPFLAGS)
 
+CFLAGS += -fstack-protector-strong
+LDFLAGS += -fstack-protector-strong
+
 FREEOBJS=\
 $(ARCH_FREEOBJS) \
 stdio/printf.o \
