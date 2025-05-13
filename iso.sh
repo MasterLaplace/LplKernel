@@ -12,7 +12,8 @@ set timeout=0
 set default=0
 
 menuentry "lpl" {
-	multiboot /boot/lpl.kernel
+    multiboot /boot/lpl.kernel
+    boot
 }
 EOF
 grub-mkrescue -o lpl.iso iso

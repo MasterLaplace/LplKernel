@@ -47,7 +47,11 @@ jobs:
         exit $(($? != 0))
 
     - name: Build
-      run: ./iso.h
+      run: |
+        pwd
+        ls
+        cd LplKernel
+        ./iso.h
 
     - name: Check if build succeeded
       run: exit $(($? != 0))

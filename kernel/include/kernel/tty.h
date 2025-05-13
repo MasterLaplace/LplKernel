@@ -7,7 +7,7 @@
 ** KERNEL_TTY
 */
 
-#define KERNEL_TTY_IMPLEMENTATION
+
 #ifndef KERNEL_TTY_H_
     #define KERNEL_TTY_H_
 
