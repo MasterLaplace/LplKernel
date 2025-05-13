@@ -20,7 +20,9 @@ void kernel_main(void)
 
     terminal_write_string(WELCOME_MESSAGE);
 
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
     terminal_write_string("Laplace kernel loading ...\n\n");
+    terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_write_string(KERNEL_CONFIG_STRING);
 
     for (;;);

@@ -19,18 +19,20 @@
 #    error "This tutorial needs to be compiled with a ix86-elf compiler"
 #endif
 
+#include "vga.h"
+
 ////////////////////////////////////////////////////////////
 // Public functions of the terminal module API
 ////////////////////////////////////////////////////////////
 
-void terminal_initialize(void);
+extern void terminal_initialize(void);
 
-void terminal_setcolor(const uint8_t color);
+extern void terminal_setcolor(const uint8_t color);
 
-void terminal_putchar(const char c);
+extern void terminal_putchar(const char c);
 
-void terminal_write_number(long num, const uint8_t base);
+extern void terminal_write_number(long num, const uint8_t base);
 
-void terminal_write_string(const char *data);
+extern void terminal_write_string(const char *data);
 
 #endif /* !KERNEL_TTY_H_ */
