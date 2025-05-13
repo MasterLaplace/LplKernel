@@ -1,0 +1,29 @@
+# Roadmap
+
+- [x] [Bare Bones](https://wiki.osdev.org/Bare_Bones)
+  - [x] Adding Support for Newlines to Terminal Driver
+- [x] [Bare Bones II](https://wiki.osdev.org/User:Zesterer/Bare_Bones)
+  - [x] Add Color Support To Your Terminal
+  - [ ] Add ANSI Support To Your Terminal
+  - [x] Add Scrolling To Your Terminal
+- [ ] [Meaty Skeleton](https://wiki.osdev.org/Meaty_Skeleton)
+  - [x] Renaming MyOS to YourOS
+  - [ ] [Improving the Build System](https://wiki.osdev.org/Hard_Build_System)
+  - [ ] [Stack Smash Protector](https://wiki.osdev.org/Stack_Smashing_Protector)
+- [x] [Higher Half x86 Bare Bones](https://wiki.osdev.org/Higher_Half_x86_Bare_Bones)
+- [ ] [Setting Up Long Mode](https://wiki.osdev.org/Setting_Up_Long_Mode)
+- [ ] [Creating a 64-bit kernel](https://wiki.osdev.org/Creating_a_64-bit_kernel)
+- [ ] [Call Global Constructors](https://wiki.osdev.org/Calling_Global_Constructors)
+- [ ] [GDT_Tutorial](https://wiki.osdev.org/GDT_Tutorial)
+  - [ ] [Global_Descriptor_Table](https://wiki.osdev.org/Global_Descriptor_Table)
+  - [ ] [Getting_to_Ring_3](https://wiki.osdev.org/Getting_to_Ring_3)
+  - [ ] [Segmentation](https://wiki.osdev.org/Segmentation)
+   - [ ] [Segment Limits](https://wiki.osdev.org/Segment_Limits)
+- [ ] [Interrupts Tutorial](https://wiki.osdev.org/Interrupts_Tutorial)
+    - [ ] [Initialize the PIC](https://wiki.osdev.org/PIC)
+    - [ ] [Make use of PIC IRQs](https://wiki.osdev.org/IRQ)
+    - [ ] [Understand the NMI](https://wiki.osdev.org/NMI)
+    - [ ] [Configure the local APIC](https://wiki.osdev.org/APIC)
+    - [ ] [Write a driver for the IOAPIC](https://wiki.osdev.org/IOAPIC)
+    - [ ] [Make use of Message Signaled Interrupts](https://wiki.osdev.org/Message_Signaled_Interrupts)
+- [ ] [Going Further](https://wiki.osdev.org/Going_Further_on_x86)
