@@ -118,6 +118,8 @@ source ~/.bashrc
 ## Build
 
 ```sh
+cd LplKernel
+
 ./clean.sh
 ./iso.sh
 ```
