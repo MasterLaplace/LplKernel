@@ -9,11 +9,11 @@
 - [x] [Meaty Skeleton](https://wiki.osdev.org/Meaty_Skeleton)
   - [x] Renaming MyOS to YourOS
   - [ ] [Improving the Build System](https://wiki.osdev.org/Hard_Build_System)
-  - [ ] [Stack Smash Protector](https://wiki.osdev.org/Stack_Smashing_Protector)
+  - [x] [Stack Smash Protector](https://wiki.osdev.org/Stack_Smashing_Protector)
 - [x] [Higher Half x86 Bare Bones](https://wiki.osdev.org/Higher_Half_x86_Bare_Bones)
 - [ ] [Setting Up Long Mode](https://wiki.osdev.org/Setting_Up_Long_Mode)
 - [ ] [Creating a 64-bit kernel](https://wiki.osdev.org/Creating_a_64-bit_kernel)
-- [ ] [Call Global Constructors](https://wiki.osdev.org/Calling_Global_Constructors)
+- [x] [Call Global Constructors](https://wiki.osdev.org/Calling_Global_Constructors)
 - [ ] [GDT_Tutorial](https://wiki.osdev.org/GDT_Tutorial)
   - [ ] [Global_Descriptor_Table](https://wiki.osdev.org/Global_Descriptor_Table)
   - [ ] [Getting_to_Ring_3](https://wiki.osdev.org/Getting_to_Ring_3)
