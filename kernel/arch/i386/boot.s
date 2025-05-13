@@ -1,8 +1,7 @@
 /* Declare constants for the multiboot header. */
 .set ALIGN,    1<<0             /* align loaded modules on page boundaries */
 .set MEMINFO,  1<<1             /* provide memory map */
-.set VBE,      1<<2             /* provide VBE information */
-.set FLAGS,    ALIGN | MEMINFO | VBE /* this is the Multiboot 'flag' field */
+.set FLAGS,    ALIGN | MEMINFO  /* this is the Multiboot 'flag' field */
 .set MAGIC,    0x1BADB002       /* 'magic number' lets bootloader find the header */
 .set CHECKSUM, -(MAGIC + FLAGS) /* checksum of above, to prove we are multiboot */
 
@@ -11,9 +10,6 @@
 .long MAGIC
 .long FLAGS
 .long CHECKSUM
-.long 0 # header_addr
-.long 0 # load_addr
-.long 12 # load_end_addr
 
 .section .bss
 .align 16
