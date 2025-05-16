@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -83,11 +84,15 @@ void terminal_setcolor(const uint8_t color) { terminal_color = color; }
 
 void terminal_putchar(const char c)
 {
+    if (!isprint(c) && !isspace(c))
+        return;
     switch (c)
     {
     case '\n':
-        ++terminal_row;
         terminal_column = 0u;
+        /* fallthrough */
+    case '\v':
+        ++terminal_row;
         break;
     case '\r': terminal_column = 0u; break;
     case '\t': terminal_column += 4u; break;
