@@ -54,6 +54,12 @@ cd LplKernel
 ./qemu.sh 4 # 4 cores to build
 ```
 
+### Running using nix
+
+```sh
+nix run github:MasterLaplace/LplKernel
+```
+
 ## References
 
 - [OSDev Wiki](https://wiki.osdev.org/Main_Page)
