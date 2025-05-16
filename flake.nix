@@ -11,7 +11,7 @@
       ] (system: function nixpkgs.legacyPackages.${system});
   in {
     devShells = forAllSystems (pkgs: {
-      default = pkgs.mkShell {
+      default = pkgs.mkShellNoCC {
         hardeningDisable = ["fortify"];
         packages =
           (builtins.attrValues self.packages.${pkgs.system})
@@ -19,6 +19,7 @@
             grub2
             libisoburn
             qemu
+            compiledb
         ]);
       };
     });
