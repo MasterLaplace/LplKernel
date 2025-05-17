@@ -46,21 +46,3 @@ size_t strlen(const char*);
 #endif
 
 #endif  /* !STRING_H_ */
-
-
-////////////////////////////////////////////////////////////////////////////////
-/*                               IMPLEMENTATION                               */
-////////////////////////////////////////////////////////////////////////////////
-#ifdef STRING_IMPLEMENTATION
-#ifndef STRING_C_ONCE
-    #define STRING_C_ONCE
-
-bool memset(void *dest, const void *src, size_t size)
-{
-    for (; size != 0; ++dest, ++src, --size)
-        *(uint8_t*)dest = *(uint8_t*)src;
-    return true;
-}
-
-#endif /* !STRING_C_ONCE */
-#endif /* !STRING_IMPLEMENTATION */
