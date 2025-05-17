@@ -20,6 +20,17 @@ stdenvNoCC.mkDerivation (finalAttrs: {
 
   installPhase = ''
     mkdir -p $out
+    mkdir -p iso/boot/grub
+
+    cat > iso/boot/grub/grub.cfg << EOF
+      set timeout=0
+      set default=0
+
+      menuentry "lpl" {
+        multiboot /boot/lpl.kernel
+        boot
+      }
+    EOF
 
     cp ${lpl-kernel}/boot/lpl.kernel iso/boot/lpl.kernel
     grub-mkrescue -o $out/lpl.iso iso

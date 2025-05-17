@@ -1,5 +1,8 @@
 *.iso
 *.kernel
+
+iso/boot/grub/
 sysroot
+
 .vscode/
 .Test/
