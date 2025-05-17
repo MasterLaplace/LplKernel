@@ -2,7 +2,10 @@
     #define _CTYPE_H
 
     #define _bounds(c, lo, hi) (((c) >= (lo)) && (c <= (hi)))
-    #define _lower_or(c) ((c) | (1 << 5))
+    #define _lower(c) ((c) | (1 << 5))
+    #define _upper(c) ((c) & ~(1 << 5))
+
+// Character classification
 
     // https://en.cppreference.com/w/c/string/byte/isprint
 
@@ -20,7 +23,7 @@
         || _bounds(c, ':', '@')             \
         || _bounds(c, '[', '`'))
 
-    #define isalpha(c) _bounds(_lower_or(c), 'a', 'z')
+    #define isalpha(c) _bounds(_lower(c), 'a', 'z')
 
     #define isupper(c) _bounds(c, 'A', 'Z')
 
@@ -28,6 +31,11 @@
 
     #define isdigit(c) _bounds(c, '0', '9')
 
-    #define isxdigit(c) (isdigit(c) || _bounds(_lower_or(c), 'a', 'f'))
+    #define isxdigit(c) (isdigit(c) || _bounds(_lower(c), 'a', 'f'))
+
+// Character case mapping
+
+    #define tolower(c) (isupper(c) ? (_lower(c)) : (c))
+    #define toupper(c) (islower(c) ? (_upper(c)) : (c))
 
 #endif
