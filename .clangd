@@ -1,0 +1,7 @@
+CompileFlags:
+  Add:
+    - -resource-dir=/nonexistent
+    - -nostdinc
+    - -nostdlibinc
+    - -nobuiltininc
+    - -I./libc/include

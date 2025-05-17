@@ -20,6 +20,9 @@ done
 for PROJECT in $PROJECTS; do
     if [ "$USE_COMPILEDB" -eq 1 ]; then
         (cd "$PROJECT" && DESTDIR="$SYSROOT" compiledb $MAKE -j"$JOBS" install)
+        jq --indent 1 'map(.arguments += ["-resource-dir=/nonexistent"])' \
+            $PROJECT/compile_commands.json > tmp                          \
+            && mv tmp $PROJECT/compile_commands.json
     else
         (cd "$PROJECT" && DESTDIR="$SYSROOT" $MAKE -j"$JOBS" install)
     fi

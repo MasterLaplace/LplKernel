@@ -12,7 +12,6 @@
   in {
     devShells = forAllSystems (pkgs: {
       default = pkgs.mkShellNoCC {
-        hardeningDisable = ["fortify"];
         packages =
           (builtins.attrValues self.packages.${pkgs.system})
           ++ (with pkgs; [
@@ -20,7 +19,14 @@
             libisoburn
             qemu
             compiledb
+            jq
+            clang # somehow this fixes clangd lsp
+            # and prevent lookup to system headers
         ]);
+
+        shellHook = ''
+          . ${./config.sh}
+        '';
       };
     });
 
