@@ -27,11 +27,11 @@
 
 extern void terminal_initialize(void);
 
-extern void terminal_setcolor(const uint8_t color);
+extern void terminal_setcolor(uint8_t color);
 
-extern void terminal_putchar(const char c);
+extern void terminal_putchar(char c);
 
-extern void terminal_write_number(long num, const uint8_t base);
+extern void terminal_write_number(long num, uint8_t base);
 
 extern void terminal_write_string(const char *data);
 

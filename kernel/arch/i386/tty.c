@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -21,7 +22,7 @@ static volatile uint16_t *const terminal_buffer = (uint16_t *) 0xC03FF000;
 // Private functions of the terminal module
 ////////////////////////////////////////////////////////////
 
-static inline void terminal_putentryat(const uint8_t c, const uint8_t color, const uint16_t row, const uint16_t col)
+static inline void terminal_putentryat(uint8_t c, uint8_t color, uint16_t row, uint16_t col)
 
 {
     const uint16_t index = col * VGA_WIDTH + row;
@@ -46,7 +47,7 @@ static inline void terminal_clear(void)
     }
 }
 
-static inline void terminal_scroll(const uint16_t line)
+static inline void terminal_scroll(uint16_t line)
 {
     for (uint32_t loop = line * (VGA_WIDTH * 2u) + 0xB8000u; loop < VGA_WIDTH * 2; ++loop)
     {
@@ -79,15 +80,19 @@ void terminal_initialize(void)
     }
 }
 
-void terminal_setcolor(const uint8_t color) { terminal_color = color; }
+void terminal_setcolor(uint8_t color) { terminal_color = color; }
 
-void terminal_putchar(const char c)
+void terminal_putchar(char c)
 {
+    if (!isprint(c) && !isspace(c))
+        return;
     switch (c)
     {
     case '\n':
-        ++terminal_row;
         terminal_column = 0u;
+        /* fallthrough */
+    case '\v':
+        ++terminal_row;
         break;
     case '\r': terminal_column = 0u; break;
     case '\t': terminal_column += 4u; break;
@@ -112,7 +117,7 @@ void terminal_putchar(const char c)
     terminal_row = VGA_HEIGHT - 1u;
 }
 
-void terminal_write_number(long num, const uint8_t base)
+void terminal_write_number(long num, uint8_t base)
 {
     if (base < 2u || base > 16u)
         return;

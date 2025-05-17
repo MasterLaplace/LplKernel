@@ -2,7 +2,6 @@
 #include <kernel/config.h>
 
 #include <kernel/tty.h>
-#include <stdio.h>
 
 const char WELCOME_MESSAGE[] = ""
 "/==+--  _                                         ---+\n"
