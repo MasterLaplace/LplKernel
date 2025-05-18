@@ -2,6 +2,7 @@
 #include <kernel/config.h>
 
 #include <kernel/tty.h>
+#include <kernel/serial.h>
 
 static const char WELCOME_MESSAGE[] = ""
 "/==+--  _                                         ---+\n"
@@ -13,8 +14,12 @@ static const char WELCOME_MESSAGE[] = ""
 "   |                | |_                             | \\\n"
 "   +---             |___|                          --+==+\n\n";
 
+static serial_t com1;
+
 __attribute__ ((constructor)) void kernel_initialize(void)
 {
+    serial_initialize(&com1, COM1, 9600);
+    serial_write_string(&com1, "["KERNEL_SYSTEM_STRING"]: serial port initialisation successful.\n");
     terminal_initialize();
 }
 
@@ -26,7 +31,8 @@ void kernel_main(void)
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_write_string(KERNEL_CONFIG_STRING);
 
-    for (;;);
+    for (;;)
+        inb(42);
 }
 
 __attribute__ ((destructor)) void kernel_cleanup(void)
