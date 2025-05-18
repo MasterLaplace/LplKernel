@@ -6,7 +6,7 @@ Kernel of the Laplace project
 
 This is the kernel of the Laplace project.
 
-![image](docs/image.png)
+![image](docs/image.gif)
 
 ## Dependencies
 

@@ -43,7 +43,6 @@ void kernel_main(void)
 
 __attribute__ ((destructor)) void kernel_cleanup(void)
 {
-    terminal_write_string("\nLaplace kernel exiting ...\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
-    terminal_write_string("Kernel panic!\n");
+    terminal_write_string("\n["KERNEL_SYSTEM_STRING"]: exiting ... panic!\n");
 }
