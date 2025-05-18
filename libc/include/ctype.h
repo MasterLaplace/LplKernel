@@ -13,7 +13,7 @@
 
     #define isprint(c) _bounds(c, ' ', '~')
 
-    #define isspace(c) (_bounds(c, '\t', '\r') || ((c) == ' '))
+    #define isspace(c) (_bounds(c, '\t', '\r') || ((c) == ' ') || ((c) == 127))
 
     #define isblank(c) ((c) == '\t' || ((c) == ' '))
 
