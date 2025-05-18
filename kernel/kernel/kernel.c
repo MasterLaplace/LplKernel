@@ -31,8 +31,14 @@ void kernel_main(void)
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_write_string(KERNEL_CONFIG_STRING);
 
-    for (;;)
-        inb(42);
+    terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
+
+    uint8_t c = 0u;
+    for (; (uint32_t)c != 27u;)
+    {
+        c = serial_read_char(&com1);
+        terminal_putchar(c);
+    }
 }
 
 __attribute__ ((destructor)) void kernel_cleanup(void)
