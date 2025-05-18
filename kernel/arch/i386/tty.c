@@ -23,7 +23,6 @@ static volatile uint16_t *const terminal_buffer = (uint16_t *) 0xC03FF000;
 ////////////////////////////////////////////////////////////
 
 static inline void terminal_putentryat(uint8_t c, uint8_t color, uint16_t row, uint16_t col)
-
 {
     const uint16_t index = col * VGA_WIDTH + row;
     terminal_buffer[index] = vga_entry(c, color);

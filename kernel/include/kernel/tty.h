@@ -14,9 +14,9 @@
 #include <stdint.h>
 
 #if defined(__linux__)
-#    error "You are not using a cross-compiler, you will most certainly run into trouble"
+#    error "This code must be compiled with a cross-compiler"
 #elif !defined(__i386__)
-#    error "This tutorial needs to be compiled with a ix86-elf compiler"
+#    error "This code must be compiled with an x86-elf compiler"
 #endif
 
 #include "vga.h"
