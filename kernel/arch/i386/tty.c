@@ -85,6 +85,7 @@ void terminal_putchar(char c)
 {
     if (!isprint(c) && !isspace(c))
         return;
+
     switch (c)
     {
     case '\n':
@@ -95,6 +96,13 @@ void terminal_putchar(char c)
         break;
     case '\r': terminal_column = 0u; break;
     case '\t': terminal_column += 4u; break;
+    case 127:
+        if (terminal_column <= 0)
+            return;
+
+        --terminal_column;
+        terminal_putentryat(' ', terminal_color, terminal_column, terminal_row);
+        break;
     default:
         terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
         ++terminal_column;
