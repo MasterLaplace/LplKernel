@@ -2,8 +2,6 @@
 set -e
 . ./build.sh "$@"
 
-mkdir -p iso
-mkdir -p iso/boot
 mkdir -p iso/boot/grub
 
 cp sysroot/boot/lpl.kernel iso/boot/lpl.kernel
