@@ -4,12 +4,22 @@
 .set FLAGS,    ALIGN | MEMINFO  # this is the Multiboot 'flag' field
 .set MAGIC,    0x1BADB002       # 'magic number' lets bootloader find the header
 .set CHECKSUM, -(MAGIC + FLAGS) # checksum of above, to prove we are multiboot
+.set KERNEL_START, 0xC0000000   # kernel start address
+.set SCREEN_WIDTH, 80
+.set SCREEN_HEIGHT, 25
+.set SCREEN_DEPTH, 24
+.set SCREEN_MODE, 0x0           # 0x0 for text mode, 0x1 for graphics mode
 
 .section .multiboot.data, "aw"
 .align 4
 .long MAGIC
 .long FLAGS
 .long CHECKSUM
+.long 0, 0, 0, 0, 0
+.long SCREEN_MODE
+.long SCREEN_WIDTH
+.long SCREEN_HEIGHT
+.long SCREEN_DEPTH
 
 .section .bootstrap_stack, "aw", @nobits
 stack_bottom:
@@ -25,16 +35,16 @@ boot_page_table1:
 
 .section .multiboot.text, "a"
 .global _start
-.type _start, @function
+    .type _start, @function
 _start:
-    movl $(boot_page_table1 - 0xC0000000), %edi
+    movl $(boot_page_table1 - KERNEL_START), %edi
     movl $0, %esi
     movl $1023, %ecx
 
 1:
     cmpl $_kernel_start, %esi
     jl 2f
-    cmpl $(_kernel_end - 0xC0000000), %esi
+    cmpl $(_kernel_end - KERNEL_START), %esi
     jge 3f
 
     movl %esi, %edx
@@ -47,11 +57,11 @@ _start:
     loop 1b
 
 3:
-    movl $(0x000B8000 | 0x003), boot_page_table1 - 0xC0000000 + 1023 * 4
-    movl $(boot_page_table1 - 0xC0000000 + 0x003), boot_page_directory - 0xC0000000
-    movl $(boot_page_table1 - 0xC0000000 + 0x003), boot_page_directory - 0xC0000000 + 768 * 4
+    movl $(0x000B8000 | 0x003), boot_page_table1 - KERNEL_START + 1023 * 4
+    movl $(boot_page_table1 - KERNEL_START + 0x003), boot_page_directory - KERNEL_START
+    movl $(boot_page_table1 - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 768 * 4
 
-    movl $(boot_page_directory - 0xC0000000), %ecx
+    movl $(boot_page_directory - KERNEL_START), %ecx
     movl %ecx, %cr3
 
     movl %cr0, %ecx
@@ -60,6 +70,7 @@ _start:
 
     lea 4f, %ecx
     jmp *%ecx
+    ljmp  $0x08, $4f
 
 .section .text
 
