@@ -14,7 +14,7 @@ static const char WELCOME_MESSAGE[] = ""
 "   |                | |_                             | \\\n"
 "   +---             |___|                          --+==+\n\n";
 
-static serial_t com1;
+static Serial_t com1;
 
 __attribute__ ((constructor)) void kernel_initialize(void)
 {

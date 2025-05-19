@@ -18,22 +18,28 @@ typedef enum COM_PORT {
     COM8 = 0x4E8
 } COM_PORT;
 
-typedef struct serial_s {
+typedef struct __attribute__((packed)) {
     uint16_t port;
     uint16_t initialized;
     uint32_t speed;
-} serial_t;
+} Serial_t;
 
 ////////////////////////////////////////////////////////////
 // Public functions of the serial module API
 ////////////////////////////////////////////////////////////
 
-extern void serial_initialize(serial_t *serial, const COM_PORT port, const uint32_t speed);
+extern void serial_initialize(Serial_t *serial, const COM_PORT port, const uint32_t speed);
 
-extern void serial_write_char(serial_t *serial, char c);
+extern void serial_write_char(Serial_t *serial, char c);
 
-extern void serial_write_string(serial_t *serial, const char *data);
+extern void serial_write_int(Serial_t *serial, int32_t i);
 
-extern uint8_t serial_read_char(serial_t *serial);
+extern void serial_write_hex32(Serial_t *serial, uint32_t i);
+
+extern void serial_write_hex64(Serial_t *serial, uint64_t i);
+
+extern void serial_write_string(Serial_t *serial, const char *data);
+
+extern uint8_t serial_read_char(Serial_t *serial);
 
 #endif /* !SERIAL_H_ */

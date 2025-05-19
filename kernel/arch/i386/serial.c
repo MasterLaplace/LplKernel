@@ -4,12 +4,12 @@
 // Private functions of the serial module
 ////////////////////////////////////////////////////////////
 
-static inline int serial_can_write(serial_t *serial)
+static inline int serial_can_write(Serial_t *serial)
 {
     return inb(serial->port + 5) & 0x20;
 }
 
-static inline int serial_can_read(serial_t *serial)
+static inline int serial_can_read(Serial_t *serial)
 {
     return inb(serial->port + 5) & 0x01;
 }
@@ -18,7 +18,7 @@ static inline int serial_can_read(serial_t *serial)
 // Public functions of the terminal module API
 ////////////////////////////////////////////////////////////
 
-void serial_initialize(serial_t *serial, COM_PORT port, uint32_t speed)
+void serial_initialize(Serial_t *serial, COM_PORT port, uint32_t speed)
 {
     serial->port = port;
     serial->speed = speed;
@@ -41,13 +41,72 @@ void serial_initialize(serial_t *serial, COM_PORT port, uint32_t speed)
     serial->initialized = 1;
 }
 
-void serial_write_char(serial_t *serial, char c)
+void serial_write_char(Serial_t *serial, char c)
 {
     while (!serial_can_write(serial));
     outb(serial->port, c);
 }
 
-void serial_write_string(serial_t *serial, const char *data)
+void serial_write_int(Serial_t *serial, int32_t i)
+{
+    char buffer[12];
+    int j = 0;
+
+    if (i < 0)
+    {
+        serial_write_char(serial, '-');
+        i = -i;
+    }
+
+    if (i == 0)
+    {
+        serial_write_char(serial, '0');
+        return;
+    }
+
+    while (i > 0)
+    {
+        buffer[j++] = '0' + (i % 10);
+        i /= 10;
+    }
+
+    while (--j >= 0)
+        serial_write_char(serial, buffer[j]);
+}
+
+void serial_write_hex32(Serial_t *serial, uint32_t i)
+{
+    char hex[11];
+    hex[0] = '0';
+    hex[1] = 'x';
+
+    for (uint8_t j = 0; j < 8; ++j)
+    {
+        uint32_t nibble = (i >> ((7 - j) * 4)) & 0xF;
+        hex[2 + j] = nibble < 10 ? '0' + nibble : 'A' + nibble - 10;
+    }
+
+    hex[10] = '\0';
+    serial_write_string(serial, hex);
+}
+
+void serial_write_hex64(Serial_t *serial, uint64_t i)
+{
+    char hex[19];
+    hex[0] = '0';
+    hex[1] = 'x';
+
+    for (uint8_t j = 0; j < 16; ++j)
+    {
+        uint32_t nibble = (i >> ((15 - j) * 4)) & 0xF;
+        hex[2 + j] = nibble < 10 ? '0' + nibble : 'A' + nibble - 10;
+    }
+
+    hex[18] = '\0';
+    serial_write_string(serial, hex);
+}
+
+void serial_write_string(Serial_t *serial, const char *data)
 {
     for (; data && *data; ++data)
     {
@@ -55,7 +114,7 @@ void serial_write_string(serial_t *serial, const char *data)
     }
 }
 
-uint8_t serial_read_char(serial_t *serial)
+uint8_t serial_read_char(Serial_t *serial)
 {
     while (!serial_can_read(serial));
     return inb(serial->port);
