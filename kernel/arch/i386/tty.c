@@ -123,19 +123,37 @@ void terminal_putchar(char c)
 
 void terminal_write_number(long num, uint8_t base)
 {
+    char buf[65];
+    int i = 0;
+    uint64_t n;
+
     if (base < 2u || base > 16u)
         return;
 
     if (num < 0)
     {
         terminal_putchar('-');
-        num = -num;
+        n = (uint64_t)(-num);
+    }
+    else
+    {
+        n = (uint64_t)num;
     }
 
-    if (num > (long) (base - 1u))
-        terminal_write_number(num / base, base);
+    if (n == 0)
+    {
+        terminal_putchar('0');
+        return;
+    }
 
-    terminal_putchar("0123456789ABCDEF"[num % base]);
+    while (n > 0)
+    {
+        buf[i++] = "0123456789ABCDEF"[n % base];
+        n /= base;
+    }
+
+    while (--i >= 0)
+        terminal_putchar(buf[i]);
 }
 
 void terminal_write_string(const char *data)
