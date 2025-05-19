@@ -1,6 +1,7 @@
 #define LAPLACE_KERNEL_PANIC
 #include <kernel/config.h>
 
+#include <kernel/multiboot_info.h>
 #include <kernel/tty.h>
 #include <kernel/serial.h>
 
@@ -15,9 +16,11 @@ static const char WELCOME_MESSAGE[] = ""
 "   +---             |___|                          --+==+\n\n";
 
 static Serial_t com1;
+static MultibootInfo_t *mbi;
 
-__attribute__ ((constructor)) void kernel_initialize(void)
+__attribute__ ((constructor)) void kernel_initialize(MultibootInfo_t *info)
 {
+    mbi = (MultibootInfo_t *)((uintptr_t)info + 0xC0000000);
     serial_initialize(&com1, COM1, 9600);
     serial_write_string(&com1, "["KERNEL_SYSTEM_STRING"]: serial port initialisation successful.\n");
     terminal_initialize();

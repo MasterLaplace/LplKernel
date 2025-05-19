@@ -80,7 +80,9 @@ _start:
     movl %ecx, %cr3
 
     mov $stack_top, %esp
+    mov $stack_top, %ebp
 
+    push %ebx
     call _init
     call kernel_main
     call _fini
