@@ -8,7 +8,7 @@
 .set SCREEN_WIDTH, 80
 .set SCREEN_HEIGHT, 25
 .set SCREEN_DEPTH, 24
-.set SCREEN_MODE, 0x0           # 0x0 for text mode, 0x1 for graphics mode
+.set SCREEN_MODE, 0x0
 
 .section .multiboot.data, "aw"
 .align 4
@@ -20,6 +20,16 @@
 .long SCREEN_WIDTH
 .long SCREEN_HEIGHT
 .long SCREEN_DEPTH
+
+# Variables to pass to C
+; .global multiboot_magic
+; .global multiboot_info_ptr
+; .data
+; .align 4
+; multiboot_magic:
+;     .long MAGIC
+; multiboot_info_ptr:
+;     .long 0
 
 .section .bootstrap_stack, "aw", @nobits
 stack_bottom:
@@ -37,6 +47,13 @@ boot_page_table1:
 .global _start
     .type _start, @function
 _start:
+    # EBX = adresse multiboot_info, EAX = MAGIC from GRUB
+    # cmpl $MAGIC, %eax
+    # jne mh_error
+    ; movl %ebx, multiboot_info_ptr
+    # movl %eax, multiboot_magic
+
+    # Initialisation du paging (higher half)
     movl $(boot_page_table1 - KERNEL_START), %edi
     movl $0, %esi
     movl $1023, %ecx
@@ -82,6 +99,13 @@ _start:
     mov $stack_top, %esp
     mov $stack_top, %ebp
 
+    # Call to kernel_initialize(magic, mbi)
+    # movl multiboot_info_ptr, %esi    # 2e arg: struct multiboot_info*
+    # movl multiboot_magic, %edi       # 1er arg: magic
+
+    ; mov $multiboot_info_ptr, %esp
+    ; mov $multiboot_info_ptr, %ebp
+
     push %ebx
     call _init
     call kernel_main
@@ -90,3 +114,13 @@ _start:
     cli
 1:  hlt
     jmp 1b
+
+; mh_halt_loop:
+;     hlt
+;     jmp mh_halt_loop
+
+; mh_error:
+;     cli
+; mh_err_halt_loop:
+;     hlt
+;     jmp mh_err_halt_loop

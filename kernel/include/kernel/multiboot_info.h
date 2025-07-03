@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+#define MULTIBOOT_MAGIC 0x1BADB002
+
+/* Flags (MEMINFO, etc.) */
+#define MULTIBOOT_FLAG_MEMINFO 1<<1
+
 /// Structure representing the boot device (field `boot_device` of `MultibootInfo`)
 typedef struct __attribute__((packed)) {
     uint8_t drive;   // BIOS drive number (e.g., 0x80)
@@ -147,5 +152,8 @@ typedef struct __attribute__((packed)) {
         } direct_color_t;
     };
 } MultibootInfo_t;
+
+extern uint32_t multiboot_magic;
+extern MultibootInfo_t *multiboot_info_ptr;
 
 #endif /* !MULTIBOOT_INFO_H_ */
