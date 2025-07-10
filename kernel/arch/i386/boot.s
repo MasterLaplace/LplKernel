@@ -127,12 +127,8 @@ higher_half_entry:
 
     movl %ebx, g_multiboot_info
 
-    # Also push it for compatibility (though kernel_main won't use it now)
-    pushl %ebx
-
     call _init
     call kernel_main
-    addl $4, %esp
     call _fini
 
     cli
