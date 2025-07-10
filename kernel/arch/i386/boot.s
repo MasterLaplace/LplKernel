@@ -1,3 +1,6 @@
+.arch i386
+.code32
+
 # Declare constants for the multiboot header.
 .set ALIGN,    1<<0             # align loaded modules on page boundaries
 .set MEMINFO,  1<<1             # provide memory map
@@ -5,8 +8,7 @@
 
 # MODE CONFIGURATION - Set via build system
 # GRAPHICS_MODE is passed as -DGRAPHICS_MODE=0 or -DGRAPHICS_MODE=1
-#ifndef GRAPHICS_MODE
-.set GRAPHICS_MODE, 0           # Default to text mode if not specified
+.set GRAPHICS_MODE, 0
 
 .if GRAPHICS_MODE
     .set FLAGS, ALIGN | MEMINFO | VIDEO     # Graphics mode enabled
