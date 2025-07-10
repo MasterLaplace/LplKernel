@@ -17,6 +17,9 @@ export INCLUDEDIR=$PREFIX/include
 export CFLAGS='-O2 -g -nostdinc'
 export CPPFLAGS=''
 
+# Graphics mode configuration (default: text mode)
+export GRAPHICS_MODE=${GRAPHICS_MODE:-0}
+
 # Configure the cross-compiler to use the desired system root.
 export SYSROOT="$(pwd)/sysroot"
 export CC="$CC --sysroot=$SYSROOT"

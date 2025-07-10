@@ -14,4 +14,6 @@ menuentry "lpl" {
     boot
 }
 EOF
-grub-mkrescue -o lpl.iso iso
+grub-mkrescue -o lpl.iso iso --install-modules="" \
+  --modules="multiboot" \
+  --fonts="" --themes="" --locales=""

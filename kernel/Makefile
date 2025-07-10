@@ -18,6 +18,10 @@ CPPFLAGS:=$(CPPFLAGS) -D__is_kernel -Iinclude
 LDFLAGS:=$(LDFLAGS)
 LIBS:=$(LIBS) -nostdlib -lk -lgcc
 
+# Graphics mode support (passed from build script)
+GRAPHICS_MODE?=0
+ASFLAGS:=-DGRAPHICS_MODE=$(GRAPHICS_MODE)
+
 ARCHDIR=arch/$(HOSTARCH)
 
 include $(ARCHDIR)/make.config
@@ -66,7 +70,7 @@ $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o:
 	$(CC) -MD -c $< -o $@ -std=gnu11 $(CFLAGS) $(CPPFLAGS)
 
 .s.o:
-	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS)
+	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS) $(ASFLAGS)
 
 clean:
 	rm -f lpl.kernel
