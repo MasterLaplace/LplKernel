@@ -5,24 +5,26 @@
 .set ALIGN,    1<<0             # align loaded modules on page boundaries
 .set MEMINFO,  1<<1             # provide memory map
 .set VIDEO,    1<<2             # video mode info (for future graphics)
-.set MAGIC,    0x1BADB002       # 'magic number' lets bootloader find the header
-.set CHECKSUM, -(MAGIC + FLAGS) # checksum of above, to prove we are multiboot
-.set KERNEL_START, 0xC0000000   # kernel start address
 
 # MODE CONFIGURATION - Set via build system
 # GRAPHICS_MODE is passed as -DGRAPHICS_MODE=0 or -DGRAPHICS_MODE=1
-.set GRAPHICS_MODE, 0
+.set GRAPHICS_MODE, 0           # Default to text mode if not specified
 
 .if GRAPHICS_MODE
     .set FLAGS, ALIGN | MEMINFO | VIDEO     # Graphics mode enabled
     .set SCREEN_MODE, 0x1                   # Force graphics mode
-    .set SCREEN_WIDTH, 1024                 # Target resolution width
-    .set SCREEN_HEIGHT, 768                 # Target resolution height
-    .set SCREEN_DEPTH, 32                   # 32-bit color depth
 .else
     .set FLAGS, ALIGN | MEMINFO             # Text mode only
     .set SCREEN_MODE, 0x0                   # Text mode (ignored)
 .endif
+
+.set MAGIC,    0x1BADB002       # 'magic number' lets bootloader find the header
+.set CHECKSUM, -(MAGIC + FLAGS) # checksum of above, to prove we are multiboot
+.set KERNEL_START, 0xC0000000   # kernel start address
+
+.set SCREEN_WIDTH, 1024         # Target resolution width
+.set SCREEN_HEIGHT, 768         # Target resolution height
+.set SCREEN_DEPTH, 32           # 32-bit color depth
 
 # Multiboot header - conditional graphics support
 .section .multiboot.data, "aw"
@@ -126,8 +128,11 @@ higher_half_entry:
 
     movl %ebx, g_multiboot_info
 
+    pushl %ebx
+
     call _init
     call kernel_main
+    addl $4, %esp           # Clean stack
     call _fini
 
     cli

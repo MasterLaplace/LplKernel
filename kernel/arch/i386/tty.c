@@ -113,18 +113,18 @@ void terminal_putchar(char c)
         break;
     }
 
-    if (terminal_column != VGA_WIDTH)
-        return;
+    if (terminal_column >= VGA_WIDTH)
+    {
+        terminal_column = 0u;
+        ++terminal_row;
+    }
 
-    terminal_column = 0u;
-    ++terminal_row;
-
-    if (terminal_row != VGA_HEIGHT)
-        return;
-
-    terminal_scroll();
-    terminal_delete_last_line();
-    terminal_row = VGA_HEIGHT - 1u;
+    if (terminal_row >= VGA_HEIGHT)
+    {
+        terminal_scroll();
+        terminal_delete_last_line();
+        terminal_row = VGA_HEIGHT - 1u;
+    }
 }
 
 void terminal_write_number(long num, uint8_t base)
