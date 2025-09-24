@@ -1,5 +1,5 @@
 /**************************************************************************
- * LplKernel v0.0.0
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
  *
  * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
  * provides a basic set of features to run a C program.
@@ -9,8 +9,8 @@
  * Copyright © 2024 by @MasterLaplace, All rights reserved.
  *
  * LplKernel is a free software: you can redistribute it and/or modify
- * it under the terms of the Anti-NN License as published by the
- * Open Source Initiative. See the Anti-NN License for more details.
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
  *
  * @file config.h
  * @brief Compile-Time Configuration Parameters for LplKernel.
@@ -21,19 +21,98 @@
  **************************************************************************/
 
 
-#ifndef CONFIG_H_
-    #define CONFIG_H_
+// clang-format off
+#ifndef KERNEL_CONFIG_H_
+    #define KERNEL_CONFIG_H_
 
 #ifdef __cplusplus
     #include <utility>
     #include <type_traits>
+
+    #include <cstddef>
+    #include <cstdint>
+#else
+    #include <stddef.h>
+    #include <stdint.h>
 #endif
 
-#include <stddef.h>
-#include <stdint.h>
 
-#ifndef DISTRIBUTION_H_
-    #define DISTRIBUTION_H_
+#ifndef LAPLACE_CONFIG_UTILS
+    #define LAPLACE_CONFIG_UTILS
+
+////////////////////////////////////////////////////////////
+// Define shared portable macros for various compilers
+////////////////////////////////////////////////////////////
+#define LPL_NEED_COMMA struct _
+#define LPL_ATTRIBUTE(key) __attribute__((key))
+#define LPL_UNUSED_ATTRIBUTE LPL_ATTRIBUTE(unused)
+#define LPL_UNUSED(x) (void)(x)
+
+////////////////////////////////////////////////////////////
+// Define portable NULL pointer using C++11 nullptr keyword
+////////////////////////////////////////////////////////////
+#if defined(__cplusplus) && __cplusplus >= 201103L
+    #define lpl_nullptr nullptr
+#elif !defined(NULL)
+    #define lpl_nullptr ((void*)0)
+#else
+    #define lpl_nullptr NULL
+#endif
+
+////////////////////////////////////////////////////////////
+// Define boolean type and values
+////////////////////////////////////////////////////////////
+#if !defined(__bool_true_false_are_defined) && !defined(__cplusplus)
+    #define bool _Bool
+    #define true 1
+    #define false 0
+    #define __bool_true_false_are_defined 1
+#endif
+
+#if defined __GNUC__ && defined __GNUC_MINOR__
+# define __GNUC_PREREQ(maj, min) \
+    ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
+#elif !defined(__GNUC_PREREQ)
+# define __GNUC_PREREQ(maj, min) 0
+#endif
+
+////////////////////////////////////////////////////////////
+// Define a portable way for packing structures
+////////////////////////////////////////////////////////////
+/** Usage:
+ * @example
+ * LPL_PACKED(struct MyStruct
+ * {
+ *     int a;
+ *     char b;
+ *     ...
+ * });
+\**********************************************************/
+#if defined(_MSC_VER) || defined(_MSVC_LANG)
+    #define LPL_PACKED( __Declaration__ ) __pragma(pack(push, 1)) __Declaration__ __pragma(pack(pop))
+    #define LPL_PACKED_START __pragma(pack(push, 1))
+    #define LPL_PACKED_END   __pragma(pack(pop))
+#elif defined(__GNUC__) || defined(__GNUG__)
+    #define LPL_PACKED( __Declaration__ ) __Declaration__ __attribute__((__packed__))
+    #define LPL_PACKED_START _Pragma("pack(1)")
+    #define LPL_PACKED_END   _Pragma("pack()")
+#else
+    #define LPL_PACKED( __Declaration__ ) __Declaration__
+    #define LPL_PACKED_START
+    #define LPL_PACKED_END
+#endif
+
+////////////////////////////////////////////////////////////
+// Helper macro to convert a macro to a string
+////////////////////////////////////////////////////////////
+#define LPL_STRINGIFY(x) #x
+#define LPL_TOSTRING(x) LPL_STRINGIFY(x)
+
+#endif /* !LAPLACE_CONFIG_UTILS */
+
+
+#ifndef KERNEL_DISTRIBUTION_H_
+    #define KERNEL_DISTRIBUTION_H_
 
 ////////////////////////////////////////////////////////////
 // Identify the Compiler
@@ -54,7 +133,7 @@
     #define KERNEL_COMPILER_CYGWIN
     #define KERNEL_COMPILER_STRING "Cygwin"
 #else
-    #error [Config@Distribution]: This compiler is not supported by KERNEL library.
+    #error [Config@Distribution]: This compiler is not supported by LplKernel.
 #endif
 
 
@@ -98,7 +177,7 @@
     #define KERNEL_SYSTEM_STRING "Laplace Kernel"
 
 #else
-    #error [Config@Distribution]: This operating system is not supported by KERNEL library.
+    #error [Config@Distribution]: This operating system is not supported by LplKernel.
 #endif
 
 #ifdef __cplusplus
@@ -239,27 +318,6 @@
 #endif
 
 ////////////////////////////////////////////////////////////
-// Define portable NULL pointer using C++11 nullptr keyword
-////////////////////////////////////////////////////////////
-#if defined(__cplusplus) && __cplusplus >= 201103L
-#elif !defined(NULL)
-    #define nullptr ((void*)0)
-#else
-    #define nullptr NULL
-#endif
-
-////////////////////////////////////////////////////////////
-// Define boolean type and values
-////////////////////////////////////////////////////////////
-#if defined(__cplusplus)
-#elif !defined(__bool_true_false_are_defined)
-    #define bool _Bool
-    #define true 1
-    #define false 0
-    #define __bool_true_false_are_defined 1
-#endif
-
-////////////////////////////////////////////////////////////
 // Define a portable debug macro
 ////////////////////////////////////////////////////////////
 #if (defined(_DEBUG) || defined(DEBUG)) && !defined(NDEBUG)
@@ -269,14 +327,6 @@
 
 #else
     #define KERNEL_DEBUG_STRING "Release"
-#endif
-
-
-#if defined __GNUC__ && defined __GNUC_MINOR__
-# define __GNUC_PREREQ(maj, min) \
-    ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
-#else
-# define __GNUC_PREREQ(maj, min) 0
 #endif
 
 ////////////////////////////////////////////////////////////
@@ -371,32 +421,11 @@
     #define KERNEL_DEPRECATED_VMSG(version, message)
 #endif
 
-
-////////////////////////////////////////////////////////////
-// Define a portable way for packing structures
-////////////////////////////////////////////////////////////
-/** Usage:
- * @example
- * PACKED(struct MyStruct
- * {
- *     int a;
- *     char b;
- *     ...
- * });
-\**********************************************************/
-#if defined(__GNUC__) || defined(__GNUG__)
-    #define PACKED( __Declaration__ ) __Declaration__ __attribute__((__packed__))
-#elif _MSC_VER
-    #define PACKED( __Declaration__ ) __pragma(pack(push, 1)) __Declaration__ __pragma(pack(pop))
-#else
-    #define PACKED( __Declaration__ ) __Declaration__
-#endif
-
-#endif /* !DISTRIBUTION_H_ */
+#endif /* !KERNEL_DISTRIBUTION_H_ */
 
 
-#ifndef VERSION_H_
-    #define VERSION_H_
+#ifndef KERNEL_VERSION_H_
+    #define KERNEL_VERSION_H_
 
 ////////////////////////////////////////////////////////////
 // Define the KERNEL version
@@ -445,17 +474,13 @@
 ////////////////////////////////////////////////////////////
 // Define the KERNEL version string
 ////////////////////////////////////////////////////////////
-// Helper macro to convert a macro to a string
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-
 #define KERNEL_VERSION_STRING \
-        TOSTRING(KERNEL_VERSION_MAJOR) "." \
-        TOSTRING(KERNEL_VERSION_MINOR) "." \
-        TOSTRING(KERNEL_VERSION_PATCH) "." \
-        TOSTRING(KERNEL_VERSION_TWEAK)
+        LPL_TOSTRING(KERNEL_VERSION_MAJOR) "." \
+        LPL_TOSTRING(KERNEL_VERSION_MINOR) "." \
+        LPL_TOSTRING(KERNEL_VERSION_PATCH) "." \
+        LPL_TOSTRING(KERNEL_VERSION_TWEAK)
 
-#endif /* !VERSION_H_ */
+#endif /* !KERNEL_VERSION_H_ */
 
 
 ////////////////////////////////////////////////////////////
@@ -467,4 +492,5 @@
         "KERNEL_COMPILER=" KERNEL_COMPILER_STRING "\n" \
         "KERNEL_DEBUG=" KERNEL_DEBUG_STRING "\n"
 
-#endif /* !CONFIG_H_ */
+#endif /* !KERNEL_CONFIG_H_ */
+// clang-format on
