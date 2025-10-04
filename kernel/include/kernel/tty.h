@@ -29,6 +29,8 @@ extern void terminal_initialize(void);
 
 extern void terminal_setcolor(uint8_t color);
 
+extern uint8_t terminal_getcolor(void);
+
 extern void terminal_putchar(char c);
 
 extern void terminal_write_number(long num, uint8_t base);

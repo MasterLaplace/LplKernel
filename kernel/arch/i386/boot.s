@@ -53,8 +53,8 @@ boot_page_directory:
 boot_page_table1:
     .skip 4096
 
-.global g_multiboot_info
-g_multiboot_info:
+.global global_multiboot_info
+global_multiboot_info:
     .skip 4
 
 .section .multiboot.text, "a"
@@ -126,7 +126,7 @@ higher_half_entry:
     movl %edx, %ebx
     addl $KERNEL_START, %ebx
 
-    movl %ebx, g_multiboot_info
+    movl %ebx, global_multiboot_info
 
     pushl %ebx
 

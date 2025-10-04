@@ -86,6 +86,8 @@ void terminal_initialize(void)
 
 void terminal_setcolor(uint8_t color) { terminal_color = color; }
 
+uint8_t terminal_getcolor(void) { return terminal_color; }
+
 void terminal_putchar(char c)
 {
     if (!isprint(c) && !isspace(c))
