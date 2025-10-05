@@ -4,7 +4,8 @@
 #include <kernel/multiboot_info_helper.h>
 #include <kernel/serial.h>
 
-#define KERNEL_START 0xC0000000
+extern const uint32_t global_kernel_start;
+#define KERNEL_START ((uint32_t) (uintptr_t) &global_kernel_start)
 
 static const char WELCOME_MESSAGE[] = ""
                                       "/==+--  _                                         ---+\n"
@@ -44,7 +45,7 @@ void kernel_main(void)
 {
     terminal_write_string(WELCOME_MESSAGE);
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-    terminal_write_string("["KERNEL_SYSTEM_STRING"]: loading ...\n\n");
+    terminal_write_string("[" KERNEL_SYSTEM_STRING "]: loading ...\n\n");
     terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
     terminal_write_string(KERNEL_CONFIG_STRING);
 

@@ -1,5 +1,7 @@
 ENTRY(_start)
 
+PROVIDE(global_kernel_start = 0xC0000000);
+
 SECTIONS
 {
     . = 0x00100000;
