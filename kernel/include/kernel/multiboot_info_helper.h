@@ -31,4 +31,28 @@ extern void print_multiboot_info_framebuffer(MultibootInfo_t *mbi);
 
 extern void print_multiboot_info(uint32_t kernel_start, MultibootInfo_t *mbi);
 
+//********************************************************//
+
+extern void write_multiboot_info_boot_device(Serial_t *serial, BootDevice_t *boot_device);
+
+extern void write_multiboot_info_module(Serial_t *serial, uint32_t kernel_start, Module_t *module);
+
+extern void write_multiboot_info_aout_symbol_table(Serial_t *serial, AOutSymbolTable_t *aout_sym);
+
+extern void write_multiboot_info_elf_section_header_table(Serial_t *serial, ELFSectionHeaderTable_t *elf_sec);
+
+extern void write_multiboot_info_memory_map(Serial_t *serial, uint32_t kernel_start, MultibootInfo_t *mbi);
+
+extern void write_multiboot_info_drive_info(Serial_t *serial, DriveInfo_t *drive_info);
+
+extern void write_multiboot_info_apm_table(Serial_t *serial, APMTable_t *apm_table);
+
+extern void write_multiboot_info_framebuffer_palette_color(Serial_t *serial, FramebufferPaletteColor_t *color);
+
+extern void write_multiboot_info_vbe_info(Serial_t *serial, MultibootInfo_t *mbi);
+
+extern void write_multiboot_info_framebuffer(Serial_t *serial, MultibootInfo_t *mbi);
+
+extern void write_multiboot_info(Serial_t *serial, uint32_t kernel_start, MultibootInfo_t *mbi);
+
 #endif /* !MULTIBOOT_INFO_HELPER_H_ */

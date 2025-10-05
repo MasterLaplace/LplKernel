@@ -37,7 +37,7 @@ __attribute__((constructor)) void kernel_initialize(void)
         return;
     }
 
-    print_multiboot_info(KERNEL_START, mbi);
+    write_multiboot_info(&com1, KERNEL_START, mbi);
 }
 
 void kernel_main(void)
