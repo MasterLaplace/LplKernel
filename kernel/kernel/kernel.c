@@ -1,8 +1,8 @@
 #define LAPLACE_KERNEL_PANIC
 #include <kernel/config.h>
 
+#include <kernel/gdt.h>
 #include <kernel/multiboot_info_helper.h>
-#include <kernel/serial.h>
 
 extern const uint32_t global_kernel_start;
 #define KERNEL_START ((uint32_t) (uintptr_t) &global_kernel_start)
