@@ -15,24 +15,24 @@ SECTIONS
         *(.multiboot.text)
     }
 
-    . += 0xC0000000;
+    . += global_kernel_start;
 
-    .text ALIGN(4K) : AT (ADDR (.text) - 0xC0000000)
+    .text ALIGN(4K) : AT (ADDR (.text) - global_kernel_start)
     {
         *(.text)
     }
 
-    .rodata ALIGN(4K) : AT (ADDR (.rodata) - 0xC0000000)
+    .rodata ALIGN(4K) : AT (ADDR (.rodata) - global_kernel_start)
     {
         *(.rodata)
     }
 
-    .data ALIGN(4K) : AT (ADDR (.data) - 0xC0000000)
+    .data ALIGN(4K) : AT (ADDR (.data) - global_kernel_start)
     {
         *(.data)
     }
 
-    .bss ALIGN(4K) : AT (ADDR (.bss) - 0xC0000000)
+    .bss ALIGN(4K) : AT (ADDR (.bss) - global_kernel_start)
     {
         *(COMMON)
         *(.bss)
