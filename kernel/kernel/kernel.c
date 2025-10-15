@@ -4,6 +4,10 @@
 #include <kernel/cpu/gdt.h>
 #include <kernel/boot/multiboot_info_helper.h>
 
+/* global_kernel_start is provided by the linker script via PROVIDE().
+ * Declare it as a const uint32_t so the compiler treats it as an address-sized
+ * symbol whose value can be read at runtime. Use a pointer cast to obtain
+ * the integer value. */
 extern const uint32_t global_kernel_start;
 #define KERNEL_START ((uint32_t) (uintptr_t) &global_kernel_start)
 
@@ -17,14 +21,16 @@ static const char WELCOME_MESSAGE[] = ""
                                       "   |                | |_                             | \\\n"
                                       "   +---             |___|                          --+==+\n\n";
 
+extern MultibootInfo_t *global_multiboot_info;
+extern GlobalDescriptorTable_t global_gdt;
 static Serial_t com1;
 static MultibootInfo_t *mbi = NULL;
-
-extern MultibootInfo_t *global_multiboot_info;
+static GlobalDescriptorTable_t gdt = {0};
 
 __attribute__((constructor)) void kernel_initialize(void)
 {
     mbi = global_multiboot_info;
+    gdt = global_gdt;
 
     serial_initialize(&com1, COM1, 9600);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: serial port initialisation successful.\n");
@@ -38,6 +44,7 @@ __attribute__((constructor)) void kernel_initialize(void)
         return;
     }
 
+    // print_multiboot_info(KERNEL_START, mbi);
     write_multiboot_info(&com1, KERNEL_START, mbi);
 }
 

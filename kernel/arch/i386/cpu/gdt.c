@@ -1,4 +1,4 @@
-#include <kernel/gdt.h>
+#include <kernel/cpu/gdt.h>
 #include <string.h>
 
 ////////////////////////////////////////////////////////////
