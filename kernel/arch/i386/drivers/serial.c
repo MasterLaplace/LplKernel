@@ -1,4 +1,4 @@
-#include <kernel/serial.h>
+#include <kernel/drivers/serial.h>
 
 ////////////////////////////////////////////////////////////
 // Private functions of the serial module

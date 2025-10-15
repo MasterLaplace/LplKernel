@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <kernel/tty.h>
+#include <kernel/drivers/tty.h>
 
 ////////////////////////////////////////////////////////////
 // Private members of the terminal module
@@ -57,6 +57,12 @@ static inline void terminal_scroll(void)
             terminal_buffer[dst_index] = terminal_buffer[src_index];
         }
     }
+    // Optimisation : copie en bloc au lieu de boucles imbriquées
+    // Copie les lignes 1-24 vers les lignes 0-23
+    // const size_t bytes_to_copy = (VGA_HEIGHT - 1) * VGA_WIDTH * sizeof(uint16_t);
+    // memmove((void*)terminal_buffer,
+    //         (void*)(terminal_buffer + VGA_WIDTH),
+    //         bytes_to_copy);
 }
 
 static inline void terminal_delete_last_line(void)

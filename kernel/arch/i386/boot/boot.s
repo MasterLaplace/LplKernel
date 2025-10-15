@@ -1,5 +1,4 @@
 .arch i386
-.code32
 
 # Declare constants for the multiboot header.
 .set ALIGN,    1<<0             # align loaded modules on page boundaries
@@ -8,6 +7,7 @@
 
 # MODE CONFIGURATION - Set via build system
 # GRAPHICS_MODE is passed as -DGRAPHICS_MODE=0 or -DGRAPHICS_MODE=1
+#ifndef GRAPHICS_MODE
 .set GRAPHICS_MODE, 0           # Default to text mode if not specified
 
 .if GRAPHICS_MODE
@@ -22,6 +22,7 @@
 .set CHECKSUM, -(MAGIC + FLAGS) # checksum of above, to prove we are multiboot
 .set KERNEL_START, 0xC0000000   # kernel start address
 
+# Graphics settings (for future use)
 .set SCREEN_WIDTH, 1024         # Target resolution width
 .set SCREEN_HEIGHT, 768         # Target resolution height
 .set SCREEN_DEPTH, 32           # 32-bit color depth
@@ -34,11 +35,12 @@
 .long CHECKSUM
 
 .if GRAPHICS_MODE
+    # Graphics mode header
     .long 0, 0, 0, 0, 0            # address header (not used)
     .long SCREEN_MODE              # mode_type (1 = force graphics)
-    .long SCREEN_WIDTH
-    .long SCREEN_HEIGHT
-    .long SCREEN_DEPTH
+    .long SCREEN_WIDTH             # width
+    .long SCREEN_HEIGHT            # height
+    .long SCREEN_DEPTH             # depth
 .endif
 
 .section .bootstrap_stack, "aw", @nobits
@@ -53,6 +55,7 @@ boot_page_directory:
 boot_page_table1:
     .skip 4096
 
+# Variable globale pour stocker le multiboot info
 .global global_multiboot_info
 global_multiboot_info:
     .skip 4
@@ -126,15 +129,19 @@ higher_half_entry:
     movl %edx, %ebx
     addl $KERNEL_START, %ebx
 
+    # Store multiboot info in global variable for constructor access
     movl %ebx, global_multiboot_info
 
+    # Also push it for compatibility (though kernel_main won't use it now)
     pushl %ebx
 
+    # Call constructors, kernel, destructors
     call _init
     call kernel_main
     addl $4, %esp           # Clean stack
     call _fini
 
+    # Halt
     cli
 halt_loop:
     hlt

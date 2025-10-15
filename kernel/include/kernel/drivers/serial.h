@@ -1,7 +1,7 @@
 #ifndef SERIAL_H_
 #define SERIAL_H_
 
-#include <kernel/asmutils.h>
+#include <kernel/lib/asmutils.h>
 #include <stdint.h>
 
 #define BASE_SERIAL_SPEED 115200

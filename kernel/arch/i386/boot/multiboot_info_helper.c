@@ -1,4 +1,4 @@
-#include <kernel/multiboot_info_helper.h>
+#include <kernel/boot/multiboot_info_helper.h>
 
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #    error "This code assumes little-endian (x86). Update multiboot parsing for big-endian targets."
@@ -157,6 +157,7 @@ void print_multiboot_info_memory_map(uint32_t kernel_start, MultibootInfo_t *mbi
     terminal_write_number((uint32_t) (long) mbi->mmap_addr, 16);
     terminal_write_string("\n");
 
+    /* Convert physical mmap address to virtual using kernel_start mapping */
     uint8_t *mmap_base = (uint8_t *) physical_to_virtual_low((uint32_t) (long) mbi->mmap_addr, kernel_start);
     if (!mmap_base)
     {
@@ -171,10 +172,14 @@ void print_multiboot_info_memory_map(uint32_t kernel_start, MultibootInfo_t *mbi
         {
             uint8_t *entry = mmap_base + offset;
 
+            /* ensure we can read the size field */
             if (offset + 4 > mbi->mmap_length)
                 break;
             uint32_t size = read_little_endian_u32(entry);
 
+            /* size is the payload length (following the u32 size). The
+             * standard payload for a BIOS memory map entry is 20 bytes
+             * (8 base + 8 length + 4 type). Guard against malformed data. */
             if (size < 20)
                 break;
             if (offset + 4 + size > mbi->mmap_length)
@@ -231,6 +236,9 @@ void print_multiboot_info_drive_info(DriveInfo_t *drive_info)
     terminal_write_string("\nSectors: ");
     terminal_write_number(drive_info->drive_sectors, 10);
 
+    /* drive_ports is a packed flexible array located immediately after the
+     * fixed header. We must read it byte-wise to avoid unaligned accesses.
+     * The array is terminated by a 16-bit zero value. */
     terminal_write_string("\nI/O Ports: ");
     {
         uint8_t *base = (uint8_t *) drive_info;

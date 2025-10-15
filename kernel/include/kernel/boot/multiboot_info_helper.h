@@ -1,9 +1,9 @@
 #ifndef MULTIBOOT_INFO_HELPER_H_
 #define MULTIBOOT_INFO_HELPER_H_
 
-#include <kernel/multiboot_info.h>
-#include <kernel/serial.h>
-#include <kernel/tty.h>
+#include <kernel/boot/multiboot_info.h>
+#include <kernel/drivers/serial.h>
+#include <kernel/drivers/tty.h>
 
 ////////////////////////////////////////////////////////////
 // Public functions of the multiboot info helper module API

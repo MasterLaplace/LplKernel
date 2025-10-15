@@ -1,11 +1,9 @@
-.global inb
-	.type inb, @function
-.global outb
-	.type outb, @function
-
 .section .text
+.global inb
+.global outb
 
 # unsigned char inb(short port)
+.type inb, @function
 inb:
     pushl %ebp
     movl %esp, %ebp
@@ -16,6 +14,7 @@ inb:
     ret
 
 # void outb(short port, unsigned char toSend)
+.type outb, @function
 outb:
     pushl %ebp
     movl %esp, %ebp
