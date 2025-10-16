@@ -55,51 +55,6 @@ static inline void encode_gdt_entry(GlobalDescriptorTableEntry_t *entry, uint32_
     memcpy(&entry->flags, &granularity_byte, sizeof(uint8_t));
 }
 
-/**
- * @brief Helper to create an access byte from individual flags
- *
- * @param accessed Accessed bit
- * @param read_write Readable (code) / Writable (data)
- * @param direction_conforming Direction (data) / Conforming (code)
- * @param executable 1 = code segment, 0 = data segment
- * @param descriptor_type 1 = code/data, 0 = system
- * @param dpl Descriptor Privilege Level (0-3)
- * @param present Present bit
- * @return uint8_t Raw access byte
- */
-static inline uint8_t create_access_byte(bool accessed, bool read_write, bool direction_conforming,
-                                         bool executable, bool descriptor_type, uint8_t dpl, bool present)
-{
-    uint8_t access = 0;
-    access |= (accessed ? 1 : 0) << 0;
-    access |= (read_write ? 1 : 0) << 1;
-    access |= (direction_conforming ? 1 : 0) << 2;
-    access |= (executable ? 1 : 0) << 3;
-    access |= (descriptor_type ? 1 : 0) << 4;
-    access |= (dpl & 0x3) << 5;
-    access |= (present ? 1 : 0) << 7;
-    return access;
-}
-
-/**
- * @brief Helper to create a flags byte from individual flags
- *
- * @param granularity Granularity (0 = 1B, 1 = 4KB)
- * @param default_big D/B bit (0 = 16-bit, 1 = 32-bit)
- * @param long_mode L bit (1 = 64-bit code segment)
- * @param available Available for system use
- * @return uint8_t Raw flags byte (high nibble only, low nibble set by encode_gdt_entry)
- */
-static inline uint8_t create_flags(bool granularity, bool default_big, bool long_mode, bool available)
-{
-    uint8_t flags = 0;
-    flags |= (available ? 1 : 0) << 4;
-    flags |= (long_mode ? 1 : 0) << 5;
-    flags |= (default_big ? 1 : 0) << 6;
-    flags |= (granularity ? 1 : 0) << 7;
-    return flags;
-}
-
 ////////////////////////////////////////////////////////////
 // Public functions of the GDT module API
 ////////////////////////////////////////////////////////////

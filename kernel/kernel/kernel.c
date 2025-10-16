@@ -21,31 +21,32 @@ static const char WELCOME_MESSAGE[] = ""
                                       "   |                | |_                             | \\\n"
                                       "   +---             |___|                          --+==+\n\n";
 
-extern MultibootInfo_t *global_multiboot_info;
-extern GlobalDescriptorTable_t global_gdt;
+extern MultibootInfo_t *multiboot_info;
+
+static GlobalDescriptorTable_t global_descriptor_table = {0};
 static Serial_t com1;
-static MultibootInfo_t *mbi = NULL;
-static GlobalDescriptorTable_t gdt = {0};
 
 __attribute__((constructor)) void kernel_initialize(void)
 {
-    mbi = global_multiboot_info;
-    gdt = global_gdt;
-
     serial_initialize(&com1, COM1, 9600);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: serial port initialisation successful.\n");
 
     terminal_initialize();
 
-    if (!mbi)
+    if (!multiboot_info)
     {
-        terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_RED, VGA_COLOR_BLACK));
-        terminal_write_string("ERROR: Multiboot info is NULL in constructor!\n");
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "] ERROR: Multiboot info is NULL in constructor!\n");
         return;
     }
 
-    // print_multiboot_info(KERNEL_START, mbi);
-    write_multiboot_info(&com1, KERNEL_START, mbi);
+    // print_multiboot_info(KERNEL_START, multiboot_info);
+    write_multiboot_info(&com1, KERNEL_START, multiboot_info);
+
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing GDT...\n");
+    global_descriptor_table_init(&global_descriptor_table);
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: loading GDT into CPU...\n");
+    global_descriptor_table_load(&global_descriptor_table);
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: GDT loaded successfully!\n");
 }
 
 void kernel_main(void)

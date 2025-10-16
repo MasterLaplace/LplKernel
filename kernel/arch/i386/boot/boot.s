@@ -52,12 +52,12 @@ stack_top:
     .align 4096
 boot_page_directory:
     .skip 4096
-boot_page_table1:
+boot_page_table:
     .skip 4096
 
 # Variable globale pour stocker le multiboot info
-.global global_multiboot_info
-global_multiboot_info:
+.global multiboot_info
+multiboot_info:
     .skip 4
 
 .section .multiboot.text, "a"
@@ -68,7 +68,7 @@ _start:
     movl %ebx, %edx
 
     # Setup page table pointer and counters
-    movl $(boot_page_table1 - KERNEL_START), %edi
+    movl $(boot_page_table - KERNEL_START), %edi
     movl $0, %esi
     movl $1024, %ecx
 
@@ -94,10 +94,10 @@ skip_page:
     loop page_mapping_loop
 
     # Map VGA buffer at the end of page table
-    movl $(0x000B8000 | 0x003), boot_page_table1 - KERNEL_START + 1023 * 4
+    movl $(0x000B8000 | 0x003), boot_page_table - KERNEL_START + 1023 * 4
     # Setup page directory
-    movl $(boot_page_table1 - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 0     # Identity mapping
-    movl $(boot_page_table1 - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 768 * 4  # Higher half mapping
+    movl $(boot_page_table - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 0     # Identity mapping
+    movl $(boot_page_table - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 768 * 4  # Higher half mapping
 
     # Enable paging
     movl $(boot_page_directory - KERNEL_START), %ecx
@@ -130,7 +130,7 @@ higher_half_entry:
     addl $KERNEL_START, %ebx
 
     # Store multiboot info in global variable for constructor access
-    movl %ebx, global_multiboot_info
+    movl %ebx, multiboot_info
 
     # Also push it for compatibility (though kernel_main won't use it now)
     pushl %ebx
