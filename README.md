@@ -54,6 +54,13 @@ cd LplKernel
 ./qemu.sh 4 # 4 cores to build
 ```
 
+## Roadmap
+
+The kernel development and its objectives are listed in the project roadmap. Consult the roadmap to see the planned features, progress status, and next steps:
+
+[ROADMAP](docs/ROADMAP.md)
+
+
 ### Running using nix
 
 ```sh
