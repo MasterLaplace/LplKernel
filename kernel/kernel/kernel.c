@@ -1,8 +1,8 @@
 #define LAPLACE_KERNEL_PANIC
 #include <kernel/config.h>
 
-#include <kernel/cpu/gdt.h>
 #include <kernel/boot/multiboot_info_helper.h>
+#include <kernel/cpu/gdt_helper.h>
 
 /* global_kernel_start is provided by the linker script via PROVIDE().
  * Declare it as a const uint32_t so the compiler treats it as an address-sized
@@ -47,6 +47,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: loading GDT into CPU...\n");
     global_descriptor_table_load(&global_descriptor_table);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: GDT loaded successfully!\n");
+    write_global_descriptor_table(&com1, &global_descriptor_table);
 }
 
 void kernel_main(void)
