@@ -6,3 +6,13 @@ sysroot
 
 .vscode/
 .Test/
+
+# kernel build files
+*.d
+*.kernel
+*.o
+
+# libc build files
+*.a
+*.d
+*.o
