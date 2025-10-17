@@ -5,7 +5,7 @@
 #endif
 
 ////////////////////////////////////////////////////////////
-// Private functions of the serial module
+// Private functions of the multiboot info helper module
 ////////////////////////////////////////////////////////////
 
 static inline uint8_t read_little_endian_u8(const uint8_t *p) { return p[0]; }
@@ -55,7 +55,7 @@ static inline void print_section_header(const char *title, uint8_t color)
 }
 
 ////////////////////////////////////////////////////////////
-// Public functions of the terminal module API
+// Public functions of the multiboot info helper module API
 ////////////////////////////////////////////////////////////
 
 void print_multiboot_info_boot_device(BootDevice_t *boot_device)

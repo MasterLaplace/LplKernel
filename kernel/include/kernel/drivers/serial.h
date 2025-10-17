@@ -34,9 +34,15 @@ extern void serial_write_char(Serial_t *serial, char c);
 
 extern void serial_write_int(Serial_t *serial, int32_t i);
 
+extern void serial_write_hex8(Serial_t *serial, uint8_t i);
+
+extern void serial_write_hex16(Serial_t *serial, uint16_t i);
+
 extern void serial_write_hex32(Serial_t *serial, uint32_t i);
 
 extern void serial_write_hex64(Serial_t *serial, uint64_t i);
+
+extern void serial_write_binary8(Serial_t *serial, uint8_t i);
 
 extern void serial_write_string(Serial_t *serial, const char *data);
 

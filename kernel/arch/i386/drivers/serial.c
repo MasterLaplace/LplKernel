@@ -74,6 +74,38 @@ void serial_write_int(Serial_t *serial, int32_t i)
         serial_write_char(serial, buffer[j]);
 }
 
+void serial_write_hex8(Serial_t *serial, uint8_t i)
+{
+    char hex[5];
+    hex[0] = '0';
+    hex[1] = 'x';
+
+    for (uint8_t j = 0; j < 2; ++j)
+    {
+        uint8_t nibble = (i >> ((1 - j) * 4)) & 0xF;
+        hex[2 + j] = nibble < 10 ? '0' + nibble : 'A' + nibble - 10;
+    }
+
+    hex[4] = '\0';
+    serial_write_string(serial, hex);
+}
+
+void serial_write_hex16(Serial_t *serial, uint16_t i)
+{
+    char hex[7];
+    hex[0] = '0';
+    hex[1] = 'x';
+
+    for (uint8_t j = 0; j < 4; ++j)
+    {
+        uint16_t nibble = (i >> ((3 - j) * 4)) & 0xF;
+        hex[2 + j] = nibble < 10 ? '0' + nibble : 'A' + nibble - 10;
+    }
+
+    hex[6] = '\0';
+    serial_write_string(serial, hex);
+}
+
 void serial_write_hex32(Serial_t *serial, uint32_t i)
 {
     char hex[11];
@@ -104,6 +136,21 @@ void serial_write_hex64(Serial_t *serial, uint64_t i)
 
     hex[18] = '\0';
     serial_write_string(serial, hex);
+}
+
+void serial_write_binary8(Serial_t *serial, uint8_t i)
+{
+    char bin[11];
+    bin[0] = '0';
+    bin[1] = 'b';
+
+    for (uint8_t j = 0; j < 8; ++j)
+    {
+        bin[2 + j] = (i & (1 << (7 - j))) ? '1' : '0';
+    }
+
+    bin[10] = '\0';
+    serial_write_string(serial, bin);
 }
 
 void serial_write_string(Serial_t *serial, const char *data)
