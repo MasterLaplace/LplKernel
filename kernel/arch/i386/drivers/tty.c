@@ -109,10 +109,17 @@ void terminal_putchar(char c)
         terminal_column = (terminal_column + 4u) & ~3u;
         break;
     case 127:
-        if (terminal_column == 0u)
+        if (terminal_column > 0u)
+        {
+            --terminal_column;
+            terminal_putentryat(' ', terminal_color, terminal_row, terminal_column);
+            break;
+        }
+        else if (terminal_row == 0u)
             return;
 
-        --terminal_column;
+        --terminal_row;
+        terminal_column = VGA_WIDTH - 1u;
         terminal_putentryat(' ', terminal_color, terminal_row, terminal_column);
         break;
     default:
