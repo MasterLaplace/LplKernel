@@ -3,6 +3,9 @@ name: Linter GitHub Action
 on:
   push:
     branches-ignore: [ga-ignore-**, gh-pages]
+    paths:
+      - '**.c'
+      - '**.h'
 
 permissions:
   contents: write
