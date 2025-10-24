@@ -25,26 +25,51 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
+      - name: Restore apt .deb cache
+        id: cache-clang-restore
+        uses: actions/cache/restore@v4.3.0
+        with:
+          path: .apt-cache
+          key: ${{ runner.os }}-clang-format-v1
 
-      - name: Find tracked C files
+      - name: Install clang-format (from cache if available)
+        run: |
+          if [ "${{ steps.cache-clang-restore.outputs.cache-hit }}" != 'true' ]; then
+            mkdir -p .apt-cache
+            sudo apt-get update
+            sudo apt-get -o Dir::Cache::archives="$(pwd)/.apt-cache" install --download-only -y clang-format || true
+            sudo chown -R "$(id -u):$(id -g)" .apt-cache || true
+          fi
+
+          if ls .apt-cache/*.deb 1> /dev/null 2>&1; then
+            echo "Installing clang-format from cached .deb"
+            sudo dpkg -i .apt-cache/*.deb || sudo apt-get install -f -y
+          else
+            echo "No cached debs found — installing via apt-get"
+            sudo apt-get update
+            sudo apt-get install -y clang-format
+          fi
+
+      - name: Format tracked C files (ensure newline at EOF + clang-format)
         id: files
         run: |
-          git ls-files '*.c' '*.h' > tracked_files.txt || true
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          sed 's/\"/\\\"/g' tracked_files.txt | sed -z 's/\n/\\n/g' >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          files=$(git ls-files -z '*.c' '*.h')
+          if [ -z "$files" ]; then
+            echo "No tracked C/H files to format."
+            echo "files=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-      - name: Ensure newline at EOF and run clang-format
-        if: steps.files.outputs.files != ''
-        run: |
-          git ls-files '*.c' '*.h' | while IFS= read -r f; do
-            tail -c1 < "$f" | read -r _ || echo >> "$f"
+          printf '%s' "$files" | xargs -0 -n1 -I{} sh -c '
+            f="{}"
+            if [ -s "$f" ]; then
+              tail -c1 "$f" | read -r _ || echo >> "$f"
+            else
+              echo >> "$f"
+            fi
             clang-format -i "$f"
-          done
+          '
+          echo "files=1" >> $GITHUB_OUTPUT
 
       - name: Show git status
         run: |
@@ -65,3 +90,10 @@ jobs:
           git commit -m "style: apply clang-format" || true
           git pull --rebase origin main || true
           git push origin HEAD:main
+
+      - name: Save apt .deb cache
+        if: always()
+        uses: actions/cache/save@v4.3.0
+        with:
+          path: .apt-cache
+          key: ${{ runner.os }}-clang-format-v1
