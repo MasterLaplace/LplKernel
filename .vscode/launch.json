@@ -1,0 +1,69 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug LplKernel with GDB + QEMU",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/kernel/lpl.kernel",
+            "cwd": "${workspaceFolder}",
+            "args": [],
+            "stopAtEntry": true,
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "miDebuggerArgs": "",
+            "targetArchitecture": "x86",
+            "setupCommands": [
+                {
+                    "description": "Wait for QEMU to start",
+                    "text": "shell sleep 2",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set architecture to i386",
+                    "text": "set architecture i386",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set disassembly flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Load kernel symbols",
+                    "text": "file ${workspaceFolder}/kernel/lpl.kernel",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Connect to QEMU remote debugger",
+                    "text": "target remote localhost:1234",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set breakpoint at kernel_main",
+                    "text": "break kernel_main",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set breakpoint at kernel_initialize",
+                    "text": "break kernel_initialize",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Launch QEMU with GDB",
+            "postDebugTask": "Kill QEMU",
+            "logging": {
+                "engineLogging": true,
+                "trace": true,
+                "traceResponse": true
+            }
+        }
+    ]
+}

@@ -9,3 +9,4 @@ done
 rm -rf sysroot
 rm -rf iso
 rm -rf lpl.iso
+rm -rf *.log

@@ -77,6 +77,9 @@ clean:
 	rm -f $(OBJS) *.o */*.o */*/*.o
 	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d
 
+debug: CFLAGS+=-DDEBUG -g3 -O0
+debug: all
+
 install: install-headers install-kernel
 
 install-headers:

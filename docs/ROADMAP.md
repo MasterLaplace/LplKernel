@@ -12,9 +12,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 **Next Goal**: Phase 3 - Implement IDT and exception handlers
 
 ### Phase Completion Status:
-- ✅ **Phase 0**: Prerequisites & Environment Setup - **90% Complete**
+- ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
   - Cross-compiler ✅, Makefiles ✅, QEMU ✅, Multiboot ✅
-  - Missing: Advanced debugging setup (Bochs, GDB integration)
+  - VSCode GDB debugging ✅ (F5 to launch QEMU+GDB with breakpoints)
 
 - ✅ **Phase 1**: Bare Bones Kernel - **100% Complete**
   - VGA text mode ✅, Serial ports ✅, Scrolling ✅, Colors ✅, Multiboot parsing ✅
@@ -52,6 +52,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ GDT debugging helpers (terminal + serial output)
 ✅ Global constructors/destructors
 ✅ Cross-compilation toolchain (i686-elf)
+✅ VSCode debugging setup (GDB + QEMU integration, F5 launch)
 ```
 
 ### What We Need Next:
@@ -78,15 +79,16 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ### Development Environment
 - [x] [GCC Cross-Compiler](https://wiki.osdev.org/GCC_Cross-Compiler) - Build a cross-compiler for i686-elf
 - [x] [Build System](https://wiki.osdev.org/Makefile) - Setup Makefiles
+- [x] [VSCode for Debugging](https://wiki.osdev.org/User:TheCool1Kevin/VSCode_Debug) - Debug configuration ✅
 - [ ] [CMake Build System](https://wiki.osdev.org/CMake_Build_System) - Alternative build system
 - [ ] [OS Specific Toolchain](https://wiki.osdev.org/OS_Specific_Toolchain) - Adapt GCC/Binutils to your platform
-- [ ] [VSCode for Debugging](https://wiki.osdev.org/User:TheCool1Kevin/VSCode_Debug) - Debug configuration
 
 ### Testing & Debugging
 - [x] [QEMU](https://wiki.osdev.org/QEMU) - Primary emulator
+- [x] [VSCode for Debugging](https://wiki.osdev.org/User:TheCool1Kevin/VSCode_Debug) - Debug configuration ✅
+- [x] [How Do I Use A Debugger With My OS](https://wiki.osdev.org/How_Do_I_Use_A_Debugger_With_My_OS) ✅
+- [x] [Kernel Debugging](https://wiki.osdev.org/Kernel_Debugging) ✅
 - [ ] [Bochs](https://wiki.osdev.org/Bochs) - Alternative emulator with debugging
-- [ ] [How Do I Use A Debugger With My OS](https://wiki.osdev.org/How_Do_I_Use_A_Debugger_With_My_OS)
-- [ ] [Kernel Debugging](https://wiki.osdev.org/Kernel_Debugging)
 - [ ] [Unit Testing](https://wiki.osdev.org/Unit_Testing)
 
 ### Knowledge & Resources

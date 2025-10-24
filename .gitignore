@@ -4,8 +4,15 @@
 iso/boot/grub/
 sysroot
 
-.vscode/
+# .vscode/ settings
+.vscode/*
+!.vscode/c_cpp_properties.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .Test/
+
+# debug files
+*.log
 
 # kernel build files
 *.d

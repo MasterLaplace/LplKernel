@@ -1,0 +1,42 @@
+{
+    "configurations": [
+        {
+            "name": "LplKernel",
+            "includePath": [
+                "${workspaceFolder}/kernel/include",
+                "${workspaceFolder}/libc/include",
+                "${workspaceFolder}/sysroot/usr/include"
+            ],
+            "defines": [
+                "__is_kernel",
+                "MULTIBOOT_VERSION=1",
+                "GRAPHICS_MODE=0",
+                "__ELF__",
+                "__i386__"
+            ],
+            "compilerPath": "/usr/local/i686-elf/bin/i686-elf-gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "gcc-x86",
+            "compilerArgs": [
+                "-ffreestanding",
+                "-nostdinc",
+                "-fno-builtin",
+                "-fno-stack-protector",
+                "-Wall",
+                "-Wextra",
+                "-g"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/kernel",
+                    "${workspaceFolder}/libc",
+                    "${workspaceFolder}/sysroot"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db"
+            }
+        }
+    ],
+    "version": 4
+}

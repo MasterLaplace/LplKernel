@@ -60,6 +60,75 @@ cd LplKernel
 nix run github:MasterLaplace/LplKernel
 ```
 
+## Debugging
+
+The project is configured for VSCode debugging with GDB and QEMU integration.
+
+### Quick Start
+
+Press **F5** in VSCode to:
+1. Build the kernel automatically
+2. Launch QEMU with GDB server (`-s -S`)
+3. Connect GDB and set breakpoints at kernel startup (`kernel_main`, `kernel_initialize`)
+4. Start debugging with full source-level debugging support
+
+### Available Tasks
+
+Use `Ctrl+Shift+P` → "Tasks: Run Task" to access:
+
+- **Build Kernel** - Compile the kernel (`./build.sh`)
+- **Launch QEMU with GDB** - Start QEMU in debug mode (background task)
+- **Run QEMU (No Debug)** - Run kernel without debugging
+- **Build ISO** - Create bootable ISO image
+- **Kill QEMU** - Stop running QEMU instances
+
+### Custom GDB Commands
+
+The `.gdbinit` file provides kernel-specific debugging helpers:
+
+```gdb
+dump_pd [address]     # Dump page directory entries with flags
+dump_gdt              # Display GDT information (segments, base, limit, flags)
+show_mode             # Show CPU mode (protected, paging, PAE, interrupts)
+```
+
+### Debug Output Files
+
+When debugging, QEMU generates log files in the project root:
+
+- **`serial.log`** - Serial output from the kernel (COM1)
+- **`qemu.log`** - QEMU debug logs (interrupts, CPU resets)
+
+### Manual GDB Connection
+
+If you need to connect GDB manually:
+
+```sh
+# Terminal 1: Start QEMU with GDB server
+qemu-system-i386 -cdrom lpl.iso -s -S
+
+# Terminal 2: Connect GDB
+i686-elf-gdb kernel/lpl.kernel
+(gdb) target remote localhost:1234
+(gdb) break kernel_main
+(gdb) continue
+```
+
+### Debugging Tips
+
+- **Breakpoints**: Set breakpoints on functions before hardware initialization
+- **Watchpoints**: Use `watch variable` to track memory changes
+- **Page Tables**: Use `dump_pd` to inspect paging structures
+- **GDT/Segments**: Use `dump_gdt` to verify segmentation setup
+- **CPU State**: Use `show_mode` to check protected mode, paging, interrupts
+- **Registers**: All CPU registers are displayed automatically at each breakpoint
+
+### Requirements
+
+- Cross-compiler at `/usr/local/i686-elf/bin/i686-elf-gcc` (or update `.vscode/c_cpp_properties.json`)
+- QEMU installed (`qemu-system-i386`)
+- GDB with i686-elf support
+
 ## Roadmap
 
 The kernel development and its objectives are listed in the project roadmap. Consult the roadmap to see the planned features, progress status, and next steps:
