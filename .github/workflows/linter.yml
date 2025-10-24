@@ -6,6 +6,7 @@ on:
     paths:
       - '**.c'
       - '**.h'
+      - '.github/workflows/linter.yml'
 
 permissions:
   contents: write
@@ -16,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Install clang-format
         run: sudo apt-get install -y clang-format
@@ -33,4 +37,10 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           git commit -m "style: apply linter" || true
-          git push || true
+          git fetch origin main
+          git pull --rebase origin main || true
+          if ! git push origin HEAD:main; then
+            echo 'Push failed - showing remote status for debugging:'
+            git --no-pager log --oneline --graph --decorate --all | sed -n '1,50p'
+            exit 0
+          fi
