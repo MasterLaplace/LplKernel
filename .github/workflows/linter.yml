@@ -24,6 +24,15 @@ jobs:
       - name: Install clang-format
         run: sudo apt-get install -y clang-format
 
+      - name: Cache APT archives (speeds up clang-format install)
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-cache-clang-format
+          restore-keys: |
+            ${{ runner.os }}-apt-cache-
+
       - name: Run clang-format
         run: |
           git ls-files -z "*.c" "*.h" | while IFS= read -rd '' f; do tail -c1 < "$f" | read -r _ || echo >> "$f"; done
