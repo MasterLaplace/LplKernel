@@ -19,9 +19,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - ✅ **Phase 1**: Bare Bones Kernel - **100% Complete**
   - VGA text mode ✅, Serial ports ✅, Scrolling ✅, Colors ✅, Multiboot parsing ✅
 
-- 🚧 **Phase 2**: CPU Initialization & Protection - **80% Complete**
-  - Higher-half kernel ✅, Paging (boot-time) ✅, GDT complete ✅
-  - Missing: TSS initialization, dynamic page management, Ring 3 transition
+- 🚧 **Phase 2**: CPU Initialization & Protection - **85% Complete**
+  - Higher-half kernel ✅, Paging (boot-time + runtime) ✅, GDT complete ✅
+  - Missing: TSS initialization, page frame allocator, Ring 3 transition
 
 - ❌ **Phase 3**: Interrupts & Exceptions - **0% Complete** ⬅️ **START HERE**
   - No IDT, no exception handlers, no PIC initialization
@@ -44,6 +44,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ Boot process (GRUB multiboot)
 ✅ Higher-half kernel at 0xC0000000
 ✅ Paging enabled (identity + kernel mapping)
+✅ Runtime paging API (map/unmap pages, virt→phys translation)
 ✅ GDT with 6 segments (null, kcode, kdata, ucode, udata, tss)
 ✅ VGA text mode terminal with colors, scrolling, backspace across lines
 ✅ Serial output with hex8/16/32/64 and binary formatting
@@ -65,7 +66,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ### Known Issues:
 ```
 ⚠️ TSS entry in GDT has base=0, limit=0 (not configured)
-⚠️ No runtime page table management
+⚠️ No page frame allocator (can't create new page tables dynamically)
 ⚠️ No memory allocator (all allocations static)
 ⚠️ No interrupt handling at all (CPU exceptions will triple fault)
 ```
@@ -146,7 +147,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [x] Kernel space mapping at 0xC0000000
   - [x] VGA buffer mapping at 0xB8000
   - [x] Remove identity mapping after jump to higher half
-  - 🚧 [Paging](https://wiki.osdev.org/Paging) - Basic boot-time only, no dynamic management
+  - [x] [Paging](https://wiki.osdev.org/Paging) - Runtime management with map/unmap API ✅
   - [ ] [Page Frame Allocation](https://wiki.osdev.org/Page_Frame_Allocation) - Physical memory manager
 
 ### Segmentation (GDT)

@@ -3,13 +3,7 @@
 
 #include <kernel/boot/multiboot_info_helper.h>
 #include <kernel/cpu/gdt_helper.h>
-
-/* global_kernel_start is provided by the linker script via PROVIDE().
- * Declare it as a const uint32_t so the compiler treats it as an address-sized
- * symbol whose value can be read at runtime. Use a pointer cast to obtain
- * the integer value. */
-extern const uint32_t global_kernel_start;
-#define KERNEL_START ((uint32_t) (uintptr_t) &global_kernel_start)
+#include <kernel/cpu/paging.h>
 
 static const char WELCOME_MESSAGE[] = ""
                                       "/==+--  _                                         ---+\n"
@@ -39,8 +33,8 @@ __attribute__((constructor)) void kernel_initialize(void)
         return;
     }
 
-    // print_multiboot_info(KERNEL_START, multiboot_info);
-    write_multiboot_info(&com1, KERNEL_START, multiboot_info);
+    // print_multiboot_info(KERNEL_VIRTUAL_BASE, multiboot_info);
+    write_multiboot_info(&com1, KERNEL_VIRTUAL_BASE, multiboot_info);
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing GDT...\n");
     global_descriptor_table_init(&global_descriptor_table);
@@ -48,6 +42,10 @@ __attribute__((constructor)) void kernel_initialize(void)
     global_descriptor_table_load(&global_descriptor_table);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: GDT loaded successfully!\n");
     write_global_descriptor_table(&com1, &global_descriptor_table);
+
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing runtime paging...\n");
+    paging_init_runtime();
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: runtime paging initialized successfully!\n");
 }
 
 void kernel_main(void)
@@ -60,8 +58,7 @@ void kernel_main(void)
 
     terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
-    uint8_t c = 0u;
-    for (; (uint32_t) c != 27u;)
+    for (uint8_t c = 0u; (uint32_t) c != 27u;)
     {
         c = serial_read_char(&com1);
         terminal_putchar(c);
