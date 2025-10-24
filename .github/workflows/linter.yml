@@ -21,17 +21,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Install clang-format
-        run: sudo apt-get install -y clang-format
-
-      - name: Cache APT archives (speeds up clang-format install)
+      - name: Restore clang-format .deb cache
         uses: actions/cache@v4
         with:
-          path: |
-            /var/cache/apt/archives
-          key: ${{ runner.os }}-apt-cache-clang-format
+          path: .apt-cache
+          key: ${{ runner.os }}-apt-cache-clang-format-v1
           restore-keys: |
-            ${{ runner.os }}-apt-cache-
+            ${{ runner.os }}-apt-cache-clang-format-
+
+      - name: Prepare and download clang-format packages to workspace cache
+        run: |
+          sudo apt-get update
+          mkdir -p .apt-cache
+          sudo apt-get -o Dir::Cache::archives="$(pwd)/.apt-cache" install --download-only -y clang-format || true
+
+      - name: Install clang-format from local cache
+        run: |
+          if ls .apt-cache/*.deb 1> /dev/null 2>&1; then
+            sudo dpkg -i .apt-cache/*.deb || sudo apt-get install -f -y
+          else
+            sudo apt-get install -y clang-format
+          fi
 
       - name: Run clang-format
         run: |
