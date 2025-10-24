@@ -34,6 +34,7 @@ jobs:
           sudo apt-get update
           mkdir -p .apt-cache
           sudo apt-get -o Dir::Cache::archives="$(pwd)/.apt-cache" install --download-only -y clang-format || true
+          sudo chown -R "$(id -u):$(id -g)" .apt-cache || true
 
       - name: Install clang-format from local cache
         run: |
@@ -43,7 +44,7 @@ jobs:
             sudo apt-get install -y clang-format
           fi
 
-      - name: Run clang-format
+      - name: Run clang-format on C source/header files and ensure newline at EOF
         run: |
           git ls-files -z "*.c" "*.h" | while IFS= read -rd '' f; do tail -c1 < "$f" | read -r _ || echo >> "$f"; done
           find . -iname '*.h' -o -iname '*.c' | xargs clang-format -i
