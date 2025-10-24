@@ -57,9 +57,6 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # Ensure .apt-cache is not tracked and removed from index before committing
-          git rm -r --cached .apt-cache || true
-          rm -rf .apt-cache || true
           git add .
           git commit -m "style: apply linter" || true
           git fetch origin main
