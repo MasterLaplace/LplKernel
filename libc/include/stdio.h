@@ -4,8 +4,10 @@
 #include <sys/cdefs.h>
 
 #define SEEK_SET 0
-#define EOF (-1)
-typedef struct { int unused; } FILE;
+#define EOF      (-1)
+typedef struct {
+    int unused;
+} FILE;
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,7 +16,7 @@ extern "C" {
 extern FILE *stderr;
 #define stderr stderr
 
-int printf(const char * __restrict, ...);
+int printf(const char *__restrict, ...);
 int putchar(int);
 int puts(const char *);
 

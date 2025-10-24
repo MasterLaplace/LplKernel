@@ -4,15 +4,9 @@
 // Private functions of the serial module
 ////////////////////////////////////////////////////////////
 
-static inline int serial_can_write(Serial_t *serial)
-{
-    return inb(serial->port + 5) & 0x20;
-}
+static inline int serial_can_write(Serial_t *serial) { return inb(serial->port + 5) & 0x20; }
 
-static inline int serial_can_read(Serial_t *serial)
-{
-    return inb(serial->port + 5) & 0x01;
-}
+static inline int serial_can_read(Serial_t *serial) { return inb(serial->port + 5) & 0x01; }
 
 ////////////////////////////////////////////////////////////
 // Public functions of the terminal module API
@@ -43,7 +37,8 @@ void serial_initialize(Serial_t *serial, COM_PORT port, uint32_t speed)
 
 void serial_write_char(Serial_t *serial, char c)
 {
-    while (!serial_can_write(serial));
+    while (!serial_can_write(serial))
+        ;
     outb(serial->port, c);
 }
 
@@ -163,6 +158,7 @@ void serial_write_string(Serial_t *serial, const char *data)
 
 uint8_t serial_read_char(Serial_t *serial)
 {
-    while (!serial_can_read(serial));
+    while (!serial_can_read(serial))
+        ;
     return inb(serial->port);
 }

@@ -96,18 +96,18 @@ static inline void print_gdt_entry(const char *name, const GlobalDescriptorTable
     terminal_write_string("):\n");
 
     // Reconstruct base address
-    uint32_t base = entry->base_low | ((uint32_t)entry->base_middle << 16) | ((uint32_t)entry->base_high << 24);
+    uint32_t base = entry->base_low | ((uint32_t) entry->base_middle << 16) | ((uint32_t) entry->base_high << 24);
     terminal_write_string("  Base: 0x");
     terminal_write_number(base, 16);
 
     // Reconstruct limit
-    uint8_t flags_byte = *(uint8_t *)&entry->flags;
-    uint32_t limit = entry->limit_low | (((uint32_t)(flags_byte & 0x0F)) << 16);
+    uint8_t flags_byte = *(uint8_t *) &entry->flags;
+    uint32_t limit = entry->limit_low | (((uint32_t) (flags_byte & 0x0F)) << 16);
     terminal_write_string("\n  Limit: 0x");
     terminal_write_number(limit, 16);
 
     // Decode access byte
-    uint8_t access = *(uint8_t *)&entry->access_byte;
+    uint8_t access = *(uint8_t *) &entry->access_byte;
     terminal_write_string("\n  Access: 0x");
     terminal_write_number(access, 16);
     terminal_write_string(" (");
@@ -122,7 +122,8 @@ static inline void print_gdt_entry(const char *name, const GlobalDescriptorTable
     terminal_write_string(")\n");
 }
 
-static inline void write_gdt_entry(Serial_t *serial, const char *name, const GlobalDescriptorTableEntry_t *entry, uint16_t selector)
+static inline void write_gdt_entry(Serial_t *serial, const char *name, const GlobalDescriptorTableEntry_t *entry,
+                                   uint16_t selector)
 {
     serial_write_string(serial, name);
     serial_write_string(serial, " (Selector ");
@@ -130,18 +131,18 @@ static inline void write_gdt_entry(Serial_t *serial, const char *name, const Glo
     serial_write_string(serial, "):\n");
 
     // Reconstruct base address
-    uint32_t base = entry->base_low | ((uint32_t)entry->base_middle << 16) | ((uint32_t)entry->base_high << 24);
+    uint32_t base = entry->base_low | ((uint32_t) entry->base_middle << 16) | ((uint32_t) entry->base_high << 24);
     serial_write_string(serial, "  Base: ");
     serial_write_hex32(serial, base);
 
     // Reconstruct limit
-    uint8_t flags_byte = *(uint8_t *)&entry->flags;
-    uint32_t limit = entry->limit_low | (((uint32_t)(flags_byte & 0x0F)) << 16);
+    uint8_t flags_byte = *(uint8_t *) &entry->flags;
+    uint32_t limit = entry->limit_low | (((uint32_t) (flags_byte & 0x0F)) << 16);
     serial_write_string(serial, "\n  Limit: ");
     serial_write_hex32(serial, limit);
 
     // Decode access byte
-    uint8_t access = *(uint8_t *)&entry->access_byte;
+    uint8_t access = *(uint8_t *) &entry->access_byte;
     serial_write_string(serial, "\n  Access: ");
     serial_write_hex8(serial, access);
     serial_write_string(serial, " (");
@@ -169,7 +170,7 @@ void print_global_descriptor_table(GlobalDescriptorTable_t *gdt)
     print_section_header("Global Descriptor Table", VGA_COLOR_LIGHT_CYAN);
 
     terminal_write_string("GDT Address: 0x");
-    terminal_write_number((uint32_t)gdt, 16);
+    terminal_write_number((uint32_t) gdt, 16);
     terminal_write_string("\nGDT Size: ");
     terminal_write_number(sizeof(GlobalDescriptorTable_t), 10);
     terminal_write_string(" bytes (");
@@ -193,7 +194,7 @@ void write_global_descriptor_table(Serial_t *serial, GlobalDescriptorTable_t *gd
 
     serial_write_string(serial, "\n=== Global Descriptor Table ===\n");
     serial_write_string(serial, "GDT Address: ");
-    serial_write_hex32(serial, (uint32_t)gdt);
+    serial_write_hex32(serial, (uint32_t) gdt);
     serial_write_string(serial, "\nGDT Size: ");
     serial_write_int(serial, sizeof(GlobalDescriptorTable_t));
     serial_write_string(serial, " bytes (");

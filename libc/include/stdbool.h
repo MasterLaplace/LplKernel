@@ -1,11 +1,11 @@
 #ifndef _STDBOOL_H
-    #define _STDBOOL_H
+#define _STDBOOL_H
 
-    #define bool _Bool
+#define bool _Bool
 
-    #define true 1
-    #define false 0
+#define true  1
+#define false 0
 
-    // see C99 - 7.16 - 7.16 Boolean type and values <stdbool.h>
-    #define __bool_true_false_are_defined 1
+// see C99 - 7.16 - 7.16 Boolean type and values <stdbool.h>
+#define __bool_true_false_are_defined 1
 #endif

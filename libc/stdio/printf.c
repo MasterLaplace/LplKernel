@@ -6,7 +6,7 @@
 
 static bool print(const char *data, size_t length)
 {
-    const unsigned char *bytes = (const unsigned char *)data;
+    const unsigned char *bytes = (const unsigned char *) data;
     for (size_t i = 0; i < length; i++)
         if (putchar(bytes[i]) == EOF)
             return false;
@@ -48,7 +48,7 @@ int printf(const char *restrict format, ...)
         if (*format == 'c')
         {
             format++;
-            char c = (char)va_arg(parameters, int /* char promotes to int */);
+            char c = (char) va_arg(parameters, int /* char promotes to int */);
             if (!maxrem)
             {
                 // TODO: Set errno to EOVERFLOW.

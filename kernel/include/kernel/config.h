@@ -20,7 +20,6 @@
  * @date 2024-03-28
  **************************************************************************/
 
-
 // clang-format off
 #ifndef KERNEL_CONFIG_H_
     #define KERNEL_CONFIG_H_

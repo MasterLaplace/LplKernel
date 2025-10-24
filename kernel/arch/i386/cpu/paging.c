@@ -51,10 +51,7 @@ static inline uint32_t virt_to_phys(uint32_t virt_addr)
  * @param phys_addr Physical address
  * @return Corresponding virtual address in higher half
  */
-static inline uint32_t phys_to_virt(uint32_t phys_addr)
-{
-    return phys_addr + KERNEL_VIRTUAL_BASE;
-}
+static inline uint32_t phys_to_virt(uint32_t phys_addr) { return phys_addr + KERNEL_VIRTUAL_BASE; }
 
 // ============================================================================
 // Public API Implementation
@@ -87,12 +84,15 @@ bool paging_map_page(uint32_t virt_addr, uint32_t phys_addr, PageDirectoryEntry_
     PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
 
     // Check if page table exists
-    if (!pde->present) {
+    if (!pde->present)
+    {
         // Page table doesn't exist - we need to create one
         // TODO: This requires a page frame allocator (Phase 4)
         // For now, we can only map pages in existing tables
         return false;
-    } else {
+    }
+    else
+    {
         /* Update PDE flags while preserving the page_table_base.
          * This uses the provided pde_flags so the caller can request
          * changed permissions for the page table without changing its base.
@@ -114,7 +114,7 @@ bool paging_map_page(uint32_t virt_addr, uint32_t phys_addr, PageDirectoryEntry_
 
     // Convert to virtual address so we can access it
     // The page table is already mapped in the higher half
-    PageTable_t *page_table = (PageTable_t *)phys_to_virt(pt_phys_addr);
+    PageTable_t *page_table = (PageTable_t *) phys_to_virt(pt_phys_addr);
 
     // Set the page table entry with all the flags from pte_flags
     PageTableEntry_t *pte = &page_table->entries[pt_index];
@@ -154,7 +154,7 @@ bool paging_unmap_page(uint32_t virt_addr)
 
     // Get page table
     uint32_t pt_phys_addr = PAGE_FRAME_ADDR(pde);
-    PageTable_t *page_table = (PageTable_t *)phys_to_virt(pt_phys_addr);
+    PageTable_t *page_table = (PageTable_t *) phys_to_virt(pt_phys_addr);
 
     PageTableEntry_t *pte = &page_table->entries[pt_index];
 
@@ -198,7 +198,7 @@ bool paging_get_physical_address(uint32_t virt_addr, uint32_t *phys_addr)
 
     // Get page table
     uint32_t pt_phys_addr = PAGE_FRAME_ADDR(pde);
-    PageTable_t *page_table = (PageTable_t *)phys_to_virt(pt_phys_addr);
+    PageTable_t *page_table = (PageTable_t *) phys_to_virt(pt_phys_addr);
 
     PageTableEntry_t *pte = &page_table->entries[pt_index];
 

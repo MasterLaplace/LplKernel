@@ -29,8 +29,8 @@ extern void gdt_flush(void);
  * @param access Raw access byte (8 bits)
  * @param flags Raw flags byte (8 bits: high nibble = G/D/B/L/AVL, low nibble = limit[19:16])
  */
-static inline void encode_gdt_entry(GlobalDescriptorTableEntry_t *entry, uint32_t base, uint32_t limit,
-                                    uint8_t access, uint8_t flags)
+static inline void encode_gdt_entry(GlobalDescriptorTableEntry_t *entry, uint32_t base, uint32_t limit, uint8_t access,
+                                    uint8_t flags)
 {
     if (!entry)
         return;
@@ -40,12 +40,12 @@ static inline void encode_gdt_entry(GlobalDescriptorTableEntry_t *entry, uint32_
         limit = 0xFFFFF;
 
     // Encode limit (low 16 bits)
-    entry->limit_low = (uint16_t)(limit & 0xFFFF);
+    entry->limit_low = (uint16_t) (limit & 0xFFFF);
 
     // Encode base (split across three fields)
-    entry->base_low = (uint16_t)(base & 0xFFFF);
-    entry->base_middle = (uint8_t)((base >> 16) & 0xFF);
-    entry->base_high = (uint8_t)((base >> 24) & 0xFF);
+    entry->base_low = (uint16_t) (base & 0xFFFF);
+    entry->base_middle = (uint8_t) ((base >> 16) & 0xFF);
+    entry->base_high = (uint8_t) ((base >> 24) & 0xFF);
 
     // Encode access byte using memcpy to avoid bitfield issues
     memcpy(&entry->access_byte, &access, sizeof(uint8_t));
@@ -123,7 +123,7 @@ void global_descriptor_table_load(GlobalDescriptorTable_t *gdt)
     // Setup GDTR: limit = size of GDT - 1, base = address of first entry
     GlobalDescriptorTablePointer_t gdtr;
     gdtr.limit = sizeof(GlobalDescriptorTable_t) - 1;
-    gdtr.base = (uint32_t)gdt;
+    gdtr.base = (uint32_t) gdt;
 
     // Load GDT using LGDT instruction (assembly)
     gdt_load(&gdtr);

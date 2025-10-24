@@ -105,9 +105,7 @@ void terminal_putchar(char c)
     case '\n': terminal_column = 0u;
     /* fallthrough */
     case '\v': ++terminal_row; break;
-    case '\t':
-        terminal_column = (terminal_column + 4u) & ~3u;
-        break;
+    case '\t': terminal_column = (terminal_column + 4u) & ~3u; break;
     case 127:
         if (terminal_column > 0u)
         {

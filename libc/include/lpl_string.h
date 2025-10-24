@@ -14,7 +14,7 @@
  **************************************************************************/
 
 #ifndef LAPLACE_STRING_H_
-    #define LAPLACE_STRING_H_
+#define LAPLACE_STRING_H_
 
 ////////////////////////////////////////////////////////////
 // Include the appropriate header based on the platform used
@@ -25,14 +25,14 @@
 ////////////////////////////////////////////////////////////
 // Include necessary headers for the string library
 ////////////////////////////////////////////////////////////
-#ifdef  __cplusplus
-    extern "C" {
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 /**
  * @brief The string structure that contains the string and its length.
@@ -49,11 +49,13 @@ typedef struct string_s {
 extern string_t *lp_string_create(char *str)
 {
     string_t *string = malloc(sizeof(string_t));
-    if (string == NULL) {
+    if (string == NULL)
+    {
         printf("[Laplace@String]: Error while allocating memory for string.\n");
         return (NULL);
     }
-    if (str == NULL) {
+    if (str == NULL)
+    {
         string->str = NULL;
         string->len = 0;
         return string;
@@ -66,12 +68,14 @@ extern string_t *lp_string_create(char *str)
 //* It adds a char to the string.
 extern void lp_string_char_append(string_t *string, char c)
 {
-    if (string == NULL) {
+    if (string == NULL)
+    {
         printf("[Laplace@String]: Error while appending char to string.\n");
         return;
     }
     string->str = realloc(string->str, string->len + 2);
-    if (string->str == NULL) {
+    if (string->str == NULL)
+    {
         printf("[Laplace@String]: Error while appending char to string.\n");
         return;
     }
@@ -83,12 +87,14 @@ extern void lp_string_char_append(string_t *string, char c)
 //* It adds a char to the beginning of the string.
 extern void lp_string_char_appstart(string_t *string, char c)
 {
-    if (string == NULL) {
+    if (string == NULL)
+    {
         printf("[Laplace@String]: Error while appending char to string.\n");
         return;
     }
     string->str = realloc(string->str, string->len + 2);
-    if (string->str == NULL) {
+    if (string->str == NULL)
+    {
         printf("[Laplace@String]: Error while appending char to string.\n");
         return;
     }
@@ -102,12 +108,14 @@ extern void lp_string_char_appstart(string_t *string, char c)
 //* It adds a string to the string.
 extern void lp_string_concat(string_t *string1, const string_t *string2)
 {
-    if (string1 == NULL || string2 == NULL) {
+    if (string1 == NULL || string2 == NULL)
+    {
         printf("[Laplace@String]: Error while concatenating strings.\n");
         return;
     }
     string1->str = realloc(string1->str, string1->len + string2->len + 1);
-    if (string1->str == NULL) {
+    if (string1->str == NULL)
+    {
         printf("[Laplace@String]: Error while concatenating strings.\n");
         return;
     }
@@ -118,15 +126,18 @@ extern void lp_string_concat(string_t *string1, const string_t *string2)
 //* It erases a part of the string.
 extern void lp_string_erase(string_t *string, const unsigned start, const unsigned end)
 {
-    if (string == NULL) {
+    if (string == NULL)
+    {
         printf("[Laplace@String]: Error while erasing string.\n");
         return;
     }
-    if (start > string->len || end > string->len) {
+    if (start > string->len || end > string->len)
+    {
         printf("[Laplace@String]: Error while erasing string.\n");
         return;
     }
-    if (start > end) {
+    if (start > end)
+    {
         printf("[Laplace@String]: Error while erasing string.\n");
         return;
     }
@@ -134,7 +145,8 @@ extern void lp_string_erase(string_t *string, const unsigned start, const unsign
     for (unsigned i = start; i < string->len - len; i++)
         string->str[i] = string->str[i + len];
     string->str = realloc(string->str, string->len - len + 1);
-    if (string->str == NULL) {
+    if (string->str == NULL)
+    {
         printf("[Laplace@String]: Error while erasing string.\n");
         return;
     } //
@@ -143,15 +155,13 @@ extern void lp_string_erase(string_t *string, const unsigned start, const unsign
 }
 
 //* It checks if the string is null.
-extern bool lp_string_is_null(string_t *string)
-{
-    return (string == NULL);
-}
+extern bool lp_string_is_null(string_t *string) { return (string == NULL); }
 
 //* It returns the size of the string.
 extern unsigned lp_string_len(string_t *string)
 {
-    if (string == NULL) {
+    if (string == NULL)
+    {
         printf("[Laplace@String]: Error while getting string length.\n");
         return (0);
     }
@@ -161,19 +171,20 @@ extern unsigned lp_string_len(string_t *string)
 //* It prints the string.
 extern void lp_string_print(string_t *list)
 {
-    if (list == NULL) {
+    if (list == NULL)
+    {
         printf("[Laplace@String]: Error while printing string.\n");
         return;
     }
-    #if defined(LAPLACE_STRING_SYSTEM_WINDOWS)
-        printf("%s\r\n", list->str);
-    #else
-        printf("%s\n", list->str);
-    #endif
+#if defined(LAPLACE_STRING_SYSTEM_WINDOWS)
+    printf("%s\r\n", list->str);
+#else
+    printf("%s\n", list->str);
+#endif
 }
 
-#ifdef  __cplusplus
-    }   // extern "C"
+#ifdef __cplusplus
+} // extern "C"
 #endif
 
-#endif/* !LAPLACE_STRING_H_ */
+#endif /* !LAPLACE_STRING_H_ */
