@@ -1,6 +1,11 @@
+# CI build cache
+.apt-cache/
+
+# Build artifacts
 *.iso
 *.kernel
 
+# Bootloader files
 iso/boot/grub/
 sysroot
 

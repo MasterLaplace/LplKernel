@@ -22,7 +22,8 @@ jobs:
           persist-credentials: true
 
       - name: Restore clang-format .deb cache
-        uses: actions/cache@v4
+        id: cache-clang
+        uses: actions/cache@v4.3.0
         with:
           path: .apt-cache
           key: ${{ runner.os }}-apt-cache-clang-format-v1
@@ -30,6 +31,7 @@ jobs:
             ${{ runner.os }}-apt-cache-clang-format-
 
       - name: Prepare and download clang-format packages to workspace cache
+        if: steps.cache-clang.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           mkdir -p .apt-cache
@@ -55,6 +57,9 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # Ensure .apt-cache is not tracked and removed from index before committing
+          git rm -r --cached .apt-cache || true
+          rm -rf .apt-cache || true
           git add .
           git commit -m "style: apply linter" || true
           git fetch origin main
