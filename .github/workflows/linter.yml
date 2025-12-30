@@ -53,22 +53,23 @@ jobs:
       - name: Format tracked C files (ensure newline at EOF + clang-format)
         id: files
         run: |
-          files=$(git ls-files -z '*.c' '*.h')
-          if [ -z "$files" ]; then
+          files_count=$(git ls-files -- '*.c' '*.h' | wc -l)
+          if [ "$files_count" -eq 0 ]; then
             echo "No tracked C/H files to format."
             echo "files=" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          printf '%s' "$files" | xargs -0 -n1 -I{} sh -c '
-            f="{}"
+          git ls-files -z -- '*.c' '*.h' | while IFS= read -r -d '' f; do
             if [ -s "$f" ]; then
               tail -c1 "$f" | read -r _ || echo >> "$f"
             else
               echo >> "$f"
             fi
-            clang-format -i "$f"
-          '
+          done
+
+          git ls-files -z -- '*.c' '*.h' | xargs -0 clang-format -i
+
           echo "files=1" >> $GITHUB_OUTPUT
 
       - name: Show git status

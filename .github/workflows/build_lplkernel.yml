@@ -19,6 +19,7 @@ on:
 
 jobs:
   build_lplkernel:
+    timeout-minutes: 20
 
     runs-on: ubuntu-latest
     if: always()
@@ -36,9 +37,23 @@ jobs:
           ~/src
         key: ${{ runner.os }}-lplkernel-src-v1
 
+    - name: Restore toolchain cache
+      uses: actions/cache@v5
+      with:
+        path: /usr/local/i686-elf
+        key: ${{ runner.os }}-lplkernel-toolchain-v1
+
     - name: Install dependencies and build cross-toolchain (if not cached)
       run: |
         set -e
+        # If the toolchain is already installed (system or restored from cache), skip building
+        if [ -x /usr/local/i686-elf/bin/i686-elf-gcc ]; then
+          echo "Cross toolchain already installed — skipping build"
+          echo 'PATH=/usr/local/i686-elf/bin:$PATH' >> $GITHUB_ENV
+          i686-elf-gcc --version || true
+          exit 0
+        fi
+
         sudo apt-get update
         sudo apt-get install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo wget make ninja-build
 
@@ -71,6 +86,28 @@ jobs:
         sudo make install-target-libgcc
 
         echo 'PATH=/usr/local/i686-elf/bin:$PATH' >> $GITHUB_ENV
+        i686-elf-gcc --version || true
+
+        # create a marker to ensure caching picks up the directory
+        sudo mkdir -p /usr/local/i686-elf/.cache_marker || true
+        sudo touch /usr/local/i686-elf/.cache_marker || true
+
+    - name: Ensure host build tools
+      run: |
+        set -e
+        # Install minimal host tools if missing to avoid 'make' or 'grep' not found errors
+        need_install=false
+        for cmd in make grep; do
+          if ! command -v "$cmd" >/dev/null 2>&1; then
+            need_install=true
+          fi
+        done
+        if [ "$need_install" = true ]; then
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends make grep
+        fi
+        make --version || true
+        grep --version || true
 
     - name: Build ISO
       run: |
