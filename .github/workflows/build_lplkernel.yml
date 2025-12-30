@@ -44,7 +44,6 @@ jobs:
     - name: Install dependencies and build cross-toolchain (if not cached)
       run: |
         set -e
-        # If the toolchain is already installed (system or restored from cache), skip building
         if [ -x /usr/local/i686-elf/bin/i686-elf-gcc ]; then
           echo "Cross toolchain already installed — skipping build"
           echo 'PATH=/usr/local/i686-elf/bin:$PATH' >> $GITHUB_ENV
@@ -86,28 +85,61 @@ jobs:
         echo 'PATH=/usr/local/i686-elf/bin:$PATH' >> $GITHUB_ENV
         i686-elf-gcc --version || true
 
-        # create a marker to ensure caching picks up the directory
         sudo mkdir -p /usr/local/i686-elf/.cache_marker || true
         sudo touch /usr/local/i686-elf/.cache_marker || true
 
     - name: Ensure host build tools
       run: |
         set -e
-        # Install minimal host tools if missing to avoid 'make' or 'grep' not found errors
+        echo "Runner: $(uname -a)"
+        echo "PATH=$PATH"
+
         need_install=false
         for cmd in make grep; do
           if ! command -v "$cmd" >/dev/null 2>&1; then
             need_install=true
           fi
         done
+
         if [ "$need_install" = true ]; then
+          echo "Missing required commands; attempting to install..."
+
+          PM=""
+          UPDATE_CMD=""
+          INSTALL_CMD=""
+          if command -v apt-get >/dev/null 2>&1; then
+            PM="apt-get"
+            UPDATE_CMD="update"
+            INSTALL_CMD="install -y --no-install-recommends make grep"
+          elif command -v yum >/dev/null 2>&1; then
+            PM="yum"
+            UPDATE_CMD="makecache"
+            INSTALL_CMD="install -y make grep"
+          elif command -v dnf >/dev/null 2>&1; then
+            PM="dnf"
+            UPDATE_CMD="makecache"
+            INSTALL_CMD="install -y make grep"
+          elif command -v apk >/dev/null 2>&1; then
+            PM="apk"
+            UPDATE_CMD=""
+            INSTALL_CMD="add --no-cache make grep"
+          else
+            echo "No supported package manager found (apt-get, yum, dnf, apk). Skipping installation.\nPlease run this job on an image with a package manager or preinstall required tools." >&2
+            exit 0
+          fi
+
           SUDO_CMD=""
           if command -v sudo >/dev/null 2>&1; then
             SUDO_CMD="sudo"
           fi
-          $SUDO_CMD apt-get update
-          $SUDO_CMD apt-get install -y --no-install-recommends make grep
+
+          echo "Detected package manager: $PM"
+          if [ -n "$UPDATE_CMD" ]; then
+            $SUDO_CMD $PM $UPDATE_CMD
+          fi
+          $SUDO_CMD $PM $INSTALL_CMD
         fi
+
         make --version || true
         grep --version || true
 
