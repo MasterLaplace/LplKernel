@@ -20,9 +20,7 @@ on:
 jobs:
   build_lplkernel:
     timeout-minutes: 20
-
     runs-on: ubuntu-latest
-    if: always()
 
     steps:
     - name: Checkout
@@ -103,8 +101,12 @@ jobs:
           fi
         done
         if [ "$need_install" = true ]; then
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends make grep
+          SUDO_CMD=""
+          if command -v sudo >/dev/null 2>&1; then
+            SUDO_CMD="sudo"
+          fi
+          $SUDO_CMD apt-get update
+          $SUDO_CMD apt-get install -y --no-install-recommends make grep
         fi
         make --version || true
         grep --version || true
