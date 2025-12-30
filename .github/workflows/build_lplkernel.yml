@@ -52,7 +52,7 @@ jobs:
         fi
 
         sudo apt-get update
-        sudo apt-get install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo wget make ninja-build
+        sudo apt-get install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo wget make ninja-build xorriso grub-pc-bin
 
         mkdir -p ~/src
         cd ~/src
@@ -82,6 +82,7 @@ jobs:
         sudo make install-gcc
         sudo make install-target-libgcc
 
+        export PATH=/usr/local/i686-elf/bin:$PATH
         echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
         i686-elf-gcc --version || true
 
