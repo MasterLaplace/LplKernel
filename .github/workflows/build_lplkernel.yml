@@ -46,7 +46,7 @@ jobs:
         set -e
         if [ -x /usr/local/i686-elf/bin/i686-elf-gcc ]; then
           echo "Cross toolchain already installed — skipping build"
-          echo 'PATH=/usr/local/i686-elf/bin:$PATH' >> $GITHUB_ENV
+          echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
           i686-elf-gcc --version || true
           exit 0
         fi
@@ -82,7 +82,7 @@ jobs:
         sudo make install-gcc
         sudo make install-target-libgcc
 
-        echo 'PATH=/usr/local/i686-elf/bin:$PATH' >> $GITHUB_ENV
+        echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
         i686-elf-gcc --version || true
 
         sudo mkdir -p /usr/local/i686-elf/.cache_marker || true
