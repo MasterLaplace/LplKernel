@@ -10,23 +10,25 @@ on:
 
 jobs:
   verify-commit-name:
+    name: Verify Commit Name
     runs-on: ubuntu-latest
 
     steps:
       - name: Set up Git repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Commit Norm Checker
+        shell: bash
         run: |
           commit_msg=$(git log --format=%B -n 1 ${{ github.sha }})
-          keyword_regex="^([a-z]+\([A-Za-z_.-]+\)|^[a-z]+): "
+          keyword_regex="^([a-z]+\([0-9A-Za-z_.-]+\)|^[a-z]+): [0-9a-z_.-]+"
 
           if [[ ! $commit_msg =~ $keyword_regex ]]; then
             if [[ $commit_msg =~ ^Merge\ .* ]]; then
               echo "Skipping merge commit"
             else
-              echo $commit_msg
-              echo "Commit message does not match expected format. Please use the following format: \"keyword(scope): comment\""
+              echo "$commit_msg"
+              echo "Commit message does not match Angular convention. Use: keyword(scope): token"
               exit 1
             fi
           fi

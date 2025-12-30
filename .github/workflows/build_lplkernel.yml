@@ -12,44 +12,63 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
 
-    - name: Install depencies
+    - name: Cache downloaded toolchain sources
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/src
+        key: ${{ runner.os }}-lplkernel-src-v1
+
+    - name: Install dependencies and build cross-toolchain (if not cached)
       run: |
-        sudo apt update
-        sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo
+        set -e
+        sudo apt-get update
+        sudo apt-get install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo wget make ninja-build
 
         mkdir -p ~/src
         cd ~/src
-        wget http://ftp.gnu.org/gnu/binutils/binutils-2.36.tar.gz
-        tar -xvf binutils-2.36.tar.gz
-        wget http://ftp.gnu.org/gnu/gcc/gcc-10.2.0/gcc-10.2.0.tar.gz
-        tar -xvf gcc-10.2.0.tar.gz
+        if [ ! -d binutils-2.36 ]; then
+          wget -q http://ftp.gnu.org/gnu/binutils/binutils-2.36.tar.gz
+          tar -xzf binutils-2.36.tar.gz
+        else
+          echo "binutils sources cached"
+        fi
+        if [ ! -d gcc-10.2.0 ]; then
+          wget -q http://ftp.gnu.org/gnu/gcc/gcc-10.2.0/gcc-10.2.0.tar.gz
+          tar -xzf gcc-10.2.0.tar.gz
+        else
+          echo "gcc sources cached"
+        fi
 
-        mkdir -p ~/src/build-binutils
-        cd ~/src/build-binutils
+        mkdir -p build-binutils
+        cd build-binutils
         ../binutils-2.36/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --disable-werror
-        make
+        make -j$(nproc)
         sudo make install
 
-        mkdir -p ~/src/build-gcc
-        cd ~/src/build-gcc
+        mkdir -p ../build-gcc
+        cd ../build-gcc
         ../gcc-10.2.0/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --enable-languages=c,c++ --without-headers
-        make all-gcc
-        make all-target-libgcc
+        make -j$(nproc) all-gcc all-target-libgcc
         sudo make install-gcc
         sudo make install-target-libgcc
 
-        echo 'export PATH=/usr/local/i686-elf/bin:$PATH' >> ~/.bashrc
-        source ~/.bashrc
-        exit $(($? != 0))
+        echo 'PATH=/usr/local/i686-elf/bin:$PATH' >> $GITHUB_ENV
 
-    - name: Build
+    - name: Build ISO
       run: |
-        pwd
-        ls
-        cd LplKernel
-        ./iso.h
+        set -e
+        ./clean.sh
+        ./iso.sh
 
     - name: Check if build succeeded
-      run: exit $(($? != 0))
+      run: |
+        set -e
+        if [ ! -f lpl.iso ]; then
+          echo "ISO not found - build failed"
+          exit 1
+        fi
