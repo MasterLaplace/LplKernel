@@ -1,11 +1,24 @@
 name: Build LplKernel CI
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
-  pull_request:
-    branches: [ "main" ]
+  push:
+    branches-ignore: [ "ga-ignore-**", "gh-pages" ]
+    paths:
+      - '**.c'
+      - '**.h'
+      - '**.cpp'
+      - '**.hpp'
+      - '**.in'
+      - '**.inl'
+      - '**.sh'
+      - '**/build_lplkernel.yml'
 
 jobs:
-  build:
+  build_lplkernel:
 
     runs-on: ubuntu-latest
     if: always()

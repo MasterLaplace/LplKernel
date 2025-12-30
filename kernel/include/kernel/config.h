@@ -46,6 +46,17 @@
 #define LPL_ATTRIBUTE(key) __attribute__((key))
 #define LPL_UNUSED_ATTRIBUTE LPL_ATTRIBUTE(unused)
 #define LPL_UNUSED(x) (void)(x)
+#define LPL_LIKELY(x)   __builtin_expect(!!(x), 1)
+#define LPL_UNLIKELY(x) __builtin_expect(!!(x), 0)
+
+////////////////////////////////////////////////////////////
+// Define a portable TODO macro to emit TODO messages during compilation
+////////////////////////////////////////////////////////////
+#if defined(__clang__) || defined(__GNUC__) || defined(__GNUG__)
+    #define LPL_TODO(msg) _Pragma(LPL_STRINGIFY(message ("TODO: " msg)))
+#else
+    #define LPL_TODO(msg) __attribute__((warning("TODO: " msg)))
+#endif
 
 ////////////////////////////////////////////////////////////
 // Define portable NULL pointer using C++11 nullptr keyword
