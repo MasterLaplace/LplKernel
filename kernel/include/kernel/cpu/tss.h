@@ -80,4 +80,16 @@ typedef struct __attribute__((packed)) {
  */
 extern void task_state_segment_load(const uint16_t tss_selector);
 
+////////////////////////////////////////////////////////////
+// Public functions of the TSS module API
+////////////////////////////////////////////////////////////
+
+/**
+ * @brief Initialize basic TSS fields (SS0, ESP0, I/O map base)
+ *
+ * @param tss Pointer to the TSS structure to initialize
+ * @param kernel_ss_selector Kernel Data Segment selector for ring 0 (SS0)
+ */
+extern void task_state_segment_initialize(TaskStateSegment_t *tss, uint16_t kernel_ss_selector);
+
 #endif /* !TSS_H_ */

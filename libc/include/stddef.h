@@ -1,7 +1,7 @@
 #ifndef _STDDEF_H
 #define _STDDEF_H
 
-#define NULL (void *) (0L)
+#define NULL (void *) (0UL)
 
 typedef int ptrdiff_t;
 typedef unsigned int size_t;

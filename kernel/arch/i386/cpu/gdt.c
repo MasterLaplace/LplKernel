@@ -45,8 +45,8 @@ static inline void global_descriptor_table_encode_entry(GlobalDescriptorTableEnt
 
     // Encode base (split across three fields)
     entry->base_low = (uint16_t) (base & 0xFFFF);
-    entry->base_middle = (uint8_t) ((base >> 16) & 0xFF);
-    entry->base_high = (uint8_t) ((base >> 24) & 0xFF);
+    entry->base_middle = (uint8_t) ((base >> 16u) & 0xFF);
+    entry->base_high = (uint8_t) ((base >> 24u) & 0xFF);
 
     // Encode access byte using memcpy to avoid bitfield issues
     memcpy(&entry->access_byte, &access, sizeof(uint8_t));
@@ -54,25 +54,6 @@ static inline void global_descriptor_table_encode_entry(GlobalDescriptorTableEnt
     // Encode flags: high nibble from flags, low nibble from limit[19:16]
     uint8_t granularity_byte = ((limit >> 16) & 0x0F) | (flags & 0xF0);
     memcpy(&entry->flags, &granularity_byte, sizeof(uint8_t));
-}
-
-// Helper to read current ESP in a single place (used for TSS initialization)
-static inline uint32_t get_current_esp(void)
-{
-    uint32_t esp;
-    asm volatile("movl %%esp, %0" : "=r"(esp));
-    return esp;
-}
-
-// Initialize basic TSS fields (SS0, ESP0, I/O map base). Keeps init logic tidy and testable.
-static void task_state_segment_initialize(TaskStateSegment_t *tss, uint16_t kernel_ss_selector)
-{
-    if (!tss)
-        return;
-
-    tss->segment_selector0 = kernel_ss_selector;
-    tss->estack_pointer0 = get_current_esp();
-    tss->io_map_base = (uint16_t) sizeof(TaskStateSegment_t);
 }
 
 ////////////////////////////////////////////////////////////
