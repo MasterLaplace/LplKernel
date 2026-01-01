@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <kernel/cpu/tss.h>
+
 /// Access byte structure for GDT entries
 typedef struct __attribute__((packed)) {
     uint8_t accessed                   : 1; // Segment accessed
@@ -98,10 +100,11 @@ typedef GlobalDescriptorTableFlat_t GlobalDescriptorTable_t;
 ////////////////////////////////////////////////////////////
 
 /**
- * @brief Initialize a flat 32-bit GDT with standard kernel/user segments
+ * @brief Initialize a flat 32-bit GDT with standard kernel/user segments and TSS
  * @param gdt Pointer to the GDT structure to initialize
+ * @param tss Pointer to the Task State Segment to set up the TSS entry
  */
-extern void global_descriptor_table_init(GlobalDescriptorTable_t *gdt);
+extern void global_descriptor_table_initialize(GlobalDescriptorTable_t *gdt, TaskStateSegment_t *tss);
 
 /**
  * @brief Load and activate a GDT

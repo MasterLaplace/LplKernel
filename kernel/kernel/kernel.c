@@ -18,6 +18,7 @@ static const char WELCOME_MESSAGE[] = ""
 extern MultibootInfo_t *multiboot_info;
 
 static GlobalDescriptorTable_t global_descriptor_table = {0};
+static TaskStateSegment_t task_state_segment = {0};
 static Serial_t com1;
 
 __attribute__((constructor)) void kernel_initialize(void)
@@ -37,14 +38,14 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_multiboot_info(&com1, KERNEL_VIRTUAL_BASE, multiboot_info);
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing GDT...\n");
-    global_descriptor_table_init(&global_descriptor_table);
+    global_descriptor_table_initialize(&global_descriptor_table, &task_state_segment);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: loading GDT into CPU...\n");
     global_descriptor_table_load(&global_descriptor_table);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: GDT loaded successfully!\n");
     write_global_descriptor_table(&com1, &global_descriptor_table);
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing runtime paging...\n");
-    paging_init_runtime();
+    paging_initialize_runtime();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: runtime paging initialized successfully!\n");
 }
 

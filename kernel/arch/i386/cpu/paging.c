@@ -57,7 +57,7 @@ static inline uint32_t phys_to_virt(uint32_t phys_addr) { return phys_addr + KER
 // Public API Implementation
 // ============================================================================
 
-void paging_init_runtime(void)
+void paging_initialize_runtime(void)
 {
     // Set current page directory to the one from boot.s
     current_page_directory = &boot_page_directory;

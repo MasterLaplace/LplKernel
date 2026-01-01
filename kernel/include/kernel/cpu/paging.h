@@ -139,7 +139,7 @@ extern void paging_flush_tlb(void);
  *
  * Call this once during kernel initialization, AFTER boot.s has set up paging.
  */
-extern void paging_init_runtime();
+extern void paging_initialize_runtime();
 
 /**
  * @brief Map a virtual address to a physical address

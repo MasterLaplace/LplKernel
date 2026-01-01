@@ -20,8 +20,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - VGA text mode ✅, Serial ports ✅, Scrolling ✅, Colors ✅, Multiboot parsing ✅
 
 - 🚧 **Phase 2**: CPU Initialization & Protection - **85% Complete**
-  - Higher-half kernel ✅, Paging (boot-time + runtime) ✅, GDT complete ✅
-  - Missing: TSS initialization, page frame allocator, Ring 3 transition
+  - Higher-half kernel ✅, Paging (boot-time + runtime) ✅, GDT complete ✅, TSS initialized ✅
+  - Missing: page frame allocator, Ring 3 transition
 
 - ❌ **Phase 3**: Interrupts & Exceptions - **0% Complete** ⬅️ **START HERE**
   - No IDT, no exception handlers, no PIC initialization
@@ -53,6 +53,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ Global constructors/destructors
 ✅ Cross-compilation toolchain (i686-elf)
 ✅ VSCode debugging setup (GDB + QEMU integration, F5 launch)
+✅ TSS entry in GDT configured (base & limit set) and loaded (LTR).
 ```
 
 ### What We Need Next:
@@ -66,7 +67,6 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ### Known Issues:
 ```
-⚠️ TSS entry in GDT has base=0, limit=0 (not configured)
 ⚠️ No page frame allocator (can't create new page tables dynamically)
 ⚠️ No memory allocator (all allocations static)
 ⚠️ No interrupt handling at all (CPU exceptions will triple fault)
@@ -159,7 +159,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [x] Kernel code/data segments
   - [x] User code/data segments (DPL=3)
   - [x] GDT helper functions for debugging (gdt_helper.c)
-  - 🚧 [Task State Segment](https://wiki.osdev.org/Task_State_Segment) (TSS) - Entry exists but not initialized
+  - [x] [Task State Segment](https://wiki.osdev.org/Task_State_Segment) (TSS) - Entry initialized and loaded (LTR).
 - [ ] [Segmentation](https://wiki.osdev.org/Segmentation) - Deep dive
   - [ ] [Segment Limits](https://wiki.osdev.org/Segment_Limits)
   - [ ] [Getting to Ring 3](https://wiki.osdev.org/Getting_to_Ring_3) - User mode
