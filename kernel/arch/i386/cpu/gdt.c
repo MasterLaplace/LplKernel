@@ -30,8 +30,8 @@ extern void gdt_flush(void);
  * @param access Raw access byte (8 bits)
  * @param flags Raw flags byte (8 bits: high nibble = G/D/B/L/AVL, low nibble = limit[19:16])
  */
-static inline void global_descriptor_table_encode_entry(GlobalDescriptorTableEntry_t *entry, uint32_t base, uint32_t limit, uint8_t access,
-                                    uint8_t flags)
+static inline void global_descriptor_table_encode_entry(GlobalDescriptorTableEntry_t *entry, uint32_t base,
+                                                        uint32_t limit, uint8_t access, uint8_t flags)
 {
     if (!entry)
         return;
@@ -72,7 +72,7 @@ static void task_state_segment_initialize(TaskStateSegment_t *tss, uint16_t kern
 
     tss->segment_selector0 = kernel_ss_selector;
     tss->estack_pointer0 = get_current_esp();
-    tss->io_map_base = (uint16_t)sizeof(TaskStateSegment_t);
+    tss->io_map_base = (uint16_t) sizeof(TaskStateSegment_t);
 }
 
 ////////////////////////////////////////////////////////////
@@ -124,9 +124,10 @@ void global_descriptor_table_initialize(GlobalDescriptorTable_t *gdt, TaskStateS
     // Base = address of TSS, Limit = sizeof(TSS)-1
     // Access=0x89 (Present, DPL=0, System, Type=9 for 32-bit TSS Available)
     // Flags=0x40 (D/B bit set to indicate 32-bit size; G=0 for byte granularity)
-    global_descriptor_table_encode_entry(&gdt->task_state_segment, (uint32_t) tss, (uint32_t)sizeof(TaskStateSegment_t) - 1, 0x89, 0x40);
+    global_descriptor_table_encode_entry(&gdt->task_state_segment, (uint32_t) tss,
+                                         (uint32_t) sizeof(TaskStateSegment_t) - 1, 0x89, 0x40);
 
-    task_state_segment_initialize(tss, (uint16_t)offsetof(GlobalDescriptorTable_t, kernel_mode_data_segment));
+    task_state_segment_initialize(tss, (uint16_t) offsetof(GlobalDescriptorTable_t, kernel_mode_data_segment));
 }
 
 /**
@@ -154,6 +155,6 @@ void global_descriptor_table_load(GlobalDescriptorTable_t *gdt)
     gdt_flush();
 
     // Load TSS using LTR instruction (assembly)
-    const uint16_t tss_selector = (uint16_t)offsetof(GlobalDescriptorTable_t, task_state_segment);
+    const uint16_t tss_selector = (uint16_t) offsetof(GlobalDescriptorTable_t, task_state_segment);
     task_state_segment_load(tss_selector);
 }
