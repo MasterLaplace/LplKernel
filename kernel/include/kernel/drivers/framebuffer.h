@@ -9,49 +9,49 @@
 #ifndef _KERNEL_FRAMEBUFFER_H
 #define _KERNEL_FRAMEBUFFER_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @brief Color structure for 32-bit RGBA colors
  */
 typedef struct {
-    uint8_t r;      /**< Red component (0-255) */
-    uint8_t g;      /**< Green component (0-255) */
-    uint8_t b;      /**< Blue component (0-255) */
-    uint8_t a;      /**< Alpha component (0-255, usually ignored) */
+    uint8_t r; /**< Red component (0-255) */
+    uint8_t g; /**< Green component (0-255) */
+    uint8_t b; /**< Blue component (0-255) */
+    uint8_t a; /**< Alpha component (0-255, usually ignored) */
 } color_t;
 
 /**
  * @brief Framebuffer information structure
  */
 typedef struct {
-    uint32_t* buffer;           /**< Pointer to framebuffer memory (virtual address) */
-    uint32_t  physical_addr;    /**< Physical address of framebuffer */
-    uint32_t  width;            /**< Width in pixels */
-    uint32_t  height;           /**< Height in pixels */
-    uint32_t  pitch;            /**< Bytes per scanline */
-    uint8_t   bpp;              /**< Bits per pixel */
-    uint8_t   red_pos;          /**< Red field position */
-    uint8_t   red_mask;         /**< Red field mask size */
-    uint8_t   green_pos;        /**< Green field position */
-    uint8_t   green_mask;       /**< Green field mask size */
-    uint8_t   blue_pos;         /**< Blue field position */
-    uint8_t   blue_mask;        /**< Blue field mask size */
-    bool      initialized;      /**< Whether the framebuffer is initialized */
+    uint32_t *buffer;       /**< Pointer to framebuffer memory (virtual address) */
+    uint32_t physical_addr; /**< Physical address of framebuffer */
+    uint32_t width;         /**< Width in pixels */
+    uint32_t height;        /**< Height in pixels */
+    uint32_t pitch;         /**< Bytes per scanline */
+    uint8_t bpp;            /**< Bits per pixel */
+    uint8_t red_pos;        /**< Red field position */
+    uint8_t red_mask;       /**< Red field mask size */
+    uint8_t green_pos;      /**< Green field position */
+    uint8_t green_mask;     /**< Green field mask size */
+    uint8_t blue_pos;       /**< Blue field position */
+    uint8_t blue_mask;      /**< Blue field mask size */
+    bool initialized;       /**< Whether the framebuffer is initialized */
 } framebuffer_info_t;
 
 /* Predefined colors */
-#define COLOR_BLACK     ((color_t){0, 0, 0, 255})
-#define COLOR_WHITE     ((color_t){255, 255, 255, 255})
-#define COLOR_RED       ((color_t){255, 0, 0, 255})
-#define COLOR_GREEN     ((color_t){0, 255, 0, 255})
-#define COLOR_BLUE      ((color_t){0, 0, 255, 255})
-#define COLOR_YELLOW    ((color_t){255, 255, 0, 255})
-#define COLOR_CYAN      ((color_t){0, 255, 255, 255})
-#define COLOR_MAGENTA   ((color_t){255, 0, 255, 255})
-#define COLOR_GRAY      ((color_t){128, 128, 128, 255})
-#define COLOR_ORANGE    ((color_t){255, 165, 0, 255})
+#define COLOR_BLACK   ((color_t){0, 0, 0, 255})
+#define COLOR_WHITE   ((color_t){255, 255, 255, 255})
+#define COLOR_RED     ((color_t){255, 0, 0, 255})
+#define COLOR_GREEN   ((color_t){0, 255, 0, 255})
+#define COLOR_BLUE    ((color_t){0, 0, 255, 255})
+#define COLOR_YELLOW  ((color_t){255, 255, 0, 255})
+#define COLOR_CYAN    ((color_t){0, 255, 255, 255})
+#define COLOR_MAGENTA ((color_t){255, 0, 255, 255})
+#define COLOR_GRAY    ((color_t){128, 128, 128, 255})
+#define COLOR_ORANGE  ((color_t){255, 165, 0, 255})
 
 /**
  * @brief Initialize the framebuffer driver
@@ -76,7 +76,7 @@ bool framebuffer_available(void);
  *
  * @return Pointer to the framebuffer info structure
  */
-const framebuffer_info_t* framebuffer_get_info(void);
+const framebuffer_info_t *framebuffer_get_info(void);
 
 /**
  * @brief Clear the entire screen with a color
@@ -164,8 +164,6 @@ uint32_t framebuffer_color_to_pixel(color_t color);
  * @param b Blue component (0-255)
  * @return The color structure
  */
-static inline color_t framebuffer_rgb(uint8_t r, uint8_t g, uint8_t b) {
-    return (color_t){r, g, b, 255};
-}
+static inline color_t framebuffer_rgb(uint8_t r, uint8_t g, uint8_t b) { return (color_t){r, g, b, 255}; }
 
 #endif /* _KERNEL_FRAMEBUFFER_H */

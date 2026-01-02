@@ -60,7 +60,7 @@ void kernel_main(void)
     if (framebuffer_available())
     {
         /* Graphics mode demo */
-        const framebuffer_info_t* fb = framebuffer_get_info();
+        const framebuffer_info_t *fb = framebuffer_get_info();
 
         /* Clear screen to dark blue */
         framebuffer_clear(framebuffer_rgb(0, 0, 64));
@@ -101,7 +101,7 @@ void kernel_main(void)
         for (uint32_t i = 0; i < 50; i += 5)
         {
             color_t col = framebuffer_rgb(i * 5, 255 - i * 5, 128);
-            framebuffer_draw_rect(300 + i, 420 + i, 200 - 2*i, 200 - 2*i, col);
+            framebuffer_draw_rect(300 + i, 420 + i, 200 - 2 * i, 200 - 2 * i, col);
         }
 
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: graphics demo displayed!\n");
