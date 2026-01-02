@@ -54,6 +54,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ Cross-compilation toolchain (i686-elf)
 ✅ VSCode debugging setup (GDB + QEMU integration, F5 launch)
 ✅ TSS entry in GDT configured (base & limit set) and loaded (LTR).
+✅ Graphics mode support (1024x768x32 linear framebuffer via Multiboot)
+✅ Framebuffer driver with pixel plotting and shape drawing primitives
 ```
 
 ### What We Need Next:
@@ -134,8 +136,11 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [x] [Serial Ports](https://wiki.osdev.org/Serial_Ports) - COM port communication
 - [x] [Printing To Screen](https://wiki.osdev.org/Printing_To_Screen) - VGA text mode
 - [x] [Text Mode Cursor](https://wiki.osdev.org/Text_Mode_Cursor)
-- [ ] [Drawing In Protected Mode](https://wiki.osdev.org/Drawing_In_Protected_Mode) - Pixel plotting basics
-- [ ] [PC Screen Font](https://wiki.osdev.org/PC_Screen_Font) - Bitmap fonts
+- [x] [Drawing In Protected Mode](https://wiki.osdev.org/Drawing_In_Protected_Mode) - Pixel plotting basics ✅
+  - [x] Linear framebuffer via Multiboot VIDEO flag (1024x768x32)
+  - [x] Framebuffer driver with put_pixel, lines, rectangles
+  - [x] Compile-time switch: `./qemu.sh --graphics` or `./qemu.sh --text`
+- [ ] [PC Screen Font](https://wiki.osdev.org/PC_Screen_Font) - Bitmap fonts (text rendering in graphics mode)
 
 ---
 

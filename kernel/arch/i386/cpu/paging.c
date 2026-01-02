@@ -23,7 +23,7 @@
 extern PageDirectory_t boot_page_directory;
 
 // Current page directory (virtual address)
-static PageDirectory_t *current_page_directory = NULL;
+PageDirectory_t *current_page_directory = NULL;
 
 // ============================================================================
 // Helper: Virtual to Physical Address Translation

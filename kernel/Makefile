@@ -55,7 +55,7 @@ $(ARCHDIR)/crtend.o \
 $(ARCHDIR)/boot/crtn.o \
 
 .PHONY: all clean install install-headers install-kernel
-.SUFFIXES: .o .c .s
+.SUFFIXES: .o .c .s .S
 
 all: lpl.kernel
 
@@ -70,6 +70,9 @@ $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o:
 	$(CC) -MD -c $< -o $@ -std=gnu11 $(CFLAGS) $(CPPFLAGS)
 
 .s.o:
+	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS) $(ASFLAGS)
+
+.S.o:
 	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS) $(ASFLAGS)
 
 clean:
