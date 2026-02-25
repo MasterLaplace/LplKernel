@@ -471,7 +471,7 @@ if (!(*pde & PAGE_PRESENT)) {
 - ✅ Paging boot-time (boot.s)
 - ✅ **Paging runtime API (nouveau)**
 - ✅ GDT complet avec 6 segments
-- 🚧 TSS non initialisé
+- ✅ TSS initialisé (base & limit configurés, LTR chargé)
 - ❌ Page frame allocator manquant
 - ❌ Ring 3 transition pas encore implémentée
 

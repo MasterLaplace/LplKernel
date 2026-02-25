@@ -32,6 +32,7 @@ LDFLAGS += -fstack-protector-strong
 
 FREEOBJS=\
 $(ARCH_FREEOBJS) \
+math/math.o \
 stdio/printf.o \
 stdio/putchar.o \
 stdio/puts.o \

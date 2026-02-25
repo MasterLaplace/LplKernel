@@ -35,8 +35,8 @@ make all-target-libgcc
 sudo make install-gcc
 sudo make install-target-libgcc
 
-echo 'export PATH=/usr/local/i686-elf/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
+echo 'export PATH=/usr/local/i686-elf/bin:$PATH' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 ## Build

@@ -27,6 +27,96 @@ typedef struct __attribute__((packed)) {
     uint32_t page_table_base : 20; // Physical address of page table (bits 12-31, 4KB aligned)
 } PageDirectoryEntry_t;
 
+typedef struct __attribute__((packed)) {
+    uint8_t dirty     : 1;
+    uint8_t page_size : 1;
+    uint8_t global    : 1;
+    uint8_t available : 3;
+} LargePage;
+
+typedef struct __attribute__((packed)) {
+    uint8_t available      : 1;
+    uint8_t page_size      : 1;
+    uint8_t available_high : 4;
+} SmallPage;
+
+typedef struct __attribute__((packed)) {
+    uint8_t page_attribute_table : 1;
+    uint16_t address_low         : 8;
+    uint8_t reserved             : 1;
+    uint16_t address_high        : 10;
+} FramePageEntry_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t present         : 1;
+    uint8_t read_write      : 1;
+    uint8_t user_supervisor : 1;
+    uint8_t write_through   : 1;
+    uint8_t cache_disable   : 1;
+    uint8_t accessed        : 1;
+    union SizeInfo {
+        LargePage large;
+        SmallPage small;
+    } size;
+    union PageFrame {
+        FramePageEntry_t page_attributes;
+        uint32_t address : 20;
+    } frame;
+} PageDirectoryEntry_v2_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t present                       : 1;
+    uint8_t read_write                    : 1;
+    uint8_t user_supervisor               : 1;
+    uint8_t write_through                 : 1;
+    uint8_t cache_disable                 : 1;
+    uint8_t accessed                      : 1;
+    uint8_t available                     : 1;
+    uint8_t page_size                     : 1;
+    uint8_t available2                    : 4;
+    uint64_t maximum_physical_address_bit : 40;
+    uint16_t available3                   : 10;
+    uint8_t execute_disable               : 1;
+} PageDirectoryEntryLongMode_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t present              : 1;
+    uint8_t read_write           : 1;
+    uint8_t user_supervisor      : 1;
+    uint8_t write_through        : 1;
+    uint8_t cache_disable        : 1;
+    uint8_t accessed             : 1;
+    uint8_t dirty                : 1;
+    uint8_t page_size            : 1;
+    uint8_t global               : 1;
+    uint8_t available            : 3;
+    uint8_t page_attribute_table : 1;
+    uint16_t reserved;
+    uint32_t maximum_physical_address_bit : 23;
+    uint8_t available2                    : 6;
+    uint8_t protection_key                : 4;
+    uint8_t execute_disable               : 1;
+} PageDirectoryPointerTableEntryLongMode_1GB_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t present              : 1;
+    uint8_t read_write           : 1;
+    uint8_t user_supervisor      : 1;
+    uint8_t write_through        : 1;
+    uint8_t cache_disable        : 1;
+    uint8_t accessed             : 1;
+    uint8_t dirty                : 1;
+    uint8_t page_size            : 1;
+    uint8_t global               : 1;
+    uint8_t available            : 3;
+    uint8_t page_attribute_table : 1;
+    uint8_t reserved             : 7;
+    uint32_t maximum_physical_address_bit;
+    uint8_t available2      : 6;
+    uint8_t protection_key  : 4;
+    uint8_t execute_disable : 1;
+} PageDirectoryEntryLongMode_2MB_t;
+
 /// Page Table Entry (32-bit format) - Based on OSDev wiki Paging article
 typedef struct __attribute__((packed)) {
     uint8_t present              : 1;  // P: Page is present in memory
@@ -41,6 +131,23 @@ typedef struct __attribute__((packed)) {
     uint8_t available            : 3;  // Available for OS use (bits 9-11)
     uint32_t page_frame_base     : 20; // Physical address of 4KB page frame (bits 12-31, 4KB aligned)
 } PageTableEntry_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t present                       : 1;
+    uint8_t read_write                    : 1;
+    uint8_t user_supervisor               : 1;
+    uint8_t write_through                 : 1;
+    uint8_t cache_disable                 : 1;
+    uint8_t accessed                      : 1;
+    uint8_t dirty                         : 1;
+    uint8_t page_attribute_table          : 1;
+    uint8_t global                        : 1;
+    uint8_t available                     : 3;
+    uint64_t maximum_physical_address_bit : 41;
+    uint16_t available2                   : 6;
+    uint8_t protection_key                : 4;
+    uint8_t execute_disable               : 1;
+} PageTableEntryLongMode_t;
 
 // ============================================================================
 // Page Directory / Page Table structures
@@ -193,8 +300,8 @@ bool paging_is_mapped(uint32_t virt_addr);
  * symbol whose value can be read at runtime. Use a pointer cast to obtain
  * the integer value. */
 extern const uint32_t global_kernel_start;
-#define KERNEL_VIRTUAL_BASE ((uint32_t) (uintptr_t) & global_kernel_start) // Higher-half kernel base
-#define PAGE_SIZE           4096                                           // 4KB pages
-#define ENTRIES_PER_TABLE   1024                                           // 1024 entries per page table/directory
+#define KERNEL_VIRTUAL_BASE ((uint32_t) (uintptr_t) &global_kernel_start) // Higher-half kernel base
+#define PAGE_SIZE           4096                                          // 4KB pages
+#define ENTRIES_PER_TABLE   1024                                          // 1024 entries per page table/directory
 
 #endif /* !PAGING_H_ */
