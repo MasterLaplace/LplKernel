@@ -1,5 +1,5 @@
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #define IS_NEGATIVE(value) ((value) & 0x80000000)
 
@@ -85,10 +85,7 @@ float my_ceilf(float value)
     return converter.f;
 }
 
-float my_modf(float value, float modul)
-{
-    return value - (trunc(value / modul) * modul);
-}
+float my_modf(float value, float modul) { return value - (trunc(value / modul) * modul); }
 
 int main(void)
 {
