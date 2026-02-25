@@ -11,8 +11,8 @@
  *   o=tanh(5.*exp(l.x-4.-p.y*vec4(-1,1,2,0))/o);
  */
 
-#include <kernel/graphics/plasma.h>
 #include <kernel/drivers/framebuffer.h>
+#include <kernel/graphics/plasma.h>
 #include <math.h>
 
 /**
@@ -23,8 +23,8 @@
 color_t plasma_pixel(uint32_t px, uint32_t py, uint32_t width, uint32_t height, float t)
 {
     vec4_t o = vec4(0, 0, 0, 0);
-    vec2_t r = vec2((float)width, (float)height);
-    vec2_t FC = vec2((float)px, (float)height - 1 - py);
+    vec2_t r = vec2((float) width, (float) height);
+    vec2_t FC = vec2((float) px, (float) height - 1 - py);
 
     /*
      * Original C++:
@@ -91,9 +91,9 @@ color_t plasma_pixel(uint32_t px, uint32_t py, uint32_t width, uint32_t height, 
     o = vec4_tanh(divided);
 
     /* Convert to color (clamp to 0-255) */
-    uint8_t cr = (uint8_t)(o.x * 255.0f);
-    uint8_t cg = (uint8_t)(o.y * 255.0f);
-    uint8_t cb = (uint8_t)(o.z * 255.0f);
+    uint8_t cr = (uint8_t) (o.x * 255.0f);
+    uint8_t cg = (uint8_t) (o.y * 255.0f);
+    uint8_t cb = (uint8_t) (o.z * 255.0f);
 
     return framebuffer_rgb(cr, cg, cb);
 }
@@ -106,7 +106,7 @@ void plasma_render_frame(float time)
     if (!framebuffer_available())
         return;
 
-    const framebuffer_info_t* fb = framebuffer_get_info();
+    const framebuffer_info_t *fb = framebuffer_get_info();
     uint32_t width = fb->width;
     uint32_t height = fb->height;
 
@@ -131,7 +131,7 @@ static void delay_loop(uint32_t iterations)
 {
     volatile uint32_t i;
     for (i = 0; i < iterations; i++)
-        __asm__ volatile ("nop");
+        __asm__ volatile("nop");
 }
 
 /**
@@ -143,7 +143,7 @@ void plasma_run(void)
         return;
 
     float time = 0.0f;
-    const float time_step = 0.05f;  /* Animation speed */
+    const float time_step = 0.05f; /* Animation speed */
 
     /* Run animation loop */
     while (1)
@@ -151,7 +151,8 @@ void plasma_run(void)
         plasma_render_frame(time);
 
         time += time_step;
-        if (time > 2.0f * M_PI) {
+        if (time > 2.0f * M_PI)
+        {
             time -= 2.0f * M_PI;
         }
 

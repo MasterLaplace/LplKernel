@@ -28,66 +28,66 @@ typedef struct __attribute__((packed)) {
  * vec2 constructors
  * ============================================================================ */
 
-static inline vec2_t vec2(float x, float y) { return (vec2_t) {x, y}; }
+static inline vec2_t vec2(float x, float y) { return (vec2_t){x, y}; }
 
-static inline vec2_t vec2_scalar(float s) { return (vec2_t) {s, s}; }
+static inline vec2_t vec2_scalar(float s) { return (vec2_t){s, s}; }
 
 /* ============================================================================
  * vec4 constructors
  * ============================================================================ */
 
-static inline vec4_t vec4(float x, float y, float z, float w) { return (vec4_t) {x, y, z, w}; }
+static inline vec4_t vec4(float x, float y, float z, float w) { return (vec4_t){x, y, z, w}; }
 
-static inline vec4_t vec4_scalar(float s) { return (vec4_t) {s, s, s, s}; }
+static inline vec4_t vec4_scalar(float s) { return (vec4_t){s, s, s, s}; }
 
 /* ============================================================================
  * vec2 operations
  * ============================================================================ */
 
 /* Addition */
-static inline vec2_t vec2_add(vec2_t a, vec2_t b) { return (vec2_t) {a.x + b.x, a.y + b.y}; }
+static inline vec2_t vec2_add(vec2_t a, vec2_t b) { return (vec2_t){a.x + b.x, a.y + b.y}; }
 
-static inline vec2_t vec2_add_s(vec2_t a, float s) { return (vec2_t) {a.x + s, a.y + s}; }
+static inline vec2_t vec2_add_s(vec2_t a, float s) { return (vec2_t){a.x + s, a.y + s}; }
 
 /* Subtraction */
-static inline vec2_t vec2_sub(vec2_t a, vec2_t b) { return (vec2_t) {a.x - b.x, a.y - b.y}; }
+static inline vec2_t vec2_sub(vec2_t a, vec2_t b) { return (vec2_t){a.x - b.x, a.y - b.y}; }
 
 /* Multiplication */
-static inline vec2_t vec2_mul(vec2_t a, vec2_t b) { return (vec2_t) {a.x * b.x, a.y * b.y}; }
+static inline vec2_t vec2_mul(vec2_t a, vec2_t b) { return (vec2_t){a.x * b.x, a.y * b.y}; }
 
-static inline vec2_t vec2_mul_s(vec2_t a, float s) { return (vec2_t) {a.x * s, a.y * s}; }
+static inline vec2_t vec2_mul_s(vec2_t a, float s) { return (vec2_t){a.x * s, a.y * s}; }
 
 /* Division */
-static inline vec2_t vec2_div_s(vec2_t a, float s) { return (vec2_t) {a.x / s, a.y / s}; }
+static inline vec2_t vec2_div_s(vec2_t a, float s) { return (vec2_t){a.x / s, a.y / s}; }
 
 /* Dot product */
 static inline float vec2_dot(vec2_t a, vec2_t b) { return a.x * b.x + a.y * b.y; }
 
 /* Swizzle: yx */
-static inline vec2_t vec2_yx(vec2_t a) { return (vec2_t) {a.y, a.x}; }
+static inline vec2_t vec2_yx(vec2_t a) { return (vec2_t){a.y, a.x}; }
 
 /* Swizzle: xyyx -> vec4 */
-static inline vec4_t vec2_xyyx(vec2_t a) { return (vec4_t) {a.x, a.y, a.y, a.x}; }
+static inline vec4_t vec2_xyyx(vec2_t a) { return (vec4_t){a.x, a.y, a.y, a.x}; }
 
 /* ============================================================================
  * vec4 operations
  * ============================================================================ */
 
 /* Addition */
-static inline vec4_t vec4_add(vec4_t a, vec4_t b) { return (vec4_t) {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w}; }
+static inline vec4_t vec4_add(vec4_t a, vec4_t b) { return (vec4_t){a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w}; }
 
-static inline vec4_t vec4_add_s(vec4_t a, float s) { return (vec4_t) {a.x + s, a.y + s, a.z + s, a.w + s}; }
+static inline vec4_t vec4_add_s(vec4_t a, float s) { return (vec4_t){a.x + s, a.y + s, a.z + s, a.w + s}; }
 
 /* Subtraction */
-static inline vec4_t vec4_sub_sf(float s, vec4_t a) { return (vec4_t) {s - a.x, s - a.y, s - a.z, s - a.w}; }
+static inline vec4_t vec4_sub_sf(float s, vec4_t a) { return (vec4_t){s - a.x, s - a.y, s - a.z, s - a.w}; }
 
 /* Multiplication */
-static inline vec4_t vec4_mul(vec4_t a, vec4_t b) { return (vec4_t) {a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w}; }
+static inline vec4_t vec4_mul(vec4_t a, vec4_t b) { return (vec4_t){a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w}; }
 
-static inline vec4_t vec4_mul_s(vec4_t a, float s) { return (vec4_t) {a.x * s, a.y * s, a.z * s, a.w * s}; }
+static inline vec4_t vec4_mul_s(vec4_t a, float s) { return (vec4_t){a.x * s, a.y * s, a.z * s, a.w * s}; }
 
 /* Division */
-static inline vec4_t vec4_div(vec4_t a, vec4_t b) { return (vec4_t) {a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w}; }
+static inline vec4_t vec4_div(vec4_t a, vec4_t b) { return (vec4_t){a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w}; }
 
 /* ============================================================================
  * Math functions for vectors (require math.h)
@@ -95,15 +95,15 @@ static inline vec4_t vec4_div(vec4_t a, vec4_t b) { return (vec4_t) {a.x / b.x, 
 
 #include <math.h>
 
-static inline vec2_t vec2_abs(vec2_t a) { return (vec2_t) {fabsf(a.x), fabsf(a.y)}; }
+static inline vec2_t vec2_abs(vec2_t a) { return (vec2_t){fabsf(a.x), fabsf(a.y)}; }
 
-static inline vec2_t vec2_cos(vec2_t a) { return (vec2_t) {cosf(a.x), cosf(a.y)}; }
+static inline vec2_t vec2_cos(vec2_t a) { return (vec2_t){cosf(a.x), cosf(a.y)}; }
 
-static inline vec4_t vec4_sin(vec4_t a) { return (vec4_t) {sinf(a.x), sinf(a.y), sinf(a.z), sinf(a.w)}; }
+static inline vec4_t vec4_sin(vec4_t a) { return (vec4_t){sinf(a.x), sinf(a.y), sinf(a.z), sinf(a.w)}; }
 
-static inline vec4_t vec4_exp(vec4_t a) { return (vec4_t) {expf(a.x), expf(a.y), expf(a.z), expf(a.w)}; }
+static inline vec4_t vec4_exp(vec4_t a) { return (vec4_t){expf(a.x), expf(a.y), expf(a.z), expf(a.w)}; }
 
-static inline vec4_t vec4_tanh(vec4_t a) { return (vec4_t) {tanhf(a.x), tanhf(a.y), tanhf(a.z), tanhf(a.w)}; }
+static inline vec4_t vec4_tanh(vec4_t a) { return (vec4_t){tanhf(a.x), tanhf(a.y), tanhf(a.z), tanhf(a.w)}; }
 
 /* ============================================================================
  * Plasma effect functions

@@ -109,10 +109,7 @@ typedef uint64_t uintmax_t;
  * @param word  Pointer to the word in which the bit will be set.
  * @param n  The bit position to set.
  */
-void set(uint8_t *word, uint8_t n)
-{
-    *word |= (1u << n);
-}
+void set(uint8_t *word, uint8_t n) { *word |= (1u << n); }
 
 /**
  * @brief Clears the n-th bit of the given word.
@@ -120,10 +117,7 @@ void set(uint8_t *word, uint8_t n)
  * @param word  Pointer to the word in which the bit will be cleared.
  * @param n  The bit position to clear.
  */
-void clear(uint8_t *word, uint8_t n)
-{
-    *word &= ~(1u << n);
-}
+void clear(uint8_t *word, uint8_t n) { *word &= ~(1u << n); }
 
 /**
  * @brief Toggles the n-th bit of the given word.
@@ -131,10 +125,7 @@ void clear(uint8_t *word, uint8_t n)
  * @param word  Pointer to the word in which the bit will be toggled.
  * @param n  The bit position to toggle.
  */
-void toggle(uint8_t *word, uint8_t n)
-{
-    *word ^= (1u << n);
-}
+void toggle(uint8_t *word, uint8_t n) { *word ^= (1u << n); }
 
 /**
  * @brief Checks if the n-th bit of the given word is set.
@@ -143,9 +134,6 @@ void toggle(uint8_t *word, uint8_t n)
  * @param n  The bit position to check.
  * @return uint8_t  Returns 1 if the bit is set, 0 otherwise.
  */
-uint8_t check(uint8_t word, uint8_t n)
-{
-    return (word & (1u << n)) != 0u;
-}
+uint8_t check(uint8_t word, uint8_t n) { return (word & (1u << n)) != 0u; }
 
 #endif

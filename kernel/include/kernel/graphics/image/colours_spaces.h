@@ -8,5 +8,4 @@
 #ifndef COLOURS_PACES_H_
 #define COLOURS_PACES_H_
 
-
 #endif /* !COLOURS_PACES_H_ */
