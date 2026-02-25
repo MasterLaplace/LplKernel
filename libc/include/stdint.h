@@ -37,11 +37,6 @@ typedef int intptr_t;
 typedef int64_t intmax_t;
 typedef uint64_t uintmax_t;
 
-typedef int32_t fixed_t;
-
-#define FIXED_SHIFT 16
-#define FIXED_ONE   (1 << FIXED_SHIFT)
-
 #define INT8_MAX  127
 #define INT8_MIN  (-INT8_MAX - 1)
 #define UINT8_MAX 255
