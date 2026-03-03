@@ -455,7 +455,7 @@ if (!(*pde & PAGE_PRESENT)) {
     // Allouer une nouvelle page pour la page table
     uint32_t new_pt_phys = page_frame_alloc(); // ← Nécessite Phase 4
     *pde = new_pt_phys | PAGE_PRESENT | PAGE_WRITE | PAGE_USER;
-    
+
     // Initialiser la page table (tout à 0)
     PageTableEntry_t *new_pt = (PageTableEntry_t *)phys_to_virt(new_pt_phys);
     memset(new_pt, 0, 4096);

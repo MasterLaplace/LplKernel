@@ -49,6 +49,35 @@ __attribute__((constructor)) void kernel_initialize(void)
     paging_initialize_runtime();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: runtime paging initialized successfully!\n");
 
+#ifdef REAL_TIME_MODE
+    {
+        /* report number of free pages available after init */
+        uint32_t count = page_frame_count();
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: free frames = ");
+        serial_write_hex32(&com1, count);
+        serial_write_string(&com1, "\n");
+
+        uint32_t f1, f2, f3;
+        if (page_frame_alloc(&f1) && page_frame_alloc(&f2) && page_frame_alloc(&f3)) {
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: allocated frames ");
+            serial_write_hex32(&com1, f1);
+            serial_write_string(&com1, ", ");
+            serial_write_hex32(&com1, f2);
+            serial_write_string(&com1, ", ");
+            serial_write_hex32(&com1, f3);
+            serial_write_string(&com1, "\n");
+
+            /* return them in different order to exercise LIFO semantics */
+            page_frame_free(f2);
+            page_frame_free(f1);
+            page_frame_free(f3);
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: freed three frames\n");
+        } else {
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: page_frame_alloc failed\n");
+        }
+    }
+#endif
+
     if (framebuffer_init())
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: framebuffer initialized successfully!\n");
     else

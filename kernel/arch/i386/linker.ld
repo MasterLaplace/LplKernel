@@ -41,3 +41,5 @@ SECTIONS
 
     _kernel_end = .;
 }
+
+PROVIDE(global_kernel_end = _kernel_end);

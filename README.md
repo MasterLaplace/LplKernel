@@ -10,6 +10,7 @@ This is the kernel of the Laplace project.
 
 ## Dependencies
 
+to build the kernel, you need to install the following dependencies:
 ```sh
 sudo apt update
 sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo
@@ -24,20 +25,32 @@ tar -xvf gcc-10.2.0.tar.gz
 mkdir -p ~/src/build-binutils
 cd ~/src/build-binutils
 ../binutils-2.36/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --disable-werror
-make
+make -j$(nproc)
 sudo make install
 
 mkdir -p ~/src/build-gcc
 cd ~/src/build-gcc
 ../gcc-10.2.0/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --enable-languages=c,c++ --without-headers
-make all-gcc
-make all-target-libgcc
+make all-gcc -j$(nproc)
+make all-target-libgcc -j$(nproc)
 sudo make install-gcc
 sudo make install-target-libgcc
 
 echo 'export PATH=/usr/local/i686-elf/bin:$PATH' >> ~/.zshrc
 source ~/.zshrc
 ```
+
+to run the kernel, you need to install QEMU:
+```sh
+sudo apt install qemu-system-x86
+```
+
+> **Note:** if your terminal comes from the VSCode snap package the
+> Snap runtime injects library paths (`/snap/core20/...`) into the
+> environment which confuse `qemu-system-*` and lead to a symbol lookup
+> error for `libpthread.so.0`.  The `qemu.sh` wrapper now clears that
+> environment automatically, but you can also work around the problem by
+> running the command from a non‑snap shell or by prefixing it with `sudo`.
 
 ## Build
 
