@@ -75,7 +75,7 @@ static inline void terminal_delete_last_line(void)
 }
 
 ////////////////////////////////////////////////////////////
-// Public functions of the terminal module API
+// Public API functions of the terminal module
 ////////////////////////////////////////////////////////////
 
 void terminal_initialize(void)

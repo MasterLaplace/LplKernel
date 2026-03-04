@@ -6,7 +6,7 @@
 #include <kernel/drivers/tty.h>
 
 ////////////////////////////////////////////////////////////
-// Public functions of the multiboot info helper module API
+// Public API functions of the multiboot info helper module
 ////////////////////////////////////////////////////////////
 
 extern void print_multiboot_info_boot_device(BootDevice_t *boot_device);

@@ -55,7 +55,7 @@ static inline void print_section_header(const char *title, uint8_t color)
 }
 
 ////////////////////////////////////////////////////////////
-// Public functions of the multiboot info helper module API
+// Public API functions of the multiboot info helper module
 ////////////////////////////////////////////////////////////
 
 void print_multiboot_info_boot_device(BootDevice_t *boot_device)

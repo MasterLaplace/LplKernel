@@ -150,6 +150,8 @@
 ////////////////////////////////////////////////////////////
 // Identify the Operating System
 ////////////////////////////////////////////////////////////
+#define KERNEL_MODE_STRING
+
 #if defined(_WIN32) || defined(__WIN32__) || defined(KERNEL_COMPILER_MINGW) || defined(KERNEL_COMPILER_CYGWIN)
 
     #define KERNEL_SYSTEM_WINDOWS
@@ -181,10 +183,17 @@
     #define KERNEL_SYSTEM_FREEBSD
     #define KERNEL_SYSTEM_STRING "FreeBSD"
 
-#elif defined(LAPLACE_KERNEL_PANIC)
+#elif defined(__LPL_KERNEL__)
 
     #define KERNEL_SYSTEM_KERNEL
     #define KERNEL_SYSTEM_STRING "Laplace Kernel"
+
+    // Identify the Kernel Mode
+    #if defined(LPL_KERNEL_REAL_TIME_MODE)
+        #define KERNEL_MODE_STRING " (Real-Time)"
+    #else
+        #define KERNEL_MODE_STRING " (Standard)"
+    #endif
 
 #else
     #error [Config@Distribution]: This operating system is not supported by LplKernel.
@@ -498,7 +507,7 @@
 ////////////////////////////////////////////////////////////
 #define KERNEL_CONFIG_STRING \
         "KERNEL_VERSION=" KERNEL_VERSION_STRING "\n" \
-        "KERNEL_SYSTEM=" KERNEL_SYSTEM_STRING "\n" \
+        "KERNEL_SYSTEM=" KERNEL_SYSTEM_STRING KERNEL_MODE_STRING "\n" \
         "KERNEL_COMPILER=" KERNEL_COMPILER_STRING "\n" \
         "KERNEL_DEBUG=" KERNEL_DEBUG_STRING "\n"
 

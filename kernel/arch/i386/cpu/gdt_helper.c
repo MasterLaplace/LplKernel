@@ -158,7 +158,7 @@ static inline void write_gdt_entry(Serial_t *serial, const char *name, const Glo
 }
 
 ////////////////////////////////////////////////////////////
-// Public functions of the GDT helper module API
+// Public API functions of the GDT helper module
 ////////////////////////////////////////////////////////////
 
 void print_global_descriptor_table(GlobalDescriptorTable_t *gdt)

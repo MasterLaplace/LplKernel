@@ -25,7 +25,7 @@ typedef struct __attribute__((packed)) {
 } Serial_t;
 
 ////////////////////////////////////////////////////////////
-// Public functions of the serial module API
+// Public API functions of the serial module
 ////////////////////////////////////////////////////////////
 
 extern void serial_initialize(Serial_t *serial, const COM_PORT port, const uint32_t speed);

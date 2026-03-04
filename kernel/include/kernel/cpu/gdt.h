@@ -96,7 +96,7 @@ typedef struct __attribute__((packed)) {
 typedef GlobalDescriptorTableFlat_t GlobalDescriptorTable_t;
 
 ////////////////////////////////////////////////////////////
-// Public functions of the GDT module API
+// Public API functions of the GDT module
 ////////////////////////////////////////////////////////////
 
 /**

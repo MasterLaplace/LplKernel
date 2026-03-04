@@ -9,7 +9,7 @@ static inline int serial_can_write(Serial_t *serial) { return inb(serial->port +
 static inline int serial_can_read(Serial_t *serial) { return inb(serial->port + 5) & 0x01; }
 
 ////////////////////////////////////////////////////////////
-// Public functions of the terminal module API
+// Public API functions of the terminal module
 ////////////////////////////////////////////////////////////
 
 void serial_initialize(Serial_t *serial, COM_PORT port, uint32_t speed)

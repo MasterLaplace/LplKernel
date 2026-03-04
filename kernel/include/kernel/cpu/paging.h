@@ -300,7 +300,9 @@ bool paging_is_mapped(uint32_t virt_addr);
  * symbol whose value can be read at runtime. Use a pointer cast to obtain
  * the integer value. */
 extern const uint32_t global_kernel_start;
+extern const uint32_t global_kernel_end;
 #define KERNEL_VIRTUAL_BASE ((uint32_t) (uintptr_t) & global_kernel_start) // Higher-half kernel base
+#define KERNEL_VIRTUAL_END ((uint32_t) (uintptr_t) & global_kernel_end)    // End of kernel virtual address space
 #define PAGE_SIZE           4096                                           // 4KB pages
 #define ENTRIES_PER_TABLE   1024                                           // 1024 entries per page table/directory
 

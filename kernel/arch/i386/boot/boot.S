@@ -61,9 +61,9 @@ stack_top:
 .global boot_page_directory
 boot_page_directory:
     .skip 4096
-.global boot_page_table
-boot_page_table:
-    .skip 4096
+.global boot_page_tables
+boot_page_tables:
+    .skip 4096 * 4
 
 /* Variable globale pour stocker le multiboot info */
 .global multiboot_info
@@ -78,36 +78,32 @@ _start:
     movl %ebx, %edx
 
     /* Setup page table pointer and counters */
-    movl $(boot_page_table - KERNEL_START), %edi
+    movl $(boot_page_tables - KERNEL_START), %edi
     movl $0, %esi
-    movl $1024, %ecx
+    movl $4096, %ecx
 
 page_mapping_loop:
-    /* Map first 1MB (0x00000000-0x00100000) for multiboot info and BIOS data */
-    cmpl $0x100000, %esi
-    jl map_this_page
-
-    /* Map kernel area (_kernel_start to _kernel_end) */
-    cmpl $_kernel_start, %esi
-    jl skip_page
-    cmpl $(_kernel_end - KERNEL_START), %esi
-    jge skip_page
-
-map_this_page:
+    /* Map ALL pages 0–16MB unconditionally (Present + Writable).
+     * We need every physical address reachable via phys_to_virt() so that
+     * the PMM can push pages onto the free-list by writing through their
+     * virtual alias.  The PMM itself decides which pages are actually free;
+     * the page tables just need to have valid entries for the whole range. */
     movl %esi, %eax
     orl $0x003, %eax        /* Present + Writable */
     movl %eax, (%edi)
 
-skip_page:
     addl $4096, %esi        /* Next page */
     addl $4, %edi           /* Next page table entry */
     loop page_mapping_loop
 
-    /* Map VGA buffer at the end of page table */
-    movl $(0x000B8000 | 0x003), boot_page_table - KERNEL_START + 1023 * 4
     /* Setup page directory */
-    movl $(boot_page_table - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 0     /* Identity mapping */
-    movl $(boot_page_table - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 768 * 4  /* Higher half mapping */
+    /* Identity mapping : PD[0] → boot_page_tables[0] (phys 0x0–0x3FFFFF) */
+    movl $(boot_page_tables - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 0 * 4
+    /* Higher-half mapping : PD[768..771] → boot_page_tables[0..3] (virt 0xC0000000–0xC0FFFFFF) */
+    movl $(boot_page_tables - KERNEL_START + 4096 * 0 + 0x003), boot_page_directory - KERNEL_START + 768 * 4
+    movl $(boot_page_tables - KERNEL_START + 4096 * 1 + 0x003), boot_page_directory - KERNEL_START + 769 * 4
+    movl $(boot_page_tables - KERNEL_START + 4096 * 2 + 0x003), boot_page_directory - KERNEL_START + 770 * 4
+    movl $(boot_page_tables - KERNEL_START + 4096 * 3 + 0x003), boot_page_directory - KERNEL_START + 771 * 4
 
     /* Enable paging */
     movl $(boot_page_directory - KERNEL_START), %ecx

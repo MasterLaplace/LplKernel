@@ -81,7 +81,7 @@ typedef struct __attribute__((packed)) {
 extern void task_state_segment_load(const uint16_t tss_selector);
 
 ////////////////////////////////////////////////////////////
-// Public functions of the TSS module API
+// Public API functions of the TSS module
 ////////////////////////////////////////////////////////////
 
 /**

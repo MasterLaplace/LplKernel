@@ -13,7 +13,7 @@ static inline uint32_t get_current_esp(void)
 }
 
 ////////////////////////////////////////////////////////////
-// Public functions of the TSS module API
+// Public API functions of the TSS module
 ////////////////////////////////////////////////////////////
 
 void task_state_segment_initialize(TaskStateSegment_t *tss, uint16_t kernel_ss_selector)

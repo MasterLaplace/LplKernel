@@ -13,7 +13,7 @@
 #include <kernel/drivers/tty.h>
 
 ////////////////////////////////////////////////////////////
-// Public functions of the GDT helper module API
+// Public API functions of the GDT helper module
 ////////////////////////////////////////////////////////////
 
 extern void print_global_descriptor_table(GlobalDescriptorTable_t *gdt);

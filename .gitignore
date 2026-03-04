@@ -28,3 +28,4 @@ sysroot
 *.a
 *.d
 *.o
+.last_build_mode

@@ -3,6 +3,7 @@ set -e
 
 JOBS=1
 USE_COMPILEDB=0
+REALTIME_MODE=1          # default: client/realtime build (Free-List PMM)
 
 for arg in "$@"; do
     case "$arg" in
@@ -11,6 +12,12 @@ for arg in "$@"; do
             ;;
         --text)
             export GRAPHICS_MODE=0
+            ;;
+        --realtime)
+            REALTIME_MODE=1
+            ;;
+        --server)
+            REALTIME_MODE=0
             ;;
         --compile-db)
             USE_COMPILEDB=1
@@ -23,15 +30,31 @@ done
 
 . ./headers.sh
 
+# Auto-clean when the build mode changes to avoid stale object files.
+LAST_MODE_FILE=".last_build_mode"
+CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0}"
+
+if [ -f "$LAST_MODE_FILE" ]; then
+    LAST_MODE=$(cat "$LAST_MODE_FILE")
+    if [ "$LAST_MODE" != "$CURRENT_MODE" ]; then
+        echo "Build mode changed ($LAST_MODE -> $CURRENT_MODE), cleaning..."
+        for PROJECT in $PROJECTS; do
+            (cd "$PROJECT" && $MAKE clean)
+        done
+        rm -rf sysroot iso lpl.iso
+    fi
+fi
+echo "$CURRENT_MODE" > "$LAST_MODE_FILE"
+
 echo "Building with graphics mode: $GRAPHICS_MODE"
 
 for PROJECT in $PROJECTS; do
     if [ "$USE_COMPILEDB" -eq 1 ]; then
-        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" compiledb $MAKE -j"$JOBS" install)
+        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" compiledb $MAKE -j"$JOBS" install)
         jq --indent 1 'map(.arguments += ["-resource-dir=/nonexistent"])' \
             $PROJECT/compile_commands.json > tmp                          \
             && mv tmp $PROJECT/compile_commands.json
     else
-        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" $MAKE -j"$JOBS" install)
+        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" $MAKE -j"$JOBS" install)
     fi
 done
