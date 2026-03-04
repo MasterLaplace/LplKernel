@@ -45,7 +45,8 @@ to run the kernel, you need to install QEMU:
 sudo apt install qemu-system-x86 qemu-utils
 ```
 
-> **Note:** if your terminal comes from the VSCode snap package the
+> [!NOTE]
+> If your terminal comes from the VSCode snap package the
 > Snap runtime injects library paths (`/snap/core20/...`) into the
 > environment which confuse `qemu-system-*` and lead to a symbol lookup
 > error for `libpthread.so.0`.  The `qemu.sh` wrapper now clears that
