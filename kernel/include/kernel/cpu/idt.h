@@ -13,7 +13,7 @@
 /// Flags byte for a present, DPL=0, 32-bit interrupt gate (P=1, DPL=0, Type=0xE)
 #define IDT_KERNEL_INTERRUPT_GATE 0x8E
 /// Flags byte for a present, DPL=3, 32-bit interrupt gate (used for syscall via int 0x80)
-#define IDT_USER_INTERRUPT_GATE   0xEE
+#define IDT_USER_INTERRUPT_GATE 0xEE
 
 typedef struct __attribute__((packed)) {
     uint8_t gate_type : 4; // Gate type (0x5 = 32-bit Task Gate, 0x6 = 16-bit Interrupt Gate, 0x7 = 16-bit Trap Gate,

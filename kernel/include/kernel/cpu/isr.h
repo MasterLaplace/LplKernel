@@ -39,11 +39,11 @@
 typedef struct __attribute__((packed)) {
     uint32_t ds;
     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax; // pusha, reversed order on stack
-    uint32_t int_no;                                  // interrupt vector number
-    uint32_t err_code;                                // error code (0 if none)
-    uint32_t eip;                                     // CPU-pushed
-    uint32_t cs;                                      // CPU-pushed
-    uint32_t eflags;                                  // CPU-pushed
+    uint32_t int_no;                                 // interrupt vector number
+    uint32_t err_code;                               // error code (0 if none)
+    uint32_t eip;                                    // CPU-pushed
+    uint32_t cs;                                     // CPU-pushed
+    uint32_t eflags;                                 // CPU-pushed
 } InterruptFrame_t;
 
 /// Type for an ISR handler registered via isr_register_handler().
