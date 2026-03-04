@@ -3,6 +3,7 @@
 
 #include <kernel/boot/multiboot_info_helper.h>
 #include <kernel/cpu/gdt_helper.h>
+#include <kernel/cpu/idt.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
@@ -20,6 +21,7 @@ static const char WELCOME_MESSAGE[] = ""
 extern MultibootInfo_t *multiboot_info;
 
 static GlobalDescriptorTable_t global_descriptor_table = {0};
+static InterruptDescriptorTable_t interrupt_descriptor_table = {0};
 static TaskStateSegment_t task_state_segment = {0};
 static Serial_t com1;
 
@@ -45,6 +47,13 @@ __attribute__((constructor)) void kernel_initialize(void)
     global_descriptor_table_load(&global_descriptor_table);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: GDT loaded successfully!\n");
     write_global_descriptor_table(&com1, &global_descriptor_table);
+
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing IDT...\n");
+    interrupt_descriptor_table_initialize(&interrupt_descriptor_table);
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: loading IDT into CPU...\n");
+    interrupt_descriptor_table_load(&interrupt_descriptor_table);
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IDT loaded successfully!\n");
+    // write_interrupt_descriptor_table(&com1, &interrupt_descriptor_table);
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing runtime paging...\n");
     paging_initialize_runtime();
@@ -89,6 +98,11 @@ __attribute__((constructor)) void kernel_initialize(void)
 
 void kernel_main(void)
 {
+    /* --- Quick IDT smoke test: trigger a #DE (Division Error) ------------ */
+    /* Uncomment to test: the ISR panic handler should print int_no=0        */
+    /* volatile int zero = 0; volatile int trap = 1 / zero; (void) trap;     */
+    /* --------------------------------------------------------------------- */
+
     if (framebuffer_available())
     {
         /* Graphics mode demo */

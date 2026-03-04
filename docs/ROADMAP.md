@@ -19,12 +19,14 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - ✅ **Phase 1**: Bare Bones Kernel - **100% Complete**
   - VGA text mode ✅, Serial ports ✅, Scrolling ✅, Colors ✅, Multiboot parsing ✅
 
-- 🚧 **Phase 2**: CPU Initialization & Protection - **85% Complete**
-  - Higher-half kernel ✅, Paging (boot-time + runtime) ✅, GDT complete ✅, TSS initialized ✅
-  - Missing: page frame allocator, Ring 3 transition
+- 🚧 **Phase 2**: CPU Initialization & Protection - **90% Complete**
+  - Higher-half kernel ✅, Paging boot-time ✅, Paging runtime API ✅, GDT complete ✅, TSS initialized ✅
+  - Remaining work: implement **Buddy Allocator** for server mode (current Free‑List covers realtime only) and finish integrating the allocator with
+  `paging_map_page()` so page tables can be created dynamically; also Ring 3 transition
 
-- ❌ **Phase 3**: Interrupts & Exceptions - **0% Complete** ⬅️ **START HERE**
-  - No IDT, no exception handlers, no PIC initialization
+- 🚧 **Phase 3**: Interrupts & Exceptions - **30% Complete**
+  - IDT structure + LIDT + 32 ISR stubs ✅, default panic handler ✅, #DE tested ✅
+  - Remaining: PIC remapping, specific exception handlers (#PF, #GP, #DF), IRQ handlers
 
 - ❌ **Phase 4**: Memory Management - **0% Complete**
   - No heap allocator (kmalloc/kfree), no page frame allocator
@@ -155,7 +157,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [x] VGA buffer mapping at 0xB8000
   - [x] Remove identity mapping after jump to higher half
   - [x] [Paging](https://wiki.osdev.org/Paging) - Runtime management with map/unmap API ✅
-  - [ ] [Page Frame Allocation](https://wiki.osdev.org/Page_Frame_Allocation) - Physical memory manager
+  - [ ] [Page Frame Allocation](https://wiki.osdev.org/Page_Frame_Allocation) - Physical memory manager (buddy allocator for server mode, free-list for realtime ✅)
 
 ### Segmentation (GDT)
 - [x] [GDT Tutorial](https://wiki.osdev.org/GDT_Tutorial)
@@ -178,21 +180,23 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐) ⬅️ **CURRENT PHASE**
 
-> ⚠️ **STATUS**: Not started - No IDT/interrupt code found in codebase
-> 🎯 **NEXT STEP**: Implement basic IDT and exception handlers (start with divide-by-zero)
+> 🚧 **STATUS**: IDT loaded, ISR stubs operational, default panic handler active
+> 🎯 **NEXT STEP**: PIC remapping (IRQ 0-15 → 32-47), then add specific handlers (#PF, #GP, keyboard)
 
 ### Interrupt Descriptor Table
-- [ ] [Interrupts](https://wiki.osdev.org/Interrupts) - Theory and overview ⭐ START HERE
-- [ ] [Interrupts Tutorial](https://wiki.osdev.org/Interrupts_Tutorial) ⭐ CRITICAL
-  - [ ] [Interrupt Descriptor Table](https://wiki.osdev.org/Interrupt_Descriptor_Table) (IDT)
-  - [ ] Create IDT structure (similar to GDT pattern)
-  - [ ] Load IDT with LIDT
-  - [ ] [Interrupt Service Routines](https://wiki.osdev.org/Interrupt_Service_Routines) (ISRs)
+- [x] [Interrupts](https://wiki.osdev.org/Interrupts) - Theory and overview
+- [x] [Interrupts Tutorial](https://wiki.osdev.org/Interrupts_Tutorial)
+  - [x] [Interrupt Descriptor Table](https://wiki.osdev.org/Interrupt_Descriptor_Table) (IDT)
+  - [x] Create IDT structure (`InterruptDescriptorTableFlat_t`, 256 × 8-byte entries)
+  - [x] Load IDT with LIDT (`idt_load.s`)
+  - [x] [Interrupt Service Routines](https://wiki.osdev.org/Interrupt_Service_Routines) (ISRs) — 32 stubs in `isr_stubs.s`
+  - [x] Dispatch table in `isr.c` — `isr_register_handler()` + default panic handler
+  - [x] Tested: `#DE` divide-by-zero triggers panic with full register dump ✅
   - [ ] [IDT problems](https://wiki.osdev.org/IDT_problems) - Common issues
 
 ### CPU Exceptions
 - [ ] [Exceptions](https://wiki.osdev.org/Exceptions) ⭐ IMPLEMENT FIRST
-  - [ ] Division Error (#DE) - Good starting point for testing
+  - [x] Division Error (#DE) - Tested ✅
   - [ ] Debug Exception (#DB)
   - [ ] Breakpoint (#BP)
   - [ ] Invalid Opcode (#UD)
