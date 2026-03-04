@@ -27,7 +27,7 @@ menuentry "lpl" {
     boot
 }
 EOF
-    GRUB_MODULES="multiboot all_video vbe gfxterm"
+    GRUB_MODULES="multiboot all_video gfxterm"
 else
     cat > iso/boot/grub/grub.cfg << EOF
 set timeout=0

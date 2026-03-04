@@ -42,7 +42,7 @@ source ~/.zshrc
 
 to run the kernel, you need to install QEMU:
 ```sh
-sudo apt install qemu-system-x86
+sudo apt install qemu-system-x86 qemu-utils
 ```
 
 > **Note:** if your terminal comes from the VSCode snap package the
@@ -64,7 +64,7 @@ cd LplKernel
 ## Run
 
 ```sh
-./qemu.sh 4 # 4 cores to build
+./qemu.sh --text --realtime 4 # 4 cores to build
 ```
 
 ### Running using nix

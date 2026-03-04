@@ -28,7 +28,7 @@ for arg in "$@"; do
     esac
 done
 
-. ./headers.sh
+. ./config.sh
 
 # Auto-clean when the build mode changes to avoid stale object files.
 LAST_MODE_FILE=".last_build_mode"
@@ -45,6 +45,8 @@ if [ -f "$LAST_MODE_FILE" ]; then
     fi
 fi
 echo "$CURRENT_MODE" > "$LAST_MODE_FILE"
+
+. ./headers.sh
 
 echo "Building with graphics mode: $GRAPHICS_MODE"
 
