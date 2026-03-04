@@ -80,7 +80,9 @@ static void freelist_push(uint32_t phys_addr)
 {
     uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
     *page_virt = free_list_head;
-    free_list_head = phys_addr;    ++free_page_count;}
+    free_list_head = phys_addr;
+    ++free_page_count;
+}
 
 /**
  * @brief Pop a page from the Free-List LIFO stack.
@@ -93,7 +95,9 @@ static uint32_t freelist_pop(void)
         return 0;
     uint32_t phys_addr = free_list_head;
     uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
-    free_list_head = *page_virt;    --free_page_count;    return phys_addr;
+    free_list_head = *page_virt;
+    --free_page_count;
+    return phys_addr;
 }
 
 #else /* Server mode — Buddy Allocator */

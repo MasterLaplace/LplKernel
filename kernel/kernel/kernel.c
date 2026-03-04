@@ -53,15 +53,15 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing PMM...\n");
     pmm_init();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-16MB) ready: ");
-    serial_write_int(&com1, (int32_t)pmm_get_free_count());
+    serial_write_int(&com1, (int32_t) pmm_get_free_count());
     serial_write_string(&com1, " pages free\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 2 (>16MB mapping)...\n");
     pmm_extend_mapping();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM ready \342\200\224 total free: ");
-    serial_write_int(&com1, (int32_t)pmm_get_free_count());
+    serial_write_int(&com1, (int32_t) pmm_get_free_count());
     serial_write_string(&com1, " pages (~");
-    serial_write_int(&com1, (int32_t)(pmm_get_free_count() * 4 / 1024));
+    serial_write_int(&com1, (int32_t) (pmm_get_free_count() * 4 / 1024));
     serial_write_string(&com1, " MB free)\n");
 
     {
@@ -72,10 +72,12 @@ __attribute__((constructor)) void kernel_initialize(void)
         serial_write_string(&com1, ", ");
         serial_write_hex32(&com1, pa2);
         serial_write_string(&com1, "\n");
-        if (pa1) page_frame_free(pa1);
-        if (pa2) page_frame_free(pa2);
+        if (pa1)
+            page_frame_free(pa1);
+        if (pa2)
+            page_frame_free(pa2);
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: after free count = ");
-        serial_write_int(&com1, (int32_t)pmm_get_free_count());
+        serial_write_int(&com1, (int32_t) pmm_get_free_count());
         serial_write_string(&com1, "\n");
     }
 
