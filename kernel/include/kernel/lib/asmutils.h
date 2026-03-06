@@ -19,4 +19,6 @@ extern uint32_t cpu_get_current_stack_pointer(void);
 
 extern void cpu_reload_page_directory(void);
 
+extern uint32_t cpu_get_page_fault_linear_address(void);
+
 #endif /* !ASMUTILS_H_ */

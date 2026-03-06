@@ -7,6 +7,7 @@
 .global cpu_no_operation
 .global cpu_get_current_stack_pointer
 .global cpu_reload_page_directory
+.global cpu_get_page_fault_linear_address
 
 # unsigned char inb(short port)
 .type inb, @function
@@ -66,4 +67,10 @@ cpu_get_current_stack_pointer:
 cpu_reload_page_directory:
     movl %cr3, %eax
     movl %eax, %cr3
+    ret
+
+# uint32_t cpu_get_page_fault_linear_address(void)
+.type cpu_get_page_fault_linear_address, @function
+cpu_get_page_fault_linear_address:
+    movl %cr2, %eax
     ret
