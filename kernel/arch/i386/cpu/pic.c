@@ -6,7 +6,7 @@
 #define PIC2_COMMAND 0xA0u
 #define PIC2_DATA    0xA1u
 
-#define PIC_EOI 0x20u
+#define PIC_EOI      0x20u
 #define PIC_READ_ISR 0x0Bu
 
 #define ICW1_ICW4 0x01u

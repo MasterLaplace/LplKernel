@@ -57,9 +57,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: remapping PIC...\n");
     interrupt_request_initialize();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PIC remapped to vectors 32-47\n");
-    serial_write_string(&com1,
-                        "[" KERNEL_SYSTEM_STRING
-                        "]: interrupts enabled (IRQ0 timer + IRQ1 keyboard, spurious IRQ7/15 policy)\n");
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING
+                               "]: interrupts enabled (IRQ0 timer + IRQ1 keyboard, spurious IRQ7/15 policy)\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing runtime paging...\n");
     paging_initialize_runtime();
