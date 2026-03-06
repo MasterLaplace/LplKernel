@@ -9,7 +9,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ## 📊 Progress Summary (Updated: 2026)
 
 ### 🎯 Current Position: **Phase 3 Bring-up** ⬅️ YOU ARE HERE
-**Next Goal**: Stabilize IRQ/exceptions (keyboard IRQ1, #PF/#GP handlers)
+**Next Goal**: PIT/RTC strategy + extended IRQ/exception test matrix
 
 ### Phase Completion Status:
 - ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
@@ -24,16 +24,17 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - Remaining work: implement **Buddy Allocator** for server mode (current Free‑List covers realtime only) and finish integrating the allocator with
   `paging_map_page()` so page tables can be created dynamically; also Ring 3 transition
 
-- 🚧 **Phase 3**: Interrupts & Exceptions - **50% Complete**
+- 🚧 **Phase 3**: Interrupts & Exceptions - **75% Complete**
   - IDT + ISR stubs (0-47) ✅, PIC remap (32-47) ✅, IRQ0 handler + EOI ✅, `sti` sequencing ✅
-  - Remaining: dedicated exception handlers (#PF, #GP, #DF), keyboard IRQ1, spurious IRQ policy
+  - Dedicated exception handlers (#PF/#GP/#DF) ✅, keyboard IRQ1 minimal ✅, spurious IRQ7/IRQ15 policy ✅
+  - Remaining: PIT/RTC ownership policy, expanded exception coverage (#DB/#BP/#UD), test matrix hardening
 
 - ❌ **Phase 4**: Memory Management - **0% Complete**
   - No heap allocator (kmalloc/kfree), no page frame allocator
 
-- ❌ **Phase 5**: Device Drivers - **10% Complete**
-  - VGA text mode ✅, Serial COM1 ✅
-  - Missing: Keyboard, storage, network, USB, PCI
+- ❌ **Phase 5**: Device Drivers - **15% Complete**
+  - VGA text mode ✅, Serial COM1 ✅, keyboard IRQ1 minimal ✅
+  - Missing: full PS/2 decode/layout, storage, network, USB, PCI
 
 - ❌ **Phase 6**: Multitasking & Scheduling - **0% Complete**
   - No scheduler, processes, threads, or context switching
@@ -61,13 +62,13 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ PIC remapped to vectors 32-47
 ✅ Interrupts enabled after IDT+PIC setup (`sti` done in kernel init)
 ✅ First hardware IRQ path validated (IRQ0 timer + EOI)
+✅ Dedicated panic handlers for #PF/#GP/#DF
+✅ IRQ1 keyboard minimal handler (raw scan code + EOI)
+✅ Spurious IRQ7/IRQ15 detection policy
 ```
 
 ### What We Need Next:
 ```
-🎯 Dedicated exception handlers (#GP, #PF, #DF)
-🎯 Keyboard IRQ1 handler and controlled unmasking
-🎯 Spurious IRQ7/IRQ15 handling policy
 🎯 PIT/RTC strategy (timer ownership and tick policy)
 🎯 Extended exception/IRQ test matrix
 ```
@@ -76,7 +77,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ```
 ⚠️ No page frame allocator (can't create new page tables dynamically)
 ⚠️ No memory allocator (all allocations static)
-⚠️ Interrupt stack is operational but exception handling is still mostly generic panic
+⚠️ Exception stack now has dedicated #PF/#GP/#DF handlers, but coverage for #DB/#BP/#UD is still pending
 ```
 
 ---
@@ -183,8 +184,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐) ⬅️ **CURRENT PHASE**
 
-> 🚧 **STATUS**: IDT+ISR operational, PIC remapped, IRQ0 path active, interrupts enabled
-> 🎯 **NEXT STEP**: dedicated exception handlers (#PF/#GP/#DF), then keyboard IRQ1
+> 🚧 **STATUS**: IDT+ISR operational, PIC remapped, IRQ0+IRQ1 active, spurious IRQ policy active
+> 🎯 **NEXT STEP**: PIT/RTC strategy and expanded exception/IRQ validation matrix
 
 ### Interrupt Descriptor Table
 - [x] [Interrupts](https://wiki.osdev.org/Interrupts) - Theory and overview
@@ -193,7 +194,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [x] Create IDT structure (`InterruptDescriptorTableFlat_t`, 256 × 8-byte entries)
   - [x] Load IDT with LIDT (`idt_load.s`)
   - [x] [Interrupt Service Routines](https://wiki.osdev.org/Interrupt_Service_Routines) (ISRs) — 48 stubs (0-47) in `isr_stubs.s`
-  - [x] Dispatch table in `isr.c` — `isr_register_handler()` + default panic handler
+  - [x] Dispatch table in `isr.c` — `interrupt_service_routine_register_handler()` + default panic handler
   - [x] Tested: `#DE` divide-by-zero triggers panic with full register dump ✅
   - [ ] [IDT problems](https://wiki.osdev.org/IDT_problems) - Common issues
 
@@ -203,9 +204,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [ ] Debug Exception (#DB)
   - [ ] Breakpoint (#BP)
   - [ ] Invalid Opcode (#UD)
-  - [ ] General Protection Fault (#GP)
-  - [ ] [Page Fault](https://wiki.osdev.org/Page_Fault) (#PF) - Critical for paging
-  - [ ] Double Fault (#DF) - Safety net
+  - [x] General Protection Fault (#GP)
+  - [x] [Page Fault](https://wiki.osdev.org/Page_Fault) (#PF) - Critical for paging
+  - [x] Double Fault (#DF) - Safety net
   - [ ] [Triple Fault](https://wiki.osdev.org/Triple_Fault) - Understanding and prevention
 
 ### Hardware Interrupts
@@ -213,6 +214,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [x] Initialize and remap PIC (IRQ 0-15 to 32-47)
   - [x] [IRQ](https://wiki.osdev.org/IRQ) - First hardware request path (IRQ0)
   - [x] EOI (End of Interrupt) handling (master/slave path implemented)
+  - [x] Spurious IRQ7/IRQ15 handling policy (PIC ISR validation)
+  - [x] IRQ1 keyboard line unmask + minimal handler (raw scan code)
 - [ ] [NMI](https://wiki.osdev.org/NMI) - Non-Maskable Interrupt
 - [ ] [APIC](https://wiki.osdev.org/APIC) - Advanced PIC (modern systems)
   - [ ] Local APIC configuration
@@ -266,12 +269,12 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ## 💾 Phase 5: Device Drivers (Difficulty ⭐⭐)
 
-> ⚠️ **STATUS**: Not started - No device drivers beyond VGA/Serial found in codebase
+> ⚠️ **STATUS**: Early bring-up - VGA/Serial done, keyboard IRQ1 minimal path available
 > 📋 **REQUIRES**: Phase 3 complete (interrupts for IRQ handling)
 
 ### Input Devices
-- [ ] [PS/2 Keyboard](https://wiki.osdev.org/PS/2_Keyboard) ⭐ START HERE (needs IRQ 1)
-  - [ ] Scan codes
+- [x] [PS/2 Keyboard](https://wiki.osdev.org/PS/2_Keyboard) ⭐ START HERE (needs IRQ 1)
+  - [x] Scan codes (raw IRQ1 capture)
   - [ ] Keyboard layouts
 - [ ] [Mouse Input](https://wiki.osdev.org/Mouse_Input)
   - [ ] PS/2 mouse

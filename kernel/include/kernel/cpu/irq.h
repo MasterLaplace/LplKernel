@@ -23,4 +23,14 @@ extern void interrupt_request_initialize(void);
  */
 extern uint32_t interrupt_request_get_tick_count(void);
 
+/**
+ * @brief Return number of detected spurious IRQ7 events.
+ */
+extern uint32_t interrupt_request_get_spurious_irq7_count(void);
+
+/**
+ * @brief Return number of detected spurious IRQ15 events.
+ */
+extern uint32_t interrupt_request_get_spurious_irq15_count(void);
+
 #endif /* !IRQ_H_ */

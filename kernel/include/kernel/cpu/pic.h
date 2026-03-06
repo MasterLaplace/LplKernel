@@ -33,4 +33,11 @@ extern void programmable_interrupt_controller_clear_mask(uint8_t irq_line);
  */
 extern void programmable_interrupt_controller_send_end_of_interrupt(uint8_t irq_line);
 
+/**
+ * @brief Return whether an IRQ line is currently marked in-service by PIC.
+ *
+ * This is used to distinguish real IRQ7/IRQ15 from spurious interrupts.
+ */
+extern uint8_t programmable_interrupt_controller_is_in_service(uint8_t irq_line);
+
 #endif /* !PIC_H_ */
