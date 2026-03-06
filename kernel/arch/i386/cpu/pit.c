@@ -38,7 +38,4 @@ void programmable_interval_timer_initialize(uint32_t target_frequency_hz)
     programmable_interval_timer_frequency_hz = PIT_INPUT_FREQUENCY_HZ / divisor;
 }
 
-uint32_t programmable_interval_timer_get_frequency_hz(void)
-{
-    return programmable_interval_timer_frequency_hz;
-}
+uint32_t programmable_interval_timer_get_frequency_hz(void) { return programmable_interval_timer_frequency_hz; }

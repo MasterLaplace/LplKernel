@@ -16,8 +16,8 @@
 #define RTC_REG_A_UPDATE_IN_PROGRESS 0x80u
 #define RTC_REG_A_RATE_MASK          0x0Fu
 
-#define RTC_REG_B_24HOUR_MODE 0x02u
-#define RTC_REG_B_BINARY_MODE 0x04u
+#define RTC_REG_B_24HOUR_MODE  0x02u
+#define RTC_REG_B_BINARY_MODE  0x04u
 #define RTC_REG_B_PERIODIC_IRQ 0x40u
 
 #define RTC_PERIODIC_RATE_64HZ 0x0Au
@@ -106,15 +106,9 @@ void realtime_clock_set_periodic_interrupt_enabled(uint8_t enabled)
     (void) realtime_clock_read_register(RTC_REGISTER_C);
 }
 
-uint8_t realtime_clock_is_periodic_interrupt_enabled(void)
-{
-    return realtime_clock_periodic_interrupt_enabled;
-}
+uint8_t realtime_clock_is_periodic_interrupt_enabled(void) { return realtime_clock_periodic_interrupt_enabled; }
 
-uint32_t realtime_clock_get_periodic_interrupt_count(void)
-{
-    return realtime_clock_periodic_interrupt_count;
-}
+uint32_t realtime_clock_get_periodic_interrupt_count(void) { return realtime_clock_periodic_interrupt_count; }
 
 void realtime_clock_read_time(RealtimeClockTime_t *time_snapshot)
 {
@@ -147,8 +141,8 @@ void realtime_clock_read_time(RealtimeClockTime_t *time_snapshot)
         {
         }
         realtime_clock_read_raw(&second_2, &minute_2, &hour_2, &day_2, &month_2, &year_2, &register_b_2);
-    } while (second_1 != second_2 || minute_1 != minute_2 || hour_1 != hour_2 || day_1 != day_2 ||
-             month_1 != month_2 || year_1 != year_2);
+    } while (second_1 != second_2 || minute_1 != minute_2 || hour_1 != hour_2 || day_1 != day_2 || month_1 != month_2 ||
+             year_1 != year_2);
 
     if ((register_b_2 & RTC_REG_B_BINARY_MODE) == 0u)
     {
