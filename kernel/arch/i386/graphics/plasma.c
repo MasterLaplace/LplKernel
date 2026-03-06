@@ -132,7 +132,7 @@ static void delay_loop(uint32_t iterations)
 {
     volatile uint32_t i;
     for (i = 0; i < iterations; i++)
-    cpu_no_operation();
+        cpu_no_operation();
 }
 
 /**

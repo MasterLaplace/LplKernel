@@ -6,10 +6,10 @@
 #include <kernel/drivers/keyboard.h>
 #include <kernel/lib/asmutils.h>
 
-#define IRQ_LINE_COUNT 16u
-#define IRQ_TIMER_LINE 0u
+#define IRQ_LINE_COUNT    16u
+#define IRQ_TIMER_LINE    0u
 #define IRQ_KEYBOARD_LINE 1u
-#define IRQ_TIMER_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_TIMER_LINE)
+#define IRQ_TIMER_VECTOR  (PIC_VECTOR_OFFSET_MASTER + IRQ_TIMER_LINE)
 
 static volatile uint32_t interrupt_request_tick_count = 0u;
 
@@ -40,7 +40,4 @@ void interrupt_request_initialize(void)
     cpu_enable_interrupts();
 }
 
-uint32_t interrupt_request_get_tick_count(void)
-{
-    return interrupt_request_tick_count;
-}
+uint32_t interrupt_request_get_tick_count(void) { return interrupt_request_tick_count; }

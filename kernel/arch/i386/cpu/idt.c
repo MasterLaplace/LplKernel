@@ -1,5 +1,5 @@
-#include <kernel/cpu/idt.h>
 #include <kernel/cpu/gdt.h>
+#include <kernel/cpu/idt.h>
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/pic.h>
 #include <stddef.h>
@@ -43,9 +43,9 @@ static inline void interrupt_descriptor_table_encode_flat_entry(InterruptDescrip
     entry->isr_high = (uint32_t) isr >> 16u;
 }
 
-__attribute__((unused))
-static inline void interrupt_descriptor_table_encode_long_entry(InterruptDescriptorTableLongModeEntry_t *entry,
-                                                                void *isr, uint16_t k_code_selector, uint8_t flags)
+__attribute__((unused)) static inline void
+interrupt_descriptor_table_encode_long_entry(InterruptDescriptorTableLongModeEntry_t *entry, void *isr,
+                                             uint16_t k_code_selector, uint8_t flags)
 {
     if (!entry)
         return;
@@ -71,8 +71,7 @@ static const isr_fn_t idt_exception_stubs[IDT_EXCEPTION_VECTOR_COUNT] = {
 };
 
 static const isr_fn_t idt_irq_stubs[IDT_IRQ_VECTOR_COUNT] = {
-    isr32, isr33, isr34, isr35, isr36, isr37, isr38, isr39,
-    isr40, isr41, isr42, isr43, isr44, isr45, isr46, isr47,
+    isr32, isr33, isr34, isr35, isr36, isr37, isr38, isr39, isr40, isr41, isr42, isr43, isr44, isr45, isr46, isr47,
 };
 
 static void interrupt_descriptor_table_clear(InterruptDescriptorTable_t *idt)
@@ -86,8 +85,8 @@ static void interrupt_descriptor_table_install_vector_range(InterruptDescriptorT
 {
     for (size_t i = 0; i < count; ++i)
     {
-        interrupt_descriptor_table_encode_flat_entry(
-            &idt->entries[base + i], (void *) stubs[i], GDT_KERNEL_CODE_SELECTOR, IDT_KERNEL_INTERRUPT_GATE);
+        interrupt_descriptor_table_encode_flat_entry(&idt->entries[base + i], (void *) stubs[i],
+                                                     GDT_KERNEL_CODE_SELECTOR, IDT_KERNEL_INTERRUPT_GATE);
     }
 }
 
@@ -110,8 +109,7 @@ void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *idt)
 
     interrupt_descriptor_table_clear(idt);
     interrupt_descriptor_table_install_vector_range(idt, 0u, idt_exception_stubs, IDT_EXCEPTION_VECTOR_COUNT);
-    interrupt_descriptor_table_install_vector_range(
-        idt, PIC_VECTOR_OFFSET_MASTER, idt_irq_stubs, IDT_IRQ_VECTOR_COUNT);
+    interrupt_descriptor_table_install_vector_range(idt, PIC_VECTOR_OFFSET_MASTER, idt_irq_stubs, IDT_IRQ_VECTOR_COUNT);
 }
 
 /**

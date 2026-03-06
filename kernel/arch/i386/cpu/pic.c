@@ -6,27 +6,18 @@
 #define PIC2_COMMAND 0xA0u
 #define PIC2_DATA    0xA1u
 
-#define PIC_EOI      0x20u
+#define PIC_EOI 0x20u
 
-#define ICW1_ICW4    0x01u
-#define ICW1_INIT    0x10u
+#define ICW1_ICW4 0x01u
+#define ICW1_INIT 0x10u
 
-#define ICW4_8086    0x01u
+#define ICW4_8086 0x01u
 
-static inline void pic_outb(uint16_t port, uint8_t value)
-{
-    outb((short) port, (unsigned char) value);
-}
+static inline void pic_outb(uint16_t port, uint8_t value) { outb((short) port, (unsigned char) value); }
 
-static inline uint8_t pic_inb(uint16_t port)
-{
-    return (uint8_t) inb((short) port);
-}
+static inline uint8_t pic_inb(uint16_t port) { return (uint8_t) inb((short) port); }
 
-static inline void pic_io_wait(void)
-{
-    pic_outb(0x80u, 0u);
-}
+static inline void pic_io_wait(void) { pic_outb(0x80u, 0u); }
 
 void programmable_interrupt_controller_send_end_of_interrupt(uint8_t irq_line)
 {

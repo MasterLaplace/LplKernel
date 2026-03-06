@@ -6,10 +6,7 @@
 ////////////////////////////////////////////////////////////
 
 // Helper to read current ESP in a single place (used for TSS initialization)
-static inline uint32_t get_current_esp(void)
-{
-    return cpu_get_current_stack_pointer();
-}
+static inline uint32_t get_current_esp(void) { return cpu_get_current_stack_pointer(); }
 
 ////////////////////////////////////////////////////////////
 // Public API functions of the TSS module
