@@ -81,6 +81,12 @@ __attribute__((constructor)) void kernel_initialize(void)
     if (KERNEL_SMOKE_TEST_ENABLE_PMM_ALLOCATE_FREE)
         kernel_smoke_test_run_physical_memory_manager_allocate_free(&com1);
 
+    if (KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS)
+        kernel_smoke_test_run_interrupt_request_runtime_status(&com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_RTC_SNAPSHOT)
+        kernel_smoke_test_run_realtime_clock_snapshot(&com1);
+
     if (framebuffer_init())
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: framebuffer initialized successfully!\n");
     else

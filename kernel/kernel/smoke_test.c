@@ -2,8 +2,10 @@
 
 #include <kernel/config.h>
 
+#include <kernel/cpu/irq.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
+#include <kernel/drivers/rtc.h>
 #include <kernel/smoke_test.h>
 
 void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port)
@@ -68,4 +70,42 @@ void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
     }
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: graphics demo displayed!\n");
+}
+
+void kernel_smoke_test_run_interrupt_request_runtime_status(Serial_t *serial_port)
+{
+    serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: IRQ runtime status: ticks=");
+    serial_write_int(serial_port, (int32_t) interrupt_request_get_tick_count());
+    serial_write_string(serial_port, ", pit_hz=");
+    serial_write_int(serial_port, (int32_t) interrupt_request_get_timer_frequency_hz());
+    serial_write_string(serial_port, ", spurious7=");
+    serial_write_int(serial_port, (int32_t) interrupt_request_get_spurious_irq7_count());
+    serial_write_string(serial_port, ", spurious15=");
+    serial_write_int(serial_port, (int32_t) interrupt_request_get_spurious_irq15_count());
+    serial_write_string(serial_port, ", rtc_irq=");
+    serial_write_int(serial_port, (int32_t) interrupt_request_get_realtime_clock_interrupt_count());
+    serial_write_string(serial_port, ", rtc_periodic=");
+    serial_write_int(serial_port, (int32_t) interrupt_request_is_realtime_clock_periodic_enabled());
+    serial_write_string(serial_port, "\n");
+}
+
+void kernel_smoke_test_run_realtime_clock_snapshot(Serial_t *serial_port)
+{
+    RealtimeClockTime_t current_time;
+
+    realtime_clock_read_time(&current_time);
+
+    serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: RTC snapshot: ");
+    serial_write_int(serial_port, (int32_t) current_time.hour);
+    serial_write_string(serial_port, ":");
+    serial_write_int(serial_port, (int32_t) current_time.minute);
+    serial_write_string(serial_port, ":");
+    serial_write_int(serial_port, (int32_t) current_time.second);
+    serial_write_string(serial_port, " ");
+    serial_write_int(serial_port, (int32_t) current_time.day);
+    serial_write_string(serial_port, "/");
+    serial_write_int(serial_port, (int32_t) current_time.month);
+    serial_write_string(serial_port, "/");
+    serial_write_int(serial_port, (int32_t) current_time.year);
+    serial_write_string(serial_port, "\n");
 }

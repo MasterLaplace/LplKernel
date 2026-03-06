@@ -3,18 +3,24 @@
 #include <kernel/cpu/exception.h>
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/pic.h>
+#include <kernel/cpu/pit.h>
 #include <kernel/drivers/keyboard.h>
+#include <kernel/drivers/rtc.h>
 #include <kernel/lib/asmutils.h>
 
 #define IRQ_LINE_COUNT        16u
 #define IRQ_CASCADE_LINE      2u
 #define IRQ_TIMER_LINE        0u
 #define IRQ_KEYBOARD_LINE     1u
+#define IRQ_RTC_LINE          8u
 #define IRQ_SPURIOUS7_LINE    7u
 #define IRQ_SPURIOUS15_LINE   15u
 #define IRQ_TIMER_VECTOR      (PIC_VECTOR_OFFSET_MASTER + IRQ_TIMER_LINE)
 #define IRQ_SPURIOUS7_VECTOR  (PIC_VECTOR_OFFSET_MASTER + IRQ_SPURIOUS7_LINE)
 #define IRQ_SPURIOUS15_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_SPURIOUS15_LINE)
+
+#define IRQ_TIMER_TARGET_FREQUENCY_HZ 100u
+#define IRQ_RTC_PERIODIC_ENABLE       0u
 
 static volatile uint32_t interrupt_request_tick_count = 0u;
 static volatile uint32_t interrupt_request_spurious_irq7_count = 0u;
@@ -64,12 +70,23 @@ void interrupt_request_initialize(void)
 {
     programmable_interrupt_controller_initialize();
     interrupt_request_mask_all();
+    programmable_interval_timer_initialize(IRQ_TIMER_TARGET_FREQUENCY_HZ);
 
     interrupt_exception_initialize();
     interrupt_service_routine_register_handler(IRQ_TIMER_VECTOR, interrupt_request_timer_handler);
     interrupt_service_routine_register_handler(IRQ_SPURIOUS7_VECTOR, interrupt_request_spurious_irq7_handler);
     interrupt_service_routine_register_handler(IRQ_SPURIOUS15_VECTOR, interrupt_request_spurious_irq15_handler);
     keyboard_interrupt_initialize();
+    realtime_clock_initialize();
+
+    if (IRQ_RTC_PERIODIC_ENABLE)
+    {
+        realtime_clock_set_periodic_interrupt_enabled(1u);
+        programmable_interrupt_controller_clear_mask(IRQ_CASCADE_LINE);
+        programmable_interrupt_controller_clear_mask(IRQ_RTC_LINE);
+    }
+    else
+        realtime_clock_set_periodic_interrupt_enabled(0u);
 
     programmable_interrupt_controller_clear_mask(IRQ_TIMER_LINE);
     programmable_interrupt_controller_clear_mask(IRQ_KEYBOARD_LINE);
@@ -81,3 +98,15 @@ uint32_t interrupt_request_get_tick_count(void) { return interrupt_request_tick_
 uint32_t interrupt_request_get_spurious_irq7_count(void) { return interrupt_request_spurious_irq7_count; }
 
 uint32_t interrupt_request_get_spurious_irq15_count(void) { return interrupt_request_spurious_irq15_count; }
+
+uint32_t interrupt_request_get_timer_frequency_hz(void) { return programmable_interval_timer_get_frequency_hz(); }
+
+uint32_t interrupt_request_get_realtime_clock_interrupt_count(void)
+{
+    return realtime_clock_get_periodic_interrupt_count();
+}
+
+uint8_t interrupt_request_is_realtime_clock_periodic_enabled(void)
+{
+    return realtime_clock_is_periodic_interrupt_enabled();
+}
