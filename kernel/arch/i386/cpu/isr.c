@@ -55,29 +55,29 @@ static void _isr_write_hex32(uint32_t v)
 // CPU exception names (vectors 0-31)
 ////////////////////////////////////////////////////////////
 
-static const char *const g_exception_names[32] = {
-    "#DE Division Error",
-    "#DB Debug",
-    "Non-Maskable Interrupt",
-    "#BP Breakpoint",
-    "#OF Overflow",
-    "#BR Bound Range Exceeded",
-    "#UD Invalid Opcode",
-    "#NM Device Not Available",
-    "#DF Double Fault",
-    "Coprocessor Segment Overrun",
-    "#TS Invalid TSS",
-    "#NP Segment Not Present",
+static const char *const EXCEPTION_NAMES[32] = {
+    "#DE Divide Error Fault",
+    "#DB Debug Exception Trap",
+    "#NMI Non-Maskable Interrupt",
+    "#BP Breakpoint Trap",
+    "#OF Overflow Trap",
+    "#BR BOUND Range Exceeded Fault",
+    "#UD Invalid Opcode (Undefined Opcode) Fault",
+    "#NM Device Not Available (No Math Coprocessor) Fault",
+    "#DF Double Fault Abort",
+    "Coprocessor Segment Overrun (reserved) Fault",
+    "#TS Invalid TSS Fault",
+    "#NP Segment Not Present Fault",
     "#SS Stack-Segment Fault",
     "#GP General Protection Fault",
     "#PF Page Fault",
     "Reserved (15)",
-    "#MF x87 Floating-Point",
-    "#AC Alignment Check",
-    "#MC Machine Check",
-    "#XF SIMD Floating-Point",
-    "#VE Virtualization",
-    "#CP Control Protection",
+    "#MF x87 Floating-Point Error (Math Fault)",
+    "#AC Alignment Check Fault",
+    "#MC Machine Check Abort",
+    "#XF SIMD Floating-Point Exception Fault",
+    "#VE Virtualization Exception Fault",
+    "#CP Control Protection Exception Fault",
     "Reserved (22)",
     "Reserved (23)",
     "Reserved (24)",
@@ -104,7 +104,7 @@ void isr_register_handler(uint8_t vec, isr_handler_t fn) { g_isr_table[vec] = fn
 
 static void isr_default_handler(const InterruptFrame_t *frame)
 {
-    const char *name = (frame->int_no < 32) ? g_exception_names[frame->int_no] : "Unknown interrupt";
+    const char *name = (frame->int_no < 32) ? EXCEPTION_NAMES[frame->int_no] : "Unknown interrupt";
 
     _isr_write_str("\r\n\r\n[KERNEL PANIC] Unhandled exception: ");
     _isr_write_str(name);

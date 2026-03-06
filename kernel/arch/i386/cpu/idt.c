@@ -58,7 +58,7 @@ static inline void interrupt_descriptor_table_encode_long_entry(InterruptDescrip
 
 typedef void (*isr_fn_t)(void);
 
-static const isr_fn_t g_isr_stubs[32] = {
+static const isr_fn_t ISR_STUBS[32] = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,  isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15,
     isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23, isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31,
 };
@@ -86,7 +86,7 @@ void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *idt)
     for (size_t i = 0; i < 32; ++i)
     {
         interrupt_descriptor_table_encode_flat_entry(
-            &idt->entries[i], (void *) g_isr_stubs[i],
+            &idt->entries[i], (void *) ISR_STUBS[i],
             0x08u,                      // kernel code segment selector
             IDT_KERNEL_INTERRUPT_GATE); // P=1, DPL=0, Type=0xE (32-bit interrupt gate)
     }
