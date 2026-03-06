@@ -150,7 +150,6 @@
 ////////////////////////////////////////////////////////////
 // Identify the Operating System
 ////////////////////////////////////////////////////////////
-#define KERNEL_MODE_STRING
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(KERNEL_COMPILER_MINGW) || defined(KERNEL_COMPILER_CYGWIN)
 
@@ -197,6 +196,10 @@
 
 #else
     #error [Config@Distribution]: This operating system is not supported by LplKernel.
+#endif
+
+#ifndef KERNEL_MODE_STRING
+#define KERNEL_MODE_STRING
 #endif
 
 #ifdef __cplusplus

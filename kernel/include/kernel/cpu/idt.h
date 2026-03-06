@@ -71,10 +71,11 @@ typedef InterruptDescriptorTableFlat_t InterruptDescriptorTable_t;
 ////////////////////////////////////////////////////////////
 
 /**
- * @brief Initialize a flat 32-bit IDT with all 32 CPU exception handlers.
+ * @brief Initialize a flat 32-bit IDT with exception and PIC IRQ handlers.
  *
- * Installs ISR stubs 0–31 as kernel interrupt gates (DPL=0, selector=0x08,
- * flags=IDT_KERNEL_INTERRUPT_GATE). Remaining entries are left zeroed.
+ * Installs ISR stubs 0-31 and 32-47 as kernel interrupt gates
+ * (DPL=0, selector=kernel code, flags=IDT_KERNEL_INTERRUPT_GATE).
+ * Remaining entries are left zeroed.
  *
  * @param idt Pointer to the IDT structure to initialize.
  */

@@ -95,6 +95,14 @@ typedef struct __attribute__((packed)) {
 /// Alias for the most commonly used layout (Flat 32-bit protected mode)
 typedef GlobalDescriptorTableFlat_t GlobalDescriptorTable_t;
 
+/// Canonical selector values for the current flat 32-bit GDT layout.
+#define GDT_NULL_SELECTOR        0x00u
+#define GDT_KERNEL_CODE_SELECTOR 0x08u
+#define GDT_KERNEL_DATA_SELECTOR 0x10u
+#define GDT_USER_CODE_SELECTOR   0x18u
+#define GDT_USER_DATA_SELECTOR   0x20u
+#define GDT_TSS_SELECTOR         0x28u
+
 ////////////////////////////////////////////////////////////
 // Public API functions of the GDT module
 ////////////////////////////////////////////////////////////

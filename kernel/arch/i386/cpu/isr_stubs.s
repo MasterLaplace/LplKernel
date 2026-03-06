@@ -1,5 +1,7 @@
 .section .text
 
+.include "arch/i386/cpu/segment_selectors.inc"
+
 # ---- Macros for ISR entry stubs ------------------------------------------
 #
 # ISR_NOERR n : CPU does NOT push an error code for this vector.
@@ -70,6 +72,25 @@ ISR_NOERR 29    #      Reserved
 ISR_NOERR 30    #      Reserved
 ISR_NOERR 31    #      Reserved
 
+# ---- PIC IRQ stubs (after remap: vectors 32-47) --------------------------
+
+ISR_NOERR 32    # IRQ0  PIT timer
+ISR_NOERR 33    # IRQ1  Keyboard
+ISR_NOERR 34    # IRQ2  Cascade (slave PIC)
+ISR_NOERR 35    # IRQ3  COM2/COM4
+ISR_NOERR 36    # IRQ4  COM1/COM3
+ISR_NOERR 37    # IRQ5  LPT2 / sound card
+ISR_NOERR 38    # IRQ6  Floppy
+ISR_NOERR 39    # IRQ7  LPT1 / spurious
+ISR_NOERR 40    # IRQ8  RTC
+ISR_NOERR 41    # IRQ9  ACPI / legacy
+ISR_NOERR 42    # IRQ10 Available
+ISR_NOERR 43    # IRQ11 Available
+ISR_NOERR 44    # IRQ12 PS/2 mouse
+ISR_NOERR 45    # IRQ13 FPU / coprocessor
+ISR_NOERR 46    # IRQ14 Primary ATA
+ISR_NOERR 47    # IRQ15 Secondary ATA / spurious
+
 # ---- Common ISR stub ------------------------------------------------------
 #
 # Stack layout just before pusha (at entry to this label):
@@ -96,14 +117,14 @@ isr_common_stub:
     movl %ds, %eax
     pushl %eax                  # save data segment register
 
-    movw $0x10, %ax             # load kernel data segment (selector 0x10)
+    movw $KERNEL_DS_SELECTOR, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %fs
     movw %ax, %gs
 
     pushl %esp                  # pass pointer to InterruptFrame_t as argument
-    call  isr_dispatch
+    call  interrupt_service_routine_dispatch
     addl  $4, %esp              # discard argument
 
     popl  %eax                  # restore original data segment

@@ -4,9 +4,11 @@
 #include <kernel/boot/multiboot_info_helper.h>
 #include <kernel/cpu/gdt_helper.h>
 #include <kernel/cpu/idt.h>
+#include <kernel/cpu/irq.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
+#include <kernel/smoke_test.h>
 
 static const char WELCOME_MESSAGE[] = ""
                                       "/==+--  _                                         ---+\n"
@@ -38,7 +40,6 @@ __attribute__((constructor)) void kernel_initialize(void)
         return;
     }
 
-    // print_multiboot_info(KERNEL_VIRTUAL_BASE, multiboot_info);
     write_multiboot_info(&com1, KERNEL_VIRTUAL_BASE, multiboot_info);
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing GDT...\n");
@@ -53,42 +54,31 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: loading IDT into CPU...\n");
     interrupt_descriptor_table_load(&interrupt_descriptor_table);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IDT loaded successfully!\n");
-    // write_interrupt_descriptor_table(&com1, &interrupt_descriptor_table);
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: remapping PIC...\n");
+    interrupt_request_initialize();
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PIC remapped to vectors 32-47\n");
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: interrupts enabled (IRQ0 only)\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing runtime paging...\n");
     paging_initialize_runtime();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: runtime paging initialized successfully!\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing PMM...\n");
-    pmm_init();
+    physical_memory_manager_initialize();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-16MB) ready: ");
-    serial_write_int(&com1, (int32_t) pmm_get_free_count());
+    serial_write_int(&com1, (int32_t) physical_memory_manager_get_free_page_count());
     serial_write_string(&com1, " pages free\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 2 (>16MB mapping)...\n");
-    pmm_extend_mapping();
+    physical_memory_manager_extend_mapping();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM ready \342\200\224 total free: ");
-    serial_write_int(&com1, (int32_t) pmm_get_free_count());
+    serial_write_int(&com1, (int32_t) physical_memory_manager_get_free_page_count());
     serial_write_string(&com1, " pages (~");
-    serial_write_int(&com1, (int32_t) (pmm_get_free_count() * 4 / 1024));
+    serial_write_int(&com1, (int32_t) (physical_memory_manager_get_free_page_count() * 4 / 1024));
     serial_write_string(&com1, " MB free)\n");
 
-    {
-        uint32_t pa1 = page_frame_alloc();
-        uint32_t pa2 = page_frame_alloc();
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: example allocate -> ");
-        serial_write_hex32(&com1, pa1);
-        serial_write_string(&com1, ", ");
-        serial_write_hex32(&com1, pa2);
-        serial_write_string(&com1, "\n");
-        if (pa1)
-            page_frame_free(pa1);
-        if (pa2)
-            page_frame_free(pa2);
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: after free count = ");
-        serial_write_int(&com1, (int32_t) pmm_get_free_count());
-        serial_write_string(&com1, "\n");
-    }
+    if (KERNEL_SMOKE_TEST_ENABLE_PMM_ALLOCATE_FREE)
+        kernel_smoke_test_run_physical_memory_manager_allocate_free(&com1);
 
     if (framebuffer_init())
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: framebuffer initialized successfully!\n");
@@ -98,59 +88,13 @@ __attribute__((constructor)) void kernel_initialize(void)
 
 void kernel_main(void)
 {
-    /* --- Quick IDT smoke test: trigger a #DE (Division Error) ------------ */
-    /* Uncomment to test: the ISR panic handler should print int_no=0        */
-    /* volatile int zero = 0; volatile int trap = 1 / zero; (void) trap;     */
-    /* --------------------------------------------------------------------- */
+    if (KERNEL_SMOKE_TEST_ENABLE_DIVISION_ERROR)
+        kernel_smoke_test_run_division_error();
 
     if (framebuffer_available())
     {
-        /* Graphics mode demo */
-        const framebuffer_info_t *fb = framebuffer_get_info();
-
-        /* Clear screen to dark blue */
-        framebuffer_clear(framebuffer_rgb(0, 0, 64));
-
-        /* Draw some shapes */
-        /* Red rectangle at top-left */
-        framebuffer_fill_rect(50, 50, 200, 100, COLOR_RED);
-
-        /* Green rectangle outline */
-        framebuffer_draw_rect(300, 50, 200, 100, COLOR_GREEN);
-
-        /* Blue filled rectangle */
-        framebuffer_fill_rect(550, 50, 200, 100, COLOR_BLUE);
-
-        /* Draw a gradient bar */
-        for (uint32_t x = 50; x < 750; x++)
-        {
-            uint8_t r = (x - 50) * 255 / 700;
-            uint8_t g = 255 - r;
-            uint8_t b = 128;
-            framebuffer_draw_vline(x, 200, 280, framebuffer_rgb(r, g, b));
-        }
-
-        /* Draw horizontal lines */
-        framebuffer_draw_hline(50, 750, 320, COLOR_WHITE);
-        framebuffer_draw_hline(50, 750, 340, COLOR_YELLOW);
-        framebuffer_draw_hline(50, 750, 360, COLOR_CYAN);
-        framebuffer_draw_hline(50, 750, 380, COLOR_MAGENTA);
-
-        /* Draw a simple pattern */
-        for (uint32_t y = 420; y < 620; y += 2)
-        {
-            for (uint32_t x = 50; x < 250; x += 2)
-                framebuffer_put_pixel(x, y, COLOR_WHITE);
-        }
-
-        /* Draw concentric rectangles */
-        for (uint32_t i = 0; i < 50; i += 5)
-        {
-            color_t col = framebuffer_rgb(i * 5, 255 - i * 5, 128);
-            framebuffer_draw_rect(300 + i, 420 + i, 200 - 2 * i, 200 - 2 * i, col);
-        }
-
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: graphics demo displayed!\n");
+        if (KERNEL_SMOKE_TEST_ENABLE_GRAPHICS_DEMO)
+            kernel_smoke_test_run_graphics_demo(&com1);
     }
     else
     {

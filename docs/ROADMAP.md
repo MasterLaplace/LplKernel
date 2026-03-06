@@ -6,10 +6,10 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ---
 
-## 📊 Progress Summary (Updated: 2025)
+## 📊 Progress Summary (Updated: 2026)
 
-### 🎯 Current Position: **End of Phase 2** ⬅️ YOU ARE HERE
-**Next Goal**: Phase 3 - Implement IDT and exception handlers
+### 🎯 Current Position: **Phase 3 Bring-up** ⬅️ YOU ARE HERE
+**Next Goal**: Stabilize IRQ/exceptions (keyboard IRQ1, #PF/#GP handlers)
 
 ### Phase Completion Status:
 - ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
@@ -24,9 +24,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - Remaining work: implement **Buddy Allocator** for server mode (current Free‑List covers realtime only) and finish integrating the allocator with
   `paging_map_page()` so page tables can be created dynamically; also Ring 3 transition
 
-- 🚧 **Phase 3**: Interrupts & Exceptions - **30% Complete**
-  - IDT structure + LIDT + 32 ISR stubs ✅, default panic handler ✅, #DE tested ✅
-  - Remaining: PIC remapping, specific exception handlers (#PF, #GP, #DF), IRQ handlers
+- 🚧 **Phase 3**: Interrupts & Exceptions - **50% Complete**
+  - IDT + ISR stubs (0-47) ✅, PIC remap (32-47) ✅, IRQ0 handler + EOI ✅, `sti` sequencing ✅
+  - Remaining: dedicated exception handlers (#PF, #GP, #DF), keyboard IRQ1, spurious IRQ policy
 
 - ❌ **Phase 4**: Memory Management - **0% Complete**
   - No heap allocator (kmalloc/kfree), no page frame allocator
@@ -58,22 +58,25 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ TSS entry in GDT configured (base & limit set) and loaded (LTR).
 ✅ Graphics mode support (1024x768x32 linear framebuffer via Multiboot)
 ✅ Framebuffer driver with pixel plotting and shape drawing primitives
+✅ PIC remapped to vectors 32-47
+✅ Interrupts enabled after IDT+PIC setup (`sti` done in kernel init)
+✅ First hardware IRQ path validated (IRQ0 timer + EOI)
 ```
 
 ### What We Need Next:
 ```
-🎯 IDT (Interrupt Descriptor Table) structure and loading
-🎯 Exception handlers (#DE, #GP, #PF, #DF, etc.)
-🎯 PIC initialization and remapping
-🎯 IRQ handlers (timer, keyboard)
-🎯 Basic exception testing (divide-by-zero)
+🎯 Dedicated exception handlers (#GP, #PF, #DF)
+🎯 Keyboard IRQ1 handler and controlled unmasking
+🎯 Spurious IRQ7/IRQ15 handling policy
+🎯 PIT/RTC strategy (timer ownership and tick policy)
+🎯 Extended exception/IRQ test matrix
 ```
 
 ### Known Issues:
 ```
 ⚠️ No page frame allocator (can't create new page tables dynamically)
 ⚠️ No memory allocator (all allocations static)
-⚠️ No interrupt handling at all (CPU exceptions will triple fault)
+⚠️ Interrupt stack is operational but exception handling is still mostly generic panic
 ```
 
 ---
@@ -180,8 +183,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐) ⬅️ **CURRENT PHASE**
 
-> 🚧 **STATUS**: IDT loaded, ISR stubs operational, default panic handler active
-> 🎯 **NEXT STEP**: PIC remapping (IRQ 0-15 → 32-47), then add specific handlers (#PF, #GP, keyboard)
+> 🚧 **STATUS**: IDT+ISR operational, PIC remapped, IRQ0 path active, interrupts enabled
+> 🎯 **NEXT STEP**: dedicated exception handlers (#PF/#GP/#DF), then keyboard IRQ1
 
 ### Interrupt Descriptor Table
 - [x] [Interrupts](https://wiki.osdev.org/Interrupts) - Theory and overview
@@ -189,7 +192,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [x] [Interrupt Descriptor Table](https://wiki.osdev.org/Interrupt_Descriptor_Table) (IDT)
   - [x] Create IDT structure (`InterruptDescriptorTableFlat_t`, 256 × 8-byte entries)
   - [x] Load IDT with LIDT (`idt_load.s`)
-  - [x] [Interrupt Service Routines](https://wiki.osdev.org/Interrupt_Service_Routines) (ISRs) — 32 stubs in `isr_stubs.s`
+  - [x] [Interrupt Service Routines](https://wiki.osdev.org/Interrupt_Service_Routines) (ISRs) — 48 stubs (0-47) in `isr_stubs.s`
   - [x] Dispatch table in `isr.c` — `isr_register_handler()` + default panic handler
   - [x] Tested: `#DE` divide-by-zero triggers panic with full register dump ✅
   - [ ] [IDT problems](https://wiki.osdev.org/IDT_problems) - Common issues
@@ -206,10 +209,10 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [ ] [Triple Fault](https://wiki.osdev.org/Triple_Fault) - Understanding and prevention
 
 ### Hardware Interrupts
-- [ ] [PIC](https://wiki.osdev.org/PIC) - Programmable Interrupt Controller ⭐ REQUIRED FOR IRQs
-  - [ ] Initialize and remap PIC (IRQ 0-15 to 32-47)
-  - [ ] [IRQ](https://wiki.osdev.org/IRQ) - Hardware interrupt requests
-  - [ ] EOI (End of Interrupt) handling
+- [x] [PIC](https://wiki.osdev.org/PIC) - Programmable Interrupt Controller ⭐ REQUIRED FOR IRQs
+  - [x] Initialize and remap PIC (IRQ 0-15 to 32-47)
+  - [x] [IRQ](https://wiki.osdev.org/IRQ) - First hardware request path (IRQ0)
+  - [x] EOI (End of Interrupt) handling (master/slave path implemented)
 - [ ] [NMI](https://wiki.osdev.org/NMI) - Non-Maskable Interrupt
 - [ ] [APIC](https://wiki.osdev.org/APIC) - Advanced PIC (modern systems)
   - [ ] Local APIC configuration

@@ -115,6 +115,8 @@ typedef struct __attribute__((packed)) {
     // Valid if bit 10 set
     APMTable_t *apm_table;
 
+//********************************************************//
+
     // Valid if bit 11 set
     uint32_t vbe_control_info;
     uint32_t vbe_mode_info;

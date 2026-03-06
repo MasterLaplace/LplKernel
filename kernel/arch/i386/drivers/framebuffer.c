@@ -9,6 +9,7 @@
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/drivers/framebuffer.h>
+#include <kernel/lib/asmutils.h>
 #include <string.h>
 
 /* Global framebuffer state */
@@ -87,9 +88,7 @@ static uint32_t *map_framebuffer(uint32_t phys_addr, uint32_t size)
     pde->page_table_base = pt_phys >> 12;
 
     /* Flush TLB to make the new mappings effective */
-    __asm__ volatile("movl %%cr3, %%eax\n\t"
-                     "movl %%eax, %%cr3" ::
-                         : "eax", "memory");
+    cpu_reload_page_directory();
 
     return (uint32_t *) virt_addr;
 }

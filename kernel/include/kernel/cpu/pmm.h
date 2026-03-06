@@ -11,7 +11,7 @@
 **       Buddy Allocator — efficient contiguous allocation (not yet implemented).
 **
 ** Coverage at boot: physical pages from 1 MB to 16 MB (boot mapping limit).
-** Pages beyond 16 MB are registered by pmm_extend_mapping() once the paging
+** Pages beyond 16 MB are registered by physical_memory_manager_extend_mapping() once the paging
 ** subsystem can create new Page Tables.
 */
 
@@ -30,7 +30,7 @@
  *
  * @note Must be called AFTER paging_initialize_runtime().
  */
-extern void pmm_init(void);
+extern void physical_memory_manager_initialize(void);
 
 /**
  * @brief Allocate one physical 4 KB page.
@@ -38,21 +38,21 @@ extern void pmm_init(void);
  * @return Physical address of the allocated page (4 KB aligned),
  *         or 0 if no free pages remain.
  */
-extern uint32_t page_frame_alloc(void);
+extern uint32_t physical_memory_manager_page_frame_allocate(void);
 
 /**
  * @brief Free (return) a physical 4 KB page to the pool.
  *
  * @param phys_addr Physical address to free (must be 4 KB aligned).
  */
-extern void page_frame_free(uint32_t phys_addr);
+extern void physical_memory_manager_page_frame_free(uint32_t phys_addr);
 
 /**
  * @brief Return the current number of free pages.
  *
  * @return Number of pages currently in the free pool.
  */
-extern uint32_t pmm_get_free_count(void);
+extern uint32_t physical_memory_manager_get_free_page_count(void);
 
 /**
  * @brief Extend the free pool beyond the 16 MB boot mapping limit.
@@ -61,11 +61,12 @@ extern uint32_t pmm_get_free_count(void);
  *          PMM pool — to create virtual mappings for every available
  *          physical page above 16 MB, then registers them in the pool.
  *
- * @note Must be called AFTER pmm_init().  Resolves the chicken-and-egg
- *       dependency between paging_map_page() (needs page_frame_alloc)
+ * @note Must be called AFTER physical_memory_manager_initialize().  Resolves
+ *       the chicken-and-egg dependency between paging_map_page()
+ *       (needs physical_memory_manager_page_frame_allocate)
  *       and the PMM (needs virtual mappings to access physical pages).
  *       After this call the PMM covers all usable RAM up to ~1 GB.
  */
-extern void pmm_extend_mapping(void);
+extern void physical_memory_manager_extend_mapping(void);
 
 #endif /* !PMM_H_ */

@@ -1,4 +1,5 @@
 #include <kernel/cpu/tss.h>
+#include <kernel/lib/asmutils.h>
 
 ////////////////////////////////////////////////////////////
 // Private functions of the TSS module
@@ -7,9 +8,7 @@
 // Helper to read current ESP in a single place (used for TSS initialization)
 static inline uint32_t get_current_esp(void)
 {
-    uint32_t esp;
-    asm volatile("movl %%esp, %0" : "=r"(esp));
-    return esp;
+    return cpu_get_current_stack_pointer();
 }
 
 ////////////////////////////////////////////////////////////

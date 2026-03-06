@@ -61,7 +61,7 @@ static inline PageTable_t *paging_get_page_table(const PageDirectoryEntry_t *pde
 /**
  * @brief Allocate and install a new Page Table for a missing PDE.
  *
- * @details Obtains a physical page via page_frame_alloc(), zeroes it to
+ * @details Obtains a physical page via physical_memory_manager_page_frame_allocate(), zeroes it to
  *          prevent the CPU from interpreting stale data as PTEs, then
  *          installs it into the given PDE with the specified flags.
  *
@@ -71,7 +71,7 @@ static inline PageTable_t *paging_get_page_table(const PageDirectoryEntry_t *pde
  */
 static bool paging_create_page_table(PageDirectoryEntry_t *pde, PageDirectoryEntry_t pde_flags)
 {
-    uint32_t new_pt_phys = page_frame_alloc();
+    uint32_t new_pt_phys = physical_memory_manager_page_frame_allocate();
     if (new_pt_phys == 0)
         return false;
 

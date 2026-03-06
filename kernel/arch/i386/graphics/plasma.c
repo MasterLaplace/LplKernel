@@ -13,6 +13,7 @@
 
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/graphics/plasma.h>
+#include <kernel/lib/asmutils.h>
 #include <math.h>
 
 /**
@@ -131,7 +132,7 @@ static void delay_loop(uint32_t iterations)
 {
     volatile uint32_t i;
     for (i = 0; i < iterations; i++)
-        __asm__ volatile("nop");
+    cpu_no_operation();
 }
 
 /**

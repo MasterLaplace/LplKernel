@@ -6,56 +6,44 @@
 */
 
 #include <kernel/cpu/isr.h>
+#include <kernel/lib/asmutils.h>
 #include <stddef.h>
 #include <stdint.h>
 
 ////////////////////////////////////////////////////////////
-// Self-contained panic output via direct COM1 port I/O
-//
-// We deliberately avoid any dependency on the Serial driver module so that
-// this code can print a panic message even before (or after) the higher-level
-// driver is torn down.
+// Private helpers for panic serial output
 ////////////////////////////////////////////////////////////
 
 #define COM1_PORT     0x3F8u
-#define COM1_LSR_THRE 0x20u // Transmitter Holding Register Empty
+#define COM1_LSR_THRE 0x20u
 
-static inline void _isr_outb(uint16_t port, uint8_t val) { __asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port)); }
-
-static inline uint8_t _isr_inb(uint16_t port)
+static void isr_write_char(char c)
 {
-    uint8_t ret;
-    __asm__ volatile("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-static void _isr_write_char(char c)
-{
-    while (!(_isr_inb(COM1_PORT + 5u) & COM1_LSR_THRE))
+    while (!(inb((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
     {
     }
-    _isr_outb(COM1_PORT, (uint8_t) c);
+    outb((short) COM1_PORT, (unsigned char) c);
 }
 
-static void _isr_write_str(const char *s)
+static void isr_write_string(const char *s)
 {
     while (*s)
-        _isr_write_char(*s++);
+        isr_write_char(*s++);
 }
 
-static void _isr_write_hex32(uint32_t v)
+static void isr_write_hex32(uint32_t value)
 {
     static const char hex[] = "0123456789ABCDEF";
-    _isr_write_str("0x");
+    isr_write_string("0x");
     for (int i = 28; i >= 0; i -= 4)
-        _isr_write_char(hex[(v >> i) & 0xF]);
+        isr_write_char(hex[(value >> i) & 0xF]);
 }
 
 ////////////////////////////////////////////////////////////
 // CPU exception names (vectors 0-31)
 ////////////////////////////////////////////////////////////
 
-static const char *const EXCEPTION_NAMES[32] = {
+static const char *const isr_exception_names[32] = {
     "#DE Divide Error Fault",
     "#DB Debug Exception Trap",
     "#NMI Non-Maskable Interrupt",
@@ -96,7 +84,10 @@ static const char *const EXCEPTION_NAMES[32] = {
 
 static isr_handler_t g_isr_table[256] = {NULL};
 
-void isr_register_handler(uint8_t vec, isr_handler_t fn) { g_isr_table[vec] = fn; }
+void interrupt_service_routine_register_handler(uint8_t interrupt_vector, isr_handler_t handler)
+{
+    g_isr_table[interrupt_vector] = handler;
+}
 
 ////////////////////////////////////////////////////////////
 // Default (panic) handler
@@ -104,65 +95,65 @@ void isr_register_handler(uint8_t vec, isr_handler_t fn) { g_isr_table[vec] = fn
 
 static void isr_default_handler(const InterruptFrame_t *frame)
 {
-    const char *name = (frame->int_no < 32) ? EXCEPTION_NAMES[frame->int_no] : "Unknown interrupt";
+    const char *name = (frame->int_no < 32) ? isr_exception_names[frame->int_no] : "Unknown interrupt";
 
-    _isr_write_str("\r\n\r\n[KERNEL PANIC] Unhandled exception: ");
-    _isr_write_str(name);
-    _isr_write_str("\r\n");
-    _isr_write_str("  int_no  = ");
-    _isr_write_hex32(frame->int_no);
-    _isr_write_str("\r\n");
-    _isr_write_str("  err_code= ");
-    _isr_write_hex32(frame->err_code);
-    _isr_write_str("\r\n");
-    _isr_write_str("  eip     = ");
-    _isr_write_hex32(frame->eip);
-    _isr_write_str("\r\n");
-    _isr_write_str("  cs      = ");
-    _isr_write_hex32(frame->cs);
-    _isr_write_str("\r\n");
-    _isr_write_str("  eflags  = ");
-    _isr_write_hex32(frame->eflags);
-    _isr_write_str("\r\n");
-    _isr_write_str("  eax     = ");
-    _isr_write_hex32(frame->eax);
-    _isr_write_str("\r\n");
-    _isr_write_str("  ecx     = ");
-    _isr_write_hex32(frame->ecx);
-    _isr_write_str("\r\n");
-    _isr_write_str("  edx     = ");
-    _isr_write_hex32(frame->edx);
-    _isr_write_str("\r\n");
-    _isr_write_str("  ebx     = ");
-    _isr_write_hex32(frame->ebx);
-    _isr_write_str("\r\n");
-    _isr_write_str("  esp     = ");
-    _isr_write_hex32(frame->esp);
-    _isr_write_str("\r\n");
-    _isr_write_str("  ebp     = ");
-    _isr_write_hex32(frame->ebp);
-    _isr_write_str("\r\n");
-    _isr_write_str("  esi     = ");
-    _isr_write_hex32(frame->esi);
-    _isr_write_str("\r\n");
-    _isr_write_str("  edi     = ");
-    _isr_write_hex32(frame->edi);
-    _isr_write_str("\r\n");
-    _isr_write_str("  ds      = ");
-    _isr_write_hex32(frame->ds);
-    _isr_write_str("\r\n");
-    _isr_write_str("--- HALTED ---\r\n");
+    isr_write_string("\r\n\r\n[KERNEL PANIC] Unhandled exception: ");
+    isr_write_string(name);
+    isr_write_string("\r\n");
+    isr_write_string("  int_no  = ");
+    isr_write_hex32(frame->int_no);
+    isr_write_string("\r\n");
+    isr_write_string("  err_code= ");
+    isr_write_hex32(frame->err_code);
+    isr_write_string("\r\n");
+    isr_write_string("  eip     = ");
+    isr_write_hex32(frame->eip);
+    isr_write_string("\r\n");
+    isr_write_string("  cs      = ");
+    isr_write_hex32(frame->cs);
+    isr_write_string("\r\n");
+    isr_write_string("  eflags  = ");
+    isr_write_hex32(frame->eflags);
+    isr_write_string("\r\n");
+    isr_write_string("  eax     = ");
+    isr_write_hex32(frame->eax);
+    isr_write_string("\r\n");
+    isr_write_string("  ecx     = ");
+    isr_write_hex32(frame->ecx);
+    isr_write_string("\r\n");
+    isr_write_string("  edx     = ");
+    isr_write_hex32(frame->edx);
+    isr_write_string("\r\n");
+    isr_write_string("  ebx     = ");
+    isr_write_hex32(frame->ebx);
+    isr_write_string("\r\n");
+    isr_write_string("  esp     = ");
+    isr_write_hex32(frame->esp);
+    isr_write_string("\r\n");
+    isr_write_string("  ebp     = ");
+    isr_write_hex32(frame->ebp);
+    isr_write_string("\r\n");
+    isr_write_string("  esi     = ");
+    isr_write_hex32(frame->esi);
+    isr_write_string("\r\n");
+    isr_write_string("  edi     = ");
+    isr_write_hex32(frame->edi);
+    isr_write_string("\r\n");
+    isr_write_string("  ds      = ");
+    isr_write_hex32(frame->ds);
+    isr_write_string("\r\n");
+    isr_write_string("--- HALTED ---\r\n");
 
-    __asm__ volatile("cli");
+    cpu_disable_interrupts();
     for (;;)
-        __asm__ volatile("hlt");
+        cpu_halt();
 }
 
 ////////////////////////////////////////////////////////////
 // Dispatcher — called from isr_common_stub (isr.s)
 ////////////////////////////////////////////////////////////
 
-void isr_dispatch(InterruptFrame_t *frame)
+void interrupt_service_routine_dispatch(InterruptFrame_t *frame)
 {
     isr_handler_t handler = g_isr_table[frame->int_no];
     if (handler)

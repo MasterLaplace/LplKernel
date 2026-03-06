@@ -1,6 +1,12 @@
 #include <kernel/cpu/idt.h>
+#include <kernel/cpu/gdt.h>
 #include <kernel/cpu/isr.h>
+#include <kernel/cpu/pic.h>
 #include <stddef.h>
+
+#define IDT_EXCEPTION_VECTOR_COUNT 32u
+#define IDT_IRQ_VECTOR_COUNT       16u
+#define IDT_TOTAL_VECTOR_COUNT     256u
 
 ////////////////////////////////////////////////////////////
 // External assembly functions (idt_load.s)
@@ -37,6 +43,7 @@ static inline void interrupt_descriptor_table_encode_flat_entry(InterruptDescrip
     entry->isr_high = (uint32_t) isr >> 16u;
 }
 
+__attribute__((unused))
 static inline void interrupt_descriptor_table_encode_long_entry(InterruptDescriptorTableLongModeEntry_t *entry,
                                                                 void *isr, uint16_t k_code_selector, uint8_t flags)
 {
@@ -58,10 +65,31 @@ static inline void interrupt_descriptor_table_encode_long_entry(InterruptDescrip
 
 typedef void (*isr_fn_t)(void);
 
-static const isr_fn_t ISR_STUBS[32] = {
+static const isr_fn_t idt_exception_stubs[IDT_EXCEPTION_VECTOR_COUNT] = {
     isr0,  isr1,  isr2,  isr3,  isr4,  isr5,  isr6,  isr7,  isr8,  isr9,  isr10, isr11, isr12, isr13, isr14, isr15,
     isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23, isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31,
 };
+
+static const isr_fn_t idt_irq_stubs[IDT_IRQ_VECTOR_COUNT] = {
+    isr32, isr33, isr34, isr35, isr36, isr37, isr38, isr39,
+    isr40, isr41, isr42, isr43, isr44, isr45, isr46, isr47,
+};
+
+static void interrupt_descriptor_table_clear(InterruptDescriptorTable_t *idt)
+{
+    for (size_t i = 0; i < IDT_TOTAL_VECTOR_COUNT; ++i)
+        interrupt_descriptor_table_encode_flat_entry(&idt->entries[i], NULL, 0u, 0u);
+}
+
+static void interrupt_descriptor_table_install_vector_range(InterruptDescriptorTable_t *idt, size_t base,
+                                                            const isr_fn_t *stubs, size_t count)
+{
+    for (size_t i = 0; i < count; ++i)
+    {
+        interrupt_descriptor_table_encode_flat_entry(
+            &idt->entries[base + i], (void *) stubs[i], GDT_KERNEL_CODE_SELECTOR, IDT_KERNEL_INTERRUPT_GATE);
+    }
+}
 
 ////////////////////////////////////////////////////////////
 // Public API functions of the IDT module
@@ -70,7 +98,7 @@ static const isr_fn_t ISR_STUBS[32] = {
 /**
  * @brief Initialize a flat 32-bit IDT with all 32 CPU exception handlers.
  *
- * @details Zeroes all 256 entries, then installs ISR stubs 0-31 as kernel
+ * @details Zeroes all 256 entries, then installs ISR stubs 0-47 as kernel
  *          interrupt gates (DPL=0, selector=0x08, flags=IDT_KERNEL_INTERRUPT_GATE).
  *
  * @param idt Pointer to the IDT structure to populate.
@@ -80,16 +108,10 @@ void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *idt)
     if (!idt)
         return;
 
-    for (size_t i = 0; i < 256; ++i)
-        interrupt_descriptor_table_encode_flat_entry(&idt->entries[i], NULL, 0u, 0u);
-
-    for (size_t i = 0; i < 32; ++i)
-    {
-        interrupt_descriptor_table_encode_flat_entry(
-            &idt->entries[i], (void *) ISR_STUBS[i],
-            0x08u,                      // kernel code segment selector
-            IDT_KERNEL_INTERRUPT_GATE); // P=1, DPL=0, Type=0xE (32-bit interrupt gate)
-    }
+    interrupt_descriptor_table_clear(idt);
+    interrupt_descriptor_table_install_vector_range(idt, 0u, idt_exception_stubs, IDT_EXCEPTION_VECTOR_COUNT);
+    interrupt_descriptor_table_install_vector_range(
+        idt, PIC_VECTOR_OFFSET_MASTER, idt_irq_stubs, IDT_IRQ_VECTOR_COUNT);
 }
 
 /**
@@ -110,6 +132,4 @@ void interrupt_descriptor_table_load(InterruptDescriptorTable_t *idt)
     idtr.offset = (uint32_t) idt;
 
     idt_load(&idtr);
-    // NOTE: interrupts are NOT enabled here (no sti).
-    // Enable interrupts explicitly after PIC initialization.
 }

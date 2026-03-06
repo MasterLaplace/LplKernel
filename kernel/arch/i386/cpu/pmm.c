@@ -4,7 +4,10 @@
  * @file pmm.c
  * @brief Physical Memory Manager — algorithm-agnostic implementation.
  *
- * @details The public API (pmm_init, page_frame_alloc, page_frame_free, …)
+ * @details The public API
+ *          (physical_memory_manager_initialize,
+ *           physical_memory_manager_page_frame_allocate,
+ *           physical_memory_manager_page_frame_free, ...)
  *          is identical for both kernel modes.  The compile-time flag
  *          LPL_KERNEL_REAL_TIME_MODE selects the backing data structure:
  *            - Realtime / client:  intrusive Free-List LIFO stack, O(1).
@@ -199,10 +202,10 @@ static bool pmm_next_mmap_entry(const uint8_t *mmap_base, uint32_t mmap_length, 
 }
 
 ////////////////////////////////////////////////////////////
-// Public API functions of the PPM module
+// Public API functions of the PMM module
 ////////////////////////////////////////////////////////////
 
-void page_frame_free(uint32_t phys_addr)
+void physical_memory_manager_page_frame_free(uint32_t phys_addr)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     freelist_push(phys_addr);
@@ -211,7 +214,7 @@ void page_frame_free(uint32_t phys_addr)
 #endif
 }
 
-uint32_t page_frame_alloc(void)
+uint32_t physical_memory_manager_page_frame_allocate(void)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     return freelist_pop();
@@ -220,9 +223,9 @@ uint32_t page_frame_alloc(void)
 #endif
 }
 
-uint32_t pmm_get_free_count(void) { return free_page_count; }
+uint32_t physical_memory_manager_get_free_page_count(void) { return free_page_count; }
 
-void pmm_init(void)
+void physical_memory_manager_initialize(void)
 {
     uint8_t *mmap_base = NULL;
     uint32_t mmap_length = 0;
@@ -254,7 +257,7 @@ void pmm_init(void)
                         continue;
                     if (addr >= PMM_MAX_PHYS_ADDR)
                         continue;
-                    page_frame_free(addr);
+                    physical_memory_manager_page_frame_free(addr);
                 }
             }
         }
@@ -262,7 +265,7 @@ void pmm_init(void)
     }
 }
 
-void pmm_extend_mapping(void)
+void physical_memory_manager_extend_mapping(void)
 {
     uint8_t *mmap_base = NULL;
     uint32_t mmap_length = 0;
@@ -299,7 +302,7 @@ void pmm_extend_mapping(void)
                     uint32_t virt_addr = pmm_phys_to_virt(addr);
                     if (!paging_map_page(virt_addr, addr, pde_flags, pte_flags))
                         continue;
-                    page_frame_free(addr);
+                    physical_memory_manager_page_frame_free(addr);
                 }
             }
         }

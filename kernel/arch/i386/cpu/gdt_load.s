@@ -2,6 +2,8 @@
 .global gdt_load
 .global gdt_flush
 
+.include "arch/i386/cpu/segment_selectors.inc"
+
 /**
  * @brief Load the GDT using LGDT instruction
  *
@@ -25,12 +27,12 @@ gdt_load:
  */
 .type gdt_flush, @function
 gdt_flush:
-    # Reload CS with kernel code selector (0x08) via far jump
-    ljmp $0x08, $.flush_cs
+    # Reload CS with kernel code selector via far jump
+    ljmp $KERNEL_CS_SELECTOR, $.flush_cs
 
 .flush_cs:
-    # Reload all data segment registers with kernel data selector (0x10)
-    movw $0x10, %ax
+    # Reload all data segment registers with kernel data selector
+    movw $KERNEL_DS_SELECTOR, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %fs
