@@ -12,6 +12,9 @@
 
 #define KERNEL_SMOKE_TEST_ENABLE_PMM_ALLOCATE_FREE  1u
 #define KERNEL_SMOKE_TEST_ENABLE_DIVISION_ERROR     0u
+#define KERNEL_SMOKE_TEST_ENABLE_DEBUG_EXCEPTION    0u
+#define KERNEL_SMOKE_TEST_ENABLE_BREAKPOINT         0u
+#define KERNEL_SMOKE_TEST_ENABLE_INVALID_OPCODE     0u
 #define KERNEL_SMOKE_TEST_ENABLE_GRAPHICS_DEMO      1u
 #define KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS 1u
 #define KERNEL_SMOKE_TEST_ENABLE_RTC_SNAPSHOT       1u
@@ -19,6 +22,12 @@
 extern void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port);
 
 extern void kernel_smoke_test_run_division_error(void);
+
+extern void kernel_smoke_test_run_debug_exception(void);
+
+extern void kernel_smoke_test_run_breakpoint_exception(void);
+
+extern void kernel_smoke_test_run_invalid_opcode_exception(void);
 
 extern void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port);
 

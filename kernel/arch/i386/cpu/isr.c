@@ -43,7 +43,7 @@ static void isr_write_hex32(uint32_t value)
 // CPU exception names (vectors 0-31)
 ////////////////////////////////////////////////////////////
 
-static const char *const isr_exception_names[32] = {
+static const char *const ISR_EXCEPTION_NAMES[32] = {
     "#DE Divide Error Fault",
     "#DB Debug Exception Trap",
     "#NMI Non-Maskable Interrupt",
@@ -95,7 +95,7 @@ void interrupt_service_routine_register_handler(uint8_t interrupt_vector, isr_ha
 
 static void isr_default_handler(const InterruptFrame_t *frame)
 {
-    const char *name = (frame->int_no < 32) ? isr_exception_names[frame->int_no] : "Unknown interrupt";
+    const char *name = (frame->int_no < 32) ? ISR_EXCEPTION_NAMES[frame->int_no] : "Unknown interrupt";
 
     isr_write_string("\r\n\r\n[KERNEL PANIC] Unhandled exception: ");
     isr_write_string(name);

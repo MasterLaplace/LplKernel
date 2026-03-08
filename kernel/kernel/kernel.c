@@ -104,6 +104,12 @@ void kernel_main(void)
 {
     if (KERNEL_SMOKE_TEST_ENABLE_DIVISION_ERROR)
         kernel_smoke_test_run_division_error();
+    if (KERNEL_SMOKE_TEST_ENABLE_DEBUG_EXCEPTION)
+        kernel_smoke_test_run_debug_exception();
+    if (KERNEL_SMOKE_TEST_ENABLE_BREAKPOINT)
+        kernel_smoke_test_run_breakpoint_exception();
+    if (KERNEL_SMOKE_TEST_ENABLE_INVALID_OPCODE)
+        kernel_smoke_test_run_invalid_opcode_exception();
 
     if (framebuffer_available())
     {

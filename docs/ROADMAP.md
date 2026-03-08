@@ -27,7 +27,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - 🚧 **Phase 3**: Interrupts & Exceptions - **82% Complete**
   - IDT + ISR stubs (0-47) ✅, PIC remap (32-47) ✅, IRQ0 handler + EOI ✅, `sti` sequencing ✅
   - Dedicated exception handlers (#PF/#GP/#DF) ✅, keyboard IRQ1 minimal ✅, spurious IRQ7/IRQ15 policy ✅
-  - Remaining: APIC/SMP timer backend, expanded exception coverage (#DB/#BP/#UD), test matrix hardening
+  - Remaining: APIC/SMP timer backend, exception/IRQ test matrix hardening
 
 - ❌ **Phase 4**: Memory Management - **0% Complete**
   - No heap allocator (kmalloc/kfree), no page frame allocator
@@ -77,7 +77,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ```
 ⚠️ No page frame allocator (can't create new page tables dynamically)
 ⚠️ No memory allocator (all allocations static)
-⚠️ Exception stack now has dedicated #PF/#GP/#DF handlers, but coverage for #DB/#BP/#UD is still pending
+⚠️ Exception stack has dedicated #DB/#BP/#UD/#PF/#GP/#DF handlers, but matrix hardening is still pending
 ```
 
 ---
@@ -201,9 +201,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ### CPU Exceptions
 - [ ] [Exceptions](https://wiki.osdev.org/Exceptions) ⭐ IMPLEMENT FIRST
   - [x] Division Error (#DE) - Tested ✅
-  - [ ] Debug Exception (#DB)
-  - [ ] Breakpoint (#BP)
-  - [ ] Invalid Opcode (#UD)
+  - [x] Debug Exception (#DB)
+  - [x] Breakpoint (#BP)
+  - [x] Invalid Opcode (#UD)
   - [x] General Protection Fault (#GP)
   - [x] [Page Fault](https://wiki.osdev.org/Page_Fault) (#PF) - Critical for paging
   - [x] Double Fault (#DF) - Safety net

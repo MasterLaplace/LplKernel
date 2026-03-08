@@ -36,6 +36,27 @@ void kernel_smoke_test_run_division_error(void)
     (void) trap;
 }
 
+void kernel_smoke_test_run_debug_exception(void)
+{
+    __asm__ volatile("pushf\n\t"
+                     "orl $0x100, (%%esp)\n\t"
+                     "popf\n\t"
+                     "nop\n\t"
+                     :
+                     :
+                     : "cc", "memory");
+}
+
+void kernel_smoke_test_run_breakpoint_exception(void)
+{
+    __asm__ volatile("int3");
+}
+
+void kernel_smoke_test_run_invalid_opcode_exception(void)
+{
+    __asm__ volatile("ud2");
+}
+
 void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
 {
     framebuffer_clear(framebuffer_rgb(0, 0, 64));

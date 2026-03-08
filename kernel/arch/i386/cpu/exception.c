@@ -6,6 +6,9 @@
 #include <stdint.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
+#define EXCEPTION_VECTOR_DEBUG_EXCEPTION           1u
+#define EXCEPTION_VECTOR_BREAKPOINT                3u
+#define EXCEPTION_VECTOR_INVALID_OPCODE            6u
 #define EXCEPTION_VECTOR_GENERAL_PROTECTION_FAULT 13u
 #define EXCEPTION_VECTOR_PAGE_FAULT               14u
 
@@ -48,6 +51,42 @@ static void exception_handle_double_fault(const InterruptFrame_t *frame)
     exception_write_string("\r\n\r\n[KERNEL PANIC] #DF Double Fault\r\n");
     exception_write_string("  err_code= ");
     exception_write_hex32(frame->err_code);
+    exception_write_string("\r\n");
+    exception_halt_forever();
+}
+
+static void exception_handle_debug_exception(const InterruptFrame_t *frame)
+{
+    exception_write_string("\r\n\r\n[KERNEL PANIC] #DB Debug Exception\r\n");
+    exception_write_string("  err_code= ");
+    exception_write_hex32(frame->err_code);
+    exception_write_string("\r\n");
+    exception_write_string("  eip     = ");
+    exception_write_hex32(frame->eip);
+    exception_write_string("\r\n");
+    exception_halt_forever();
+}
+
+static void exception_handle_breakpoint(const InterruptFrame_t *frame)
+{
+    exception_write_string("\r\n\r\n[KERNEL PANIC] #BP Breakpoint\r\n");
+    exception_write_string("  err_code= ");
+    exception_write_hex32(frame->err_code);
+    exception_write_string("\r\n");
+    exception_write_string("  eip     = ");
+    exception_write_hex32(frame->eip);
+    exception_write_string("\r\n");
+    exception_halt_forever();
+}
+
+static void exception_handle_invalid_opcode(const InterruptFrame_t *frame)
+{
+    exception_write_string("\r\n\r\n[KERNEL PANIC] #UD Invalid Opcode\r\n");
+    exception_write_string("  err_code= ");
+    exception_write_hex32(frame->err_code);
+    exception_write_string("\r\n");
+    exception_write_string("  eip     = ");
+    exception_write_hex32(frame->eip);
     exception_write_string("\r\n");
     exception_halt_forever();
 }
@@ -119,6 +158,9 @@ static void exception_handle_page_fault(const InterruptFrame_t *frame)
 
 void interrupt_exception_initialize(void)
 {
+    interrupt_service_routine_register_handler(EXCEPTION_VECTOR_DEBUG_EXCEPTION, exception_handle_debug_exception);
+    interrupt_service_routine_register_handler(EXCEPTION_VECTOR_BREAKPOINT, exception_handle_breakpoint);
+    interrupt_service_routine_register_handler(EXCEPTION_VECTOR_INVALID_OPCODE, exception_handle_invalid_opcode);
     interrupt_service_routine_register_handler(EXCEPTION_VECTOR_DOUBLE_FAULT, exception_handle_double_fault);
     interrupt_service_routine_register_handler(EXCEPTION_VECTOR_GENERAL_PROTECTION_FAULT,
                                                exception_handle_general_protection_fault);
