@@ -6,9 +6,9 @@
 #include <stdint.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
-#define EXCEPTION_VECTOR_DEBUG_EXCEPTION           1u
-#define EXCEPTION_VECTOR_BREAKPOINT                3u
-#define EXCEPTION_VECTOR_INVALID_OPCODE            6u
+#define EXCEPTION_VECTOR_DEBUG_EXCEPTION          1u
+#define EXCEPTION_VECTOR_BREAKPOINT               3u
+#define EXCEPTION_VECTOR_INVALID_OPCODE           6u
 #define EXCEPTION_VECTOR_GENERAL_PROTECTION_FAULT 13u
 #define EXCEPTION_VECTOR_PAGE_FAULT               14u
 

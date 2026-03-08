@@ -26,15 +26,9 @@ void clock_initialize(void)
     interrupt_request_initialize();
 }
 
-ClockProfile_t clock_get_profile(void)
-{
-    return clock_profile;
-}
+ClockProfile_t clock_get_profile(void) { return clock_profile; }
 
-const char *clock_get_backend_name(void)
-{
-    return clock_backend_name;
-}
+const char *clock_get_backend_name(void) { return clock_backend_name; }
 
 const char *clock_get_profile_name(void)
 {
@@ -43,37 +37,16 @@ const char *clock_get_profile_name(void)
     return "server-throughput";
 }
 
-uint32_t clock_get_tick_hz(void)
-{
-    return interrupt_request_get_timer_frequency_hz();
-}
+uint32_t clock_get_tick_hz(void) { return interrupt_request_get_timer_frequency_hz(); }
 
-uint32_t clock_get_tick_count(void)
-{
-    return interrupt_request_get_tick_count();
-}
+uint32_t clock_get_tick_count(void) { return interrupt_request_get_tick_count(); }
 
-uint32_t clock_get_spurious_irq7_count(void)
-{
-    return interrupt_request_get_spurious_irq7_count();
-}
+uint32_t clock_get_spurious_irq7_count(void) { return interrupt_request_get_spurious_irq7_count(); }
 
-uint32_t clock_get_spurious_irq15_count(void)
-{
-    return interrupt_request_get_spurious_irq15_count();
-}
+uint32_t clock_get_spurious_irq15_count(void) { return interrupt_request_get_spurious_irq15_count(); }
 
-uint32_t clock_get_rtc_periodic_interrupt_count(void)
-{
-    return interrupt_request_get_realtime_clock_interrupt_count();
-}
+uint32_t clock_get_rtc_periodic_interrupt_count(void) { return interrupt_request_get_realtime_clock_interrupt_count(); }
 
-uint8_t clock_is_rtc_periodic_enabled(void)
-{
-    return interrupt_request_is_realtime_clock_periodic_enabled();
-}
+uint8_t clock_is_rtc_periodic_enabled(void) { return interrupt_request_is_realtime_clock_periodic_enabled(); }
 
-void clock_read_walltime(RealtimeClockTime_t *time_snapshot)
-{
-    realtime_clock_read_time(time_snapshot);
-}
+void clock_read_walltime(RealtimeClockTime_t *time_snapshot) { realtime_clock_read_time(time_snapshot); }

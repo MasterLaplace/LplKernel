@@ -47,15 +47,9 @@ void kernel_smoke_test_run_debug_exception(void)
                      : "cc", "memory");
 }
 
-void kernel_smoke_test_run_breakpoint_exception(void)
-{
-    __asm__ volatile("int3");
-}
+void kernel_smoke_test_run_breakpoint_exception(void) { __asm__ volatile("int3"); }
 
-void kernel_smoke_test_run_invalid_opcode_exception(void)
-{
-    __asm__ volatile("ud2");
-}
+void kernel_smoke_test_run_invalid_opcode_exception(void) { __asm__ volatile("ud2"); }
 
 void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
 {
