@@ -15,6 +15,8 @@
 #define KERNEL_SMOKE_TEST_ENABLE_DEBUG_EXCEPTION    0u
 #define KERNEL_SMOKE_TEST_ENABLE_BREAKPOINT         0u
 #define KERNEL_SMOKE_TEST_ENABLE_INVALID_OPCODE     0u
+#define KERNEL_SMOKE_TEST_ENABLE_GENERAL_PROTECTION 0u
+#define KERNEL_SMOKE_TEST_ENABLE_PAGE_FAULT         0u
 #define KERNEL_SMOKE_TEST_ENABLE_GRAPHICS_DEMO      1u
 #define KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS 1u
 #define KERNEL_SMOKE_TEST_ENABLE_RTC_SNAPSHOT       1u
@@ -28,6 +30,10 @@ extern void kernel_smoke_test_run_debug_exception(void);
 extern void kernel_smoke_test_run_breakpoint_exception(void);
 
 extern void kernel_smoke_test_run_invalid_opcode_exception(void);
+
+extern void kernel_smoke_test_run_general_protection_exception(void);
+
+extern void kernel_smoke_test_run_page_fault_exception(void);
 
 extern void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port);
 

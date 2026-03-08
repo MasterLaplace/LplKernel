@@ -51,6 +51,24 @@ void kernel_smoke_test_run_breakpoint_exception(void) { __asm__ volatile("int3")
 
 void kernel_smoke_test_run_invalid_opcode_exception(void) { __asm__ volatile("ud2"); }
 
+void kernel_smoke_test_run_general_protection_exception(void)
+{
+    __asm__ volatile("xorl %%eax, %%eax\n\t"
+                     "movw %%ax, %%ds\n\t"
+                     "movl (%%eax), %%eax\n\t"
+                     :
+                     :
+                     : "eax", "memory");
+}
+
+void kernel_smoke_test_run_page_fault_exception(void)
+{
+    volatile uint32_t *const non_present_virtual_address = (volatile uint32_t *) 0xE0001000u;
+    volatile uint32_t trap = *non_present_virtual_address;
+
+    (void) trap;
+}
+
 void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
 {
     framebuffer_clear(framebuffer_rgb(0, 0, 64));

@@ -2,6 +2,7 @@
 #include <kernel/config.h>
 
 #include <kernel/boot/multiboot_info_helper.h>
+#include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/gdt_helper.h>
 #include <kernel/cpu/idt.h>
@@ -85,6 +86,42 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_int(&com1, (int32_t) (physical_memory_manager_get_free_page_count() * 4 / 1024));
     serial_write_string(&com1, " MB free)\n");
 
+#if defined(LPL_KERNEL_EXPERIMENTAL_APIC_TIMER_BACKEND)
+    if (advanced_pic_timer_backend_late_initialize())
+    {
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC late init state=");
+        serial_write_string(&com1, advanced_pic_timer_backend_name());
+        serial_write_string(&com1, ", lapic_phys=");
+        serial_write_hex32(&com1, advanced_pic_timer_backend_get_local_apic_physical_base());
+        serial_write_string(&com1, ", mmio_mapped=");
+        serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_is_local_apic_mmio_mapped());
+        serial_write_string(&com1, ", lapic_ver=");
+        serial_write_hex32(&com1, advanced_pic_timer_backend_get_local_apic_version_register());
+        serial_write_string(&com1, "\n");
+
+        if (advanced_pic_timer_backend_calibrate_with_pit())
+        {
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC calibration state=");
+            serial_write_string(&com1, advanced_pic_timer_backend_name());
+            serial_write_string(&com1, ", lapic_timer_hz_estimate=");
+            serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_get_calibrated_timer_frequency_hz());
+            serial_write_string(&com1, "\n");
+        }
+        else
+        {
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC calibration skipped state=");
+            serial_write_string(&com1, advanced_pic_timer_backend_name());
+            serial_write_string(&com1, "\n");
+        }
+    }
+    else
+    {
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC late init skipped state=");
+        serial_write_string(&com1, advanced_pic_timer_backend_name());
+        serial_write_string(&com1, "\n");
+    }
+#endif
+
     if (KERNEL_SMOKE_TEST_ENABLE_PMM_ALLOCATE_FREE)
         kernel_smoke_test_run_physical_memory_manager_allocate_free(&com1);
 
@@ -110,6 +147,10 @@ void kernel_main(void)
         kernel_smoke_test_run_breakpoint_exception();
     if (KERNEL_SMOKE_TEST_ENABLE_INVALID_OPCODE)
         kernel_smoke_test_run_invalid_opcode_exception();
+    if (KERNEL_SMOKE_TEST_ENABLE_GENERAL_PROTECTION)
+        kernel_smoke_test_run_general_protection_exception();
+    if (KERNEL_SMOKE_TEST_ENABLE_PAGE_FAULT)
+        kernel_smoke_test_run_page_fault_exception();
 
     if (framebuffer_available())
     {

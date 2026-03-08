@@ -1,5 +1,7 @@
 #include <kernel/cpu/clock.h>
 
+#include <kernel/cpu/apic_timer.h>
+
 #include <kernel/cpu/irq.h>
 
 #define CLOCK_BACKEND_NAME_PIT "pit-irq0"
@@ -10,20 +12,36 @@
 static ClockProfile_t clock_profile = CLOCK_PROFILE_SERVER_THROUGHPUT;
 static const char *clock_backend_name = CLOCK_BACKEND_NAME_PIT;
 
+static uint32_t clock_select_profile_frequency_hz(void)
+{
+    if (clock_profile == CLOCK_PROFILE_CLIENT_RT)
+        return CLOCK_CLIENT_TIMER_FREQUENCY_HZ;
+    return CLOCK_SERVER_TIMER_FREQUENCY_HZ;
+}
+
 void clock_initialize(void)
 {
+    uint32_t target_frequency_hz;
+
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     clock_profile = CLOCK_PROFILE_CLIENT_RT;
-    interrupt_request_set_timer_frequency_hz(CLOCK_CLIENT_TIMER_FREQUENCY_HZ);
-    interrupt_request_set_realtime_clock_periodic_enabled(0u);
 #else
     clock_profile = CLOCK_PROFILE_SERVER_THROUGHPUT;
-    interrupt_request_set_timer_frequency_hz(CLOCK_SERVER_TIMER_FREQUENCY_HZ);
-    interrupt_request_set_realtime_clock_periodic_enabled(0u);
 #endif
 
-    clock_backend_name = CLOCK_BACKEND_NAME_PIT;
-    interrupt_request_initialize();
+    target_frequency_hz = clock_select_profile_frequency_hz();
+    interrupt_request_set_realtime_clock_periodic_enabled(0u);
+
+#if defined(LPL_KERNEL_EXPERIMENTAL_APIC_TIMER_BACKEND)
+    if (advanced_pic_timer_backend_initialize(target_frequency_hz))
+        clock_backend_name = advanced_pic_timer_backend_name();
+    else
+#endif
+    {
+        clock_backend_name = CLOCK_BACKEND_NAME_PIT;
+        interrupt_request_set_timer_frequency_hz(target_frequency_hz);
+        interrupt_request_initialize();
+    }
 }
 
 ClockProfile_t clock_get_profile(void) { return clock_profile; }
