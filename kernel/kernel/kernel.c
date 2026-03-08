@@ -2,6 +2,7 @@
 #include <kernel/config.h>
 
 #include <kernel/boot/multiboot_info_helper.h>
+#include <kernel/cpu/clock.h>
 #include <kernel/cpu/gdt_helper.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/irq.h>
@@ -54,11 +55,17 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: loading IDT into CPU...\n");
     interrupt_descriptor_table_load(&interrupt_descriptor_table);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IDT loaded successfully!\n");
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: remapping PIC...\n");
-    interrupt_request_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PIC remapped to vectors 32-47\n");
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING
-                               "]: interrupts enabled (IRQ0 timer + IRQ1 keyboard, spurious IRQ7/15 policy)\n");
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing clock policy...\n");
+    clock_initialize();
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: clock profile=");
+    serial_write_string(&com1, clock_get_profile_name());
+    serial_write_string(&com1, ", backend=");
+    serial_write_string(&com1, clock_get_backend_name());
+    serial_write_string(&com1, ", hz=");
+    serial_write_int(&com1, (int32_t) clock_get_tick_hz());
+    serial_write_string(&com1, ", rtc_periodic=");
+    serial_write_int(&com1, (int32_t) clock_is_rtc_periodic_enabled());
+    serial_write_string(&com1, "\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing runtime paging...\n");
     paging_initialize_runtime();

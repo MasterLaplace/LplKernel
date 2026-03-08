@@ -20,6 +20,16 @@
 extern void interrupt_request_initialize(void);
 
 /**
+ * @brief Configure IRQ0 timer target frequency for next initialization.
+ */
+extern void interrupt_request_set_timer_frequency_hz(uint32_t frequency_hz);
+
+/**
+ * @brief Configure RTC periodic IRQ8 policy for next initialization.
+ */
+extern void interrupt_request_set_realtime_clock_periodic_enabled(uint8_t enabled);
+
+/**
  * @brief Return IRQ0 tick count since IRQ initialization.
  */
 extern uint32_t interrupt_request_get_tick_count(void);

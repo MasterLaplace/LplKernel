@@ -9,7 +9,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ## 📊 Progress Summary (Updated: 2026)
 
 ### 🎯 Current Position: **Phase 3 Bring-up** ⬅️ YOU ARE HERE
-**Next Goal**: PIT/RTC strategy + extended IRQ/exception test matrix
+**Next Goal**: APIC/SMP timer backend and extended exception matrix
 
 ### Phase Completion Status:
 - ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
@@ -24,10 +24,10 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - Remaining work: implement **Buddy Allocator** for server mode (current Free‑List covers realtime only) and finish integrating the allocator with
   `paging_map_page()` so page tables can be created dynamically; also Ring 3 transition
 
-- 🚧 **Phase 3**: Interrupts & Exceptions - **75% Complete**
+- 🚧 **Phase 3**: Interrupts & Exceptions - **82% Complete**
   - IDT + ISR stubs (0-47) ✅, PIC remap (32-47) ✅, IRQ0 handler + EOI ✅, `sti` sequencing ✅
   - Dedicated exception handlers (#PF/#GP/#DF) ✅, keyboard IRQ1 minimal ✅, spurious IRQ7/IRQ15 policy ✅
-  - Remaining: PIT/RTC ownership policy, expanded exception coverage (#DB/#BP/#UD), test matrix hardening
+  - Remaining: APIC/SMP timer backend, expanded exception coverage (#DB/#BP/#UD), test matrix hardening
 
 - ❌ **Phase 4**: Memory Management - **0% Complete**
   - No heap allocator (kmalloc/kfree), no page frame allocator
@@ -69,7 +69,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ### What We Need Next:
 ```
-🎯 PIT/RTC strategy (timer ownership and tick policy)
+🎯 APIC/SMP-ready timer backend in `clock_*` abstraction
 🎯 Extended exception/IRQ test matrix
 ```
 
@@ -185,7 +185,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐) ⬅️ **CURRENT PHASE**
 
 > 🚧 **STATUS**: IDT+ISR operational, PIC remapped, IRQ0+IRQ1 active, spurious IRQ policy active
-> 🎯 **NEXT STEP**: PIT/RTC strategy and expanded exception/IRQ validation matrix
+> 🎯 **NEXT STEP**: APIC/SMP timer backend and expanded exception/IRQ validation matrix
 
 ### Interrupt Descriptor Table
 - [x] [Interrupts](https://wiki.osdev.org/Interrupts) - Theory and overview
@@ -224,9 +224,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [Message Signaled Interrupts](https://wiki.osdev.org/Message_Signaled_Interrupts) (MSI)
 
 ### Timers
-- [ ] [Programmable Interval Timer](https://wiki.osdev.org/Programmable_Interval_Timer) (PIT)
+- [x] [Programmable Interval Timer](https://wiki.osdev.org/Programmable_Interval_Timer) (PIT)
 - [ ] [HPET](https://wiki.osdev.org/HPET) - High Precision Event Timer
-- [ ] [RTC](https://wiki.osdev.org/RTC) - Real Time Clock
+- [x] [RTC](https://wiki.osdev.org/RTC) - Real Time Clock (polling + optional periodic IRQ8 policy)
 - [ ] [CMOS](https://wiki.osdev.org/CMOS) - CMOS clock
 - [ ] [Detecting CPU Speed](https://wiki.osdev.org/Detecting_CPU_Speed)
 

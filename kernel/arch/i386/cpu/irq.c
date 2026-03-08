@@ -19,12 +19,13 @@
 #define IRQ_SPURIOUS7_VECTOR  (PIC_VECTOR_OFFSET_MASTER + IRQ_SPURIOUS7_LINE)
 #define IRQ_SPURIOUS15_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_SPURIOUS15_LINE)
 
-#define IRQ_TIMER_TARGET_FREQUENCY_HZ 100u
-#define IRQ_RTC_PERIODIC_ENABLE       0u
+#define IRQ_TIMER_DEFAULT_FREQUENCY_HZ 100u
 
 static volatile uint32_t interrupt_request_tick_count = 0u;
 static volatile uint32_t interrupt_request_spurious_irq7_count = 0u;
 static volatile uint32_t interrupt_request_spurious_irq15_count = 0u;
+static uint32_t interrupt_request_timer_target_frequency_hz = IRQ_TIMER_DEFAULT_FREQUENCY_HZ;
+static uint8_t interrupt_request_rtc_periodic_enabled = 0u;
 
 static void interrupt_request_timer_handler(const InterruptFrame_t *frame)
 {
@@ -70,7 +71,7 @@ void interrupt_request_initialize(void)
 {
     programmable_interrupt_controller_initialize();
     interrupt_request_mask_all();
-    programmable_interval_timer_initialize(IRQ_TIMER_TARGET_FREQUENCY_HZ);
+    programmable_interval_timer_initialize(interrupt_request_timer_target_frequency_hz);
 
     interrupt_exception_initialize();
     interrupt_service_routine_register_handler(IRQ_TIMER_VECTOR, interrupt_request_timer_handler);
@@ -79,7 +80,7 @@ void interrupt_request_initialize(void)
     keyboard_interrupt_initialize();
     realtime_clock_initialize();
 
-    if (IRQ_RTC_PERIODIC_ENABLE)
+    if (interrupt_request_rtc_periodic_enabled)
     {
         realtime_clock_set_periodic_interrupt_enabled(1u);
         programmable_interrupt_controller_clear_mask(IRQ_CASCADE_LINE);
@@ -91,6 +92,18 @@ void interrupt_request_initialize(void)
     programmable_interrupt_controller_clear_mask(IRQ_TIMER_LINE);
     programmable_interrupt_controller_clear_mask(IRQ_KEYBOARD_LINE);
     cpu_enable_interrupts();
+}
+
+void interrupt_request_set_timer_frequency_hz(uint32_t frequency_hz)
+{
+    if (frequency_hz == 0u)
+        frequency_hz = 1u;
+    interrupt_request_timer_target_frequency_hz = frequency_hz;
+}
+
+void interrupt_request_set_realtime_clock_periodic_enabled(uint8_t enabled)
+{
+    interrupt_request_rtc_periodic_enabled = (uint8_t) (enabled != 0u);
 }
 
 uint32_t interrupt_request_get_tick_count(void) { return interrupt_request_tick_count; }
