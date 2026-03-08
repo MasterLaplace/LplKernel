@@ -21,12 +21,8 @@ extern void cpu_reload_page_directory(void);
 
 extern uint32_t cpu_get_page_fault_linear_address(void);
 
-extern void cpu_cpuid(uint32_t leaf,
-					  uint32_t subleaf,
-					  uint32_t *out_eax,
-					  uint32_t *out_ebx,
-					  uint32_t *out_ecx,
-					  uint32_t *out_edx);
+extern void cpu_cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *out_eax, uint32_t *out_ebx, uint32_t *out_ecx,
+                      uint32_t *out_edx);
 
 extern uint64_t cpu_read_msr(uint32_t msr);
 

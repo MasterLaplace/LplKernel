@@ -9,25 +9,25 @@
 #define APIC_CPUID_LEAF_FEATURES 0x00000001u
 #define APIC_CPUID_EDX_BIT_APIC  (1u << 9u)
 
-#define IA32_APIC_BASE_MSR              0x0000001Bu
-#define IA32_APIC_BASE_BSP_BIT          (1ull << 8u)
-#define IA32_APIC_BASE_X2APIC_MODE_BIT  (1ull << 10u)
-#define IA32_APIC_BASE_ENABLE_BIT       (1ull << 11u)
+#define IA32_APIC_BASE_MSR                0x0000001Bu
+#define IA32_APIC_BASE_BSP_BIT            (1ull << 8u)
+#define IA32_APIC_BASE_X2APIC_MODE_BIT    (1ull << 10u)
+#define IA32_APIC_BASE_ENABLE_BIT         (1ull << 11u)
 #define IA32_APIC_BASE_PHYSICAL_BASE_MASK 0xFFFFF000ull
 
 #define APIC_TIMER_MMIO_VIRTUAL_BASE 0xFFB00000u
 
-#define LOCAL_APIC_REGISTER_VERSION      0x0030u
-#define LOCAL_APIC_REGISTER_SPURIOUS     0x00F0u
-#define LOCAL_APIC_REGISTER_LVT_TIMER    0x0320u
+#define LOCAL_APIC_REGISTER_VERSION             0x0030u
+#define LOCAL_APIC_REGISTER_SPURIOUS            0x00F0u
+#define LOCAL_APIC_REGISTER_LVT_TIMER           0x0320u
 #define LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT 0x0380u
 #define LOCAL_APIC_REGISTER_TIMER_CURRENT_COUNT 0x0390u
 #define LOCAL_APIC_REGISTER_TIMER_DIVIDE_CONFIG 0x03E0u
 
-#define LOCAL_APIC_SPURIOUS_ENABLE_BIT   (1u << 8u)
-#define LOCAL_APIC_LVT_MASKED_BIT        (1u << 16u)
+#define LOCAL_APIC_SPURIOUS_ENABLE_BIT      (1u << 8u)
+#define LOCAL_APIC_LVT_MASKED_BIT           (1u << 16u)
 #define LOCAL_APIC_TIMER_VECTOR_PLACEHOLDER 0xFEu
-#define LOCAL_APIC_TIMER_LVT_MODE_ONE_SHOT (0u << 17u)
+#define LOCAL_APIC_TIMER_LVT_MODE_ONE_SHOT  (0u << 17u)
 
 #define LOCAL_APIC_TIMER_DIVIDE_BY_16_ENCODING 0x3u
 
@@ -81,9 +81,7 @@ static uint8_t advanced_pic_timer_backend_map_local_apic_mmio(void)
     pte_flags.write_through = 0u;
     pte_flags.cache_disable = 1u;
 
-    if (!paging_map_page(APIC_TIMER_MMIO_VIRTUAL_BASE,
-                         advanced_pic_timer_local_apic_physical_base,
-                         pde_flags,
+    if (!paging_map_page(APIC_TIMER_MMIO_VIRTUAL_BASE, advanced_pic_timer_local_apic_physical_base, pde_flags,
                          pte_flags))
         return 0u;
 
@@ -204,8 +202,7 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
     advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_DIVIDE_CONFIG,
                                                  LOCAL_APIC_TIMER_DIVIDE_BY_16_ENCODING);
     advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_LVT_TIMER,
-                                                 LOCAL_APIC_LVT_MASKED_BIT |
-                                                     LOCAL_APIC_TIMER_LVT_MODE_ONE_SHOT |
+                                                 LOCAL_APIC_LVT_MASKED_BIT | LOCAL_APIC_TIMER_LVT_MODE_ONE_SHOT |
                                                      LOCAL_APIC_TIMER_VECTOR_PLACEHOLDER);
     advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT, 0xFFFFFFFFu);
 
@@ -236,20 +233,14 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
     return 1u;
 }
 
-const char *advanced_pic_timer_backend_name(void)
-{
-    return advanced_pic_timer_backend_state_name;
-}
+const char *advanced_pic_timer_backend_name(void) { return advanced_pic_timer_backend_state_name; }
 
 uint32_t advanced_pic_timer_backend_get_local_apic_physical_base(void)
 {
     return advanced_pic_timer_local_apic_physical_base;
 }
 
-uint8_t advanced_pic_timer_backend_is_local_apic_mmio_mapped(void)
-{
-    return advanced_pic_timer_local_apic_mmio_mapped;
-}
+uint8_t advanced_pic_timer_backend_is_local_apic_mmio_mapped(void) { return advanced_pic_timer_local_apic_mmio_mapped; }
 
 uint32_t advanced_pic_timer_backend_get_local_apic_version_register(void)
 {
