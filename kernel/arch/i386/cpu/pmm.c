@@ -105,18 +105,40 @@ static uint32_t freelist_pop(void)
 
 #else /* Server mode — Buddy Allocator */
 
+/** @brief Transitional server allocator head (intrusive LIFO stack). */
+static uint32_t server_fallback_free_list_head = 0;
+
 /**
  * @brief Insert a page into the Buddy Allocator.
- * @note Stub — will be implemented in a future phase.
+ * @details Transitional fallback until full buddy implementation lands.
+ *          Keeps server build functional for runtime page-table growth.
  */
-static void buddy_insert(uint32_t phys_addr) { (void) phys_addr; }
+static void buddy_insert(uint32_t phys_addr)
+{
+    uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
+
+    *page_virt = server_fallback_free_list_head;
+    server_fallback_free_list_head = phys_addr;
+    ++free_page_count;
+}
 
 /**
  * @brief Remove a page from the Buddy Allocator.
- * @note Stub — will be implemented in a future phase.
- * @return Always 0 (not yet implemented).
+ * @details Transitional fallback until full buddy implementation lands.
+ * @return Physical address, or 0 if empty.
  */
-static uint32_t buddy_remove(void) { return 0; }
+static uint32_t buddy_remove(void)
+{
+    if (server_fallback_free_list_head == 0)
+        return 0;
+
+    uint32_t phys_addr = server_fallback_free_list_head;
+    uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
+
+    server_fallback_free_list_head = *page_virt;
+    --free_page_count;
+    return phys_addr;
+}
 
 #endif /* LPL_KERNEL_REAL_TIME_MODE */
 

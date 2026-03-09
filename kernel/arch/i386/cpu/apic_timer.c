@@ -1,6 +1,7 @@
 #include <kernel/cpu/apic_timer.h>
 
 #include <kernel/cpu/irq.h>
+#include <kernel/cpu/pic.h>
 
 #include <kernel/cpu/paging.h>
 
@@ -18,6 +19,7 @@
 #define APIC_TIMER_MMIO_VIRTUAL_BASE 0xFFB00000u
 
 #define LOCAL_APIC_REGISTER_VERSION             0x0030u
+#define LOCAL_APIC_REGISTER_EOI                 0x00B0u
 #define LOCAL_APIC_REGISTER_SPURIOUS            0x00F0u
 #define LOCAL_APIC_REGISTER_LVT_TIMER           0x0320u
 #define LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT 0x0380u
@@ -28,6 +30,10 @@
 #define LOCAL_APIC_LVT_MASKED_BIT           (1u << 16u)
 #define LOCAL_APIC_TIMER_VECTOR_PLACEHOLDER 0xFEu
 #define LOCAL_APIC_TIMER_LVT_MODE_ONE_SHOT  (0u << 17u)
+#define LOCAL_APIC_TIMER_LVT_MODE_PERIODIC  (1u << 17u)
+
+#define IRQ_TIMER_LINE       0u
+#define IRQ_TIMER_VECTOR     (PIC_VECTOR_OFFSET_MASTER + IRQ_TIMER_LINE)
 
 #define LOCAL_APIC_TIMER_DIVIDE_BY_16_ENCODING 0x3u
 
@@ -39,6 +45,7 @@ static uint8_t advanced_pic_timer_local_apic_is_bootstrap_processor = 0u;
 static uint8_t advanced_pic_timer_local_apic_mmio_mapped = 0u;
 static uint32_t advanced_pic_timer_local_apic_version_register = 0u;
 static uint32_t advanced_pic_timer_local_apic_calibrated_frequency_hz = 0u;
+static uint8_t advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
 
 static inline volatile uint32_t *advanced_pic_timer_local_apic_register_pointer(uint32_t offset)
 {
@@ -105,6 +112,7 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
     advanced_pic_timer_local_apic_mmio_mapped = 0u;
     advanced_pic_timer_local_apic_version_register = 0u;
     advanced_pic_timer_local_apic_calibrated_frequency_hz = 0u;
+    advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
 
     cpu_cpuid(APIC_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
     if ((edx & APIC_CPUID_EDX_BIT_APIC) == 0u)
@@ -233,6 +241,49 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
     return 1u;
 }
 
+uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequency_hz)
+{
+    uint32_t timer_initial_count;
+    uint32_t lapic_timer_hz;
+
+    if (!advanced_pic_timer_local_apic_mmio_mapped)
+    {
+        interrupt_request_set_timer_owner_is_apic(0u);
+        advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
+        advanced_pic_timer_backend_state_name = "apic-periodic-mmio-not-ready";
+        return 0u;
+    }
+
+    lapic_timer_hz = advanced_pic_timer_local_apic_calibrated_frequency_hz;
+    if (lapic_timer_hz == 0u)
+    {
+        interrupt_request_set_timer_owner_is_apic(0u);
+        advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
+        advanced_pic_timer_backend_state_name = "apic-periodic-missing-calibration";
+        return 0u;
+    }
+
+    if (target_frequency_hz == 0u)
+        target_frequency_hz = 1u;
+
+    timer_initial_count = lapic_timer_hz / target_frequency_hz;
+    if (timer_initial_count == 0u)
+        timer_initial_count = 1u;
+
+    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_DIVIDE_CONFIG,
+                                                 LOCAL_APIC_TIMER_DIVIDE_BY_16_ENCODING);
+    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_LVT_TIMER,
+                                                 LOCAL_APIC_TIMER_LVT_MODE_PERIODIC | IRQ_TIMER_VECTOR);
+    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT, timer_initial_count);
+
+    programmable_interrupt_controller_set_mask(IRQ_TIMER_LINE);
+    interrupt_request_set_timer_owner_is_apic(1u);
+
+    advanced_pic_timer_local_apic_periodic_mode_enabled = 1u;
+    advanced_pic_timer_backend_state_name = "apic-periodic-owner-active";
+    return 1u;
+}
+
 const char *advanced_pic_timer_backend_name(void) { return advanced_pic_timer_backend_state_name; }
 
 uint32_t advanced_pic_timer_backend_get_local_apic_physical_base(void)
@@ -250,6 +301,18 @@ uint32_t advanced_pic_timer_backend_get_local_apic_version_register(void)
 uint32_t advanced_pic_timer_backend_get_calibrated_timer_frequency_hz(void)
 {
     return advanced_pic_timer_local_apic_calibrated_frequency_hz;
+}
+
+uint8_t advanced_pic_timer_backend_is_periodic_mode_enabled(void)
+{
+    return advanced_pic_timer_local_apic_periodic_mode_enabled;
+}
+
+void advanced_pic_timer_backend_signal_end_of_interrupt(void)
+{
+    if (!advanced_pic_timer_local_apic_mmio_mapped)
+        return;
+    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_EOI, 0u);
 }
 
 uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void)

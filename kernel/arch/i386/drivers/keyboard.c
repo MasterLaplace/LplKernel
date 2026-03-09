@@ -1,7 +1,9 @@
 #include <kernel/drivers/keyboard.h>
 
 #include <kernel/cpu/isr.h>
+#include <kernel/cpu/irq.h>
 #include <kernel/cpu/pic.h>
+#include <kernel/cpu/apic_timer.h>
 #include <kernel/lib/asmutils.h>
 
 #include <stdint.h>
@@ -44,7 +46,11 @@ static void keyboard_interrupt_handler(const InterruptFrame_t *frame)
     keyboard_write_string("[IRQ1] keyboard scan code = ");
     keyboard_write_hex8(scan_code);
     keyboard_write_string("\r\n");
-    programmable_interrupt_controller_send_end_of_interrupt(IRQ_KEYBOARD_LINE);
+
+    if (interrupt_request_is_keyboard_owner_apic())
+        advanced_pic_timer_backend_signal_end_of_interrupt();
+    else
+        programmable_interrupt_controller_send_end_of_interrupt(IRQ_KEYBOARD_LINE);
 }
 
 void keyboard_interrupt_initialize(void)

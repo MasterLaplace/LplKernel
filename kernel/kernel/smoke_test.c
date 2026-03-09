@@ -3,8 +3,11 @@
 #include <kernel/config.h>
 
 #include <kernel/cpu/clock.h>
+#include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/irq.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/smoke_test.h>
 
 void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port)
@@ -67,6 +70,12 @@ void kernel_smoke_test_run_page_fault_exception(void)
     volatile uint32_t trap = *non_present_virtual_address;
 
     (void) trap;
+}
+
+void kernel_smoke_test_run_double_fault_exception(void)
+{
+    /* Synthetic vector injection for #DF handler-path validation. */
+    __asm__ volatile("int $0x08");
 }
 
 void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
@@ -140,4 +149,39 @@ void kernel_smoke_test_run_realtime_clock_snapshot(Serial_t *serial_port)
     serial_write_string(serial_port, "/");
     serial_write_int(serial_port, (int32_t) current_time.year);
     serial_write_string(serial_port, "\n");
+}
+
+void kernel_smoke_test_run_apic_periodic_mode(Serial_t *serial_port)
+{
+    uint32_t start_tick;
+    uint32_t end_tick;
+    uint32_t target_tick;
+
+    serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: APIC periodic smoke: state=");
+    serial_write_string(serial_port, advanced_pic_timer_backend_name());
+    serial_write_string(serial_port, ", apic_owner=");
+    serial_write_int(serial_port, (int32_t) interrupt_request_is_timer_owner_apic());
+    serial_write_string(serial_port, ", periodic=");
+    serial_write_int(serial_port, (int32_t) advanced_pic_timer_backend_is_periodic_mode_enabled());
+    serial_write_string(serial_port, "\n");
+
+    if (!interrupt_request_is_timer_owner_apic() || !advanced_pic_timer_backend_is_periodic_mode_enabled())
+    {
+        serial_write_string(serial_port,
+                            "[" KERNEL_SYSTEM_STRING "]: APIC periodic smoke: skipped (owner/path inactive)\n");
+        return;
+    }
+
+    start_tick = clock_get_tick_count();
+    target_tick = start_tick + 8u;
+    while (clock_get_tick_count() < target_tick)
+        cpu_no_operation();
+    end_tick = clock_get_tick_count();
+
+    serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: APIC periodic smoke: delta_ticks=");
+    serial_write_int(serial_port, (int32_t) (end_tick - start_tick));
+    if ((end_tick - start_tick) >= 8u)
+        serial_write_string(serial_port, " (pass)\n");
+    else
+        serial_write_string(serial_port, " (fail)\n");
 }

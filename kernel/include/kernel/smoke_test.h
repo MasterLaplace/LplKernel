@@ -17,9 +17,13 @@
 #define KERNEL_SMOKE_TEST_ENABLE_INVALID_OPCODE     0u
 #define KERNEL_SMOKE_TEST_ENABLE_GENERAL_PROTECTION 0u
 #define KERNEL_SMOKE_TEST_ENABLE_PAGE_FAULT         0u
+#define KERNEL_SMOKE_TEST_ENABLE_DOUBLE_FAULT       0u
 #define KERNEL_SMOKE_TEST_ENABLE_GRAPHICS_DEMO      1u
 #define KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS 1u
 #define KERNEL_SMOKE_TEST_ENABLE_RTC_SNAPSHOT       1u
+#ifndef KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE
+#define KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE 0u
+#endif
 
 extern void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port);
 
@@ -35,10 +39,14 @@ extern void kernel_smoke_test_run_general_protection_exception(void);
 
 extern void kernel_smoke_test_run_page_fault_exception(void);
 
+extern void kernel_smoke_test_run_double_fault_exception(void);
+
 extern void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port);
 
 extern void kernel_smoke_test_run_interrupt_request_runtime_status(Serial_t *serial_port);
 
 extern void kernel_smoke_test_run_realtime_clock_snapshot(Serial_t *serial_port);
+
+extern void kernel_smoke_test_run_apic_periodic_mode(Serial_t *serial_port);
 
 #endif /* !SMOKE_TEST_H_ */

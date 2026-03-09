@@ -2,12 +2,15 @@
 #include <kernel/config.h>
 
 #include <kernel/boot/multiboot_info_helper.h>
+#include <kernel/cpu/acpi.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/gdt_helper.h>
 #include <kernel/cpu/idt.h>
+#include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/paging.h>
+#include <kernel/cpu/pic.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/smoke_test.h>
@@ -86,7 +89,107 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_int(&com1, (int32_t) (physical_memory_manager_get_free_page_count() * 4 / 1024));
     serial_write_string(&com1, " MB free)\n");
 
-#if defined(LPL_KERNEL_EXPERIMENTAL_APIC_TIMER_BACKEND)
+    advanced_configuration_and_power_interface_madt_initialize();
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI MADT state=");
+    serial_write_string(&com1, advanced_configuration_and_power_interface_madt_get_state_name());
+    serial_write_string(&com1, ", madt=");
+    serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_is_available());
+    serial_write_string(&com1, ", lapic_phys=");
+    serial_write_hex32(&com1, advanced_configuration_and_power_interface_madt_get_local_apic_physical_base());
+    serial_write_string(&com1, ", ioapic_count=");
+    serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_count());
+    serial_write_string(&com1, ", iso_count=");
+    serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_count());
+    serial_write_string(&com1, "\n");
+
+    for (uint8_t ioapic_index = 0u; ioapic_index < advanced_configuration_and_power_interface_madt_get_io_apic_count(); ++ioapic_index)
+    {
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI IOAPIC[");
+        serial_write_int(&com1, (int32_t) ioapic_index);
+        serial_write_string(&com1, "] id=");
+        serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
+        serial_write_string(&com1, ", phys=");
+        serial_write_hex32(&com1, advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(ioapic_index));
+        serial_write_string(&com1, ", gsi_base=");
+        serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_gsi_base(ioapic_index));
+        serial_write_string(&com1, "\n");
+    }
+
+    for (uint8_t iso_index = 0u; iso_index < advanced_configuration_and_power_interface_madt_get_interrupt_source_override_count(); ++iso_index)
+    {
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI ISO[");
+        serial_write_int(&com1, (int32_t) iso_index);
+        serial_write_string(&com1, "] bus=");
+        serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_bus(iso_index));
+        serial_write_string(&com1, ", source_irq=");
+        serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_source_irq(iso_index));
+        serial_write_string(&com1, ", gsi=");
+        serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_gsi(iso_index));
+        serial_write_string(&com1, ", flags=");
+        serial_write_hex16(&com1, advanced_configuration_and_power_interface_madt_get_interrupt_source_override_flags(iso_index));
+        serial_write_string(&com1, "\n");
+    }
+
+    for (uint8_t isa_irq = 0u; isa_irq <= 1u; ++isa_irq)
+    {
+        uint32_t mapped_gsi = 0u;
+        uint16_t mapped_flags = 0u;
+        uint8_t ioapic_index = 0u;
+
+        if (!advanced_configuration_and_power_interface_madt_resolve_isa_irq(isa_irq, &mapped_gsi, &mapped_flags))
+            continue;
+
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI route ISA IRQ");
+        serial_write_int(&com1, (int32_t) isa_irq);
+        serial_write_string(&com1, " -> GSI ");
+        serial_write_int(&com1, (int32_t) mapped_gsi);
+        serial_write_string(&com1, ", flags=");
+        serial_write_hex16(&com1, mapped_flags);
+
+        if (advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(mapped_gsi, &ioapic_index))
+        {
+            serial_write_string(&com1, ", ioapic_index=");
+            serial_write_int(&com1, (int32_t) ioapic_index);
+            serial_write_string(&com1, ", ioapic_id=");
+            serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
+        }
+        else
+            serial_write_string(&com1, ", ioapic_index=none");
+
+        serial_write_string(&com1, "\n");
+    }
+
+    input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC scaffold state=");
+    serial_write_string(&com1, input_output_advanced_programmable_interrupt_controller_get_state_name());
+    serial_write_string(&com1, ", mapped=");
+    serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_mapped_count());
+    serial_write_string(&com1, ", routes=");
+    serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_count());
+    serial_write_string(&com1, "\n");
+
+    for (uint8_t route_index = 0u; route_index < input_output_advanced_programmable_interrupt_controller_get_programmed_route_count(); ++route_index)
+    {
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC route[");
+        serial_write_int(&com1, (int32_t) route_index);
+        serial_write_string(&com1, "] isa_irq=");
+        serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(route_index));
+        serial_write_string(&com1, ", gsi=");
+        serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_gsi(route_index));
+        serial_write_string(&com1, ", vector=");
+        serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_vector(route_index));
+        serial_write_string(&com1, ", ioapic_index=");
+        serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_index(route_index));
+        serial_write_string(&com1, ", ioapic_id=");
+        serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_id(route_index));
+        serial_write_string(&com1, ", masked=");
+        serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(route_index));
+        serial_write_string(&com1, ", iso_flags=");
+        serial_write_hex16(&com1, input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso_flags(route_index));
+        serial_write_string(&com1, "\n");
+    }
+
+#if defined(LPL_KERNEL_APIC_TIMER_BACKEND)
     if (advanced_pic_timer_backend_late_initialize())
     {
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC late init state=");
@@ -99,6 +202,28 @@ __attribute__((constructor)) void kernel_initialize(void)
         serial_write_hex32(&com1, advanced_pic_timer_backend_get_local_apic_version_register());
         serial_write_string(&com1, "\n");
 
+#if defined(LPL_KERNEL_IOAPIC_KEYBOARD_OWNER)
+        if (input_output_advanced_programmable_interrupt_controller_enable_isa_route(1u))
+        {
+            programmable_interrupt_controller_set_mask(1u);
+            interrupt_request_set_keyboard_owner_is_apic(1u);
+
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC keyboard handoff state=");
+            serial_write_string(&com1, input_output_advanced_programmable_interrupt_controller_get_state_name());
+            serial_write_string(&com1, ", irq1_owner_apic=");
+            serial_write_int(&com1, (int32_t) interrupt_request_is_keyboard_owner_apic());
+            serial_write_string(&com1, "\n");
+        }
+        else
+        {
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC keyboard handoff fallback state=");
+            serial_write_string(&com1, input_output_advanced_programmable_interrupt_controller_get_state_name());
+            serial_write_string(&com1, ", irq1_owner_apic=");
+            serial_write_int(&com1, (int32_t) interrupt_request_is_keyboard_owner_apic());
+            serial_write_string(&com1, "\n");
+        }
+#endif
+
         if (advanced_pic_timer_backend_calibrate_with_pit())
         {
             serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC calibration state=");
@@ -106,6 +231,29 @@ __attribute__((constructor)) void kernel_initialize(void)
             serial_write_string(&com1, ", lapic_timer_hz_estimate=");
             serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_get_calibrated_timer_frequency_hz());
             serial_write_string(&com1, "\n");
+
+#if defined(LPL_KERNEL_APIC_TIMER_OWNER)
+            if (advanced_pic_timer_backend_enable_periodic_mode(interrupt_request_get_timer_frequency_hz()))
+            {
+                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC owner handoff state=");
+                serial_write_string(&com1, advanced_pic_timer_backend_name());
+                serial_write_string(&com1, ", apic_owner=");
+                serial_write_int(&com1, (int32_t) interrupt_request_is_timer_owner_apic());
+                serial_write_string(&com1, ", apic_periodic=");
+                serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_is_periodic_mode_enabled());
+                serial_write_string(&com1, "\n");
+            }
+            else
+            {
+                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC owner handoff fallback state=");
+                serial_write_string(&com1, advanced_pic_timer_backend_name());
+                serial_write_string(&com1, ", apic_owner=");
+                serial_write_int(&com1, (int32_t) interrupt_request_is_timer_owner_apic());
+                serial_write_string(&com1, ", apic_periodic=");
+                serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_is_periodic_mode_enabled());
+                serial_write_string(&com1, "\n");
+            }
+#endif
         }
         else
         {
@@ -131,6 +279,9 @@ __attribute__((constructor)) void kernel_initialize(void)
     if (KERNEL_SMOKE_TEST_ENABLE_RTC_SNAPSHOT)
         kernel_smoke_test_run_realtime_clock_snapshot(&com1);
 
+    if (KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE)
+        kernel_smoke_test_run_apic_periodic_mode(&com1);
+
     if (framebuffer_init())
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: framebuffer initialized successfully!\n");
     else
@@ -151,6 +302,8 @@ void kernel_main(void)
         kernel_smoke_test_run_general_protection_exception();
     if (KERNEL_SMOKE_TEST_ENABLE_PAGE_FAULT)
         kernel_smoke_test_run_page_fault_exception();
+    if (KERNEL_SMOKE_TEST_ENABLE_DOUBLE_FAULT)
+        kernel_smoke_test_run_double_fault_exception();
 
     if (framebuffer_available())
     {

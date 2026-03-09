@@ -59,4 +59,30 @@ extern uint32_t interrupt_request_get_realtime_clock_interrupt_count(void);
  */
 extern uint8_t interrupt_request_is_realtime_clock_periodic_enabled(void);
 
+/**
+ * @brief Select timer interrupt owner for vector 32 handler.
+ *
+ * 0 => legacy PIT/PIC ownership (default)
+ * non-zero => Local APIC ownership
+ */
+extern void interrupt_request_set_timer_owner_is_apic(uint8_t enabled);
+
+/**
+ * @brief Return non-zero when timer vector ownership is APIC.
+ */
+extern uint8_t interrupt_request_is_timer_owner_apic(void);
+
+/**
+ * @brief Select keyboard interrupt ownership mode.
+ *
+ * 0 => legacy PIC ownership
+ * non-zero => IOAPIC delivery with Local APIC EOI
+ */
+extern void interrupt_request_set_keyboard_owner_is_apic(uint8_t enabled);
+
+/**
+ * @brief Return non-zero when keyboard IRQ ownership is APIC/IOAPIC.
+ */
+extern uint8_t interrupt_request_is_keyboard_owner_apic(void);
+
 #endif /* !IRQ_H_ */

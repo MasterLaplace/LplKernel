@@ -1,5 +1,6 @@
 #include <kernel/cpu/irq.h>
 
+#include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/exception.h>
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/pic.h>
@@ -26,12 +27,17 @@ static volatile uint32_t interrupt_request_spurious_irq7_count = 0u;
 static volatile uint32_t interrupt_request_spurious_irq15_count = 0u;
 static uint32_t interrupt_request_timer_target_frequency_hz = IRQ_TIMER_DEFAULT_FREQUENCY_HZ;
 static uint8_t interrupt_request_rtc_periodic_enabled = 0u;
+static uint8_t interrupt_request_timer_owner_is_apic = 0u;
+static uint8_t interrupt_request_keyboard_owner_is_apic = 0u;
 
 static void interrupt_request_timer_handler(const InterruptFrame_t *frame)
 {
     (void) frame;
     interrupt_request_tick_count++;
-    programmable_interrupt_controller_send_end_of_interrupt(IRQ_TIMER_LINE);
+    if (interrupt_request_timer_owner_is_apic)
+        advanced_pic_timer_backend_signal_end_of_interrupt();
+    else
+        programmable_interrupt_controller_send_end_of_interrupt(IRQ_TIMER_LINE);
 }
 
 static void interrupt_request_mask_all(void)
@@ -106,6 +112,16 @@ void interrupt_request_set_realtime_clock_periodic_enabled(uint8_t enabled)
     interrupt_request_rtc_periodic_enabled = (uint8_t) (enabled != 0u);
 }
 
+void interrupt_request_set_timer_owner_is_apic(uint8_t enabled)
+{
+    interrupt_request_timer_owner_is_apic = (uint8_t) (enabled != 0u);
+}
+
+void interrupt_request_set_keyboard_owner_is_apic(uint8_t enabled)
+{
+    interrupt_request_keyboard_owner_is_apic = (uint8_t) (enabled != 0u);
+}
+
 uint32_t interrupt_request_get_tick_count(void) { return interrupt_request_tick_count; }
 
 uint32_t interrupt_request_get_spurious_irq7_count(void) { return interrupt_request_spurious_irq7_count; }
@@ -122,4 +138,14 @@ uint32_t interrupt_request_get_realtime_clock_interrupt_count(void)
 uint8_t interrupt_request_is_realtime_clock_periodic_enabled(void)
 {
     return realtime_clock_is_periodic_interrupt_enabled();
+}
+
+uint8_t interrupt_request_is_timer_owner_apic(void)
+{
+    return interrupt_request_timer_owner_is_apic;
+}
+
+uint8_t interrupt_request_is_keyboard_owner_apic(void)
+{
+    return interrupt_request_keyboard_owner_is_apic;
 }

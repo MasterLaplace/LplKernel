@@ -32,7 +32,7 @@ void clock_initialize(void)
     target_frequency_hz = clock_select_profile_frequency_hz();
     interrupt_request_set_realtime_clock_periodic_enabled(0u);
 
-#if defined(LPL_KERNEL_EXPERIMENTAL_APIC_TIMER_BACKEND)
+#if defined(LPL_KERNEL_APIC_TIMER_BACKEND)
     if (advanced_pic_timer_backend_initialize(target_frequency_hz))
         clock_backend_name = advanced_pic_timer_backend_name();
     else

@@ -65,6 +65,27 @@ extern uint8_t advanced_pic_timer_backend_calibrate_with_pit(void);
 extern uint32_t advanced_pic_timer_backend_get_calibrated_timer_frequency_hz(void);
 
 /**
+ * @brief Enable LAPIC periodic timer mode using the remapped timer vector.
+ *
+ * This is an experimental ownership handoff path and should be used only when
+ * APIC probe + late init + calibration succeeded.
+ *
+ * @param target_frequency_hz desired scheduler tick frequency.
+ * @return Non-zero when APIC periodic mode is active, zero otherwise.
+ */
+extern uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequency_hz);
+
+/**
+ * @brief Return non-zero when APIC periodic timer mode is active.
+ */
+extern uint8_t advanced_pic_timer_backend_is_periodic_mode_enabled(void);
+
+/**
+ * @brief Send Local APIC EOI for an APIC-delivered timer interrupt.
+ */
+extern void advanced_pic_timer_backend_signal_end_of_interrupt(void);
+
+/**
  * @brief Return whether current CPU is bootstrap processor according to APIC base MSR.
  */
 extern uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void);
