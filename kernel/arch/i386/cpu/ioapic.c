@@ -14,25 +14,23 @@
 #define IOAPIC_REGISTER_VERSION  0x01u
 #define IOAPIC_REGISTER_REDIRECT 0x10u
 
-#define IOAPIC_REDIR_LOW_VECTOR_MASK           0x000000FFu
-#define IOAPIC_REDIR_LOW_POLARITY_ACTIVE_LOW   (1u << 13u)
-#define IOAPIC_REDIR_LOW_TRIGGER_LEVEL         (1u << 15u)
-#define IOAPIC_REDIR_LOW_MASKED                (1u << 16u)
+#define IOAPIC_REDIR_LOW_VECTOR_MASK         0x000000FFu
+#define IOAPIC_REDIR_LOW_POLARITY_ACTIVE_LOW (1u << 13u)
+#define IOAPIC_REDIR_LOW_TRIGGER_LEVEL       (1u << 15u)
+#define IOAPIC_REDIR_LOW_MASKED              (1u << 16u)
 
-#define ACPI_ISO_POLARITY_MASK                 0x0003u
-#define ACPI_ISO_POLARITY_ACTIVE_HIGH          0x0001u
-#define ACPI_ISO_POLARITY_ACTIVE_LOW           0x0003u
-#define ACPI_ISO_TRIGGER_MASK                  0x000Cu
-#define ACPI_ISO_TRIGGER_EDGE                  0x0004u
-#define ACPI_ISO_TRIGGER_LEVEL                 0x000Cu
+#define ACPI_ISO_POLARITY_MASK        0x0003u
+#define ACPI_ISO_POLARITY_ACTIVE_HIGH 0x0001u
+#define ACPI_ISO_POLARITY_ACTIVE_LOW  0x0003u
+#define ACPI_ISO_TRIGGER_MASK         0x000Cu
+#define ACPI_ISO_TRIGGER_EDGE         0x0004u
+#define ACPI_ISO_TRIGGER_LEVEL        0x000Cu
 
 static const char *io_apic_state_name = "ioapic-not-initialized";
 static uint8_t io_apic_mapped_count = 0u;
 static uint8_t io_apic_route_count = 0u;
-static InputOutputApicUnit_t
-    io_apic_units[INPUT_OUTPUT_APIC_MAX_COUNT] = {0};
-static InputOutputApicRouteInfo_t
-    io_apic_routes[INPUT_OUTPUT_APIC_MAX_ROUTES] = {0};
+static InputOutputApicUnit_t io_apic_units[INPUT_OUTPUT_APIC_MAX_COUNT] = {0};
+static InputOutputApicRouteInfo_t io_apic_routes[INPUT_OUTPUT_APIC_MAX_ROUTES] = {0};
 
 static inline volatile uint32_t *io_apic_register_pointer(uint32_t io_apic_virtual_base, uint32_t offset)
 {
@@ -96,9 +94,7 @@ static uint8_t io_apic_find_unit_for_gsi(uint32_t gsi, uint8_t *unit_index, uint
     if (!unit_index || !gsi_relative)
         return 0u;
 
-    for (uint8_t index = 0u;
-         index < INPUT_OUTPUT_APIC_MAX_COUNT;
-         ++index)
+    for (uint8_t index = 0u; index < INPUT_OUTPUT_APIC_MAX_COUNT; ++index)
     {
         InputOutputApicUnit_t *unit = &io_apic_units[index];
         uint32_t gsi_end;
@@ -207,9 +203,7 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
     io_apic_mapped_count = 0u;
     io_apic_route_count = 0u;
 
-        for (uint8_t index = 0u;
-            index < INPUT_OUTPUT_APIC_MAX_COUNT;
-            ++index)
+    for (uint8_t index = 0u; index < INPUT_OUTPUT_APIC_MAX_COUNT; ++index)
     {
         io_apic_units[index].id = 0u;
         io_apic_units[index].physical_base = 0u;
@@ -274,7 +268,10 @@ const char *input_output_advanced_programmable_interrupt_controller_get_state_na
 
 uint8_t input_output_advanced_programmable_interrupt_controller_get_mapped_count(void) { return io_apic_mapped_count; }
 
-uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_count(void) { return io_apic_route_count; }
+uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_count(void)
+{
+    return io_apic_route_count;
+}
 
 uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(uint8_t route_index)
 {

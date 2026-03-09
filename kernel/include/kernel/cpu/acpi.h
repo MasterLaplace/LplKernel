@@ -14,76 +14,76 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT    16u
 
 typedef struct __attribute__((packed)) {
-	char signature[8];
-	uint8_t checksum;
-	char oem_id[6];
-	uint8_t revision;
-	uint32_t rsdt_address;
-	uint32_t length;
-	uint64_t xsdt_address;
-	uint8_t extended_checksum;
-	uint8_t reserved[3];
+    char signature[8];
+    uint8_t checksum;
+    char oem_id[6];
+    uint8_t revision;
+    uint32_t rsdt_address;
+    uint32_t length;
+    uint64_t xsdt_address;
+    uint8_t extended_checksum;
+    uint8_t reserved[3];
 } AdvancedConfigurationAndPowerInterfaceRsdp_t;
 
 typedef struct __attribute__((packed)) {
-	char signature[4];
-	uint32_t length;
-	uint8_t revision;
-	uint8_t checksum;
-	char oem_id[6];
-	char oem_table_id[8];
-	uint32_t oem_revision;
-	uint32_t creator_id;
-	uint32_t creator_revision;
+    char signature[4];
+    uint32_t length;
+    uint8_t revision;
+    uint8_t checksum;
+    char oem_id[6];
+    char oem_table_id[8];
+    uint32_t oem_revision;
+    uint32_t creator_id;
+    uint32_t creator_revision;
 } AdvancedConfigurationAndPowerInterfaceSdtHeader_t;
 
 typedef struct __attribute__((packed)) {
-	AdvancedConfigurationAndPowerInterfaceSdtHeader_t header;
-	uint32_t local_apic_address;
-	uint32_t flags;
+    AdvancedConfigurationAndPowerInterfaceSdtHeader_t header;
+    uint32_t local_apic_address;
+    uint32_t flags;
 } AdvancedConfigurationAndPowerInterfaceMadt_t;
 
 typedef struct __attribute__((packed)) {
-	uint8_t type;
-	uint8_t length;
+    uint8_t type;
+    uint8_t length;
 } AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t;
 
 typedef struct __attribute__((packed)) {
-	uint8_t type;
-	uint8_t length;
-	uint8_t io_apic_id;
-	uint8_t reserved;
-	uint32_t io_apic_address;
-	uint32_t global_system_interrupt_base;
+    uint8_t type;
+    uint8_t length;
+    uint8_t io_apic_id;
+    uint8_t reserved;
+    uint32_t io_apic_address;
+    uint32_t global_system_interrupt_base;
 } AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t;
 
 typedef struct __attribute__((packed)) {
-	uint8_t type;
-	uint8_t length;
-	uint16_t reserved;
-	uint64_t local_apic_address;
+    uint8_t type;
+    uint8_t length;
+    uint16_t reserved;
+    uint64_t local_apic_address;
 } AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t;
 
 typedef struct __attribute__((packed)) {
-	uint8_t type;
-	uint8_t length;
-	uint8_t bus;
-	uint8_t source;
-	uint32_t global_system_interrupt;
-	uint16_t flags;
+    uint8_t type;
+    uint8_t length;
+    uint8_t bus;
+    uint8_t source;
+    uint32_t global_system_interrupt;
+    uint16_t flags;
 } AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t;
 
 typedef struct {
-	uint8_t id;
-	uint32_t physical_base;
-	uint32_t gsi_base;
+    uint8_t id;
+    uint32_t physical_base;
+    uint32_t gsi_base;
 } AdvancedConfigurationAndPowerInterfaceIoApicInfo_t;
 
 typedef struct {
-	uint8_t bus;
-	uint8_t source_irq;
-	uint32_t gsi;
-	uint16_t flags;
+    uint8_t bus;
+    uint8_t source_irq;
+    uint32_t gsi;
+    uint16_t flags;
 } AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t;
 
 /**
@@ -161,10 +161,8 @@ extern uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_so
  *
  * @return non-zero when MADT topology is available; zero otherwise.
  */
-extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(
-	uint8_t irq,
-	uint32_t *gsi,
-	uint16_t *flags);
+extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq, uint32_t *gsi,
+                                                                               uint16_t *flags);
 
 /**
  * @brief Select the IOAPIC index responsible for a GSI using MADT bases.
@@ -174,8 +172,7 @@ extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(
  *
  * @return non-zero when a candidate IOAPIC was found; zero otherwise.
  */
-extern uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(
-	uint32_t gsi,
-	uint8_t *io_apic_index);
+extern uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t gsi,
+                                                                                    uint8_t *io_apic_index);
 
 #endif /* !ACPI_H_ */

@@ -1,9 +1,9 @@
 #include <kernel/drivers/keyboard.h>
 
-#include <kernel/cpu/isr.h>
-#include <kernel/cpu/irq.h>
-#include <kernel/cpu/pic.h>
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/irq.h>
+#include <kernel/cpu/isr.h>
+#include <kernel/cpu/pic.h>
 #include <kernel/lib/asmutils.h>
 
 #include <stdint.h>

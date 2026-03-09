@@ -109,11 +109,15 @@ static uint32_t acpi_read_ebda_base_physical(void)
     return ((uint32_t) ebda_segment) << 4u;
 }
 
-static const AdvancedConfigurationAndPowerInterfaceRsdp_t *acpi_find_rsdp_in_range(uint32_t start_phys, uint32_t end_phys)
+static const AdvancedConfigurationAndPowerInterfaceRsdp_t *acpi_find_rsdp_in_range(uint32_t start_phys,
+                                                                                   uint32_t end_phys)
 {
-    for (uint32_t addr = start_phys; addr + sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t) <= end_phys; addr += ACPI_RSDP_SCAN_ALIGN)
+    for (uint32_t addr = start_phys; addr + sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t) <= end_phys;
+         addr += ACPI_RSDP_SCAN_ALIGN)
     {
-        const AdvancedConfigurationAndPowerInterfaceRsdp_t *candidate = (const AdvancedConfigurationAndPowerInterfaceRsdp_t *) acpi_map_physical_const(addr, sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t));
+        const AdvancedConfigurationAndPowerInterfaceRsdp_t *candidate =
+            (const AdvancedConfigurationAndPowerInterfaceRsdp_t *) acpi_map_physical_const(
+                addr, sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t));
         if (!candidate)
             continue;
 
@@ -130,7 +134,8 @@ static const AdvancedConfigurationAndPowerInterfaceRsdp_t *acpi_find_rsdp_in_ran
             if (rsdp_length < sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t))
                 continue;
 
-            candidate = (const AdvancedConfigurationAndPowerInterfaceRsdp_t *) acpi_map_physical_const(addr, rsdp_length);
+            candidate =
+                (const AdvancedConfigurationAndPowerInterfaceRsdp_t *) acpi_map_physical_const(addr, rsdp_length);
             if (!candidate)
                 continue;
 
@@ -150,7 +155,8 @@ static const AdvancedConfigurationAndPowerInterfaceRsdp_t *acpi_find_rsdp(void)
 
     if (ebda_base >= 0x00080000u && ebda_base < ACPI_BIOS_SCAN_END)
     {
-        const AdvancedConfigurationAndPowerInterfaceRsdp_t *rsdp = acpi_find_rsdp_in_range(ebda_base, ebda_base + 1024u);
+        const AdvancedConfigurationAndPowerInterfaceRsdp_t *rsdp =
+            acpi_find_rsdp_in_range(ebda_base, ebda_base + 1024u);
         if (rsdp)
             return rsdp;
     }
@@ -160,7 +166,8 @@ static const AdvancedConfigurationAndPowerInterfaceRsdp_t *acpi_find_rsdp(void)
 
 static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *acpi_map_sdt_header(uint32_t physical_address)
 {
-    return (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) acpi_map_physical_const(physical_address, sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t));
+    return (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) acpi_map_physical_const(
+        physical_address, sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t));
 }
 
 static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *acpi_map_sdt_full(uint32_t physical_address)
@@ -172,7 +179,8 @@ static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *acpi_map_sdt_ful
     if (header->length < sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t))
         return NULL;
 
-    return (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) acpi_map_physical_const(physical_address, header->length);
+    return (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) acpi_map_physical_const(physical_address,
+                                                                                               header->length);
 }
 
 static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_t *madt)
@@ -196,7 +204,8 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
 
     while (entry_ptr + sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t) <= entry_end)
     {
-        const AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t *entry = (const AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t *) entry_ptr;
+        const AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t *entry =
+            (const AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t *) entry_ptr;
 
         if (entry->length < sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t))
         {
@@ -212,25 +221,29 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
 
         if (entry->type == 1u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t))
         {
-            const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *ioapic_entry = (const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *) entry_ptr;
+            const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *ioapic_entry =
+                (const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *) entry_ptr;
 
             if (acpi_madt_io_apic_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT)
             {
-                AdvancedConfigurationAndPowerInterfaceIoApicInfo_t *info = &acpi_madt_io_apic_info[acpi_madt_io_apic_count];
+                AdvancedConfigurationAndPowerInterfaceIoApicInfo_t *info =
+                    &acpi_madt_io_apic_info[acpi_madt_io_apic_count];
                 info->id = ioapic_entry->io_apic_id;
                 info->physical_base = ioapic_entry->io_apic_address;
                 info->gsi_base = ioapic_entry->global_system_interrupt_base;
                 acpi_madt_io_apic_count++;
             }
         }
-        else if (entry->type == 2u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t))
+        else if (entry->type == 2u &&
+                 entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t))
         {
             const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *iso_entry =
                 (const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *) entry_ptr;
 
             if (acpi_madt_iso_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT)
             {
-                AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *info = &acpi_madt_iso_info[acpi_madt_iso_count];
+                AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *info =
+                    &acpi_madt_iso_info[acpi_madt_iso_count];
                 info->bus = iso_entry->bus;
                 info->source_irq = iso_entry->source;
                 info->gsi = iso_entry->global_system_interrupt;
@@ -238,7 +251,8 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
                 acpi_madt_iso_count++;
             }
         }
-        else if (entry->type == 5u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t))
+        else if (entry->type == 5u &&
+                 entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t))
         {
             const AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t *lapic_override_entry =
                 (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t *) entry_ptr;
@@ -309,7 +323,8 @@ void advanced_configuration_and_power_interface_madt_initialize(void)
     }
 
     entry_count = (rsdt->length - sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t)) / sizeof(uint32_t);
-    entry_physical_addresses = (const uint32_t *) ((const uint8_t *) rsdt + sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t));
+    entry_physical_addresses =
+        (const uint32_t *) ((const uint8_t *) rsdt + sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t));
 
     for (size_t i = 0; i < entry_count; ++i)
     {

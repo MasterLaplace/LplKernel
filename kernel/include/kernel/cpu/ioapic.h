@@ -14,22 +14,22 @@
 #define INPUT_OUTPUT_APIC_MAX_ROUTES 2u
 
 typedef struct {
-	uint8_t id;
-	uint32_t physical_base;
-	uint32_t virtual_base;
-	uint32_t gsi_base;
-	uint32_t redirection_entry_count;
-	uint8_t mapped;
+    uint8_t id;
+    uint32_t physical_base;
+    uint32_t virtual_base;
+    uint32_t gsi_base;
+    uint32_t redirection_entry_count;
+    uint8_t mapped;
 } InputOutputApicUnit_t;
 
 typedef struct {
-	uint8_t isa_irq;
-	uint32_t gsi;
-	uint8_t vector;
-	uint8_t io_apic_index;
-	uint8_t io_apic_id;
-	uint8_t masked;
-	uint16_t iso_flags;
+    uint8_t isa_irq;
+    uint32_t gsi;
+    uint8_t vector;
+    uint8_t io_apic_index;
+    uint8_t io_apic_id;
+    uint8_t masked;
+    uint16_t iso_flags;
 } InputOutputApicRouteInfo_t;
 
 /**
@@ -58,44 +58,41 @@ extern uint8_t input_output_advanced_programmable_interrupt_controller_get_progr
 /**
  * @brief Return programmed ISA IRQ line for route index.
  */
-extern uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(
-	uint8_t route_index);
+extern uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(uint8_t route_index);
 
 /**
  * @brief Return programmed GSI for route index.
  */
-extern uint32_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_gsi(
-	uint8_t route_index);
+extern uint32_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_gsi(uint8_t route_index);
 
 /**
  * @brief Return programmed IDT vector for route index.
  */
-extern uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_vector(
-	uint8_t route_index);
+extern uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_vector(uint8_t route_index);
 
 /**
  * @brief Return route index IOAPIC source index.
  */
-extern uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_index(
-	uint8_t route_index);
+extern uint8_t
+input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_index(uint8_t route_index);
 
 /**
  * @brief Return route index IOAPIC hardware id.
  */
-extern uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_id(
-	uint8_t route_index);
+extern uint8_t
+input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_id(uint8_t route_index);
 
 /**
  * @brief Return non-zero when programmed route remains masked.
  */
-extern uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(
-	uint8_t route_index);
+extern uint8_t
+input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(uint8_t route_index);
 
 /**
  * @brief Return raw MADT ISO flags consumed for the programmed route.
  */
-extern uint16_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso_flags(
-	uint8_t route_index);
+extern uint16_t
+input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso_flags(uint8_t route_index);
 
 /**
  * @brief Unmask a previously programmed ISA route in IOAPIC redirection table.

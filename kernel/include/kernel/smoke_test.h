@@ -22,7 +22,7 @@
 #define KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS 1u
 #define KERNEL_SMOKE_TEST_ENABLE_RTC_SNAPSHOT       1u
 #ifndef KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE
-#define KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE 0u
+#    define KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE 0u
 #endif
 
 extern void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port);

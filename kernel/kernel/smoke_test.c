@@ -2,8 +2,8 @@
 
 #include <kernel/config.h>
 
-#include <kernel/cpu/clock.h>
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/clock.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>

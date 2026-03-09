@@ -140,12 +140,6 @@ uint8_t interrupt_request_is_realtime_clock_periodic_enabled(void)
     return realtime_clock_is_periodic_interrupt_enabled();
 }
 
-uint8_t interrupt_request_is_timer_owner_apic(void)
-{
-    return interrupt_request_timer_owner_is_apic;
-}
+uint8_t interrupt_request_is_timer_owner_apic(void) { return interrupt_request_timer_owner_is_apic; }
 
-uint8_t interrupt_request_is_keyboard_owner_apic(void)
-{
-    return interrupt_request_keyboard_owner_is_apic;
-}
+uint8_t interrupt_request_is_keyboard_owner_apic(void) { return interrupt_request_keyboard_owner_is_apic; }
