@@ -76,6 +76,9 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: runtime paging initialized successfully!\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing PMM...\n");
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM strategy=");
+    serial_write_string(&com1, physical_memory_manager_get_strategy_name());
+    serial_write_string(&com1, "\n");
     physical_memory_manager_initialize();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-16MB) ready: ");
     serial_write_int(&com1, (int32_t) physical_memory_manager_get_free_page_count());
@@ -88,6 +91,24 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, " pages (~");
     serial_write_int(&com1, (int32_t) (physical_memory_manager_get_free_page_count() * 4 / 1024));
     serial_write_string(&com1, " MB free)\n");
+
+#if !defined(LPL_KERNEL_REAL_TIME_MODE)
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM buddy free blocks by order: ");
+    for (uint8_t order = 0u; order <= 18u; ++order)
+    {
+        uint32_t count = physical_memory_manager_debug_get_free_block_count(order);
+
+        if (!count)
+            continue;
+
+        serial_write_string(&com1, "o");
+        serial_write_int(&com1, (int32_t) order);
+        serial_write_string(&com1, "=");
+        serial_write_int(&com1, (int32_t) count);
+        serial_write_string(&com1, " ");
+    }
+    serial_write_string(&com1, "\n");
+#endif
 
     advanced_configuration_and_power_interface_madt_initialize();
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI MADT state=");
@@ -301,6 +322,26 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     if (KERNEL_SMOKE_TEST_ENABLE_PMM_ALLOCATE_FREE)
         kernel_smoke_test_run_physical_memory_manager_allocate_free(&com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_PAGING_PT_RECLAIM)
+        kernel_smoke_test_run_paging_runtime_page_table_reclaim(&com1);
+
+#if !defined(LPL_KERNEL_REAL_TIME_MODE)
+    if (KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_COALESCE)
+        kernel_smoke_test_run_physical_memory_manager_buddy_coalesce(&com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_STRESS)
+        kernel_smoke_test_run_physical_memory_manager_buddy_stress(&com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_ORDER)
+        kernel_smoke_test_run_physical_memory_manager_buddy_order(&com1);
+
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM guard counters: rejected_free=");
+    serial_write_int(&com1, (int32_t) physical_memory_manager_debug_get_rejected_free_count());
+    serial_write_string(&com1, ", double_free=");
+    serial_write_int(&com1, (int32_t) physical_memory_manager_debug_get_double_free_count());
+    serial_write_string(&com1, "\n");
+#endif
 
     if (KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS)
         kernel_smoke_test_run_interrupt_request_runtime_status(&com1);

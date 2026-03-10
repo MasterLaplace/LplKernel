@@ -20,6 +20,16 @@
 extern PageDirectory_t boot_page_directory;
 
 PageDirectory_t *current_page_directory = NULL;
+static bool page_table_runtime_owned[1024] = {0};
+static uint32_t page_table_runtime_owned_count = 0u;
+
+#if !defined(LPL_KERNEL_REAL_TIME_MODE)
+/*
+ * Server optimization: keep one spare contiguous 4 KB frame from a 2-page
+ * buddy allocation for the next page-table creation.
+ */
+static uint32_t paging_cached_page_table_phys = 0u;
+#endif
 
 ////////////////////////////////////////////////////////////
 // Address Translation
@@ -49,6 +59,36 @@ static inline uint32_t phys_to_virt(uint32_t phys_addr) { return phys_addr + KER
 ////////////////////////////////////////////////////////////
 
 /**
+ * @brief Allocate one physical frame for a new Page Table.
+ *
+ * @details On server builds, prefer a 2-page buddy allocation and cache the
+ *          second frame to reduce allocator churn for bursty PT creation.
+ *          Client/realtime keeps single-page deterministic allocation.
+ */
+static uint32_t paging_allocate_page_table_frame(void)
+{
+#if defined(LPL_KERNEL_REAL_TIME_MODE)
+    return physical_memory_manager_page_frame_allocate();
+#else
+    if (paging_cached_page_table_phys)
+    {
+        uint32_t cached_phys = paging_cached_page_table_phys;
+        paging_cached_page_table_phys = 0u;
+        return cached_phys;
+    }
+
+    uint32_t block_phys = physical_memory_manager_page_frame_allocate_order(1u);
+    if (block_phys)
+    {
+        paging_cached_page_table_phys = block_phys + PAGE_SIZE;
+        return block_phys;
+    }
+
+    return physical_memory_manager_page_frame_allocate();
+#endif
+}
+
+/**
  * @brief Resolve a present PDE to the Page Table it references.
  * @param pde Pointer to a present Page Directory Entry.
  * @return Virtual pointer to the Page Table.
@@ -71,7 +111,7 @@ static inline PageTable_t *paging_get_page_table(const PageDirectoryEntry_t *pde
  */
 static bool paging_create_page_table(PageDirectoryEntry_t *pde, PageDirectoryEntry_t pde_flags)
 {
-    uint32_t new_pt_phys = physical_memory_manager_page_frame_allocate();
+    uint32_t new_pt_phys = paging_allocate_page_table_frame();
     if (new_pt_phys == 0)
         return false;
 
@@ -154,11 +194,32 @@ static void paging_clear_pte(PageTableEntry_t *pte)
     pte->page_frame_base = 0;
 }
 
+/**
+ * @brief Check whether a page table has any present entries.
+ */
+static bool paging_is_page_table_empty(const PageTable_t *page_table)
+{
+    for (uint32_t index = 0u; index < 1024u; ++index)
+    {
+        if (page_table->entries[index].present)
+            return false;
+    }
+
+    return true;
+}
+
 ////////////////////////////////////////////////////////////
 // Public API functions of the Paging module
 ////////////////////////////////////////////////////////////
 
-void paging_initialize_runtime(void) { current_page_directory = &boot_page_directory; }
+void paging_initialize_runtime(void)
+{
+    current_page_directory = &boot_page_directory;
+    page_table_runtime_owned_count = 0u;
+
+    for (uint32_t index = 0u; index < 1024u; ++index)
+        page_table_runtime_owned[index] = false;
+}
 
 bool paging_map_page(uint32_t virt_addr, uint32_t phys_addr, PageDirectoryEntry_t pde_flags, PageTableEntry_t pte_flags)
 {
@@ -177,6 +238,9 @@ bool paging_map_page(uint32_t virt_addr, uint32_t phys_addr, PageDirectoryEntry_
     {
         if (!paging_create_page_table(pde, pde_flags))
             return false;
+
+        page_table_runtime_owned[pd_index] = true;
+        ++page_table_runtime_owned_count;
     }
     else
     {
@@ -210,6 +274,29 @@ bool paging_unmap_page(uint32_t virt_addr)
         return false;
 
     paging_clear_pte(pte);
+
+    if (page_table_runtime_owned[pd_index] && paging_is_page_table_empty(page_table))
+    {
+        uint32_t page_table_phys = PAGE_FRAME_ADDR(pde);
+
+        pde->present = 0;
+        pde->read_write = 0;
+        pde->user_supervisor = 0;
+        pde->write_through = 0;
+        pde->cache_disable = 0;
+        pde->accessed = 0;
+        pde->reserved_zero = 0;
+        pde->page_size = 0;
+        pde->ignored = 0;
+        pde->available = 0;
+        pde->page_table_base = 0;
+
+        page_table_runtime_owned[pd_index] = false;
+        if (page_table_runtime_owned_count > 0u)
+            --page_table_runtime_owned_count;
+        physical_memory_manager_page_frame_free(page_table_phys);
+    }
+
     paging_invlpg(virt_addr);
     return true;
 }
@@ -242,3 +329,5 @@ bool paging_is_mapped(uint32_t virt_addr)
     uint32_t unused;
     return paging_get_physical_address(virt_addr, &unused);
 }
+
+uint32_t paging_get_runtime_owned_page_table_count(void) { return page_table_runtime_owned_count; }

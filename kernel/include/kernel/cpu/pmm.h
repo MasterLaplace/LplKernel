@@ -19,6 +19,7 @@
 #define PMM_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /**
  * @brief Initialize the Physical Memory Manager.
@@ -41,6 +42,14 @@ extern void physical_memory_manager_initialize(void);
 extern uint32_t physical_memory_manager_page_frame_allocate(void);
 
 /**
+ * @brief Allocate a contiguous 2^order block of 4 KB physical pages.
+ *
+ * @param order Buddy order (0 => 1 page, 1 => 2 pages, ...).
+ * @return Base physical address of the allocated block, or 0 on failure.
+ */
+extern uint32_t physical_memory_manager_page_frame_allocate_order(uint8_t order);
+
+/**
  * @brief Free (return) a physical 4 KB page to the pool.
  *
  * @param phys_addr Physical address to free (must be 4 KB aligned).
@@ -48,11 +57,53 @@ extern uint32_t physical_memory_manager_page_frame_allocate(void);
 extern void physical_memory_manager_page_frame_free(uint32_t phys_addr);
 
 /**
+ * @brief Free a contiguous 2^order block of 4 KB physical pages.
+ *
+ * @param phys_addr Base physical address of the allocated block.
+ * @param order Buddy order used at allocation time.
+ */
+extern void physical_memory_manager_page_frame_free_order(uint32_t phys_addr, uint8_t order);
+
+/**
  * @brief Return the current number of free pages.
  *
  * @return Number of pages currently in the free pool.
  */
 extern uint32_t physical_memory_manager_get_free_page_count(void);
+
+/**
+ * @brief Return the active PMM strategy name.
+ *
+ * @return Human-readable strategy string selected at compile time.
+ */
+extern const char *physical_memory_manager_get_strategy_name(void);
+
+/**
+ * @brief Debug helper: check whether a buddy free block exists at address/order.
+ *
+ * @param phys_addr Base physical address of the candidate block.
+ * @param order Buddy order (0=4KB, 1=8KB, ...).
+ * @return true when the exact block is currently free in server buddy mode.
+ */
+extern bool physical_memory_manager_debug_is_free_block(uint32_t phys_addr, uint8_t order);
+
+/**
+ * @brief Debug helper: number of rejected free requests since last PMM init.
+ */
+extern uint32_t physical_memory_manager_debug_get_rejected_free_count(void);
+
+/**
+ * @brief Debug helper: number of rejected frees classified as double-free.
+ */
+extern uint32_t physical_memory_manager_debug_get_double_free_count(void);
+
+/**
+ * @brief Debug helper: number of free blocks available at a buddy order.
+ *
+ * @param order Buddy order (0 => 4 KB, 1 => 8 KB, ...).
+ * @return Number of currently free blocks at this order.
+ */
+extern uint32_t physical_memory_manager_debug_get_free_block_count(uint8_t order);
 
 /**
  * @brief Extend the free pool beyond the 16 MB boot mapping limit.

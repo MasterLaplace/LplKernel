@@ -9,7 +9,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ## 📊 Progress Summary (Updated: 2026)
 
 ### 🎯 Current Position: **Phase 3 Bring-up** ⬅️ YOU ARE HERE
-**Next Goal**: APIC periodic timer ownership handoff (experimental) + final exception matrix closure
+**Next Goal**: Promote APIC/IOAPIC ownership paths from experimental gates to policy-driven defaults, keeping PIT/PIC fallback-safe behavior.
 
 ### Phase Completion Status:
 - ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
@@ -19,20 +19,26 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - ✅ **Phase 1**: Bare Bones Kernel - **100% Complete**
   - VGA text mode ✅, Serial ports ✅, Scrolling ✅, Colors ✅, Multiboot parsing ✅
 
-- 🚧 **Phase 2**: CPU Initialization & Protection - **90% Complete**
+- 🚧 **Phase 2**: CPU Initialization & Protection - **92% Complete**
   - Higher-half kernel ✅, Paging boot-time ✅, Paging runtime API ✅, GDT complete ✅, TSS initialized ✅
-  - Remaining work: implement **Buddy Allocator** for server mode (current Free‑List covers realtime only) and finish integrating the allocator with
-  `paging_map_page()` so page tables can be created dynamically; also Ring 3 transition
+  - Remaining work: complete Ring 3 transition and stabilize allocator policy telemetry/tests across profiles
 
-- 🚧 **Phase 3**: Interrupts & Exceptions - **89% Complete**
+- 🚧 **Phase 3**: Interrupts & Exceptions - **98% Complete**
   - IDT + ISR stubs (0-47) ✅, PIC remap (32-47) ✅, IRQ0 handler + EOI ✅, `sti` sequencing ✅
   - Dedicated exception handlers (#PF/#GP/#DF) ✅, keyboard IRQ1 minimal ✅, spurious IRQ7/IRQ15 policy ✅
   - Exception smoke matrix expanded with controlled regressions (`#DE/#PF/#GP`) ✅
   - `clock_*` abstraction now includes APIC backend scaffold + LAPIC late-init + PIT-based calibration with safe PIT fallback ✅
-  - Remaining: APIC periodic timer ownership path (experimental), #DF dedicated smoke trigger, and SMP-facing APIC routing
+  - APIC periodic timer ownership handoff runtime-validated in QEMU (experimental compile-time path) ✅
+  - IOAPIC IRQ1 ownership handoff runtime-validated in QEMU on client ownership profile path ✅
+  - PIT fallback continuity runtime-validated with APIC ownership disabled profile path, `ticks > 0` and stable IRQ runtime status ✅
+  - ACPI MADT discovery scaffold now parses LAPIC base, IOAPIC entries, and Interrupt Source Overrides (ISO) ✅
+  - Remaining: legacy experimental define deprecation and full policy-driven promotion of APIC/IOAPIC ownership defaults; SMP-facing distribution (AP startup/per-CPU affinity/IPI) is deferred
 
-- ❌ **Phase 4**: Memory Management - **0% Complete**
-  - No heap allocator (kmalloc/kfree), no page frame allocator
+- 🚧 **Phase 4**: Memory Management - **34% Complete**
+  - PMM implemented (client free-list + server buddy allocator with order API) ✅
+  - PMM coalescing/stress smokes + guard telemetry validated in QEMU ✅
+  - Runtime paging now reclaims runtime-created empty page tables on unmap ✅
+  - Missing: heap allocator (kmalloc/kfree), advanced VMM policies, and broader in-kernel consumers of multi-page order allocations
 
 - ❌ **Phase 5**: Device Drivers - **15% Complete**
   - VGA text mode ✅, Serial COM1 ✅, keyboard IRQ1 minimal ✅
@@ -73,16 +79,26 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ### What We Need Next:
 ```
-🎯 Experimental APIC periodic timer programming path (still fallback-safe)
-🎯 Complete exception/IRQ matrix with dedicated #DF trigger path
+🎯 Promote APIC ownership path from experimental compile-time mode to policy-driven default behavior
+🎯 Promote IOAPIC IRQ1 handoff path from experimental compile-time mode to policy-driven default behavior
+🎯 Lock explicit deferrals for Phase 3: x2APIC/SMP/AP startup/IPI/per-CPU interrupt distribution
+```
+
+### Phase 3 Closure Gates (To Drop Experimental Label)
+```
+G1. [x] Profile policy locked and documented (client/server ownership rules)
+G2. [x] APIC state machine emits explicit owner-active or fallback states (no ambiguous "skipped")
+G3. [x] IOAPIC IRQ1 handoff path validated with anti-double-interrupt behavior
+G4. [x] PIT fallback continuity validated when APIC owner path is unavailable
+G5. [x] Smoke matrix entries for APIC/IOAPIC ownership pass in one full validation cycle
+G6. [x] Deferred scope explicitly documented (x2APIC, SMP AP startup, IPI, per-CPU affinity)
 ```
 
 ### Known Issues:
 ```
-⚠️ No page frame allocator (can't create new page tables dynamically)
 ⚠️ No memory allocator (all allocations static)
-⚠️ APIC timer is calibrated but not yet tick owner (PIT still authoritative)
-⚠️ Exception stack has dedicated handlers, but #DF dedicated smoke trigger is still pending
+⚠️ Default tick owner remains PIT; APIC ownership is runtime-validated but still compile-time gated for promotion safety
+⚠️ MADT discovery + IOAPIC scaffold are implemented and validated, but default-owner promotion remains intentionally staged
 ```
 
 ---
@@ -189,8 +205,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐) ⬅️ **CURRENT PHASE**
 
-> 🚧 **STATUS**: IDT+ISR operational, PIC remapped, IRQ0+IRQ1 active, spurious IRQ policy active
-> 🎯 **NEXT STEP**: experimental APIC periodic timer ownership path + #DF smoke-test closure
+> 🚧 **STATUS**: IDT+ISR operational, PIC remapped, IRQ0+IRQ1 active, spurious IRQ policy active, APIC ownership validated in experimental mode
+> 🎯 **NEXT STEP**: first SMP-facing APIC routing scaffolds (MADT/IOAPIC)
 
 ### Interrupt Descriptor Table
 - [x] [Interrupts](https://wiki.osdev.org/Interrupts) - Theory and overview
@@ -222,10 +238,15 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [x] Spurious IRQ7/IRQ15 handling policy (PIC ISR validation)
   - [x] IRQ1 keyboard line unmask + minimal handler (raw scan code)
 - [ ] [NMI](https://wiki.osdev.org/NMI) - Non-Maskable Interrupt
-- [ ] [APIC](https://wiki.osdev.org/APIC) - Advanced PIC (modern systems)
-  - [ ] Local APIC configuration
-  - [ ] [APIC timer](https://wiki.osdev.org/APIC_timer)
-- [ ] [IOAPIC](https://wiki.osdev.org/IOAPIC) - I/O APIC
+- [x] [APIC](https://wiki.osdev.org/APIC) - Advanced PIC (modern systems) (**Partial - Phase 3 scope**)
+  - [x] Local APIC probe + MMIO late-init (xAPIC mode)
+  - [x] [APIC timer](https://wiki.osdev.org/APIC_timer) calibration + periodic owner handoff path (policy-gated)
+  - [ ] x2APIC mode and SMP AP orchestration (deferred)
+- [x] [IOAPIC](https://wiki.osdev.org/IOAPIC) - I/O APIC (**Partial - Phase 3 scope**)
+  - [x] MADT IOAPIC discovery and MMIO mapping
+  - [x] ISA IRQ0/IRQ1 route programming scaffold with ISO-derived flags (masked baseline)
+  - [x] Controlled IRQ1 route enable/handoff path (policy-gated)
+  - [ ] Broad routing policy (RTC/advanced GSI/SMP distribution) deferred
 - [ ] [Message Signaled Interrupts](https://wiki.osdev.org/Message_Signaled_Interrupts) (MSI)
 
 ### Timers

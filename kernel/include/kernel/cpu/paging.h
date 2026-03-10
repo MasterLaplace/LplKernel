@@ -291,6 +291,14 @@ bool paging_get_physical_address(uint32_t virt_addr, uint32_t *phys_addr);
  */
 bool paging_is_mapped(uint32_t virt_addr);
 
+/**
+ * @brief Return number of runtime-created page tables currently active.
+ *
+ * @details Counts only page tables created by paging_map_page() at runtime,
+ *          excluding boot-time page tables.
+ */
+uint32_t paging_get_runtime_owned_page_table_count(void);
+
 // ============================================================================
 // Constants
 // ============================================================================

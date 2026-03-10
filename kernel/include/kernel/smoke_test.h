@@ -21,11 +21,23 @@
 #define KERNEL_SMOKE_TEST_ENABLE_GRAPHICS_DEMO      1u
 #define KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS 1u
 #define KERNEL_SMOKE_TEST_ENABLE_RTC_SNAPSHOT       1u
+#define KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_COALESCE 1u
+#define KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_STRESS   1u
+#define KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_ORDER    1u
+#define KERNEL_SMOKE_TEST_ENABLE_PAGING_PT_RECLAIM  1u
 #ifndef KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE
 #    define KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE 0u
 #endif
 
 extern void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port);
+
+extern void kernel_smoke_test_run_physical_memory_manager_buddy_coalesce(Serial_t *serial_port);
+
+extern void kernel_smoke_test_run_physical_memory_manager_buddy_stress(Serial_t *serial_port);
+
+extern void kernel_smoke_test_run_physical_memory_manager_buddy_order(Serial_t *serial_port);
+
+extern void kernel_smoke_test_run_paging_runtime_page_table_reclaim(Serial_t *serial_port);
 
 extern void kernel_smoke_test_run_division_error(void);
 
