@@ -145,10 +145,7 @@ static inline bool buddy_is_valid_phys(uint32_t phys_addr)
     return IS_PAGE_ALIGNED(phys_addr) && phys_addr < PMM_MAX_PHYS_ADDR;
 }
 
-static bool buddy_is_valid_order(uint8_t order)
-{
-    return order <= PMM_BUDDY_MAX_ORDER;
-}
+static bool buddy_is_valid_order(uint8_t order) { return order <= PMM_BUDDY_MAX_ORDER; }
 
 static bool buddy_is_order_aligned(uint32_t phys_addr, uint8_t order)
 {
@@ -381,15 +378,9 @@ static uint32_t buddy_remove_order(uint8_t requested_order)
     return block_phys;
 }
 
-static void buddy_insert(uint32_t phys_addr)
-{
-    buddy_insert_order(phys_addr, 0u);
-}
+static void buddy_insert(uint32_t phys_addr) { buddy_insert_order(phys_addr, 0u); }
 
-static uint32_t buddy_remove(void)
-{
-    return buddy_remove_order(0u);
-}
+static uint32_t buddy_remove(void) { return buddy_remove_order(0u); }
 
 static void buddy_reset_state(void)
 {

@@ -18,8 +18,8 @@
 #ifndef PMM_H_
 #define PMM_H_
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @brief Initialize the Physical Memory Manager.

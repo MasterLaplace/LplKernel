@@ -152,8 +152,8 @@ void kernel_smoke_test_run_physical_memory_manager_buddy_stress(Serial_t *serial
     uint32_t double_free_after = physical_memory_manager_debug_get_double_free_count();
 
     bool free_count_restored = (free_count_after == free_count_before);
-    bool guard_triggered = (rejected_after == (rejected_before + 1u)) &&
-                           (double_free_after == (double_free_before + 1u));
+    bool guard_triggered =
+        (rejected_after == (rejected_before + 1u)) && (double_free_after == (double_free_before + 1u));
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: PMM buddy stress: alloc=");
     serial_write_int(serial_port, (int32_t) allocation_count);
