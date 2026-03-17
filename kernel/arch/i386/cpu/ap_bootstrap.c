@@ -16,9 +16,9 @@
 #define AP_BOOTSTRAP_STACK_SIZE 8192u
 
 /* Maximum APs we can bootstrap (limit to compacted slots) */
-#define AP_BOOTSTRAP_MAX_APS 31u  /* 0 is BSP, 1-31 are APs */
+#define AP_BOOTSTRAP_MAX_APS 31u /* 0 is BSP, 1-31 are APs */
 
-static ApplicationProcessorBootstrapTable_t ap_bootstrap_table = { 0 };
+static ApplicationProcessorBootstrapTable_t ap_bootstrap_table = {0};
 static bool application_processor_bootstrap_initialized = false;
 static uint8_t ap_bootstrap_static_stacks[AP_BOOTSTRAP_MAX_APS][AP_BOOTSTRAP_STACK_SIZE];
 
@@ -46,7 +46,7 @@ uint8_t application_processor_bootstrap_initialize(void)
     {
         uint8_t apic_id = cpu_topology_get_apic_id_at_slot(slot);
 
-        if (apic_id == 0xFFu)  /* Not yet discovered */
+        if (apic_id == 0xFFu) /* Not yet discovered */
             continue;
 
         /* Skip BSP (it already has a stack) */
@@ -79,8 +79,7 @@ ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_
 {
     for (uint32_t slot = 0u; slot < 32u; ++slot)
     {
-        if (ap_bootstrap_table.entries[slot].initialized &&
-            ap_bootstrap_table.entries[slot].apic_id == apic_id)
+        if (ap_bootstrap_table.entries[slot].initialized && ap_bootstrap_table.entries[slot].apic_id == apic_id)
         {
             return &ap_bootstrap_table.entries[slot];
         }
@@ -102,10 +101,7 @@ ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_
 /**
  * @brief Get total count of non-BSP APs discovered.
  */
-uint32_t application_processor_bootstrap_get_ap_count(void)
-{
-    return ap_bootstrap_table.ap_count;
-}
+uint32_t application_processor_bootstrap_get_ap_count(void) { return ap_bootstrap_table.ap_count; }
 
 /**
  * @brief Get kernel virtual address of AP stack (top of allocated region).
@@ -158,10 +154,7 @@ uint8_t application_processor_bootstrap_is_booted(uint32_t logical_slot)
 /**
  * @brief Reset iteration cursor for iterating through APs.
  */
-void application_processor_bootstrap_reset_iteration(void)
-{
-    ap_bootstrap_table.next_entry_index = 0u;
-}
+void application_processor_bootstrap_reset_iteration(void) { ap_bootstrap_table.next_entry_index = 0u; }
 
 /**
  * @brief Get next unbooted AP entry; returns NULL when iteration exhausted.

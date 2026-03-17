@@ -22,28 +22,27 @@
 /* ── Tuning ────────────────────────────────────────────── */
 
 /** Number of second-level index bits per first-level class. */
-#define TLSF_SLI_LOG2       2u
-#define TLSF_SLI_COUNT      (1u << TLSF_SLI_LOG2)   /* 4 */
+#define TLSF_SLI_LOG2  2u
+#define TLSF_SLI_COUNT (1u << TLSF_SLI_LOG2) /* 4 */
 
 /** Maximum first-level classes (covers up to 2^(FLI-1) byte blocks). */
-#define TLSF_FLI_COUNT      16u
+#define TLSF_FLI_COUNT 16u
 
 /** Minimum block payload size (bytes).  Must be >= 2 * sizeof(void*). */
 #define TLSF_MIN_BLOCK_SIZE 16u
 
 /** Alignment of all returned pointers. */
-#define TLSF_ALIGN          8u
-#define TLSF_ALIGN_MASK     (TLSF_ALIGN - 1u)
+#define TLSF_ALIGN      8u
+#define TLSF_ALIGN_MASK (TLSF_ALIGN - 1u)
 
 /** Bit flags stored in the low bits of block_header_t::size. */
-#define TLSF_BLOCK_FREE_BIT     (1u << 0)
+#define TLSF_BLOCK_FREE_BIT      (1u << 0)
 #define TLSF_BLOCK_PREV_FREE_BIT (1u << 1)
-#define TLSF_BLOCK_FLAG_MASK    (TLSF_BLOCK_FREE_BIT | TLSF_BLOCK_PREV_FREE_BIT)
+#define TLSF_BLOCK_FLAG_MASK     (TLSF_BLOCK_FREE_BIT | TLSF_BLOCK_PREV_FREE_BIT)
 
 /* ── Block header ──────────────────────────────────────── */
 
-typedef struct block_header
-{
+typedef struct block_header {
     /**
      * Size of the usable payload in bytes, with the two LSBs used as flags:
      *   bit 0: 1 = this block is free
@@ -69,12 +68,11 @@ _Static_assert(sizeof(block_header_t) <= TLSF_MIN_BLOCK_SIZE + 2 * sizeof(uint32
                "block_header_t too large for TLSF_MIN_BLOCK_SIZE");
 
 /* Overhead = the non-payload part of the header (size + prev_phys). */
-#define TLSF_BLOCK_OVERHEAD  (sizeof(uint32_t) + sizeof(block_header_t *))
+#define TLSF_BLOCK_OVERHEAD (sizeof(uint32_t) + sizeof(block_header_t *))
 
 /* ── TLSF control structure ───────────────────────────── */
 
-typedef struct
-{
+typedef struct {
     /** FL-level bitmap: bit i set => at least one free block in FL class i. */
     uint32_t fl_bitmap;
 
@@ -104,20 +102,11 @@ static tlsf_control_t g_tlsf;
 
 /* ── Compiler builtins (freestanding) ─────────────────── */
 
-static inline uint32_t tlsf_clz(uint32_t v)
-{
-    return v ? (uint32_t) __builtin_clz(v) : 32u;
-}
+static inline uint32_t tlsf_clz(uint32_t v) { return v ? (uint32_t) __builtin_clz(v) : 32u; }
 
-static inline uint32_t tlsf_ffs(uint32_t v)
-{
-    return v ? (uint32_t) __builtin_ctz(v) : 32u;
-}
+static inline uint32_t tlsf_ffs(uint32_t v) { return v ? (uint32_t) __builtin_ctz(v) : 32u; }
 
-static inline uint32_t tlsf_log2_floor(uint32_t v)
-{
-    return 31u - tlsf_clz(v);
-}
+static inline uint32_t tlsf_log2_floor(uint32_t v) { return 31u - tlsf_clz(v); }
 
 /* ── rdtsc helper (optional; gracefully degrades) ─────── */
 
@@ -125,7 +114,7 @@ static inline uint32_t tlsf_rdtsc_low(void)
 {
 #if defined(__i386__) || defined(__x86_64__)
     uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo) :: "edx");
+    asm volatile("rdtsc" : "=a"(lo)::"edx");
     return lo;
 #else
     return 0u;
@@ -134,50 +123,23 @@ static inline uint32_t tlsf_rdtsc_low(void)
 
 /* ── Block helpers ─────────────────────────────────────── */
 
-static inline uint32_t block_get_size(const block_header_t *b)
-{
-    return b->size & ~TLSF_BLOCK_FLAG_MASK;
-}
+static inline uint32_t block_get_size(const block_header_t *b) { return b->size & ~TLSF_BLOCK_FLAG_MASK; }
 
-static inline void block_set_size(block_header_t *b, uint32_t sz)
-{
-    b->size = sz | (b->size & TLSF_BLOCK_FLAG_MASK);
-}
+static inline void block_set_size(block_header_t *b, uint32_t sz) { b->size = sz | (b->size & TLSF_BLOCK_FLAG_MASK); }
 
-static inline bool block_is_free(const block_header_t *b)
-{
-    return (b->size & TLSF_BLOCK_FREE_BIT) != 0u;
-}
+static inline bool block_is_free(const block_header_t *b) { return (b->size & TLSF_BLOCK_FREE_BIT) != 0u; }
 
-static inline void block_set_free(block_header_t *b)
-{
-    b->size |= TLSF_BLOCK_FREE_BIT;
-}
+static inline void block_set_free(block_header_t *b) { b->size |= TLSF_BLOCK_FREE_BIT; }
 
-static inline void block_set_used(block_header_t *b)
-{
-    b->size &= ~TLSF_BLOCK_FREE_BIT;
-}
+static inline void block_set_used(block_header_t *b) { b->size &= ~TLSF_BLOCK_FREE_BIT; }
 
-static inline bool block_is_prev_free(const block_header_t *b)
-{
-    return (b->size & TLSF_BLOCK_PREV_FREE_BIT) != 0u;
-}
+static inline bool block_is_prev_free(const block_header_t *b) { return (b->size & TLSF_BLOCK_PREV_FREE_BIT) != 0u; }
 
-static inline void block_set_prev_free(block_header_t *b)
-{
-    b->size |= TLSF_BLOCK_PREV_FREE_BIT;
-}
+static inline void block_set_prev_free(block_header_t *b) { b->size |= TLSF_BLOCK_PREV_FREE_BIT; }
 
-static inline void block_set_prev_used(block_header_t *b)
-{
-    b->size &= ~TLSF_BLOCK_PREV_FREE_BIT;
-}
+static inline void block_set_prev_used(block_header_t *b) { b->size &= ~TLSF_BLOCK_PREV_FREE_BIT; }
 
-static inline void *block_to_ptr(const block_header_t *b)
-{
-    return (void *) ((uint8_t *) b + TLSF_BLOCK_OVERHEAD);
-}
+static inline void *block_to_ptr(const block_header_t *b) { return (void *) ((uint8_t *) b + TLSF_BLOCK_OVERHEAD); }
 
 static inline block_header_t *ptr_to_block(const void *ptr)
 {
@@ -191,10 +153,7 @@ static inline block_header_t *block_next_phys(const block_header_t *b)
 }
 
 /** Check if a block is the sentinel (last in pool). */
-static inline bool block_is_sentinel(const block_header_t *b)
-{
-    return block_get_size(b) == 0u;
-}
+static inline bool block_is_sentinel(const block_header_t *b) { return block_get_size(b) == 0u; }
 
 /* ── Mapping: size → (fl, sl) ─────────────────────────── */
 
@@ -505,11 +464,11 @@ bool kernel_tlsf_owns(const void *ptr)
     return p >= g_tlsf.pool_start && p < g_tlsf.pool_end;
 }
 
-bool kernel_tlsf_is_initialized(void)        { return g_tlsf.initialized; }
-uint32_t kernel_tlsf_get_pool_size(void)     { return g_tlsf.pool_size; }
-uint32_t kernel_tlsf_get_free_bytes(void)    { return g_tlsf.free_bytes; }
-uint32_t kernel_tlsf_get_alloc_count(void)   { return g_tlsf.alloc_count; }
-uint32_t kernel_tlsf_get_free_count(void)    { return g_tlsf.free_op_count; }
+bool kernel_tlsf_is_initialized(void) { return g_tlsf.initialized; }
+uint32_t kernel_tlsf_get_pool_size(void) { return g_tlsf.pool_size; }
+uint32_t kernel_tlsf_get_free_bytes(void) { return g_tlsf.free_bytes; }
+uint32_t kernel_tlsf_get_alloc_count(void) { return g_tlsf.alloc_count; }
+uint32_t kernel_tlsf_get_free_count(void) { return g_tlsf.free_op_count; }
 uint32_t kernel_tlsf_get_failed_alloc_count(void) { return g_tlsf.failed_alloc_count; }
-uint32_t kernel_tlsf_get_wcet_alloc_cycles(void)  { return g_tlsf.wcet_alloc_cycles; }
-uint32_t kernel_tlsf_get_wcet_free_cycles(void)    { return g_tlsf.wcet_free_cycles; }
+uint32_t kernel_tlsf_get_wcet_alloc_cycles(void) { return g_tlsf.wcet_alloc_cycles; }
+uint32_t kernel_tlsf_get_wcet_free_cycles(void) { return g_tlsf.wcet_free_cycles; }

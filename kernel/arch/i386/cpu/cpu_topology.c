@@ -106,10 +106,7 @@ uint32_t cpu_topology_register_discovered_apic_id(uint32_t apic_id)
     return cpu_topology_register_apic_id_internal(apic_id & 0xFFu);
 }
 
-uint32_t cpu_topology_get_local_apic_id(void)
-{
-    return cpu_topology_local_apic_id;
-}
+uint32_t cpu_topology_get_local_apic_id(void) { return cpu_topology_local_apic_id; }
 
 void cpu_topology_set_runtime_local_apic_id(uint32_t apic_id)
 {
@@ -142,10 +139,7 @@ void cpu_topology_mark_runtime_cpu_online(void)
     cpu_topology_mark_apic_id_online(cpu_topology_local_apic_id);
 }
 
-uint32_t cpu_topology_get_online_cpu_count(void)
-{
-    return cpu_topology_online_cpu_count;
-}
+uint32_t cpu_topology_get_online_cpu_count(void) { return cpu_topology_online_cpu_count; }
 
 bool cpu_topology_is_logical_slot_online(uint32_t slot)
 {
@@ -172,7 +166,7 @@ uint32_t cpu_topology_get_slot_domain(uint32_t slot)
 uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot)
 {
     if (slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS)
-        return 0xFFu;  /* Invalid APIC ID */
+        return 0xFFu; /* Invalid APIC ID */
 
     uint32_t apic_id = cpu_topology_apic_id_to_slot[slot];
     if (apic_id == CPU_TOPOLOGY_INVALID_APIC_ID)
@@ -181,15 +175,9 @@ uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot)
     return apic_id & 0xFFu;
 }
 
-uint32_t cpu_topology_get_discovered_cpu_count(void)
-{
-    return cpu_topology_discovered_cpu_count;
-}
+uint32_t cpu_topology_get_discovered_cpu_count(void) { return cpu_topology_discovered_cpu_count; }
 
-const char *cpu_topology_get_source_name(void)
-{
-    return cpu_topology_source_name;
-}
+const char *cpu_topology_get_source_name(void) { return cpu_topology_source_name; }
 
 bool cpu_topology_debug_force_logical_slot(uint32_t slot)
 {
@@ -217,7 +205,4 @@ void cpu_topology_debug_clear_forced_logical_slot(void)
         cpu_topology_source_name = "topology-cpuid-no-apic";
 }
 
-uint8_t cpu_topology_is_forced(void)
-{
-    return cpu_topology_forced_slot_enabled;
-}
+uint8_t cpu_topology_is_forced(void) { return cpu_topology_forced_slot_enabled; }

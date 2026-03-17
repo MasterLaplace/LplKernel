@@ -13,8 +13,8 @@
 #define COM1_PORT          0x3F8u
 #define COM1_LSR_THRE      0x20u
 
-#define IRQ_KEYBOARD_LINE   1u
-#define IRQ_KEYBOARD_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_KEYBOARD_LINE)
+#define IRQ_KEYBOARD_LINE            1u
+#define IRQ_KEYBOARD_VECTOR          (PIC_VECTOR_OFFSET_MASTER + IRQ_KEYBOARD_LINE)
 #define KEYBOARD_CHAR_QUEUE_CAPACITY 128u
 
 static uint32_t keyboard_irq_count = 0u;
@@ -96,25 +96,13 @@ void keyboard_interrupt_initialize(void)
     interrupt_service_routine_register_handler(IRQ_KEYBOARD_VECTOR, keyboard_interrupt_handler);
 }
 
-uint32_t keyboard_get_irq_count(void)
-{
-    return keyboard_irq_count;
-}
+uint32_t keyboard_get_irq_count(void) { return keyboard_irq_count; }
 
-uint32_t keyboard_get_printable_count(void)
-{
-    return keyboard_printable_count;
-}
+uint32_t keyboard_get_printable_count(void) { return keyboard_printable_count; }
 
-char keyboard_get_last_printable_char(void)
-{
-    return keyboard_last_printable_char;
-}
+char keyboard_get_last_printable_char(void) { return keyboard_last_printable_char; }
 
-uint32_t keyboard_get_pending_char_count(void)
-{
-    return keyboard_char_queue_count;
-}
+uint32_t keyboard_get_pending_char_count(void) { return keyboard_char_queue_count; }
 
 uint8_t keyboard_try_pop_char(char *out_char)
 {
@@ -127,7 +115,4 @@ uint8_t keyboard_try_pop_char(char *out_char)
     return 1u;
 }
 
-uint32_t keyboard_get_dropped_char_count(void)
-{
-    return keyboard_char_queue_drop_count;
-}
+uint32_t keyboard_get_dropped_char_count(void) { return keyboard_char_queue_drop_count; }

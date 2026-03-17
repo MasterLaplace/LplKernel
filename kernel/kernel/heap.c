@@ -3,17 +3,17 @@
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
-#include <kernel/mm/vmm.h>
 #include <kernel/mm/heap.h>
 #include <kernel/mm/slab.h>
 #include <kernel/mm/tlsf.h>
+#include <kernel/mm/vmm.h>
 #include <stdbool.h>
 #include <stdint.h>
 
 #define KERNEL_HEAP_ALIGNMENT       8u
 #define KERNEL_HEAP_BLOCK_FLAG_FREE 0x01u
 #define KERNEL_HEAP_BLOCK_FLAG_BIG  0x02u
-#define KERNEL_HEAP_BLOCK_FLAG_SC   0x04u  /* server size-class bucket block */
+#define KERNEL_HEAP_BLOCK_FLAG_SC   0x04u /* server size-class bucket block */
 #define KERNEL_HEAP_BLOCK_FLAG_VMM  0x08u
 #define KERNEL_HEAP_MIN_SPLIT       32u
 #define KERNEL_HEAP_MAX_ORDER       18u
@@ -21,25 +21,25 @@
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 /* Total pages pre-allocated in the boot pool for first-fit fallback. */
-#define KERNEL_HEAP_CLIENT_BOOT_POOL_PAGES 8u
+#    define KERNEL_HEAP_CLIENT_BOOT_POOL_PAGES 8u
 /*
  * Pages donated to the slab sub-system (taken from the boot pool).
  * KERNEL_SLAB_CACHE_MAX_PAGES pages per cache × 3 caches.
  */
-#define KERNEL_HEAP_CLIENT_SLAB_PAGES (KERNEL_SLAB_CACHE_MAX_PAGES * 3u)
+#    define KERNEL_HEAP_CLIENT_SLAB_PAGES (KERNEL_SLAB_CACHE_MAX_PAGES * 3u)
 
 /* TLSF deterministic O(1) heap pool size (4 MB). */
-#define KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE (4u * 1024u * 1024u)
+#    define KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE (4u * 1024u * 1024u)
 static uint8_t kernel_heap_client_tlsf_pool[KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE] __attribute__((aligned(8)));
 #else
 /* Server size-class fast-path: power-of-two sizes 8 … 512 B. */
-#define KERNEL_HEAP_SIZE_CLASSES      7u
+#    define KERNEL_HEAP_SIZE_CLASSES   7u
 /*
  * Logical domain count for server allocator staging.
  * With current single-core bring-up, selection defaults to domain 0.
  * Phase 4 SMP work will wire this selector to per-CPU topology.
  */
-#define KERNEL_HEAP_SERVER_DOMAINS    2u
+#    define KERNEL_HEAP_SERVER_DOMAINS 2u
 #endif
 
 static KernelHeapBlock_t *kernel_heap_free_list = NULL;
@@ -78,9 +78,7 @@ typedef struct KernelHeapServerDomain {
  * Each bucket is a singly-linked free-list using the KernelHeapBlock next
  * pointer.  When a bucket is empty, kmalloc falls through to first-fit.
  */
-static uint32_t kernel_heap_size_class_sizes[KERNEL_HEAP_SIZE_CLASSES] = {
-    8u, 16u, 32u, 64u, 128u, 256u, 512u
-};
+static uint32_t kernel_heap_size_class_sizes[KERNEL_HEAP_SIZE_CLASSES] = {8u, 16u, 32u, 64u, 128u, 256u, 512u};
 static KernelHeapServerDomain_t kernel_heap_server_domains[KERNEL_HEAP_SERVER_DOMAINS];
 static uint32_t kernel_heap_server_active_domain = 0u;
 static uint8_t kernel_heap_server_slot_domain_override_enabled[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC];
@@ -93,10 +91,7 @@ static const char kernel_heap_strategy_name[] = "slab+tlsf-client";
 static const char kernel_heap_strategy_name[] = "sizeclass+first-fit-server";
 #endif
 
-static uint32_t kernel_heap_align_up(uint32_t value, uint32_t align)
-{
-    return (value + (align - 1u)) & ~(align - 1u);
-}
+static uint32_t kernel_heap_align_up(uint32_t value, uint32_t align) { return (value + (align - 1u)) & ~(align - 1u); }
 
 static uint32_t kernel_heap_virt_to_phys(const void *virt_ptr)
 {
@@ -128,8 +123,8 @@ static uint32_t kernel_heap_server_get_local_domain_index(void)
 }
 
 static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t local_domain_index,
-                                                                    uint32_t size_class_index,
-                                                                    uint32_t *owner_domain_index)
+                                                                   uint32_t size_class_index,
+                                                                   uint32_t *owner_domain_index)
 {
     if (!owner_domain_index || size_class_index >= KERNEL_HEAP_SIZE_CLASSES)
         return NULL;
@@ -350,10 +345,7 @@ void kernel_heap_initialize_ap_domain(uint32_t logical_slot)
     }
 }
 #else
-void kernel_heap_initialize_ap_domain(uint32_t logical_slot)
-{
-    (void) logical_slot;
-}
+void kernel_heap_initialize_ap_domain(uint32_t logical_slot) { (void) logical_slot; }
 #endif
 
 void kernel_heap_initialize(void)
@@ -435,7 +427,7 @@ void *kmalloc(size_t size)
             uint32_t owner_domain_index = local_domain_index;
 
             uint32_t eflags;
-            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
 
             if (local_domain && local_domain->size_class_lists[sc])
             {
@@ -444,14 +436,14 @@ void *kmalloc(size_t size)
                 --local_domain->size_class_free_counts[sc];
             }
 
-            __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+            __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
 
             if (!block && local_domain)
             {
                 ++local_domain->remote_probe_count;
-                __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+                __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
                 block = kernel_heap_server_try_pop_remote_bucket(local_domain_index, sc, &owner_domain_index);
-                __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+                __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
                 if (block)
                     ++local_domain->remote_hit_count;
             }
@@ -470,9 +462,10 @@ void *kmalloc(size_t size)
 
             if (local_domain)
                 ++local_domain->first_fit_fallback_count;
-                
+
             batch_count = 4u; /* Batch size for refill */
-            total_size = kernel_heap_align_up(kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+            total_size = kernel_heap_align_up(
+                kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
             total_size *= batch_count;
             if (local_domain)
                 ++local_domain->size_class_refill_counts[matched_sc];
@@ -559,36 +552,37 @@ void *kmalloc(size_t size)
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     if (matched_sc != 0xFFFFFFFFu && batch_count > 1u)
     {
-         uint32_t sc_full_size = kernel_heap_align_up(kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+        uint32_t sc_full_size = kernel_heap_align_up(
+            kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
 
-         uint32_t eflags;
-         __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+        uint32_t eflags;
+        __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
 
-         for (uint32_t i = 1u; i < batch_count; ++i)
-         {
-             if (current->size < sc_full_size * (i + 1u))
-                 break;
+        for (uint32_t i = 1u; i < batch_count; ++i)
+        {
+            if (current->size < sc_full_size * (i + 1u))
+                break;
 
-             KernelHeapBlock_t *piece = (KernelHeapBlock_t *) ((uint8_t *) current + (i * sc_full_size));
-             piece->size = sc_full_size;
-             piece->flags = KERNEL_HEAP_BLOCK_FLAG_SC | KERNEL_HEAP_BLOCK_FLAG_FREE;
-             piece->order = (uint8_t) matched_sc;
-             piece->reserved = (uint16_t) local_domain_index;
-             piece->magic = KERNEL_HEAP_HEADER_MAGIC;
-             
-             if (local_domain)
-             {
-                 piece->next = local_domain->size_class_lists[matched_sc];
-                 local_domain->size_class_lists[matched_sc] = piece;
-                 ++local_domain->size_class_free_counts[matched_sc];
-             }
-         }
-         __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+            KernelHeapBlock_t *piece = (KernelHeapBlock_t *) ((uint8_t *) current + (i * sc_full_size));
+            piece->size = sc_full_size;
+            piece->flags = KERNEL_HEAP_BLOCK_FLAG_SC | KERNEL_HEAP_BLOCK_FLAG_FREE;
+            piece->order = (uint8_t) matched_sc;
+            piece->reserved = (uint16_t) local_domain_index;
+            piece->magic = KERNEL_HEAP_HEADER_MAGIC;
 
-         current->size = sc_full_size; 
-         current->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
-         current->order = (uint8_t) matched_sc;
-         current->reserved = (uint16_t) local_domain_index;
+            if (local_domain)
+            {
+                piece->next = local_domain->size_class_lists[matched_sc];
+                local_domain->size_class_lists[matched_sc] = piece;
+                ++local_domain->size_class_free_counts[matched_sc];
+            }
+        }
+        __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
+
+        current->size = sc_full_size;
+        current->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
+        current->order = (uint8_t) matched_sc;
+        current->reserved = (uint16_t) local_domain_index;
     }
     else
     {
@@ -687,14 +681,14 @@ void kfree(void *ptr)
             KernelHeapServerDomain_t *domain = &kernel_heap_server_domains[owner_domain];
 
             uint32_t eflags;
-            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
 
             header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
             header->next = domain->size_class_lists[sc];
             domain->size_class_lists[sc] = header;
             ++domain->size_class_free_counts[sc];
 
-            __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+            __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
             return;
         }
     }
@@ -852,7 +846,6 @@ uint32_t kernel_heap_get_server_per_cpu_hit_count(uint32_t slot)
     return 0u;
 #endif
 }
-
 
 void kernel_heap_hot_loop_enter(void)
 {

@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 
-#include <kernel/mm/stack_allocator.h>
 #include <kernel/mm/heap.h>
+#include <kernel/mm/stack_allocator.h>
 
 static uint8_t *kernel_stack_allocator_base = NULL;
 static uint32_t kernel_stack_allocator_capacity = 0u;
@@ -68,10 +68,7 @@ void *kernel_stack_alloc_push(uint32_t size, uint32_t align)
     return result;
 }
 
-uint32_t kernel_stack_alloc_get_marker(void)
-{
-    return kernel_stack_allocator_offset;
-}
+uint32_t kernel_stack_alloc_get_marker(void) { return kernel_stack_allocator_offset; }
 
 void kernel_stack_alloc_rollback(uint32_t marker)
 {

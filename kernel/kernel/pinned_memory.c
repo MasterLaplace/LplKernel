@@ -1,8 +1,8 @@
 #define __LPL_KERNEL__
 
-#include <kernel/mm/pinned_memory.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/mm/pinned_memory.h>
 #include <kernel/mm/vmm.h>
 #include <stddef.h>
 
@@ -30,7 +30,7 @@ void *kernel_pinned_alloc(uint32_t size)
     uint32_t pages_needed = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 
     uint32_t start_virt = pinned_virtual_cursor;
-    
+
     if (!kernel_vmm_reserve_at((void *) start_virt, pages_needed))
         return NULL;
 
@@ -86,12 +86,6 @@ void kernel_pinned_free(void *ptr, uint32_t size)
     kernel_vmm_free_pages(ptr, pages_to_free);
 }
 
-uint32_t kernel_pinned_get_allocated_pages(void)
-{
-    return pinned_allocated_pages;
-}
+uint32_t kernel_pinned_get_allocated_pages(void) { return pinned_allocated_pages; }
 
-uint32_t kernel_pinned_get_released_pages(void)
-{
-    return pinned_released_pages;
-}
+uint32_t kernel_pinned_get_released_pages(void) { return pinned_released_pages; }

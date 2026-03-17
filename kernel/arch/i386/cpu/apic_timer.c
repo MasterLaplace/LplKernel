@@ -147,7 +147,8 @@ uint8_t advanced_pic_timer_backend_late_initialize(void)
 
     apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
 
-    advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-ready-lvt-masked" : "xapic-ready-lvt-masked";
+    advanced_pic_timer_backend_state_name =
+        apic_is_x2apic_active() ? "x2apic-ready-lvt-masked" : "xapic-ready-lvt-masked";
     return 1u;
 }
 
@@ -176,7 +177,7 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
 
     start_tick = interrupt_request_get_tick_count();
 
-    apic_write(LAPIC_REG_TIMER_DIV, 0x3u); /* Divide by 16 */
+    apic_write(LAPIC_REG_TIMER_DIV, 0x3u);                /* Divide by 16 */
     apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu); /* One-shot mode, masked */
     apic_write(LAPIC_REG_TIMER_INIT, 0xFFFFFFFFu);
 
@@ -244,7 +245,8 @@ uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequenc
     interrupt_request_set_timer_owner_is_apic(1u);
 
     advanced_pic_timer_local_apic_periodic_mode_enabled = 1u;
-    advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-periodic-active" : "xapic-periodic-active";
+    advanced_pic_timer_backend_state_name =
+        apic_is_x2apic_active() ? "x2apic-periodic-active" : "xapic-periodic-active";
     return 1u;
 }
 
@@ -280,10 +282,7 @@ uint8_t advanced_pic_timer_backend_is_periodic_mode_enabled(void)
     return advanced_pic_timer_local_apic_periodic_mode_enabled;
 }
 
-void advanced_pic_timer_backend_signal_end_of_interrupt(void)
-{
-    apic_send_eoi();
-}
+void advanced_pic_timer_backend_signal_end_of_interrupt(void) { apic_send_eoi(); }
 
 uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void)
 {

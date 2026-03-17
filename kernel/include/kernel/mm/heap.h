@@ -53,8 +53,7 @@ extern uint32_t kernel_heap_get_size_class_hit_count(uint32_t size_class_index);
 extern bool kernel_heap_set_server_active_domain(uint32_t domain_index);
 extern uint32_t kernel_heap_get_server_domain_count(void);
 extern uint32_t kernel_heap_get_server_active_domain(void);
-extern uint32_t kernel_heap_get_server_domain_refill_count(uint32_t domain_index,
-														   uint32_t size_class_index);
+extern uint32_t kernel_heap_get_server_domain_refill_count(uint32_t domain_index, uint32_t size_class_index);
 extern uint32_t kernel_heap_get_server_domain_first_fit_fallback_count(uint32_t domain_index);
 extern uint32_t kernel_heap_get_server_domain_remote_probe_count(uint32_t domain_index);
 extern uint32_t kernel_heap_get_server_domain_remote_hit_count(uint32_t domain_index);

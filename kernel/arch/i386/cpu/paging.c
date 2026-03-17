@@ -8,9 +8,9 @@
  *          operations on the active page directory.
  */
 
+#include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
-#include <kernel/cpu/apic_ipi.h>
 #include <stddef.h>
 #include <string.h>
 

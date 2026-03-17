@@ -6,18 +6,18 @@
 */
 
 #include <kernel/cpu/apic.h>
-#include <kernel/lib/asmutils.h>
 #include <kernel/drivers/serial.h>
+#include <kernel/lib/asmutils.h>
 #include <stdbool.h>
 #include <stddef.h>
 
 extern Serial_t com1;
 
-#define IA32_APIC_BASE_MSR                0x0000001Bu
-#define IA32_APIC_BASE_X2APIC_MODE_BIT    (1ull << 10u)
-#define IA32_APIC_BASE_ENABLE_BIT         (1ull << 11u)
+#define IA32_APIC_BASE_MSR             0x0000001Bu
+#define IA32_APIC_BASE_X2APIC_MODE_BIT (1ull << 10u)
+#define IA32_APIC_BASE_ENABLE_BIT      (1ull << 11u)
 
-#define CPUID_FEAT_ECX_X2APIC             (1u << 21u)
+#define CPUID_FEAT_ECX_X2APIC (1u << 21u)
 
 static uint32_t g_apic_mmio_base = 0u;
 static bool g_x2apic_active = false;
@@ -25,7 +25,7 @@ static bool g_x2apic_active = false;
 bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
 {
     uint32_t eax, ebx, ecx, edx;
-    
+
     g_apic_mmio_base = mmio_virtual_base;
 
     /* Check x2APIC support via CPUID */
@@ -48,9 +48,10 @@ bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
         apic_base |= IA32_APIC_BASE_ENABLE_BIT;
         cpu_write_msr(IA32_APIC_BASE_MSR, apic_base);
         g_x2apic_active = false;
-        
+
         /* Enable LAPIC via Spurious Vector Register */
-        if (g_apic_mmio_base) {
+        if (g_apic_mmio_base)
+        {
             uint32_t svr = apic_read(LAPIC_REG_SPURIOUS);
             apic_write(LAPIC_REG_SPURIOUS, svr | (1u << 8u));
         }
@@ -66,12 +67,12 @@ uint32_t apic_read(uint32_t reg_offset)
     {
         /* x2APIC: read from MSR 0x800 + (reg_offset >> 4) */
         uint32_t msr = X2APIC_MSR_BASE + (reg_offset >> 4);
-        return (uint32_t)cpu_read_msr(msr);
+        return (uint32_t) cpu_read_msr(msr);
     }
     else if (g_apic_mmio_base)
     {
         /* xAPIC: read from MMIO */
-        return *(volatile uint32_t *)(uintptr_t)(g_apic_mmio_base + reg_offset);
+        return *(volatile uint32_t *) (uintptr_t) (g_apic_mmio_base + reg_offset);
     }
     return 0xFFFFFFFFu;
 }
@@ -82,12 +83,12 @@ void apic_write(uint32_t reg_offset, uint32_t value)
     {
         /* x2APIC: write to MSR 0x800 + (reg_offset >> 4) */
         uint32_t msr = X2APIC_MSR_BASE + (reg_offset >> 4);
-        cpu_write_msr(msr, (uint64_t)value);
+        cpu_write_msr(msr, (uint64_t) value);
     }
     else if (g_apic_mmio_base)
     {
         /* xAPIC: write to MMIO */
-        *(volatile uint32_t *)(uintptr_t)(g_apic_mmio_base + reg_offset) = value;
+        *(volatile uint32_t *) (uintptr_t) (g_apic_mmio_base + reg_offset) = value;
     }
 }
 
@@ -107,12 +108,6 @@ void apic_write_icr(uint32_t high, uint32_t low)
     }
 }
 
-void apic_send_eoi(void)
-{
-    apic_write(LAPIC_REG_EOI, 0u);
-}
+void apic_send_eoi(void) { apic_write(LAPIC_REG_EOI, 0u); }
 
-bool apic_is_x2apic_active(void)
-{
-    return g_x2apic_active;
-}
+bool apic_is_x2apic_active(void) { return g_x2apic_active; }

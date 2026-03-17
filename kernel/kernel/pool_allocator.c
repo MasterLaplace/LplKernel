@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 
-#include <kernel/mm/pool_allocator.h>
 #include <kernel/mm/heap.h>
+#include <kernel/mm/pool_allocator.h>
 #include <stddef.h>
 
 static uint8_t *kernel_pool_base = NULL;
@@ -20,7 +20,7 @@ static inline uint32_t pool_allocator_rdtsc_low(void)
 {
 #if defined(__i386__) || defined(__x86_64__)
     uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo) :: "edx");
+    asm volatile("rdtsc" : "=a"(lo)::"edx");
     return lo;
 #else
     return 0u;

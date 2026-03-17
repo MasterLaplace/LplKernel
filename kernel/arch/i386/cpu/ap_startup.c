@@ -17,18 +17,18 @@
 #include <stdint.h>
 
 /* Kernel CR3 value (page directory physical address) */
-extern void *boot_page_directory;  /* Defined in boot.S */
-extern void *boot_page_tables;     /* Defined in boot.S */
+extern void *boot_page_directory; /* Defined in boot.S */
+extern void *boot_page_tables;    /* Defined in boot.S */
 extern InterruptDescriptorTable_t interrupt_descriptor_table;
 
 /* Higher-half base (see paging.h) */
 
 static uint32_t kernel_cr3_cached = 0u;
-static ApplicationProcessorLocalContext_t ap_local_context = { 0 };
-static Serial_t *ap_serial_port = NULL;  /* Shared serial port reference */
+static ApplicationProcessorLocalContext_t ap_local_context = {0};
+static Serial_t *ap_serial_port = NULL; /* Shared serial port reference */
 static uint32_t ap_startup_reported_online_count = 0u;
 static uint8_t ap_startup_last_reported_apic_id = 0xFFu;
-static uint8_t ap_startup_reported_apic_bitmap[32] = { 0u };
+static uint8_t ap_startup_reported_apic_bitmap[32] = {0u};
 
 static uint8_t ap_startup_try_mark_reported_apic_id(uint8_t apic_id)
 {
@@ -61,7 +61,7 @@ static void ap_startup_record_online_event(uint8_t apic_id, uint32_t logical_slo
 uint32_t application_processor_startup_get_kernel_cr3(void)
 {
     if (!kernel_cr3_cached)
-        kernel_cr3_cached = (uint32_t)(uintptr_t)&boot_page_directory - KERNEL_VIRTUAL_BASE;
+        kernel_cr3_cached = (uint32_t) (uintptr_t) &boot_page_directory - KERNEL_VIRTUAL_BASE;
 
     return kernel_cr3_cached;
 }
@@ -73,16 +73,12 @@ uint32_t application_processor_startup_get_kernel_cr3(void)
  *
  * @param serial_port Pointer to COM1 serial port struct.
  */
-void application_processor_startup_set_serial_port(Serial_t *serial_port)
-{
-    ap_serial_port = serial_port;
-}
+void application_processor_startup_set_serial_port(Serial_t *serial_port) { ap_serial_port = serial_port; }
 
 uint8_t application_processor_startup_ensure_low_identity_mapping(void)
 {
     uint32_t *page_directory = (uint32_t *) (uintptr_t) &boot_page_directory;
-    uint32_t page_tables_phys =
-        ((uint32_t) (uintptr_t) &boot_page_tables - KERNEL_VIRTUAL_BASE) & 0xFFFFF000u;
+    uint32_t page_tables_phys = ((uint32_t) (uintptr_t) &boot_page_tables - KERNEL_VIRTUAL_BASE) & 0xFFFFF000u;
 
     if ((page_directory[0] & 0x1u) == 0u)
     {
@@ -128,7 +124,7 @@ void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logi
 
     /* Bind AP to domain (using slot → domain mapping; AP will share BSP domain by default) */
     uint32_t domain = cpu_topology_get_slot_domain(logical_slot);
-    
+
     /* Initialize AP memory domain caching infrastructure */
     kernel_heap_initialize_ap_domain(logical_slot);
 
@@ -143,7 +139,6 @@ void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logi
         serial_write_int(ap_serial_port, (int32_t) domain);
         serial_write_string(ap_serial_port, "\n");
     }
-
 }
 
 void application_processor_startup_report_bootstrap_ack(uint8_t apic_id, uint32_t logical_slot)
@@ -151,39 +146,24 @@ void application_processor_startup_report_bootstrap_ack(uint8_t apic_id, uint32_
     ap_startup_record_online_event(apic_id, logical_slot);
 }
 
-uint32_t application_processor_startup_get_reported_online_count(void)
-{
-    return ap_startup_reported_online_count;
-}
+uint32_t application_processor_startup_get_reported_online_count(void) { return ap_startup_reported_online_count; }
 
-uint8_t application_processor_startup_get_last_reported_apic_id(void)
-{
-    return ap_startup_last_reported_apic_id;
-}
+uint8_t application_processor_startup_get_last_reported_apic_id(void) { return ap_startup_last_reported_apic_id; }
 
 /**
  * @brief Get AP's local APIC ID.
  */
-uint8_t application_processor_startup_get_apic_id(void)
-{
-    return ap_local_context.apic_id;
-}
+uint8_t application_processor_startup_get_apic_id(void) { return ap_local_context.apic_id; }
 
 /**
  * @brief Get AP's logical slot.
  */
-uint32_t application_processor_startup_get_logical_slot(void)
-{
-    return ap_local_context.logical_slot;
-}
+uint32_t application_processor_startup_get_logical_slot(void) { return ap_local_context.logical_slot; }
 
 /**
  * @brief Check if AP CPU has been initialized.
  */
-uint8_t application_processor_startup_is_initialized(void)
-{
-    return ap_local_context.initialized;
-}
+uint8_t application_processor_startup_is_initialized(void) { return ap_local_context.initialized; }
 
 /**
  * @brief Minimal AP main loop (placeholder for real task scheduling).
@@ -197,6 +177,6 @@ void application_processor_startup_main_loop(void)
     asm volatile("sti");
     while (1)
     {
-        asm volatile("hlt");  /* Wait for interrupt */
+        asm volatile("hlt"); /* Wait for interrupt */
     }
 }

@@ -8,9 +8,9 @@
 #ifndef KERNEL_MM_VMM_H_
 #define KERNEL_MM_VMM_H_
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /* VMM Regions */
 #define KERNEL_VMM_DYNAMIC_START 0xD0000000u

@@ -16,12 +16,12 @@
  * Contains APIC ID, logical slot mapping, and stack allocation info.
  */
 typedef struct APBootstrapEntry {
-    uint8_t apic_id;          /* APIC ID of this AP */
-    uint32_t logical_slot;    /* Compacted logical slot from topology */
-    void *stack_base;         /* Virtual address of stack base */
-    uint32_t stack_size;      /* Stack size (typically 8 KB) */
-    uint8_t initialized;      /* Whether this entry is valid */
-    uint8_t booted;           /* Whether AP has been started */
+    uint8_t apic_id;       /* APIC ID of this AP */
+    uint32_t logical_slot; /* Compacted logical slot from topology */
+    void *stack_base;      /* Virtual address of stack base */
+    uint32_t stack_size;   /* Stack size (typically 8 KB) */
+    uint8_t initialized;   /* Whether this entry is valid */
+    uint8_t booted;        /* Whether AP has been started */
 } ApplicationProcessorBootstrapEntry_t;
 
 /**
@@ -32,9 +32,9 @@ typedef struct APBootstrapEntry {
  * @note Logical slot is a compacted index assigned during topology discovery, not necessarily contiguous.
  */
 typedef struct APBootstrapTable_t {
-    ApplicationProcessorBootstrapEntry_t entries[32u];  /* One per possible slot */
-    uint32_t ap_count;                 /* Number of non-BSP APs */
-    uint32_t next_entry_index;         /* Cursor for iteration */
+    ApplicationProcessorBootstrapEntry_t entries[32u]; /* One per possible slot */
+    uint32_t ap_count;                                 /* Number of non-BSP APs */
+    uint32_t next_entry_index;                         /* Cursor for iteration */
 } ApplicationProcessorBootstrapTable_t;
 
 /**

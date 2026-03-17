@@ -58,8 +58,8 @@ extern uint16_t application_processor_trampoline_get_acknowledgement_word(void);
  * @param cr3_physical Shared kernel CR3 physical address.
  */
 extern void application_processor_trampoline_configure_handoff(uint8_t apic_id, uint32_t logical_slot,
-                                            uint32_t stack_top_virtual, uint32_t c_entry_virtual,
-                                            uint32_t main_loop_virtual, uint32_t cr3_physical);
+                                                               uint32_t stack_top_virtual, uint32_t c_entry_virtual,
+                                                               uint32_t main_loop_virtual, uint32_t cr3_physical);
 
 /**
  * @brief Wait for AP C-entry completion marker from trampoline handoff.

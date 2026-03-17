@@ -5,32 +5,23 @@
 ** vmm — Virtual Memory Manager implementation
 */
 
-#include <kernel/mm/vmm.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/mm/vmm.h>
 #include <string.h>
 
-#define VMM_PAGE_COUNT (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
+#define VMM_PAGE_COUNT  (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
 #define VMM_BITMAP_SIZE (VMM_PAGE_COUNT / 8)
 
 static uint8_t vmm_bitmap[VMM_BITMAP_SIZE];
 static uint32_t vmm_last_search_index = 0u;
 static bool vmm_initialized = false;
 
-static void vmm_bitmap_set(uint32_t index)
-{
-    vmm_bitmap[index / 8] |= (1 << (index % 8));
-}
+static void vmm_bitmap_set(uint32_t index) { vmm_bitmap[index / 8] |= (1 << (index % 8)); }
 
-static void vmm_bitmap_clear(uint32_t index)
-{
-    vmm_bitmap[index / 8] &= ~(1 << (index % 8));
-}
+static void vmm_bitmap_clear(uint32_t index) { vmm_bitmap[index / 8] &= ~(1 << (index % 8)); }
 
-static bool vmm_bitmap_test(uint32_t index)
-{
-    return (vmm_bitmap[index / 8] & (1 << (index % 8))) != 0;
-}
+static bool vmm_bitmap_test(uint32_t index) { return (vmm_bitmap[index / 8] & (1 << (index % 8))) != 0; }
 
 bool kernel_vmm_initialize(void)
 {
@@ -52,7 +43,7 @@ void *kernel_vmm_reserve_pages(uint32_t page_count)
     for (uint32_t i = 0u; i < VMM_PAGE_COUNT; ++i)
     {
         uint32_t idx = (vmm_last_search_index + i) % VMM_PAGE_COUNT;
-        
+
         if (!vmm_bitmap_test(idx))
         {
             if (++consecutive == page_count)
@@ -74,8 +65,8 @@ void *kernel_vmm_reserve_pages(uint32_t page_count)
         vmm_bitmap_set(found_index + i);
 
     vmm_last_search_index = found_index + page_count;
-    
-    return (void *)(uintptr_t)(KERNEL_VMM_DYNAMIC_START + (found_index * PAGE_SIZE));
+
+    return (void *) (uintptr_t) (KERNEL_VMM_DYNAMIC_START + (found_index * PAGE_SIZE));
 }
 
 bool kernel_vmm_reserve_at(void *virt, uint32_t page_count)
@@ -83,7 +74,7 @@ bool kernel_vmm_reserve_at(void *virt, uint32_t page_count)
     if (!vmm_initialized || !virt || page_count == 0)
         return false;
 
-    uint32_t virt_addr = (uint32_t)(uintptr_t)virt;
+    uint32_t virt_addr = (uint32_t) (uintptr_t) virt;
     if (virt_addr < KERNEL_VMM_DYNAMIC_START || (virt_addr + page_count * PAGE_SIZE) > KERNEL_VMM_DYNAMIC_END)
         return false;
 
@@ -109,7 +100,7 @@ void *kernel_vmm_alloc_pages(uint32_t page_count)
     if (!virt_base)
         return NULL;
 
-    uint32_t start_virt = (uint32_t)(uintptr_t)virt_base;
+    uint32_t start_virt = (uint32_t) (uintptr_t) virt_base;
 
     for (uint32_t i = 0u; i < page_count; ++i)
     {
@@ -147,7 +138,7 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count)
     if (!vmm_initialized || !ptr || page_count == 0)
         return;
 
-    uint32_t virt_start = (uint32_t)(uintptr_t)ptr;
+    uint32_t virt_start = (uint32_t) (uintptr_t) ptr;
     if (virt_start < KERNEL_VMM_DYNAMIC_START || virt_start >= KERNEL_VMM_DYNAMIC_END)
         return;
 
