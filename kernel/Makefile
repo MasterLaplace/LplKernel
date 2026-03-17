@@ -36,6 +36,12 @@ LIBS:=$(LIBS) $(KERNEL_ARCH_LIBS)
 
 KERNEL_OBJS=\
 $(KERNEL_ARCH_OBJS) \
+kernel/heap.o \
+kernel/slab.o \
+kernel/frame_arena.o \
+kernel/pool_allocator.o \
+kernel/ring_buffer.o \
+kernel/tlsf.o \
 kernel/kernel.o \
 kernel/smoke_test.o \
 

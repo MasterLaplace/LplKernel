@@ -18,11 +18,11 @@ for arg in "$@"; do
             REALTIME_MODE=1
             ;;
         --client)
-            REALTIME_MODE=1
+            export REALTIME_MODE=1
             export GRAPHICS_MODE=1
             ;;
         --server)
-            REALTIME_MODE=0
+            export REALTIME_MODE=0
             export GRAPHICS_MODE=0
             ;;
         --compile-db)

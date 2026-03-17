@@ -8,8 +8,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ## 📊 Progress Summary (Updated: 2026)
 
-### 🎯 Current Position: **Phase 3 Bring-up** ⬅️ YOU ARE HERE
-**Next Goal**: Promote APIC/IOAPIC ownership paths from experimental gates to policy-driven defaults, keeping PIT/PIC fallback-safe behavior.
+### 🎯 Current Position: **Phase 4 Bring-up** ⬅️ YOU ARE HERE
+**Next Goal**: Advance Phase 4 VMM policy work and close remaining Ring 3 transition tasks from Phase 2.
 
 ### Phase Completion Status:
 - ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
@@ -23,26 +23,47 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - Higher-half kernel ✅, Paging boot-time ✅, Paging runtime API ✅, GDT complete ✅, TSS initialized ✅
   - Remaining work: complete Ring 3 transition and stabilize allocator policy telemetry/tests across profiles
 
-- 🚧 **Phase 3**: Interrupts & Exceptions - **98% Complete**
+- ✅ **Phase 3**: Interrupts & Exceptions - **100% Complete**
   - IDT + ISR stubs (0-47) ✅, PIC remap (32-47) ✅, IRQ0 handler + EOI ✅, `sti` sequencing ✅
   - Dedicated exception handlers (#PF/#GP/#DF) ✅, keyboard IRQ1 minimal ✅, spurious IRQ7/IRQ15 policy ✅
   - Exception smoke matrix expanded with controlled regressions (`#DE/#PF/#GP`) ✅
   - `clock_*` abstraction now includes APIC backend scaffold + LAPIC late-init + PIT-based calibration with safe PIT fallback ✅
-  - APIC periodic timer ownership handoff runtime-validated in QEMU (experimental compile-time path) ✅
-  - IOAPIC IRQ1 ownership handoff runtime-validated in QEMU on client ownership profile path ✅
-  - PIT fallback continuity runtime-validated with APIC ownership disabled profile path, `ticks > 0` and stable IRQ runtime status ✅
-  - ACPI MADT discovery scaffold now parses LAPIC base, IOAPIC entries, and Interrupt Source Overrides (ISO) ✅
-  - Remaining: legacy experimental define deprecation and full policy-driven promotion of APIC/IOAPIC ownership defaults; SMP-facing distribution (AP startup/per-CPU affinity/IPI) is deferred
+  - APIC periodic timer ownership handoff promoted to runtime profile policy defaults ✅
+  - IOAPIC IRQ1 ownership handoff promoted to runtime profile policy defaults ✅
+  - PIT fallback continuity runtime-validated with ownership-disabled profile path, `ticks > 0`, and stable IRQ runtime status ✅
+  - ACPI MADT discovery scaffold parses LAPIC base, IOAPIC entries, and Interrupt Source Overrides (ISO) ✅
+  - AP startup low-memory trampoline installed at SIPI vector `0x08`; BSP-side INIT/SIPI dispatch runtime-validated in QEMU SMP=2 with ack marker (`ack_word=0x4150`) and `delivered=1` ✅
+  - AP trampoline handoff from real mode to protected/paged AP C entry (`application_processor_startup_initialize_cpu`) runtime-validated in QEMU SMP=2 on server and client profiles (`c_entry_word=0x4350`) ✅
+  - AP startup dispatch telemetry hardened with per-AP retry window (`attempts`, `retries`, `seq_fail`, `ack_to`, `c_entry_to`) and zero C-entry timeout in validated runs ✅
 
-- 🚧 **Phase 4**: Memory Management - **34% Complete**
+- 🚧 **Phase 4**: Memory Management - **85% Complete** (Client Profile 100% Validated)
   - PMM implemented (client free-list + server buddy allocator with order API) ✅
   - PMM coalescing/stress smokes + guard telemetry validated in QEMU ✅
   - Runtime paging now reclaims runtime-created empty page tables on unmap ✅
-  - Missing: heap allocator (kmalloc/kfree), advanced VMM policies, and broader in-kernel consumers of multi-page order allocations
+  - Initial kernel heap allocator (`kmalloc`/`kfree`) wired with profile-aware behavior and smoke validation ✅
+  - Heap hardening pass: header magic checks + rejected/double-free counters + runtime smoke validation on both profiles ✅
+  - Client deterministic boot pool: 8 pre-allocated 4 KiB pages split between slab caches and first-fit list at init time; no runtime PMM calls from kmalloc ✅
+  - Client fixed-size slab allocator: three O(1) caches (16 B / 64 B / 256 B) backed by boot pool, with anti-double-free cookie guard (`0x534C4131`) ✅
+  - Server size-class fast-path: 7 per-size free-lists (8–512 B) for O(1) alloc/free on common sizes; first-fit serves as fallback and feeds buckets on first free ✅
+  - Server allocation-domain scaffold: size-class buckets now sit behind a logical multi-domain selector sourced from CPU logical slot (CPUID APIC ID compacted to stable slot; boot default slot 0 -> domain 0), with refill/fallback + remote probe/hit telemetry, preparing per-CPU then per-NUMA sharding without changing current behavior ✅
+  - Server allocator now supports per-slot domain override table (moving off single global active-domain behavior toward per-CPU cache-front routing) ✅
+  - Slab smoke tests (client): alloc×2, free, guard-check for all three caches, runtime validated ✅
+  - Size-class smoke tests (server): alloc→free→realloc hit-count verification for 8/64/256 B, plus domain/refill telemetry validation, runtime validated ✅
+  - Client hot-loop memory rule scaffolding: `kernel_heap_hot_loop_enter/leave` + runtime violation counter + dedicated smoke ✅
+  - Client frame arena allocator implemented (pre-allocated 2 KiB bootstrap capacity, reset-per-frame semantics, runtime telemetry + smoke validation) ✅
+  - Client fixed-size pool allocator implemented (64 B objects, 32-slot bootstrap capacity, O(1) alloc/free, exhaustion smoke) ✅
+  - Client ring buffer implemented (32 B slots, 32-entry bootstrap capacity, explicit SPSC mode, FIFO/wrap/full-empty smoke) ✅
+  - Client pinned memory API (`kernel_pinned_alloc` / DMA mappings) implemented and validated in emulation ✅
+  - Client full validation matrix (WCET bounds, soak bounds, wrap-around stress, hot-loop bounds) passing cleanly under QEMU ✅
+  - Memory architecture docs added: `PMM_BUDDY.md`, `KMALLOC_PROFILE_SPLIT.md`, `CLIENT_MEMORY_RULES.md`, `SERVER_NUMA_SMP.md` ✅
+  - Missing: advanced VMM policies (kernel VA range manager, mmap/munmap), broader in-kernel consumers of multi-page order allocations
 
-- ❌ **Phase 5**: Device Drivers - **15% Complete**
-  - VGA text mode ✅, Serial COM1 ✅, keyboard IRQ1 minimal ✅
-  - Missing: full PS/2 decode/layout, storage, network, USB, PCI
+- 🚧 **Phase 5**: Device Drivers - **29% Complete**
+  - VGA text mode ✅, Serial COM1 ✅, keyboard IRQ1 raw handler ✅
+  - PS/2 set-1 decode scaffold + modifier tracking + printable FIFO queue APIs (`keyboard_try_pop_char`) ✅
+  - Keyboard queue overflow telemetry (`keyboard_get_dropped_char_count`) + runtime counters wired ✅
+  - Text-mode interactive kernel console loop (non-blocking input path + `help/stats/ap/kbd` commands) ✅
+  - Missing: full keyboard layout/mapping policy, storage, network, USB, PCI
 
 - ❌ **Phase 6**: Multitasking & Scheduling - **0% Complete**
   - No scheduler, processes, threads, or context switching
@@ -72,16 +93,20 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ First hardware IRQ path validated (IRQ0 timer + EOI)
 ✅ Dedicated panic handlers for #PF/#GP/#DF
 ✅ IRQ1 keyboard minimal handler (raw scan code + EOI)
+✅ PS/2 keyboard decode scaffold with printable queue API (`keyboard_try_pop_char`)
+✅ Non-blocking kernel console loop (keyboard queue first, serial fallback via `serial_try_read_char`)
 ✅ Spurious IRQ7/IRQ15 detection policy
 ✅ Exception smoke tests for #DE/#PF/#GP (compile-time controlled)
 ✅ APIC probe metadata, LAPIC MMIO late-init, and PIT-referenced LAPIC calibration
+✅ BSP AP startup dispatch with active low-memory trampoline, INIT/SIPI ack counters, and protected-mode AP C-entry handoff telemetry
 ```
 
 ### What We Need Next:
 ```
-🎯 Promote APIC ownership path from experimental compile-time mode to policy-driven default behavior
-🎯 Promote IOAPIC IRQ1 handoff path from experimental compile-time mode to policy-driven default behavior
-🎯 Lock explicit deferrals for Phase 3: x2APIC/SMP/AP startup/IPI/per-CPU interrupt distribution
+🎯 Complete Phase 2 Ring 3 transition and user-mode entry validation
+🎯 Expand Phase 4 VMM policy surface (kernel VA range manager, mmap/munmap design and bring-up)
+🎯 Integrate multi-page/order allocations into additional in-kernel consumers
+🎯 Begin Phase 5 keyboard layout policy and first storage-driver milestone
 ```
 
 ### Phase 3 Closure Gates (To Drop Experimental Label)
@@ -91,14 +116,14 @@ G2. [x] APIC state machine emits explicit owner-active or fallback states (no am
 G3. [x] IOAPIC IRQ1 handoff path validated with anti-double-interrupt behavior
 G4. [x] PIT fallback continuity validated when APIC owner path is unavailable
 G5. [x] Smoke matrix entries for APIC/IOAPIC ownership pass in one full validation cycle
-G6. [x] Deferred scope explicitly documented (x2APIC, SMP AP startup, IPI, per-CPU affinity)
+G6. [x] Deferred scope explicitly documented (x2APIC, IPI, per-CPU affinity)
 ```
 
 ### Known Issues:
 ```
-⚠️ No memory allocator (all allocations static)
-⚠️ Default tick owner remains PIT; APIC ownership is runtime-validated but still compile-time gated for promotion safety
-⚠️ MADT discovery + IOAPIC scaffold are implemented and validated, but default-owner promotion remains intentionally staged
+⚠️ Heap allocator is initial/minimal; advanced deterministic client policies and server throughput allocators are still pending
+⚠️ Advanced VMM policy layer (VA manager plus mmap/munmap semantics) is not implemented yet
+⚠️ x2APIC/IPI/per-CPU interrupt affinity remain deferred beyond current Phase 3 closure scope
 ```
 
 ---
@@ -203,10 +228,10 @@ G6. [x] Deferred scope explicitly documented (x2APIC, SMP AP startup, IPI, per-C
 
 ---
 
-## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐) ⬅️ **CURRENT PHASE**
+## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐)
 
-> 🚧 **STATUS**: IDT+ISR operational, PIC remapped, IRQ0+IRQ1 active, spurious IRQ policy active, APIC ownership validated in experimental mode
-> 🎯 **NEXT STEP**: first SMP-facing APIC routing scaffolds (MADT/IOAPIC)
+> ✅ **STATUS**: Completed. IDT/PIC/IRQ paths, APIC/IOAPIC ownership policy promotion, and SMP=2 AP C-entry handoff are runtime-validated.
+> 🎯 **NEXT STEP**: continue with remaining Phase 2 Ring 3 transition and active Phase 4 memory/VMM expansion.
 
 ### Interrupt Descriptor Table
 - [x] [Interrupts](https://wiki.osdev.org/Interrupts) - Theory and overview

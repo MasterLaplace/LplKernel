@@ -16,28 +16,9 @@
 #define IA32_APIC_BASE_ENABLE_BIT         (1ull << 11u)
 #define IA32_APIC_BASE_PHYSICAL_BASE_MASK 0xFFFFF000ull
 
+#include <kernel/cpu/apic.h>
+
 #define APIC_TIMER_MMIO_VIRTUAL_BASE 0xFFB00000u
-
-#define LOCAL_APIC_REGISTER_VERSION             0x0030u
-#define LOCAL_APIC_REGISTER_EOI                 0x00B0u
-#define LOCAL_APIC_REGISTER_SPURIOUS            0x00F0u
-#define LOCAL_APIC_REGISTER_LVT_TIMER           0x0320u
-#define LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT 0x0380u
-#define LOCAL_APIC_REGISTER_TIMER_CURRENT_COUNT 0x0390u
-#define LOCAL_APIC_REGISTER_TIMER_DIVIDE_CONFIG 0x03E0u
-
-#define LOCAL_APIC_SPURIOUS_ENABLE_BIT      (1u << 8u)
-#define LOCAL_APIC_LVT_MASKED_BIT           (1u << 16u)
-#define LOCAL_APIC_TIMER_VECTOR_PLACEHOLDER 0xFEu
-#define LOCAL_APIC_TIMER_LVT_MODE_ONE_SHOT  (0u << 17u)
-#define LOCAL_APIC_TIMER_LVT_MODE_PERIODIC  (1u << 17u)
-
-#define IRQ_TIMER_LINE   0u
-#define IRQ_TIMER_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_TIMER_LINE)
-
-#define LOCAL_APIC_TIMER_DIVIDE_BY_16_ENCODING 0x3u
-
-#define LOCAL_APIC_TIMER_CALIBRATION_TICKS 8u
 
 static const char *advanced_pic_timer_backend_state_name = "apic-probe-only";
 static uint32_t advanced_pic_timer_local_apic_physical_base = 0u;
@@ -46,21 +27,6 @@ static uint8_t advanced_pic_timer_local_apic_mmio_mapped = 0u;
 static uint32_t advanced_pic_timer_local_apic_version_register = 0u;
 static uint32_t advanced_pic_timer_local_apic_calibrated_frequency_hz = 0u;
 static uint8_t advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
-
-static inline volatile uint32_t *advanced_pic_timer_local_apic_register_pointer(uint32_t offset)
-{
-    return (volatile uint32_t *) (APIC_TIMER_MMIO_VIRTUAL_BASE + offset);
-}
-
-static inline uint32_t advanced_pic_timer_local_apic_register_read(uint32_t offset)
-{
-    return *advanced_pic_timer_local_apic_register_pointer(offset);
-}
-
-static inline void advanced_pic_timer_local_apic_register_write(uint32_t offset, uint32_t value)
-{
-    *advanced_pic_timer_local_apic_register_pointer(offset) = value;
-}
 
 static uint8_t advanced_pic_timer_backend_map_local_apic_mmio(void)
 {
@@ -168,17 +134,20 @@ uint8_t advanced_pic_timer_backend_late_initialize(void)
         return 0u;
     }
 
-    advanced_pic_timer_local_apic_version_register =
-        advanced_pic_timer_local_apic_register_read(LOCAL_APIC_REGISTER_VERSION);
+    /* Initialize Local APIC on this CPU (handles x2APIC transition if supported) */
+    if (!apic_initialize_on_cpu(APIC_TIMER_MMIO_VIRTUAL_BASE))
+    {
+        advanced_pic_timer_backend_state_name = "apic-initialize-failed";
+        return 0u;
+    }
 
-    spurious_register_value = advanced_pic_timer_local_apic_register_read(LOCAL_APIC_REGISTER_SPURIOUS);
-    spurious_register_value |= LOCAL_APIC_SPURIOUS_ENABLE_BIT;
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_SPURIOUS, spurious_register_value);
+    advanced_pic_timer_local_apic_version_register = apic_read(LAPIC_REG_VERSION);
 
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_LVT_TIMER,
-                                                 LOCAL_APIC_LVT_MASKED_BIT | LOCAL_APIC_TIMER_VECTOR_PLACEHOLDER);
+    /* APIC already enabled by apic_initialize_on_cpu (SVR bit 8) */
 
-    advanced_pic_timer_backend_state_name = "apic-late-mmio-ready-lvt-masked";
+    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
+
+    advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-ready-lvt-masked" : "xapic-ready-lvt-masked";
     return 1u;
 }
 
@@ -191,7 +160,7 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
     uint32_t local_apic_elapsed_counts;
     uint64_t local_apic_frequency_hz_u64;
 
-    if (!advanced_pic_timer_local_apic_mmio_mapped)
+    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
         return 0u;
 
     pit_frequency_hz = interrupt_request_get_timer_frequency_hz();
@@ -207,21 +176,18 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
 
     start_tick = interrupt_request_get_tick_count();
 
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_DIVIDE_CONFIG,
-                                                 LOCAL_APIC_TIMER_DIVIDE_BY_16_ENCODING);
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_LVT_TIMER,
-                                                 LOCAL_APIC_LVT_MASKED_BIT | LOCAL_APIC_TIMER_LVT_MODE_ONE_SHOT |
-                                                     LOCAL_APIC_TIMER_VECTOR_PLACEHOLDER);
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT, 0xFFFFFFFFu);
+    apic_write(LAPIC_REG_TIMER_DIV, 0x3u); /* Divide by 16 */
+    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu); /* One-shot mode, masked */
+    apic_write(LAPIC_REG_TIMER_INIT, 0xFFFFFFFFu);
 
-    end_tick = start_tick + LOCAL_APIC_TIMER_CALIBRATION_TICKS;
+    end_tick = start_tick + 8u;
     while (interrupt_request_get_tick_count() < end_tick)
         cpu_no_operation();
 
-    local_apic_current_count = advanced_pic_timer_local_apic_register_read(LOCAL_APIC_REGISTER_TIMER_CURRENT_COUNT);
+    local_apic_current_count = apic_read(LAPIC_REG_TIMER_CUR);
     local_apic_elapsed_counts = 0xFFFFFFFFu - local_apic_current_count;
 
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT, 0u);
+    apic_write(LAPIC_REG_TIMER_INIT, 0u);
 
     if (local_apic_elapsed_counts == 0u)
     {
@@ -231,13 +197,13 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
 
     local_apic_frequency_hz_u64 = (uint64_t) local_apic_elapsed_counts;
     local_apic_frequency_hz_u64 *= (uint64_t) pit_frequency_hz;
-    local_apic_frequency_hz_u64 /= (uint64_t) LOCAL_APIC_TIMER_CALIBRATION_TICKS;
+    local_apic_frequency_hz_u64 /= (uint64_t) 8u;
 
     if (local_apic_frequency_hz_u64 > 0xFFFFFFFFull)
         local_apic_frequency_hz_u64 = 0xFFFFFFFFull;
 
     advanced_pic_timer_local_apic_calibrated_frequency_hz = (uint32_t) local_apic_frequency_hz_u64;
-    advanced_pic_timer_backend_state_name = "apic-calibrated-pit-fallback";
+    advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-calibrated" : "xapic-calibrated";
     return 1u;
 }
 
@@ -246,11 +212,11 @@ uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequenc
     uint32_t timer_initial_count;
     uint32_t lapic_timer_hz;
 
-    if (!advanced_pic_timer_local_apic_mmio_mapped)
+    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
     {
         interrupt_request_set_timer_owner_is_apic(0u);
         advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
-        advanced_pic_timer_backend_state_name = "apic-periodic-mmio-not-ready";
+        advanced_pic_timer_backend_state_name = "apic-periodic-not-ready";
         return 0u;
     }
 
@@ -270,17 +236,15 @@ uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequenc
     if (timer_initial_count == 0u)
         timer_initial_count = 1u;
 
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_DIVIDE_CONFIG,
-                                                 LOCAL_APIC_TIMER_DIVIDE_BY_16_ENCODING);
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_LVT_TIMER,
-                                                 LOCAL_APIC_TIMER_LVT_MODE_PERIODIC | IRQ_TIMER_VECTOR);
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_TIMER_INITIAL_COUNT, timer_initial_count);
+    apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
+    apic_write(LAPIC_REG_LVT_TIMER, (1u << 17u) | (32u + 0u)); /* Periodic mode + Vector 32 */
+    apic_write(LAPIC_REG_TIMER_INIT, timer_initial_count);
 
-    programmable_interrupt_controller_set_mask(IRQ_TIMER_LINE);
+    programmable_interrupt_controller_set_mask(0u);
     interrupt_request_set_timer_owner_is_apic(1u);
 
     advanced_pic_timer_local_apic_periodic_mode_enabled = 1u;
-    advanced_pic_timer_backend_state_name = "apic-periodic-owner-active";
+    advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-periodic-active" : "xapic-periodic-active";
     return 1u;
 }
 
@@ -289,6 +253,14 @@ const char *advanced_pic_timer_backend_name(void) { return advanced_pic_timer_ba
 uint32_t advanced_pic_timer_backend_get_local_apic_physical_base(void)
 {
     return advanced_pic_timer_local_apic_physical_base;
+}
+
+uint32_t advanced_pic_timer_backend_get_local_apic_virtual_base(void)
+{
+    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+        return 0u;
+
+    return APIC_TIMER_MMIO_VIRTUAL_BASE;
 }
 
 uint8_t advanced_pic_timer_backend_is_local_apic_mmio_mapped(void) { return advanced_pic_timer_local_apic_mmio_mapped; }
@@ -310,9 +282,7 @@ uint8_t advanced_pic_timer_backend_is_periodic_mode_enabled(void)
 
 void advanced_pic_timer_backend_signal_end_of_interrupt(void)
 {
-    if (!advanced_pic_timer_local_apic_mmio_mapped)
-        return;
-    advanced_pic_timer_local_apic_register_write(LOCAL_APIC_REGISTER_EOI, 0u);
+    apic_send_eoi();
 }
 
 uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void)

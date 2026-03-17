@@ -8,7 +8,7 @@
 #ifndef APIC_TIMER_H_
 #define APIC_TIMER_H_
 
-#include <stdint.h>
+#include <kernel/cpu/apic.h>
 
 /**
  * @brief Initialize advanced PIC timer backend (probe-only in current stage).
@@ -38,6 +38,13 @@ extern const char *advanced_pic_timer_backend_name(void);
  * Returns 0 when probe failed or local APIC MMIO mode is unavailable.
  */
 extern uint32_t advanced_pic_timer_backend_get_local_apic_physical_base(void);
+
+/**
+ * @brief Return mapped LAPIC MMIO virtual base used by APIC backend.
+ *
+ * Returns 0 when LAPIC MMIO is not mapped yet.
+ */
+extern uint32_t advanced_pic_timer_backend_get_local_apic_virtual_base(void);
 
 /**
  * @brief Return non-zero when LAPIC MMIO page is mapped for runtime access.

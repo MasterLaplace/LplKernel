@@ -110,6 +110,10 @@ void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *idt)
     interrupt_descriptor_table_clear(idt);
     interrupt_descriptor_table_install_vector_range(idt, 0u, idt_exception_stubs, IDT_EXCEPTION_VECTOR_COUNT);
     interrupt_descriptor_table_install_vector_range(idt, PIC_VECTOR_OFFSET_MASTER, idt_irq_stubs, IDT_IRQ_VECTOR_COUNT);
+
+    /* Install IPI handlers */
+    interrupt_descriptor_table_encode_flat_entry(&idt->entries[0x40u], (void *) isr64,
+                                                 GDT_KERNEL_CODE_SELECTOR, IDT_KERNEL_INTERRUPT_GATE);
 }
 
 /**

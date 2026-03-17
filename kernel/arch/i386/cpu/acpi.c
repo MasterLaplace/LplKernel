@@ -18,6 +18,9 @@
 static const char *acpi_madt_state_name = "acpi-not-initialized";
 static uint8_t acpi_madt_available = 0u;
 static uint32_t acpi_madt_local_apic_physical_base = 0u;
+static uint8_t acpi_madt_local_apic_count = 0u;
+static AdvancedConfigurationAndPowerInterfaceLocalApicInfo_t
+    acpi_madt_local_apic_info[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_LOCAL_APIC_COUNT] = {0};
 static uint8_t acpi_madt_io_apic_count = 0u;
 static AdvancedConfigurationAndPowerInterfaceIoApicInfo_t
     acpi_madt_io_apic_info[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT] = {0};
@@ -219,7 +222,22 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
             return 0u;
         }
 
-        if (entry->type == 1u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t))
+        if (entry->type == 0u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t))
+        {
+            const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *lapic_entry =
+                (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *) entry_ptr;
+
+            if (acpi_madt_local_apic_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_LOCAL_APIC_COUNT)
+            {
+                AdvancedConfigurationAndPowerInterfaceLocalApicInfo_t *info =
+                    &acpi_madt_local_apic_info[acpi_madt_local_apic_count];
+                info->acpi_processor_id = lapic_entry->acpi_processor_id;
+                info->apic_id = lapic_entry->apic_id;
+                info->flags = lapic_entry->flags;
+                acpi_madt_local_apic_count++;
+            }
+        }
+        else if (entry->type == 1u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t))
         {
             const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *ioapic_entry =
                 (const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *) entry_ptr;
@@ -287,6 +305,7 @@ void advanced_configuration_and_power_interface_madt_initialize(void)
     acpi_madt_state_name = "acpi-rsdp-search";
     acpi_madt_available = 0u;
     acpi_madt_local_apic_physical_base = 0u;
+    acpi_madt_local_apic_count = 0u;
     acpi_madt_io_apic_count = 0u;
     acpi_madt_iso_count = 0u;
 
@@ -353,6 +372,38 @@ uint8_t advanced_configuration_and_power_interface_madt_is_available(void) { ret
 uint32_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void)
 {
     return acpi_madt_local_apic_physical_base;
+}
+
+uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_count(void)
+{
+    return acpi_madt_local_apic_count;
+}
+
+uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_id(uint8_t index)
+{
+    if (index >= acpi_madt_local_apic_count)
+        return 0u;
+    return acpi_madt_local_apic_info[index].apic_id;
+}
+
+uint8_t advanced_configuration_and_power_interface_madt_is_local_apic_enabled(uint8_t index)
+{
+    if (index >= acpi_madt_local_apic_count)
+        return 0u;
+    return (uint8_t) ((acpi_madt_local_apic_info[index].flags & 0x1u) != 0u);
+}
+
+uint8_t advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count(void)
+{
+    uint8_t enabled_count = 0u;
+
+    for (uint8_t index = 0u; index < acpi_madt_local_apic_count; ++index)
+    {
+        if ((acpi_madt_local_apic_info[index].flags & 0x1u) != 0u)
+            ++enabled_count;
+    }
+
+    return enabled_count;
 }
 
 uint8_t advanced_configuration_and_power_interface_madt_get_io_apic_count(void) { return acpi_madt_io_apic_count; }

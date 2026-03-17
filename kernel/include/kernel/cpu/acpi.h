@@ -12,6 +12,7 @@
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT 8u
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT    16u
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_LOCAL_APIC_COUNT 32u
 
 typedef struct __attribute__((packed)) {
     char signature[8];
@@ -51,6 +52,14 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     uint8_t type;
     uint8_t length;
+    uint8_t acpi_processor_id;
+    uint8_t apic_id;
+    uint32_t flags;
+} AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
     uint8_t io_apic_id;
     uint8_t reserved;
     uint32_t io_apic_address;
@@ -80,6 +89,12 @@ typedef struct {
 } AdvancedConfigurationAndPowerInterfaceIoApicInfo_t;
 
 typedef struct {
+    uint8_t acpi_processor_id;
+    uint8_t apic_id;
+    uint32_t flags;
+} AdvancedConfigurationAndPowerInterfaceLocalApicInfo_t;
+
+typedef struct {
     uint8_t bus;
     uint8_t source_irq;
     uint32_t gsi;
@@ -107,6 +122,26 @@ extern uint8_t advanced_configuration_and_power_interface_madt_is_available(void
  * @brief Return MADT-reported local APIC physical base address.
  */
 extern uint32_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void);
+
+/**
+ * @brief Return discovered Local APIC count from MADT entries.
+ */
+extern uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_count(void);
+
+/**
+ * @brief Return discovered Local APIC id for an index.
+ */
+extern uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_id(uint8_t index);
+
+/**
+ * @brief Return non-zero when Local APIC entry is MADT-enabled (flags bit0).
+ */
+extern uint8_t advanced_configuration_and_power_interface_madt_is_local_apic_enabled(uint8_t index);
+
+/**
+ * @brief Return number of MADT Local APIC entries with enabled flag set.
+ */
+extern uint8_t advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count(void);
 
 /**
  * @brief Return discovered IOAPIC count from MADT entries.

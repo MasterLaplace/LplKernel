@@ -162,3 +162,15 @@ uint8_t serial_read_char(Serial_t *serial)
         ;
     return inb(serial->port);
 }
+
+uint8_t serial_try_read_char(Serial_t *serial, uint8_t *out_char)
+{
+    if (!serial || !out_char)
+        return 0u;
+
+    if (!serial_can_read(serial))
+        return 0u;
+
+    *out_char = inb(serial->port);
+    return 1u;
+}

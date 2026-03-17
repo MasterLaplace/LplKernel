@@ -91,6 +91,10 @@ ISR_NOERR 45    # IRQ13 FPU / coprocessor
 ISR_NOERR 46    # IRQ14 Primary ATA
 ISR_NOERR 47    # IRQ15 Secondary ATA / spurious
 
+# ---- Custom / IPI stubs ---------------------------------------------------
+
+ISR_NOERR 64    # 0x40: TLB Shootdown IPI
+
 # ---- Common ISR stub ------------------------------------------------------
 #
 # Stack layout just before pusha (at entry to this label):

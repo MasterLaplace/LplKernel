@@ -105,6 +105,37 @@ extern uint32_t physical_memory_manager_debug_get_double_free_count(void);
  */
 extern uint32_t physical_memory_manager_debug_get_free_block_count(uint8_t order);
 
+////////////////////////////////////////////////////////////
+// Instrumentation: Watermarks, Histogram, Fragmentation
+////////////////////////////////////////////////////////////
+
+/**
+ * @brief Return the peak (high-water mark) free page count observed since init.
+ */
+extern uint32_t physical_memory_manager_get_watermark_high(void);
+
+/**
+ * @brief Return the trough (low-water mark) free page count observed since init.
+ */
+extern uint32_t physical_memory_manager_get_watermark_low(void);
+
+/**
+ * @brief Export the buddy free-block histogram (server only).
+ *
+ * @param out_counts  Output array, filled with free-block counts per order.
+ * @param max_orders  Maximum number of order slots in out_counts.
+ * @return Number of orders actually written.
+ */
+extern uint32_t physical_memory_manager_get_buddy_histogram(uint32_t *out_counts, uint32_t max_orders);
+
+/**
+ * @brief Return the fragmentation ratio (0..100) of the buddy allocator.
+ *
+ * @details Defined as 100 - (largest_contiguous_free_pages * 100 / total_free_pages).
+ *          Returns 0 on client mode or when no free pages exist.
+ */
+extern uint32_t physical_memory_manager_get_fragmentation_ratio(void);
+
 /**
  * @brief Extend the free pool beyond the 16 MB boot mapping limit.
  *

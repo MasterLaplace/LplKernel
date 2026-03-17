@@ -42,7 +42,7 @@
         {
             "label": "Launch QEMU with GDB",
             "type": "shell",
-            "command": "qemu-system-i386 -s -S -serial file:${workspaceFolder}/serial.log -cdrom ${workspaceFolder}/lpl.iso -m 512 -no-reboot -no-shutdown -d int,cpu_reset -D ${workspaceFolder}/qemu.log",
+            "command": "unset LD_LIBRARY_PATH LD_PRELOAD GTK_PATH XDG_DATA_DIRS SNAP SNAP_VERSION SNAP_ARCH SNAP_REVISION; PATH=/usr/bin:/bin; /usr/bin/qemu-system-i386 -s -S -serial file:${workspaceFolder}/serial.log -cdrom ${workspaceFolder}/lpl.iso -m 512 -no-reboot -no-shutdown -d int,cpu_reset -D ${workspaceFolder}/qemu.log",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

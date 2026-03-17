@@ -24,6 +24,8 @@ typedef struct __attribute__((packed)) {
     uint32_t speed;
 } Serial_t;
 
+extern Serial_t com1;
+
 ////////////////////////////////////////////////////////////
 // Public API functions of the serial module
 ////////////////////////////////////////////////////////////
@@ -47,5 +49,14 @@ extern void serial_write_binary8(Serial_t *serial, uint8_t i);
 extern void serial_write_string(Serial_t *serial, const char *data);
 
 extern uint8_t serial_read_char(Serial_t *serial);
+
+/**
+ * @brief Try to read one byte from serial without blocking.
+ *
+ * @param serial Serial port descriptor.
+ * @param out_char Destination byte when data is available.
+ * @return 1 when one byte was read, 0 when no data is pending or args invalid.
+ */
+extern uint8_t serial_try_read_char(Serial_t *serial, uint8_t *out_char);
 
 #endif /* !SERIAL_H_ */

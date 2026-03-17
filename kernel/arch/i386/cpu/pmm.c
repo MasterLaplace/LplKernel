@@ -69,11 +69,38 @@ static inline uint32_t pmm_virt_to_phys(uint32_t virt_addr) { return virt_addr -
 /** @brief Number of free pages currently in the pool. */
 static uint32_t free_page_count = 0;
 
+/** @brief High-water mark for free_page_count (peak since init). */
+static uint32_t free_page_count_watermark_high = 0;
+
+/** @brief Low-water mark for free_page_count (trough since init). */
+static uint32_t free_page_count_watermark_low = 0xFFFFFFFFu;
+
+/** @brief Track whether watermarks have been seeded after first population. */
+static bool watermarks_seeded = false;
+
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 static const char pmm_strategy_name[] = "freelist-lifo-realtime";
 #else
 static const char pmm_strategy_name[] = "buddy-allocator-server";
 #endif
+
+/**
+ * @brief Update watermarks after any change to free_page_count.
+ */
+static inline void pmm_update_watermarks(void)
+{
+    if (!watermarks_seeded)
+    {
+        free_page_count_watermark_high = free_page_count;
+        free_page_count_watermark_low = free_page_count;
+        watermarks_seeded = true;
+        return;
+    }
+    if (free_page_count > free_page_count_watermark_high)
+        free_page_count_watermark_high = free_page_count;
+    if (free_page_count < free_page_count_watermark_low)
+        free_page_count_watermark_low = free_page_count;
+}
 
 ////////////////////////////////////////////////////////////
 // Algorithm-Specific Helpers
@@ -97,6 +124,7 @@ static void freelist_push(uint32_t phys_addr)
     *page_virt = free_list_head;
     free_list_head = phys_addr;
     ++free_page_count;
+    pmm_update_watermarks();
 }
 
 /**
@@ -112,6 +140,7 @@ static uint32_t freelist_pop(void)
     uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
     free_list_head = *page_virt;
     --free_page_count;
+    pmm_update_watermarks();
     return phys_addr;
 }
 
@@ -340,6 +369,7 @@ static void buddy_insert_order(uint32_t phys_addr, uint8_t requested_order)
     }
 
     buddy_list_push(current_order, current_phys);
+    pmm_update_watermarks();
 }
 
 /**
@@ -375,6 +405,7 @@ static uint32_t buddy_remove_order(uint8_t requested_order)
     }
 
     free_page_count -= (1u << requested_order);
+    pmm_update_watermarks();
     return block_phys;
 }
 
@@ -569,6 +600,62 @@ uint32_t physical_memory_manager_debug_get_free_block_count(uint8_t order)
 #endif
 }
 
+uint32_t physical_memory_manager_get_watermark_high(void) { return free_page_count_watermark_high; }
+
+uint32_t physical_memory_manager_get_watermark_low(void)
+{
+    return watermarks_seeded ? free_page_count_watermark_low : 0u;
+}
+
+uint32_t physical_memory_manager_get_buddy_histogram(uint32_t *out_counts, uint32_t max_orders)
+{
+#ifdef LPL_KERNEL_REAL_TIME_MODE
+    (void) out_counts;
+    (void) max_orders;
+    return 0u;
+#else
+    uint32_t orders_to_write = max_orders;
+    if (orders_to_write > PMM_BUDDY_MAX_ORDER + 1u)
+        orders_to_write = PMM_BUDDY_MAX_ORDER + 1u;
+
+    for (uint32_t order = 0u; order < orders_to_write; ++order)
+        out_counts[order] = buddy_debug_get_free_block_count((uint8_t) order);
+
+    return orders_to_write;
+#endif
+}
+
+uint32_t physical_memory_manager_get_fragmentation_ratio(void)
+{
+#ifdef LPL_KERNEL_REAL_TIME_MODE
+    return 0u;
+#else
+    if (free_page_count == 0u)
+        return 0u;
+
+    /* Find the highest order with at least one free block. */
+    uint32_t largest_contiguous_pages = 0u;
+
+    for (int order = (int) PMM_BUDDY_MAX_ORDER; order >= 0; --order)
+    {
+        uint32_t count = buddy_debug_get_free_block_count((uint8_t) order);
+        if (count > 0u)
+        {
+            largest_contiguous_pages = 1u << (uint32_t) order;
+            break;
+        }
+    }
+
+    if (largest_contiguous_pages == 0u)
+        return 100u;
+
+    if (largest_contiguous_pages >= free_page_count)
+        return 0u;
+
+    return 100u - (largest_contiguous_pages * 100u / free_page_count);
+#endif
+}
+
 void physical_memory_manager_initialize(void)
 {
     uint8_t *mmap_base = NULL;
@@ -578,6 +665,9 @@ void physical_memory_manager_initialize(void)
         return;
 
     free_page_count = 0u;
+    free_page_count_watermark_high = 0u;
+    free_page_count_watermark_low = 0xFFFFFFFFu;
+    watermarks_seeded = false;
 
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     buddy_reset_state();
