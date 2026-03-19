@@ -31,9 +31,9 @@ void programmable_interval_timer_initialize(uint32_t target_frequency_hz)
 {
     uint16_t divisor = programmable_interval_timer_frequency_to_divisor(target_frequency_hz);
 
-    outb((short) PIT_COMMAND_PORT, PIT_CHANNEL0_LOHIBYTE_MODE2_BINARY);
-    outb((short) PIT_CHANNEL0_DATA_PORT, (unsigned char) (divisor & 0x00FFu));
-    outb((short) PIT_CHANNEL0_DATA_PORT, (unsigned char) ((divisor >> 8u) & 0x00FFu));
+    asmutils_output_byte((short) PIT_COMMAND_PORT, PIT_CHANNEL0_LOHIBYTE_MODE2_BINARY);
+    asmutils_output_byte((short) PIT_CHANNEL0_DATA_PORT, (unsigned char) (divisor & 0x00FFu));
+    asmutils_output_byte((short) PIT_CHANNEL0_DATA_PORT, (unsigned char) ((divisor >> 8u) & 0x00FFu));
 
     programmable_interval_timer_frequency_hz = PIT_INPUT_FREQUENCY_HZ / divisor;
 }

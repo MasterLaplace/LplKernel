@@ -97,7 +97,7 @@ void interrupt_request_initialize(void)
 
     programmable_interrupt_controller_clear_mask(IRQ_TIMER_LINE);
     programmable_interrupt_controller_clear_mask(IRQ_KEYBOARD_LINE);
-    cpu_enable_interrupts();
+    asmutils_enable_interrupts();
 }
 
 void interrupt_request_set_timer_frequency_hz(uint32_t frequency_hz)

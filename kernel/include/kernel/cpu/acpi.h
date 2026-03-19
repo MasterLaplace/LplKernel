@@ -8,6 +8,9 @@
 #ifndef ACPI_H_
 #define ACPI_H_
 
+#include <kernel/cpu/paging.h>
+
+#include <stddef.h>
 #include <stdint.h>
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT 8u
@@ -97,7 +100,7 @@ typedef struct {
 typedef struct {
     uint8_t bus;
     uint8_t source_irq;
-    uint32_t gsi;
+    uint32_t global_system_interrupt;
     uint16_t flags;
 } AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t;
 
@@ -249,7 +252,7 @@ extern uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_so
  *
  * @return non-zero when MADT topology is available; zero otherwise.
  */
-extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq, uint32_t *gsi,
+extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq, uint32_t *global_system_interrupt,
                                                                                uint16_t *flags);
 
 /**
@@ -260,7 +263,7 @@ extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(u
  *
  * @return non-zero when a candidate IOAPIC was found; zero otherwise.
  */
-extern uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t gsi,
+extern uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t global_system_interrupt,
                                                                                     uint8_t *io_apic_index);
 
 #endif /* !ACPI_H_ */

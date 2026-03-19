@@ -1,27 +1,4 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** AP (Application Processor) entry point and CPU initialization
-*/
-
-#include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
-#include <kernel/cpu/apic.h>
-#include <kernel/cpu/cpu_topology.h>
-#include <kernel/cpu/gdt.h>
-#include <kernel/cpu/idt.h>
-#include <kernel/cpu/paging.h>
-#include <kernel/mm/heap.h>
-#include <stddef.h>
-#include <stdint.h>
-
-/* Kernel CR3 value (page directory physical address) */
-extern void *boot_page_directory;  /* Defined in boot.S */
-extern void *boot_page_tables;     /* Defined in boot.S */
-extern InterruptDescriptorTable_t interrupt_descriptor_table;
-
-/* Higher-half base (see paging.h) */
 
 static uint32_t kernel_cr3_cached = 0u;
 static ApplicationProcessorLocalContext_t ap_local_context = { 0 };
@@ -128,7 +105,7 @@ void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logi
 
     /* Bind AP to domain (using slot → domain mapping; AP will share BSP domain by default) */
     uint32_t domain = cpu_topology_get_slot_domain(logical_slot);
-    
+
     /* Initialize AP memory domain caching infrastructure */
     kernel_heap_initialize_ap_domain(logical_slot);
 

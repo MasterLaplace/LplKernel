@@ -24,7 +24,7 @@ typedef struct {
 
 typedef struct {
     uint8_t isa_irq;
-    uint32_t gsi;
+    uint32_t global_system_interrupt;
     uint8_t vector;
     uint8_t io_apic_index;
     uint8_t io_apic_id;

@@ -2,13 +2,23 @@
 ** EPITECH PROJECT, 2026
 ** LplKernel
 ** File description:
-** AP bootstrap stack and initialization header
+** AP (Application Processor) bootstrap stack and initialization header
 */
 
 #ifndef KERNEL_CPU_AP_BOOTSTRAP_H_
 #define KERNEL_CPU_AP_BOOTSTRAP_H_
 
+#include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/paging.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
+
+/* Stack size for each AP: 8 KB */
+#define AP_BOOTSTRAP_STACK_SIZE 8192u
+
+/* Maximum APs we can bootstrap (limit to compacted slots) */
+#define AP_BOOTSTRAP_MAX_APS 31u  /* 0 is BSP, 1-31 are APs */
 
 /**
  * @brief Bootstrap entry for an Application Processor (AP).
@@ -40,13 +50,22 @@ typedef struct APBootstrapTable_t {
 /**
  * @brief Initialize AP bootstrap table and allocate per-AP stacks.
  *
- * Call after:
+ * This should be called after:
  * - CPU topology discovery complete (APIC IDs registered)
- * - Heap operational
- * - Paging ready
+ * - Heap is operational
+ * - Paging is set up
  *
  * Allocates 8 KB stack per non-BSP AP discovered in topology.
  * Stores virtual addresses for use in AP protected mode entry.
+ *
+ * Allocates 8 KB stack per non-BSP APIC entry, storing virtual addresses
+ * for later use during AP startup (in protected mode entry point).
+ *
+ * @details:
+ * - Iterate through discovered APIC IDs and assign per-AP static stacks.
+ * - Skip BSP (it already has a stack) and Not yet discovered entries (0xFF).
+ * - Limit to AP_BOOTSTRAP_MAX_APS to avoid overflow.
+ * - Mark entries as initialized and track count of valid APs.
  *
  * @return Non-zero on success; zero if heap allocation fails.
  */
@@ -70,13 +89,20 @@ extern ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get
 extern uint32_t application_processor_bootstrap_get_ap_count(void);
 
 /**
- * @brief Get kernel virtual address of AP stack top (RSP initial value).
+ * @brief Get kernel virtual address of AP stack top of allocated region (RSP initial value).
+ *
+ * @details: Stack grows downward, so "top" is base + size. This is the value to load into RSP for the AP's protected mode entry point.
+ *
  * @return Virtual address; NULL if slot invalid.
  */
 extern void *application_processor_bootstrap_get_ap_stack_top(uint32_t logical_slot);
 
 /**
  * @brief Get physical address of AP stack top (for real mode bootstrap).
+ *
+ * @note: This assumes identity mapping or explicit paging initialization
+ * at the AP bootstrap stage.
+ *
  * @return Physical address; 0 if invalid.
  */
 extern uint32_t application_processor_bootstrap_get_ap_stack_phys(uint32_t logical_slot);
@@ -98,7 +124,7 @@ extern uint8_t application_processor_bootstrap_is_booted(uint32_t logical_slot);
 extern void application_processor_bootstrap_reset_iteration(void);
 
 /**
- * @brief Get next unbooted AP entry; NULL when exhausted.
+ * @brief Get next unbooted AP entry; NULL when iteration exhausted.
  *
  * Use with application_processor_bootstrap_reset_iteration() for a full pass.
  */

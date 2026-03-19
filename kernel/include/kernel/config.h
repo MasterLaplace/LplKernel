@@ -473,7 +473,7 @@
 #ifdef FLAG_VERSION_TWEAK
     #define KERNEL_VERSION_TWEAK FLAG_VERSION_TWEAK
 #else
-    #define KERNEL_VERSION_TWEAK 3
+    #define KERNEL_VERSION_TWEAK 4
 #endif
 
 ////////////////////////////////////////////////////////////

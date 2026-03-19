@@ -58,7 +58,7 @@ static void cpu_topology_detect_from_cpuid(void)
     uint32_t ecx = 0u;
     uint32_t edx = 0u;
 
-    cpu_cpuid(CPU_TOPOLOGY_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
+    asmutils_cpuid(CPU_TOPOLOGY_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
 
     if ((edx & CPU_TOPOLOGY_CPUID_EDX_APIC_BIT) == 0u)
     {

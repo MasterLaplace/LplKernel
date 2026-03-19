@@ -4,9 +4,9 @@
 // Private functions of the serial module
 ////////////////////////////////////////////////////////////
 
-static inline int serial_can_write(Serial_t *serial) { return inb(serial->port + 5) & 0x20; }
+static inline int serial_can_write(Serial_t *serial) { return asmutils_input_byte(serial->port + 5) & 0x20; }
 
-static inline int serial_can_read(Serial_t *serial) { return inb(serial->port + 5) & 0x01; }
+static inline int serial_can_read(Serial_t *serial) { return asmutils_input_byte(serial->port + 5) & 0x01; }
 
 ////////////////////////////////////////////////////////////
 // Public API functions of the terminal module
@@ -18,20 +18,20 @@ void serial_initialize(Serial_t *serial, COM_PORT port, uint32_t speed)
     serial->speed = speed;
     serial->initialized = 0;
 
-    outb(port + 1, 0x00);
-    outb(port + 3, 0x80);
-    outb(port, (BASE_SERIAL_SPEED / speed) % 256);
-    outb(port + 1, (BASE_SERIAL_SPEED / speed) % 256);
-    outb(port + 3, 0x03);
-    outb(port + 2, 0xC7);
-    outb(port + 4, 0x0B);
-    outb(port + 4, 0x1E);
-    outb(port, 0xAE);
+    asmutils_output_byte(port + 1, 0x00);
+    asmutils_output_byte(port + 3, 0x80);
+    asmutils_output_byte(port, (BASE_SERIAL_SPEED / speed) % 256);
+    asmutils_output_byte(port + 1, (BASE_SERIAL_SPEED / speed) % 256);
+    asmutils_output_byte(port + 3, 0x03);
+    asmutils_output_byte(port + 2, 0xC7);
+    asmutils_output_byte(port + 4, 0x0B);
+    asmutils_output_byte(port + 4, 0x1E);
+    asmutils_output_byte(port, 0xAE);
 
-    if (inb(port) != 0xAE)
+    if (asmutils_input_byte(port) != 0xAE)
         return;
 
-    outb(port + 4, 0x0F);
+    asmutils_output_byte(port + 4, 0x0F);
     serial->initialized = 1;
 }
 
@@ -39,7 +39,7 @@ void serial_write_char(Serial_t *serial, char c)
 {
     while (!serial_can_write(serial))
         ;
-    outb(serial->port, c);
+    asmutils_output_byte(serial->port, c);
 }
 
 void serial_write_int(Serial_t *serial, int32_t i)
@@ -160,7 +160,7 @@ uint8_t serial_read_char(Serial_t *serial)
 {
     while (!serial_can_read(serial))
         ;
-    return inb(serial->port);
+    return asmutils_input_byte(serial->port);
 }
 
 uint8_t serial_try_read_char(Serial_t *serial, uint8_t *out_char)
@@ -171,6 +171,6 @@ uint8_t serial_try_read_char(Serial_t *serial, uint8_t *out_char)
     if (!serial_can_read(serial))
         return 0u;
 
-    *out_char = inb(serial->port);
+    *out_char = asmutils_input_byte(serial->port);
     return 1u;
 }

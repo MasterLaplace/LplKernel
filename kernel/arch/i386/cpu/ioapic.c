@@ -89,7 +89,7 @@ static uint32_t io_apic_extract_redirection_count(uint32_t io_apic_virtual_base)
     return max_redir_index + 1u;
 }
 
-static uint8_t io_apic_find_unit_for_gsi(uint32_t gsi, uint8_t *unit_index, uint32_t *gsi_relative)
+static uint8_t io_apic_find_unit_for_gsi(uint32_t global_system_interrupt, uint8_t *unit_index, uint32_t *gsi_relative)
 {
     if (!unit_index || !gsi_relative)
         return 0u;
@@ -106,11 +106,11 @@ static uint8_t io_apic_find_unit_for_gsi(uint32_t gsi, uint8_t *unit_index, uint
             continue;
 
         gsi_end = unit->gsi_base + unit->redirection_entry_count;
-        if (gsi < unit->gsi_base || gsi >= gsi_end)
+        if (global_system_interrupt < unit->gsi_base || global_system_interrupt >= gsi_end)
             continue;
 
         *unit_index = index;
-        *gsi_relative = gsi - unit->gsi_base;
+        *gsi_relative = global_system_interrupt - unit->gsi_base;
         return 1u;
     }
 
@@ -141,7 +141,7 @@ static uint32_t io_apic_build_redirection_low(uint8_t vector, uint16_t iso_flags
 
 static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
 {
-    uint32_t gsi = 0u;
+    uint32_t global_system_interrupt = 0u;
     uint16_t iso_flags = 0u;
     uint8_t unit_index = 0u;
     uint32_t gsi_relative = 0u;
@@ -155,10 +155,10 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
     if (io_apic_route_count >= INPUT_OUTPUT_APIC_MAX_ROUTES)
         return 0u;
 
-    if (!advanced_configuration_and_power_interface_madt_resolve_isa_irq(isa_irq, &gsi, &iso_flags))
+    if (!advanced_configuration_and_power_interface_madt_resolve_isa_irq(isa_irq, &global_system_interrupt, &iso_flags))
         return 0u;
 
-    if (!io_apic_find_unit_for_gsi(gsi, &unit_index, &gsi_relative))
+    if (!io_apic_find_unit_for_gsi(global_system_interrupt, &unit_index, &gsi_relative))
         return 0u;
 
     unit = &io_apic_units[unit_index];
@@ -174,7 +174,7 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
 
     route = &io_apic_routes[io_apic_route_count];
     route->isa_irq = isa_irq;
-    route->gsi = gsi;
+    route->global_system_interrupt = global_system_interrupt;
     route->vector = vector;
     route->io_apic_index = unit_index;
     route->io_apic_id = unit->id;
@@ -284,7 +284,7 @@ uint32_t input_output_advanced_programmable_interrupt_controller_get_programmed_
 {
     if (route_index >= io_apic_route_count)
         return 0u;
-    return io_apic_routes[route_index].gsi;
+    return io_apic_routes[route_index].global_system_interrupt;
 }
 
 uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_vector(uint8_t route_index)
@@ -355,16 +355,16 @@ uint8_t input_output_advanced_programmable_interrupt_controller_enable_isa_route
         return 0u;
     }
 
-    if (route->gsi < unit->gsi_base)
+    if (route->global_system_interrupt < unit->gsi_base)
     {
-        io_apic_state_name = "ioapic-route-enable-gsi-underflow";
+        io_apic_state_name = "ioapic-route-enable-global_system_interrupt-underflow";
         return 0u;
     }
 
-    gsi_relative = route->gsi - unit->gsi_base;
+    gsi_relative = route->global_system_interrupt - unit->gsi_base;
     if (gsi_relative > 0x7Fu)
     {
-        io_apic_state_name = "ioapic-route-enable-gsi-relative-invalid";
+        io_apic_state_name = "ioapic-route-enable-global_system_interrupt-relative-invalid";
         return 0u;
     }
 

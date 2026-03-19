@@ -41,10 +41,10 @@ static void keyboard_queue_push_char(char c)
 
 static void keyboard_write_char(char c)
 {
-    while (!(inb((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
+    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
     {
     }
-    outb((short) COM1_PORT, (unsigned char) c);
+    asmutils_output_byte((short) COM1_PORT, (unsigned char) c);
 }
 
 static void keyboard_write_string(const char *s)
@@ -64,7 +64,7 @@ static void keyboard_write_hex8(uint8_t value)
 
 static void keyboard_interrupt_handler(const InterruptFrame_t *frame)
 {
-    const uint8_t scan_code = (uint8_t) inb((short) KEYBOARD_DATA_PORT);
+    const uint8_t scan_code = (uint8_t) asmutils_input_byte((short) KEYBOARD_DATA_PORT);
     const char decoded = ps2_keyboard_decode_scancode(scan_code);
 
     (void) frame;

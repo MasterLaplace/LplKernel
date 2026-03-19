@@ -30,14 +30,14 @@ static uint8_t realtime_clock_periodic_interrupt_enabled = 0u;
 
 static uint8_t realtime_clock_read_register(uint8_t reg)
 {
-    outb((short) CMOS_INDEX_PORT, (unsigned char) reg);
-    return (uint8_t) inb((short) CMOS_DATA_PORT);
+    asmutils_output_byte((short) CMOS_INDEX_PORT, (unsigned char) reg);
+    return (uint8_t) asmutils_input_byte((short) CMOS_DATA_PORT);
 }
 
 static void realtime_clock_write_register(uint8_t reg, uint8_t value)
 {
-    outb((short) CMOS_INDEX_PORT, (unsigned char) reg);
-    outb((short) CMOS_DATA_PORT, (unsigned char) value);
+    asmutils_output_byte((short) CMOS_INDEX_PORT, (unsigned char) reg);
+    asmutils_output_byte((short) CMOS_DATA_PORT, (unsigned char) value);
 }
 
 static uint8_t realtime_clock_bcd_to_binary(uint8_t value)

@@ -123,7 +123,7 @@ uint8_t advanced_pic_ipi_send_init(uint8_t apic_id)
 
     uint32_t low = 0x00000500u | (1u << 14u) | (1u << 15u); /* INIT + Assert + Level */
     uint32_t high = (uint32_t) apic_id << 24u;
-    
+
     apic_write_icr(high, low);
     return advanced_pic_ipi_wait_delivery();
 }
@@ -135,7 +135,7 @@ uint8_t advanced_pic_ipi_send_sipi(uint8_t apic_id, uint8_t startup_vector)
 
     uint32_t low = (uint32_t) startup_vector | 0x00000600u; /* SIPI */
     uint32_t high = (uint32_t) apic_id << 24u;
-    
+
     apic_write_icr(high, low);
     return advanced_pic_ipi_wait_delivery();
 }
@@ -193,7 +193,7 @@ uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint8_t sho
 void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
 {
     uint32_t cpu_count = cpu_topology_get_online_cpu_count();
-    
+
     if (cpu_count <= 1u)
     {
         paging_invlpg(virt_addr);

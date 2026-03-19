@@ -88,7 +88,7 @@ static uint32_t *map_framebuffer(uint32_t phys_addr, uint32_t size)
     pde->page_table_base = pt_phys >> 12;
 
     /* Flush TLB to make the new mappings effective */
-    cpu_reload_page_directory();
+    asmutils_invalidate_translation_lookaside_buffer();
 
     return (uint32_t *) virt_addr;
 }

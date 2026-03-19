@@ -1,20 +1,9 @@
 .section .text
-.global inb
-.global outb
-.global cpu_enable_interrupts
-.global cpu_disable_interrupts
-.global cpu_halt
-.global cpu_no_operation
-.global cpu_get_current_stack_pointer
-.global cpu_reload_page_directory
-.global cpu_get_page_fault_linear_address
-.global cpu_cpuid
-.global cpu_read_msr
-.global cpu_write_msr
 
-# unsigned char inb(short port)
-.type inb, @function
-inb:
+# I/O Port Operations
+.globl asmutils_input_byte
+.type asmutils_input_byte, @function
+asmutils_input_byte:
     pushl %ebp
     movl %esp, %ebp
     movl 8(%ebp), %edx
@@ -23,9 +12,9 @@ inb:
     popl %ebp
     ret
 
-# void outb(short port, unsigned char toSend)
-.type outb, @function
-outb:
+.globl asmutils_output_byte
+.type asmutils_output_byte, @function
+asmutils_output_byte:
     pushl %ebp
     movl %esp, %ebp
     movl 8(%ebp), %edx
@@ -35,54 +24,56 @@ outb:
     popl %ebp
     ret
 
-# void cpu_enable_interrupts(void)
-.type cpu_enable_interrupts, @function
-cpu_enable_interrupts:
+# Interrupt Control
+.globl asmutils_enable_interrupts
+.type asmutils_enable_interrupts, @function
+asmutils_enable_interrupts:
     sti
     ret
 
-# void cpu_disable_interrupts(void)
-.type cpu_disable_interrupts, @function
-cpu_disable_interrupts:
+.globl asmutils_disable_interrupts
+.type asmutils_disable_interrupts, @function
+asmutils_disable_interrupts:
     cli
     ret
 
-# void cpu_halt(void)
-.type cpu_halt, @function
-cpu_halt:
+# CPU Primitive Operations
+.globl asmutils_halt
+.type asmutils_halt, @function
+asmutils_halt:
     hlt
     ret
 
-# void cpu_no_operation(void)
-.type cpu_no_operation, @function
-cpu_no_operation:
+.globl asmutils_no_operation
+.type asmutils_no_operation, @function
+asmutils_no_operation:
     nop
     ret
 
-# uint32_t cpu_get_current_stack_pointer(void)
-.type cpu_get_current_stack_pointer, @function
-cpu_get_current_stack_pointer:
+# CPU Register Access
+.globl asmutils_get_current_stack_pointer
+.type asmutils_get_current_stack_pointer, @function
+asmutils_get_current_stack_pointer:
     movl %esp, %eax
     ret
 
-# void cpu_reload_page_directory(void)
-.type cpu_reload_page_directory, @function
-cpu_reload_page_directory:
+.globl asmutils_invalidate_translation_lookaside_buffer
+.type asmutils_invalidate_translation_lookaside_buffer, @function
+asmutils_invalidate_translation_lookaside_buffer:
     movl %cr3, %eax
     movl %eax, %cr3
     ret
 
-# uint32_t cpu_get_page_fault_linear_address(void)
-.type cpu_get_page_fault_linear_address, @function
-cpu_get_page_fault_linear_address:
+.globl asmutils_get_page_fault_linear_address
+.type asmutils_get_page_fault_linear_address, @function
+asmutils_get_page_fault_linear_address:
     movl %cr2, %eax
     ret
 
-# void cpu_cpuid(uint32_t leaf, uint32_t subleaf,
-#                uint32_t *out_eax, uint32_t *out_ebx,
-#                uint32_t *out_ecx, uint32_t *out_edx)
-.type cpu_cpuid, @function
-cpu_cpuid:
+# CPU Information & Configuration
+.globl asmutils_cpuid
+.type asmutils_cpuid, @function
+asmutils_cpuid:
     pushl %ebp
     movl %esp, %ebp
     pushl %ebx
@@ -93,31 +84,32 @@ cpu_cpuid:
 
     movl 16(%ebp), %esi
     testl %esi, %esi
-    jz 1f
+    jz asmutils_cpuid_skip_eax
     movl %eax, (%esi)
-1:
+asmutils_cpuid_skip_eax:
     movl 20(%ebp), %esi
     testl %esi, %esi
-    jz 2f
+    jz asmutils_cpuid_skip_ebx
     movl %ebx, (%esi)
-2:
+asmutils_cpuid_skip_ebx:
     movl 24(%ebp), %esi
     testl %esi, %esi
-    jz 3f
+    jz asmutils_cpuid_skip_ecx
     movl %ecx, (%esi)
-3:
+asmutils_cpuid_skip_ecx:
     movl 28(%ebp), %esi
     testl %esi, %esi
-    jz 4f
+    jz asmutils_cpuid_skip_edx
     movl %edx, (%esi)
-4:
+asmutils_cpuid_skip_edx:
     popl %ebx
     popl %ebp
     ret
 
-# uint64_t cpu_read_msr(uint32_t msr)
-.type cpu_read_msr, @function
-cpu_read_msr:
+# Model-Specific Registers
+.globl asmutils_read_model_specific_register
+.type asmutils_read_model_specific_register, @function
+asmutils_read_model_specific_register:
     pushl %ebp
     movl %esp, %ebp
     movl 8(%ebp), %ecx
@@ -125,9 +117,9 @@ cpu_read_msr:
     popl %ebp
     ret
 
-# void cpu_write_msr(uint32_t msr, uint64_t value)
-.type cpu_write_msr, @function
-cpu_write_msr:
+.globl asmutils_write_model_specific_register
+.type asmutils_write_model_specific_register, @function
+asmutils_write_model_specific_register:
     pushl %ebp
     movl %esp, %ebp
     movl 8(%ebp), %ecx

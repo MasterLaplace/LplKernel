@@ -19,10 +19,10 @@
 
 static void isr_write_char(char c)
 {
-    while (!(inb((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
+    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
     {
     }
-    outb((short) COM1_PORT, (unsigned char) c);
+    asmutils_output_byte((short) COM1_PORT, (unsigned char) c);
 }
 
 static void isr_write_string(const char *s)
@@ -144,9 +144,9 @@ static void isr_default_handler(const InterruptFrame_t *frame)
     isr_write_string("\r\n");
     isr_write_string("--- HALTED ---\r\n");
 
-    cpu_disable_interrupts();
+    asmutils_disable_interrupts();
     for (;;)
-        cpu_halt();
+        asmutils_halt();
 }
 
 ////////////////////////////////////////////////////////////

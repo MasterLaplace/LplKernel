@@ -17,10 +17,10 @@
 
 static void exception_write_char(char c)
 {
-    while (!(inb((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
+    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
     {
     }
-    outb((short) COM1_PORT, (unsigned char) c);
+    asmutils_output_byte((short) COM1_PORT, (unsigned char) c);
 }
 
 static void exception_write_string(const char *s)
@@ -40,9 +40,9 @@ static void exception_write_hex32(uint32_t value)
 
 static void exception_halt_forever(void)
 {
-    cpu_disable_interrupts();
+    asmutils_disable_interrupts();
     for (;;)
-        cpu_halt();
+        asmutils_halt();
 }
 
 static void exception_handle_double_fault(const InterruptFrame_t *frame)
@@ -126,7 +126,7 @@ static void exception_handle_general_protection_fault(const InterruptFrame_t *fr
 static void exception_handle_page_fault(const InterruptFrame_t *frame)
 {
     const uint32_t error_code = frame->err_code;
-    const uint32_t fault_address = cpu_get_page_fault_linear_address();
+    const uint32_t fault_address = asmutils_get_page_fault_linear_address();
 
     exception_write_string("\r\n\r\n[KERNEL PANIC] #PF Page Fault\r\n");
     exception_write_string("  cr2            = ");

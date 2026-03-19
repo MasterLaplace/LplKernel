@@ -1679,7 +1679,7 @@ void kernel_smoke_test_run_apic_periodic_mode(Serial_t *serial_port)
     start_tick = clock_get_tick_count();
     target_tick = start_tick + 8u;
     while (clock_get_tick_count() < target_tick)
-        cpu_no_operation();
+        asmutils_no_operation();
     end_tick = clock_get_tick_count();
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: APIC periodic smoke: delta_ticks=");
@@ -2076,9 +2076,9 @@ static void ring3_syscall_handler(const InterruptFrame_t *frame)
     (void) frame;
     ++ring3_syscall_count;
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ring3 smoke: syscall int 0x80 received (pass)\n");
-    cpu_disable_interrupts();
+    asmutils_disable_interrupts();
     for (;;)
-        cpu_halt();
+        asmutils_halt();
 }
 #endif
 

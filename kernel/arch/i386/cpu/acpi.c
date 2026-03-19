@@ -1,9 +1,5 @@
 #include <kernel/cpu/acpi.h>
 
-#include <kernel/cpu/paging.h>
-
-#include <stddef.h>
-
 #define ACPI_RSDP_SIGNATURE "RSD PTR "
 #define ACPI_MADT_SIGNATURE "APIC"
 #define ACPI_RSDT_SIGNATURE "RSDT"
@@ -264,7 +260,7 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
                     &acpi_madt_iso_info[acpi_madt_iso_count];
                 info->bus = iso_entry->bus;
                 info->source_irq = iso_entry->source;
-                info->gsi = iso_entry->global_system_interrupt;
+                info->global_system_interrupt = iso_entry->global_system_interrupt;
                 info->flags = iso_entry->flags;
                 acpi_madt_iso_count++;
             }
@@ -288,10 +284,7 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
     }
 
     acpi_madt_available = 1u;
-    if (acpi_madt_io_apic_count == 0u)
-        acpi_madt_state_name = "acpi-madt-ready-no-ioapic";
-    else
-        acpi_madt_state_name = "acpi-madt-ready-ioapic-found";
+    acpi_madt_state_name = (acpi_madt_io_apic_count == 0u) ? "acpi-madt-ready-no-ioapic" : "acpi-madt-ready-ioapic-found";
     return 1u;
 }
 
@@ -446,7 +439,7 @@ uint32_t advanced_configuration_and_power_interface_madt_get_interrupt_source_ov
 {
     if (index >= acpi_madt_iso_count)
         return 0u;
-    return acpi_madt_iso_info[index].gsi;
+    return acpi_madt_iso_info[index].global_system_interrupt;
 }
 
 uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_source_override_flags(uint8_t index)
@@ -456,15 +449,15 @@ uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_source_ov
     return acpi_madt_iso_info[index].flags;
 }
 
-uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq, uint32_t *gsi, uint16_t *flags)
+uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t interrupt_request, uint32_t *global_system_interrupt, uint16_t *flags)
 {
-    if (!gsi || !flags)
+    if (!global_system_interrupt || !flags)
         return 0u;
 
     if (!acpi_madt_available)
         return 0u;
 
-    *gsi = irq;
+    *global_system_interrupt = interrupt_request;
     *flags = 0u;
 
     for (uint8_t index = 0u; index < acpi_madt_iso_count; ++index)
@@ -473,10 +466,10 @@ uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t 
 
         if (iso->bus != 0u)
             continue;
-        if (iso->source_irq != irq)
+        if (iso->source_irq != interrupt_request)
             continue;
 
-        *gsi = iso->gsi;
+        *global_system_interrupt = iso->global_system_interrupt;
         *flags = iso->flags;
         break;
     }
@@ -484,7 +477,7 @@ uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t 
     return 1u;
 }
 
-uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t gsi, uint8_t *io_apic_index)
+uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t global_system_interrupt, uint8_t *io_apic_index)
 {
     uint8_t found = 0u;
     uint32_t best_base = 0u;
@@ -500,7 +493,7 @@ uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uin
     {
         uint32_t current_base = acpi_madt_io_apic_info[index].gsi_base;
 
-        if (current_base > gsi)
+        if (current_base > global_system_interrupt)
             continue;
 
         if (!found || current_base > best_base)
