@@ -15,6 +15,9 @@ sysroot
 !.vscode/launch.json
 !.vscode/tasks.json
 .Test/
+.github/
+docs/
+.tmp_refs/
 
 # debug files
 *.log

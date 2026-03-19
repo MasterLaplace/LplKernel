@@ -181,6 +181,16 @@ uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot)
     return apic_id & 0xFFu;
 }
 
+uint32_t cpu_topology_get_slot_for_apic_id(uint32_t apic_id)
+{
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS; ++slot)
+    {
+        if (cpu_topology_apic_id_to_slot[slot] == apic_id)
+            return slot;
+    }
+    return CPU_TOPOLOGY_INVALID_APIC_ID;
+}
+
 uint32_t cpu_topology_get_discovered_cpu_count(void)
 {
     return cpu_topology_discovered_cpu_count;

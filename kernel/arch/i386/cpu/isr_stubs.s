@@ -94,6 +94,7 @@ ISR_NOERR 47    # IRQ15 Secondary ATA / spurious
 # ---- Custom / IPI stubs ---------------------------------------------------
 
 ISR_NOERR 64    # 0x40: TLB Shootdown IPI
+ISR_NOERR 128   # 0x80: syscall gate (DPL3)
 
 # ---- Common ISR stub ------------------------------------------------------
 #

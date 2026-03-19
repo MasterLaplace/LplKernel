@@ -295,51 +295,26 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
     return 1u;
 }
 
-void advanced_configuration_and_power_interface_madt_initialize(void)
+const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_and_power_interface_find_table(const char *signature)
 {
     const AdvancedConfigurationAndPowerInterfaceRsdp_t *rsdp;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *rsdt;
     size_t entry_count;
     const uint32_t *entry_physical_addresses;
 
-    acpi_madt_state_name = "acpi-rsdp-search";
-    acpi_madt_available = 0u;
-    acpi_madt_local_apic_physical_base = 0u;
-    acpi_madt_local_apic_count = 0u;
-    acpi_madt_io_apic_count = 0u;
-    acpi_madt_iso_count = 0u;
-
     rsdp = acpi_find_rsdp();
-    if (!rsdp)
-    {
-        acpi_madt_state_name = "acpi-rsdp-not-found";
-        return;
-    }
-
-    if (rsdp->rsdt_address == 0u)
-    {
-        acpi_madt_state_name = "acpi-rsdt-address-missing";
-        return;
-    }
+    if (!rsdp || rsdp->rsdt_address == 0u)
+        return NULL;
 
     rsdt = acpi_map_sdt_full(rsdp->rsdt_address);
     if (!rsdt)
-    {
-        acpi_madt_state_name = "acpi-rsdt-unmapped";
-        return;
-    }
+        return NULL;
 
     if (!acpi_signature_matches(rsdt->signature, ACPI_RSDT_SIGNATURE, 4u))
-    {
-        acpi_madt_state_name = "acpi-rsdt-signature-invalid";
-        return;
-    }
+        return NULL;
 
     if (!acpi_checksum_is_valid((const uint8_t *) rsdt, rsdt->length))
-    {
-        acpi_madt_state_name = "acpi-rsdt-checksum-invalid";
-        return;
-    }
+        return NULL;
 
     entry_count = (rsdt->length - sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t)) / sizeof(uint32_t);
     entry_physical_addresses =
@@ -353,16 +328,35 @@ void advanced_configuration_and_power_interface_madt_initialize(void)
         if (!sdt)
             continue;
 
-        if (!acpi_signature_matches(sdt->signature, ACPI_MADT_SIGNATURE, 4u))
-            continue;
+        if (acpi_signature_matches(sdt->signature, signature, 4u))
+        {
+            if (acpi_checksum_is_valid((const uint8_t *) sdt, sdt->length))
+                return sdt;
+        }
+    }
 
-        if (acpi_parse_madt((const AdvancedConfigurationAndPowerInterfaceMadt_t *) sdt))
-            return;
+    return NULL;
+}
 
+void advanced_configuration_and_power_interface_madt_initialize(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *sdt;
+
+    acpi_madt_state_name = "acpi-madt-search";
+    acpi_madt_available = 0u;
+    acpi_madt_local_apic_physical_base = 0u;
+    acpi_madt_local_apic_count = 0u;
+    acpi_madt_io_apic_count = 0u;
+    acpi_madt_iso_count = 0u;
+
+    sdt = advanced_configuration_and_power_interface_find_table(ACPI_MADT_SIGNATURE);
+    if (!sdt)
+    {
+        acpi_madt_state_name = "acpi-madt-not-found";
         return;
     }
 
-    acpi_madt_state_name = "acpi-madt-not-found";
+    acpi_parse_madt((const AdvancedConfigurationAndPowerInterfaceMadt_t *) sdt);
 }
 
 const char *advanced_configuration_and_power_interface_madt_get_state_name(void) { return acpi_madt_state_name; }

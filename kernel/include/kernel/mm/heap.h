@@ -17,12 +17,15 @@ typedef struct KernelHeapBlock {
     uint8_t flags;
     uint8_t order;
     uint16_t reserved;
+    uint16_t canary;
     struct KernelHeapBlock *next;
-} KernelHeapBlock_t;
+} __attribute__((aligned(8))) KernelHeapBlock_t;
 
 extern void kernel_heap_initialize(void);
 
 extern void *kmalloc(size_t size);
+
+extern void *kmalloc_sensitive(size_t size);
 
 extern void kfree(void *ptr);
 

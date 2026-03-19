@@ -29,6 +29,7 @@
 #include <kernel/mm/stack_allocator.h>
 #include <kernel/mm/tlsf.h>
 #include <kernel/mm/vmm.h>
+#include <kernel/cpu/numa_policy.h>
 #include <kernel/smoke_test.h>
 
 #define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES 16384u
@@ -398,9 +399,12 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, physical_memory_manager_get_strategy_name());
     serial_write_string(&com1, "\n");
     physical_memory_manager_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-16MB) ready: ");
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-64MB) ready: ");
     serial_write_int(&com1, (int32_t) physical_memory_manager_get_free_page_count());
     serial_write_string(&com1, " pages free\n");
+
+    advanced_configuration_and_power_interface_madt_initialize();
+    numa_policy_initialize();
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 2 (>16MB mapping)...\n");
     physical_memory_manager_extend_mapping();
@@ -796,14 +800,20 @@ __attribute__((constructor)) void kernel_initialize(void)
     }
 #endif
 
-    if (KERNEL_SMOKE_TEST_ENABLE_PMM_ALLOCATE_FREE)
-        kernel_smoke_test_run_physical_memory_manager_allocate_free(&com1);
+
 
     if (KERNEL_SMOKE_TEST_ENABLE_PAGING_PT_RECLAIM)
         kernel_smoke_test_run_paging_runtime_page_table_reclaim(&com1);
 
-    if (KERNEL_SMOKE_TEST_ENABLE_HEAP_ALLOCATE_FREE)
+    if (KERNEL_SMOKE_TEST_ENABLE_HEAP_ALLOCATE_FREE) {
         kernel_smoke_test_run_heap_allocate_free(&com1);
+        kernel_smoke_test_run_heap_poison_canary(&com1);
+    }
+    
+    kernel_smoke_test_run_pmm_uaf_detection(&com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL)
+        kernel_smoke_test_run_ring3_minimal(&com1);
 
     if (KERNEL_SMOKE_TEST_ENABLE_CPU_TOPOLOGY_COMPACTION)
         kernel_smoke_test_run_cpu_topology_compaction(&com1);

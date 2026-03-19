@@ -5,9 +5,12 @@
 ** vmm — Virtual Memory Manager implementation
 */
 
+#include <kernel/config.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <stddef.h>
+#include <stdbool.h>
 #include <string.h>
 
 #define VMM_PAGE_COUNT (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
@@ -36,6 +39,7 @@ bool kernel_vmm_initialize(void)
 {
     memset(vmm_bitmap, 0, sizeof(vmm_bitmap));
     vmm_last_search_index = 0u;
+
     vmm_initialized = true;
     return true;
 }
@@ -46,24 +50,25 @@ void *kernel_vmm_reserve_pages(uint32_t page_count)
         return NULL;
 
     uint32_t found_index = 0xFFFFFFFFu;
-    uint32_t consecutive = 0u;
 
-    /* Simple first-fit search from last index (with wrap-around) */
-    for (uint32_t i = 0u; i < VMM_PAGE_COUNT; ++i)
+    uint32_t i = 0;
+    while (i <= VMM_PAGE_COUNT - page_count)
     {
-        uint32_t idx = (vmm_last_search_index + i) % VMM_PAGE_COUNT;
-        
-        if (!vmm_bitmap_test(idx))
+        bool match = true;
+        for (uint32_t j = 0u; j < page_count; ++j)
         {
-            if (++consecutive == page_count)
+            if (vmm_bitmap_test(i + j))
             {
-                found_index = (idx - page_count + 1);
+                match = false;
+                i += j + 1; /* Skip ahead */
                 break;
             }
         }
-        else
+
+        if (match)
         {
-            consecutive = 0u;
+            found_index = i;
+            break;
         }
     }
 

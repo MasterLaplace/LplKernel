@@ -63,7 +63,7 @@ boot_page_directory:
     .skip 4096
 .global boot_page_tables
 boot_page_tables:
-    .skip 4096 * 4
+    .skip 4096 * 16
 
 /* Variable globale pour stocker le multiboot info */
 .global multiboot_info
@@ -80,7 +80,7 @@ _start:
     /* Setup page table pointer and counters */
     movl $(boot_page_tables - KERNEL_START), %edi
     movl $0, %esi
-    movl $4096, %ecx
+    movl $16384, %ecx
 
 page_mapping_loop:
     /* Map ALL pages 0–16MB unconditionally (Present + Writable).
@@ -99,11 +99,12 @@ page_mapping_loop:
     /* Setup page directory */
     /* Identity mapping : PD[0] → boot_page_tables[0] (phys 0x0–0x3FFFFF) */
     movl $(boot_page_tables - KERNEL_START + 0x003), boot_page_directory - KERNEL_START + 0 * 4
-    /* Higher-half mapping : PD[768..771] → boot_page_tables[0..3] (virt 0xC0000000–0xC0FFFFFF) */
-    movl $(boot_page_tables - KERNEL_START + 4096 * 0 + 0x003), boot_page_directory - KERNEL_START + 768 * 4
-    movl $(boot_page_tables - KERNEL_START + 4096 * 1 + 0x003), boot_page_directory - KERNEL_START + 769 * 4
-    movl $(boot_page_tables - KERNEL_START + 4096 * 2 + 0x003), boot_page_directory - KERNEL_START + 770 * 4
-    movl $(boot_page_tables - KERNEL_START + 4096 * 3 + 0x003), boot_page_directory - KERNEL_START + 771 * 4
+    /* Higher-half mapping : PD[768..783] → boot_page_tables[0..15] (virt 0xC0000000–0xC3FFFFFF) */
+    .set i, 0
+    .rept 16
+        movl $(boot_page_tables - KERNEL_START + 4096 * i + 0x003), boot_page_directory - KERNEL_START + (768 + i) * 4
+        .set i, i + 1
+    .endr
 
     /* Enable paging */
     movl $(boot_page_directory - KERNEL_START), %ecx

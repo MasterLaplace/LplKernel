@@ -1,8 +1,10 @@
 #define __LPL_KERNEL__
 
+#include <kernel/config.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/cpu/numa_policy.h>
 #include <kernel/mm/vmm.h>
 #include <kernel/mm/heap.h>
 #include <kernel/mm/slab.h>
@@ -15,6 +17,9 @@
 #define KERNEL_HEAP_BLOCK_FLAG_BIG  0x02u
 #define KERNEL_HEAP_BLOCK_FLAG_SC   0x04u  /* server size-class bucket block */
 #define KERNEL_HEAP_BLOCK_FLAG_VMM  0x08u
+#define KERNEL_HEAP_BLOCK_FLAG_SENS 0x10u
+#define KERNEL_HEAP_BLOCK_FLAG_SLAB 0x20u
+#define KERNEL_HEAP_BLOCK_FLAG_TLSF 0x40u
 #define KERNEL_HEAP_MIN_SPLIT       32u
 #define KERNEL_HEAP_MAX_ORDER       18u
 #define KERNEL_HEAP_HEADER_MAGIC    0x4C50u
@@ -134,9 +139,15 @@ static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t loca
     if (!owner_domain_index || size_class_index >= KERNEL_HEAP_SIZE_CLASSES)
         return NULL;
 
+    uint32_t local_numa_node = numa_policy_get_node_for_slot(local_domain_index);
+
+    // Pass 1: Try to steal from other CPUs on the SAME NUMA node
     for (uint32_t domain_index = 0u; domain_index < KERNEL_HEAP_SERVER_DOMAINS; ++domain_index)
     {
         if (domain_index == local_domain_index)
+            continue;
+
+        if (numa_policy_get_node_for_slot(domain_index) != local_numa_node)
             continue;
 
         KernelHeapServerDomain_t *domain = kernel_heap_server_get_domain(domain_index);
@@ -145,7 +156,27 @@ static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t loca
             continue;
 
         KernelHeapBlock_t *block = domain->size_class_lists[size_class_index];
+        domain->size_class_lists[size_class_index] = block->next;
+        --domain->size_class_free_counts[size_class_index];
+        *owner_domain_index = domain_index;
+        return block;
+    }
 
+    // Pass 2: Fallback to CPUs on a DIFFERENT NUMA node
+    for (uint32_t domain_index = 0u; domain_index < KERNEL_HEAP_SERVER_DOMAINS; ++domain_index)
+    {
+        if (domain_index == local_domain_index)
+            continue;
+
+        if (numa_policy_get_node_for_slot(domain_index) == local_numa_node)
+            continue;
+
+        KernelHeapServerDomain_t *domain = kernel_heap_server_get_domain(domain_index);
+
+        if (!domain || !domain->size_class_lists[size_class_index])
+            continue;
+
+        KernelHeapBlock_t *block = domain->size_class_lists[size_class_index];
         domain->size_class_lists[size_class_index] = block->next;
         --domain->size_class_free_counts[size_class_index];
         *owner_domain_index = domain_index;
@@ -155,23 +186,7 @@ static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t loca
     return NULL;
 }
 
-static uint8_t kernel_heap_required_order(uint32_t total_size)
-{
-    uint32_t pages = (total_size + (PAGE_SIZE - 1u)) / PAGE_SIZE;
-    uint32_t block_pages = 1u;
-    uint8_t order = 0u;
 
-    while (block_pages < pages && order < KERNEL_HEAP_MAX_ORDER)
-    {
-        block_pages <<= 1u;
-        ++order;
-    }
-
-    if (block_pages < pages)
-        return 0xFFu;
-
-    return order;
-}
 #endif
 
 static void kernel_heap_add_free_block(KernelHeapBlock_t *block)
@@ -398,21 +413,65 @@ void *kmalloc(size_t size)
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     /*
      * Client fast-path: try the slab for exact cache sizes.
-     * Slab objects carry no KernelHeapBlock_t header — the pointer
-     * returned is the raw object.  kfree() detects this via
-     * kernel_slab_free() ownership check.
      */
     {
-        void *slab_obj = kernel_slab_alloc(payload_size);
-        if (slab_obj)
-            return slab_obj;
+        void *obj = kernel_slab_alloc(total_size);
+        if (obj) {
+            KernelHeapBlock_t *header = (KernelHeapBlock_t *)obj;
+            header->size = total_size;
+            header->magic = KERNEL_HEAP_HEADER_MAGIC;
+            header->flags = KERNEL_HEAP_BLOCK_FLAG_SLAB;
+            header->canary = (uint16_t)((0xCAFE ^ header->size) & 0xFFFF);
+            #ifdef LPL_KERNEL_DEBUG_POISON
+            for (uint32_t z = 0; z < payload_size; ++z) ((uint8_t*)(header + 1))[z] = 0xCC;
+            #endif
+            return (void *)(header + 1);
+        }
     }
 
     /* Client O(1) deterministic heap: TLSF. */
-    void *tlsf_obj = kernel_tlsf_alloc(payload_size);
-    if (tlsf_obj)
-        return tlsf_obj;
-#else
+    void *tlsf_raw = kernel_tlsf_alloc(total_size);
+    if (tlsf_raw) {
+        KernelHeapBlock_t *header = (KernelHeapBlock_t *)tlsf_raw;
+        header->size = total_size;
+        header->magic = KERNEL_HEAP_HEADER_MAGIC;
+        header->flags = KERNEL_HEAP_BLOCK_FLAG_TLSF;
+        header->canary = (uint16_t)((0xCAFE ^ header->size) & 0xFFFF);
+        #ifdef LPL_KERNEL_DEBUG_POISON
+        for (uint32_t z = 0; z < payload_size; ++z) ((uint8_t*)(header + 1))[z] = 0xCC;
+        #endif
+        return (void *)(header + 1);
+    }
+#endif
+
+    /*
+     * Universal Large Allocation / VMM Fallback.
+     * If total_size is definitely too big for small pool or explicit request,
+     * or if we are on client and SLAB/TLSF both failed/rejected, we hit VMM.
+     */
+    if (total_size > PAGE_SIZE || (payload_size > 1024u))
+    {
+        uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
+        KernelHeapBlock_t *vmm_header = (KernelHeapBlock_t *) kernel_vmm_alloc_pages(page_count);
+
+        if (vmm_header) {
+            vmm_header->size = page_count * PAGE_SIZE;
+            vmm_header->magic = KERNEL_HEAP_HEADER_MAGIC;
+            vmm_header->flags = KERNEL_HEAP_BLOCK_FLAG_VMM;
+            vmm_header->order = 0u;
+            vmm_header->reserved = (uint16_t) page_count;
+            vmm_header->next = NULL;
+
+            ++kernel_heap_large_allocation_count;
+            #ifdef LPL_KERNEL_DEBUG_POISON
+            vmm_header->canary = (uint16_t)((0xCAFE ^ vmm_header->size) & 0xFFFF);
+            for (uint32_t z = 0; z < (vmm_header->size - sizeof(KernelHeapBlock_t)); ++z) ((uint8_t*)(vmm_header + 1))[z] = 0xCC;
+            #endif
+            return (void *) (vmm_header + 1);
+        }
+    }
+
+#ifndef LPL_KERNEL_REAL_TIME_MODE
     /*
      * Server fast-path: current mono-domain scaffold.
      * Today every CPU resolves to domain 0; later per-CPU/per-NUMA work
@@ -463,8 +522,13 @@ void *kmalloc(size_t size)
 
                 block->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
                 block->order = (uint8_t) sc;
+                block->size = kernel_heap_size_class_sizes[sc] + (uint32_t)sizeof(KernelHeapBlock_t);
                 block->reserved = (uint16_t) owner_domain_index;
                 block->next = NULL;
+                #ifdef LPL_KERNEL_DEBUG_POISON
+                block->canary = (uint16_t)((0xCAFE ^ block->size) & 0xFFFF);
+                for (uint32_t z = 0; z < kernel_heap_size_class_sizes[sc]; ++z) ((uint8_t*)(block + 1))[z] = 0xCC;
+#endif
                 return (void *) (block + 1);
             }
 
@@ -479,31 +543,9 @@ void *kmalloc(size_t size)
             break;
         }
     }
-
-    if (total_size > PAGE_SIZE)
-    {
-        uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
-        KernelHeapBlock_t *header = (KernelHeapBlock_t *) kernel_vmm_alloc_pages(page_count);
-
-        if (!header)
-            return NULL;
-
-        header->size = page_count * PAGE_SIZE;
-        header->magic = KERNEL_HEAP_HEADER_MAGIC;
-        header->flags = KERNEL_HEAP_BLOCK_FLAG_VMM;
-        header->order = 0u;
-        header->reserved = (uint16_t) page_count;
-        header->next = NULL;
-
-        ++kernel_heap_large_allocation_count;
-        return (void *) (header + 1);
-    }
 #endif
 
-#ifdef LPL_KERNEL_REAL_TIME_MODE
-    if (total_size > PAGE_SIZE)
-        return NULL;
-#endif
+
 
     /* First-fit path. */
     KernelHeapBlock_t *prev = NULL;
@@ -605,6 +647,14 @@ void *kmalloc(size_t size)
     }
 #endif
 
+    #ifdef LPL_KERNEL_DEBUG_POISON
+    current->canary = (uint16_t)((0xCAFE ^ current->size) & 0xFFFF);
+    uint32_t poison_size = current->size - sizeof(KernelHeapBlock_t);
+#ifndef LPL_KERNEL_REAL_TIME_MODE
+    if (current->flags & KERNEL_HEAP_BLOCK_FLAG_SC) poison_size = kernel_heap_size_class_sizes[current->order];
+#endif
+    for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(current + 1))[z] = 0xCC;
+#endif
     return (void *) (current + 1);
 }
 
@@ -618,26 +668,64 @@ void kfree(void *ptr)
         ++kernel_heap_hot_loop_violation_count;
 #endif
 
-#ifdef LPL_KERNEL_REAL_TIME_MODE
-    /* Client: check slab ownership first (no header on slab objects). */
-    if (kernel_slab_free(ptr))
-        return;
+    KernelHeapBlock_t *header = ((KernelHeapBlock_t *) ptr) - 1;
 
-    /* Client: check TLSF ownership. */
-    if (kernel_tlsf_owns(ptr))
-    {
-        kernel_tlsf_free(ptr);
+    /* Security check: verify canary and magic before any operation. */
+    if (header->magic != KERNEL_HEAP_HEADER_MAGIC ||
+        header->canary != (uint16_t)((0xCAFE ^ header->size) & 0xFFFF)) {
+        kernel_heap_rejected_free_count++;
+        return;
+    }
+
+    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_FREE) {
+        kernel_heap_rejected_free_count++;
+        kernel_heap_double_free_count++;
+        return;
+    }
+
+#ifdef LPL_KERNEL_REAL_TIME_MODE
+    /* Client specialized free. */
+    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SLAB) {
+        #ifdef LPL_KERNEL_DEBUG_POISON
+        uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
+        for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(header + 1))[z] = 0xDD;
+        #endif
+        header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
+        kernel_slab_free(header);
+        return;
+    }
+    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_TLSF) {
+        #ifdef LPL_KERNEL_DEBUG_POISON
+        uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
+        for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(header + 1))[z] = 0xDD;
+        #endif
+        header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
+        kernel_tlsf_free(header);
         return;
     }
 #endif
-
-    KernelHeapBlock_t *header = ((KernelHeapBlock_t *) ptr) - 1;
 
     if (header->magic != KERNEL_HEAP_HEADER_MAGIC)
     {
         ++kernel_heap_rejected_free_count;
         return;
     }
+
+#ifdef LPL_KERNEL_DEBUG_POISON
+    if (header->canary != (uint16_t)((0xCAFE ^ header->size) & 0xFFFF))
+    {
+        ++kernel_heap_rejected_free_count;
+        return;
+    }
+    
+    uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
+#ifndef LPL_KERNEL_REAL_TIME_MODE
+    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SC)
+        poison_size = kernel_heap_size_class_sizes[header->order];
+#endif
+        
+    for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(header + 1))[z] = 0xDD;
+#endif
 
     if (header->flags & KERNEL_HEAP_BLOCK_FLAG_FREE)
     {
@@ -885,4 +973,33 @@ uint32_t kernel_heap_get_hot_loop_violation_count(void)
 #else
     return 0u;
 #endif
+}
+
+void *kmalloc_sensitive(size_t size)
+{
+    if (!kernel_heap_initialized || size == 0u) return NULL;
+    
+    uint32_t payload_size = kernel_heap_align_up((uint32_t) size, KERNEL_HEAP_ALIGNMENT);
+    uint32_t total_size = kernel_heap_align_up(payload_size + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+    
+    // Force VMM allocation so it gets isolated in its own dedicated pages
+    uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
+    KernelHeapBlock_t *header = (KernelHeapBlock_t *) kernel_vmm_alloc_pages(page_count);
+
+    if (!header) return NULL;
+
+    header->size = page_count * PAGE_SIZE;
+    header->magic = KERNEL_HEAP_HEADER_MAGIC;
+    header->flags = KERNEL_HEAP_BLOCK_FLAG_VMM | KERNEL_HEAP_BLOCK_FLAG_SENS;
+    header->order = 0u;
+    header->reserved = (uint16_t) page_count;
+    header->next = NULL;
+
+#ifdef LPL_KERNEL_DEBUG_POISON
+    header->canary = (uint16_t)((0xCAFE ^ header->size) & 0xFFFF);
+    for (uint32_t z = 0; z < (header->size - sizeof(KernelHeapBlock_t)); ++z) ((uint8_t*)(header + 1))[z] = 0xCC;
+#endif
+
+    ++kernel_heap_large_allocation_count;
+    return (void *) (header + 1);
 }

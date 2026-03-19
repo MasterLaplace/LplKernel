@@ -123,8 +123,6 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
 
 uint8_t advanced_pic_timer_backend_late_initialize(void)
 {
-    uint32_t spurious_register_value;
-
     if (advanced_pic_timer_local_apic_physical_base == 0u)
         return 0u;
 

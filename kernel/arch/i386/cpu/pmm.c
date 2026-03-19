@@ -1,4 +1,4 @@
-#define __LPL_KERNEL__
+
 
 /**
  * @file pmm.c
@@ -14,9 +14,11 @@
  *            - Server:             Buddy Allocator with split/merge support.
  */
 
+#include <kernel/config.h>
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/cpu/numa_policy.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -24,8 +26,8 @@
 // Constants
 ////////////////////////////////////////////////////////////
 
-/** @brief Boot-time mapping ceiling (4 page tables x 4 MB). */
-#define PMM_BOOT_MAP_LIMIT 0x01000000UL
+/** @brief Boot-time mapping ceiling (16 page tables x 4 MB = 64 MB). */
+#define PMM_BOOT_MAP_LIMIT 0x04000000UL
 
 /** @brief Low memory reservation (BIOS, VGA, Multiboot structures). */
 #define PMM_LOW_MEMORY_LIMIT 0x00100000UL
@@ -78,6 +80,11 @@ static uint32_t free_page_count_watermark_low = 0xFFFFFFFFu;
 /** @brief Track whether watermarks have been seeded after first population. */
 static bool watermarks_seeded = false;
 
+static uint32_t pmm_local_hits = 0;
+static uint32_t pmm_remote_hits = 0;
+static uint32_t pmm_cross_node_fallbacks = 0;
+static uint32_t pmm_uaf_anomalies = 0;
+
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 static const char pmm_strategy_name[] = "freelist-lifo-realtime";
 #else
@@ -108,46 +115,72 @@ static inline void pmm_update_watermarks(void)
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 
-/** @brief Head of the intrusive LIFO stack (physical address, 0 = empty). */
-static uint32_t free_list_head = 0;
+/** @brief Heads of the intrusive LIFO stacks per node (physical address, 0 = empty). */
+static uint32_t free_list_heads[NUMA_POLICY_MAX_NODES] = {0};
 
 /**
- * @brief Push a page onto the Free-List LIFO stack.
- * @details Stores the current head pointer in the page's first 4 bytes
- *          (via the higher-half virtual alias), then makes this page the
- *          new head.
+ * @brief Push a page onto the Free-List LIFO stack of its associated NUMA node.
  * @param phys_addr 4 KB-aligned physical address to push.
  */
 static void freelist_push(uint32_t phys_addr)
 {
+    uint32_t node_id = numa_policy_get_node_for_address(phys_addr);
+    if (node_id >= numa_policy_get_node_count())
+        node_id = 0;
+
     uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
-    *page_virt = free_list_head;
-    free_list_head = phys_addr;
+    *page_virt = free_list_heads[node_id];
+    free_list_heads[node_id] = phys_addr;
+    
     ++free_page_count;
     pmm_update_watermarks();
 }
 
 /**
- * @brief Pop a page from the Free-List LIFO stack.
- * @details Reads the next-pointer from the head page and advances the head.
+ * @brief Pop a page from the Free-List LIFO stack (local-first NUMA policy).
  * @return Physical address of the popped page, or 0 if empty.
  */
 static uint32_t freelist_pop(void)
 {
-    if (free_list_head == 0)
-        return 0;
-    uint32_t phys_addr = free_list_head;
-    uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
-    free_list_head = *page_virt;
-    --free_page_count;
-    pmm_update_watermarks();
-    return phys_addr;
+    uint32_t local_node = numa_policy_get_local_node();
+    if (local_node >= NUMA_POLICY_MAX_NODES)
+        local_node = 0;
+
+    // Fast path: try local node
+    if (free_list_heads[local_node] != 0)
+    {
+        uint32_t phys_addr = free_list_heads[local_node];
+        uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
+        free_list_heads[local_node] = *page_virt;
+        --free_page_count;
+        pmm_update_watermarks();
+        pmm_local_hits++;
+        return phys_addr;
+    }
+
+    // Comprehensive fallback: check all nodes
+    for (uint32_t target_node = 0; target_node < NUMA_POLICY_MAX_NODES; ++target_node)
+    {
+        if (free_list_heads[target_node] != 0)
+        {
+            uint32_t phys_addr = free_list_heads[target_node];
+            uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
+            free_list_heads[target_node] = *page_virt;
+            --free_page_count;
+            pmm_update_watermarks();
+            pmm_remote_hits++;
+            pmm_cross_node_fallbacks++;
+            return phys_addr;
+        }
+    }
+
+    return 0;
 }
 
 #else /* Server mode — Buddy Allocator */
 
 /** @brief Free-list heads for each buddy order (order 0 = 4 KB). */
-static uint32_t buddy_free_list_heads[PMM_BUDDY_MAX_ORDER + 1u] = {0};
+static uint32_t buddy_free_list_heads[NUMA_POLICY_MAX_NODES][PMM_BUDDY_MAX_ORDER + 1u] = {0};
 
 /** @brief Free-state marker for page indices (1 = free block base, 0 = otherwise). */
 static uint8_t buddy_page_is_free[PMM_MAX_PAGE_COUNT] = {0};
@@ -183,13 +216,24 @@ static bool buddy_is_order_aligned(uint32_t phys_addr, uint8_t order)
 
 static void buddy_list_push(uint8_t order, uint32_t phys_addr)
 {
+    uint32_t node_id = numa_policy_get_node_for_address(phys_addr);
+    if (node_id >= numa_policy_get_node_count())
+        node_id = 0;
+
     uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
     uint32_t page_index = buddy_phys_to_page_index(phys_addr);
 
-    *page_virt = buddy_free_list_heads[order];
-    buddy_free_list_heads[order] = phys_addr;
+    *page_virt = buddy_free_list_heads[node_id][order];
+    buddy_free_list_heads[node_id][order] = phys_addr;
     buddy_page_is_free[page_index] = 1u;
     buddy_page_order[page_index] = order;
+
+#ifdef LPL_KERNEL_DEBUG_POISON
+    if (order == 0u) {
+        uint8_t *poison_ptr = (uint8_t *)(page_virt + 1);
+        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i) poison_ptr[i] = 0xAA;
+    }
+#endif
 
     uint32_t start_page_index = buddy_phys_to_page_index(phys_addr);
     uint32_t page_count = 1u << order;
@@ -198,9 +242,9 @@ static void buddy_list_push(uint8_t order, uint32_t phys_addr)
         buddy_page_allocated[start_page_index + page_offset] = 0u;
 }
 
-static uint32_t buddy_list_pop(uint8_t order)
+static uint32_t buddy_list_pop_from_node(uint32_t target_node, uint8_t order)
 {
-    uint32_t phys_addr = buddy_free_list_heads[order];
+    uint32_t phys_addr = buddy_free_list_heads[target_node][order];
 
     if (!phys_addr)
         return 0;
@@ -208,8 +252,20 @@ static uint32_t buddy_list_pop(uint8_t order)
     uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
     uint32_t page_index = buddy_phys_to_page_index(phys_addr);
 
-    buddy_free_list_heads[order] = *page_virt;
+    buddy_free_list_heads[target_node][order] = *page_virt;
     buddy_page_is_free[page_index] = 0u;
+
+#ifdef LPL_KERNEL_DEBUG_POISON
+    if (order == 0u) {
+        uint8_t *poison_ptr = (uint8_t *)(page_virt + 1);
+        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i) {
+            if (poison_ptr[i] != 0xAA) {
+                pmm_uaf_anomalies++;
+                break;
+            }
+        }
+    }
+#endif
 
     uint32_t start_page_index = buddy_phys_to_page_index(phys_addr);
     uint32_t page_count = 1u << order;
@@ -220,9 +276,9 @@ static uint32_t buddy_list_pop(uint8_t order)
     return phys_addr;
 }
 
-static bool buddy_list_remove_exact(uint8_t order, uint32_t phys_addr)
+static bool buddy_list_remove_exact(uint32_t target_node, uint8_t order, uint32_t phys_addr)
 {
-    uint32_t current_phys = buddy_free_list_heads[order];
+    uint32_t current_phys = buddy_free_list_heads[target_node][order];
     uint32_t previous_phys = 0;
 
     while (current_phys)
@@ -240,7 +296,7 @@ static bool buddy_list_remove_exact(uint8_t order, uint32_t phys_addr)
                 *previous_virt = next_phys;
             }
             else
-                buddy_free_list_heads[order] = next_phys;
+                buddy_free_list_heads[target_node][order] = next_phys;
 
             buddy_page_is_free[page_index] = 0u;
             return true;
@@ -303,13 +359,16 @@ static uint32_t buddy_debug_get_free_block_count(uint8_t order)
         return 0u;
 
     uint32_t count = 0u;
-    uint32_t current_phys = buddy_free_list_heads[order];
-
-    while (current_phys)
+    for (uint32_t node_id = 0; node_id < numa_policy_get_node_count(); ++node_id)
     {
-        uint32_t *current_virt = (uint32_t *) pmm_phys_to_virt(current_phys);
-        current_phys = *current_virt;
-        ++count;
+        uint32_t current_phys = buddy_free_list_heads[node_id][order];
+
+        while (current_phys)
+        {
+            uint32_t *current_virt = (uint32_t *) pmm_phys_to_virt(current_phys);
+            current_phys = *current_virt;
+            ++count;
+        }
     }
 
     return count;
@@ -361,7 +420,9 @@ static void buddy_insert_order(uint32_t phys_addr, uint8_t requested_order)
 
         if (!buddy_can_merge(current_order, buddy_phys))
             break;
-        if (!buddy_list_remove_exact(current_order, buddy_phys))
+        uint32_t buddy_node = numa_policy_get_node_for_address(buddy_phys);
+        if (buddy_node >= numa_policy_get_node_count()) buddy_node = 0;
+        if (!buddy_list_remove_exact(buddy_node, current_order, buddy_phys))
             break;
 
         current_phys = (buddy_phys < current_phys) ? buddy_phys : current_phys;
@@ -382,15 +443,37 @@ static uint32_t buddy_remove_order(uint8_t requested_order)
     if (!buddy_is_valid_order(requested_order))
         return 0;
 
+    uint32_t local_node = numa_policy_get_local_node();
+    uint32_t node_count = numa_policy_get_node_count();
+    uint32_t target_node = local_node;
     uint8_t order = requested_order;
 
-    while (order <= PMM_BUDDY_MAX_ORDER && buddy_free_list_heads[order] == 0)
+    while (order <= PMM_BUDDY_MAX_ORDER && buddy_free_list_heads[local_node][order] == 0)
         ++order;
 
-    if (order > PMM_BUDDY_MAX_ORDER)
-        return 0;
+    if (order <= PMM_BUDDY_MAX_ORDER) {
+        target_node = local_node;
+        pmm_local_hits += (1u << requested_order);
+    } else {
+        bool found = false;
+        for (uint32_t i = 1; i < node_count; ++i)
+        {
+            target_node = (local_node + i) % node_count;
+            order = requested_order;
+            while (order <= PMM_BUDDY_MAX_ORDER && buddy_free_list_heads[target_node][order] == 0)
+                ++order;
+            if (order <= PMM_BUDDY_MAX_ORDER) {
+                found = true;
+                pmm_remote_hits += (1u << requested_order);
+                pmm_cross_node_fallbacks++;
+                break;
+            }
+        }
+        if (!found)
+            return 0;
+    }
 
-    uint32_t block_phys = buddy_list_pop(order);
+    uint32_t block_phys = buddy_list_pop_from_node(target_node, order);
     if (!block_phys)
         return 0;
 
@@ -415,8 +498,10 @@ static uint32_t buddy_remove(void) { return buddy_remove_order(0u); }
 
 static void buddy_reset_state(void)
 {
-    for (uint32_t order = 0u; order <= PMM_BUDDY_MAX_ORDER; ++order)
-        buddy_free_list_heads[order] = 0;
+    for (uint32_t node_id = 0; node_id < NUMA_POLICY_MAX_NODES; ++node_id) {
+        for (uint32_t order = 0u; order <= PMM_BUDDY_MAX_ORDER; ++order)
+            buddy_free_list_heads[node_id][order] = 0;
+    }
 
     for (uint32_t page_index = 0u; page_index < PMM_MAX_PAGE_COUNT; ++page_index)
     {
@@ -600,6 +685,11 @@ uint32_t physical_memory_manager_debug_get_free_block_count(uint8_t order)
 #endif
 }
 
+uint32_t physical_memory_manager_get_uaf_anomaly_count(void)
+{
+    return pmm_uaf_anomalies;
+}
+
 uint32_t physical_memory_manager_get_watermark_high(void) { return free_page_count_watermark_high; }
 
 uint32_t physical_memory_manager_get_watermark_low(void)
@@ -672,7 +762,7 @@ void physical_memory_manager_initialize(void)
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     buddy_reset_state();
 #else
-    free_list_head = 0u;
+    for (uint32_t i = 0; i < NUMA_POLICY_MAX_NODES; ++i) free_list_heads[i] = 0u;
 #endif
 
     uint32_t kernel_phys_start = PMM_LOW_MEMORY_LIMIT;

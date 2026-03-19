@@ -102,6 +102,7 @@ extern void isr45(void);
 extern void isr46(void);
 extern void isr47(void);
 extern void isr64(void);
+extern void isr128(void);
 
 ////////////////////////////////////////////////////////////
 // Public API functions of the ISR module

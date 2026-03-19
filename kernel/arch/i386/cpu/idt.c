@@ -114,6 +114,10 @@ void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *idt)
     /* Install IPI handlers */
     interrupt_descriptor_table_encode_flat_entry(&idt->entries[0x40u], (void *) isr64,
                                                  GDT_KERNEL_CODE_SELECTOR, IDT_KERNEL_INTERRUPT_GATE);
+
+    /* Install user-callable syscall gate (int 0x80, DPL=3). */
+    interrupt_descriptor_table_encode_flat_entry(&idt->entries[0x80u], (void *) isr128,
+                                                 GDT_KERNEL_CODE_SELECTOR, IDT_USER_INTERRUPT_GATE);
 }
 
 /**

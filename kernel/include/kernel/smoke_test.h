@@ -25,7 +25,8 @@
 #define KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_STRESS   1u
 #define KERNEL_SMOKE_TEST_ENABLE_PMM_BUDDY_ORDER    1u
 #define KERNEL_SMOKE_TEST_ENABLE_PAGING_PT_RECLAIM  0u
-#define KERNEL_SMOKE_TEST_ENABLE_HEAP_ALLOCATE_FREE 0u
+#define KERNEL_SMOKE_TEST_ENABLE_HEAP_ALLOCATE_FREE 1u
+#define KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL 0u
 #define KERNEL_SMOKE_TEST_ENABLE_CPU_TOPOLOGY_COMPACTION 1u
 #define KERNEL_SMOKE_TEST_ENABLE_CPU_TOPOLOGY_MADT_SYNC 1u
 #define KERNEL_SMOKE_TEST_ENABLE_CPU_TOPOLOGY_RUNTIME_SLOT 1u
@@ -73,6 +74,9 @@ extern void kernel_smoke_test_run_physical_memory_manager_buddy_order(Serial_t *
 extern void kernel_smoke_test_run_paging_runtime_page_table_reclaim(Serial_t *serial_port);
 
 extern void kernel_smoke_test_run_heap_allocate_free(Serial_t *serial_port);
+extern void kernel_smoke_test_run_heap_poison_canary(Serial_t *serial_port);
+extern void kernel_smoke_test_run_pmm_uaf_detection(Serial_t *serial_port);
+extern void kernel_smoke_test_run_ring3_minimal(Serial_t *serial_port);
 
 extern void kernel_smoke_test_run_cpu_topology_compaction(Serial_t *serial_port);
 

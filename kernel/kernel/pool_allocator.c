@@ -1,5 +1,5 @@
 #define __LPL_KERNEL__
-
+#include <kernel/config.h>
 #include <kernel/mm/pool_allocator.h>
 #include <kernel/mm/heap.h>
 #include <stddef.h>

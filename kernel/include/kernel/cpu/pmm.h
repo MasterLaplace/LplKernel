@@ -105,6 +105,8 @@ extern uint32_t physical_memory_manager_debug_get_double_free_count(void);
  */
 extern uint32_t physical_memory_manager_debug_get_free_block_count(uint8_t order);
 
+extern uint32_t physical_memory_manager_get_uaf_anomaly_count(void);
+
 ////////////////////////////////////////////////////////////
 // Instrumentation: Watermarks, Histogram, Fragmentation
 ////////////////////////////////////////////////////////////

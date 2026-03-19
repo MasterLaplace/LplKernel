@@ -1,5 +1,5 @@
 #define __LPL_KERNEL__
-
+#include <kernel/config.h>
 #include <kernel/mm/frame_arena.h>
 #include <kernel/mm/heap.h>
 
