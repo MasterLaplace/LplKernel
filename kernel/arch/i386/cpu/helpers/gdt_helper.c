@@ -1,4 +1,4 @@
-#include <kernel/cpu/gdt_helper.h>
+#include <kernel/cpu/helpers/gdt_helper.h>
 
 ////////////////////////////////////////////////////////////
 // Private functions of the GDT helper module

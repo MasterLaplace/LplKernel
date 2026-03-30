@@ -5,8 +5,8 @@
 ** vmm — Virtual Memory Manager for kernel address space
 */
 
-#ifndef KERNEL_MM_VMM_H_
-#define KERNEL_MM_VMM_H_
+#ifndef KERNEL_MEMORY_VMM_H_
+#define KERNEL_MEMORY_VMM_H_
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -55,4 +55,4 @@ bool kernel_vmm_reserve_at(void *virt, uint32_t page_count);
  */
 void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
 
-#endif /* !KERNEL_MM_VMM_H_ */
+#endif /* !KERNEL_MEMORY_VMM_H_ */

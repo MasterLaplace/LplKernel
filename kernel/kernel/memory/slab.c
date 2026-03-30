@@ -1,6 +1,6 @@
 #define __LPL_KERNEL__
 
-#include <kernel/mm/slab.h>
+#include <kernel/memory/slab.h>
 #include <stddef.h>
 
 /*

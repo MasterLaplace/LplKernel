@@ -1,5 +1,5 @@
-#ifndef KERNEL_MM_PINNED_MEMORY_H_
-#define KERNEL_MM_PINNED_MEMORY_H_
+#ifndef KERNEL_MEMORY_PINNED_MEMORY_H_
+#define KERNEL_MEMORY_PINNED_MEMORY_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -10,4 +10,4 @@ extern void kernel_pinned_free(void *ptr, uint32_t size);
 extern uint32_t kernel_pinned_get_allocated_pages(void);
 extern uint32_t kernel_pinned_get_released_pages(void);
 
-#endif /* !KERNEL_MM_PINNED_MEMORY_H_ */
+#endif /* !KERNEL_MEMORY_PINNED_MEMORY_H_ */

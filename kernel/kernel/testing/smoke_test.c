@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 
 #include <kernel/config.h>
-#include <kernel/mm/pool_allocator.h>
+#include <kernel/memory/pool_allocator.h>
 
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/apic_timer.h>
@@ -15,16 +15,16 @@
 #include <kernel/cpu/pmm.h>
 #include <kernel/cpu/ring3.h>
 #include <kernel/drivers/framebuffer.h>
-#include <kernel/mm/frame_arena.h>
-#include <kernel/mm/slab.h>
+#include <kernel/memory/frame_arena.h>
+#include <kernel/memory/slab.h>
 #include <kernel/lib/asmutils.h>
-#include <kernel/mm/heap.h>
-#include <kernel/mm/pool_allocator.h>
-#include <kernel/mm/slab.h>
-#include <kernel/mm/tlsf.h>
-#include <kernel/mm/ring_buffer.h>
-#include <kernel/mm/stack_allocator.h>
-#include <kernel/mm/vmm.h>
+#include <kernel/memory/heap.h>
+#include <kernel/memory/pool_allocator.h>
+#include <kernel/memory/slab.h>
+#include <kernel/memory/tlsf.h>
+#include <kernel/memory/ring_buffer.h>
+#include <kernel/memory/stack_allocator.h>
+#include <kernel/memory/vmm.h>
 #include <kernel/smoke_test.h>
 
 void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port)

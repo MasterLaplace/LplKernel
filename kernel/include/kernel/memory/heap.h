@@ -1,12 +1,12 @@
 /*
 ** LplKernel
-** kernel/include/kernel/mm/heap.h
+** kernel/include/kernel/memory/heap.h
 **
 ** Kernel heap allocator facade.
 */
 
-#ifndef KERNEL_MM_HEAP_H_
-#define KERNEL_MM_HEAP_H_
+#ifndef KERNEL_MEMORY_HEAP_H_
+#define KERNEL_MEMORY_HEAP_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -98,4 +98,4 @@ extern uint32_t kernel_heap_get_server_domain_remote_hit_count(uint32_t domain_i
 extern void kernel_heap_initialize_ap_domain(uint32_t logical_slot);
 extern uint32_t kernel_heap_get_server_per_cpu_hit_count(uint32_t slot);
 
-#endif /* !KERNEL_MM_HEAP_H_ */
+#endif /* !KERNEL_MEMORY_HEAP_H_ */

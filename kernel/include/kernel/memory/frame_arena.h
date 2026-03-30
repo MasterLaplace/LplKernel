@@ -1,12 +1,12 @@
 /*
 ** LplKernel
-** kernel/include/kernel/mm/frame_arena.h
+** kernel/include/kernel/memory/frame_arena.h
 **
 ** Pre-allocated frame arena allocator.
 */
 
-#ifndef KERNEL_MM_FRAME_ARENA_H_
-#define KERNEL_MM_FRAME_ARENA_H_
+#ifndef KERNEL_MEMORY_FRAME_ARENA_H_
+#define KERNEL_MEMORY_FRAME_ARENA_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -38,4 +38,4 @@ extern uint32_t kernel_frame_arena_get_wcet_alloc_cycles(void);
 
 extern uint32_t kernel_frame_arena_get_wcet_reset_cycles(void);
 
-#endif /* !KERNEL_MM_FRAME_ARENA_H_ */
+#endif /* !KERNEL_MEMORY_FRAME_ARENA_H_ */

@@ -1,12 +1,12 @@
 /*
 ** LplKernel
-** kernel/include/kernel/mm/pool_allocator.h
+** kernel/include/kernel/memory/pool_allocator.h
 **
 ** Fixed-size pre-allocated pool allocator.
 */
 
-#ifndef KERNEL_MM_POOL_ALLOCATOR_H_
-#define KERNEL_MM_POOL_ALLOCATOR_H_
+#ifndef KERNEL_MEMORY_POOL_ALLOCATOR_H_
+#define KERNEL_MEMORY_POOL_ALLOCATOR_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -33,4 +33,4 @@ extern uint32_t kernel_pool_get_wcet_alloc_cycles(void);
 
 extern uint32_t kernel_pool_get_wcet_free_cycles(void);
 
-#endif /* !KERNEL_MM_POOL_ALLOCATOR_H_ */
+#endif /* !KERNEL_MEMORY_POOL_ALLOCATOR_H_ */

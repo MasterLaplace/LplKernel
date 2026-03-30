@@ -17,7 +17,7 @@
 **   - Immediate coalescing on free (boundary-tag style).
 */
 
-#include <kernel/mm/tlsf.h>
+#include <kernel/memory/tlsf.h>
 
 /* ── Tuning ────────────────────────────────────────────── */
 

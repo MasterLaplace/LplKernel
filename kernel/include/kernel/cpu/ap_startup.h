@@ -15,7 +15,7 @@
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/paging.h>
-#include <kernel/mm/heap.h>
+#include <kernel/memory/heap.h>
 #include <stddef.h>
 #include <stdint.h>
 

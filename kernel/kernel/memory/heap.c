@@ -5,10 +5,10 @@
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/cpu/numa_policy.h>
-#include <kernel/mm/vmm.h>
-#include <kernel/mm/heap.h>
-#include <kernel/mm/slab.h>
-#include <kernel/mm/tlsf.h>
+#include <kernel/memory/vmm.h>
+#include <kernel/memory/heap.h>
+#include <kernel/memory/slab.h>
+#include <kernel/memory/tlsf.h>
 #include <stdbool.h>
 #include <stdint.h>
 

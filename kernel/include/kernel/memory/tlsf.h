@@ -1,6 +1,6 @@
 /*
 ** LplKernel
-** kernel/include/kernel/mm/tlsf.h
+** kernel/include/kernel/memory/tlsf.h
 **
 ** Two-Level Segregated Fit (TLSF) deterministic allocator.
 **
@@ -12,8 +12,8 @@
 ** SLI: Second-Level Index — subdivision within each FLI class (4 bins).
 */
 
-#ifndef KERNEL_MM_TLSF_H_
-#define KERNEL_MM_TLSF_H_
+#ifndef KERNEL_MEMORY_TLSF_H_
+#define KERNEL_MEMORY_TLSF_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -75,4 +75,4 @@ extern uint32_t kernel_tlsf_get_wcet_alloc_cycles(void);
 /** @brief Return the peak free cycles (WCET) observed. */
 extern uint32_t kernel_tlsf_get_wcet_free_cycles(void);
 
-#endif /* !KERNEL_MM_TLSF_H_ */
+#endif /* !KERNEL_MEMORY_TLSF_H_ */

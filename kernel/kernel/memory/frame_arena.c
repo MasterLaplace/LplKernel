@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 #include <kernel/config.h>
-#include <kernel/mm/frame_arena.h>
-#include <kernel/mm/heap.h>
+#include <kernel/memory/frame_arena.h>
+#include <kernel/memory/heap.h>
 
 static uint8_t *kernel_frame_arena_base = NULL;
 static uint32_t kernel_frame_arena_capacity = 0u;

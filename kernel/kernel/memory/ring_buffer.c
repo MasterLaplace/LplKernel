@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 
-#include <kernel/mm/ring_buffer.h>
-#include <kernel/mm/heap.h>
+#include <kernel/memory/ring_buffer.h>
+#include <kernel/memory/heap.h>
 #include <string.h>
 
 static uint8_t *kernel_ring_buffer_base = NULL;

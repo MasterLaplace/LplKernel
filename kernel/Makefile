@@ -43,6 +43,9 @@ kernel/memory/pool_allocator.o \
 kernel/memory/ring_buffer.o \
 kernel/memory/tlsf.o \
 kernel/core/kernel.o \
+kernel/memory/helpers/pmm_helper.o \
+kernel/memory/helpers/heap_helper.o \
+kernel/memory/helpers/core_allocators_helper.o \
 kernel/testing/smoke_test.o \
 
 OBJS=\

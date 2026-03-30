@@ -1,6 +1,6 @@
 /*
 ** LplKernel
-** kernel/include/kernel/mm/slab.h
+** kernel/include/kernel/memory/slab.h
 **
 ** Fixed-size slab allocator.
 **
@@ -12,8 +12,8 @@
 **   to the first-fit path.
 */
 
-#ifndef KERNEL_MM_SLAB_H_
-#define KERNEL_MM_SLAB_H_
+#ifndef KERNEL_MEMORY_SLAB_H_
+#define KERNEL_MEMORY_SLAB_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -55,4 +55,4 @@ extern bool kernel_slab_free(void *ptr);
 extern uint32_t kernel_slab_get_free_count(uint32_t object_size);
 extern uint32_t kernel_slab_get_used_count(uint32_t object_size);
 
-#endif /* !KERNEL_MM_SLAB_H_ */
+#endif /* !KERNEL_MEMORY_SLAB_H_ */

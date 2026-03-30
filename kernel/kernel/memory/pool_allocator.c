@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 #include <kernel/config.h>
-#include <kernel/mm/pool_allocator.h>
-#include <kernel/mm/heap.h>
+#include <kernel/memory/pool_allocator.h>
+#include <kernel/memory/heap.h>
 #include <stddef.h>
 
 static uint8_t *kernel_pool_base = NULL;

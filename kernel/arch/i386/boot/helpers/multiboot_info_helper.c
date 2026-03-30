@@ -1,4 +1,4 @@
-#include <kernel/boot/multiboot_info_helper.h>
+#include <kernel/boot/helpers/multiboot_info_helper.h>
 
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #    error "This code assumes little-endian (x86). Update multiboot parsing for big-endian targets."

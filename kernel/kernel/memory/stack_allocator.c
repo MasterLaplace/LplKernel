@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 
-#include <kernel/mm/stack_allocator.h>
-#include <kernel/mm/heap.h>
+#include <kernel/memory/stack_allocator.h>
+#include <kernel/memory/heap.h>
 
 static uint8_t *kernel_stack_allocator_base = NULL;
 static uint32_t kernel_stack_allocator_capacity = 0u;

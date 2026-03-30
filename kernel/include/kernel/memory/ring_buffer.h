@@ -1,12 +1,12 @@
 /*
 ** LplKernel
-** kernel/include/kernel/mm/ring_buffer.h
+** kernel/include/kernel/memory/ring_buffer.h
 **
 ** Fixed-slot pre-allocated ring buffer.
 */
 
-#ifndef KERNEL_MM_RING_BUFFER_H_
-#define KERNEL_MM_RING_BUFFER_H_
+#ifndef KERNEL_MEMORY_RING_BUFFER_H_
+#define KERNEL_MEMORY_RING_BUFFER_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -46,4 +46,4 @@ extern uint32_t kernel_ring_buffer_get_failed_enqueue_count(void);
 
 extern uint32_t kernel_ring_buffer_get_failed_dequeue_count(void);
 
-#endif /* !KERNEL_MM_RING_BUFFER_H_ */
+#endif /* !KERNEL_MEMORY_RING_BUFFER_H_ */

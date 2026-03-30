@@ -6,7 +6,7 @@
 */
 
 #include <kernel/config.h>
-#include <kernel/mm/vmm.h>
+#include <kernel/memory/vmm.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
 #include <stddef.h>

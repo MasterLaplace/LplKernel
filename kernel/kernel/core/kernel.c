@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 #include <kernel/config.h>
 
-#include <kernel/boot/multiboot_info_helper.h>
+#include <kernel/boot/helpers/multiboot_info_helper.h>
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
@@ -10,7 +10,7 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/cpu_topology.h>
-#include <kernel/cpu/gdt_helper.h>
+#include <kernel/cpu/helpers/gdt_helper.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
@@ -20,17 +20,27 @@
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/ps2_keyboard.h>
-#include <kernel/mm/frame_arena.h>
-#include <kernel/mm/heap.h>
-#include <kernel/mm/pinned_memory.h>
-#include <kernel/mm/pool_allocator.h>
-#include <kernel/mm/ring_buffer.h>
-#include <kernel/mm/slab.h>
-#include <kernel/mm/stack_allocator.h>
-#include <kernel/mm/tlsf.h>
-#include <kernel/mm/vmm.h>
+#include <kernel/memory/frame_arena.h>
+#include <kernel/memory/heap.h>
+#include <kernel/memory/pinned_memory.h>
+#include <kernel/memory/pool_allocator.h>
+#include <kernel/memory/ring_buffer.h>
+#include <kernel/memory/slab.h>
+#include <kernel/memory/stack_allocator.h>
+#include <kernel/memory/tlsf.h>
+#include <kernel/memory/vmm.h>
 #include <kernel/cpu/numa_policy.h>
 #include <kernel/smoke_test.h>
+#include <kernel/cpu/helpers/clock_helper.h>
+#include <kernel/cpu/helpers/cpu_topology_helper.h>
+#include <kernel/cpu/helpers/acpi_helper.h>
+#include <kernel/cpu/helpers/ioapic_helper.h>
+#include <kernel/cpu/helpers/apic_timer_helper.h>
+#include <kernel/cpu/helpers/ap_startup_helper.h>
+#include <kernel/memory/helpers/pmm_helper.h>
+#include <kernel/memory/helpers/heap_helper.h>
+#include <kernel/memory/helpers/core_allocators_helper.h>
+#include <kernel/drivers/helpers/keyboard_helper.h>
 
 #define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES 16384u
 #define KERNEL_STACK_ALLOCATOR_DEFAULT_CAPACITY_BYTES 16384u
@@ -166,13 +176,7 @@ static void kernel_try_start_discovered_aps(void)
 {
     uint8_t ap_bootstrap_ok = application_processor_bootstrap_initialize();
 
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: AP bootstrap init=");
-    serial_write_int(&com1, (int32_t) ap_bootstrap_ok);
-    serial_write_string(&com1, ", ap_count=");
-    serial_write_int(&com1, (int32_t) application_processor_bootstrap_get_ap_count());
-    serial_write_string(&com1, ", kernel_cr3=");
-    serial_write_hex32(&com1, application_processor_startup_get_kernel_cr3());
-    serial_write_string(&com1, "\n");
+    write_ap_bootstrap_init_info(&com1, ap_bootstrap_ok);
 
     application_processor_startup_set_serial_port(&com1);
 
@@ -181,25 +185,23 @@ static void kernel_try_start_discovered_aps(void)
 
     if (!advanced_pic_ipi_is_ready())
     {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: AP startup skipped (IPI not ready)\n");
+        write_ap_startup_skipped_ipi_not_ready_info(&com1);
         return;
     }
 
     if (!application_processor_startup_ensure_low_identity_mapping())
     {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: AP startup skipped (identity map unavailable)\n");
+        write_ap_startup_skipped_identity_map_unavailable_info(&com1);
         return;
     }
 
     if (!application_processor_trampoline_install())
     {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: AP startup skipped (trampoline install failed)\n");
+        write_ap_startup_skipped_trampoline_install_failed_info(&com1);
         return;
     }
 
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: AP trampoline installed, vector=");
-    serial_write_hex8(&com1, application_processor_trampoline_get_startup_vector());
-    serial_write_string(&com1, "\n");
+    write_ap_trampoline_installed_info(&com1);
 
     application_processor_bootstrap_reset_iteration();
 
@@ -270,68 +272,10 @@ static void kernel_try_start_discovered_aps(void)
             ++delivered;
         }
 
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: AP startup dispatch apic_id=");
-        serial_write_int(&com1, (int32_t) entry->apic_id);
-        serial_write_string(&com1, ", slot=");
-        serial_write_int(&com1, (int32_t) entry->logical_slot);
-        serial_write_string(&com1, ", vector=");
-        serial_write_hex8(&com1, application_processor_trampoline_get_startup_vector());
-        serial_write_string(&com1, ", delivered=");
-        serial_write_int(&com1, (int32_t) (sequence_ok && ack_ok));
-        serial_write_string(&com1, ", seq_ok=");
-        serial_write_int(&com1, (int32_t) sequence_ok);
-        serial_write_string(&com1, ", ack_ok=");
-        serial_write_int(&com1, (int32_t) ack_ok);
-        serial_write_string(&com1, ", c_entry_ok=");
-        serial_write_int(&com1, (int32_t) c_entry_ok);
-        serial_write_string(&com1, ", ack_word=");
-        serial_write_hex16(&com1, application_processor_trampoline_get_acknowledgement_word());
-        serial_write_string(&com1, ", c_entry_word=");
-        serial_write_hex16(&com1, application_processor_trampoline_get_c_entry_word());
-        serial_write_string(&com1, ", attempts=");
-        serial_write_int(&com1, (int32_t) attempts_used);
-        serial_write_string(&com1, "\n");
+        write_ap_startup_dispatch_info(&com1, entry, sequence_ok, ack_ok, c_entry_ok, attempts_used);
     }
 
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: AP startup summary attempted=");
-    serial_write_int(&com1, (int32_t) attempted);
-    serial_write_string(&com1, ", delivered=");
-    serial_write_int(&com1, (int32_t) delivered);
-    serial_write_string(&com1, ", seq_attempts=");
-    serial_write_int(&com1, (int32_t) advanced_pic_ipi_get_startup_sequence_attempt_count());
-    serial_write_string(&com1, ", seq_success=");
-    serial_write_int(&com1, (int32_t) advanced_pic_ipi_get_startup_sequence_success_count());
-    serial_write_string(&com1, ", init_ipi=");
-    serial_write_int(&com1, (int32_t) advanced_pic_ipi_get_init_attempt_count());
-    serial_write_string(&com1, ", sipi=");
-    serial_write_int(&com1, (int32_t) advanced_pic_ipi_get_sipi_attempt_count());
-    serial_write_string(&com1, ", ap_reported_online=");
-    serial_write_int(&com1, (int32_t) application_processor_startup_get_reported_online_count());
-    serial_write_string(&com1, ", ap_last_id=");
-    serial_write_int(&com1, (int32_t) application_processor_startup_get_last_reported_apic_id());
-    serial_write_string(&com1, ", retries=");
-    serial_write_int(&com1, (int32_t) retries_consumed);
-    serial_write_string(&com1, ", seq_fail=");
-    serial_write_int(&com1, (int32_t) sequence_failures);
-    serial_write_string(&com1, ", ack_to=");
-    serial_write_int(&com1, (int32_t) acknowledgement_timeouts);
-    serial_write_string(&com1, ", c_entry_to=");
-    serial_write_int(&com1, (int32_t) c_entry_timeouts);
-    serial_write_string(&com1, ", tramp_installs=");
-    serial_write_int(&com1, (int32_t) application_processor_trampoline_get_install_count());
-    serial_write_string(&com1, ", tramp_waits=");
-    serial_write_int(&com1, (int32_t) application_processor_trampoline_get_ack_wait_count());
-    serial_write_string(&com1, ", tramp_ack_ok=");
-    serial_write_int(&com1, (int32_t) application_processor_trampoline_get_ack_success_count());
-    serial_write_string(&com1, ", tramp_ack_to=");
-    serial_write_int(&com1, (int32_t) application_processor_trampoline_get_ack_timeout_count());
-    serial_write_string(&com1, ", tramp_c_waits=");
-    serial_write_int(&com1, (int32_t) application_processor_trampoline_get_c_entry_wait_count());
-    serial_write_string(&com1, ", tramp_c_ok=");
-    serial_write_int(&com1, (int32_t) application_processor_trampoline_get_c_entry_success_count());
-    serial_write_string(&com1, ", tramp_c_to=");
-    serial_write_int(&com1, (int32_t) application_processor_trampoline_get_c_entry_timeout_count());
-    serial_write_string(&com1, "\n");
+    write_ap_startup_summary(&com1, attempted, delivered, retries_consumed, sequence_failures, acknowledgement_timeouts, c_entry_timeouts);
 }
 
 __attribute__((constructor)) void kernel_initialize(void)
@@ -363,30 +307,10 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IDT loaded successfully!\n");
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing clock policy...\n");
     clock_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: clock profile=");
-    serial_write_string(&com1, clock_get_profile_name());
-    serial_write_string(&com1, ", backend=");
-    serial_write_string(&com1, clock_get_backend_name());
-    serial_write_string(&com1, ", hz=");
-    serial_write_int(&com1, (int32_t) clock_get_tick_hz());
-    serial_write_string(&com1, ", rtc_periodic=");
-    serial_write_int(&com1, (int32_t) clock_is_rtc_periodic_enabled());
-    serial_write_string(&com1, "\n");
+    write_clock_info(&com1);
 
     cpu_topology_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: cpu topology slot=");
-    serial_write_int(&com1, (int32_t) cpu_topology_get_logical_slot());
-    serial_write_string(&com1, ", apic_id=");
-    serial_write_int(&com1, (int32_t) cpu_topology_get_local_apic_id());
-    serial_write_string(&com1, ", cpus=");
-    serial_write_int(&com1, (int32_t) cpu_topology_get_discovered_cpu_count());
-    serial_write_string(&com1, ", online=");
-    serial_write_int(&com1, (int32_t) cpu_topology_get_online_cpu_count());
-    serial_write_string(&com1, ", source=");
-    serial_write_string(&com1, cpu_topology_get_source_name());
-    serial_write_string(&com1, ", forced=");
-    serial_write_int(&com1, (int32_t) cpu_topology_is_forced());
-    serial_write_string(&com1, "\n");
+    write_cpu_topology_info(&com1);
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing runtime paging...\n");
     paging_initialize_runtime();
@@ -395,179 +319,38 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: kernel VMM initialized successfully!\n");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing PMM...\n");
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM strategy=");
-    serial_write_string(&com1, physical_memory_manager_get_strategy_name());
-    serial_write_string(&com1, "\n");
+    write_pmm_strategy_info(&com1);
     physical_memory_manager_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-64MB) ready: ");
-    serial_write_int(&com1, (int32_t) physical_memory_manager_get_free_page_count());
-    serial_write_string(&com1, " pages free\n");
+    write_pmm_pass_1_info(&com1);
 
     advanced_configuration_and_power_interface_madt_initialize();
     numa_policy_initialize();
 
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 2 (>16MB mapping)...\n");
+    write_pmm_pass_2_start_info(&com1);
     physical_memory_manager_extend_mapping();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM ready - total free: ");
-    serial_write_int(&com1, (int32_t) physical_memory_manager_get_free_page_count());
-    serial_write_string(&com1, " pages (~");
-    serial_write_int(&com1, (int32_t) (physical_memory_manager_get_free_page_count() * 4 / 1024));
-    serial_write_string(&com1, " MB free), watermark_high=");
-    serial_write_int(&com1, (int32_t) physical_memory_manager_get_watermark_high());
-    serial_write_string(&com1, ", watermark_low=");
-    serial_write_int(&com1, (int32_t) physical_memory_manager_get_watermark_low());
-    serial_write_string(&com1, ", frag=");
-    serial_write_int(&com1, (int32_t) physical_memory_manager_get_fragmentation_ratio());
-    serial_write_string(&com1, "%\n");
+    write_pmm_ready_info(&com1);
 
     kernel_heap_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: heap strategy=");
-    serial_write_string(&com1, kernel_heap_get_strategy_name());
-#ifdef LPL_KERNEL_REAL_TIME_MODE
-    serial_write_string(&com1, ", tlsf_pool=");
-    serial_write_int(&com1, (int32_t) (kernel_tlsf_get_pool_size() / 1024));
-    serial_write_string(&com1, "KB\n");
-#else
-    serial_write_string(&com1, "\n");
-#endif
-    serial_write_string(&com1, ", small_free_blocks=");
-    serial_write_int(&com1, (int32_t) kernel_heap_get_small_free_block_count());
-    serial_write_string(&com1, ", small_free_bytes=");
-    serial_write_int(&com1, (int32_t) kernel_heap_get_small_free_bytes());
-    serial_write_string(&com1, ", rejected_free=");
-    serial_write_int(&com1, (int32_t) kernel_heap_debug_get_rejected_free_count());
-    serial_write_string(&com1, ", double_free=");
-    serial_write_int(&com1, (int32_t) kernel_heap_debug_get_double_free_count());
-    serial_write_string(&com1, "\n");
+    write_heap_info(&com1);
 
     bool frame_arena_ok = kernel_frame_arena_initialize(KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES);
     bool stack_allocator_ok = kernel_stack_allocator_initialize(KERNEL_STACK_ALLOCATOR_DEFAULT_CAPACITY_BYTES);
     bool pool_allocator_ok = kernel_pool_allocator_initialize(KERNEL_POOL_ALLOCATOR_DEFAULT_OBJECT_SIZE,
                                                               KERNEL_POOL_ALLOCATOR_DEFAULT_OBJECT_COUNT);
     bool pinned_ok = kernel_pinned_memory_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: core allocators ready: arena=");
-    serial_write_int(&com1, (int32_t) frame_arena_ok);
-    serial_write_string(&com1, ", stack=");
-    serial_write_int(&com1, (int32_t) stack_allocator_ok);
-    serial_write_string(&com1, ", pool=");
-    serial_write_int(&com1, (int32_t) pool_allocator_ok);
-    serial_write_string(&com1, ", pinned=");
-    serial_write_int(&com1, (int32_t) pinned_ok);
-    serial_write_string(&com1, ", arena_capacity=");
-    serial_write_int(&com1, (int32_t) kernel_frame_arena_get_capacity_bytes());
-    serial_write_string(&com1, ", arena_budget_exceeded=");
-    serial_write_int(&com1, (int32_t) kernel_frame_arena_get_budget_exceeded_count());
-    serial_write_string(&com1, ", stack_capacity=");
-    serial_write_int(&com1, (int32_t) kernel_stack_allocator_get_capacity());
-    serial_write_string(&com1, ", pool_object_size=");
-    serial_write_int(&com1, (int32_t) kernel_pool_get_object_size());
-    serial_write_string(&com1, ", pool_capacity=");
-    serial_write_int(&com1, (int32_t) kernel_pool_get_capacity());
-    serial_write_string(&com1, ", free=");
-    serial_write_int(&com1, (int32_t) kernel_pool_get_free_count());
-    serial_write_string(&com1, "\n");
+    write_core_allocators_info(&com1, frame_arena_ok, stack_allocator_ok, pool_allocator_ok, pinned_ok);
 
     bool ring_buffer_ok = kernel_ring_buffer_initialize_ex(KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE,
                                                            KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT,
                                                            KERNEL_RING_BUFFER_MODE_SPSC);
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ring buffer init=");
-    serial_write_int(&com1, (int32_t) ring_buffer_ok);
-    serial_write_string(&com1, ", mode=");
-    serial_write_int(&com1, (int32_t) kernel_ring_buffer_get_mode());
-    serial_write_string(&com1, ", slot_size=");
-    serial_write_int(&com1, (int32_t) kernel_ring_buffer_get_slot_size());
-    serial_write_string(&com1, ", capacity=");
-    serial_write_int(&com1, (int32_t) kernel_ring_buffer_get_capacity());
-    serial_write_string(&com1, ", count=");
-    serial_write_int(&com1, (int32_t) kernel_ring_buffer_get_count());
-    serial_write_string(&com1, ", enq=");
-    serial_write_int(&com1, (int32_t) kernel_ring_buffer_get_enqueue_count());
-    serial_write_string(&com1, ", deq=");
-    serial_write_int(&com1, (int32_t) kernel_ring_buffer_get_dequeue_count());
-    serial_write_string(&com1, "\n");
+    write_ring_buffer_info(&com1, ring_buffer_ok);
 
-#if defined(LPL_KERNEL_REAL_TIME_MODE)
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: slab free: sz16=");
-    serial_write_int(&com1, (int32_t) kernel_slab_get_free_count(16u));
-    serial_write_string(&com1, ", sz64=");
-    serial_write_int(&com1, (int32_t) kernel_slab_get_free_count(64u));
-    serial_write_string(&com1, ", sz256=");
-    serial_write_int(&com1, (int32_t) kernel_slab_get_free_count(256u));
-    serial_write_string(&com1, ", hot_loop_depth=");
-    serial_write_int(&com1, (int32_t) kernel_heap_get_hot_loop_depth());
-    serial_write_string(&com1, ", hot_loop_violations=");
-    serial_write_int(&com1, (int32_t) kernel_heap_get_hot_loop_violation_count());
-    serial_write_string(&com1, "\n");
-#else
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: server heap domains=");
-    serial_write_int(&com1, (int32_t) kernel_heap_get_server_domain_count());
-    serial_write_string(&com1, ", active=");
-    serial_write_int(&com1, (int32_t) kernel_heap_get_server_active_domain());
-    serial_write_string(&com1, ", first_fit_fallbacks=");
-    serial_write_int(&com1,
-                     (int32_t) kernel_heap_get_server_domain_first_fit_fallback_count(
-                         kernel_heap_get_server_active_domain()));
-    serial_write_string(&com1, ", remote_probe=");
-    serial_write_int(&com1,
-                     (int32_t) kernel_heap_get_server_domain_remote_probe_count(
-                         kernel_heap_get_server_active_domain()));
-    serial_write_string(&com1, ", remote_hit=");
-    serial_write_int(&com1,
-                     (int32_t) kernel_heap_get_server_domain_remote_hit_count(
-                         kernel_heap_get_server_active_domain()));
-    serial_write_string(&com1, "\n");
+    write_heap_extended_info(&com1);
 
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: sizeclass buckets free/hits: ");
-    for (uint32_t sc = 0u; sc < 7u; ++sc)
-    {
-        serial_write_string(&com1, "s");
-        serial_write_int(&com1, (int32_t) sc);
-        serial_write_string(&com1, "=");
-        serial_write_int(&com1, (int32_t) kernel_heap_get_size_class_free_count(sc));
-        serial_write_string(&com1, "/");
-        serial_write_int(&com1, (int32_t) kernel_heap_get_size_class_hit_count(sc));
-        serial_write_string(&com1, "/");
-        serial_write_int(&com1,
-                         (int32_t) kernel_heap_get_server_domain_refill_count(
-                             kernel_heap_get_server_active_domain(), sc));
-        serial_write_string(&com1, " ");
-    }
-    serial_write_string(&com1, "\n");
-#endif
-
-#if !defined(LPL_KERNEL_REAL_TIME_MODE)
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM buddy free blocks by order: ");
-    for (uint8_t order = 0u; order <= 18u; ++order)
-    {
-        uint32_t count = physical_memory_manager_debug_get_free_block_count(order);
-
-        if (!count)
-            continue;
-
-        serial_write_string(&com1, "o");
-        serial_write_int(&com1, (int32_t) order);
-        serial_write_string(&com1, "=");
-        serial_write_int(&com1, (int32_t) count);
-        serial_write_string(&com1, " ");
-    }
-    serial_write_string(&com1, "\n");
-#endif
+    write_pmm_buddy_info(&com1);
 
     advanced_configuration_and_power_interface_madt_initialize();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI MADT state=");
-    serial_write_string(&com1, advanced_configuration_and_power_interface_madt_get_state_name());
-    serial_write_string(&com1, ", madt=");
-    serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_is_available());
-    serial_write_string(&com1, ", lapic_phys=");
-    serial_write_hex32(&com1, advanced_configuration_and_power_interface_madt_get_local_apic_physical_base());
-    serial_write_string(&com1, ", ioapic_count=");
-    serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_count());
-    serial_write_string(&com1, ", lapic_count=");
-    serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_local_apic_count());
-    serial_write_string(&com1, ", iso_count=");
-    serial_write_int(&com1,
-                     (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_count());
-    serial_write_string(&com1, "\n");
+    write_acpi_madt_info(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())
     {
@@ -582,140 +365,24 @@ __attribute__((constructor)) void kernel_initialize(void)
                 advanced_configuration_and_power_interface_madt_get_local_apic_id(lapic_index));
         }
 
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: cpu topology MADT sync cpus=");
-        serial_write_int(&com1, (int32_t) cpu_topology_get_discovered_cpu_count());
-        serial_write_string(&com1, "\n");
+        write_cpu_topology_madt_sync_info(&com1);
     }
 
-    for (uint8_t ioapic_index = 0u; ioapic_index < advanced_configuration_and_power_interface_madt_get_io_apic_count();
-         ++ioapic_index)
-    {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI IOAPIC[");
-        serial_write_int(&com1, (int32_t) ioapic_index);
-        serial_write_string(&com1, "] id=");
-        serial_write_int(&com1, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
-        serial_write_string(&com1, ", phys=");
-        serial_write_hex32(&com1,
-                           advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(ioapic_index));
-        serial_write_string(&com1, ", gsi_base=");
-        serial_write_int(&com1,
-                         (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_gsi_base(ioapic_index));
-        serial_write_string(&com1, "\n");
-    }
+    write_acpi_ioapics_info(&com1);
 
-    for (uint8_t iso_index = 0u;
-         iso_index < advanced_configuration_and_power_interface_madt_get_interrupt_source_override_count(); ++iso_index)
-    {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI ISO[");
-        serial_write_int(&com1, (int32_t) iso_index);
-        serial_write_string(&com1, "] bus=");
-        serial_write_int(
-            &com1,
-            (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_bus(iso_index));
-        serial_write_string(&com1, ", source_irq=");
-        serial_write_int(
-            &com1, (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_source_irq(
-                       iso_index));
-        serial_write_string(&com1, ", gsi=");
-        serial_write_int(
-            &com1,
-            (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_gsi(iso_index));
-        serial_write_string(&com1, ", flags=");
-        serial_write_hex16(
-            &com1, advanced_configuration_and_power_interface_madt_get_interrupt_source_override_flags(iso_index));
-        serial_write_string(&com1, "\n");
-    }
+    write_acpi_isos_info(&com1);
 
-    for (uint8_t isa_irq = 0u; isa_irq <= 1u; ++isa_irq)
-    {
-        uint32_t mapped_gsi = 0u;
-        uint16_t mapped_flags = 0u;
-        uint8_t ioapic_index = 0u;
-
-        if (!advanced_configuration_and_power_interface_madt_resolve_isa_irq(isa_irq, &mapped_gsi, &mapped_flags))
-            continue;
-
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI route ISA IRQ");
-        serial_write_int(&com1, (int32_t) isa_irq);
-        serial_write_string(&com1, " -> GSI ");
-        serial_write_int(&com1, (int32_t) mapped_gsi);
-        serial_write_string(&com1, ", flags=");
-        serial_write_hex16(&com1, mapped_flags);
-
-        if (advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(mapped_gsi, &ioapic_index))
-        {
-            serial_write_string(&com1, ", ioapic_index=");
-            serial_write_int(&com1, (int32_t) ioapic_index);
-            serial_write_string(&com1, ", ioapic_id=");
-            serial_write_int(&com1,
-                             (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
-        }
-        else
-            serial_write_string(&com1, ", ioapic_index=none");
-
-        serial_write_string(&com1, "\n");
-    }
+    write_acpi_isa_routing_info(&com1);
 
     input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC scaffold state=");
-    serial_write_string(&com1, input_output_advanced_programmable_interrupt_controller_get_state_name());
-    serial_write_string(&com1, ", mapped=");
-    serial_write_int(&com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_mapped_count());
-    serial_write_string(&com1, ", routes=");
-    serial_write_int(&com1,
-                     (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_count());
-    serial_write_string(&com1, "\n");
+    write_ioapic_scaffold_info(&com1);
 
-    for (uint8_t route_index = 0u;
-         route_index < input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
-         ++route_index)
-    {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC route[");
-        serial_write_int(&com1, (int32_t) route_index);
-        serial_write_string(&com1, "] isa_irq=");
-        serial_write_int(
-            &com1,
-            (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(route_index));
-        serial_write_string(&com1, ", gsi=");
-        serial_write_int(
-            &com1,
-            (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_gsi(route_index));
-        serial_write_string(&com1, ", vector=");
-        serial_write_int(
-            &com1,
-            (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_vector(route_index));
-        serial_write_string(&com1, ", ioapic_index=");
-        serial_write_int(
-            &com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_index(
-                       route_index));
-        serial_write_string(&com1, ", ioapic_id=");
-        serial_write_int(
-            &com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_io_apic_id(
-                       route_index));
-        serial_write_string(&com1, ", masked=");
-        serial_write_int(
-            &com1, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(
-                       route_index));
-        serial_write_string(&com1, ", iso_flags=");
-        serial_write_hex16(
-            &com1, input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso_flags(route_index));
-        serial_write_string(&com1, "\n");
-    }
+    write_ioapic_routes_info(&com1);
 
     if (advanced_pic_timer_backend_late_initialize())
     {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC late init state=");
-        serial_write_string(&com1, advanced_pic_timer_backend_name());
-        serial_write_string(&com1, ", lapic_phys=");
-        serial_write_hex32(&com1, advanced_pic_timer_backend_get_local_apic_physical_base());
-        serial_write_string(&com1, ", mmio_mapped=");
-        serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_is_local_apic_mmio_mapped());
-        serial_write_string(&com1, ", lapic_ver=");
-        serial_write_hex32(&com1, advanced_pic_timer_backend_get_local_apic_version_register());
-        serial_write_string(&com1, "\n");
-
         advanced_pic_ipi_initialize(advanced_pic_timer_backend_get_local_apic_virtual_base());
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC IPI framework initialized\n");
+        write_apic_late_init_state_info(&com1);
 
         kernel_try_start_discovered_aps();
 
@@ -726,74 +393,46 @@ __attribute__((constructor)) void kernel_initialize(void)
                 programmable_interrupt_controller_set_mask(1u);
                 interrupt_request_set_keyboard_owner_is_apic(1u);
 
-                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC keyboard handoff state=");
-                serial_write_string(&com1, input_output_advanced_programmable_interrupt_controller_get_state_name());
-                serial_write_string(&com1, ", irq1_owner_apic=");
-                serial_write_int(&com1, (int32_t) interrupt_request_is_keyboard_owner_apic());
-                serial_write_string(&com1, "\n");
+                write_ioapic_keyboard_handoff_info(&com1, 1u);
             }
             else
             {
-                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC keyboard handoff fallback state=");
-                serial_write_string(&com1, input_output_advanced_programmable_interrupt_controller_get_state_name());
-                serial_write_string(&com1, ", irq1_owner_apic=");
-                serial_write_int(&com1, (int32_t) interrupt_request_is_keyboard_owner_apic());
-                serial_write_string(&com1, "\n");
+                write_ioapic_keyboard_handoff_info(&com1, 0u);
             }
         }
         else
         {
-            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: IOAPIC keyboard ownership policy=pic-fallback\n");
+            write_ioapic_keyboard_policy_fallback_info(&com1);
         }
 
         if (advanced_pic_timer_backend_calibrate_with_pit())
         {
-            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC calibration state=");
-            serial_write_string(&com1, advanced_pic_timer_backend_name());
-            serial_write_string(&com1, ", lapic_timer_hz_estimate=");
-            serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_get_calibrated_timer_frequency_hz());
-            serial_write_string(&com1, "\n");
+            write_apic_calibration_info(&com1);
 
             if (kernel_policy_enable_apic_timer_owner())
             {
                 if (advanced_pic_timer_backend_enable_periodic_mode(interrupt_request_get_timer_frequency_hz()))
                 {
-                    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC owner handoff state=");
-                    serial_write_string(&com1, advanced_pic_timer_backend_name());
-                    serial_write_string(&com1, ", apic_owner=");
-                    serial_write_int(&com1, (int32_t) interrupt_request_is_timer_owner_apic());
-                    serial_write_string(&com1, ", apic_periodic=");
-                    serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_is_periodic_mode_enabled());
-                    serial_write_string(&com1, "\n");
+                    write_apic_owner_handoff_info(&com1, 1u);
                 }
                 else
                 {
-                    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC owner handoff fallback state=");
-                    serial_write_string(&com1, advanced_pic_timer_backend_name());
-                    serial_write_string(&com1, ", apic_owner=");
-                    serial_write_int(&com1, (int32_t) interrupt_request_is_timer_owner_apic());
-                    serial_write_string(&com1, ", apic_periodic=");
-                    serial_write_int(&com1, (int32_t) advanced_pic_timer_backend_is_periodic_mode_enabled());
-                    serial_write_string(&com1, "\n");
+                    write_apic_owner_handoff_info(&com1, 0u);
                 }
             }
             else
             {
-                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC ownership policy=pit-fallback\n");
+                write_apic_owner_policy_fallback_info(&com1);
             }
         }
         else
         {
-            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC calibration skipped state=");
-            serial_write_string(&com1, advanced_pic_timer_backend_name());
-            serial_write_string(&com1, "\n");
+            write_apic_calibration_skipped_info(&com1);
         }
     }
     else
     {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC late init skipped state=");
-        serial_write_string(&com1, advanced_pic_timer_backend_name());
-        serial_write_string(&com1, "\n");
+        write_apic_late_init_skipped_info(&com1);
     }
 
     if (KERNEL_SMOKE_TEST_ENABLE_PAGING_PT_RECLAIM)
@@ -898,11 +537,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     if (KERNEL_SMOKE_TEST_ENABLE_TLSF_FRAGMENTATION)
         kernel_smoke_test_run_tlsf_fragmentation(&com1);
 
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM guard counters: rejected_free=");
-    serial_write_int(&com1, (int32_t) physical_memory_manager_debug_get_rejected_free_count());
-    serial_write_string(&com1, ", double_free=");
-    serial_write_int(&com1, (int32_t) physical_memory_manager_debug_get_double_free_count());
-    serial_write_string(&com1, "\n");
+    write_pmm_guard_info(&com1);
 
     if (KERNEL_SMOKE_TEST_ENABLE_IRQ_RUNTIME_STATUS)
         kernel_smoke_test_run_interrupt_request_runtime_status(&com1);
@@ -919,17 +554,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     if (KERNEL_SMOKE_TEST_ENABLE_IOAPIC_READINESS)
         kernel_smoke_test_run_ioapic_readiness(&com1);
 
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: keyboard runtime: irq=");
-    serial_write_int(&com1, (int32_t) keyboard_get_irq_count());
-    serial_write_string(&com1, ", printable=");
-    serial_write_int(&com1, (int32_t) keyboard_get_printable_count());
-    serial_write_string(&com1, ", pending=");
-    serial_write_int(&com1, (int32_t) keyboard_get_pending_char_count());
-    serial_write_string(&com1, ", dropped=");
-    serial_write_int(&com1, (int32_t) keyboard_get_dropped_char_count());
-    serial_write_string(&com1, ", last='");
-    serial_write_int(&com1, (int32_t) keyboard_get_last_printable_char());
-    serial_write_string(&com1, "'\n");
+    write_keyboard_runtime_info(&com1);
 
     if (framebuffer_init())
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: framebuffer initialized successfully!\n");

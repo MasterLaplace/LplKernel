@@ -1,12 +1,12 @@
 /*
 ** LplKernel
-** kernel/include/kernel/mm/stack_allocator.h
+** kernel/include/kernel/memory/stack_allocator.h
 **
 ** Fixed-size pre-allocated LIFO stack allocator.
 */
 
-#ifndef KERNEL_MM_STACK_ALLOCATOR_H_
-#define KERNEL_MM_STACK_ALLOCATOR_H_
+#ifndef KERNEL_MEMORY_STACK_ALLOCATOR_H_
+#define KERNEL_MEMORY_STACK_ALLOCATOR_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -34,4 +34,4 @@ extern uint32_t kernel_stack_allocator_get_rollback_count(void);
 
 extern uint32_t kernel_stack_allocator_get_failed_alloc_count(void);
 
-#endif /* !KERNEL_MM_STACK_ALLOCATOR_H_ */
+#endif /* !KERNEL_MEMORY_STACK_ALLOCATOR_H_ */
