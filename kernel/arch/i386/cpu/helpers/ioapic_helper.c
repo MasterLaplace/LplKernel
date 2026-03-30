@@ -53,8 +53,9 @@ void write_ioapic_routes_info(Serial_t *serial)
             input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso_flags(route_index));
         serial_write_string(serial, ", dest_apic_id=");
         serial_write_int(
-            serial, (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(
-                        route_index));
+            serial,
+            (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(
+                route_index));
         serial_write_string(serial, "\n");
     }
 }

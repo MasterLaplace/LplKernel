@@ -122,6 +122,7 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_des
  * @param apic_id The target CPU's local APIC ID.
  * @return non-zero on success, zero on failure.
  */
-extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq, uint8_t apic_id);
+extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq,
+                                                                                                 uint8_t apic_id);
 
 #endif /* KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

@@ -375,14 +375,16 @@ uint8_t input_output_advanced_programmable_interrupt_controller_enable_isa_route
     return 1u;
 }
 
-uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(uint8_t route_index)
+uint8_t
+input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(uint8_t route_index)
 {
     if (route_index >= io_apic_route_count)
         return 0u;
     return io_apic_routes[route_index].destination_apic_id;
 }
 
-uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq, uint8_t apic_id)
+uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq,
+                                                                                          uint8_t apic_id)
 {
     int32_t route_index_signed;
     uint8_t route_index;
@@ -416,7 +418,7 @@ uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_de
     redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
     redir_high = io_apic_register_read(unit->virtual_base, redir_reg_index + 1u);
     redir_high &= ~(0xFF000000u); // Clear bits 24-31
-    redir_high |= ((uint32_t)apic_id << 24u);
+    redir_high |= ((uint32_t) apic_id << 24u);
     io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
 
     route->destination_apic_id = apic_id;
