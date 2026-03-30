@@ -5,8 +5,11 @@
 ** exception
 */
 
-#ifndef EXCEPTION_H_
-#define EXCEPTION_H_
+#ifndef KERNEL_CPU_EXCEPTION_H
+#define KERNEL_CPU_EXCEPTION_H
+
+#include <kernel/cpu/isr.h>
+#include <kernel/lib/asmutils.h>
 
 /**
  * @brief Register dedicated handlers for critical CPU exceptions.
@@ -21,4 +24,4 @@
  */
 extern void interrupt_exception_initialize(void);
 
-#endif /* !EXCEPTION_H_ */
+#endif /* KERNEL_CPU_EXCEPTION_H */

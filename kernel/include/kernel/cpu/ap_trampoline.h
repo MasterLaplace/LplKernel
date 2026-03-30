@@ -5,8 +5,8 @@
 ** AP low-memory trampoline install and acknowledgement helpers
 */
 
-#ifndef KERNEL_CPU_AP_TRAMPOLINE_H_
-#define KERNEL_CPU_AP_TRAMPOLINE_H_
+#ifndef KERNEL_CPU_APPLICATION_PROCESSOR_TRAMPOLINE_H
+#define KERNEL_CPU_APPLICATION_PROCESSOR_TRAMPOLINE_H
 
 #include <stdint.h>
 
@@ -58,8 +58,10 @@ extern uint16_t application_processor_trampoline_get_acknowledgement_word(void);
  * @param cr3_physical Shared kernel CR3 physical address.
  */
 extern void application_processor_trampoline_configure_handoff(uint8_t apic_id, uint32_t logical_slot,
-                                            uint32_t stack_top_virtual, uint32_t c_entry_virtual,
-                                            uint32_t main_loop_virtual, uint32_t cr3_physical);
+                                                                uint32_t stack_top_virtual,
+                                                                uint32_t c_entry_virtual,
+                                                                uint32_t main_loop_virtual,
+                                                                uint32_t cr3_physical);
 
 /**
  * @brief Wait for AP C-entry completion marker from trampoline handoff.
@@ -109,4 +111,4 @@ extern uint32_t application_processor_trampoline_get_c_entry_success_count(void)
  */
 extern uint32_t application_processor_trampoline_get_c_entry_timeout_count(void);
 
-#endif /* !KERNEL_CPU_AP_TRAMPOLINE_H_ */
+#endif /* KERNEL_CPU_APPLICATION_PROCESSOR_TRAMPOLINE_H */

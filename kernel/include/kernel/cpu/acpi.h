@@ -5,8 +5,8 @@
 ** acpi
 */
 
-#ifndef ACPI_H_
-#define ACPI_H_
+#ifndef KERNEL_CPU_ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_H
+#define KERNEL_CPU_ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_H
 
 #include <kernel/cpu/paging.h>
 
@@ -158,7 +158,7 @@ extern void advanced_configuration_and_power_interface_madt_initialize(void);
 
 /**
  * @brief Find an ACPI table by its signature.
- * 
+ *
  * @param signature 4-character signature of the table (e.g. "SRAT").
  * @return Pointer to the mapped ACPI table header, or NULL if not found.
  */
@@ -266,4 +266,4 @@ extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(u
 extern uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t global_system_interrupt,
                                                                                     uint8_t *io_apic_index);
 
-#endif /* !ACPI_H_ */
+#endif /* KERNEL_CPU_ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_H */

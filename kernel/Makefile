@@ -36,14 +36,14 @@ LIBS:=$(LIBS) $(KERNEL_ARCH_LIBS)
 
 KERNEL_OBJS=\
 $(KERNEL_ARCH_OBJS) \
-kernel/heap.o \
-kernel/slab.o \
-kernel/frame_arena.o \
-kernel/pool_allocator.o \
-kernel/ring_buffer.o \
-kernel/tlsf.o \
-kernel/kernel.o \
-kernel/smoke_test.o \
+kernel/memory/heap.o \
+kernel/memory/slab.o \
+kernel/memory/frame_arena.o \
+kernel/memory/pool_allocator.o \
+kernel/memory/ring_buffer.o \
+kernel/memory/tlsf.o \
+kernel/core/kernel.o \
+kernel/testing/smoke_test.o \
 
 OBJS=\
 $(ARCHDIR)/boot/crti.o \

@@ -1,8 +1,4 @@
 #include <kernel/cpu/numa_policy.h>
-#include <kernel/cpu/acpi.h>
-#include <kernel/cpu/cpu_topology.h>
-#include <kernel/drivers/serial.h>
-#include <stddef.h>
 
 #define NUMA_POLICY_MAX_SLOTS CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC
 #define NUMA_POLICY_MAX_RANGES 32u
@@ -26,7 +22,7 @@ static void numa_policy_parse_srat(const AdvancedConfigurationAndPowerInterfaceS
 
     while (entry_ptr + sizeof(AdvancedConfigurationAndPowerInterfaceSratEntryHeader_t) <= entry_end)
     {
-        const AdvancedConfigurationAndPowerInterfaceSratEntryHeader_t *entry = 
+        const AdvancedConfigurationAndPowerInterfaceSratEntryHeader_t *entry =
             (const AdvancedConfigurationAndPowerInterfaceSratEntryHeader_t *) entry_ptr;
 
         if (entry->length == 0u || entry_ptr + entry->length > entry_end)
@@ -36,17 +32,17 @@ static void numa_policy_parse_srat(const AdvancedConfigurationAndPowerInterfaceS
         {
             const AdvancedConfigurationAndPowerInterfaceSratLocalApicEntry_t *lapic_entry =
                 (const AdvancedConfigurationAndPowerInterfaceSratLocalApicEntry_t *) entry_ptr;
-            
+
             if ((lapic_entry->flags & 1u) != 0u)
             {
                 uint32_t domain = lapic_entry->proximity_domain_low |
                     ((uint32_t)lapic_entry->proximity_domain_high[0] << 8u) |
                     ((uint32_t)lapic_entry->proximity_domain_high[1] << 16u) |
                     ((uint32_t)lapic_entry->proximity_domain_high[2] << 24u);
-                
+
                 uint32_t apic_id = lapic_entry->apic_id;
                 uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_id);
-                
+
                 if (slot < NUMA_POLICY_MAX_SLOTS)
                 {
                     numa_slot_to_node_map[slot] = domain;
@@ -64,13 +60,13 @@ static void numa_policy_parse_srat(const AdvancedConfigurationAndPowerInterfaceS
         {
             const AdvancedConfigurationAndPowerInterfaceSratX2ApicEntry_t *x2apic_entry =
                 (const AdvancedConfigurationAndPowerInterfaceSratX2ApicEntry_t *) entry_ptr;
-            
+
             if ((x2apic_entry->flags & 1u) != 0u)
             {
                 uint32_t domain = x2apic_entry->proximity_domain;
                 uint32_t apic_id = x2apic_entry->x2apic_id;
                 uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_id);
-                
+
                 if (slot < NUMA_POLICY_MAX_SLOTS)
                 {
                     numa_slot_to_node_map[slot] = domain;
@@ -88,7 +84,7 @@ static void numa_policy_parse_srat(const AdvancedConfigurationAndPowerInterfaceS
         {
             const AdvancedConfigurationAndPowerInterfaceSratMemoryEntry_t *mem_entry =
                 (const AdvancedConfigurationAndPowerInterfaceSratMemoryEntry_t *) entry_ptr;
-            
+
             if ((mem_entry->flags & 1u) != 0u)
             {
                 uint32_t domain = mem_entry->proximity_domain;
@@ -110,7 +106,7 @@ static void numa_policy_parse_srat(const AdvancedConfigurationAndPowerInterfaceS
                 }
             }
         }
-        
+
         entry_ptr += entry->length;
     }
 }
@@ -138,7 +134,7 @@ void numa_policy_initialize(void)
     {
         serial_write_string(&com1, "[Laplace Kernel]: NUMA discovery fallback, single node 0 assumed\n");
     }
-    
+
     for (uint32_t i = 0; i < numa_node_count; ++i)
     {
         if (numa_nodes[i].cpus_bound > 0 || numa_nodes[i].memory_ranges > 0 || i == 0)
@@ -180,5 +176,5 @@ uint32_t numa_policy_get_node_for_address(uint32_t phys_addr)
             return numa_ranges[i].node_id;
         }
     }
-    return 0u; // Fallback to Node 0
+    return 0u;
 }

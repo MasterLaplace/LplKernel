@@ -1,9 +1,6 @@
 /*
 ** LplKernel
 ** kernel/include/kernel/mm/frame_arena.h
-
-mm (Memory Management) subsystem header for a pre-allocated frame arena allocator.
-This allocator provides a simple linear allocation strategy from a fixed-size
 **
 ** Pre-allocated frame arena allocator.
 */

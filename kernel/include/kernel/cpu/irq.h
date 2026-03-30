@@ -5,8 +5,17 @@
 ** irq
 */
 
-#ifndef IRQ_H_
-#define IRQ_H_
+#ifndef KERNEL_CPU_INTERRUPT_REQUEST_H
+#define KERNEL_CPU_INTERRUPT_REQUEST_H
+
+#include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/exception.h>
+#include <kernel/cpu/isr.h>
+#include <kernel/cpu/pic.h>
+#include <kernel/cpu/pit.h>
+#include <kernel/drivers/keyboard.h>
+#include <kernel/drivers/rtc.h>
+#include <kernel/lib/asmutils.h>
 
 #include <stdint.h>
 
@@ -85,4 +94,4 @@ extern void interrupt_request_set_keyboard_owner_is_apic(uint8_t enabled);
  */
 extern uint8_t interrupt_request_is_keyboard_owner_apic(void);
 
-#endif /* !IRQ_H_ */
+#endif /* KERNEL_CPU_INTERRUPT_REQUEST_H */

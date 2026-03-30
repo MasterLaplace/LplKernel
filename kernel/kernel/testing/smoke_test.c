@@ -156,7 +156,6 @@ void kernel_smoke_test_run_physical_memory_manager_buddy_stress(Serial_t *serial
             physical_memory_manager_page_frame_free(pages[i]);
     }
 
-    /* Intentional double free to validate guard path. */
     physical_memory_manager_page_frame_free(victim);
 
     uint32_t free_count_after = physical_memory_manager_get_free_page_count();
@@ -333,10 +332,6 @@ void kernel_smoke_test_run_heap_allocate_free(Serial_t *serial_port)
 
     void *small_a = kmalloc(64u);
     void *small_b = kmalloc(224u);
-    /*
-     * Use small_b as the guard victim: if allocation succeeds, an immediate
-     * second kfree(small_b) must be rejected by the allocator guard path.
-     */
     void *guard_victim = small_b;
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     void *large = NULL;
@@ -358,7 +353,6 @@ void kernel_smoke_test_run_heap_allocate_free(Serial_t *serial_port)
     if (guard_victim)
         kfree(guard_victim);
 
-    /* Intentional double-free to trigger the heap guard. */
     if (guard_victim)
         kfree(guard_victim);
 
@@ -391,7 +385,6 @@ void kernel_smoke_test_run_heap_allocate_free(Serial_t *serial_port)
     guard_triggered = (rejected_after > rejected_before);
     if (!guard_triggered)
     {
-        /* Fallback guard probe: corrupt the header-adjacent byte to trip canary reject. */
         void *guard_fallback = kmalloc(100u);
         if (guard_fallback)
         {
@@ -640,10 +633,6 @@ void kernel_smoke_test_run_cpu_topology_slot_domain(Serial_t *serial_port)
 void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-    /*
-     * Client: verify each slab cache returns distinct, non-NULL objects
-     * and restores its free-count after free.
-     */
     static const uint32_t slab_sizes[3u] = {
         KERNEL_SLAB_SIZE_SMALL, KERNEL_SLAB_SIZE_MEDIUM, KERNEL_SLAB_SIZE_LARGE
     };
@@ -667,7 +656,6 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
         uint32_t free_after = kernel_slab_get_free_count(sz);
         bool restored = (free_after == free_before);
 
-        /* Spurious-free guard: a random stack address must be rejected. */
         volatile uint32_t stack_canary = 0u;
         bool guard_ok = !kernel_slab_free((void *) &stack_canary);
 
@@ -695,13 +683,6 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
     else
         serial_write_string(serial_port, " (fail)\n");
 #else
-    /*
-     * Server: allocate objects via kmalloc at size-class-friendly sizes,
-     * free them, re-allocate, then check that the fast-path hit counter
-     * has increased (proving the bucket was used on the second pass).
-     * Also confirm the mono-domain scaffold reports domain 0 and tracks
-     * bucket refills before per-CPU/per-NUMA sharding is introduced.
-     */
     static const uint32_t sc_sizes[3u] = { 8u, 64u, 256u };
     bool overall_pass = true;
     uint32_t domain_count = kernel_heap_get_server_domain_count();
@@ -731,7 +712,6 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
         if (remote_candidate)
             kfree(remote_candidate);
 
-        /* Restore default active domain source for remaining checks. */
         cpu_topology_debug_clear_forced_logical_slot();
         void *restore = kmalloc(8u);
         if (restore)
@@ -751,7 +731,6 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
     {
         uint32_t sz = sc_sizes[ci];
 
-        /* Use sc index 0 for 8B, 3 for 64B, 5 for 256B. */
         uint32_t sc_idx = 0u;
         if (sz == 64u)  sc_idx = 3u;
         if (sz == 256u) sc_idx = 5u;
@@ -768,7 +747,6 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
         if (a) kfree(a);
         if (b) kfree(b);
 
-        /* Second pair -- should hit the bucket. */
         void *c = kmalloc(sz);
         void *d = kmalloc(sz);
         bool realloc_ok = (c != NULL) && (d != NULL);
@@ -909,14 +887,12 @@ void kernel_smoke_test_run_frame_arena_budget(Serial_t *serial_port)
         return;
     }
 
-    /* Start from a clean slate. */
     kernel_frame_arena_reset();
     kernel_frame_arena_set_frame_budget(0u);
 
     uint32_t exceeded_before = kernel_frame_arena_get_budget_exceeded_count();
     uint32_t failed_before = kernel_frame_arena_get_failed_alloc_count();
 
-    /* Set a tight 64 B budget. */
     kernel_frame_arena_set_frame_budget(64u);
 
     void *a = kernel_frame_arena_alloc(32u, 8u);
@@ -927,18 +903,15 @@ void kernel_smoke_test_run_frame_arena_budget(Serial_t *serial_port)
     bool exceeded_incremented = (kernel_frame_arena_get_budget_exceeded_count() == (exceeded_before + 1u));
     bool failed_incremented = (kernel_frame_arena_get_failed_alloc_count() == (failed_before + 1u));
 
-    /* A smaller alloc that fits within the budget should succeed. */
     void *c = kernel_frame_arena_alloc(16u, 8u);
     bool second_ok = (c != NULL) && (c != a);
 
-    /* Clear budget and reset: subsequent allocs are unconstrained by budget. */
     kernel_frame_arena_reset();
     kernel_frame_arena_set_frame_budget(0u);
 
     void *d = kernel_frame_arena_alloc(128u, 8u);
     bool unconstrained_ok = (d != NULL);
 
-    /* Restore clean state. */
     kernel_frame_arena_reset();
 
     bool pass = first_ok && over_budget_rejected && exceeded_incremented && failed_incremented && second_ok &&
@@ -1033,7 +1006,6 @@ void kernel_smoke_test_run_pool_allocator_basic(Serial_t *serial_port)
     if (poison_test) {
         uint8_t *p = (uint8_t *) poison_test;
         if (kernel_pool_get_object_size() > sizeof(void *) + 4u) {
-            // Check beyond the 4-byte cookie used by the pool allocator
             if (p[sizeof(void *) + 4u] != 0xDF)
                 poison_ok = false;
         }
@@ -1310,7 +1282,6 @@ void kernel_smoke_test_run_pmm_watermark(Serial_t *serial_port)
     uint32_t high_before = physical_memory_manager_get_watermark_high();
     uint32_t low_before = physical_memory_manager_get_watermark_low();
 
-    /* Allocate some pages to push the low watermark down. */
     uint32_t pages[8] = {0};
     uint32_t allocated = 0u;
 
@@ -1324,7 +1295,6 @@ void kernel_smoke_test_run_pmm_watermark(Serial_t *serial_port)
 
     uint32_t low_after_alloc = physical_memory_manager_get_watermark_low();
 
-    /* Free them all to push high watermark back up. */
     for (uint32_t i = 0u; i < allocated; ++i)
         physical_memory_manager_page_frame_free(pages[i]);
 
@@ -1361,7 +1331,6 @@ void kernel_smoke_test_run_pmm_fragmentation(Serial_t *serial_port)
     uint32_t frag_before = physical_memory_manager_get_fragmentation_ratio();
     uint32_t free_before = physical_memory_manager_get_free_page_count();
 
-    /* Allocate alternating pages to artificially fragment. */
     uint32_t pages[32] = {0};
     uint32_t allocated = 0u;
 
@@ -1373,7 +1342,6 @@ void kernel_smoke_test_run_pmm_fragmentation(Serial_t *serial_port)
         ++allocated;
     }
 
-    /* Free odd-indexed pages to create gaps. */
     for (uint32_t i = 1u; i < allocated; i += 2u)
     {
         if (pages[i])
@@ -1382,7 +1350,6 @@ void kernel_smoke_test_run_pmm_fragmentation(Serial_t *serial_port)
 
     uint32_t frag_during = physical_memory_manager_get_fragmentation_ratio();
 
-    /* Free remaining even-indexed pages. */
     for (uint32_t i = 0u; i < allocated; i += 2u)
     {
         if (pages[i])
@@ -1487,7 +1454,6 @@ void kernel_smoke_test_run_tlsf_fragmentation(Serial_t *serial_port)
 
     uint32_t free_before = kernel_tlsf_get_free_bytes();
 
-    /* Allocate and free to create a Swiss cheese pattern. */
     void *ptrs[128];
     uint32_t allocated = 0u;
 
@@ -1499,7 +1465,6 @@ void kernel_smoke_test_run_tlsf_fragmentation(Serial_t *serial_port)
         ++allocated;
     }
 
-    /* Free alternating blocks. */
     for (uint32_t i = 1u; i < allocated; i += 2u)
     {
         kernel_tlsf_free(ptrs[i]);
@@ -1511,7 +1476,6 @@ void kernel_smoke_test_run_tlsf_fragmentation(Serial_t *serial_port)
     (void) wcet_alloc_during;
     (void) wcet_free_during;
 
-    /* Free the rest. TLSF must coalesce them perfectly. */
     for (uint32_t i = 0u; i < allocated; ++i)
     {
         if (ptrs[i])
@@ -1578,7 +1542,6 @@ void kernel_smoke_test_run_page_fault_exception(void)
 
 void kernel_smoke_test_run_double_fault_exception(void)
 {
-    /* Synthetic vector injection for #DF handler-path validation. */
     __asm__ volatile("int $0x08");
 }
 
@@ -1764,7 +1727,6 @@ void kernel_smoke_test_run_heap_cross_domain_stress(Serial_t *serial_port)
     bool domain_ok = true;
     uint32_t allocs = 0u;
 
-    /* Force domain 0 state via CPU slot mock. */
     if (!cpu_topology_debug_force_logical_slot(0u))
         domain_ok = false;
 
@@ -1775,7 +1737,6 @@ void kernel_smoke_test_run_heap_cross_domain_stress(Serial_t *serial_port)
     if (obj_d0)
         ++allocs;
 
-    /* Force domain 1 state via CPU slot mock. */
     if (!cpu_topology_debug_force_logical_slot(1u))
         domain_ok = false;
 
@@ -1789,13 +1750,11 @@ void kernel_smoke_test_run_heap_cross_domain_stress(Serial_t *serial_port)
     if (obj_d1b)
         ++allocs;
 
-    /* Restore domain 0. */
     cpu_topology_debug_clear_forced_logical_slot();
 
     uint32_t active_restored = kernel_heap_get_server_active_domain();
     bool restore_ok = (active_restored == 0u);
 
-    /* Clean up. */
     if (obj_d0)
         kfree(obj_d0);
     if (obj_d1a)
@@ -1965,7 +1924,6 @@ void kernel_smoke_test_run_heap_poison_canary(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     (void) serial_port;
-    /* Skip on client - S7 hardening is server-priority */
     return;
 #else
     void *secret = kmalloc_sensitive(100u);
@@ -2023,7 +1981,6 @@ void kernel_smoke_test_run_pmm_uaf_detection(Serial_t *serial_port)
 #else
     uint32_t uaf_before = physical_memory_manager_get_uaf_anomaly_count();
 
-    // Allocate two pages to prevent coalescing of the first one when freed
     uint32_t page1 = physical_memory_manager_page_frame_allocate();
     uint32_t page2 = physical_memory_manager_page_frame_allocate();
 
@@ -2036,14 +1993,10 @@ void kernel_smoke_test_run_pmm_uaf_detection(Serial_t *serial_port)
 
     uint32_t *virt1 = (uint32_t *)(page1 + KERNEL_VIRTUAL_BASE);
 
-    // Free the FIRST page. Since page2 is still allocated and is likely the buddy,
-    // page1 CANNOT coalesce and will stay in the order 0 free list.
     physical_memory_manager_page_frame_free(page1);
 
-    // Use-After-Free corruption
     virt1[10] = 0xDEADBEEF;
 
-    // Allocate again. This SHOULD return page1 from the head of the free list.
     uint32_t page_retry = physical_memory_manager_page_frame_allocate();
 
     uint32_t uaf_after = physical_memory_manager_get_uaf_anomaly_count();
@@ -2126,9 +2079,9 @@ void kernel_smoke_test_run_ring3_minimal(Serial_t *serial_port)
     }
 
     user_code = (uint8_t *) 0x00400000u;
-    user_code[0] = 0xCD; // int 0x80
+    user_code[0] = 0xCD;
     user_code[1] = 0x80;
-    user_code[2] = 0xEB; // jmp -2
+    user_code[2] = 0xEB;
     user_code[3] = 0xFE;
 
     interrupt_service_routine_register_handler(0x80u, ring3_syscall_handler);

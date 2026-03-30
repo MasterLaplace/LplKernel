@@ -1,10 +1,5 @@
 #include <kernel/cpu/exception.h>
 
-#include <kernel/cpu/isr.h>
-#include <kernel/lib/asmutils.h>
-
-#include <stdint.h>
-
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
 #define EXCEPTION_VECTOR_DEBUG_EXCEPTION          1u
 #define EXCEPTION_VECTOR_BREAKPOINT               3u

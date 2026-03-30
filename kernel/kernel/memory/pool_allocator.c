@@ -67,7 +67,7 @@ bool kernel_pool_allocator_initialize(uint32_t object_size, uint32_t object_coun
     {
         uint8_t *slot = kernel_pool_base + (index * kernel_pool_slot_size);
         *((void **) slot) = kernel_pool_free_head;
-        *((uint32_t *) (slot + sizeof(void *))) = 0x504F4F4Cu; /* 'POOL' */
+        *((uint32_t *) (slot + sizeof(void *))) = 0x504F4F4Cu;
         kernel_pool_free_head = slot;
     }
 
@@ -125,7 +125,6 @@ bool kernel_pool_free(void *ptr)
         return false;
 
 #ifdef LPL_KERNEL_DEBUG_POISON
-    /* Leave room for the free_head pointer, poison the rest. */
     if (kernel_pool_object_size > sizeof(void *))
     {
         uint8_t *poison_start = (uint8_t *) ptr + sizeof(void *);

@@ -5,8 +5,8 @@
 ** AP (Application Processor) startup entry point and CPU initialization
 */
 
-#ifndef KERNEL_CPU_AP_STARTUP_H_
-#define KERNEL_CPU_AP_STARTUP_H_
+#ifndef KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H
+#define KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H
 
 #include <kernel/drivers/serial.h>
 #include <kernel/cpu/ap_bootstrap.h>
@@ -19,9 +19,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Kernel CR3 value (page directory physical address) */
-extern void *boot_page_directory;  /* Defined in boot.S */
-extern void *boot_page_tables;     /* Defined in boot.S */
+extern void *boot_page_directory;
+extern void *boot_page_tables;
 extern InterruptDescriptorTable_t interrupt_descriptor_table;
 
 /**
@@ -124,4 +123,4 @@ extern uint8_t application_processor_startup_is_initialized(void);
  */
 extern void application_processor_startup_main_loop(void);
 
-#endif /* !KERNEL_CPU_AP_STARTUP_H_ */
+#endif /* KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H */

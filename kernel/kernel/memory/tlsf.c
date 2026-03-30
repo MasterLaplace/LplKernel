@@ -224,7 +224,6 @@ static void mapping_insert(uint32_t size, uint32_t *p_fl, uint32_t *p_sl)
 /** Round-up mapping: find the smallest (fl, sl) that can satisfy size. */
 static void mapping_search(uint32_t size, uint32_t *p_fl, uint32_t *p_sl)
 {
-    /* Round up to the next class boundary so we don't return too-small blocks. */
     if (size >= (1u << (TLSF_SLI_LOG2 + 1u)))
     {
         uint32_t round = (1u << (tlsf_log2_floor(size) - TLSF_SLI_LOG2)) - 1u;
@@ -245,7 +244,6 @@ static void free_list_remove(block_header_t *block)
     if (prev)
         prev->free_next = next;
 
-    /* If block was the head, update the free list head. */
     uint32_t fl, sl;
     mapping_insert(block_get_size(block), &fl, &sl);
 
@@ -284,15 +282,13 @@ static block_header_t *find_suitable_block(uint32_t *p_fl, uint32_t *p_sl)
     uint32_t fl = *p_fl;
     uint32_t sl = *p_sl;
 
-    /* Search in the same FL class for a larger SL. */
     uint32_t sl_map = g_tlsf.sl_bitmap[fl] & (~0u << sl);
 
     if (sl_map == 0u)
     {
-        /* No block in this FL — search higher FL classes. */
         uint32_t fl_map = g_tlsf.fl_bitmap & (~0u << (fl + 1u));
         if (fl_map == 0u)
-            return NULL; /* out of memory */
+            return NULL;
 
         fl = tlsf_ffs(fl_map);
         sl_map = g_tlsf.sl_bitmap[fl];
@@ -318,7 +314,6 @@ static block_header_t *block_split(block_header_t *block, uint32_t size)
 
     block_set_size(block, size);
 
-    /* Update the next physical block's prev_phys pointer. */
     block_header_t *next = block_next_phys(rest);
     if (!block_is_sentinel(next))
         next->prev_phys = rest;
@@ -345,7 +340,6 @@ bool kernel_tlsf_initialize(void *buffer, size_t size)
     if (!buffer || size < (TLSF_BLOCK_OVERHEAD + TLSF_MIN_BLOCK_SIZE + TLSF_BLOCK_OVERHEAD))
         return false;
 
-    /* Alignment check. */
     uintptr_t buf_addr = (uintptr_t) buffer;
     if (buf_addr & TLSF_ALIGN_MASK)
     {
@@ -354,7 +348,6 @@ bool kernel_tlsf_initialize(void *buffer, size_t size)
         buffer = (void *) aligned;
     }
 
-    /* Zero control structure. */
     for (uint32_t i = 0u; i < sizeof(g_tlsf); ++i)
         ((uint8_t *) &g_tlsf)[i] = 0u;
 
@@ -362,12 +355,10 @@ bool kernel_tlsf_initialize(void *buffer, size_t size)
     g_tlsf.pool_end = (uint8_t *) buffer + size;
     g_tlsf.pool_size = (uint32_t) size;
 
-    /* Create sentinel block at the end (zero-size, used). */
     block_header_t *sentinel = (block_header_t *) (g_tlsf.pool_end - TLSF_BLOCK_OVERHEAD);
-    sentinel->size = 0u; /* size=0, free=0, prev_free=0 */
+    sentinel->size = 0u;
     sentinel->prev_phys = NULL;
 
-    /* Create the initial free block spanning the entire pool. */
     block_header_t *first = (block_header_t *) buffer;
     uint32_t usable = (uint32_t) size - TLSF_BLOCK_OVERHEAD - TLSF_BLOCK_OVERHEAD;
     first->size = 0u;
@@ -379,7 +370,6 @@ bool kernel_tlsf_initialize(void *buffer, size_t size)
 
     sentinel->prev_phys = first;
 
-    /* Insert the initial block into the free lists. */
     free_list_insert(first);
 
     g_tlsf.free_bytes = usable;
@@ -394,7 +384,6 @@ void *kernel_tlsf_alloc(size_t request_size)
 
     uint32_t t0 = tlsf_rdtsc_low();
 
-    /* Round up to minimum and align. */
     uint32_t size = (uint32_t) request_size;
     if (size < TLSF_MIN_BLOCK_SIZE)
         size = TLSF_MIN_BLOCK_SIZE;
@@ -410,16 +399,14 @@ void *kernel_tlsf_alloc(size_t request_size)
         return NULL;
     }
 
-    /* Remove from free list. */
     free_list_remove(block);
 
-    /* Split if the block is much larger than needed. */
     uint32_t bsize = block_get_size(block);
     if (bsize >= size + TLSF_BLOCK_OVERHEAD + TLSF_MIN_BLOCK_SIZE)
     {
         block_header_t *rest = block_split(block, size);
         block_set_free(rest);
-        block_set_prev_used(rest); /* this block will be used */
+        block_set_prev_used(rest);
         free_list_insert(rest);
         g_tlsf.free_bytes -= (size + TLSF_BLOCK_OVERHEAD);
     }
@@ -428,10 +415,8 @@ void *kernel_tlsf_alloc(size_t request_size)
         g_tlsf.free_bytes -= bsize;
     }
 
-    /* Mark block as used. */
     block_set_used(block);
 
-    /* Mark next physical block's prev_free flag to 0. */
     block_header_t *next = block_next_phys(block);
     if (!block_is_sentinel(next))
         block_set_prev_used(next);
@@ -456,7 +441,6 @@ void kernel_tlsf_free(void *ptr)
     block_header_t *block = ptr_to_block(ptr);
     uint32_t added_free_bytes = block_get_size(block);
 
-    /* Coalesce with next block if free. */
     block_header_t *next = block_next_phys(block);
     if (!block_is_sentinel(next) && block_is_free(next))
     {
@@ -465,7 +449,6 @@ void kernel_tlsf_free(void *ptr)
         block = block_absorb_next(block, next);
     }
 
-    /* Coalesce with previous block if free. */
     if (block_is_prev_free(block) && block->prev_phys)
     {
         block_header_t *prev = block->prev_phys;
@@ -478,13 +461,11 @@ void kernel_tlsf_free(void *ptr)
         }
     }
 
-    /* Mark as free and insert into free list. */
     block_set_free(block);
     free_list_insert(block);
 
     g_tlsf.free_bytes += added_free_bytes;
 
-    /* Mark next physical block's prev_free flag. */
     block_header_t *next_after = block_next_phys(block);
     if (!block_is_sentinel(next_after))
         block_set_prev_free(next_after);

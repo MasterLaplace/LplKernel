@@ -18,7 +18,7 @@
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 
 /* ------------------------------------------------------------------ */
-/* CLIENT implementation                                               */
+/* CLIENT implementation                                              */
 /* ------------------------------------------------------------------ */
 
 /*
@@ -63,7 +63,6 @@ static void slab_cache_populate(KernelSlabCache_t *cache, void *page_virt, uint3
     stride = (stride + 7u) & ~7u;
 #endif
 
-    /* Track ownership range across donated pages. */
     if (cache->base == 0u || (uintptr_t) page_virt < cache->base)
         cache->base = (uintptr_t) page_virt;
     if ((uintptr_t) page_end > cache->end)
@@ -71,8 +70,6 @@ static void slab_cache_populate(KernelSlabCache_t *cache, void *page_virt, uint3
 
     while ((cursor + stride) <= page_end)
     {
-        /* Use the first word of the free slot as the next pointer,
-         * and the second word as the free-cookie guard. */
         void **slot = (void **) cursor;
         *slot = cache->free_head;
         *((uint32_t *) (cursor + sizeof(void *))) = SLAB_FREE_COOKIE;
@@ -87,17 +84,10 @@ static void slab_cache_populate(KernelSlabCache_t *cache, void *page_virt, uint3
 
 void kernel_slab_initialize(void **backing_pages, uint32_t page_count)
 {
-    /* 4 KiB page size; pull from the compile-time constant. */
 #ifndef PAGE_SIZE
 #    define PAGE_SIZE 4096u
 #endif
 
-    /*
-     * Page distribution strategy: round-robin over the three caches so
-     * each gets a roughly even share of the donated pages.  With the
-     * default 6 donated pages (KERNEL_SLAB_CACHE_MAX_PAGES*3) each
-     * cache gets exactly 2 pages.
-     */
     for (uint32_t i = 0u; i < page_count; ++i)
     {
         if (!backing_pages[i])
@@ -121,7 +111,6 @@ void *kernel_slab_alloc(uint32_t size)
 
         void *obj = cache->free_head;
         cache->free_head = *((void **) obj);
-        /* Clear the free-cookie so the slot is distinguishable as live. */
         *((uint32_t *) ((uint8_t *) obj + sizeof(void *))) = 0u;
         --cache->free_count;
         ++cache->used_count;
@@ -141,11 +130,9 @@ bool kernel_slab_free(void *ptr)
     {
         KernelSlabCache_t *cache = &slab_caches[i];
 
-        /* Ownership check: pointer must fall within the donated range. */
         if (addr < cache->base || addr >= cache->end)
             continue;
 
-        /* Alignment check: must be object-aligned within the range. */
         uint32_t stride = cache->object_size;
 #ifdef LPL_KERNEL_DEBUG_POISON
         stride += sizeof(uint32_t);
@@ -157,12 +144,9 @@ bool kernel_slab_free(void *ptr)
 #ifdef LPL_KERNEL_DEBUG_POISON
         uint32_t *end_canary = (uint32_t *) ((uint8_t *) ptr + cache->object_size);
         if (*end_canary != 0xC001CAFEu)
-        {
-            return false; /* Canary corrupted */
-        }
+            return false;
 #endif
 
-        /* Double-free guard: cookie already present means already free. */
         uint32_t *cookie_word = (uint32_t *) ((uint8_t *) ptr + sizeof(void *));
         if (*cookie_word == SLAB_FREE_COOKIE)
             return false;

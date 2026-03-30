@@ -1,10 +1,8 @@
 #include <kernel/cpu/cpu_topology.h>
 
-#include <kernel/lib/asmutils.h>
-
 #define CPU_TOPOLOGY_CPUID_LEAF_FEATURES 0x00000001u
 #define CPU_TOPOLOGY_CPUID_EDX_APIC_BIT  (1u << 9u)
-#define CPU_TOPOLOGY_MAX_LOGICAL_CPUS    32u
+#define CPU_TOPOLOGY_MAX_LOGICAL_CPUS    CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC
 #define CPU_TOPOLOGY_INVALID_APIC_ID     0xFFFFFFFFu
 
 static uint8_t cpu_topology_initialized = 0u;
@@ -172,7 +170,7 @@ uint32_t cpu_topology_get_slot_domain(uint32_t slot)
 uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot)
 {
     if (slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS)
-        return 0xFFu;  /* Invalid APIC ID */
+        return 0xFFu;
 
     uint32_t apic_id = cpu_topology_apic_id_to_slot[slot];
     if (apic_id == CPU_TOPOLOGY_INVALID_APIC_ID)

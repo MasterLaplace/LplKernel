@@ -40,54 +40,44 @@ extern PageDirectory_t *current_page_directory;
  */
 static uint32_t *map_framebuffer(uint32_t phys_addr, uint32_t size)
 {
-    /* Calculate number of pages needed */
     uint32_t num_pages = (size + 0xFFF) / 0x1000;
 
-    /* Fixed virtual address for the framebuffer: 0xE0000000 (PD index 896) */
     uint32_t virt_addr = 0xE0000000;
-    uint32_t pd_index = virt_addr >> 22; /* = 896 */
+    uint32_t pd_index = virt_addr >> 22;
 
-    /* Safety check */
     if (!current_page_directory)
     {
         return NULL;
     }
 
-    /* Initialize our static page table (clear all entries) */
     for (uint32_t i = 0; i < 1024; i++)
     {
         framebuffer_page_table.entries[i] = (PageTableEntry_t){0};
     }
 
-    /* Map each framebuffer page into our page table */
     for (uint32_t i = 0; i < num_pages && i < 1024; i++)
     {
         uint32_t page_phys = phys_addr + (i * 0x1000);
 
-        /* Setup page table entry: present, read/write, supervisor, write-through */
         framebuffer_page_table.entries[i].present = 1;
         framebuffer_page_table.entries[i].read_write = 1;
         framebuffer_page_table.entries[i].user_supervisor = 0;
-        framebuffer_page_table.entries[i].write_through = 1; /* Better for framebuffer */
+        framebuffer_page_table.entries[i].write_through = 1;
         framebuffer_page_table.entries[i].cache_disable = 0;
         framebuffer_page_table.entries[i].page_frame_base = page_phys >> 12;
     }
 
-    /* Get physical address of our page table */
-    /* Since we're in higher-half kernel, convert virtual to physical */
     uint32_t pt_phys = (uint32_t) &framebuffer_page_table - 0xC0000000;
 
-    /* Insert the page table into the page directory */
     PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
     pde->present = 1;
     pde->read_write = 1;
     pde->user_supervisor = 0;
     pde->write_through = 1;
     pde->cache_disable = 0;
-    pde->page_size = 0; /* 4KB pages */
+    pde->page_size = 0;
     pde->page_table_base = pt_phys >> 12;
 
-    /* Flush TLB to make the new mappings effective */
     asmutils_invalidate_translation_lookaside_buffer();
 
     return (uint32_t *) virt_addr;
@@ -97,47 +87,39 @@ bool framebuffer_init(void)
 {
     if (fb_info.initialized)
     {
-        return true; /* Already initialized */
+        return true;
     }
 
-    /* Check if we have multiboot info */
     if (multiboot_info == NULL)
     {
         return false;
     }
 
-    /* Check if framebuffer info is available (flag bit 12) */
     if (!(multiboot_info->flags & (1 << 12)))
     {
         return false;
     }
 
-    /* Check framebuffer type - we only support linear framebuffer (type 1) */
     if (multiboot_info->framebuffer_type != 1)
     {
-        return false; /* Not a linear framebuffer */
+        return false;
     }
 
-    /* We only support 32-bit color for now */
     if (multiboot_info->framebuffer_bpp != 32)
     {
         return false;
     }
 
-    /* Store framebuffer information */
     fb_info.physical_addr = (uint32_t) multiboot_info->framebuffer_addr;
     fb_info.width = multiboot_info->framebuffer_width;
     fb_info.height = multiboot_info->framebuffer_height;
     fb_info.pitch = multiboot_info->framebuffer_pitch;
     fb_info.bpp = multiboot_info->framebuffer_bpp;
 
-    /* Store color field information - these are in the direct_color_t union member */
-    /* Note: Some GRUB/QEMU combinations return 0 for mask sizes, which is incorrect.
-     * For 32-bit color, we assume 8 bits per channel if mask is 0 */
     fb_info.red_pos = multiboot_info->direct_color_t.framebuffer_red_field_position;
     fb_info.red_mask = multiboot_info->direct_color_t.framebuffer_red_mask_size;
     if (fb_info.red_mask == 0)
-        fb_info.red_mask = 8; /* Default to 8 bits */
+        fb_info.red_mask = 8;
 
     fb_info.green_pos = multiboot_info->direct_color_t.framebuffer_green_field_position;
     fb_info.green_mask = multiboot_info->direct_color_t.framebuffer_green_mask_size;
@@ -149,10 +131,8 @@ bool framebuffer_init(void)
     if (fb_info.blue_mask == 0)
         fb_info.blue_mask = 8;
 
-    /* Calculate framebuffer size */
     uint32_t fb_size = fb_info.pitch * fb_info.height;
 
-    /* Map the framebuffer into kernel virtual memory */
     fb_info.buffer = map_framebuffer(fb_info.physical_addr, fb_size);
     if (fb_info.buffer == NULL)
     {
@@ -174,7 +154,6 @@ uint32_t framebuffer_color_to_pixel(color_t color)
         return 0;
     }
 
-    /* Build the pixel value based on field positions */
     uint32_t pixel = 0;
     pixel |= ((uint32_t) color.r) << fb_info.red_pos;
     pixel |= ((uint32_t) color.g) << fb_info.green_pos;
@@ -190,17 +169,13 @@ void framebuffer_put_pixel(uint32_t x, uint32_t y, color_t color)
         return;
     }
 
-    /* Bounds checking */
     if (x >= fb_info.width || y >= fb_info.height)
     {
         return;
     }
 
-    /* Calculate pixel offset */
-    /* pitch is in bytes, but buffer is uint32_t* so divide by 4 */
     uint32_t offset = y * (fb_info.pitch / 4) + x;
 
-    /* Write the pixel */
     fb_info.buffer[offset] = framebuffer_color_to_pixel(color);
 }
 
@@ -221,7 +196,6 @@ color_t framebuffer_get_pixel(uint32_t x, uint32_t y)
     uint32_t offset = y * (fb_info.pitch / 4) + x;
     uint32_t pixel = fb_info.buffer[offset];
 
-    /* Extract color components */
     color.r = (pixel >> fb_info.red_pos) & ((1 << fb_info.red_mask) - 1);
     color.g = (pixel >> fb_info.green_pos) & ((1 << fb_info.green_mask) - 1);
     color.b = (pixel >> fb_info.blue_pos) & ((1 << fb_info.blue_mask) - 1);
@@ -239,7 +213,6 @@ void framebuffer_clear(color_t color)
     uint32_t pixel = framebuffer_color_to_pixel(color);
     uint32_t total_pixels = fb_info.width * fb_info.height;
 
-    /* Fast clear using 32-bit writes */
     for (uint32_t i = 0; i < total_pixels; i++)
     {
         fb_info.buffer[i] = pixel;
@@ -253,7 +226,6 @@ void framebuffer_draw_hline(uint32_t x1, uint32_t x2, uint32_t y, color_t color)
         return;
     }
 
-    /* Ensure x1 <= x2 */
     if (x1 > x2)
     {
         uint32_t tmp = x1;
@@ -261,7 +233,6 @@ void framebuffer_draw_hline(uint32_t x1, uint32_t x2, uint32_t y, color_t color)
         x2 = tmp;
     }
 
-    /* Bounds checking */
     if (y >= fb_info.height)
     {
         return;
@@ -287,7 +258,6 @@ void framebuffer_draw_vline(uint32_t x, uint32_t y1, uint32_t y2, color_t color)
         return;
     }
 
-    /* Ensure y1 <= y2 */
     if (y1 > y2)
     {
         uint32_t tmp = y1;
@@ -295,7 +265,6 @@ void framebuffer_draw_vline(uint32_t x, uint32_t y1, uint32_t y2, color_t color)
         y2 = tmp;
     }
 
-    /* Bounds checking */
     if (x >= fb_info.width)
     {
         return;
@@ -321,11 +290,9 @@ void framebuffer_draw_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t heig
         return;
     }
 
-    /* Draw top and bottom horizontal lines */
     framebuffer_draw_hline(x, x + width - 1, y, color);
     framebuffer_draw_hline(x, x + width - 1, y + height - 1, color);
 
-    /* Draw left and right vertical lines */
     framebuffer_draw_vline(x, y, y + height - 1, color);
     framebuffer_draw_vline(x + width - 1, y, y + height - 1, color);
 }
@@ -337,7 +304,6 @@ void framebuffer_fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t heig
         return;
     }
 
-    /* Bounds checking */
     if (x >= fb_info.width || y >= fb_info.height)
     {
         return;

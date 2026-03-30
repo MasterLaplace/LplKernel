@@ -95,18 +95,15 @@ static inline void print_gdt_entry(const char *name, const GlobalDescriptorTable
     terminal_write_number(selector, 16);
     terminal_write_string("):\n");
 
-    // Reconstruct base address
     uint32_t base = entry->base_low | ((uint32_t) entry->base_middle << 16) | ((uint32_t) entry->base_high << 24);
     terminal_write_string("  Base: 0x");
     terminal_write_number(base, 16);
 
-    // Reconstruct limit
     uint8_t flags_byte = *(uint8_t *) &entry->flags;
     uint32_t limit = entry->limit_low | (((uint32_t) (flags_byte & 0x0F)) << 16);
     terminal_write_string("\n  Limit: 0x");
     terminal_write_number(limit, 16);
 
-    // Decode access byte
     uint8_t access = *(uint8_t *) &entry->access_byte;
     terminal_write_string("\n  Access: 0x");
     terminal_write_number(access, 16);
@@ -114,7 +111,6 @@ static inline void print_gdt_entry(const char *name, const GlobalDescriptorTable
     print_access_byte_decoded(access);
     terminal_write_string(")");
 
-    // Decode flags
     terminal_write_string("\n  Flags: 0x");
     terminal_write_number(flags_byte >> 4, 16);
     terminal_write_string(" (");
@@ -130,18 +126,15 @@ static inline void write_gdt_entry(Serial_t *serial, const char *name, const Glo
     serial_write_hex16(serial, selector);
     serial_write_string(serial, "):\n");
 
-    // Reconstruct base address
     uint32_t base = entry->base_low | ((uint32_t) entry->base_middle << 16) | ((uint32_t) entry->base_high << 24);
     serial_write_string(serial, "  Base: ");
     serial_write_hex32(serial, base);
 
-    // Reconstruct limit
     uint8_t flags_byte = *(uint8_t *) &entry->flags;
     uint32_t limit = entry->limit_low | (((uint32_t) (flags_byte & 0x0F)) << 16);
     serial_write_string(serial, "\n  Limit: ");
     serial_write_hex32(serial, limit);
 
-    // Decode access byte
     uint8_t access = *(uint8_t *) &entry->access_byte;
     serial_write_string(serial, "\n  Access: ");
     serial_write_hex8(serial, access);
@@ -149,7 +142,6 @@ static inline void write_gdt_entry(Serial_t *serial, const char *name, const Glo
     write_access_byte_decoded(serial, access);
     serial_write_string(serial, ")");
 
-    // Decode flags
     serial_write_string(serial, "\n  Flags: ");
     serial_write_hex8(serial, flags_byte >> 4);
     serial_write_string(serial, " (");

@@ -5,8 +5,10 @@
 ** tss
 */
 
-#ifndef TSS_H_
-#define TSS_H_
+#ifndef KERNEL_CPU_TASK_STATE_SEGMENT_H
+#define KERNEL_CPU_TASK_STATE_SEGMENT_H
+
+#include <kernel/lib/asmutils.h>
 
 #include <stdint.h>
 
@@ -92,4 +94,4 @@ extern void task_state_segment_load(const uint16_t tss_selector);
  */
 extern void task_state_segment_initialize(TaskStateSegment_t *tss, uint16_t kernel_ss_selector);
 
-#endif /* !TSS_H_ */
+#endif /* KERNEL_CPU_TASK_STATE_SEGMENT_H */

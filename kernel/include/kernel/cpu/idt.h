@@ -5,9 +5,14 @@
 ** idt
 */
 
-#ifndef IDT_H_
-#define IDT_H_
+#ifndef KERNEL_CPU_INTERRUPT_DESCRIPTOR_TABLE_H
+#define KERNEL_CPU_INTERRUPT_DESCRIPTOR_TABLE_H
 
+#include <kernel/cpu/gdt.h>
+#include <kernel/cpu/isr.h>
+#include <kernel/cpu/pic.h>
+
+#include <stddef.h>
 #include <stdint.h>
 
 /// Flags byte for a present, DPL=0, 32-bit interrupt gate (P=1, DPL=0, Type=0xE)
@@ -92,4 +97,4 @@ extern void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *id
  */
 extern void interrupt_descriptor_table_load(InterruptDescriptorTable_t *idt);
 
-#endif /* !IDT_H_ */
+#endif /* KERNEL_CPU_INTERRUPT_DESCRIPTOR_TABLE_H */

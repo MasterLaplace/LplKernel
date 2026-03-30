@@ -5,10 +5,14 @@
 ** apic_timer
 */
 
-#ifndef APIC_TIMER_H_
-#define APIC_TIMER_H_
+#ifndef KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_TIMER_H
+#define KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_TIMER_H
 
 #include <kernel/cpu/apic.h>
+#include <kernel/cpu/irq.h>
+#include <kernel/cpu/paging.h>
+#include <kernel/cpu/pic.h>
+#include <kernel/lib/asmutils.h>
 
 /**
  * @brief Initialize advanced PIC timer backend (probe-only in current stage).
@@ -97,4 +101,4 @@ extern void advanced_pic_timer_backend_signal_end_of_interrupt(void);
  */
 extern uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void);
 
-#endif /* !APIC_TIMER_H_ */
+#endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_TIMER_H */

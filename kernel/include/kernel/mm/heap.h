@@ -8,6 +8,7 @@
 #ifndef KERNEL_MM_HEAP_H_
 #define KERNEL_MM_HEAP_H_
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -41,18 +42,50 @@ extern uint32_t kernel_heap_debug_get_rejected_free_count(void);
 
 extern uint32_t kernel_heap_debug_get_double_free_count(void);
 
-/*
- * Client deterministic hot-loop guard.
- * On server builds these functions are no-op stubs returning 0.
+/**
+ * @brief Enter the client hot loop allocation guard scope.
+ *
+ * @note Server builds expose a no-op implementation.
  */
 extern void kernel_heap_hot_loop_enter(void);
+
+/**
+ * @brief Leave the client hot loop allocation guard scope.
+ *
+ * @note Server builds expose a no-op implementation.
+ */
 extern void kernel_heap_hot_loop_leave(void);
+
+/**
+ * @brief Return current hot loop nesting depth.
+ *
+ * @return Hot loop nesting depth on client builds, 0 on server builds.
+ */
 extern uint32_t kernel_heap_get_hot_loop_depth(void);
+
+/**
+ * @brief Return total hot loop allocation guard violations.
+ *
+ * @return Violation count on client builds, 0 on server builds.
+ */
 extern uint32_t kernel_heap_get_hot_loop_violation_count(void);
 
-/* Server size-class telemetry (returns 0 on client builds). */
+/**
+ * @brief Return available free blocks in a server size class.
+ *
+ * @param size_class_index Server size class index.
+ * @return Free block count on server builds, 0 on client builds.
+ */
 extern uint32_t kernel_heap_get_size_class_free_count(uint32_t size_class_index);
+
+/**
+ * @brief Return hit count for a server size class fast path.
+ *
+ * @param size_class_index Server size class index.
+ * @return Hit count on server builds, 0 on client builds.
+ */
 extern uint32_t kernel_heap_get_size_class_hit_count(uint32_t size_class_index);
+
 extern bool kernel_heap_set_server_active_domain(uint32_t domain_index);
 extern uint32_t kernel_heap_get_server_domain_count(void);
 extern uint32_t kernel_heap_get_server_active_domain(void);

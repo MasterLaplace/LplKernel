@@ -408,7 +408,7 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM pass 2 (>16MB mapping)...\n");
     physical_memory_manager_extend_mapping();
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM ready \342\200\224 total free: ");
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: PMM ready - total free: ");
     serial_write_int(&com1, (int32_t) physical_memory_manager_get_free_page_count());
     serial_write_string(&com1, " pages (~");
     serial_write_int(&com1, (int32_t) (physical_memory_manager_get_free_page_count() * 4 / 1024));
@@ -702,7 +702,6 @@ __attribute__((constructor)) void kernel_initialize(void)
         serial_write_string(&com1, "\n");
     }
 
-#if defined(LPL_KERNEL_APIC_TIMER_BACKEND)
     if (advanced_pic_timer_backend_late_initialize())
     {
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC late init state=");
@@ -715,11 +714,9 @@ __attribute__((constructor)) void kernel_initialize(void)
         serial_write_hex32(&com1, advanced_pic_timer_backend_get_local_apic_version_register());
         serial_write_string(&com1, "\n");
 
-        /* Initialize APIC IPI framework for AP startup */
         advanced_pic_ipi_initialize(advanced_pic_timer_backend_get_local_apic_virtual_base());
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: APIC IPI framework initialized\n");
 
-        /* Start discovered APs only after MADT sync + APIC IPI readiness */
         kernel_try_start_discovered_aps();
 
         if (kernel_policy_enable_ioapic_keyboard_owner())
@@ -798,9 +795,6 @@ __attribute__((constructor)) void kernel_initialize(void)
         serial_write_string(&com1, advanced_pic_timer_backend_name());
         serial_write_string(&com1, "\n");
     }
-#endif
-
-
 
     if (KERNEL_SMOKE_TEST_ENABLE_PAGING_PT_RECLAIM)
         kernel_smoke_test_run_paging_runtime_page_table_reclaim(&com1);
@@ -809,7 +803,7 @@ __attribute__((constructor)) void kernel_initialize(void)
         kernel_smoke_test_run_heap_allocate_free(&com1);
         kernel_smoke_test_run_heap_poison_canary(&com1);
     }
-    
+
     kernel_smoke_test_run_pmm_uaf_detection(&com1);
 
     if (KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL)

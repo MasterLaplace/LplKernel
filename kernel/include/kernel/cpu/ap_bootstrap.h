@@ -5,33 +5,38 @@
 ** AP (Application Processor) bootstrap stack and initialization header
 */
 
-#ifndef KERNEL_CPU_AP_BOOTSTRAP_H_
-#define KERNEL_CPU_AP_BOOTSTRAP_H_
+#ifndef KERNEL_CPU_APPLICATION_PROCESSOR_BOOTSTRAP_H
+#define KERNEL_CPU_APPLICATION_PROCESSOR_BOOTSTRAP_H
 
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/paging.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
 
-/* Stack size for each AP: 8 KB */
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #define AP_BOOTSTRAP_STACK_SIZE 8192u
 
-/* Maximum APs we can bootstrap (limit to compacted slots) */
-#define AP_BOOTSTRAP_MAX_APS 31u  /* 0 is BSP, 1-31 are APs */
+#define AP_BOOTSTRAP_MAX_APS 31u
 
 /**
  * @brief Bootstrap entry for an Application Processor (AP).
  *
  * Contains APIC ID, logical slot mapping, and stack allocation info.
+ * @param apic_id  APIC ID of the AP (0-255); 0xFF indicates invalid/not present.
+ * @param logical_slot  Logical CPU slot index assigned during topology discovery.
+ * @param stack_base  Virtual address of the base of the allocated stack region for this AP.
+ * @param stack_size  Size of the allocated stack region in bytes.
+ * @param initialized  Flag indicating whether this entry has been initialized with valid data.
+ * @param booted  Flag indicating whether the AP has been successfully booted.
  */
 typedef struct APBootstrapEntry {
-    uint8_t apic_id;          /* APIC ID of this AP */
-    uint32_t logical_slot;    /* Compacted logical slot from topology */
-    void *stack_base;         /* Virtual address of stack base */
-    uint32_t stack_size;      /* Stack size (typically 8 KB) */
-    uint8_t initialized;      /* Whether this entry is valid */
-    uint8_t booted;           /* Whether AP has been started */
+    uint8_t apic_id;
+    uint32_t logical_slot;
+    void *stack_base;
+    uint32_t stack_size;
+    uint8_t initialized;
+    uint8_t booted;
 } ApplicationProcessorBootstrapEntry_t;
 
 /**
@@ -42,9 +47,9 @@ typedef struct APBootstrapEntry {
  * @note Logical slot is a compacted index assigned during topology discovery, not necessarily contiguous.
  */
 typedef struct APBootstrapTable_t {
-    ApplicationProcessorBootstrapEntry_t entries[32u];  /* One per possible slot */
-    uint32_t ap_count;                 /* Number of non-BSP APs */
-    uint32_t next_entry_index;         /* Cursor for iteration */
+    ApplicationProcessorBootstrapEntry_t entries[32u];
+    uint32_t ap_count;
+    uint32_t next_entry_index;
 } ApplicationProcessorBootstrapTable_t;
 
 /**
@@ -130,4 +135,4 @@ extern void application_processor_bootstrap_reset_iteration(void);
  */
 extern ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_next_unbooted_ap(void);
 
-#endif /* !KERNEL_CPU_AP_BOOTSTRAP_H_ */
+#endif /* KERNEL_CPU_APPLICATION_PROCESSOR_BOOTSTRAP_H */

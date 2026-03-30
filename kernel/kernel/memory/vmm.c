@@ -60,7 +60,7 @@ void *kernel_vmm_reserve_pages(uint32_t page_count)
             if (vmm_bitmap_test(i + j))
             {
                 match = false;
-                i += j + 1; /* Skip ahead */
+                i += j + 1;
                 break;
             }
         }
@@ -79,8 +79,8 @@ void *kernel_vmm_reserve_pages(uint32_t page_count)
         vmm_bitmap_set(found_index + i);
 
     vmm_last_search_index = found_index + page_count;
-    
-    return (void *)(uintptr_t)(KERNEL_VMM_DYNAMIC_START + (found_index * PAGE_SIZE));
+
+    return (void *) (uintptr_t) (KERNEL_VMM_DYNAMIC_START + (found_index * PAGE_SIZE));
 }
 
 bool kernel_vmm_reserve_at(void *virt, uint32_t page_count)
@@ -88,20 +88,18 @@ bool kernel_vmm_reserve_at(void *virt, uint32_t page_count)
     if (!vmm_initialized || !virt || page_count == 0)
         return false;
 
-    uint32_t virt_addr = (uint32_t)(uintptr_t)virt;
+    uint32_t virt_addr = (uint32_t) (uintptr_t) virt;
     if (virt_addr < KERNEL_VMM_DYNAMIC_START || (virt_addr + page_count * PAGE_SIZE) > KERNEL_VMM_DYNAMIC_END)
         return false;
 
     uint32_t start_index = (virt_addr - KERNEL_VMM_DYNAMIC_START) / PAGE_SIZE;
 
-    /* Check if already reserved */
     for (uint32_t i = 0u; i < page_count; ++i)
     {
         if (vmm_bitmap_test(start_index + i))
             return false;
     }
 
-    /* Mark as reserved */
     for (uint32_t i = 0u; i < page_count; ++i)
         vmm_bitmap_set(start_index + i);
 
@@ -114,14 +112,13 @@ void *kernel_vmm_alloc_pages(uint32_t page_count)
     if (!virt_base)
         return NULL;
 
-    uint32_t start_virt = (uint32_t)(uintptr_t)virt_base;
+    uint32_t start_virt = (uint32_t) (uintptr_t) virt_base;
 
     for (uint32_t i = 0u; i < page_count; ++i)
     {
         uint32_t phys = physical_memory_manager_page_frame_allocate();
         if (phys == 0u)
         {
-            /* Error: cleanup and return NULL (simplified cleanup) */
             kernel_vmm_free_pages(virt_base, i);
             return NULL;
         }
@@ -152,7 +149,7 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count)
     if (!vmm_initialized || !ptr || page_count == 0)
         return;
 
-    uint32_t virt_start = (uint32_t)(uintptr_t)ptr;
+    uint32_t virt_start = (uint32_t) (uintptr_t) ptr;
     if (virt_start < KERNEL_VMM_DYNAMIC_START || virt_start >= KERNEL_VMM_DYNAMIC_END)
         return;
 

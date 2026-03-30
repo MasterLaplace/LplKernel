@@ -5,11 +5,16 @@
 ** paging - Runtime paging management API for higher-half kernel
 */
 
-#ifndef PAGING_H_
-#define PAGING_H_
+#ifndef KERNEL_CPU_PAGING_H
+#define KERNEL_CPU_PAGING_H
+
+#include <kernel/config.h>
+#include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/pmm.h>
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 /// Page Directory Entry (32-bit format) - Based on OSDev wiki Paging article
 /// Structure for PDE when PS=0 (points to a 4KB page table)
@@ -149,23 +154,13 @@ typedef struct __attribute__((packed)) {
     uint8_t execute_disable               : 1;
 } PageTableEntryLongMode_t;
 
-// ============================================================================
-// Page Directory / Page Table structures
-// ============================================================================
-
-/// Page Directory: Array of 1024 page directory entries (4KB total)
 typedef struct __attribute__((packed)) {
     PageDirectoryEntry_t entries[1024];
 } PageDirectory_t;
 
-/// Page Table: Array of 1024 page table entries (4KB total)
 typedef struct __attribute__((packed)) {
     PageTableEntry_t entries[1024];
 } PageTable_t;
-
-// ============================================================================
-// Helper macros for address manipulation
-// ============================================================================
 
 /**
  * @brief Extract page directory index from virtual address (bits 31-22)
@@ -188,9 +183,6 @@ typedef struct __attribute__((packed)) {
  */
 #define PAGE_OFFSET(virt_addr) ((uint32_t) (virt_addr) & 0xFFF)
 
-// ============================================================================
-// Address Alignment Helpers
-// ============================================================================
 
 /**
  * @brief Align address down to page boundary (4KB)
@@ -207,9 +199,6 @@ typedef struct __attribute__((packed)) {
  */
 #define IS_PAGE_ALIGNED(addr) (((uint32_t) (addr) & 0xFFF) == 0)
 
-// ============================================================================
-// Low-level Assembly Functions (defined in paging_asm.s)
-// ============================================================================
 
 /**
  * @brief Get the current page directory physical address from CR3
@@ -234,9 +223,6 @@ extern void paging_invlpg(uint32_t virt_addr);
  */
 extern void paging_flush_tlb(void);
 
-// ============================================================================
-// Runtime Paging Management API (defined in paging.c)
-// ============================================================================
 
 /**
  * @brief Initialize paging management subsystem
@@ -299,10 +285,6 @@ bool paging_is_mapped(uint32_t virt_addr);
  */
 uint32_t paging_get_runtime_owned_page_table_count(void);
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 /* global_kernel_start is provided by the linker script via PROVIDE().
  * Declare it as a const uint32_t so the compiler treats it as an address-sized
  * symbol whose value can be read at runtime. Use a pointer cast to obtain
@@ -314,4 +296,4 @@ extern const uint32_t global_kernel_end;
 #define PAGE_SIZE           4096                                           // 4KB pages
 #define ENTRIES_PER_TABLE   1024                                           // 1024 entries per page table/directory
 
-#endif /* !PAGING_H_ */
+#endif /* KERNEL_CPU_PAGING_H */

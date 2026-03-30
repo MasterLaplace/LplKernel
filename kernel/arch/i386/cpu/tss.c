@@ -1,5 +1,4 @@
 #include <kernel/cpu/tss.h>
-#include <kernel/lib/asmutils.h>
 
 ////////////////////////////////////////////////////////////
 // Private functions of the TSS module

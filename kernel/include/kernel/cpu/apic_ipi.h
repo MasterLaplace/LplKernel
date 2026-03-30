@@ -5,8 +5,13 @@
 ** APIC Inter-Processor Interrupt (IPI) framework header
 */
 
-#ifndef KERNEL_CPU_APIC_IPI_H_
-#define KERNEL_CPU_APIC_IPI_H_
+#ifndef KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_IPI_H
+#define KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_IPI_H
+
+#include <kernel/cpu/apic.h>
+#include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/isr.h>
+#include <kernel/cpu/paging.h>
 
 #include <stdint.h>
 
@@ -93,6 +98,12 @@ extern uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint
  * Broadcasts an IPI to all other CPUs to invalidate a specific virtual address.
  */
 extern void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr);
+
+/**
+ * @brief IPI-based TLB flush.
+ *
+ * Broadcasts an IPI to all other CPUs to flush their entire TLB.
+ */
 extern void advanced_pic_ipi_broadcast_tlb_flush(void);
 
 /**
@@ -115,4 +126,4 @@ extern uint32_t advanced_pic_ipi_get_startup_sequence_attempt_count(void);
  */
 extern uint32_t advanced_pic_ipi_get_startup_sequence_success_count(void);
 
-#endif /* !KERNEL_CPU_APIC_IPI_H_ */
+#endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_IPI_H */

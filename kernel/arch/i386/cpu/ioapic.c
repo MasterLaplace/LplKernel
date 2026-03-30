@@ -1,9 +1,5 @@
 #include <kernel/cpu/ioapic.h>
 
-#include <kernel/cpu/acpi.h>
-#include <kernel/cpu/paging.h>
-#include <kernel/cpu/pic.h>
-
 #define IOAPIC_MMIO_BASE_VIRT 0xFFB10000u
 #define IOAPIC_MMIO_STRIDE    0x1000u
 

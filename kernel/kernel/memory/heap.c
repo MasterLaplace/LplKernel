@@ -25,25 +25,13 @@
 #define KERNEL_HEAP_HEADER_MAGIC    0x4C50u
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-/* Total pages pre-allocated in the boot pool for first-fit fallback. */
 #define KERNEL_HEAP_CLIENT_BOOT_POOL_PAGES 8u
-/*
- * Pages donated to the slab sub-system (taken from the boot pool).
- * KERNEL_SLAB_CACHE_MAX_PAGES pages per cache × 3 caches.
- */
 #define KERNEL_HEAP_CLIENT_SLAB_PAGES (KERNEL_SLAB_CACHE_MAX_PAGES * 3u)
 
-/* TLSF deterministic O(1) heap pool size (4 MB). */
 #define KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE (4u * 1024u * 1024u)
 static uint8_t kernel_heap_client_tlsf_pool[KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE] __attribute__((aligned(8)));
 #else
-/* Server size-class fast-path: power-of-two sizes 8 … 512 B. */
 #define KERNEL_HEAP_SIZE_CLASSES      7u
-/*
- * Logical domain count for server allocator staging.
- * With current single-core bring-up, selection defaults to domain 0.
- * Phase 4 SMP work will wire this selector to per-CPU topology.
- */
 #define KERNEL_HEAP_SERVER_DOMAINS    2u
 #endif
 
@@ -56,10 +44,6 @@ static uint32_t kernel_heap_double_free_count = 0u;
 static bool kernel_heap_initialized = false;
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-/*
- * Client-only deterministic rule guard:
- * kmalloc/kfree are forbidden in the hot loop.
- */
 static uint32_t kernel_heap_hot_loop_depth = 0u;
 static uint32_t kernel_heap_hot_loop_violation_count = 0u;
 #endif
@@ -75,14 +59,6 @@ typedef struct KernelHeapServerDomain {
     uint32_t remote_hit_count;
 } KernelHeapServerDomain_t;
 
-/*
- * Server size-class buckets.
- * Slot i holds objects whose usable payload fits in (8 << i) bytes:
- *   i=0 →  8 B, i=1 → 16 B, i=2 → 32 B, i=3 → 64 B,
- *   i=4 → 128 B, i=5 → 256 B, i=6 → 512 B
- * Each bucket is a singly-linked free-list using the KernelHeapBlock next
- * pointer.  When a bucket is empty, kmalloc falls through to first-fit.
- */
 static uint32_t kernel_heap_size_class_sizes[KERNEL_HEAP_SIZE_CLASSES] = {
     8u, 16u, 32u, 64u, 128u, 256u, 512u
 };
@@ -141,7 +117,6 @@ static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t loca
 
     uint32_t local_numa_node = numa_policy_get_node_for_slot(local_domain_index);
 
-    // Pass 1: Try to steal from other CPUs on the SAME NUMA node
     for (uint32_t domain_index = 0u; domain_index < KERNEL_HEAP_SERVER_DOMAINS; ++domain_index)
     {
         if (domain_index == local_domain_index)
@@ -162,7 +137,6 @@ static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t loca
         return block;
     }
 
-    // Pass 2: Fallback to CPUs on a DIFFERENT NUMA node
     for (uint32_t domain_index = 0u; domain_index < KERNEL_HEAP_SERVER_DOMAINS; ++domain_index)
     {
         if (domain_index == local_domain_index)
@@ -280,10 +254,6 @@ static bool kernel_heap_grow_small_pool(void)
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 static void kernel_heap_build_client_boot_pool(void)
 {
-    /*
-     * The first KERNEL_HEAP_CLIENT_SLAB_PAGES pages are handed to
-     * the slab allocator; the remaining pages feed the first-fit list.
-     */
     void *slab_backing[KERNEL_HEAP_CLIENT_SLAB_PAGES];
     uint32_t slab_donated = 0u;
 
@@ -350,9 +320,6 @@ void kernel_heap_initialize_ap_domain(uint32_t logical_slot)
 {
     (void) logical_slot;
 
-    /* Pre-populate the AP domain with a few blocks from the global first-fit pool.
-       Since this is called by the AP itself during startup, kmalloc() will automatically
-       resolve to the AP's local domain and kfree() will stash the blocks there. */
     for (uint32_t sc = 0u; sc < KERNEL_HEAP_SIZE_CLASSES; ++sc)
     {
         uint32_t payload_size = kernel_heap_size_class_sizes[sc];
@@ -411,9 +378,6 @@ void *kmalloc(size_t size)
         kernel_heap_align_up(payload_size + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-    /*
-     * Client fast-path: try the slab for exact cache sizes.
-     */
     {
         void *obj = kernel_slab_alloc(total_size);
         if (obj) {
@@ -429,7 +393,6 @@ void *kmalloc(size_t size)
         }
     }
 
-    /* Client O(1) deterministic heap: TLSF. */
     void *tlsf_raw = kernel_tlsf_alloc(total_size);
     if (tlsf_raw) {
         KernelHeapBlock_t *header = (KernelHeapBlock_t *)tlsf_raw;
@@ -444,11 +407,6 @@ void *kmalloc(size_t size)
     }
 #endif
 
-    /*
-     * Universal Large Allocation / VMM Fallback.
-     * If total_size is definitely too big for small pool or explicit request,
-     * or if we are on client and SLAB/TLSF both failed/rejected, we hit VMM.
-     */
     if (total_size > PAGE_SIZE || (payload_size > 1024u))
     {
         uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
@@ -472,11 +430,6 @@ void *kmalloc(size_t size)
     }
 
 #ifndef LPL_KERNEL_REAL_TIME_MODE
-    /*
-     * Server fast-path: current mono-domain scaffold.
-     * Today every CPU resolves to domain 0; later per-CPU/per-NUMA work
-     * can swap only the selector while preserving the bucket contract.
-     */
     uint32_t local_domain_index = kernel_heap_server_get_local_domain_index();
     KernelHeapServerDomain_t *local_domain = kernel_heap_server_get_domain(local_domain_index);
     uint32_t matched_sc = 0xFFFFFFFFu;
@@ -534,8 +487,8 @@ void *kmalloc(size_t size)
 
             if (local_domain)
                 ++local_domain->first_fit_fallback_count;
-                
-            batch_count = 4u; /* Batch size for refill */
+
+            batch_count = 4u;
             total_size = kernel_heap_align_up(kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
             total_size *= batch_count;
             if (local_domain)
@@ -544,10 +497,6 @@ void *kmalloc(size_t size)
         }
     }
 #endif
-
-
-
-    /* First-fit path. */
     KernelHeapBlock_t *prev = NULL;
     KernelHeapBlock_t *current = kernel_heap_free_list;
 
@@ -617,7 +566,7 @@ void *kmalloc(size_t size)
              piece->order = (uint8_t) matched_sc;
              piece->reserved = (uint16_t) local_domain_index;
              piece->magic = KERNEL_HEAP_HEADER_MAGIC;
-             
+
              if (local_domain)
              {
                  piece->next = local_domain->size_class_lists[matched_sc];
@@ -627,7 +576,7 @@ void *kmalloc(size_t size)
          }
          __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
 
-         current->size = sc_full_size; 
+         current->size = sc_full_size;
          current->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
          current->order = (uint8_t) matched_sc;
          current->reserved = (uint16_t) local_domain_index;
@@ -670,7 +619,6 @@ void kfree(void *ptr)
 
     KernelHeapBlock_t *header = ((KernelHeapBlock_t *) ptr) - 1;
 
-    /* Security check: verify canary and magic before any operation. */
     if (header->magic != KERNEL_HEAP_HEADER_MAGIC ||
         header->canary != (uint16_t)((0xCAFE ^ header->size) & 0xFFFF)) {
         kernel_heap_rejected_free_count++;
@@ -684,7 +632,6 @@ void kfree(void *ptr)
     }
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-    /* Client specialized free. */
     if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SLAB) {
         #ifdef LPL_KERNEL_DEBUG_POISON
         uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
@@ -717,13 +664,13 @@ void kfree(void *ptr)
         ++kernel_heap_rejected_free_count;
         return;
     }
-    
+
     uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SC)
         poison_size = kernel_heap_size_class_sizes[header->order];
 #endif
-        
+
     for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(header + 1))[z] = 0xDD;
 #endif
 
@@ -759,12 +706,6 @@ void kfree(void *ptr)
     }
 
 #ifndef LPL_KERNEL_REAL_TIME_MODE
-    /*
-     * Server: if this block is size-class tagged, push it back into
-     * its bucket using the stored class index (header->order).
-     * This covers both SC-fast-path allocations and first-fit
-     * allocations that were tagged at alloc time.
-     */
     if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SC)
     {
         uint8_t sc = header->order;
@@ -978,11 +919,10 @@ uint32_t kernel_heap_get_hot_loop_violation_count(void)
 void *kmalloc_sensitive(size_t size)
 {
     if (!kernel_heap_initialized || size == 0u) return NULL;
-    
+
     uint32_t payload_size = kernel_heap_align_up((uint32_t) size, KERNEL_HEAP_ALIGNMENT);
     uint32_t total_size = kernel_heap_align_up(payload_size + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
-    
-    // Force VMM allocation so it gets isolated in its own dedicated pages
+
     uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
     KernelHeapBlock_t *header = (KernelHeapBlock_t *) kernel_vmm_alloc_pages(page_count);
 

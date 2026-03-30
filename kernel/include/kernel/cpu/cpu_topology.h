@@ -5,8 +5,10 @@
 ** Minimal CPU topology abstraction for allocator domain routing.
 */
 
-#ifndef CPU_TOPOLOGY_H_
-#define CPU_TOPOLOGY_H_
+#ifndef KERNEL_CPU_TOPOLOGY_H
+#define KERNEL_CPU_TOPOLOGY_H
+
+#include <kernel/lib/asmutils.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -163,4 +165,4 @@ extern void cpu_topology_debug_clear_forced_logical_slot(void);
  */
 extern uint8_t cpu_topology_is_forced(void);
 
-#endif /* !CPU_TOPOLOGY_H_ */
+#endif /* KERNEL_CPU_TOPOLOGY_H */

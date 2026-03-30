@@ -7,8 +7,6 @@
 
 #include <kernel/cpu/ap_trampoline.h>
 
-#include <stdint.h>
-
 #define KERNEL_VIRTUAL_BASE                  0xC0000000u
 #define AP_TRAMPOLINE_PHYSICAL_BASE          0x00008000u
 #define AP_TRAMPOLINE_STARTUP_VECTOR         0x08u

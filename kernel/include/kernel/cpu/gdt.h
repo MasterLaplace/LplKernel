@@ -5,11 +5,13 @@
 ** gdt
 */
 
-#ifndef GDT_H_
-#define GDT_H_
+#ifndef KERNEL_CPU_GLOBAL_DESCRIPTOR_TABLE_H
+#define KERNEL_CPU_GLOBAL_DESCRIPTOR_TABLE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <kernel/cpu/tss.h>
 
@@ -109,6 +111,15 @@ typedef GlobalDescriptorTableFlat_t GlobalDescriptorTable_t;
 
 /**
  * @brief Initialize a flat 32-bit GDT with standard kernel/user segments and TSS
+ *
+ * @details Creates six entries at fixed selectors:
+ *          - 0x00: Null descriptor (required by CPU)
+ *          - 0x08: Kernel code (DPL=0, base=0, limit=4 GB, access=0x9A)
+ *          - 0x10: Kernel data (DPL=0, base=0, limit=4 GB, access=0x92)
+ *          - 0x18: User code   (DPL=3, base=0, limit=4 GB, access=0xFA)
+ *          - 0x20: User data   (DPL=3, base=0, limit=4 GB, access=0xF2)
+ *          - 0x28: TSS         (system descriptor, byte granularity)
+ *
  * @param gdt Pointer to the GDT structure to initialize
  * @param tss Pointer to the Task State Segment to set up the TSS entry
  */
@@ -117,7 +128,7 @@ extern void global_descriptor_table_initialize(GlobalDescriptorTable_t *gdt, Tas
 /**
  * @brief Load and activate a GDT
  *
- * This function:
+ * @details This function:
  *  1. Sets up the GDTR pointer with the GDT base address and limit
  *  2. Loads the GDT using LGDT instruction
  *  3. Reloads all segment registers (CS via far jump, DS/ES/FS/GS/SS)
@@ -126,4 +137,4 @@ extern void global_descriptor_table_initialize(GlobalDescriptorTable_t *gdt, Tas
  */
 extern void global_descriptor_table_load(GlobalDescriptorTable_t *gdt);
 
-#endif /* GDT_H_ */
+#endif /* KERNEL_CPU_GLOBAL_DESCRIPTOR_TABLE_H */

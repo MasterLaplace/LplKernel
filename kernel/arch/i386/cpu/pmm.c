@@ -131,7 +131,7 @@ static void freelist_push(uint32_t phys_addr)
     uint32_t *page_virt = (uint32_t *) pmm_phys_to_virt(phys_addr);
     *page_virt = free_list_heads[node_id];
     free_list_heads[node_id] = phys_addr;
-    
+
     ++free_page_count;
     pmm_update_watermarks();
 }
@@ -146,7 +146,6 @@ static uint32_t freelist_pop(void)
     if (local_node >= NUMA_POLICY_MAX_NODES)
         local_node = 0;
 
-    // Fast path: try local node
     if (free_list_heads[local_node] != 0)
     {
         uint32_t phys_addr = free_list_heads[local_node];
@@ -158,7 +157,6 @@ static uint32_t freelist_pop(void)
         return phys_addr;
     }
 
-    // Comprehensive fallback: check all nodes
     for (uint32_t target_node = 0; target_node < NUMA_POLICY_MAX_NODES; ++target_node)
     {
         if (free_list_heads[target_node] != 0)
@@ -723,7 +721,6 @@ uint32_t physical_memory_manager_get_fragmentation_ratio(void)
     if (free_page_count == 0u)
         return 0u;
 
-    /* Find the highest order with at least one free block. */
     uint32_t largest_contiguous_pages = 0u;
 
     for (int order = (int) PMM_BUDDY_MAX_ORDER; order >= 0; --order)

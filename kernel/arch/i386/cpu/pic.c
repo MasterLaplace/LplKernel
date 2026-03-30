@@ -1,5 +1,4 @@
 #include <kernel/cpu/pic.h>
-#include <kernel/lib/asmutils.h>
 
 #define PIC1_COMMAND 0x20u
 #define PIC1_DATA    0x21u
@@ -14,9 +13,9 @@
 
 #define ICW4_8086 0x01u
 
-static inline void pic_outb(uint16_t port, uint8_t value) { asmutils_output_byte((short) port, (unsigned char) value); }
+static inline void pic_outb(uint16_t port, uint8_t value) { asmutils_output_byte(port, value); }
 
-static inline uint8_t pic_inb(uint16_t port) { return (uint8_t) asmutils_input_byte((short) port); }
+static inline uint8_t pic_inb(uint16_t port) { return asmutils_input_byte(port); }
 
 static inline void pic_io_wait(void) { pic_outb(0x80u, 0u); }
 

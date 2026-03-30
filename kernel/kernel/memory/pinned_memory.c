@@ -30,7 +30,7 @@ void *kernel_pinned_alloc(uint32_t size)
     uint32_t pages_needed = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 
     uint32_t start_virt = pinned_virtual_cursor;
-    
+
     if (!kernel_vmm_reserve_at((void *) start_virt, pages_needed))
         return NULL;
 
@@ -38,7 +38,7 @@ void *kernel_pinned_alloc(uint32_t size)
     {
         uint32_t phys = physical_memory_manager_page_frame_allocate();
         if (phys == 0u)
-            return NULL; /* Memory exhaustion, leak handled here for simplicity */
+            return NULL;
 
         PageDirectoryEntry_t pde = {0};
         pde.present = 1;
@@ -49,7 +49,7 @@ void *kernel_pinned_alloc(uint32_t size)
         pte.present = 1;
         pte.read_write = 1;
         pte.user_supervisor = 0;
-        pte.available = 1; /* Mark as non-evictable (pinned) */
+        pte.available = 1;
 
         if (!paging_map_page(start_virt + (i * PAGE_SIZE), phys, pde, pte))
             return NULL;

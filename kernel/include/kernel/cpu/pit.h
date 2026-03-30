@@ -5,8 +5,10 @@
 ** pit
 */
 
-#ifndef PIT_H_
-#define PIT_H_
+#ifndef KERNEL_CPU_PROGRAMMABLE_INTERVAL_TIMER_H
+#define KERNEL_CPU_PROGRAMMABLE_INTERVAL_TIMER_H
+
+#include <kernel/lib/asmutils.h>
 
 #include <stdint.h>
 
@@ -22,4 +24,4 @@ extern void programmable_interval_timer_initialize(uint32_t target_frequency_hz)
  */
 extern uint32_t programmable_interval_timer_get_frequency_hz(void);
 
-#endif /* !PIT_H_ */
+#endif /* KERNEL_CPU_PROGRAMMABLE_INTERVAL_TIMER_H */
