@@ -29,23 +29,23 @@
  * the object is already free (double-free) -> reject, return false.
  * kernel_slab_alloc() clears the cookie on allocation.
  */
-#define SLAB_FREE_COOKIE 0x534C4131u  /* 'SLA1' */
+#    define SLAB_FREE_COOKIE 0x534C4131u /* 'SLA1' */
 
-#define SLAB_NUM_CACHES 3u
+#    define SLAB_NUM_CACHES 3u
 
 typedef struct {
-    uint32_t object_size;  /* bytes per object                        */
-    void    *free_head;    /* head of the free-list (NULL == full)    */
-    uint32_t free_count;   /* objects currently on the free-list      */
-    uint32_t used_count;   /* objects currently live                  */
-    uintptr_t base;        /* virtual address of the first owned page */
-    uintptr_t end;         /* first byte past the owned pages         */
+    uint32_t object_size; /* bytes per object                        */
+    void *free_head;      /* head of the free-list (NULL == full)    */
+    uint32_t free_count;  /* objects currently on the free-list      */
+    uint32_t used_count;  /* objects currently live                  */
+    uintptr_t base;       /* virtual address of the first owned page */
+    uintptr_t end;        /* first byte past the owned pages         */
 } KernelSlabCache_t;
 
 static KernelSlabCache_t slab_caches[SLAB_NUM_CACHES] = {
-    { KERNEL_SLAB_SIZE_SMALL,  NULL, 0u, 0u, 0u, 0u },
-    { KERNEL_SLAB_SIZE_MEDIUM, NULL, 0u, 0u, 0u, 0u },
-    { KERNEL_SLAB_SIZE_LARGE,  NULL, 0u, 0u, 0u, 0u },
+    {KERNEL_SLAB_SIZE_SMALL,  NULL, 0u, 0u, 0u, 0u},
+    {KERNEL_SLAB_SIZE_MEDIUM, NULL, 0u, 0u, 0u, 0u},
+    {KERNEL_SLAB_SIZE_LARGE,  NULL, 0u, 0u, 0u, 0u},
 };
 
 /*
@@ -55,13 +55,13 @@ static KernelSlabCache_t slab_caches[SLAB_NUM_CACHES] = {
 static void slab_cache_populate(KernelSlabCache_t *cache, void *page_virt, uint32_t page_size)
 {
     uint32_t obj_size = cache->object_size;
-    uint8_t *cursor   = (uint8_t *) page_virt;
+    uint8_t *cursor = (uint8_t *) page_virt;
     uint8_t *page_end = cursor + page_size;
     uint32_t stride = obj_size;
-#ifdef LPL_KERNEL_DEBUG_POISON
+#    ifdef LPL_KERNEL_DEBUG_POISON
     stride += sizeof(uint32_t);
     stride = (stride + 7u) & ~7u;
-#endif
+#    endif
 
     if (cache->base == 0u || (uintptr_t) page_virt < cache->base)
         cache->base = (uintptr_t) page_virt;
@@ -73,9 +73,9 @@ static void slab_cache_populate(KernelSlabCache_t *cache, void *page_virt, uint3
         void **slot = (void **) cursor;
         *slot = cache->free_head;
         *((uint32_t *) (cursor + sizeof(void *))) = SLAB_FREE_COOKIE;
-#ifdef LPL_KERNEL_DEBUG_POISON
+#    ifdef LPL_KERNEL_DEBUG_POISON
         *((uint32_t *) (cursor + obj_size)) = 0xC001CAFEu;
-#endif
+#    endif
         cache->free_head = cursor;
         ++cache->free_count;
         cursor += stride;
@@ -134,14 +134,14 @@ bool kernel_slab_free(void *ptr)
             continue;
 
         uint32_t stride = cache->object_size;
-#ifdef LPL_KERNEL_DEBUG_POISON
+#    ifdef LPL_KERNEL_DEBUG_POISON
         stride += sizeof(uint32_t);
         stride = (stride + 7u) & ~7u;
-#endif
+#    endif
         if ((addr - cache->base) % stride != 0u)
             continue;
 
-#ifdef LPL_KERNEL_DEBUG_POISON
+#    ifdef LPL_KERNEL_DEBUG_POISON
         uint32_t *end_canary = (uint32_t *) ((uint8_t *) ptr + cache->object_size);
         if (*end_canary != 0xC001CAFEu)
             return false;

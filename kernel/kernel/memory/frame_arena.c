@@ -19,7 +19,7 @@ static inline uint32_t frame_arena_rdtsc_low(void)
 {
 #if defined(__i386__) || defined(__x86_64__)
     uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo) :: "edx");
+    asm volatile("rdtsc" : "=a"(lo)::"edx");
     return lo;
 #else
     return 0u;

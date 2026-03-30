@@ -86,12 +86,6 @@ void kernel_pinned_free(void *ptr, uint32_t size)
     kernel_vmm_free_pages(ptr, pages_to_free);
 }
 
-uint32_t kernel_pinned_get_allocated_pages(void)
-{
-    return pinned_allocated_pages;
-}
+uint32_t kernel_pinned_get_allocated_pages(void) { return pinned_allocated_pages; }
 
-uint32_t kernel_pinned_get_released_pages(void)
-{
-    return pinned_released_pages;
-}
+uint32_t kernel_pinned_get_released_pages(void) { return pinned_released_pages; }

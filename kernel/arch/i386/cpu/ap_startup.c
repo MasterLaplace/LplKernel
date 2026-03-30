@@ -5,7 +5,7 @@ static ApplicationProcessorLocalContext_t ap_local_context = { 0 };
 static Serial_t *ap_serial_port = NULL;
 static uint32_t ap_startup_reported_online_count = 0u;
 static uint8_t ap_startup_last_reported_apic_id = 0xFFu;
-static uint8_t ap_startup_reported_apic_bitmap[32] = { 0u };
+static uint8_t ap_startup_reported_apic_bitmap[32] = {0u};
 
 static uint8_t ap_startup_try_mark_reported_apic_id(uint8_t apic_id)
 {
@@ -33,7 +33,7 @@ static void ap_startup_record_online_event(uint8_t apic_id, uint32_t logical_slo
 uint32_t application_processor_startup_get_kernel_cr3(void)
 {
     if (!kernel_cr3_cached)
-        kernel_cr3_cached = (uint32_t)(uintptr_t)&boot_page_directory - KERNEL_VIRTUAL_BASE;
+        kernel_cr3_cached = (uint32_t) (uintptr_t) &boot_page_directory - KERNEL_VIRTUAL_BASE;
 
     return kernel_cr3_cached;
 }
@@ -46,8 +46,7 @@ void application_processor_startup_set_serial_port(Serial_t *serial_port)
 uint8_t application_processor_startup_ensure_low_identity_mapping(void)
 {
     uint32_t *page_directory = (uint32_t *) (uintptr_t) &boot_page_directory;
-    uint32_t page_tables_phys =
-        ((uint32_t) (uintptr_t) &boot_page_tables - KERNEL_VIRTUAL_BASE) & 0xFFFFF000u;
+    uint32_t page_tables_phys = ((uint32_t) (uintptr_t) &boot_page_tables - KERNEL_VIRTUAL_BASE) & 0xFFFFF000u;
 
     if ((page_directory[0] & 0x1u) == 0u)
     {
@@ -85,7 +84,6 @@ void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logi
         serial_write_int(ap_serial_port, (int32_t) domain);
         serial_write_string(ap_serial_port, "\n");
     }
-
 }
 
 void application_processor_startup_report_bootstrap_ack(uint8_t apic_id, uint32_t logical_slot)
@@ -93,15 +91,9 @@ void application_processor_startup_report_bootstrap_ack(uint8_t apic_id, uint32_
     ap_startup_record_online_event(apic_id, logical_slot);
 }
 
-uint32_t application_processor_startup_get_reported_online_count(void)
-{
-    return ap_startup_reported_online_count;
-}
+uint32_t application_processor_startup_get_reported_online_count(void) { return ap_startup_reported_online_count; }
 
-uint8_t application_processor_startup_get_last_reported_apic_id(void)
-{
-    return ap_startup_last_reported_apic_id;
-}
+uint8_t application_processor_startup_get_last_reported_apic_id(void) { return ap_startup_last_reported_apic_id; }
 
 uint8_t application_processor_startup_get_apic_id(void)
 {

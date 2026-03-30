@@ -68,10 +68,7 @@ void advanced_pic_ipi_initialize(uint32_t lapic_virtual_base)
     interrupt_service_routine_register_handler(0x40u, apic_ipi_tlb_shootdown_handler);
 }
 
-uint8_t advanced_pic_ipi_is_ready(void)
-{
-    return apic_ipi_lapic_base != 0u;
-}
+uint8_t advanced_pic_ipi_is_ready(void) { return apic_ipi_lapic_base != 0u; }
 
 void advanced_pic_ipi_enable_local_apic(void)
 {
@@ -127,12 +124,14 @@ uint8_t advanced_pic_ipi_send_startup_sequence(uint8_t apic_id, uint8_t startup_
     if (!advanced_pic_ipi_send_init(apic_id))
         return 0u;
 
-    for (volatile uint32_t delay = 0u; delay < 10000u; ++delay) ;
+    for (volatile uint32_t delay = 0u; delay < 10000u; ++delay)
+        ;
 
     if (!advanced_pic_ipi_send_sipi(apic_id, startup_vector))
         return 0u;
 
-    for (volatile uint32_t delay = 0u; delay < 10000u; ++delay) ;
+    for (volatile uint32_t delay = 0u; delay < 10000u; ++delay)
+        ;
 
     if (!advanced_pic_ipi_send_sipi(apic_id, startup_vector))
         return 0u;
@@ -141,25 +140,13 @@ uint8_t advanced_pic_ipi_send_startup_sequence(uint8_t apic_id, uint8_t startup_
     return 1u;
 }
 
-uint32_t advanced_pic_ipi_get_init_attempt_count(void)
-{
-    return apic_ipi_init_attempt_count;
-}
+uint32_t advanced_pic_ipi_get_init_attempt_count(void) { return apic_ipi_init_attempt_count; }
 
-uint32_t advanced_pic_ipi_get_sipi_attempt_count(void)
-{
-    return apic_ipi_sipi_attempt_count;
-}
+uint32_t advanced_pic_ipi_get_sipi_attempt_count(void) { return apic_ipi_sipi_attempt_count; }
 
-uint32_t advanced_pic_ipi_get_startup_sequence_attempt_count(void)
-{
-    return apic_ipi_startup_sequence_attempt_count;
-}
+uint32_t advanced_pic_ipi_get_startup_sequence_attempt_count(void) { return apic_ipi_startup_sequence_attempt_count; }
 
-uint32_t advanced_pic_ipi_get_startup_sequence_success_count(void)
-{
-    return apic_ipi_startup_sequence_success_count;
-}
+uint32_t advanced_pic_ipi_get_startup_sequence_success_count(void) { return apic_ipi_startup_sequence_success_count; }
 
 uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint8_t shorthand)
 {
@@ -196,7 +183,4 @@ void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
     paging_invlpg(virt_addr);
 }
 
-void advanced_pic_ipi_broadcast_tlb_flush(void)
-{
-    advanced_pic_ipi_broadcast_tlb_shootdown(0xFFFFFFFFu);
-}
+void advanced_pic_ipi_broadcast_tlb_flush(void) { advanced_pic_ipi_broadcast_tlb_shootdown(0xFFFFFFFFu); }

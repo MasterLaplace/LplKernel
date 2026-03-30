@@ -9,11 +9,11 @@
 
 extern Serial_t com1;
 
-#define IA32_APIC_BASE_MSR                0x0000001Bu
-#define IA32_APIC_BASE_X2APIC_MODE_BIT    (1ull << 10u)
-#define IA32_APIC_BASE_ENABLE_BIT         (1ull << 11u)
+#define IA32_APIC_BASE_MSR             0x0000001Bu
+#define IA32_APIC_BASE_X2APIC_MODE_BIT (1ull << 10u)
+#define IA32_APIC_BASE_ENABLE_BIT      (1ull << 11u)
 
-#define CPUID_FEAT_ECX_X2APIC             (1u << 21u)
+#define CPUID_FEAT_ECX_X2APIC (1u << 21u)
 
 static uint32_t g_apic_mmio_base = 0u;
 static bool g_x2apic_active = false;
@@ -93,12 +93,6 @@ void apic_write_icr(uint32_t high, uint32_t low)
     }
 }
 
-void apic_send_eoi(void)
-{
-    apic_write(LAPIC_REG_EOI, 0u);
-}
+void apic_send_eoi(void) { apic_write(LAPIC_REG_EOI, 0u); }
 
-bool apic_is_x2apic_active(void)
-{
-    return g_x2apic_active;
-}
+bool apic_is_x2apic_active(void) { return g_x2apic_active; }

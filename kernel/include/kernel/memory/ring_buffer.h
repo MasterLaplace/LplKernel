@@ -12,10 +12,10 @@
 #include <stdint.h>
 
 typedef enum KernelRingBufferMode {
-	KERNEL_RING_BUFFER_MODE_LOCAL = 0u,
-	KERNEL_RING_BUFFER_MODE_SPSC  = 1u,
-    KERNEL_RING_BUFFER_MODE_MPSC  = 2u,
-    KERNEL_RING_BUFFER_MODE_MPMC  = 3u,
+    KERNEL_RING_BUFFER_MODE_LOCAL = 0u,
+    KERNEL_RING_BUFFER_MODE_SPSC = 1u,
+    KERNEL_RING_BUFFER_MODE_MPSC = 2u,
+    KERNEL_RING_BUFFER_MODE_MPMC = 3u,
 } KernelRingBufferMode_t;
 
 extern bool kernel_ring_buffer_initialize(uint32_t slot_size, uint32_t slot_count);

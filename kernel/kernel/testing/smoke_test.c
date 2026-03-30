@@ -449,8 +449,7 @@ void kernel_smoke_test_run_cpu_topology_compaction(Serial_t *serial_port)
     uint32_t slot1_repeat = cpu_topology_register_discovered_apic_id(2u);
     uint32_t discovered = cpu_topology_get_discovered_cpu_count();
 
-    bool compact_ok =
-        (slot0 == 0u) && (slot1 == 1u) && (slot2 == 2u) && (slot1_repeat == 1u);
+    bool compact_ok = (slot0 == 0u) && (slot1 == 1u) && (slot2 == 2u) && (slot1_repeat == 1u);
     bool count_ok = (discovered == 3u);
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: topology compact smoke: slots=");
@@ -686,8 +685,7 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
     static const uint32_t sc_sizes[3u] = { 8u, 64u, 256u };
     bool overall_pass = true;
     uint32_t domain_count = kernel_heap_get_server_domain_count();
-        bool domain_meta_ok = (domain_count >= 1u) &&
-                          (kernel_heap_get_server_active_domain() == 0u);
+    bool domain_meta_ok = (domain_count >= 1u) && (kernel_heap_get_server_active_domain() == 0u);
     uint32_t active_domain = kernel_heap_get_server_active_domain();
     uint32_t remote_probe_before = kernel_heap_get_server_domain_remote_probe_count(active_domain);
     uint32_t remote_hit_before = kernel_heap_get_server_domain_remote_hit_count(active_domain);
@@ -723,8 +721,7 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
         remote_cross_domain_ok = switch_to_zero_ok && switch_to_one_ok && switch_back_ok &&
                                  (remote_candidate != NULL) &&
                                  (remote_probe_domain1_after > remote_probe_domain1_before) &&
-                                 (remote_hit_domain1_after > remote_hit_domain1_before) &&
-                                 (active_domain == 0u);
+                                 (remote_hit_domain1_after > remote_hit_domain1_before) && (active_domain == 0u);
     }
 
     for (uint32_t ci = 0u; ci < 3u; ++ci)
@@ -732,8 +729,10 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
         uint32_t sz = sc_sizes[ci];
 
         uint32_t sc_idx = 0u;
-        if (sz == 64u)  sc_idx = 3u;
-        if (sz == 256u) sc_idx = 5u;
+        if (sz == 64u)
+            sc_idx = 3u;
+        if (sz == 256u)
+            sc_idx = 5u;
 
         uint32_t domain_index = kernel_heap_get_server_active_domain();
         uint32_t hit_before = kernel_heap_get_size_class_hit_count(sc_idx);
@@ -744,14 +743,18 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
         void *b = kmalloc(sz);
         bool alloc_ok = (a != NULL) && (b != NULL) && (a != b);
 
-        if (a) kfree(a);
-        if (b) kfree(b);
+        if (a)
+            kfree(a);
+        if (b)
+            kfree(b);
 
         void *c = kmalloc(sz);
         void *d = kmalloc(sz);
         bool realloc_ok = (c != NULL) && (d != NULL);
-        if (c) kfree(c);
-        if (d) kfree(d);
+        if (c)
+            kfree(c);
+        if (d)
+            kfree(d);
 
         uint32_t hit_after = kernel_heap_get_size_class_hit_count(sc_idx);
         uint32_t refill_after = kernel_heap_get_server_domain_refill_count(domain_index, sc_idx);
@@ -760,8 +763,7 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
         bool refill_recorded = (refill_after >= refill_before);
         bool cpu_hit_ok = (cpu_hit_after > cpu_hit_before);
 
-        bool cache_pass =
-            alloc_ok && realloc_ok && fast_path_used && domain_meta_ok && cpu_hit_ok;
+        bool cache_pass = alloc_ok && realloc_ok && fast_path_used && domain_meta_ok && cpu_hit_ok;
         overall_pass = overall_pass && cache_pass;
 
         serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: sc smoke sz=");
@@ -784,8 +786,7 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
 
     uint32_t remote_probe_after = kernel_heap_get_server_domain_remote_probe_count(active_domain);
     uint32_t remote_hit_after = kernel_heap_get_server_domain_remote_hit_count(active_domain);
-    bool remote_path_quiet = (remote_probe_after >= remote_probe_before) &&
-                             (remote_hit_after == remote_hit_before);
+    bool remote_path_quiet = (remote_probe_after >= remote_probe_before) && (remote_hit_after == remote_hit_before);
     overall_pass = overall_pass && remote_path_quiet && remote_cross_domain_ok;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: sc smoke overall=");
@@ -882,8 +883,7 @@ void kernel_smoke_test_run_frame_arena_budget(Serial_t *serial_port)
 {
     if (!kernel_frame_arena_is_initialized())
     {
-        serial_write_string(serial_port,
-                            "[" KERNEL_SYSTEM_STRING "]: frame arena budget smoke: not initialized\n");
+        serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: frame arena budget smoke: not initialized\n");
         return;
     }
 
@@ -914,8 +914,8 @@ void kernel_smoke_test_run_frame_arena_budget(Serial_t *serial_port)
 
     kernel_frame_arena_reset();
 
-    bool pass = first_ok && over_budget_rejected && exceeded_incremented && failed_incremented && second_ok &&
-                unconstrained_ok;
+    bool pass =
+        first_ok && over_budget_rejected && exceeded_incremented && failed_incremented && second_ok && unconstrained_ok;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: frame arena budget smoke: first_ok=");
     serial_write_int(serial_port, (int32_t) first_ok);
@@ -1003,7 +1003,8 @@ void kernel_smoke_test_run_pool_allocator_basic(Serial_t *serial_port)
     bool poison_ok = true;
 #ifdef LPL_KERNEL_DEBUG_POISON
     void *poison_test = kernel_pool_alloc();
-    if (poison_test) {
+    if (poison_test)
+    {
         uint8_t *p = (uint8_t *) poison_test;
         if (kernel_pool_get_object_size() > sizeof(void *) + 4u) {
             if (p[sizeof(void *) + 4u] != 0xDF)
@@ -1127,13 +1128,13 @@ void kernel_smoke_test_run_ring_buffer_basic(Serial_t *serial_port)
     uint32_t dequeue_after = kernel_ring_buffer_get_dequeue_count();
     uint32_t failed_enqueue_after = kernel_ring_buffer_get_failed_enqueue_count();
     uint32_t failed_dequeue_after = kernel_ring_buffer_get_failed_dequeue_count();
-    bool op_counts_ok = (enqueue_after == (enqueue_before + capacity + half)) &&
-                        (dequeue_after == (dequeue_before + capacity + half));
+    bool op_counts_ok =
+        (enqueue_after == (enqueue_before + capacity + half)) && (dequeue_after == (dequeue_before + capacity + half));
     bool failed_counts_ok = (failed_enqueue_after == (failed_enqueue_before + 1u)) &&
                             (failed_dequeue_after == (failed_dequeue_before + 1u));
     bool drained = (kernel_ring_buffer_get_count() == 0u);
-    bool pass = mode_ok && enqueue_ok && full_guard && order_ok && empty_guard && op_counts_ok &&
-                failed_counts_ok && drained;
+    bool pass =
+        mode_ok && enqueue_ok && full_guard && order_ok && empty_guard && op_counts_ok && failed_counts_ok && drained;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: ring buffer smoke: mode_ok=");
     serial_write_int(serial_port, (int32_t) mode_ok);
@@ -1199,7 +1200,7 @@ static inline uint32_t allocator_wcet_rdtsc_low(void)
 {
 #if defined(__i386__) || defined(__x86_64__)
     uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo) :: "edx");
+    asm volatile("rdtsc" : "=a"(lo)::"edx");
     return lo;
 #else
     return 0u;
@@ -1243,22 +1244,29 @@ void kernel_smoke_test_run_frame_budget_determinism(Serial_t *serial_port)
     uint32_t min_cycles = 0xFFFFFFFFu;
     uint32_t max_cycles = 0u;
 
-    for (uint32_t i = 0u; i < 100u; ++i) {
+    for (uint32_t i = 0u; i < 100u; ++i)
+    {
         uint32_t t0 = allocator_wcet_rdtsc_low();
         void *ptr = kernel_frame_arena_alloc(64u, 8u);
         uint32_t t1 = allocator_wcet_rdtsc_low();
 
-        if (!ptr) break;
+        if (!ptr)
+            break;
 
         uint32_t delta = t1 - t0;
-        if (delta < min_cycles) min_cycles = delta;
-        if (delta > max_cycles) max_cycles = delta;
+        if (delta < min_cycles)
+            min_cycles = delta;
+        if (delta > max_cycles)
+            max_cycles = delta;
     }
 
     bool variance_ok = false;
-    if (min_cycles > 0u) {
+    if (min_cycles > 0u)
+    {
         variance_ok = (max_cycles * 10u) < (min_cycles * 13u);
-    } else {
+    }
+    else
+    {
         variance_ok = true;
     }
 
@@ -1419,8 +1427,8 @@ void kernel_smoke_test_run_tlsf_basic(Serial_t *serial_port)
 
     bool free_restored = (free_after == free_before);
     bool counts_ok = (alloc_after == alloc_before + 5u);
-    bool bounded = (wcet_alloc_after > 0u && wcet_alloc_after < 5000000u) &&
-                   (wcet_free_after > 0u && wcet_free_after < 5000000u);
+    bool bounded =
+        (wcet_alloc_after > 0u && wcet_alloc_after < 5000000u) && (wcet_free_after > 0u && wcet_free_after < 5000000u);
 
     bool pass = allocs_ok && owns_ok && free_restored && counts_ok && bounded;
 
@@ -1794,7 +1802,8 @@ void kernel_smoke_test_run_c7_tlsf_soak(Serial_t *serial_port)
     for (uint32_t i = 0u; i < 1000u; ++i)
     {
         void *ptr = kmalloc(512u);
-        if (!ptr) {
+        if (!ptr)
+        {
             pass = false;
             break;
         }
@@ -1820,7 +1829,8 @@ void kernel_smoke_test_run_c7_frame_simulation(Serial_t *serial_port)
         void *obj2 = kernel_frame_arena_alloc(128u, 16u);
         void *obj3 = kernel_frame_arena_alloc(256u, 32u);
 
-        if (!obj1 || !obj2 || !obj3) {
+        if (!obj1 || !obj2 || !obj3)
+        {
             pass = false;
             break;
         }
@@ -1840,17 +1850,23 @@ void kernel_smoke_test_run_c7_ring_stress(Serial_t *serial_port)
     for (uint32_t i = 0u; i < 10000u; ++i)
     {
         uint32_t dummy = i;
-        if (!kernel_ring_buffer_enqueue((const uint8_t *)&dummy, sizeof(dummy))) {
-            pass = false; break;
+        if (!kernel_ring_buffer_enqueue((const uint8_t *) &dummy, sizeof(dummy)))
+        {
+            pass = false;
+            break;
         }
 
         uint32_t out_dummy = 0;
-        if (!kernel_ring_buffer_dequeue((uint8_t *)&out_dummy, sizeof(out_dummy))) {
-            pass = false; break;
+        if (!kernel_ring_buffer_dequeue((uint8_t *) &out_dummy, sizeof(out_dummy)))
+        {
+            pass = false;
+            break;
         }
 
-        if (dummy != out_dummy) {
-            pass = false; break;
+        if (dummy != out_dummy)
+        {
+            pass = false;
+            break;
         }
     }
 
@@ -1861,7 +1877,8 @@ void kernel_smoke_test_run_c7_ring_stress(Serial_t *serial_port)
 
 void kernel_smoke_test_run_c7_combined_hotloop(Serial_t *serial_port)
 {
-    if (!kernel_frame_arena_is_initialized() || !kernel_pool_allocator_is_initialized() || !kernel_ring_buffer_is_initialized())
+    if (!kernel_frame_arena_is_initialized() || !kernel_pool_allocator_is_initialized() ||
+        !kernel_ring_buffer_is_initialized())
         return;
 
     bool pass = true;
@@ -1870,10 +1887,12 @@ void kernel_smoke_test_run_c7_combined_hotloop(Serial_t *serial_port)
     for (uint32_t i = 0u; i < 500u; ++i)
     {
         void *frame_ptr = kernel_frame_arena_alloc(16u, 8u);
-        if (!frame_ptr) pass = false;
+        if (!frame_ptr)
+            pass = false;
 
         void *pool_ptr = kernel_pool_alloc();
-        if (!pool_ptr) pass = false;
+        if (!pool_ptr)
+            pass = false;
 
         uint8_t ev = 0xAF;
         kernel_ring_buffer_enqueue(&ev, 1);
@@ -1882,7 +1901,8 @@ void kernel_smoke_test_run_c7_combined_hotloop(Serial_t *serial_port)
         if (pool_ptr)
             kernel_pool_free(pool_ptr);
 
-        if (!pass) break;
+        if (!pass)
+            break;
     }
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: C7 combined hotloop: allocator_sanity=");

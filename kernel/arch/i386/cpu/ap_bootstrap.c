@@ -1,6 +1,6 @@
 #include <kernel/cpu/ap_bootstrap.h>
 
-static ApplicationProcessorBootstrapTable_t ap_bootstrap_table = { 0 };
+static ApplicationProcessorBootstrapTable_t ap_bootstrap_table = {0};
 static bool application_processor_bootstrap_initialized = false;
 static uint8_t ap_bootstrap_static_stacks[AP_BOOTSTRAP_MAX_APS][AP_BOOTSTRAP_STACK_SIZE];
 
@@ -41,8 +41,7 @@ ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_
 {
     for (uint32_t slot = 0u; slot < 32u; ++slot)
     {
-        if (ap_bootstrap_table.entries[slot].initialized &&
-            ap_bootstrap_table.entries[slot].apic_id == apic_id)
+        if (ap_bootstrap_table.entries[slot].initialized && ap_bootstrap_table.entries[slot].apic_id == apic_id)
         {
             return &ap_bootstrap_table.entries[slot];
         }

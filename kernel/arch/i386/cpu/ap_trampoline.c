@@ -51,8 +51,7 @@ static volatile uint16_t *ap_trampoline_c_entry_word_pointer(void)
 
 static volatile uint32_t *ap_trampoline_mailbox_word_pointer(uint32_t offset)
 {
-    uintptr_t mailbox_virtual =
-        (uintptr_t) (AP_TRAMPOLINE_MAILBOX_PHYSICAL + offset + KERNEL_VIRTUAL_BASE);
+    uintptr_t mailbox_virtual = (uintptr_t) (AP_TRAMPOLINE_MAILBOX_PHYSICAL + offset + KERNEL_VIRTUAL_BASE);
 
     return (volatile uint32_t *) mailbox_virtual;
 }
@@ -73,15 +72,9 @@ uint8_t application_processor_trampoline_install(void)
     return 1u;
 }
 
-uint8_t application_processor_trampoline_is_installed(void)
-{
-    return ap_trampoline_installed;
-}
+uint8_t application_processor_trampoline_is_installed(void) { return ap_trampoline_installed; }
 
-uint8_t application_processor_trampoline_get_startup_vector(void)
-{
-    return AP_TRAMPOLINE_STARTUP_VECTOR;
-}
+uint8_t application_processor_trampoline_get_startup_vector(void) { return AP_TRAMPOLINE_STARTUP_VECTOR; }
 
 void application_processor_trampoline_reset_acknowledgement(void)
 {
@@ -109,14 +102,11 @@ uint8_t application_processor_trampoline_wait_for_acknowledgement(uint32_t spin_
     return 0u;
 }
 
-uint16_t application_processor_trampoline_get_acknowledgement_word(void)
-{
-    return *ap_trampoline_ack_word_pointer();
-}
+uint16_t application_processor_trampoline_get_acknowledgement_word(void) { return *ap_trampoline_ack_word_pointer(); }
 
 void application_processor_trampoline_configure_handoff(uint8_t apic_id, uint32_t logical_slot,
-                                     uint32_t stack_top_virtual, uint32_t c_entry_virtual,
-                                     uint32_t main_loop_virtual, uint32_t cr3_physical)
+                                                        uint32_t stack_top_virtual, uint32_t c_entry_virtual,
+                                                        uint32_t main_loop_virtual, uint32_t cr3_physical)
 {
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_APIC_ID_OFFSET) = (uint32_t) apic_id;
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_CR3_OFFSET) = cr3_physical;
@@ -145,35 +135,17 @@ uint8_t application_processor_trampoline_wait_for_c_entry(uint32_t spin_limit)
     return 0u;
 }
 
-uint16_t application_processor_trampoline_get_c_entry_word(void)
-{
-    return *ap_trampoline_c_entry_word_pointer();
-}
+uint16_t application_processor_trampoline_get_c_entry_word(void) { return *ap_trampoline_c_entry_word_pointer(); }
 
-uint32_t application_processor_trampoline_get_install_count(void)
-{
-    return ap_trampoline_install_count;
-}
+uint32_t application_processor_trampoline_get_install_count(void) { return ap_trampoline_install_count; }
 
-uint32_t application_processor_trampoline_get_ack_wait_count(void)
-{
-    return ap_trampoline_ack_wait_count;
-}
+uint32_t application_processor_trampoline_get_ack_wait_count(void) { return ap_trampoline_ack_wait_count; }
 
-uint32_t application_processor_trampoline_get_ack_success_count(void)
-{
-    return ap_trampoline_ack_success_count;
-}
+uint32_t application_processor_trampoline_get_ack_success_count(void) { return ap_trampoline_ack_success_count; }
 
-uint32_t application_processor_trampoline_get_ack_timeout_count(void)
-{
-    return ap_trampoline_ack_timeout_count;
-}
+uint32_t application_processor_trampoline_get_ack_timeout_count(void) { return ap_trampoline_ack_timeout_count; }
 
-uint32_t application_processor_trampoline_get_c_entry_wait_count(void)
-{
-    return ap_trampoline_c_entry_wait_count;
-}
+uint32_t application_processor_trampoline_get_c_entry_wait_count(void) { return ap_trampoline_c_entry_wait_count; }
 
 uint32_t application_processor_trampoline_get_c_entry_success_count(void)
 {

@@ -15,7 +15,7 @@
 #define KERNEL_HEAP_ALIGNMENT       8u
 #define KERNEL_HEAP_BLOCK_FLAG_FREE 0x01u
 #define KERNEL_HEAP_BLOCK_FLAG_BIG  0x02u
-#define KERNEL_HEAP_BLOCK_FLAG_SC   0x04u  /* server size-class bucket block */
+#define KERNEL_HEAP_BLOCK_FLAG_SC   0x04u /* server size-class bucket block */
 #define KERNEL_HEAP_BLOCK_FLAG_VMM  0x08u
 #define KERNEL_HEAP_BLOCK_FLAG_SENS 0x10u
 #define KERNEL_HEAP_BLOCK_FLAG_SLAB 0x20u
@@ -74,10 +74,7 @@ static const char kernel_heap_strategy_name[] = "slab+tlsf-client";
 static const char kernel_heap_strategy_name[] = "sizeclass+first-fit-server";
 #endif
 
-static uint32_t kernel_heap_align_up(uint32_t value, uint32_t align)
-{
-    return (value + (align - 1u)) & ~(align - 1u);
-}
+static uint32_t kernel_heap_align_up(uint32_t value, uint32_t align) { return (value + (align - 1u)) & ~(align - 1u); }
 
 static uint32_t kernel_heap_virt_to_phys(const void *virt_ptr)
 {
@@ -109,8 +106,8 @@ static uint32_t kernel_heap_server_get_local_domain_index(void)
 }
 
 static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t local_domain_index,
-                                                                    uint32_t size_class_index,
-                                                                    uint32_t *owner_domain_index)
+                                                                   uint32_t size_class_index,
+                                                                   uint32_t *owner_domain_index)
 {
     if (!owner_domain_index || size_class_index >= KERNEL_HEAP_SIZE_CLASSES)
         return NULL;
@@ -332,10 +329,7 @@ void kernel_heap_initialize_ap_domain(uint32_t logical_slot)
     }
 }
 #else
-void kernel_heap_initialize_ap_domain(uint32_t logical_slot)
-{
-    (void) logical_slot;
-}
+void kernel_heap_initialize_ap_domain(uint32_t logical_slot) { (void) logical_slot; }
 #endif
 
 void kernel_heap_initialize(void)
@@ -447,7 +441,7 @@ void *kmalloc(size_t size)
             uint32_t owner_domain_index = local_domain_index;
 
             uint32_t eflags;
-            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
 
             if (local_domain && local_domain->size_class_lists[sc])
             {
@@ -456,14 +450,14 @@ void *kmalloc(size_t size)
                 --local_domain->size_class_free_counts[sc];
             }
 
-            __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+            __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
 
             if (!block && local_domain)
             {
                 ++local_domain->remote_probe_count;
-                __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+                __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
                 block = kernel_heap_server_try_pop_remote_bucket(local_domain_index, sc, &owner_domain_index);
-                __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+                __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
                 if (block)
                     ++local_domain->remote_hit_count;
             }
@@ -550,15 +544,16 @@ void *kmalloc(size_t size)
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     if (matched_sc != 0xFFFFFFFFu && batch_count > 1u)
     {
-         uint32_t sc_full_size = kernel_heap_align_up(kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+        uint32_t sc_full_size = kernel_heap_align_up(
+            kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
 
-         uint32_t eflags;
-         __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+        uint32_t eflags;
+        __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
 
-         for (uint32_t i = 1u; i < batch_count; ++i)
-         {
-             if (current->size < sc_full_size * (i + 1u))
-                 break;
+        for (uint32_t i = 1u; i < batch_count; ++i)
+        {
+            if (current->size < sc_full_size * (i + 1u))
+                break;
 
              KernelHeapBlock_t *piece = (KernelHeapBlock_t *) ((uint8_t *) current + (i * sc_full_size));
              piece->size = sc_full_size;
@@ -716,14 +711,14 @@ void kfree(void *ptr)
             KernelHeapServerDomain_t *domain = &kernel_heap_server_domains[owner_domain];
 
             uint32_t eflags;
-            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags) :: "memory");
+            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
 
             header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
             header->next = domain->size_class_lists[sc];
             domain->size_class_lists[sc] = header;
             ++domain->size_class_free_counts[sc];
 
-            __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+            __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
             return;
         }
     }
@@ -881,7 +876,6 @@ uint32_t kernel_heap_get_server_per_cpu_hit_count(uint32_t slot)
     return 0u;
 #endif
 }
-
 
 void kernel_heap_hot_loop_enter(void)
 {

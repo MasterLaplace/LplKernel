@@ -68,10 +68,7 @@ void *kernel_stack_alloc_push(uint32_t size, uint32_t align)
     return result;
 }
 
-uint32_t kernel_stack_alloc_get_marker(void)
-{
-    return kernel_stack_allocator_offset;
-}
+uint32_t kernel_stack_alloc_get_marker(void) { return kernel_stack_allocator_offset; }
 
 void kernel_stack_alloc_rollback(uint32_t marker)
 {

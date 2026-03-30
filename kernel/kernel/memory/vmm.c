@@ -13,27 +13,18 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define VMM_PAGE_COUNT (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
+#define VMM_PAGE_COUNT  (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
 #define VMM_BITMAP_SIZE (VMM_PAGE_COUNT / 8)
 
 static uint8_t vmm_bitmap[VMM_BITMAP_SIZE];
 static uint32_t vmm_last_search_index = 0u;
 static bool vmm_initialized = false;
 
-static void vmm_bitmap_set(uint32_t index)
-{
-    vmm_bitmap[index / 8] |= (1 << (index % 8));
-}
+static void vmm_bitmap_set(uint32_t index) { vmm_bitmap[index / 8] |= (1 << (index % 8)); }
 
-static void vmm_bitmap_clear(uint32_t index)
-{
-    vmm_bitmap[index / 8] &= ~(1 << (index % 8));
-}
+static void vmm_bitmap_clear(uint32_t index) { vmm_bitmap[index / 8] &= ~(1 << (index % 8)); }
 
-static bool vmm_bitmap_test(uint32_t index)
-{
-    return (vmm_bitmap[index / 8] & (1 << (index % 8))) != 0;
-}
+static bool vmm_bitmap_test(uint32_t index) { return (vmm_bitmap[index / 8] & (1 << (index % 8))) != 0; }
 
 bool kernel_vmm_initialize(void)
 {
