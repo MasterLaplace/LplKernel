@@ -5,8 +5,11 @@
 ** clock
 */
 
-#ifndef CLOCK_H_
-#define CLOCK_H_
+#ifndef KERNEL_CPU_CLOCK_H
+#define KERNEL_CPU_CLOCK_H
+
+#include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/irq.h>
 
 #include <kernel/drivers/rtc.h>
 
@@ -72,4 +75,4 @@ extern uint8_t clock_is_rtc_periodic_enabled(void);
  */
 extern void clock_read_walltime(RealtimeClockTime_t *time_snapshot);
 
-#endif /* !CLOCK_H_ */
+#endif /* KERNEL_CPU_CLOCK_H */

@@ -59,13 +59,38 @@ sudo apt install qemu-system-x86 qemu-utils
 cd LplKernel
 
 ./clean.sh
-./iso.sh
+./build.sh --client   # deterministic client profile
+./build.sh --server   # throughput server profile
 ```
+
+### Build ISO per profile
+
+```sh
+./iso.sh --client
+cp lpl.iso lpl-client.iso
+
+./iso.sh --server
+cp lpl.iso lpl-server.iso
+```
+
+### One-shot dual-profile pipeline
+
+```sh
+./pipeline_profiles.sh
+```
+
+Pipeline outputs:
+
+- `lpl-client.iso`
+- `lpl-server.iso`
+- `lpl-client.kernel`
+- `lpl-server.kernel`
 
 ## Run
 
 ```sh
-./qemu.sh --text --realtime 4 # 4 cores to build
+./qemu.sh --client  # graphics + deterministic policy
+./qemu.sh --server  # text + throughput policy
 ```
 
 ### Running using nix
@@ -91,9 +116,14 @@ Press **F5** in VSCode to:
 Use `Ctrl+Shift+P` → "Tasks: Run Task" to access:
 
 - **Build Kernel** - Compile the kernel (`./build.sh`)
+- **Build Kernel (Client)** - Compile deterministic client profile (`./build.sh --client`)
+- **Build Kernel (Server)** - Compile throughput server profile (`./build.sh --server`)
 - **Launch QEMU with GDB** - Start QEMU in debug mode (background task)
 - **Run QEMU (No Debug)** - Run kernel without debugging
 - **Build ISO** - Create bootable ISO image
+- **Build ISO (Client)** - Create client-profile ISO (`./iso.sh --client`)
+- **Build ISO (Server)** - Create server-profile ISO (`./iso.sh --server`)
+- **Validate Pipeline (Client+Server)** - Build both profiles and generate distinct artifacts
 - **Kill QEMU** - Stop running QEMU instances
 
 ### Custom GDB Commands

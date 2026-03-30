@@ -5,8 +5,8 @@
 ** rtc
 */
 
-#ifndef RTC_H_
-#define RTC_H_
+#ifndef KERNEL_DRIVERS_REALTIME_CLOCK_H
+#define KERNEL_DRIVERS_REALTIME_CLOCK_H
 
 #include <stdint.h>
 
@@ -44,4 +44,4 @@ extern uint32_t realtime_clock_get_periodic_interrupt_count(void);
  */
 extern void realtime_clock_read_time(RealtimeClockTime_t *time_snapshot);
 
-#endif /* !RTC_H_ */
+#endif /* KERNEL_DRIVERS_REALTIME_CLOCK_H */

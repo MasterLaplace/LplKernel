@@ -5,8 +5,10 @@
 ** Minimal CPU topology abstraction for allocator domain routing.
 */
 
-#ifndef CPU_TOPOLOGY_H_
-#define CPU_TOPOLOGY_H_
+#ifndef KERNEL_CPU_TOPOLOGY_H
+#define KERNEL_CPU_TOPOLOGY_H
+
+#include <kernel/lib/asmutils.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -114,6 +116,14 @@ extern uint32_t cpu_topology_get_slot_domain(uint32_t slot);
 extern uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot);
 
 /**
+ * @brief Get the logical CPU slot associated with a given APIC ID.
+ *
+ * @param apic_id APIC ID to query.
+ * @return Logical slot index, or 0xFFFFFFFFu if the APIC ID is unknown.
+ */
+extern uint32_t cpu_topology_get_slot_for_apic_id(uint32_t apic_id);
+
+/**
  * @brief Get the total number of CPUs discovered during topology initialization.
  *
  * @return Count of discovered CPUs (including offline).
@@ -155,4 +165,4 @@ extern void cpu_topology_debug_clear_forced_logical_slot(void);
  */
 extern uint8_t cpu_topology_is_forced(void);
 
-#endif /* !CPU_TOPOLOGY_H_ */
+#endif /* KERNEL_CPU_TOPOLOGY_H */

@@ -5,8 +5,8 @@
 ** keyboard
 */
 
-#ifndef KEYBOARD_H_
-#define KEYBOARD_H_
+#ifndef KERNEL_DRIVERS_KEYBOARD_H
+#define KERNEL_DRIVERS_KEYBOARD_H
 
 #include <stdint.h>
 
@@ -50,4 +50,4 @@ extern uint8_t keyboard_try_pop_char(char *out_char);
  */
 extern uint32_t keyboard_get_dropped_char_count(void);
 
-#endif /* !KEYBOARD_H_ */
+#endif /* KERNEL_DRIVERS_KEYBOARD_H */

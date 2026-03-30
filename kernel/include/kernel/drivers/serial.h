@@ -1,5 +1,5 @@
-#ifndef SERIAL_H_
-#define SERIAL_H_
+#ifndef KERNEL_DRIVERS_SERIAL_H
+#define KERNEL_DRIVERS_SERIAL_H
 
 #include <kernel/lib/asmutils.h>
 #include <stdint.h>
@@ -59,4 +59,4 @@ extern uint8_t serial_read_char(Serial_t *serial);
  */
 extern uint8_t serial_try_read_char(Serial_t *serial, uint8_t *out_char);
 
-#endif /* !SERIAL_H_ */
+#endif /* KERNEL_DRIVERS_SERIAL_H */

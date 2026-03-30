@@ -182,7 +182,7 @@
     #define KERNEL_SYSTEM_FREEBSD
     #define KERNEL_SYSTEM_STRING "FreeBSD"
 
-#elif defined(__LPL_KERNEL__)
+#elif defined(__LPL_KERNEL__) || defined(__is_kernel)
 
     #define KERNEL_SYSTEM_KERNEL
     #define KERNEL_SYSTEM_STRING "Laplace Kernel"
@@ -473,7 +473,7 @@
 #ifdef FLAG_VERSION_TWEAK
     #define KERNEL_VERSION_TWEAK FLAG_VERSION_TWEAK
 #else
-    #define KERNEL_VERSION_TWEAK 3
+    #define KERNEL_VERSION_TWEAK 4
 #endif
 
 ////////////////////////////////////////////////////////////

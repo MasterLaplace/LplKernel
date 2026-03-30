@@ -1,9 +1,5 @@
 #include <kernel/cpu/clock.h>
 
-#include <kernel/cpu/apic_timer.h>
-
-#include <kernel/cpu/irq.h>
-
 #define CLOCK_BACKEND_NAME_PIT "pit-irq0"
 
 #define CLOCK_CLIENT_TIMER_FREQUENCY_HZ 100u
@@ -32,11 +28,9 @@ void clock_initialize(void)
     target_frequency_hz = clock_select_profile_frequency_hz();
     interrupt_request_set_realtime_clock_periodic_enabled(0u);
 
-#if defined(LPL_KERNEL_APIC_TIMER_BACKEND)
     if (advanced_pic_timer_backend_initialize(target_frequency_hz))
         clock_backend_name = advanced_pic_timer_backend_name();
     else
-#endif
     {
         clock_backend_name = CLOCK_BACKEND_NAME_PIT;
         interrupt_request_set_timer_frequency_hz(target_frequency_hz);

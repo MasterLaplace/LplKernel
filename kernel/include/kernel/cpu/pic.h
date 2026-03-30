@@ -5,8 +5,10 @@
 ** pic
 */
 
-#ifndef PIC_H_
-#define PIC_H_
+#ifndef KERNEL_CPU_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
+#define KERNEL_CPU_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
+
+#include <kernel/lib/asmutils.h>
 
 #include <stdint.h>
 
@@ -40,4 +42,4 @@ extern void programmable_interrupt_controller_send_end_of_interrupt(uint8_t irq_
  */
 extern uint8_t programmable_interrupt_controller_is_in_service(uint8_t irq_line);
 
-#endif /* !PIC_H_ */
+#endif /* KERNEL_CPU_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

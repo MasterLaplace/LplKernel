@@ -5,35 +5,36 @@
 ** apic — Universal Local APIC Management (xAPIC & x2APIC)
 */
 
-#ifndef KERNEL_CPU_APIC_H_
-#define KERNEL_CPU_APIC_H_
+#ifndef KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
+#define KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
+
+#include <kernel/drivers/serial.h>
+#include <kernel/lib/asmutils.h>
 
 #include <stdbool.h>
 #include <stdint.h>
 
-/* LAPIC Register Offsets (for xAPIC MMIO) */
-#define LAPIC_REG_ID          0x0020u
-#define LAPIC_REG_VERSION     0x0030u
-#define LAPIC_REG_TPR         0x0080u
-#define LAPIC_REG_EOI         0x00B0u
-#define LAPIC_REG_LDR         0x00D0u
-#define LAPIC_REG_DFR         0x00E0u
-#define LAPIC_REG_SPURIOUS    0x00F0u
-#define LAPIC_REG_ESR         0x0280u
-#define LAPIC_REG_ICR_LOW     0x0300u
-#define LAPIC_REG_ICR_HIGH    0x0310u
-#define LAPIC_REG_LVT_TIMER   0x0320u
-#define LAPIC_REG_LVT_THERMAL 0x0330u
-#define LAPIC_REG_LVT_PERF    0x0340u
-#define LAPIC_REG_LVT_LINT0   0x0350u
-#define LAPIC_REG_LVT_LINT1   0x0360u
-#define LAPIC_REG_LVT_ERROR   0x0370u
-#define LAPIC_REG_TIMER_INIT  0x0380u
-#define LAPIC_REG_TIMER_CUR   0x0390u
-#define LAPIC_REG_TIMER_DIV   0x03E0u
+#define LAPIC_REG_ID               0x0020u
+#define LAPIC_REG_VERSION          0x0030u
+#define LAPIC_REG_TPR              0x0080u
+#define LAPIC_REG_EOI              0x00B0u
+#define LAPIC_REG_LDR              0x00D0u
+#define LAPIC_REG_DFR              0x00E0u
+#define LAPIC_REG_SPURIOUS         0x00F0u
+#define LAPIC_REG_ESR              0x0280u
+#define LAPIC_REG_ICR_LOW          0x0300u
+#define LAPIC_REG_ICR_HIGH         0x0310u
+#define LAPIC_REG_LVT_TIMER        0x0320u
+#define LAPIC_REG_LVT_THERMAL      0x0330u
+#define LAPIC_REG_LVT_PERF         0x0340u
+#define LAPIC_REG_LVT_LINT0        0x0350u
+#define LAPIC_REG_LVT_LINT1        0x0360u
+#define LAPIC_REG_LVT_ERROR        0x0370u
+#define LAPIC_REG_TIMER_INIT       0x0380u
+#define LAPIC_REG_TIMER_CUR        0x0390u
+#define LAPIC_REG_TIMER_DIV        0x03E0u
 
-/* x2APIC MSR Range: 0x800 to 0x8ff */
-#define X2APIC_MSR_BASE 0x800u
+#define X2APIC_MSR_BASE            0x800u
 
 /**
  * @brief Initialize the Local APIC on the current CPU.
@@ -86,4 +87,4 @@ void apic_send_eoi(void);
  */
 bool apic_is_x2apic_active(void);
 
-#endif /* !KERNEL_CPU_APIC_H_ */
+#endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

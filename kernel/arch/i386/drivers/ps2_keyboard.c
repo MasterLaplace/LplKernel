@@ -54,89 +54,75 @@ static uint8_t ps2_escape_sequence = 0u; /* expect 0xE0 prefix */
 
 char ps2_keyboard_decode_scancode(uint8_t scancode)
 {
-    /* 0xE0 prefix for extended keys (right-side modifiers, etc) */
     if (scancode == 0xE0)
     {
         ps2_escape_sequence = 1u;
-        return 0x00; /* No character yet */
-    }
-
-    /* 0xF0 = key release marker */
-    if (scancode == 0xF0)
-    {
-        /* Next byte will be the release code; for now, just mark it */
         return 0x00;
     }
 
-    /* Handle key release codes (following 0xF0) */
+    if (scancode == 0xF0)
+        return 0x00;
+
     if (ps2_escape_sequence && (scancode & 0x80))
     {
-        /* Extended key release */
         ps2_escape_sequence = 0u;
         uint8_t code = scancode & 0x7F;
 
-        /* Right-side modifiers */
-        if (code == 0x14) /* Right Ctrl */
+        if (code == 0x14)
             ps2_ctrl_state = 0u;
-        else if (code == 0x11) /* Right Alt */
+        else if (code == 0x11)
             ps2_alt_state = 0u;
 
         return 0x00;
     }
 
-    /* Standard key release (without 0xE0 prefix) */
     if (scancode == 0x80)
-    {
-        /* This  is incomplete in set 1; actual release codes are scancode | 0x80 */
         return 0x00;
-    }
 
-    /* Track modifier state changes (key press) */
-    if (scancode == 0x2A) /* Left Shift press */
+    if (scancode == 0x2A)
     {
         ps2_shift_state = 1u;
         return 0x00;
     }
-    if (scancode == 0x36) /* Right Shift press */
+    if (scancode == 0x36)
     {
         ps2_shift_state = 1u;
         return 0x00;
     }
-    if (scancode == 0x1D) /* Left Ctrl press */
+    if (scancode == 0x1D)
     {
         if (ps2_escape_sequence)
-            ps2_escape_sequence = 0u; /* Was right ctrl, already handled */
+            ps2_escape_sequence = 0u;
         else
             ps2_ctrl_state = 1u;
         return 0x00;
     }
-    if (scancode == 0x38) /* Left Alt press */
+    if (scancode == 0x38)
     {
         if (ps2_escape_sequence)
         {
             ps2_escape_sequence = 0u;
-            ps2_alt_state = 1u; /* Right Alt */
+            ps2_alt_state = 1u;
         }
         return 0x00;
     }
-    if (scancode == 0x3A) /* Caps Lock press (0x3A, no release code in set 1) */
+    if (scancode == 0x3A)
     {
-        ps2_caps_lock_state ^= 1u; /* Toggle */
+        ps2_caps_lock_state ^= 1u;
         return 0x00;
     }
 
-    /* Handle normal printable keys */
     if (scancode < 128u && ps2_scancode_table[scancode] != 0x00)
     {
         ps2_escape_sequence = 0u;
 
-        /* Choose shift table or normal table */
-        const char *table = (ps2_shift_state || ps2_caps_lock_state) ? ps2_scancode_table_shift : ps2_scancode_table;
+        const char *table = (ps2_shift_state || ps2_caps_lock_state) ?
+                            ps2_scancode_table_shift : ps2_scancode_table;
         return table[scancode];
     }
 
     ps2_escape_sequence = 0u;
-    return 0x00; /* Unknown or control key */
+    return 0x00;
 }
 
 uint8_t ps2_keyboard_get_shift_state(void) { return ps2_shift_state; }

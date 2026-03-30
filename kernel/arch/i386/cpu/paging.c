@@ -10,9 +10,6 @@
 
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/paging.h>
-#include <kernel/cpu/pmm.h>
-#include <stddef.h>
-#include <string.h>
 
 ////////////////////////////////////////////////////////////
 // Private State
@@ -298,8 +295,6 @@ bool paging_unmap_page(uint32_t virt_addr)
         physical_memory_manager_page_frame_free(page_table_phys);
     }
 
-    /* On SMP systems, broadcast TLB shootdown to other cores.
-       Falls back to local invlpg on single-core. */
     advanced_pic_ipi_broadcast_tlb_shootdown(virt_addr);
     return true;
 }

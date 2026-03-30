@@ -1,10 +1,8 @@
 #include <kernel/cpu/cpu_topology.h>
 
-#include <kernel/lib/asmutils.h>
-
 #define CPU_TOPOLOGY_CPUID_LEAF_FEATURES 0x00000001u
 #define CPU_TOPOLOGY_CPUID_EDX_APIC_BIT  (1u << 9u)
-#define CPU_TOPOLOGY_MAX_LOGICAL_CPUS    32u
+#define CPU_TOPOLOGY_MAX_LOGICAL_CPUS    CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC
 #define CPU_TOPOLOGY_INVALID_APIC_ID     0xFFFFFFFFu
 
 static uint8_t cpu_topology_initialized = 0u;
@@ -58,7 +56,7 @@ static void cpu_topology_detect_from_cpuid(void)
     uint32_t ecx = 0u;
     uint32_t edx = 0u;
 
-    cpu_cpuid(CPU_TOPOLOGY_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
+    asmutils_cpuid(CPU_TOPOLOGY_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
 
     if ((edx & CPU_TOPOLOGY_CPUID_EDX_APIC_BIT) == 0u)
     {
@@ -166,7 +164,7 @@ uint32_t cpu_topology_get_slot_domain(uint32_t slot)
 uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot)
 {
     if (slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS)
-        return 0xFFu; /* Invalid APIC ID */
+        return 0xFFu;
 
     uint32_t apic_id = cpu_topology_apic_id_to_slot[slot];
     if (apic_id == CPU_TOPOLOGY_INVALID_APIC_ID)
@@ -175,7 +173,20 @@ uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot)
     return apic_id & 0xFFu;
 }
 
-uint32_t cpu_topology_get_discovered_cpu_count(void) { return cpu_topology_discovered_cpu_count; }
+uint32_t cpu_topology_get_slot_for_apic_id(uint32_t apic_id)
+{
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS; ++slot)
+    {
+        if (cpu_topology_apic_id_to_slot[slot] == apic_id)
+            return slot;
+    }
+    return CPU_TOPOLOGY_INVALID_APIC_ID;
+}
+
+uint32_t cpu_topology_get_discovered_cpu_count(void)
+{
+    return cpu_topology_discovered_cpu_count;
+}
 
 const char *cpu_topology_get_source_name(void) { return cpu_topology_source_name; }
 

@@ -2,14 +2,26 @@
 ** EPITECH PROJECT, 2026
 ** LplKernel
 ** File description:
-** AP startup initialization header
+** AP (Application Processor) startup entry point and CPU initialization
 */
 
-#ifndef KERNEL_CPU_AP_STARTUP_H_
-#define KERNEL_CPU_AP_STARTUP_H_
+#ifndef KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H
+#define KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H
 
 #include <kernel/drivers/serial.h>
+#include <kernel/cpu/ap_bootstrap.h>
+#include <kernel/cpu/apic.h>
+#include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/gdt.h>
+#include <kernel/cpu/idt.h>
+#include <kernel/cpu/paging.h>
+#include <kernel/memory/heap.h>
+#include <stddef.h>
 #include <stdint.h>
+
+extern void *boot_page_directory;
+extern void *boot_page_tables;
+extern InterruptDescriptorTable_t interrupt_descriptor_table;
 
 /**
  * @brief Local CPU context for an Application Processor (AP) during startup.
@@ -111,4 +123,4 @@ extern uint8_t application_processor_startup_is_initialized(void);
  */
 extern void application_processor_startup_main_loop(void);
 
-#endif /* !KERNEL_CPU_AP_STARTUP_H_ */
+#endif /* KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H */

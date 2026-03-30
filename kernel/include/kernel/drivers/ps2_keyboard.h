@@ -5,8 +5,8 @@
 ** PS/2 keyboard scan code decoder header
 */
 
-#ifndef KERNEL_DRIVERS_PS2_KEYBOARD_H_
-#define KERNEL_DRIVERS_PS2_KEYBOARD_H_
+#ifndef KERNEL_DRIVERS_PS2_KEYBOARD_H
+#define KERNEL_DRIVERS_PS2_KEYBOARD_H
 
 #include <stdint.h>
 
@@ -56,4 +56,4 @@ extern uint8_t ps2_keyboard_get_caps_lock_state(void);
  */
 extern void ps2_keyboard_reset_modifiers(void);
 
-#endif /* !KERNEL_DRIVERS_PS2_KEYBOARD_H_ */
+#endif /* KERNEL_DRIVERS_PS2_KEYBOARD_H */

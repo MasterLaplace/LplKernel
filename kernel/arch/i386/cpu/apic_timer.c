@@ -1,12 +1,5 @@
 #include <kernel/cpu/apic_timer.h>
 
-#include <kernel/cpu/irq.h>
-#include <kernel/cpu/pic.h>
-
-#include <kernel/cpu/paging.h>
-
-#include <kernel/lib/asmutils.h>
-
 #define APIC_CPUID_LEAF_FEATURES 0x00000001u
 #define APIC_CPUID_EDX_BIT_APIC  (1u << 9u)
 
@@ -15,8 +8,6 @@
 #define IA32_APIC_BASE_X2APIC_MODE_BIT    (1ull << 10u)
 #define IA32_APIC_BASE_ENABLE_BIT         (1ull << 11u)
 #define IA32_APIC_BASE_PHYSICAL_BASE_MASK 0xFFFFF000ull
-
-#include <kernel/cpu/apic.h>
 
 #define APIC_TIMER_MMIO_VIRTUAL_BASE 0xFFB00000u
 
@@ -80,14 +71,14 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
     advanced_pic_timer_local_apic_calibrated_frequency_hz = 0u;
     advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
 
-    cpu_cpuid(APIC_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
+    asmutils_cpuid(APIC_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
     if ((edx & APIC_CPUID_EDX_BIT_APIC) == 0u)
     {
         advanced_pic_timer_backend_state_name = "apic-probe-no-local-apic";
         return 0u;
     }
 
-    apic_base_msr = cpu_read_msr(IA32_APIC_BASE_MSR);
+    apic_base_msr = asmutils_read_model_specific_register(IA32_APIC_BASE_MSR);
     if ((apic_base_msr & IA32_APIC_BASE_ENABLE_BIT) == 0u)
     {
         advanced_pic_timer_backend_state_name = "apic-probe-local-apic-disabled";
@@ -113,18 +104,12 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
 
     advanced_pic_timer_backend_state_name = "apic-probe-xapic-mmio-ready";
 
-    /*
-     * @todo:
-     * APIC MMIO timer programming and IRQ vector routing are not wired yet.
-     * Keep runtime ownership on PIT until full local APIC timer bring-up lands.
-     */
+    /* TODO: APIC MMIO timer programming and IRQ vector routing are not wired yet. */
     return 0u;
 }
 
 uint8_t advanced_pic_timer_backend_late_initialize(void)
 {
-    uint32_t spurious_register_value;
-
     if (advanced_pic_timer_local_apic_physical_base == 0u)
         return 0u;
 
@@ -134,7 +119,6 @@ uint8_t advanced_pic_timer_backend_late_initialize(void)
         return 0u;
     }
 
-    /* Initialize Local APIC on this CPU (handles x2APIC transition if supported) */
     if (!apic_initialize_on_cpu(APIC_TIMER_MMIO_VIRTUAL_BASE))
     {
         advanced_pic_timer_backend_state_name = "apic-initialize-failed";
@@ -142,8 +126,6 @@ uint8_t advanced_pic_timer_backend_late_initialize(void)
     }
 
     advanced_pic_timer_local_apic_version_register = apic_read(LAPIC_REG_VERSION);
-
-    /* APIC already enabled by apic_initialize_on_cpu (SVR bit 8) */
 
     apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
 
@@ -173,17 +155,17 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
 
     start_tick = interrupt_request_get_tick_count();
     while (interrupt_request_get_tick_count() == start_tick)
-        cpu_no_operation();
+        asmutils_no_operation();
 
     start_tick = interrupt_request_get_tick_count();
 
-    apic_write(LAPIC_REG_TIMER_DIV, 0x3u);                /* Divide by 16 */
-    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu); /* One-shot mode, masked */
+    apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
+    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
     apic_write(LAPIC_REG_TIMER_INIT, 0xFFFFFFFFu);
 
     end_tick = start_tick + 8u;
     while (interrupt_request_get_tick_count() < end_tick)
-        cpu_no_operation();
+        asmutils_no_operation();
 
     local_apic_current_count = apic_read(LAPIC_REG_TIMER_CUR);
     local_apic_elapsed_counts = 0xFFFFFFFFu - local_apic_current_count;
@@ -238,7 +220,7 @@ uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequenc
         timer_initial_count = 1u;
 
     apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
-    apic_write(LAPIC_REG_LVT_TIMER, (1u << 17u) | (32u + 0u)); /* Periodic mode + Vector 32 */
+    apic_write(LAPIC_REG_LVT_TIMER, (1u << 17u) | (32u + 0u));
     apic_write(LAPIC_REG_TIMER_INIT, timer_initial_count);
 
     programmable_interrupt_controller_set_mask(0u);

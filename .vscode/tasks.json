@@ -23,6 +23,40 @@
             "problemMatcher": []
         },
         {
+            "label": "Build Kernel (Client)",
+            "type": "shell",
+            "command": "./build.sh --client",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Kernel (Server)",
+            "type": "shell",
+            "command": "./build.sh --server",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Clean Kernel",
             "type": "shell",
             "command": "./clean.sh",
@@ -116,6 +150,57 @@
                 "reveal": "always",
                 "focus": false,
                 "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build ISO (Client)",
+            "type": "shell",
+            "command": "./iso.sh --client",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build ISO (Server)",
+            "type": "shell",
+            "command": "./iso.sh --server",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Validate Pipeline (Client+Server)",
+            "type": "shell",
+            "command": "./pipeline_profiles.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
                 "showReuseMessage": false,
                 "clear": true
             },

@@ -1,14 +1,5 @@
 #include <kernel/cpu/irq.h>
 
-#include <kernel/cpu/apic_timer.h>
-#include <kernel/cpu/exception.h>
-#include <kernel/cpu/isr.h>
-#include <kernel/cpu/pic.h>
-#include <kernel/cpu/pit.h>
-#include <kernel/drivers/keyboard.h>
-#include <kernel/drivers/rtc.h>
-#include <kernel/lib/asmutils.h>
-
 #define IRQ_LINE_COUNT        16u
 #define IRQ_CASCADE_LINE      2u
 #define IRQ_TIMER_LINE        0u
@@ -97,7 +88,7 @@ void interrupt_request_initialize(void)
 
     programmable_interrupt_controller_clear_mask(IRQ_TIMER_LINE);
     programmable_interrupt_controller_clear_mask(IRQ_KEYBOARD_LINE);
-    cpu_enable_interrupts();
+    asmutils_enable_interrupts();
 }
 
 void interrupt_request_set_timer_frequency_hz(uint32_t frequency_hz)

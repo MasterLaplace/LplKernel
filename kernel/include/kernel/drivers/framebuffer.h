@@ -6,8 +6,8 @@
  * linear framebuffer provided by the Multiboot bootloader.
  */
 
-#ifndef _KERNEL_FRAMEBUFFER_H
-#define _KERNEL_FRAMEBUFFER_H
+#ifndef KERNEL_DRIVERS_FRAMEBUFFER_H
+#define KERNEL_DRIVERS_FRAMEBUFFER_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -166,4 +166,4 @@ uint32_t framebuffer_color_to_pixel(color_t color);
  */
 static inline color_t framebuffer_rgb(uint8_t r, uint8_t g, uint8_t b) { return (color_t){r, g, b, 255}; }
 
-#endif /* _KERNEL_FRAMEBUFFER_H */
+#endif /* KERNEL_DRIVERS_FRAMEBUFFER_H */

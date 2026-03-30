@@ -7,8 +7,8 @@
 ** KERNEL_TTY
 */
 
-#ifndef KERNEL_TTY_H_
-#define KERNEL_TTY_H_
+#ifndef KERNEL_DRIVERS_TTY_H
+#define KERNEL_DRIVERS_TTY_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -37,4 +37,4 @@ extern void terminal_write_number(long num, uint8_t base);
 
 extern void terminal_write_string(const char *data);
 
-#endif /* !KERNEL_TTY_H_ */
+#endif /* KERNEL_DRIVERS_TTY_H */

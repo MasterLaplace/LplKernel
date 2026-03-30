@@ -30,14 +30,14 @@ static uint8_t realtime_clock_periodic_interrupt_enabled = 0u;
 
 static uint8_t realtime_clock_read_register(uint8_t reg)
 {
-    outb((short) CMOS_INDEX_PORT, (unsigned char) reg);
-    return (uint8_t) inb((short) CMOS_DATA_PORT);
+    asmutils_output_byte(CMOS_INDEX_PORT, reg);
+    return asmutils_input_byte(CMOS_DATA_PORT);
 }
 
 static void realtime_clock_write_register(uint8_t reg, uint8_t value)
 {
-    outb((short) CMOS_INDEX_PORT, (unsigned char) reg);
-    outb((short) CMOS_DATA_PORT, (unsigned char) value);
+    asmutils_output_byte(CMOS_INDEX_PORT, reg);
+    asmutils_output_byte(CMOS_DATA_PORT, value);
 }
 
 static uint8_t realtime_clock_bcd_to_binary(uint8_t value)
@@ -132,14 +132,10 @@ void realtime_clock_read_time(RealtimeClockTime_t *time_snapshot)
 
     do
     {
-        while (realtime_clock_is_update_in_progress())
-        {
-        }
+        while (realtime_clock_is_update_in_progress());
         realtime_clock_read_raw(&second_1, &minute_1, &hour_1, &day_1, &month_1, &year_1, &register_b_1);
 
-        while (realtime_clock_is_update_in_progress())
-        {
-        }
+        while (realtime_clock_is_update_in_progress());
         realtime_clock_read_raw(&second_2, &minute_2, &hour_2, &day_2, &month_2, &year_2, &register_b_2);
     } while (second_1 != second_2 || minute_1 != minute_2 || hour_1 != hour_2 || day_1 != day_2 || month_1 != month_2 ||
              year_1 != year_2);

@@ -1,6 +1,4 @@
 #include <kernel/cpu/gdt.h>
-#include <stddef.h>
-#include <string.h>
 
 ////////////////////////////////////////////////////////////
 // External assembly functions (gdt_load.s)
@@ -59,20 +57,6 @@ static inline void global_descriptor_table_encode_entry(GlobalDescriptorTableEnt
 // Public API functions of the GDT module
 ////////////////////////////////////////////////////////////
 
-/**
- * @brief Initialize a flat 32-bit GDT with kernel/user segments and TSS.
- *
- * @details Creates six entries at fixed selectors:
- *          - 0x00: Null descriptor (required by CPU)
- *          - 0x08: Kernel code (DPL=0, base=0, limit=4 GB, access=0x9A)
- *          - 0x10: Kernel data (DPL=0, base=0, limit=4 GB, access=0x92)
- *          - 0x18: User code   (DPL=3, base=0, limit=4 GB, access=0xFA)
- *          - 0x20: User data   (DPL=3, base=0, limit=4 GB, access=0xF2)
- *          - 0x28: TSS         (system descriptor, byte granularity)
- *
- * @param gdt Pointer to the GDT structure to populate.
- * @param tss Pointer to the TSS used for the TSS descriptor.
- */
 void global_descriptor_table_initialize(GlobalDescriptorTable_t *gdt, TaskStateSegment_t *tss)
 {
     if (!gdt || !tss)
@@ -89,14 +73,6 @@ void global_descriptor_table_initialize(GlobalDescriptorTable_t *gdt, TaskStateS
     task_state_segment_initialize(tss, (uint16_t) offsetof(GlobalDescriptorTable_t, kernel_mode_data_segment));
 }
 
-/**
- * @brief Load and activate a GDT.
- *
- * @details Constructs the GDTR, loads the GDT via LGDT, reloads all
- *          segment registers, and loads the TSS via LTR.
- *
- * @param gdt Pointer to the initialized GDT structure.
- */
 void global_descriptor_table_load(GlobalDescriptorTable_t *gdt)
 {
     if (!gdt)

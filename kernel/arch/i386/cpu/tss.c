@@ -1,12 +1,11 @@
 #include <kernel/cpu/tss.h>
-#include <kernel/lib/asmutils.h>
 
 ////////////////////////////////////////////////////////////
 // Private functions of the TSS module
 ////////////////////////////////////////////////////////////
 
 // Helper to read current ESP in a single place (used for TSS initialization)
-static inline uint32_t get_current_esp(void) { return cpu_get_current_stack_pointer(); }
+static inline uint32_t get_current_esp(void) { return asmutils_get_current_stack_pointer(); }
 
 ////////////////////////////////////////////////////////////
 // Public API functions of the TSS module

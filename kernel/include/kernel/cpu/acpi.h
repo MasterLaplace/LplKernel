@@ -5,9 +5,12 @@
 ** acpi
 */
 
-#ifndef ACPI_H_
-#define ACPI_H_
+#ifndef KERNEL_CPU_ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_H
+#define KERNEL_CPU_ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_H
 
+#include <kernel/cpu/paging.h>
+
+#include <stddef.h>
 #include <stdint.h>
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT     8u
@@ -97,9 +100,54 @@ typedef struct {
 typedef struct {
     uint8_t bus;
     uint8_t source_irq;
-    uint32_t gsi;
+    uint32_t global_system_interrupt;
     uint16_t flags;
 } AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t;
+
+typedef struct __attribute__((packed)) {
+    AdvancedConfigurationAndPowerInterfaceSdtHeader_t header;
+    uint32_t reserved1;
+    uint64_t reserved2;
+} AdvancedConfigurationAndPowerInterfaceSrat_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+} AdvancedConfigurationAndPowerInterfaceSratEntryHeader_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+    uint8_t proximity_domain_low;
+    uint8_t apic_id;
+    uint32_t flags;
+    uint8_t local_sapic_eid;
+    uint8_t proximity_domain_high[3];
+    uint32_t clock_domain;
+} AdvancedConfigurationAndPowerInterfaceSratLocalApicEntry_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+    uint32_t proximity_domain;
+    uint16_t reserved1;
+    uint64_t base_address;
+    uint64_t region_length;
+    uint32_t reserved2;
+    uint32_t flags;
+    uint64_t reserved3;
+} AdvancedConfigurationAndPowerInterfaceSratMemoryEntry_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+    uint16_t reserved1;
+    uint32_t proximity_domain;
+    uint32_t x2apic_id;
+    uint32_t flags;
+    uint32_t clock_domain;
+    uint32_t reserved2;
+} AdvancedConfigurationAndPowerInterfaceSratX2ApicEntry_t;
 
 /**
  * @brief Parse ACPI RSDP/RSDT and discover MADT topology metadata.
@@ -107,6 +155,14 @@ typedef struct {
  * Current scope is discovery-only (no IOAPIC programming yet).
  */
 extern void advanced_configuration_and_power_interface_madt_initialize(void);
+
+/**
+ * @brief Find an ACPI table by its signature.
+ *
+ * @param signature 4-character signature of the table (e.g. "SRAT").
+ * @return Pointer to the mapped ACPI table header, or NULL if not found.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_and_power_interface_find_table(const char *signature);
 
 /**
  * @brief Return current ACPI/MADT discovery state name.
@@ -196,7 +252,7 @@ extern uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_so
  *
  * @return non-zero when MADT topology is available; zero otherwise.
  */
-extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq, uint32_t *gsi,
+extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq, uint32_t *global_system_interrupt,
                                                                                uint16_t *flags);
 
 /**
@@ -207,7 +263,7 @@ extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(u
  *
  * @return non-zero when a candidate IOAPIC was found; zero otherwise.
  */
-extern uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t gsi,
+extern uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t global_system_interrupt,
                                                                                     uint8_t *io_apic_index);
 
-#endif /* !ACPI_H_ */
+#endif /* KERNEL_CPU_ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_H */

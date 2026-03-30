@@ -5,8 +5,12 @@
 ** ioapic
 */
 
-#ifndef IOAPIC_H_
-#define IOAPIC_H_
+#ifndef KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
+#define KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
+
+#include <kernel/cpu/acpi.h>
+#include <kernel/cpu/paging.h>
+#include <kernel/cpu/pic.h>
 
 #include <stdint.h>
 
@@ -24,7 +28,7 @@ typedef struct {
 
 typedef struct {
     uint8_t isa_irq;
-    uint32_t gsi;
+    uint32_t global_system_interrupt;
     uint8_t vector;
     uint8_t io_apic_index;
     uint8_t io_apic_id;
@@ -104,4 +108,4 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso
  */
 extern uint8_t input_output_advanced_programmable_interrupt_controller_enable_isa_route(uint8_t isa_irq);
 
-#endif /* !IOAPIC_H_ */
+#endif /* KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

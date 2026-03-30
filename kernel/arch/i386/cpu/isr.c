@@ -6,9 +6,6 @@
 */
 
 #include <kernel/cpu/isr.h>
-#include <kernel/lib/asmutils.h>
-#include <stddef.h>
-#include <stdint.h>
 
 ////////////////////////////////////////////////////////////
 // Private helpers for panic serial output
@@ -19,10 +16,10 @@
 
 static void isr_write_char(char c)
 {
-    while (!(inb((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
+    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
     {
     }
-    outb((short) COM1_PORT, (unsigned char) c);
+    asmutils_output_byte((short) COM1_PORT, (unsigned char) c);
 }
 
 static void isr_write_string(const char *s)
@@ -38,10 +35,6 @@ static void isr_write_hex32(uint32_t value)
     for (int i = 28; i >= 0; i -= 4)
         isr_write_char(hex[(value >> i) & 0xF]);
 }
-
-////////////////////////////////////////////////////////////
-// CPU exception names (vectors 0-31)
-////////////////////////////////////////////////////////////
 
 static const char *const ISR_EXCEPTION_NAMES[32] = {
     "#DE Divide Error Fault",
@@ -78,20 +71,12 @@ static const char *const ISR_EXCEPTION_NAMES[32] = {
     "Reserved (31)",
 };
 
-////////////////////////////////////////////////////////////
-// Dispatch table
-////////////////////////////////////////////////////////////
-
 static isr_handler_t g_isr_table[256] = {NULL};
 
 void interrupt_service_routine_register_handler(uint8_t interrupt_vector, isr_handler_t handler)
 {
     g_isr_table[interrupt_vector] = handler;
 }
-
-////////////////////////////////////////////////////////////
-// Default (panic) handler
-////////////////////////////////////////////////////////////
 
 static void isr_default_handler(const InterruptFrame_t *frame)
 {
@@ -144,14 +129,10 @@ static void isr_default_handler(const InterruptFrame_t *frame)
     isr_write_string("\r\n");
     isr_write_string("--- HALTED ---\r\n");
 
-    cpu_disable_interrupts();
+    asmutils_disable_interrupts();
     for (;;)
-        cpu_halt();
+        asmutils_halt();
 }
-
-////////////////////////////////////////////////////////////
-// Dispatcher — called from isr_common_stub (isr.s)
-////////////////////////////////////////////////////////////
 
 void interrupt_service_routine_dispatch(InterruptFrame_t *frame)
 {

@@ -5,9 +5,12 @@
 ** isr — Interrupt Service Routines
 */
 
-#ifndef ISR_H_
-#define ISR_H_
+#ifndef KERNEL_CPU_INTERRUPT_SERVICE_ROUTINE_H
+#define KERNEL_CPU_INTERRUPT_SERVICE_ROUTINE_H
 
+#include <kernel/lib/asmutils.h>
+
+#include <stddef.h>
 #include <stdint.h>
 
 /**
@@ -46,12 +49,7 @@ typedef struct __attribute__((packed)) {
     uint32_t eflags;
 } InterruptFrame_t;
 
-/// Type for an ISR handler registered via interrupt_service_routine_register_handler().
 typedef void (*isr_handler_t)(const InterruptFrame_t *frame);
-
-////////////////////////////////////////////////////////////
-// Assembly stubs — isr0..isr47 (isr_stubs.s)
-////////////////////////////////////////////////////////////
 
 extern void isr0(void);
 extern void isr1(void);
@@ -102,6 +100,7 @@ extern void isr45(void);
 extern void isr46(void);
 extern void isr47(void);
 extern void isr64(void);
+extern void isr128(void);
 
 ////////////////////////////////////////////////////////////
 // Public API functions of the ISR module
@@ -128,4 +127,4 @@ extern void interrupt_service_routine_register_handler(uint8_t interrupt_vector,
  */
 extern void interrupt_service_routine_dispatch(InterruptFrame_t *frame);
 
-#endif /* !ISR_H_ */
+#endif /* KERNEL_CPU_INTERRUPT_SERVICE_ROUTINE_H */
