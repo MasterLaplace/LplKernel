@@ -372,6 +372,7 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
     write_ioapic_scaffold_info(&com1);
+    input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(1u, 0u);
 
     write_ioapic_routes_info(&com1);
 

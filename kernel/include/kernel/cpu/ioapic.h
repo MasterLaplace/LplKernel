@@ -34,6 +34,7 @@ typedef struct {
     uint8_t io_apic_id;
     uint8_t masked;
     uint16_t iso_flags;
+    uint8_t destination_apic_id;
 } InputOutputApicRouteInfo_t;
 
 /**
@@ -107,5 +108,20 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso
  * @return non-zero when route is active (unmasked), zero on failure.
  */
 extern uint8_t input_output_advanced_programmable_interrupt_controller_enable_isa_route(uint8_t isa_irq);
+
+/**
+ * @brief Return programmed destination APIC ID for route index.
+ */
+extern uint8_t
+input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(uint8_t route_index);
+
+/**
+ * @brief Set the destination APIC ID for a previously programmed ISA route.
+ *
+ * @param isa_irq The ISA IRQ number.
+ * @param apic_id The target CPU's local APIC ID.
+ * @return non-zero on success, zero on failure.
+ */
+extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq, uint8_t apic_id);
 
 #endif /* KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

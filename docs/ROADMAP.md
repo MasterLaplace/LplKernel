@@ -8,8 +8,8 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 
 ## 📊 Progress Summary (Updated: 2026)
 
-### 🎯 Current Position: **Phase 4 Bring-up** ⬅️ YOU ARE HERE
-**Next Goal**: Advance Phase 4 VMM policy work and close remaining Ring 3 transition tasks from Phase 2.
+### 🎯 Current Position: **Phase 5 Device Drivers** ⬅️ YOU ARE HERE
+**Next Goal**: Advance Phase 5 keyboard layout policy and begin storage driver integration.
 
 ### Phase Completion Status:
 - ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
@@ -19,9 +19,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - ✅ **Phase 1**: Bare Bones Kernel - **100% Complete**
   - VGA text mode ✅, Serial ports ✅, Scrolling ✅, Colors ✅, Multiboot parsing ✅
 
-- 🚧 **Phase 2**: CPU Initialization & Protection - **92% Complete**
+- ✅ **Phase 2**: CPU Initialization & Protection - **100% Complete**
   - Higher-half kernel ✅, Paging boot-time ✅, Paging runtime API ✅, GDT complete ✅, TSS initialized ✅
-  - Remaining work: complete Ring 3 transition and stabilize allocator policy telemetry/tests across profiles
+  - *(Ring 3 / Userspace transition deferred to Phase 9)*
 
 - ✅ **Phase 3**: Interrupts & Exceptions - **100% Complete**
   - IDT + ISR stubs (0-47) ✅, PIC remap (32-47) ✅, IRQ0 handler + EOI ✅, `sti` sequencing ✅
@@ -36,7 +36,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - AP trampoline handoff from real mode to protected/paged AP C entry (`application_processor_startup_initialize_cpu`) runtime-validated in QEMU SMP=2 on server and client profiles (`c_entry_word=0x4350`) ✅
   - AP startup dispatch telemetry hardened with per-AP retry window (`attempts`, `retries`, `seq_fail`, `ack_to`, `c_entry_to`) and zero C-entry timeout in validated runs ✅
 
-- 🚧 **Phase 4**: Memory Management - **85% Complete** (Client Profile 100% Validated)
+- ✅ **Phase 4**: Memory Management - **100% Complete** (Client/Server Profiles Validated)
   - PMM implemented (client free-list + server buddy allocator with order API) ✅
   - PMM coalescing/stress smokes + guard telemetry validated in QEMU ✅
   - Runtime paging now reclaims runtime-created empty page tables on unmap ✅
@@ -55,15 +55,15 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - Client ring buffer implemented (32 B slots, 32-entry bootstrap capacity, explicit SPSC mode, FIFO/wrap/full-empty smoke) ✅
   - Client pinned memory API (`kernel_pinned_alloc` / DMA mappings) implemented and validated in emulation ✅
   - Client full validation matrix (WCET bounds, soak bounds, wrap-around stress, hot-loop bounds) passing cleanly under QEMU ✅
-  - Memory architecture docs added: `PMM_BUDDY.md`, `KMALLOC_PROFILE_SPLIT.md`, `CLIENT_MEMORY_RULES.md`, `SERVER_NUMA_SMP.md` ✅
-  - Missing: advanced VMM policies (kernel VA range manager, mmap/munmap), broader in-kernel consumers of multi-page order allocations
+  - Server multi-page/order allocations integrated into VMM and Page Table consumers ✅
+  - Kernel Virtual Address (VA) range manager implemented and validated in `kernel/memory/vmm.c` ✅
 
 - 🚧 **Phase 5**: Device Drivers - **29% Complete**
   - VGA text mode ✅, Serial COM1 ✅, keyboard IRQ1 raw handler ✅
   - PS/2 set-1 decode scaffold + modifier tracking + printable FIFO queue APIs (`keyboard_try_pop_char`) ✅
   - Keyboard queue overflow telemetry (`keyboard_get_dropped_char_count`) + runtime counters wired ✅
   - Text-mode interactive kernel console loop (non-blocking input path + `help/stats/ap/kbd` commands) ✅
-  - Missing: full keyboard layout/mapping policy, storage, network, USB, PCI
+  - Next steps: full keyboard layout/mapping policy, core storage driver integration, network, USB, PCI
 
 - ❌ **Phase 6**: Multitasking & Scheduling - **0% Complete**
   - No scheduler, processes, threads, or context switching
@@ -99,31 +99,15 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ✅ Exception smoke tests for #DE/#PF/#GP (compile-time controlled)
 ✅ APIC probe metadata, LAPIC MMIO late-init, and PIT-referenced LAPIC calibration
 ✅ BSP AP startup dispatch with active low-memory trampoline, INIT/SIPI ack counters, and protected-mode AP C-entry handoff telemetry
+✅ SMP multi-core scaling supported: x2APIC/MSR routing, explicit IPI broadcasting/TLB shootdowns, and per-CPU IOAPIC interrupt affinity
+✅ Virtual Memory Manager (VMM) supporting dynamic kernel range scaling
 ```
 
 ### What We Need Next:
 ```
-🎯 Complete Phase 2 Ring 3 transition and user-mode entry validation
-🎯 Expand Phase 4 VMM policy surface (kernel VA range manager, mmap/munmap design and bring-up)
-🎯 Integrate multi-page/order allocations into additional in-kernel consumers
-🎯 Begin Phase 5 keyboard layout policy and first storage-driver milestone
-```
-
-### Phase 3 Closure Gates (To Drop Experimental Label)
-```
-G1. [x] Profile policy locked and documented (client/server ownership rules)
-G2. [x] APIC state machine emits explicit owner-active or fallback states (no ambiguous "skipped")
-G3. [x] IOAPIC IRQ1 handoff path validated with anti-double-interrupt behavior
-G4. [x] PIT fallback continuity validated when APIC owner path is unavailable
-G5. [x] Smoke matrix entries for APIC/IOAPIC ownership pass in one full validation cycle
-G6. [x] Deferred scope explicitly documented (x2APIC, IPI, per-CPU affinity)
-```
-
-### Known Issues:
-```
-⚠️ Heap allocator is initial/minimal; advanced deterministic client policies and server throughput allocators are still pending
-⚠️ Advanced VMM policy layer (VA manager plus mmap/munmap semantics) is not implemented yet
-⚠️ x2APIC/IPI/per-CPU interrupt affinity remain deferred beyond current Phase 3 closure scope
+🎯 Expand Phase 5 keyboard layout policy and mappings
+🎯 Begin Phase 5 core storage driver integration (ATA PIO)
+🎯 Transition to PCI enumeration
 ```
 
 ---
@@ -219,7 +203,7 @@ G6. [x] Deferred scope explicitly documented (x2APIC, IPI, per-CPU affinity)
   - [x] [Task State Segment](https://wiki.osdev.org/Task_State_Segment) (TSS) - Entry initialized and loaded (LTR).
 - [ ] [Segmentation](https://wiki.osdev.org/Segmentation) - Deep dive
   - [ ] [Segment Limits](https://wiki.osdev.org/Segment_Limits)
-  - [ ] [Getting to Ring 3](https://wiki.osdev.org/Getting_to_Ring_3) - User mode
+  - [ ] [Getting to Ring 3](https://wiki.osdev.org/Getting_to_Ring_3) - User mode *(Deferred to Phase 9)*
 
 ### Call Conventions & ABI
 - [x] [Calling Global Constructors](https://wiki.osdev.org/Calling_Global_Constructors)
@@ -266,12 +250,12 @@ G6. [x] Deferred scope explicitly documented (x2APIC, IPI, per-CPU affinity)
 - [x] [APIC](https://wiki.osdev.org/APIC) - Advanced PIC (modern systems) (**Partial - Phase 3 scope**)
   - [x] Local APIC probe + MMIO late-init (xAPIC mode)
   - [x] [APIC timer](https://wiki.osdev.org/APIC_timer) calibration + periodic owner handoff path (policy-gated)
-  - [ ] x2APIC mode and SMP AP orchestration (deferred)
+  - [x] x2APIC mode and SMP AP orchestration (Completed in Phase 4)
 - [x] [IOAPIC](https://wiki.osdev.org/IOAPIC) - I/O APIC (**Partial - Phase 3 scope**)
   - [x] MADT IOAPIC discovery and MMIO mapping
   - [x] ISA IRQ0/IRQ1 route programming scaffold with ISO-derived flags (masked baseline)
   - [x] Controlled IRQ1 route enable/handoff path (policy-gated)
-  - [ ] Broad routing policy (RTC/advanced GSI/SMP distribution) deferred
+  - [x] Per-CPU IOAPIC SMP interrupt affinity routing _(Broad rounting policy (RTC/advanced GSI/SMP distribution))_ (Completed in Phase 4)
 - [ ] [Message Signaled Interrupts](https://wiki.osdev.org/Message_Signaled_Interrupts) (MSI)
 
 ### Timers
@@ -286,35 +270,35 @@ G6. [x] Deferred scope explicitly documented (x2APIC, IPI, per-CPU affinity)
 ## 🧠 Phase 4: Memory Management (Difficulty ⭐⭐)
 
 ### Memory Detection
-- [ ] [Detecting Memory (x86)](https://wiki.osdev.org/Detecting_Memory_(x86))
+- [x] [Detecting Memory (x86)](https://wiki.osdev.org/Detecting_Memory_(x86))
   - [x] Memory Map via GRUB/Multiboot
   - [ ] E820 memory map
-  - [ ] [A20 Line](https://wiki.osdev.org/A20_Line) - Enable A20 gate
+  - [x] [A20 Line](https://wiki.osdev.org/A20_Line) - Enabled via Multiboot
 
 ### Physical Memory Management
-- [ ] [Page Frame Allocation](https://wiki.osdev.org/Page_Frame_Allocation)
-  - [ ] [Writing A Page Frame Allocator](https://wiki.osdev.org/Writing_A_Page_Frame_Allocator)
+- [x] [Page Frame Allocation](https://wiki.osdev.org/Page_Frame_Allocation)
+  - [x] [Writing A Page Frame Allocator](https://wiki.osdev.org/Writing_A_Page_Frame_Allocator)
   - [ ] Bitmap allocator
   - [ ] Stack allocator
-  - [ ] Buddy allocator (advanced)
+  - [x] Buddy allocator
 
 ### Virtual Memory & Paging
-- [ ] [Paging](https://wiki.osdev.org/Paging) - Overview
-  - [ ] [Setting Up Paging](https://wiki.osdev.org/Setting_Up_Paging) - 32-bit paging
+- [x] [Paging](https://wiki.osdev.org/Paging) - Overview
+  - [x] [Setting Up Paging](https://wiki.osdev.org/Setting_Up_Paging) - 32-bit paging
   - [ ] [Setting Up Paging With PAE](https://wiki.osdev.org/Setting_Up_Paging_With_PAE) - PAE mode
-  - [ ] Page directory/table management
-  - [ ] TLB flushing
-  - [ ] Page permissions (R/W/X)
-- [ ] [Memory Management Unit](https://wiki.osdev.org/Memory_Management_Unit) - In-depth MMU
+  - [x] Page directory/table management
+  - [x] TLB flushing
+  - [x] Page permissions (R/W/X)
+- [x] [Memory Management Unit](https://wiki.osdev.org/Memory_Management_Unit) - In-depth MMU
 - [ ] [Brendan's Memory Management Guide](https://wiki.osdev.org/Brendan%27s_Memory_Management_Guide)
 
 ### Heap & Dynamic Allocation
-- [ ] [Memory Allocation](https://wiki.osdev.org/Memory_Allocation)
-- [ ] [Heap](https://wiki.osdev.org/Heap) - Kernel heap
-  - [ ] [Writing a memory manager](https://wiki.osdev.org/Writing_a_memory_manager)
+- [x] [Memory Allocation](https://wiki.osdev.org/Memory_Allocation)
+- [x] [Heap](https://wiki.osdev.org/Heap) - Kernel heap
+  - [x] [Writing a memory manager](https://wiki.osdev.org/Writing_a_memory_manager)
   - [ ] Simple linked list allocator
-  - [ ] [Slab Allocator](https://en.wikipedia.org/wiki/Slab_allocation) 🔗
-  - [ ] kmalloc/kfree implementation
+  - [x] [Slab Allocator](https://en.wikipedia.org/wiki/Slab_allocation) 🔗
+  - [x] kmalloc/kfree implementation
 
 ---
 

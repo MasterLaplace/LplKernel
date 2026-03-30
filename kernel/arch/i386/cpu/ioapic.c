@@ -176,6 +176,7 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
     route->io_apic_id = unit->id;
     route->masked = 1u;
     route->iso_flags = iso_flags;
+    route->destination_apic_id = 0u;
     io_apic_route_count++;
     return 1u;
 }
@@ -371,5 +372,53 @@ uint8_t input_output_advanced_programmable_interrupt_controller_enable_isa_route
 
     route->masked = 0u;
     io_apic_state_name = "ioapic-route-enable-active";
+    return 1u;
+}
+
+uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(uint8_t route_index)
+{
+    if (route_index >= io_apic_route_count)
+        return 0u;
+    return io_apic_routes[route_index].destination_apic_id;
+}
+
+uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq, uint8_t apic_id)
+{
+    int32_t route_index_signed;
+    uint8_t route_index;
+    InputOutputApicRouteInfo_t *route;
+    InputOutputApicUnit_t *unit;
+    uint32_t gsi_relative;
+    uint8_t redir_reg_index;
+    uint32_t redir_high;
+
+    route_index_signed = io_apic_find_programmed_route_index_by_irq(isa_irq);
+    if (route_index_signed < 0)
+        return 0u;
+
+    route_index = (uint8_t) route_index_signed;
+    route = &io_apic_routes[route_index];
+
+    if (route->io_apic_index >= INPUT_OUTPUT_APIC_MAX_COUNT)
+        return 0u;
+
+    unit = &io_apic_units[route->io_apic_index];
+    if (!unit->mapped)
+        return 0u;
+
+    if (route->global_system_interrupt < unit->gsi_base)
+        return 0u;
+
+    gsi_relative = route->global_system_interrupt - unit->gsi_base;
+    if (gsi_relative > 0x7Fu)
+        return 0u;
+
+    redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
+    redir_high = io_apic_register_read(unit->virtual_base, redir_reg_index + 1u);
+    redir_high &= ~(0xFF000000u); // Clear bits 24-31
+    redir_high |= ((uint32_t)apic_id << 24u);
+    io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
+
+    route->destination_apic_id = apic_id;
     return 1u;
 }
