@@ -10,18 +10,29 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/helpers/acpi_helper.h>
+#include <kernel/cpu/helpers/ap_startup_helper.h>
+#include <kernel/cpu/helpers/apic_timer_helper.h>
+#include <kernel/cpu/helpers/clock_helper.h>
+#include <kernel/cpu/helpers/cpu_topology_helper.h>
 #include <kernel/cpu/helpers/gdt_helper.h>
+#include <kernel/cpu/helpers/ioapic_helper.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
+#include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
+#include <kernel/drivers/helpers/keyboard_helper.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/ps2_keyboard.h>
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
+#include <kernel/memory/helpers/core_allocators_helper.h>
+#include <kernel/memory/helpers/heap_helper.h>
+#include <kernel/memory/helpers/pmm_helper.h>
 #include <kernel/memory/pinned_memory.h>
 #include <kernel/memory/pool_allocator.h>
 #include <kernel/memory/ring_buffer.h>
@@ -29,28 +40,17 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
-#include <kernel/cpu/numa_policy.h>
 #include <kernel/smoke_test.h>
-#include <kernel/cpu/helpers/clock_helper.h>
-#include <kernel/cpu/helpers/cpu_topology_helper.h>
-#include <kernel/cpu/helpers/acpi_helper.h>
-#include <kernel/cpu/helpers/ioapic_helper.h>
-#include <kernel/cpu/helpers/apic_timer_helper.h>
-#include <kernel/cpu/helpers/ap_startup_helper.h>
-#include <kernel/memory/helpers/pmm_helper.h>
-#include <kernel/memory/helpers/heap_helper.h>
-#include <kernel/memory/helpers/core_allocators_helper.h>
-#include <kernel/drivers/helpers/keyboard_helper.h>
 
-#define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES 16384u
+#define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES     16384u
 #define KERNEL_STACK_ALLOCATOR_DEFAULT_CAPACITY_BYTES 16384u
-#define KERNEL_POOL_ALLOCATOR_DEFAULT_OBJECT_SIZE 64u
-#define KERNEL_POOL_ALLOCATOR_DEFAULT_OBJECT_COUNT 128u
-#define KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE 32u
-#define KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT 256u
-#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT 200000u
-#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT 300000u
-#define KERNEL_AP_STARTUP_MAX_ATTEMPTS 3u
+#define KERNEL_POOL_ALLOCATOR_DEFAULT_OBJECT_SIZE     64u
+#define KERNEL_POOL_ALLOCATOR_DEFAULT_OBJECT_COUNT    128u
+#define KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE          32u
+#define KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT         256u
+#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT           200000u
+#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT       300000u
+#define KERNEL_AP_STARTUP_MAX_ATTEMPTS                3u
 
 static const char WELCOME_MESSAGE[] = ""
                                       "/==+--  _                                         ---+\n"
@@ -103,10 +103,7 @@ static uint8_t kernel_string_equals(const char *lhs, const char *rhs)
     return (uint8_t) (*lhs == '\0' && *rhs == '\0');
 }
 
-static void kernel_console_print_prompt(void)
-{
-    terminal_write_string("\n> ");
-}
+static void kernel_console_print_prompt(void) { terminal_write_string("\n> "); }
 
 static void kernel_console_execute_command(const char *command)
 {
@@ -234,13 +231,13 @@ static void kernel_try_start_discovered_aps(void)
 
             attempts_used = (uint8_t) (attempt + 1u);
             application_processor_trampoline_reset_acknowledgement();
-            application_processor_trampoline_configure_handoff(entry->apic_id, entry->logical_slot,
-                                                                (uint32_t) (uintptr_t) ap_stack_top,
-                                                                (uint32_t) (uintptr_t) application_processor_startup_initialize_cpu,
-                                                                (uint32_t) (uintptr_t) application_processor_startup_main_loop,
-                                                                application_processor_startup_get_kernel_cr3());
-            sequence_ok =
-                advanced_pic_ipi_send_startup_sequence(entry->apic_id, application_processor_trampoline_get_startup_vector());
+            application_processor_trampoline_configure_handoff(
+                entry->apic_id, entry->logical_slot, (uint32_t) (uintptr_t) ap_stack_top,
+                (uint32_t) (uintptr_t) application_processor_startup_initialize_cpu,
+                (uint32_t) (uintptr_t) application_processor_startup_main_loop,
+                application_processor_startup_get_kernel_cr3());
+            sequence_ok = advanced_pic_ipi_send_startup_sequence(entry->apic_id,
+                                                                 application_processor_trampoline_get_startup_vector());
             if (!sequence_ok)
             {
                 ++sequence_failures;
@@ -275,7 +272,8 @@ static void kernel_try_start_discovered_aps(void)
         write_ap_startup_dispatch_info(&com1, entry, sequence_ok, ack_ok, c_entry_ok, attempts_used);
     }
 
-    write_ap_startup_summary(&com1, attempted, delivered, retries_consumed, sequence_failures, acknowledgement_timeouts, c_entry_timeouts);
+    write_ap_startup_summary(&com1, attempted, delivered, retries_consumed, sequence_failures, acknowledgement_timeouts,
+                             c_entry_timeouts);
 }
 
 __attribute__((constructor)) void kernel_initialize(void)
@@ -340,9 +338,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     bool pinned_ok = kernel_pinned_memory_initialize();
     write_core_allocators_info(&com1, frame_arena_ok, stack_allocator_ok, pool_allocator_ok, pinned_ok);
 
-    bool ring_buffer_ok = kernel_ring_buffer_initialize_ex(KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE,
-                                                           KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT,
-                                                           KERNEL_RING_BUFFER_MODE_SPSC);
+    bool ring_buffer_ok = kernel_ring_buffer_initialize_ex(
+        KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE, KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT, KERNEL_RING_BUFFER_MODE_SPSC);
     write_ring_buffer_info(&com1, ring_buffer_ok);
 
     write_heap_extended_info(&com1);
@@ -355,8 +352,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     if (advanced_configuration_and_power_interface_madt_is_available())
     {
         for (uint8_t lapic_index = 0u;
-             lapic_index < advanced_configuration_and_power_interface_madt_get_local_apic_count();
-             ++lapic_index)
+             lapic_index < advanced_configuration_and_power_interface_madt_get_local_apic_count(); ++lapic_index)
         {
             if (!advanced_configuration_and_power_interface_madt_is_local_apic_enabled(lapic_index))
                 continue;
@@ -438,7 +434,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     if (KERNEL_SMOKE_TEST_ENABLE_PAGING_PT_RECLAIM)
         kernel_smoke_test_run_paging_runtime_page_table_reclaim(&com1);
 
-    if (KERNEL_SMOKE_TEST_ENABLE_HEAP_ALLOCATE_FREE) {
+    if (KERNEL_SMOKE_TEST_ENABLE_HEAP_ALLOCATE_FREE)
+    {
         kernel_smoke_test_run_heap_allocate_free(&com1);
         kernel_smoke_test_run_heap_poison_canary(&com1);
     }
@@ -522,7 +519,7 @@ __attribute__((constructor)) void kernel_initialize(void)
         kernel_smoke_test_run_heap_cross_domain_stress(&com1);
 
     if (KERNEL_SMOKE_TEST_ENABLE_VMM_ALLOC_FREE)
-         kernel_smoke_test_run_vmm_alloc_free(&com1);
+        kernel_smoke_test_run_vmm_alloc_free(&com1);
 #endif
 
     if (KERNEL_SMOKE_TEST_ENABLE_PMM_WATERMARK)

@@ -183,10 +183,7 @@ uint32_t cpu_topology_get_slot_for_apic_id(uint32_t apic_id)
     return CPU_TOPOLOGY_INVALID_APIC_ID;
 }
 
-uint32_t cpu_topology_get_discovered_cpu_count(void)
-{
-    return cpu_topology_discovered_cpu_count;
-}
+uint32_t cpu_topology_get_discovered_cpu_count(void) { return cpu_topology_discovered_cpu_count; }
 
 const char *cpu_topology_get_source_name(void) { return cpu_topology_source_name; }
 

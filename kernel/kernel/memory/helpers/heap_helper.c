@@ -1,8 +1,8 @@
-#include <kernel/memory/helpers/heap_helper.h>
+#include <kernel/config.h>
 #include <kernel/memory/heap.h>
+#include <kernel/memory/helpers/heap_helper.h>
 #include <kernel/memory/slab.h>
 #include <kernel/memory/tlsf.h>
-#include <kernel/config.h>
 
 void write_heap_info(Serial_t *serial)
 {
@@ -46,17 +46,14 @@ void write_heap_extended_info(Serial_t *serial)
     serial_write_string(serial, ", active=");
     serial_write_int(serial, (int32_t) kernel_heap_get_server_active_domain());
     serial_write_string(serial, ", first_fit_fallbacks=");
-    serial_write_int(serial,
-                     (int32_t) kernel_heap_get_server_domain_first_fit_fallback_count(
-                         kernel_heap_get_server_active_domain()));
+    serial_write_int(serial, (int32_t) kernel_heap_get_server_domain_first_fit_fallback_count(
+                                 kernel_heap_get_server_active_domain()));
     serial_write_string(serial, ", remote_probe=");
-    serial_write_int(serial,
-                     (int32_t) kernel_heap_get_server_domain_remote_probe_count(
-                         kernel_heap_get_server_active_domain()));
+    serial_write_int(
+        serial, (int32_t) kernel_heap_get_server_domain_remote_probe_count(kernel_heap_get_server_active_domain()));
     serial_write_string(serial, ", remote_hit=");
     serial_write_int(serial,
-                     (int32_t) kernel_heap_get_server_domain_remote_hit_count(
-                         kernel_heap_get_server_active_domain()));
+                     (int32_t) kernel_heap_get_server_domain_remote_hit_count(kernel_heap_get_server_active_domain()));
     serial_write_string(serial, "\n");
 
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: sizeclass buckets free/hits: ");
@@ -69,9 +66,8 @@ void write_heap_extended_info(Serial_t *serial)
         serial_write_string(serial, "/");
         serial_write_int(serial, (int32_t) kernel_heap_get_size_class_hit_count(sc));
         serial_write_string(serial, "/");
-        serial_write_int(serial,
-                         (int32_t) kernel_heap_get_server_domain_refill_count(
-                             kernel_heap_get_server_active_domain(), sc));
+        serial_write_int(
+            serial, (int32_t) kernel_heap_get_server_domain_refill_count(kernel_heap_get_server_active_domain(), sc));
         serial_write_string(serial, " ");
     }
     serial_write_string(serial, "\n");

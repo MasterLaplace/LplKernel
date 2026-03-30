@@ -1,6 +1,6 @@
-#include <kernel/memory/helpers/pmm_helper.h>
-#include <kernel/cpu/pmm.h>
 #include <kernel/config.h>
+#include <kernel/cpu/pmm.h>
+#include <kernel/memory/helpers/pmm_helper.h>
 
 void write_pmm_strategy_info(Serial_t *serial)
 {

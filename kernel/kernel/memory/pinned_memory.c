@@ -1,8 +1,8 @@
 #define __LPL_KERNEL__
 
-#include <kernel/memory/pinned_memory.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/memory/pinned_memory.h>
 #include <kernel/memory/vmm.h>
 #include <stddef.h>
 

@@ -1,8 +1,8 @@
-#include <kernel/cpu/helpers/apic_timer_helper.h>
-#include <kernel/cpu/apic_timer.h>
-#include <kernel/cpu/irq.h>
-#include <kernel/cpu/ioapic.h>
 #include <kernel/config.h>
+#include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/helpers/apic_timer_helper.h>
+#include <kernel/cpu/ioapic.h>
+#include <kernel/cpu/irq.h>
 
 void write_apic_late_init_state_info(Serial_t *serial)
 {

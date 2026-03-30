@@ -2,13 +2,13 @@
 
 #include <kernel/config.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
-#include <kernel/cpu/numa_policy.h>
-#include <kernel/memory/vmm.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/slab.h>
 #include <kernel/memory/tlsf.h>
+#include <kernel/memory/vmm.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -25,14 +25,14 @@
 #define KERNEL_HEAP_HEADER_MAGIC    0x4C50u
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-#define KERNEL_HEAP_CLIENT_BOOT_POOL_PAGES 8u
-#define KERNEL_HEAP_CLIENT_SLAB_PAGES (KERNEL_SLAB_CACHE_MAX_PAGES * 3u)
+#    define KERNEL_HEAP_CLIENT_BOOT_POOL_PAGES 8u
+#    define KERNEL_HEAP_CLIENT_SLAB_PAGES      (KERNEL_SLAB_CACHE_MAX_PAGES * 3u)
 
-#define KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE (4u * 1024u * 1024u)
+#    define KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE (4u * 1024u * 1024u)
 static uint8_t kernel_heap_client_tlsf_pool[KERNEL_HEAP_CLIENT_TLSF_POOL_SIZE] __attribute__((aligned(8)));
 #else
-#define KERNEL_HEAP_SIZE_CLASSES      7u
-#define KERNEL_HEAP_SERVER_DOMAINS    2u
+#    define KERNEL_HEAP_SIZE_CLASSES   7u
+#    define KERNEL_HEAP_SERVER_DOMAINS 2u
 #endif
 
 static KernelHeapBlock_t *kernel_heap_free_list = NULL;
@@ -59,9 +59,7 @@ typedef struct KernelHeapServerDomain {
     uint32_t remote_hit_count;
 } KernelHeapServerDomain_t;
 
-static uint32_t kernel_heap_size_class_sizes[KERNEL_HEAP_SIZE_CLASSES] = {
-    8u, 16u, 32u, 64u, 128u, 256u, 512u
-};
+static uint32_t kernel_heap_size_class_sizes[KERNEL_HEAP_SIZE_CLASSES] = {8u, 16u, 32u, 64u, 128u, 256u, 512u};
 static KernelHeapServerDomain_t kernel_heap_server_domains[KERNEL_HEAP_SERVER_DOMAINS];
 static uint32_t kernel_heap_server_active_domain = 0u;
 static uint8_t kernel_heap_server_slot_domain_override_enabled[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC];
@@ -156,7 +154,6 @@ static KernelHeapBlock_t *kernel_heap_server_try_pop_remote_bucket(uint32_t loca
 
     return NULL;
 }
-
 
 #endif
 
@@ -374,30 +371,34 @@ void *kmalloc(size_t size)
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     {
         void *obj = kernel_slab_alloc(total_size);
-        if (obj) {
-            KernelHeapBlock_t *header = (KernelHeapBlock_t *)obj;
+        if (obj)
+        {
+            KernelHeapBlock_t *header = (KernelHeapBlock_t *) obj;
             header->size = total_size;
             header->magic = KERNEL_HEAP_HEADER_MAGIC;
             header->flags = KERNEL_HEAP_BLOCK_FLAG_SLAB;
-            header->canary = (uint16_t)((0xCAFE ^ header->size) & 0xFFFF);
-            #ifdef LPL_KERNEL_DEBUG_POISON
-            for (uint32_t z = 0; z < payload_size; ++z) ((uint8_t*)(header + 1))[z] = 0xCC;
-            #endif
-            return (void *)(header + 1);
+            header->canary = (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF);
+#    ifdef LPL_KERNEL_DEBUG_POISON
+            for (uint32_t z = 0; z < payload_size; ++z)
+                ((uint8_t *) (header + 1))[z] = 0xCC;
+#    endif
+            return (void *) (header + 1);
         }
     }
 
     void *tlsf_raw = kernel_tlsf_alloc(total_size);
-    if (tlsf_raw) {
-        KernelHeapBlock_t *header = (KernelHeapBlock_t *)tlsf_raw;
+    if (tlsf_raw)
+    {
+        KernelHeapBlock_t *header = (KernelHeapBlock_t *) tlsf_raw;
         header->size = total_size;
         header->magic = KERNEL_HEAP_HEADER_MAGIC;
         header->flags = KERNEL_HEAP_BLOCK_FLAG_TLSF;
-        header->canary = (uint16_t)((0xCAFE ^ header->size) & 0xFFFF);
-        #ifdef LPL_KERNEL_DEBUG_POISON
-        for (uint32_t z = 0; z < payload_size; ++z) ((uint8_t*)(header + 1))[z] = 0xCC;
-        #endif
-        return (void *)(header + 1);
+        header->canary = (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF);
+#    ifdef LPL_KERNEL_DEBUG_POISON
+        for (uint32_t z = 0; z < payload_size; ++z)
+            ((uint8_t *) (header + 1))[z] = 0xCC;
+#    endif
+        return (void *) (header + 1);
     }
 #endif
 
@@ -406,7 +407,8 @@ void *kmalloc(size_t size)
         uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
         KernelHeapBlock_t *vmm_header = (KernelHeapBlock_t *) kernel_vmm_alloc_pages(page_count);
 
-        if (vmm_header) {
+        if (vmm_header)
+        {
             vmm_header->size = page_count * PAGE_SIZE;
             vmm_header->magic = KERNEL_HEAP_HEADER_MAGIC;
             vmm_header->flags = KERNEL_HEAP_BLOCK_FLAG_VMM;
@@ -415,10 +417,11 @@ void *kmalloc(size_t size)
             vmm_header->next = NULL;
 
             ++kernel_heap_large_allocation_count;
-            #ifdef LPL_KERNEL_DEBUG_POISON
-            vmm_header->canary = (uint16_t)((0xCAFE ^ vmm_header->size) & 0xFFFF);
-            for (uint32_t z = 0; z < (vmm_header->size - sizeof(KernelHeapBlock_t)); ++z) ((uint8_t*)(vmm_header + 1))[z] = 0xCC;
-            #endif
+#ifdef LPL_KERNEL_DEBUG_POISON
+            vmm_header->canary = (uint16_t) ((0xCAFE ^ vmm_header->size) & 0xFFFF);
+            for (uint32_t z = 0; z < (vmm_header->size - sizeof(KernelHeapBlock_t)); ++z)
+                ((uint8_t *) (vmm_header + 1))[z] = 0xCC;
+#endif
             return (void *) (vmm_header + 1);
         }
     }
@@ -469,13 +472,14 @@ void *kmalloc(size_t size)
 
                 block->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
                 block->order = (uint8_t) sc;
-                block->size = kernel_heap_size_class_sizes[sc] + (uint32_t)sizeof(KernelHeapBlock_t);
+                block->size = kernel_heap_size_class_sizes[sc] + (uint32_t) sizeof(KernelHeapBlock_t);
                 block->reserved = (uint16_t) owner_domain_index;
                 block->next = NULL;
-                #ifdef LPL_KERNEL_DEBUG_POISON
-                block->canary = (uint16_t)((0xCAFE ^ block->size) & 0xFFFF);
-                for (uint32_t z = 0; z < kernel_heap_size_class_sizes[sc]; ++z) ((uint8_t*)(block + 1))[z] = 0xCC;
-#endif
+#    ifdef LPL_KERNEL_DEBUG_POISON
+                block->canary = (uint16_t) ((0xCAFE ^ block->size) & 0xFFFF);
+                for (uint32_t z = 0; z < kernel_heap_size_class_sizes[sc]; ++z)
+                    ((uint8_t *) (block + 1))[z] = 0xCC;
+#    endif
                 return (void *) (block + 1);
             }
 
@@ -483,7 +487,8 @@ void *kmalloc(size_t size)
                 ++local_domain->first_fit_fallback_count;
 
             batch_count = 4u;
-            total_size = kernel_heap_align_up(kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+            total_size = kernel_heap_align_up(
+                kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
             total_size *= batch_count;
             if (local_domain)
                 ++local_domain->size_class_refill_counts[matched_sc];
@@ -555,26 +560,26 @@ void *kmalloc(size_t size)
             if (current->size < sc_full_size * (i + 1u))
                 break;
 
-             KernelHeapBlock_t *piece = (KernelHeapBlock_t *) ((uint8_t *) current + (i * sc_full_size));
-             piece->size = sc_full_size;
-             piece->flags = KERNEL_HEAP_BLOCK_FLAG_SC | KERNEL_HEAP_BLOCK_FLAG_FREE;
-             piece->order = (uint8_t) matched_sc;
-             piece->reserved = (uint16_t) local_domain_index;
-             piece->magic = KERNEL_HEAP_HEADER_MAGIC;
+            KernelHeapBlock_t *piece = (KernelHeapBlock_t *) ((uint8_t *) current + (i * sc_full_size));
+            piece->size = sc_full_size;
+            piece->flags = KERNEL_HEAP_BLOCK_FLAG_SC | KERNEL_HEAP_BLOCK_FLAG_FREE;
+            piece->order = (uint8_t) matched_sc;
+            piece->reserved = (uint16_t) local_domain_index;
+            piece->magic = KERNEL_HEAP_HEADER_MAGIC;
 
-             if (local_domain)
-             {
-                 piece->next = local_domain->size_class_lists[matched_sc];
-                 local_domain->size_class_lists[matched_sc] = piece;
-                 ++local_domain->size_class_free_counts[matched_sc];
-             }
-         }
-         __asm__ volatile("push %0\n\tpopf" :: "r"(eflags) : "memory", "cc");
+            if (local_domain)
+            {
+                piece->next = local_domain->size_class_lists[matched_sc];
+                local_domain->size_class_lists[matched_sc] = piece;
+                ++local_domain->size_class_free_counts[matched_sc];
+            }
+        }
+        __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
 
-         current->size = sc_full_size;
-         current->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
-         current->order = (uint8_t) matched_sc;
-         current->reserved = (uint16_t) local_domain_index;
+        current->size = sc_full_size;
+        current->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
+        current->order = (uint8_t) matched_sc;
+        current->reserved = (uint16_t) local_domain_index;
     }
     else
     {
@@ -591,13 +596,15 @@ void *kmalloc(size_t size)
     }
 #endif
 
-    #ifdef LPL_KERNEL_DEBUG_POISON
-    current->canary = (uint16_t)((0xCAFE ^ current->size) & 0xFFFF);
+#ifdef LPL_KERNEL_DEBUG_POISON
+    current->canary = (uint16_t) ((0xCAFE ^ current->size) & 0xFFFF);
     uint32_t poison_size = current->size - sizeof(KernelHeapBlock_t);
-#ifndef LPL_KERNEL_REAL_TIME_MODE
-    if (current->flags & KERNEL_HEAP_BLOCK_FLAG_SC) poison_size = kernel_heap_size_class_sizes[current->order];
-#endif
-    for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(current + 1))[z] = 0xCC;
+#    ifndef LPL_KERNEL_REAL_TIME_MODE
+    if (current->flags & KERNEL_HEAP_BLOCK_FLAG_SC)
+        poison_size = kernel_heap_size_class_sizes[current->order];
+#    endif
+    for (uint32_t z = 0; z < poison_size; ++z)
+        ((uint8_t *) (current + 1))[z] = 0xCC;
 #endif
     return (void *) (current + 1);
 }
@@ -614,33 +621,38 @@ void kfree(void *ptr)
 
     KernelHeapBlock_t *header = ((KernelHeapBlock_t *) ptr) - 1;
 
-    if (header->magic != KERNEL_HEAP_HEADER_MAGIC ||
-        header->canary != (uint16_t)((0xCAFE ^ header->size) & 0xFFFF)) {
+    if (header->magic != KERNEL_HEAP_HEADER_MAGIC || header->canary != (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF))
+    {
         kernel_heap_rejected_free_count++;
         return;
     }
 
-    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_FREE) {
+    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_FREE)
+    {
         kernel_heap_rejected_free_count++;
         kernel_heap_double_free_count++;
         return;
     }
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SLAB) {
-        #ifdef LPL_KERNEL_DEBUG_POISON
+    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SLAB)
+    {
+#    ifdef LPL_KERNEL_DEBUG_POISON
         uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
-        for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(header + 1))[z] = 0xDD;
-        #endif
+        for (uint32_t z = 0; z < poison_size; ++z)
+            ((uint8_t *) (header + 1))[z] = 0xDD;
+#    endif
         header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
         kernel_slab_free(header);
         return;
     }
-    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_TLSF) {
-        #ifdef LPL_KERNEL_DEBUG_POISON
+    if (header->flags & KERNEL_HEAP_BLOCK_FLAG_TLSF)
+    {
+#    ifdef LPL_KERNEL_DEBUG_POISON
         uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
-        for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(header + 1))[z] = 0xDD;
-        #endif
+        for (uint32_t z = 0; z < poison_size; ++z)
+            ((uint8_t *) (header + 1))[z] = 0xDD;
+#    endif
         header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
         kernel_tlsf_free(header);
         return;
@@ -654,19 +666,20 @@ void kfree(void *ptr)
     }
 
 #ifdef LPL_KERNEL_DEBUG_POISON
-    if (header->canary != (uint16_t)((0xCAFE ^ header->size) & 0xFFFF))
+    if (header->canary != (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF))
     {
         ++kernel_heap_rejected_free_count;
         return;
     }
 
     uint32_t poison_size = header->size - sizeof(KernelHeapBlock_t);
-#ifndef LPL_KERNEL_REAL_TIME_MODE
+#    ifndef LPL_KERNEL_REAL_TIME_MODE
     if (header->flags & KERNEL_HEAP_BLOCK_FLAG_SC)
         poison_size = kernel_heap_size_class_sizes[header->order];
-#endif
+#    endif
 
-    for (uint32_t z = 0; z < poison_size; ++z) ((uint8_t*)(header + 1))[z] = 0xDD;
+    for (uint32_t z = 0; z < poison_size; ++z)
+        ((uint8_t *) (header + 1))[z] = 0xDD;
 #endif
 
     if (header->flags & KERNEL_HEAP_BLOCK_FLAG_FREE)
@@ -912,15 +925,18 @@ uint32_t kernel_heap_get_hot_loop_violation_count(void)
 
 void *kmalloc_sensitive(size_t size)
 {
-    if (!kernel_heap_initialized || size == 0u) return NULL;
+    if (!kernel_heap_initialized || size == 0u)
+        return NULL;
 
     uint32_t payload_size = kernel_heap_align_up((uint32_t) size, KERNEL_HEAP_ALIGNMENT);
-    uint32_t total_size = kernel_heap_align_up(payload_size + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+    uint32_t total_size =
+        kernel_heap_align_up(payload_size + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
 
     uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
     KernelHeapBlock_t *header = (KernelHeapBlock_t *) kernel_vmm_alloc_pages(page_count);
 
-    if (!header) return NULL;
+    if (!header)
+        return NULL;
 
     header->size = page_count * PAGE_SIZE;
     header->magic = KERNEL_HEAP_HEADER_MAGIC;
@@ -930,8 +946,9 @@ void *kmalloc_sensitive(size_t size)
     header->next = NULL;
 
 #ifdef LPL_KERNEL_DEBUG_POISON
-    header->canary = (uint16_t)((0xCAFE ^ header->size) & 0xFFFF);
-    for (uint32_t z = 0; z < (header->size - sizeof(KernelHeapBlock_t)); ++z) ((uint8_t*)(header + 1))[z] = 0xCC;
+    header->canary = (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF);
+    for (uint32_t z = 0; z < (header->size - sizeof(KernelHeapBlock_t)); ++z)
+        ((uint8_t *) (header + 1))[z] = 0xCC;
 #endif
 
     ++kernel_heap_large_allocation_count;

@@ -1,6 +1,6 @@
-#include <kernel/cpu/helpers/clock_helper.h>
-#include <kernel/cpu/clock.h>
 #include <kernel/config.h>
+#include <kernel/cpu/clock.h>
+#include <kernel/cpu/helpers/clock_helper.h>
 
 void write_clock_info(Serial_t *serial)
 {

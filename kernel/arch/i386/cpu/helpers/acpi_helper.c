@@ -1,6 +1,6 @@
-#include <kernel/cpu/helpers/acpi_helper.h>
-#include <kernel/cpu/acpi.h>
 #include <kernel/config.h>
+#include <kernel/cpu/acpi.h>
+#include <kernel/cpu/helpers/acpi_helper.h>
 
 void write_acpi_madt_info(Serial_t *serial)
 {
@@ -28,7 +28,8 @@ void write_acpi_ioapics_info(Serial_t *serial)
         serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: ACPI IOAPIC[");
         serial_write_int(serial, (int32_t) ioapic_index);
         serial_write_string(serial, "] id=");
-        serial_write_int(serial, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
+        serial_write_int(serial,
+                         (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
         serial_write_string(serial, ", phys=");
         serial_write_hex32(serial,
                            advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(ioapic_index));
@@ -53,7 +54,7 @@ void write_acpi_isos_info(Serial_t *serial)
         serial_write_string(serial, ", source_irq=");
         serial_write_int(
             serial, (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_source_irq(
-                       iso_index));
+                        iso_index));
         serial_write_string(serial, ", gsi=");
         serial_write_int(
             serial,

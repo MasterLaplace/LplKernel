@@ -116,8 +116,7 @@ char ps2_keyboard_decode_scancode(uint8_t scancode)
     {
         ps2_escape_sequence = 0u;
 
-        const char *table = (ps2_shift_state || ps2_caps_lock_state) ?
-                            ps2_scancode_table_shift : ps2_scancode_table;
+        const char *table = (ps2_shift_state || ps2_caps_lock_state) ? ps2_scancode_table_shift : ps2_scancode_table;
         return table[scancode];
     }
 

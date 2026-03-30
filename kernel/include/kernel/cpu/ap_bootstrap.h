@@ -96,7 +96,8 @@ extern uint32_t application_processor_bootstrap_get_ap_count(void);
 /**
  * @brief Get kernel virtual address of AP stack top of allocated region (RSP initial value).
  *
- * @details: Stack grows downward, so "top" is base + size. This is the value to load into RSP for the AP's protected mode entry point.
+ * @details: Stack grows downward, so "top" is base + size. This is the value to load into RSP for the AP's protected
+ * mode entry point.
  *
  * @return Virtual address; NULL if slot invalid.
  */

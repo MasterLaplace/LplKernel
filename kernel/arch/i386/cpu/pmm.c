@@ -14,11 +14,11 @@
  *            - Server:             Buddy Allocator with split/merge support.
  */
 
-#include <kernel/config.h>
 #include <kernel/boot/multiboot_info.h>
+#include <kernel/config.h>
+#include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
-#include <kernel/cpu/numa_policy.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -226,12 +226,14 @@ static void buddy_list_push(uint8_t order, uint32_t phys_addr)
     buddy_page_is_free[page_index] = 1u;
     buddy_page_order[page_index] = order;
 
-#ifdef LPL_KERNEL_DEBUG_POISON
-    if (order == 0u) {
-        uint8_t *poison_ptr = (uint8_t *)(page_virt + 1);
-        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i) poison_ptr[i] = 0xAA;
+#    ifdef LPL_KERNEL_DEBUG_POISON
+    if (order == 0u)
+    {
+        uint8_t *poison_ptr = (uint8_t *) (page_virt + 1);
+        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i)
+            poison_ptr[i] = 0xAA;
     }
-#endif
+#    endif
 
     uint32_t start_page_index = buddy_phys_to_page_index(phys_addr);
     uint32_t page_count = 1u << order;
@@ -253,17 +255,20 @@ static uint32_t buddy_list_pop_from_node(uint32_t target_node, uint8_t order)
     buddy_free_list_heads[target_node][order] = *page_virt;
     buddy_page_is_free[page_index] = 0u;
 
-#ifdef LPL_KERNEL_DEBUG_POISON
-    if (order == 0u) {
-        uint8_t *poison_ptr = (uint8_t *)(page_virt + 1);
-        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i) {
-            if (poison_ptr[i] != 0xAA) {
+#    ifdef LPL_KERNEL_DEBUG_POISON
+    if (order == 0u)
+    {
+        uint8_t *poison_ptr = (uint8_t *) (page_virt + 1);
+        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i)
+        {
+            if (poison_ptr[i] != 0xAA)
+            {
                 pmm_uaf_anomalies++;
                 break;
             }
         }
     }
-#endif
+#    endif
 
     uint32_t start_page_index = buddy_phys_to_page_index(phys_addr);
     uint32_t page_count = 1u << order;
@@ -419,7 +424,8 @@ static void buddy_insert_order(uint32_t phys_addr, uint8_t requested_order)
         if (!buddy_can_merge(current_order, buddy_phys))
             break;
         uint32_t buddy_node = numa_policy_get_node_for_address(buddy_phys);
-        if (buddy_node >= numa_policy_get_node_count()) buddy_node = 0;
+        if (buddy_node >= numa_policy_get_node_count())
+            buddy_node = 0;
         if (!buddy_list_remove_exact(buddy_node, current_order, buddy_phys))
             break;
 
@@ -449,10 +455,13 @@ static uint32_t buddy_remove_order(uint8_t requested_order)
     while (order <= PMM_BUDDY_MAX_ORDER && buddy_free_list_heads[local_node][order] == 0)
         ++order;
 
-    if (order <= PMM_BUDDY_MAX_ORDER) {
+    if (order <= PMM_BUDDY_MAX_ORDER)
+    {
         target_node = local_node;
         pmm_local_hits += (1u << requested_order);
-    } else {
+    }
+    else
+    {
         bool found = false;
         for (uint32_t i = 1; i < node_count; ++i)
         {
@@ -460,7 +469,8 @@ static uint32_t buddy_remove_order(uint8_t requested_order)
             order = requested_order;
             while (order <= PMM_BUDDY_MAX_ORDER && buddy_free_list_heads[target_node][order] == 0)
                 ++order;
-            if (order <= PMM_BUDDY_MAX_ORDER) {
+            if (order <= PMM_BUDDY_MAX_ORDER)
+            {
                 found = true;
                 pmm_remote_hits += (1u << requested_order);
                 pmm_cross_node_fallbacks++;
@@ -496,7 +506,8 @@ static uint32_t buddy_remove(void) { return buddy_remove_order(0u); }
 
 static void buddy_reset_state(void)
 {
-    for (uint32_t node_id = 0; node_id < NUMA_POLICY_MAX_NODES; ++node_id) {
+    for (uint32_t node_id = 0; node_id < NUMA_POLICY_MAX_NODES; ++node_id)
+    {
         for (uint32_t order = 0u; order <= PMM_BUDDY_MAX_ORDER; ++order)
             buddy_free_list_heads[node_id][order] = 0;
     }
@@ -683,10 +694,7 @@ uint32_t physical_memory_manager_debug_get_free_block_count(uint8_t order)
 #endif
 }
 
-uint32_t physical_memory_manager_get_uaf_anomaly_count(void)
-{
-    return pmm_uaf_anomalies;
-}
+uint32_t physical_memory_manager_get_uaf_anomaly_count(void) { return pmm_uaf_anomalies; }
 
 uint32_t physical_memory_manager_get_watermark_high(void) { return free_page_count_watermark_high; }
 
@@ -759,7 +767,8 @@ void physical_memory_manager_initialize(void)
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     buddy_reset_state();
 #else
-    for (uint32_t i = 0; i < NUMA_POLICY_MAX_NODES; ++i) free_list_heads[i] = 0u;
+    for (uint32_t i = 0; i < NUMA_POLICY_MAX_NODES; ++i)
+        free_list_heads[i] = 0u;
 #endif
 
     uint32_t kernel_phys_start = PMM_LOW_MEMORY_LIMIT;

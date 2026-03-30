@@ -1,11 +1,12 @@
-#include <kernel/memory/helpers/core_allocators_helper.h>
-#include <kernel/memory/frame_arena.h>
-#include <kernel/memory/pool_allocator.h>
-#include <kernel/memory/stack_allocator.h>
-#include <kernel/memory/ring_buffer.h>
 #include <kernel/config.h>
+#include <kernel/memory/frame_arena.h>
+#include <kernel/memory/helpers/core_allocators_helper.h>
+#include <kernel/memory/pool_allocator.h>
+#include <kernel/memory/ring_buffer.h>
+#include <kernel/memory/stack_allocator.h>
 
-void write_core_allocators_info(Serial_t *serial, bool frame_arena_ok, bool stack_allocator_ok, bool pool_allocator_ok, bool pinned_ok)
+void write_core_allocators_info(Serial_t *serial, bool frame_arena_ok, bool stack_allocator_ok, bool pool_allocator_ok,
+                                bool pinned_ok)
 {
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: core allocators ready: arena=");
     serial_write_int(serial, (int32_t) frame_arena_ok);

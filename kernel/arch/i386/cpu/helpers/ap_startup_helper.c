@@ -1,8 +1,8 @@
-#include <kernel/cpu/helpers/ap_startup_helper.h>
-#include <kernel/cpu/ap_startup.h>
-#include <kernel/cpu/apic_ipi.h>
-#include <kernel/cpu/ap_trampoline.h>
 #include <kernel/config.h>
+#include <kernel/cpu/ap_startup.h>
+#include <kernel/cpu/ap_trampoline.h>
+#include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/helpers/ap_startup_helper.h>
 
 void write_ap_bootstrap_init_info(Serial_t *serial, uint8_t ap_bootstrap_ok)
 {
@@ -37,7 +37,8 @@ void write_ap_trampoline_installed_info(Serial_t *serial)
     serial_write_string(serial, "\n");
 }
 
-void write_ap_startup_dispatch_info(Serial_t *serial, ApplicationProcessorBootstrapEntry_t *entry, uint8_t sequence_ok, uint8_t ack_ok, uint8_t c_entry_ok, uint8_t attempts_used)
+void write_ap_startup_dispatch_info(Serial_t *serial, ApplicationProcessorBootstrapEntry_t *entry, uint8_t sequence_ok,
+                                    uint8_t ack_ok, uint8_t c_entry_ok, uint8_t attempts_used)
 {
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: AP startup dispatch apic_id=");
     serial_write_int(serial, (int32_t) entry->apic_id);
@@ -62,7 +63,8 @@ void write_ap_startup_dispatch_info(Serial_t *serial, ApplicationProcessorBootst
     serial_write_string(serial, "\n");
 }
 
-void write_ap_startup_summary(Serial_t *serial, uint32_t attempted, uint32_t delivered, uint32_t retries_consumed, uint32_t sequence_failures, uint32_t acknowledgement_timeouts, uint32_t c_entry_timeouts)
+void write_ap_startup_summary(Serial_t *serial, uint32_t attempted, uint32_t delivered, uint32_t retries_consumed,
+                              uint32_t sequence_failures, uint32_t acknowledgement_timeouts, uint32_t c_entry_timeouts)
 {
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: AP startup summary attempted=");
     serial_write_int(serial, (int32_t) attempted);

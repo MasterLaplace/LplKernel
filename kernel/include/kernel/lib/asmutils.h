@@ -94,8 +94,8 @@ extern uint32_t asmutils_get_page_fault_linear_address(void);
  * Returns CPU capability and feature information. Output pointers are checked
  * for NULL before writing.
  */
-extern void asmutils_cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *out_eax, uint32_t *out_ebx,
-                           uint32_t *out_ecx, uint32_t *out_edx);
+extern void asmutils_cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *out_eax, uint32_t *out_ebx, uint32_t *out_ecx,
+                           uint32_t *out_edx);
 
 /**
  * @brief Read a Model-Specific Register (MSR).

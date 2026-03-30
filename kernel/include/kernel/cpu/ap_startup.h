@@ -8,13 +8,13 @@
 #ifndef KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H
 #define KERNEL_CPU_APPLICATION_PROCESSOR_STARTUP_H
 
-#include <kernel/drivers/serial.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/paging.h>
+#include <kernel/drivers/serial.h>
 #include <kernel/memory/heap.h>
 #include <stddef.h>
 #include <stdint.h>

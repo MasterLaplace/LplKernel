@@ -1,6 +1,6 @@
 #include <kernel/cpu/numa_policy.h>
 
-#define NUMA_POLICY_MAX_SLOTS CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC
+#define NUMA_POLICY_MAX_SLOTS  CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC
 #define NUMA_POLICY_MAX_RANGES 32u
 
 typedef struct {
@@ -36,9 +36,9 @@ static void numa_policy_parse_srat(const AdvancedConfigurationAndPowerInterfaceS
             if ((lapic_entry->flags & 1u) != 0u)
             {
                 uint32_t domain = lapic_entry->proximity_domain_low |
-                    ((uint32_t)lapic_entry->proximity_domain_high[0] << 8u) |
-                    ((uint32_t)lapic_entry->proximity_domain_high[1] << 16u) |
-                    ((uint32_t)lapic_entry->proximity_domain_high[2] << 24u);
+                                  ((uint32_t) lapic_entry->proximity_domain_high[0] << 8u) |
+                                  ((uint32_t) lapic_entry->proximity_domain_high[1] << 16u) |
+                                  ((uint32_t) lapic_entry->proximity_domain_high[2] << 24u);
 
                 uint32_t apic_id = lapic_entry->apic_id;
                 uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_id);
@@ -98,8 +98,8 @@ static void numa_policy_parse_srat(const AdvancedConfigurationAndPowerInterfaceS
                     numa_nodes[domain].memory_ranges++;
                     if (numa_range_count < NUMA_POLICY_MAX_RANGES)
                     {
-                        numa_ranges[numa_range_count].base = (uint32_t)mem_entry->base_address;
-                        numa_ranges[numa_range_count].length = (uint32_t)mem_entry->region_length;
+                        numa_ranges[numa_range_count].base = (uint32_t) mem_entry->base_address;
+                        numa_ranges[numa_range_count].length = (uint32_t) mem_entry->region_length;
                         numa_ranges[numa_range_count].node_id = domain;
                         numa_range_count++;
                     }
@@ -157,15 +157,9 @@ uint32_t numa_policy_get_node_for_slot(uint32_t slot)
     return numa_slot_to_node_map[slot];
 }
 
-uint32_t numa_policy_get_local_node(void)
-{
-    return numa_policy_get_node_for_slot(cpu_topology_get_logical_slot());
-}
+uint32_t numa_policy_get_local_node(void) { return numa_policy_get_node_for_slot(cpu_topology_get_logical_slot()); }
 
-uint32_t numa_policy_get_node_count(void)
-{
-    return numa_node_count;
-}
+uint32_t numa_policy_get_node_count(void) { return numa_node_count; }
 
 uint32_t numa_policy_get_node_for_address(uint32_t phys_addr)
 {

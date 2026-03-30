@@ -15,15 +15,14 @@
 #include <kernel/cpu/pmm.h>
 #include <kernel/cpu/ring3.h>
 #include <kernel/drivers/framebuffer.h>
-#include <kernel/memory/frame_arena.h>
-#include <kernel/memory/slab.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/pool_allocator.h>
-#include <kernel/memory/slab.h>
-#include <kernel/memory/tlsf.h>
 #include <kernel/memory/ring_buffer.h>
+#include <kernel/memory/slab.h>
 #include <kernel/memory/stack_allocator.h>
+#include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/smoke_test.h>
 
@@ -397,8 +396,7 @@ void kernel_smoke_test_run_heap_allocate_free(Serial_t *serial_port)
         }
     }
 #else
-    guard_triggered =
-        (rejected_after > rejected_before) || (double_after > double_before);
+    guard_triggered = (rejected_after > rejected_before) || (double_after > double_before);
 #endif
 
     pass = pass && free_pool_restored && large_counter_ok && guard_triggered;
@@ -632,9 +630,7 @@ void kernel_smoke_test_run_cpu_topology_slot_domain(Serial_t *serial_port)
 void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-    static const uint32_t slab_sizes[3u] = {
-        KERNEL_SLAB_SIZE_SMALL, KERNEL_SLAB_SIZE_MEDIUM, KERNEL_SLAB_SIZE_LARGE
-    };
+    static const uint32_t slab_sizes[3u] = {KERNEL_SLAB_SIZE_SMALL, KERNEL_SLAB_SIZE_MEDIUM, KERNEL_SLAB_SIZE_LARGE};
     bool overall_pass = true;
 
     for (uint32_t ci = 0u; ci < 3u; ++ci)
@@ -682,7 +678,7 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
     else
         serial_write_string(serial_port, " (fail)\n");
 #else
-    static const uint32_t sc_sizes[3u] = { 8u, 64u, 256u };
+    static const uint32_t sc_sizes[3u] = {8u, 64u, 256u};
     bool overall_pass = true;
     uint32_t domain_count = kernel_heap_get_server_domain_count();
     bool domain_meta_ok = (domain_count >= 1u) && (kernel_heap_get_server_active_domain() == 0u);
@@ -1006,7 +1002,8 @@ void kernel_smoke_test_run_pool_allocator_basic(Serial_t *serial_port)
     if (poison_test)
     {
         uint8_t *p = (uint8_t *) poison_test;
-        if (kernel_pool_get_object_size() > sizeof(void *) + 4u) {
+        if (kernel_pool_get_object_size() > sizeof(void *) + 4u)
+        {
             if (p[sizeof(void *) + 4u] != 0xDF)
                 poison_ok = false;
         }
@@ -1548,10 +1545,7 @@ void kernel_smoke_test_run_page_fault_exception(void)
     (void) trap;
 }
 
-void kernel_smoke_test_run_double_fault_exception(void)
-{
-    __asm__ volatile("int $0x08");
-}
+void kernel_smoke_test_run_double_fault_exception(void) { __asm__ volatile("int $0x08"); }
 
 void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
 {
@@ -1951,34 +1945,39 @@ void kernel_smoke_test_run_heap_poison_canary(Serial_t *serial_port)
     bool alloc_ok = (secret != NULL) && (normal != NULL);
 
     bool poison_ok = true;
-#ifdef LPL_KERNEL_DEBUG_POISON
-    if (normal) {
-        uint8_t *ptr = (uint8_t *)normal;
-        for (uint32_t i = 0; i < 32u; ++i) {
-            if (ptr[i] != 0xCC) poison_ok = false;
+#    ifdef LPL_KERNEL_DEBUG_POISON
+    if (normal)
+    {
+        uint8_t *ptr = (uint8_t *) normal;
+        for (uint32_t i = 0; i < 32u; ++i)
+        {
+            if (ptr[i] != 0xCC)
+                poison_ok = false;
         }
     }
-#endif
+#    endif
 
-#ifdef LPL_KERNEL_DEBUG_POISON
+#    ifdef LPL_KERNEL_DEBUG_POISON
     uint32_t rejected_before = kernel_heap_debug_get_rejected_free_count();
-#endif
+#    endif
 
-    if (normal) {
-        KernelHeapBlock_t *header = ((KernelHeapBlock_t *)normal) - 1;
+    if (normal)
+    {
+        KernelHeapBlock_t *header = ((KernelHeapBlock_t *) normal) - 1;
         header->canary = 0xBAD;
         kfree(normal);
     }
 
-    if (secret) kfree(secret);
+    if (secret)
+        kfree(secret);
 
     bool canary_ok;
-#ifdef LPL_KERNEL_DEBUG_POISON
+#    ifdef LPL_KERNEL_DEBUG_POISON
     uint32_t rejected_after = kernel_heap_debug_get_rejected_free_count();
     canary_ok = (rejected_after > rejected_before);
-#else
+#    else
     canary_ok = true;
-#endif
+#    endif
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: heap poison/canary smoke: alloc=");
     serial_write_int(serial_port, (int32_t) alloc_ok);
@@ -2004,14 +2003,17 @@ void kernel_smoke_test_run_pmm_uaf_detection(Serial_t *serial_port)
     uint32_t page1 = physical_memory_manager_page_frame_allocate();
     uint32_t page2 = physical_memory_manager_page_frame_allocate();
 
-    if (!page1 || !page2) {
+    if (!page1 || !page2)
+    {
         serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: PMM UAF smoke: failed to allocate pages\n");
-        if (page1) physical_memory_manager_page_frame_free(page1);
-        if (page2) physical_memory_manager_page_frame_free(page2);
+        if (page1)
+            physical_memory_manager_page_frame_free(page1);
+        if (page2)
+            physical_memory_manager_page_frame_free(page2);
         return;
     }
 
-    uint32_t *virt1 = (uint32_t *)(page1 + KERNEL_VIRTUAL_BASE);
+    uint32_t *virt1 = (uint32_t *) (page1 + KERNEL_VIRTUAL_BASE);
 
     physical_memory_manager_page_frame_free(page1);
 
@@ -2022,21 +2024,23 @@ void kernel_smoke_test_run_pmm_uaf_detection(Serial_t *serial_port)
     uint32_t uaf_after = physical_memory_manager_get_uaf_anomaly_count();
 
     bool detected = (uaf_after > uaf_before);
-    if (page2) physical_memory_manager_page_frame_free(page2);
-    if (page_retry && page_retry != page1) physical_memory_manager_page_frame_free(page_retry);
+    if (page2)
+        physical_memory_manager_page_frame_free(page2);
+    if (page_retry && page_retry != page1)
+        physical_memory_manager_page_frame_free(page_retry);
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: PMM UAF smoke: detected=");
     serial_write_int(serial_port, (int32_t) detected);
     serial_write_string(serial_port, ", same_page=");
     serial_write_int(serial_port, (int32_t) (page1 == page_retry));
-#ifdef LPL_KERNEL_DEBUG_POISON
+#    ifdef LPL_KERNEL_DEBUG_POISON
     if (detected)
         serial_write_string(serial_port, " (pass)\n");
     else
         serial_write_string(serial_port, " (fail)\n");
-#else
+#    else
     serial_write_string(serial_port, " (skipped - no poison)\n");
-#endif
+#    endif
 #endif
 }
 

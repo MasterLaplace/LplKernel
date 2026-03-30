@@ -284,11 +284,13 @@ static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_
     }
 
     acpi_madt_available = 1u;
-    acpi_madt_state_name = (acpi_madt_io_apic_count == 0u) ? "acpi-madt-ready-no-ioapic" : "acpi-madt-ready-ioapic-found";
+    acpi_madt_state_name =
+        (acpi_madt_io_apic_count == 0u) ? "acpi-madt-ready-no-ioapic" : "acpi-madt-ready-ioapic-found";
     return 1u;
 }
 
-const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_and_power_interface_find_table(const char *signature)
+const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
+advanced_configuration_and_power_interface_find_table(const char *signature)
 {
     const AdvancedConfigurationAndPowerInterfaceRsdp_t *rsdp;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *rsdt;
@@ -449,7 +451,9 @@ uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_source_ov
     return acpi_madt_iso_info[index].flags;
 }
 
-uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t interrupt_request, uint32_t *global_system_interrupt, uint16_t *flags)
+uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t interrupt_request,
+                                                                        uint32_t *global_system_interrupt,
+                                                                        uint16_t *flags)
 {
     if (!global_system_interrupt || !flags)
         return 0u;
@@ -477,7 +481,8 @@ uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t 
     return 1u;
 }
 
-uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t global_system_interrupt, uint8_t *io_apic_index)
+uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uint32_t global_system_interrupt,
+                                                                             uint8_t *io_apic_index)
 {
     uint8_t found = 0u;
     uint32_t best_base = 0u;

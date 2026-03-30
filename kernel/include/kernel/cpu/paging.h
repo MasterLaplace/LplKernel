@@ -183,7 +183,6 @@ typedef struct __attribute__((packed)) {
  */
 #define PAGE_OFFSET(virt_addr) ((uint32_t) (virt_addr) & 0xFFF)
 
-
 /**
  * @brief Align address down to page boundary (4KB)
  */
@@ -198,7 +197,6 @@ typedef struct __attribute__((packed)) {
  * @brief Check if address is page-aligned
  */
 #define IS_PAGE_ALIGNED(addr) (((uint32_t) (addr) & 0xFFF) == 0)
-
 
 /**
  * @brief Get the current page directory physical address from CR3
@@ -222,7 +220,6 @@ extern void paging_invlpg(uint32_t virt_addr);
  * @brief Flush entire TLB by reloading CR3
  */
 extern void paging_flush_tlb(void);
-
 
 /**
  * @brief Initialize paging management subsystem

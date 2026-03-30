@@ -57,10 +57,7 @@ ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_
     return &ap_bootstrap_table.entries[logical_slot];
 }
 
-uint32_t application_processor_bootstrap_get_ap_count(void)
-{
-    return ap_bootstrap_table.ap_count;
-}
+uint32_t application_processor_bootstrap_get_ap_count(void) { return ap_bootstrap_table.ap_count; }
 
 void *application_processor_bootstrap_get_ap_stack_top(uint32_t logical_slot)
 {
@@ -93,10 +90,7 @@ uint8_t application_processor_bootstrap_is_booted(uint32_t logical_slot)
     return entry ? entry->booted : 0u;
 }
 
-void application_processor_bootstrap_reset_iteration(void)
-{
-    ap_bootstrap_table.next_entry_index = 0u;
-}
+void application_processor_bootstrap_reset_iteration(void) { ap_bootstrap_table.next_entry_index = 0u; }
 
 ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_next_unbooted_ap(void)
 {

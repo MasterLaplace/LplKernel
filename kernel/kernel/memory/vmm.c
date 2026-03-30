@@ -6,11 +6,11 @@
 */
 
 #include <kernel/config.h>
-#include <kernel/memory/vmm.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
-#include <stddef.h>
+#include <kernel/memory/vmm.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
 #define VMM_PAGE_COUNT  (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)

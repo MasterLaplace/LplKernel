@@ -84,9 +84,9 @@ static void slab_cache_populate(KernelSlabCache_t *cache, void *page_virt, uint3
 
 void kernel_slab_initialize(void **backing_pages, uint32_t page_count)
 {
-#ifndef PAGE_SIZE
-#    define PAGE_SIZE 4096u
-#endif
+#    ifndef PAGE_SIZE
+#        define PAGE_SIZE 4096u
+#    endif
 
     for (uint32_t i = 0u; i < page_count; ++i)
     {
@@ -145,7 +145,7 @@ bool kernel_slab_free(void *ptr)
         uint32_t *end_canary = (uint32_t *) ((uint8_t *) ptr + cache->object_size);
         if (*end_canary != 0xC001CAFEu)
             return false;
-#endif
+#    endif
 
         uint32_t *cookie_word = (uint32_t *) ((uint8_t *) ptr + sizeof(void *));
         if (*cookie_word == SLAB_FREE_COOKIE)

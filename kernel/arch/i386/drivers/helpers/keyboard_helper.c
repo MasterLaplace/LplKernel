@@ -1,6 +1,6 @@
+#include <kernel/config.h>
 #include <kernel/drivers/helpers/keyboard_helper.h>
 #include <kernel/drivers/keyboard.h>
-#include <kernel/config.h>
 
 void write_keyboard_runtime_info(Serial_t *serial)
 {

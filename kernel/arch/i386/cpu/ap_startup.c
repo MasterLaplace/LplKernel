@@ -1,7 +1,7 @@
 #include <kernel/cpu/ap_startup.h>
 
 static uint32_t kernel_cr3_cached = 0u;
-static ApplicationProcessorLocalContext_t ap_local_context = { 0 };
+static ApplicationProcessorLocalContext_t ap_local_context = {0};
 static Serial_t *ap_serial_port = NULL;
 static uint32_t ap_startup_reported_online_count = 0u;
 static uint8_t ap_startup_last_reported_apic_id = 0xFFu;
@@ -38,10 +38,7 @@ uint32_t application_processor_startup_get_kernel_cr3(void)
     return kernel_cr3_cached;
 }
 
-void application_processor_startup_set_serial_port(Serial_t *serial_port)
-{
-    ap_serial_port = serial_port;
-}
+void application_processor_startup_set_serial_port(Serial_t *serial_port) { ap_serial_port = serial_port; }
 
 uint8_t application_processor_startup_ensure_low_identity_mapping(void)
 {
@@ -95,20 +92,11 @@ uint32_t application_processor_startup_get_reported_online_count(void) { return 
 
 uint8_t application_processor_startup_get_last_reported_apic_id(void) { return ap_startup_last_reported_apic_id; }
 
-uint8_t application_processor_startup_get_apic_id(void)
-{
-    return ap_local_context.apic_id;
-}
+uint8_t application_processor_startup_get_apic_id(void) { return ap_local_context.apic_id; }
 
-uint32_t application_processor_startup_get_logical_slot(void)
-{
-    return ap_local_context.logical_slot;
-}
+uint32_t application_processor_startup_get_logical_slot(void) { return ap_local_context.logical_slot; }
 
-uint8_t application_processor_startup_is_initialized(void)
-{
-    return ap_local_context.initialized;
-}
+uint8_t application_processor_startup_is_initialized(void) { return ap_local_context.initialized; }
 
 void application_processor_startup_main_loop(void)
 {

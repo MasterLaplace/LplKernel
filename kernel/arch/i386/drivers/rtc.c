@@ -132,10 +132,12 @@ void realtime_clock_read_time(RealtimeClockTime_t *time_snapshot)
 
     do
     {
-        while (realtime_clock_is_update_in_progress());
+        while (realtime_clock_is_update_in_progress())
+            ;
         realtime_clock_read_raw(&second_1, &minute_1, &hour_1, &day_1, &month_1, &year_1, &register_b_1);
 
-        while (realtime_clock_is_update_in_progress());
+        while (realtime_clock_is_update_in_progress())
+            ;
         realtime_clock_read_raw(&second_2, &minute_2, &hour_2, &day_2, &month_2, &year_2, &register_b_2);
     } while (second_1 != second_2 || minute_1 != minute_2 || hour_1 != hour_2 || day_1 != day_2 || month_1 != month_2 ||
              year_1 != year_2);

@@ -7,30 +7,30 @@
 
 #include <kernel/cpu/apic_ipi.h>
 
-#define LAPIC_ICR_LOW_OFFSET     0x300u
-#define LAPIC_ICR_HIGH_OFFSET    0x310u
+#define LAPIC_ICR_LOW_OFFSET  0x300u
+#define LAPIC_ICR_HIGH_OFFSET 0x310u
 
-#define LAPIC_ICR_VECTOR_MASK    0x000000FFu
-#define LAPIC_ICR_DELIVERY_MODE_MASK     0x00000700u
-#define LAPIC_ICR_DELIVERY_MODE_FIXED    (0u << 8)
-#define LAPIC_ICR_DELIVERY_MODE_LOWEST   (1u << 8)
-#define LAPIC_ICR_DELIVERY_MODE_SMI      (2u << 8)
-#define LAPIC_ICR_DELIVERY_MODE_NMI      (4u << 8)
-#define LAPIC_ICR_DELIVERY_MODE_INIT     (5u << 8)
-#define LAPIC_ICR_DELIVERY_MODE_SIPI     (6u << 8)
-#define LAPIC_ICR_DEST_MODE_PHYSICAL     (0u << 11)
-#define LAPIC_ICR_DEST_MODE_LOGICAL      (1u << 11)
-#define LAPIC_ICR_DELIVERY_STATUS        (1u << 12)
-#define LAPIC_ICR_LEVEL_MASK             (1u << 14)
-#define LAPIC_ICR_LEVEL_ASSERT           (1u << 14)
-#define LAPIC_ICR_LEVEL_DEASSERT         0u
-#define LAPIC_ICR_TRIGGER_MODE_EDGE      0u
-#define LAPIC_ICR_TRIGGER_MODE_LEVEL     (1u << 15)
-#define LAPIC_ICR_DEST_SHORT_MASK        (3u << 18)
-#define LAPIC_ICR_DEST_SHORT_NONE        0u
-#define LAPIC_ICR_DEST_SHORT_SELF        (1u << 18)
-#define LAPIC_ICR_DEST_SHORT_ALL_INCL    (2u << 18)
-#define LAPIC_ICR_DEST_SHORT_ALL_EXCL    (3u << 18)
+#define LAPIC_ICR_VECTOR_MASK          0x000000FFu
+#define LAPIC_ICR_DELIVERY_MODE_MASK   0x00000700u
+#define LAPIC_ICR_DELIVERY_MODE_FIXED  (0u << 8)
+#define LAPIC_ICR_DELIVERY_MODE_LOWEST (1u << 8)
+#define LAPIC_ICR_DELIVERY_MODE_SMI    (2u << 8)
+#define LAPIC_ICR_DELIVERY_MODE_NMI    (4u << 8)
+#define LAPIC_ICR_DELIVERY_MODE_INIT   (5u << 8)
+#define LAPIC_ICR_DELIVERY_MODE_SIPI   (6u << 8)
+#define LAPIC_ICR_DEST_MODE_PHYSICAL   (0u << 11)
+#define LAPIC_ICR_DEST_MODE_LOGICAL    (1u << 11)
+#define LAPIC_ICR_DELIVERY_STATUS      (1u << 12)
+#define LAPIC_ICR_LEVEL_MASK           (1u << 14)
+#define LAPIC_ICR_LEVEL_ASSERT         (1u << 14)
+#define LAPIC_ICR_LEVEL_DEASSERT       0u
+#define LAPIC_ICR_TRIGGER_MODE_EDGE    0u
+#define LAPIC_ICR_TRIGGER_MODE_LEVEL   (1u << 15)
+#define LAPIC_ICR_DEST_SHORT_MASK      (3u << 18)
+#define LAPIC_ICR_DEST_SHORT_NONE      0u
+#define LAPIC_ICR_DEST_SHORT_SELF      (1u << 18)
+#define LAPIC_ICR_DEST_SHORT_ALL_INCL  (2u << 18)
+#define LAPIC_ICR_DEST_SHORT_ALL_EXCL  (3u << 18)
 
 static uint32_t apic_ipi_lapic_base = 0u;
 static uint32_t apic_ipi_init_attempt_count = 0u;

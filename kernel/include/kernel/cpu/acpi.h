@@ -162,7 +162,8 @@ extern void advanced_configuration_and_power_interface_madt_initialize(void);
  * @param signature 4-character signature of the table (e.g. "SRAT").
  * @return Pointer to the mapped ACPI table header, or NULL if not found.
  */
-extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_and_power_interface_find_table(const char *signature);
+extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
+advanced_configuration_and_power_interface_find_table(const char *signature);
 
 /**
  * @brief Return current ACPI/MADT discovery state name.
@@ -252,7 +253,8 @@ extern uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_so
  *
  * @return non-zero when MADT topology is available; zero otherwise.
  */
-extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq, uint32_t *global_system_interrupt,
+extern uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t irq,
+                                                                               uint32_t *global_system_interrupt,
                                                                                uint16_t *flags);
 
 /**

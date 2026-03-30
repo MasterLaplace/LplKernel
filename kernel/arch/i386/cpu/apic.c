@@ -42,7 +42,8 @@ bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
         asmutils_write_model_specific_register(IA32_APIC_BASE_MSR, apic_base);
         g_x2apic_active = false;
 
-        if (g_apic_mmio_base) {
+        if (g_apic_mmio_base)
+        {
             uint32_t svr = apic_read(LAPIC_REG_SPURIOUS);
             apic_write(LAPIC_REG_SPURIOUS, svr | (1u << 8u));
         }
@@ -57,11 +58,11 @@ uint32_t apic_read(uint32_t reg_offset)
     if (g_x2apic_active)
     {
         uint32_t msr = X2APIC_MSR_BASE + (reg_offset >> 4);
-        return (uint32_t)asmutils_read_model_specific_register(msr);
+        return (uint32_t) asmutils_read_model_specific_register(msr);
     }
     else if (g_apic_mmio_base)
     {
-        return *(volatile uint32_t *)(uintptr_t)(g_apic_mmio_base + reg_offset);
+        return *(volatile uint32_t *) (uintptr_t) (g_apic_mmio_base + reg_offset);
     }
     return 0xFFFFFFFFu;
 }
@@ -71,11 +72,11 @@ void apic_write(uint32_t reg_offset, uint32_t value)
     if (g_x2apic_active)
     {
         uint32_t msr = X2APIC_MSR_BASE + (reg_offset >> 4);
-        asmutils_write_model_specific_register(msr, (uint64_t)value);
+        asmutils_write_model_specific_register(msr, (uint64_t) value);
     }
     else if (g_apic_mmio_base)
     {
-        *(volatile uint32_t *)(uintptr_t)(g_apic_mmio_base + reg_offset) = value;
+        *(volatile uint32_t *) (uintptr_t) (g_apic_mmio_base + reg_offset) = value;
     }
 }
 

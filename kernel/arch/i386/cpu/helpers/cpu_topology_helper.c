@@ -1,6 +1,6 @@
-#include <kernel/cpu/helpers/cpu_topology_helper.h>
-#include <kernel/cpu/cpu_topology.h>
 #include <kernel/config.h>
+#include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/helpers/cpu_topology_helper.h>
 
 void write_cpu_topology_info(Serial_t *serial)
 {
