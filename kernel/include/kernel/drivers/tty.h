@@ -27,6 +27,10 @@
 
 extern void terminal_initialize(void);
 
+extern void terminal_reset_pos(void);
+
+extern void terminal_clear(void);
+
 extern void terminal_setcolor(uint8_t color);
 
 extern uint8_t terminal_getcolor(void);

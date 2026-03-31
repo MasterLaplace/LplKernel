@@ -382,7 +382,7 @@ void print_multiboot_info(uint32_t kernel_start, MultibootInfo_t *mbi)
 
     if (mbi->flags & (1 << 2))
     {
-        print_multiboot_string(mbi->cmdline, kernel_start, "Command line: ");
+        print_multiboot_string(mbi->cmdline, kernel_start, "Command line:");
     }
 
     if (mbi->flags & (1 << 3) && mbi->mods_count > 0 && mbi->mods_addr)

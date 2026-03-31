@@ -28,24 +28,6 @@ static inline void terminal_putentryat(uint8_t c, uint8_t color, uint16_t row, u
     terminal_buffer[index] = vga_entry(c, color);
 }
 
-static inline void terminal_reset_pos(void)
-{
-    terminal_row = 0u;
-    terminal_column = 0u;
-}
-
-static inline void terminal_clear(void)
-{
-    for (uint16_t row = 0; row < VGA_HEIGHT; ++row)
-    {
-        for (uint16_t col = 0; col < VGA_WIDTH; ++col)
-        {
-            const uint16_t index = row * VGA_WIDTH + col;
-            terminal_buffer[index] = vga_entry(' ', terminal_color);
-        }
-    }
-}
-
 static inline void terminal_scroll(void)
 {
     for (uint16_t row = 1; row < VGA_HEIGHT; ++row)
@@ -77,6 +59,24 @@ void terminal_initialize(void)
     for (uint16_t row = 0u; row < VGA_HEIGHT; ++row)
     {
         for (uint16_t col = 0u; col < VGA_WIDTH; ++col)
+        {
+            const uint16_t index = row * VGA_WIDTH + col;
+            terminal_buffer[index] = vga_entry(' ', terminal_color);
+        }
+    }
+}
+
+void terminal_reset_pos(void)
+{
+    terminal_row = 0u;
+    terminal_column = 0u;
+}
+
+void terminal_clear(void)
+{
+    for (uint16_t row = 0; row < VGA_HEIGHT; ++row)
+    {
+        for (uint16_t col = 0; col < VGA_WIDTH; ++col)
         {
             const uint16_t index = row * VGA_WIDTH + col;
             terminal_buffer[index] = vga_entry(' ', terminal_color);
