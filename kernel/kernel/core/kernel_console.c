@@ -1,15 +1,15 @@
+#include <kernel/config.h>
 #include <kernel/core/kernel_console.h>
 #include <kernel/cpu/ap_startup.h>
-#include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/ap_trampoline.h>
+#include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/drivers/helpers/keyboard_helper.h>
 #include <kernel/drivers/keyboard.h>
-#include <kernel/memory/heap.h>
-#include <kernel/cpu/pmm.h>
 #include <kernel/drivers/tty.h>
-#include <kernel/config.h>
+#include <kernel/memory/heap.h>
 
 static uint8_t kernel_string_equals(const char *lhs, const char *rhs)
 {

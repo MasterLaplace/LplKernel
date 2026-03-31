@@ -1,6 +1,6 @@
+#include <kernel/config.h>
 #include <kernel/core/kernel_splash.h>
 #include <kernel/drivers/tty.h>
-#include <kernel/config.h>
 #include <kernel/lib/asmutils.h>
 
 static uint32_t g_splash_total_steps = 0u;
@@ -54,8 +54,10 @@ static void kernel_splash_draw(const char *step_name)
     if (g_splash_total_steps > 0u)
         pct = (g_splash_current_step * 100u) / g_splash_total_steps;
 
-    if (pct < 10u) terminal_putchar(' ');
-    if (pct < 100u) terminal_putchar(' ');
+    if (pct < 10u)
+        terminal_putchar(' ');
+    if (pct < 100u)
+        terminal_putchar(' ');
     terminal_write_number(pct, 10u);
     terminal_write_string("%\n");
 }

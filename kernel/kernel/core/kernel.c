@@ -43,8 +43,8 @@
 #include <kernel/smoke_test.h>
 
 #include <kernel/core/kernel_console.h>
-#include <kernel/core/kernel_smp.h>
 #include <kernel/core/kernel_smoke_batch.h>
+#include <kernel/core/kernel_smp.h>
 #include <kernel/core/kernel_splash.h>
 
 #define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES     16384u

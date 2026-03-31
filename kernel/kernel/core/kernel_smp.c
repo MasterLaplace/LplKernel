@@ -1,13 +1,13 @@
 #include <kernel/core/kernel_smp.h>
-#include <kernel/cpu/helpers/ap_startup_helper.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
-#include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/ap_trampoline.h>
+#include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/helpers/ap_startup_helper.h>
 
-#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT           200000u
-#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT       300000u
-#define KERNEL_AP_STARTUP_MAX_ATTEMPTS                3u
+#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT     200000u
+#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT 300000u
+#define KERNEL_AP_STARTUP_MAX_ATTEMPTS          3u
 
 void kernel_smp_try_start_discovered_aps(Serial_t *com1)
 {

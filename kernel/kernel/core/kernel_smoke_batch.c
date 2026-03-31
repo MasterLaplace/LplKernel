@@ -1,6 +1,6 @@
+#include <kernel/config.h>
 #include <kernel/core/kernel_smoke_batch.h>
 #include <kernel/smoke_test.h>
-#include <kernel/config.h>
 
 void kernel_smoke_batch_run_initialization_tests(Serial_t *com1)
 {
