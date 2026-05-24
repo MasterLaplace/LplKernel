@@ -24,11 +24,12 @@ Ce livre est organisé en **cinq parties** suivant une progression logique des c
 
 | Profil | Parcours Recommandé |
 |:---|:---|
-| **Architecte Système / Kernel** | Ch. 1 → Ch. 2 → Ch. 3 → Ch. 8 |
+| **Architecte Système / Kernel** | Ch. 1 → Ch. 2 → Ch. 3 → Ch. 9 → Ch. 8 |
 | **Développeur Moteur de Jeu** | Ch. 1 → Ch. 3 → Ch. 4 → Ch. 5 → Ch. 6 |
 | **Ingénieur Réseau / Multijoueur** | Ch. 3 → Ch. 6 → Ch. 2 |
 | **Chercheur en BCI / Neurosciences** | Ch. 7 → Ch. 2 (Lock-Free) → Ch. 5 (Rendu VR) |
-| **Lecture Exhaustive** | Séquentielle : Ch. 1 à Ch. 8 |
+| **Ingénieur Embarqué / IoT** | Ch. 9 → Ch. 2 → Ch. 3 (Soft-Float) → Ch. 7 |
+| **Lecture Exhaustive** | Séquentielle : Ch. 1 à Ch. 9 |
 
 ## Conventions
 
@@ -1911,6 +1912,284 @@ Si le calcul quantique mature n'est pas attendu avant 2030-2040 pour les applica
 
 ---
 
+# Chapitre 9 : Gestion Énergétique — Du Transistor à la Sonde Spatiale
+
+## 9.1 Introduction : L'Énergie, Contrainte Architecturale Fondamentale
+
+Les chapitres précédents ont traité la mémoire, le déterminisme et le rendu comme les piliers d'un moteur FullDive. Mais il existe une contrainte physique qui les transcende toutes : l'**énergie**. Un casque VR autonome fonctionne sur batterie — chaque microseconde de calcul inutile réduit l'autonomie et augmente la chaleur dissipée contre le visage de l'utilisateur. Un serveur de build consomme des mégawatts — chaque instruction gaspillée se traduit en coût financier et en empreinte carbone.
+
+La gestion énergétique n'est pas un sujet annexe : elle dicte le dimensionnement du matériel, la conception de la boucle de simulation, et même le choix des instructions assembleur dans l'*idle loop* du noyau. Ce chapitre explore la science de la consommation électrique depuis les lois physiques des semi-conducteurs jusqu'aux algorithmes d'ordonnancement du noyau, en passant par l'application la plus extrême jamais réalisée : l'hibernation de la sonde spatiale *Rosetta* pendant 31 mois à 800 millions de kilomètres du Soleil.
+
+## 9.2 Physique de la Dissipation de Puissance CMOS
+
+### 9.2.1 Puissance Dynamique
+
+La quasi-totalité des processeurs modernes repose sur la technologie **CMOS** (*Complementary Metal-Oxide-Semiconductor*). La consommation totale d'un circuit CMOS est la somme de deux composantes : la **puissance dynamique** (transitions logiques) et la **puissance statique** (courants de fuite).[^1]
+
+La puissance dynamique de commutation est modélisée par l'équation fondamentale :
+
+$$P_{dynamique} = \alpha \cdot C_L \cdot V_{DD}^2 \cdot f$$
+
+Où :
+- $\alpha$ : facteur d'activité de commutation (probabilité de transition par cycle)
+- $C_L$ : capacité de charge dynamique totale
+- $V_{DD}$ : tension d'alimentation
+- $f$ : fréquence d'horloge
+
+La puissance de court-circuit (*short-circuit power*), quant à elle, se manifeste de manière extrêmement brève lors de la transition d'un signal : pendant le laps de temps où la tension d'entrée bascule, les transistors PMOS et NMOS se retrouvent simultanément passants, créant un chemin direct temporaire entre l'alimentation et la masse. Bien que cette composante représente généralement moins de 10 % de la puissance dynamique totale, elle augmente significativement si les fronts de transition se dégradent.[^1]
+
+### 9.2.2 Puissance Statique et Courants de Fuite
+
+La puissance statique correspond à l'énergie dissipée **même lorsque le circuit est inactif** :
+
+$$P_{statique} = V_{CC} \cdot I_{CC}$$
+
+Où $I_{CC}$ est le courant de fuite total. Avec la miniaturisation (7 nm, 5 nm), la tension de seuil $V_{th}$ des transistors a dû être abaissée, provoquant une augmentation **exponentielle** des courants de fuite sous-le-seuil (*subthreshold leakage*). L'amincissement de l'oxyde de grille engendre également un courant de fuite par **effet tunnel quantique** (*gate leakage*). De surcroît, des diodes parasites formées par la diffusion entre la source/drain et le substrat génèrent des courants de fuite par polarisation inverse.[^2]
+
+Dans les architectures nanométriques modernes, la puissance statique peut représenter entre **30 % et 70 %** de la consommation totale si aucune mesure de confinement matériel n'est appliquée.[^2]
+
+### 9.2.3 Le Produit Énergie-Délai (EDP)
+
+L'optimisation énergétique ne consiste pas à minimiser la puissance brute — ralentir excessivement le calcul peut être contre-productif si les courants de fuite statiques consomment plus pendant le temps additionnel. La métrique correcte est le **Produit Énergie-Délai** (*Energy-Delay Product*) :
+
+$$EDP = E \cdot T = P \cdot T^2$$
+
+Minimiser l'EDP garantit l'équilibre optimal entre efficacité énergétique et réactivité. Le point de tension optimal se situe généralement autour de 1 V pour les dispositifs submicroniques avec des seuils de ~0.5 V.[^3]
+
+### 9.2.4 Impact des Algorithmes d'Ordonnancement
+
+Le choix de l'algorithme d'ordonnancement (*scheduler*) dicte le profil énergétique. Un algorithme FCFS (*First-Come, First-Served*) peut induire un "effet de convoi", où des tâches rapides restent bloquées derrière de longues tâches complexes, empêchant le processeur de retourner en sommeil profond. À l'inverse, une approche SJF (*Shortest Job First*) permet de purger la file d'attente rapidement pour entrer en hibernation, bien qu'elle puisse provoquer la privation (*starvation*) des tâches lourdes. Les planificateurs modernes privilégient la consolidation de charge pour regrouper l'exécution et prolonger les phases d'inactivité continue.[^3]
+
+## 9.3 Mécanismes Matériels de Confinement
+
+### 9.3.1 Clock Gating
+
+Le **Clock Gating** est la technique la plus répandue pour réduire la puissance dynamique. En bloquant le signal d'horloge d'un composant inactif (cache, bus, périphérique), on annule simultanément le facteur de fréquence $f$ et d'activité $\alpha$.[^4]
+
+L'implémentation naïve (porte AND entre horloge et signal Enable) risque de générer des *glitches* si le signal d'activation bascule pendant que l'horloge est haute. Les bibliothèques CMOS fournissent des cellules **ICG** (*Integrated Clock Gating*) intégrant un *latch* qui échantillonne le signal Enable uniquement sur le front bas de l'horloge. Pour évaluer la qualité de la mise en œuvre, on mesure l'efficacité de la coupure d'horloge via la métrique de **CGE** (*Clock Gate Efficiency*).[^4]
+
+### 9.3.2 Power Gating
+
+Le **Power Gating** cible directement la puissance statique en coupant physiquement l'alimentation d'un bloc matériel entier via des *sleep transistors*. C'est redoutablement efficace contre les courants de fuite, mais avec un inconvénient majeur : la **perte irrévocable de l'état logique** du bloc éteint.[^5]
+
+Le noyau doit orchestrer une séquence stricte avant l'extinction :
+1. Sauvegarder les données critiques (registres de rétention à tension minimale)
+2. Activer les **cellules d'isolation** aux frontières pour empêcher la propagation de signaux flottants
+3. Couper l'alimentation
+4. Au réveil : restaurer l'état, désactiver l'isolation, re-valider les données
+
+### 9.3.3 DVFS — Dynamic Voltage and Frequency Scaling
+
+Le **DVFS** ajuste dynamiquement la tension *et* la fréquence du processeur selon la charge de travail. La réduction de tension offre une baisse quadratique de la consommation, mais allonge le délai de propagation des portes, forçant à réduire la fréquence pour éviter les erreurs de calcul.[^6]
+
+L'implémentation requiert une communication avec le **PMIC** (*Power Management IC*) via le bus I2C. Ce bus nécessite des résistances de tirage (*pull-up*) judicieusement dimensionnées, typiquement 2,2 k$\Omega$ pour le mode rapide (1 Mbit/s) ou 0,5 k$\Omega$ pour le mode ultra-rapide (3,4 Mbit/s). Le code du noyau envoie des commandes de type *read-modify-write* pour ajuster les registres de régulation de tension. Dans les architectures multiprocesseurs modernes, la gestion de domaines de tension distincts s'appuie sur le modèle **GALS** (*Globally Asynchronous Locally Synchronous*). Par exemple, sur les microcontrôleurs STM32, la fonction `HAL_PWREx_ControlVoltageScaling()` encapsule ces appels matériels :
+
+```c
+// Séquence DVFS simplifiée (pseudo-code noyau)
+void dvfs_set_frequency(uint32_t target_freq) {
+    uint32_t target_voltage = freq_to_voltage_table[target_freq];
+
+    if (target_freq > current_freq) {
+        // Augmentation : d'abord la tension, PUIS la fréquence
+        pmic_i2c_write(VOLTAGE_REG, target_voltage);
+        wait_voltage_stable();  // CRITIQUE : attendre stabilisation PLL
+        set_cpu_frequency(target_freq);
+    } else {
+        // Diminution : d'abord la fréquence, PUIS la tension
+        set_cpu_frequency(target_freq);
+        pmic_i2c_write(VOLTAGE_REG, target_voltage);
+    }
+}
+```
+
+L'ordre est critique : augmenter la fréquence avant que la tension ne soit stable provoque un effondrement du système.[^6]
+
+## 9.4 L'Interface ACPI : Standardisation des États d'Énergie
+
+L'**ACPI** (*Advanced Configuration and Power Interface*), introduit en 1996, transfère la politique de gestion énergétique du BIOS au noyau OS via l'**OSPM** (*OS-directed Power Management*). Il catégorise la gestion en plusieurs strates :[^7]
+
+### 9.4.1 S-States (Système Global)
+
+| État | Nom | Description | Rétention d'État |
+|:---|:---|:---|:---|
+| **S0** | Working | Système pleinement opérationnel | Totale |
+| **S1** | Standby | CPU suspendu, mémoire et caches maintenus | Totale |
+| **S3** | Suspend-to-RAM | CPU éteint, seule la DRAM est rafraîchie | RAM uniquement |
+| **S4** | Hibernate | RAM copiée sur disque, système éteint | Disque |
+| **S5/G3** | Off | Arrêt complet | Aucune |
+
+### 9.4.2 C-States (Processeur)
+
+Les **C-States** définissent les niveaux d'inactivité du processeur dans l'état S0 :
+
+| C-State | Mode | Caractéristiques |
+|:---|:---|:---|
+| **C0** | Active | Exécution d'instructions. Seul état où les P-States s'appliquent |
+| **C1** | Halt | Horloge arrêtée, registres maintenus. Réveil quasi instantané |
+| **C2** | Stop-Clock | Horloge matérielle arrêtée. Latence de réveil plus longue |
+| **C3** | Sleep | Cohérence des caches abandonnée. Purge nécessaire au réveil |
+| **C4+** | Deep Sleep | Power Gating complet. Gains massifs sur les courants de fuite |
+
+### 9.4.3 P-States et D-States
+
+Les **P-States** (Performance States) implémentent le DVFS dans C0 : P0 = fréquence/tension max, Pn = couples progressivement réduits. Les **D-States** (D0 à D3) contrôlent individuellement l'alimentation des périphériques.[^7]
+
+## 9.5 Implémentation Assembleur : Les Instructions d'Arrêt
+
+### 9.5.1 x86 : HLT et MWAIT
+
+L'instruction **HLT** (*Halt*, opcode `0xF4`) suspend l'exécution du processeur jusqu'à une interruption matérielle, plaçant le CPU en C1. Présente depuis le 8086, elle n'a été utilisée pour l'économie d'énergie qu'à partir du DX4 (1994).[^8]
+
+Sa limite : dans un système multiprocesseur, réveiller un cœur en HLT nécessite une **IPI** (*Inter-Processor Interrupt*) coûteuse. Les extensions SSE3 ont introduit **MONITOR/MWAIT** pour résoudre ce problème :
+
+```asm
+; x86 : mise en veille avec surveillance d'adresse mémoire
+; Le noyau arme la surveillance sur l'adresse de la runqueue
+MONITOR  [runqueue_addr], ecx, edx   ; Armer la surveillance
+
+; Hints dans EAX : bits [3:0] = C-State cible (ex: 0x10 pour C3)
+mov eax, 0x10          ; C-State hint
+mov ecx, 0x01          ; Activer les extensions (TPAUSE-aware)
+MWAIT                  ; Entrer en sommeil
+
+; Le CPU se réveille SANS IPI quand un autre cœur écrit à [runqueue_addr]
+```
+
+Le pilote Linux `intel_idle` exploite cette mécanique pour purger les caches L1/L2 au moment optimal avant d'exécuter MWAIT, contournant la latence de l'implémentation ACPI générique.[^8]
+
+### 9.5.2 ARM : WFI et WFE
+
+Les architectures ARM (des Cortex-M embarqués aux Cortex-A des smartphones) adoptent une approche RISC et utilisent deux instructions spécialisées :
+
+| Instruction | Mécanisme de Réveil | Usage Typique |
+|:---|:---|:---|
+| **WFI** (*Wait For Interrupt*) | Interruption matérielle (NVIC/GIC) | Boucle d'attente (*idle loop*) du noyau |
+| **WFE** (*Wait For Event*) | Événement interne, instruction SEV d'un autre cœur, signal EVENTI | Spinlocks écoénergétiques en SMP |
+
+L'instruction WFE est particulièrement stratégique pour les **spinlocks** : au lieu de boucler en gaspillant de la puissance dynamique, un cœur en échec d'acquisition de verrou exécute WFE et s'endort. Le cœur libérateur exécute **SEV** (*Send Event*). L'exécution de SEV génère une impulsion sur le signal EVENTO qui modifie le registre d'événement du cœur en attente, le réveillant immédiatement sans recourir à un complexe contrôleur d'interruptions (GIC).[^9]
+
+Le pattern de mise en veille sûr pour WFI requiert une attention aux *race conditions* :
+
+```c
+// Pattern ARM sûr pour WFI (évite le missed-interrupt bug)
+void enter_idle(void) {
+    __disable_irq();              // Masquer les interruptions (PRIMASK)
+    if (no_work_pending()) {      // Revérifier les flags logiciels
+        __WFI();                  // Le CPU se réveille même si PRIMASK est set
+    }
+    __enable_irq();               // Les interruptions en attente sont servies ici
+}
+```
+
+Le registre **SCB_SCR** du Cortex-M permet d'approfondir le sommeil. Le bit **SLEEPDEEP** désactive les oscillateurs principaux (PLL) et place les régulateurs en mode basse puissance, passant du simple *Sleep* au **Deep Sleep** (consommation de quelques µA). Le bit **SLEEPONEXIT** fait se rendormir automatiquement le CPU après chaque ISR, éliminant le coût de restauration de contexte.[^9]
+
+## 9.6 Le Noyau Sans Tic (Tickless Kernel)
+
+### 9.6.1 Le Problème du Tic Périodique
+
+Dans l'architecture classique, le noyau maintient un timer périodique (100–1000 Hz) qui génère une interruption à chaque tic pour mettre à jour l'horloge interne et réévaluer l'ordonnancement. Ce mécanisme est un **désastre énergétique** : même si la file de processus est vide, l'interruption force le CPU à quitter son état C3/Deep Sleep toutes les millisecondes.[^10]
+
+### 9.6.2 Suppression du Tic
+
+Le **Tickless Kernel** (Linux `CONFIG_NO_HZ_IDLE`, FreeRTOS `configUSE_TICKLESS_IDLE`) résout ce problème :
+
+1. Quand aucune tâche n'est exécutable, évaluer le délai exact avant le prochain timeout
+2. **Désactiver** le timer périodique
+3. Programmer une alarme asynchrone (HPET, timer basse puissance) à la durée exacte
+4. Exécuter WFI/MWAIT — le CPU dort ininterrompu
+5. Au réveil, une fonction du noyau (comme `vTaskStepTick()` dans FreeRTOS) interroge l'horloge matérielle absolue pour calculer le temps d'inactivité écoulé et l'ajoute artificiellement au compteur de ticks global.
+
+Le CPU peut ainsi rester en veille **plusieurs secondes, voire heures**, au lieu d'être réveillé 1000 fois par seconde. L'illusion est parfaite pour les couches applicatives : le temps système semble continu.[^10]
+
+### 9.6.3 Gouverneurs CPUIdle sous Linux
+
+La décision d'entrer dans tel ou tel C-State incombe au sous-système **CPUIdle**, via des algorithmes appelés *gouverneurs* :
+
+| Gouverneur | Stratégie | Avantage | Limite |
+|:---|:---|:---|:---|
+| **Ladder** | Descente progressive C1→C2→C3 par paliers | Latence de réveil maîtrisée | N'exploite pas les longs silences |
+| **Menu** | Saut direct au C-State le plus profond possible | Maximise les économies en mode Tickless | Prédiction heuristique (peut se tromper) |
+
+Le gouverneur **Menu** (défaut en mode NO_HZ) évalue deux critères : le *break-even point* énergétique (le C-State est-il rentable vu le coût de réveil ?) et la **tolérance à la latence** (`pm_qos`). Il utilise l'historique des interruptions réseau/stockage pour estimer si un réveil prématuré risque de survenir.[^11]
+
+## 9.7 L'Ultime Frontière : L'Hibernation de Rosetta
+
+### 9.7.1 Contraintes aux Confins du Système Solaire
+
+La sonde **Rosetta** de l'ESA, lancée en 2004 vers la comète 67P/Tchourioumov-Guérassimenko, était propulsée exclusivement par panneaux solaires — pas de RTG (générateur radio-isotopique). En 2011, sa trajectoire l'a éloignée à **800 millions de km** du Soleil (5.25 UA, au-delà de Jupiter). La loi du carré inverse rendait la puissance solaire insuffisante pour maintenir les systèmes en fonctionnement.[^12]
+
+### 9.7.2 Le Protocole d'Hibernation Profonde
+
+Le 8 juin 2011, l'ESA a exécuté un **Power Gating à l'échelle d'un vaisseau spatial** :
+
+1. **Spin-Up** : Les propulseurs placent la sonde en rotation à ~1 tour/minute (4 degrés par seconde), les immenses panneaux solaires orientés vers le Soleil. L'effet gyroscopique maintient passivement l'orientation de l'**AOCS** (*Attitude and Orbit Control Subsystem*) pendant 31 mois.
+2. **Extinction séquentielle** : Périphériques non-critiques privés d'électricité — capteurs d'attitude, roues de réaction, émetteur radio haute puissance HGA, 21 instruments scientifiques, atterrisseur Philae — tout est coupé.
+3. **Survie minimale** : Seuls restent actifs l'ordinateur de bord **CDMS** (*Command and Data Management Subsystem*), le réseau de radiateurs thermiques (prévention du gel de l'hydrazine) et l'**horloge temps réel** (RTC).
+
+La RTC (souvent des familles industrielles comme le composant DP8573A de Texas Instruments), cadencée par un oscillateur à quartz (**XTAL**) de très haute fiabilité compensé thermiquement (USO) à 32,768 kHz, égrène inlassablement les secondes en tirant quelques **microampères** des réserves du CDMS — l'équivalent cosmique d'une boucle `while(rtc < alarm) WFI();`. Ce comptage se poursuit jusqu'à l'atteinte d'une condition de correspondance matérielle d'alarme (*Alarm Compare Match*).[^13]
+
+À 10:00 GMT, le compteur RTC atteint la condition d'alarme (*Alarm Compare Match*). L'interruption matérielle la plus importante de l'histoire du vol spatial européen réveille le CDMS :
+
+| Étape | Durée | Opération |
+|:---|:---|:---|
+| **T0 → T0+6h** | 6 heures | Montée en température progressive des capteurs de navigation (Star Trackers) |
+| **Spin-Down** | ~1h | Neutralisation de la rotation cométaire par poussées d'hydrazine |
+| **Acquisition attitude** | ~30 min | Reconnaissance du champ stellaire par viseurs d'étoiles (matrices CCD) |
+| **Earth-Pointing** | ~30 min | Alignement de l'antenne HGA vers le point bleu pâle de la Terre |
+| **Premier signal** | +45 min | Télémétrie reçue à l'ESOC (Darmstadt) à la vitesse de la lumière (807 millions km) |
+
+La lenteur méthodique de ce réveil est calculée : allumer une optique spatiale sous la température du vide profond provoquerait des chocs thermiques fatals. La séquence ordonnée par le module de sécurité **FDIR** (*Failure Detection Isolation and Recovery*) active les sous-systèmes séquentiellement pour éviter un *current inrush* (appel de courant) qui effondrerait la faible tension d'alimentation.[^12]
+
+### 9.7.4 Philae et le Micro-Budget Cométaire
+
+L'atterrisseur **Philae** (100 kg) illustre le dimensionnement extrême : batteries primaires pour les 60 premières heures critiques, puis batteries secondaires rechargées par de minuscules panneaux solaires avec seulement ~1.5 h de Soleil par jour cométaire de 12.4 h. Le *duty cycle* de chaque instrument scientifique est calibré au millijoule près — une application directe de l'EDP au niveau mission.[^14]
+
+## 9.8 Implications pour LplKernel
+
+La gestion énergétique impacte directement l'architecture du moteur :
+
+| Composant | Stratégie Énergétique | Justification |
+|:---|:---|:---|
+| **Casque VR (Client)** | Tickless kernel + DVFS agressif | Autonomie batterie, réduction chaleur faciale |
+| **Thread BCI** | WFI entre échantillons EEG | Le Cortex-M du casque dort 95 % du temps entre 250 Hz |
+| **Serveur Build** | C-States profonds en inter-tick | Les ticks à 60 Hz laissent 16 ms de sommeil possible |
+| **Idle Loop moteur** | MWAIT surveillant la runqueue | Réveil sans IPI quand un paquet réseau arrive |
+| **Ordonnanceur** | Consolidation de charge → cœurs deep sleep | Regrouper les tâches pour éteindre des cœurs entiers |
+
+La règle d'or est la même que pour Rosetta : **faire le travail le plus rapidement possible, entrer dans l'état de sommeil le plus profond, et y rester le plus longtemps possible**.
+
+### Notes de bas de page — Chapitre 9
+
+[^1]: Cadence PCB Design, "CMOS Power Consumption" — Modélisation $P = \alpha \cdot C_L \cdot V_{DD}^2 \cdot f$. Texas Instruments, "CMOS Power Consumption and CPD Calculation" (SCAA035).
+
+[^2]: Northwestern University ECE, "Leakage current: Moore's law meets static power". Fernuni Hagen, "Trends in Static Power Consumption" — 30-70 % de la consommation totale en nœuds nanométriques.
+
+[^3]: arXiv:2601.08539, "Reducing Compute Waste in LLMs through Kernel-Level DVFS". Emergent Mind, "Energy-Delay Product Reduction".
+
+[^4]: AnySilicon, "The Ultimate Guide to Clock Gating" — Architecture des cellules ICG (Integrated Clock Gating).
+
+[^5]: AnySilicon, "The Ultimate Guide to Power Gating" — Sleep transistors, isolation cells, retention registers.
+
+[^6]: MSOE Faculty, "Dynamic Voltage and Frequency Scaling" — Relation DVFS/délai de propagation. STMicroelectronics, `HAL_PWREx_ControlVoltageScaling()`.
+
+[^7]: ACPI Specification 6.5 (UEFI Forum). Wikipedia, "ACPI". Metebalci.com, "CPU Power Management, C-states and P-states".
+
+[^8]: Wikipedia, "HLT (x86 instruction)". Stack Overflow, "MWAIT vs HALT". Felix Cloutier, "MWAIT instruction reference". Linux kernel `drivers/idle/intel_idle.c`.
+
+[^9]: ARM Developer Documentation, "Wait for Interrupt and Wait for Event" (Cortex-X4). ARM Documentation ka001283, "Purpose of WFI and WFE". Reddit r/embedded, "ARM Cortex-M: correct usage of WFI/WFE".
+
+[^10]: Red Hat, "Tickless Kernel" (Performance Tuning Guide). Medium, "Tickless Mode in FreeRTOS Explained". Linux kernel documentation, `NO_HZ`.
+
+[^11]: Linux kernel `drivers/cpuidle/governors/menu.c`. LWN.net, "Improving idle behavior in tickless systems". Stack Overflow, "Ladder vs Menu governors".
+
+[^12]: ESA, "Rosetta comet probe enters hibernation in deep space". ESA, "The most important alarm clock in the Solar System". Wikipedia, "Rosetta (spacecraft)".
+
+[^13]: NASA NTRS, "Stability of a Crystal Oscillator, Type Si530". TI DP8573A RTC Datasheet. Space Exploration Stack Exchange, "How does Rosetta wake-up?".
+
+[^14]: AIAA SpaceOps 2014, "Rosetta Lander: On-Comet Operations Preparation and Planning". SGF Budapest, "Rosetta CDMS".
+
+---
+
 # ANNEXES
 
 ---
@@ -2002,6 +2281,32 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 | **Virtqueue** | File d'attente circulaire VirtIO pour communication hôte-invité |
 | **VRS** | Variable Rate Shading — Résolution de shading variable par région |
 | **WDDM** | Windows Display Driver Model — Modèle de pilote graphique Windows |
+| **ACPI** | Advanced Configuration and Power Interface — Spécification de gestion d'énergie OS |
+| **AML** | ACPI Machine Language — Pseudo-code interprété par le noyau pour configurer le matériel |
+| **AOCS** | Attitude and Orbit Control Subsystem — Système de contrôle d'attitude et d'orbite des sondes spatiales |
+| **CDMS** | Command and Data Management Subsystem — Sous-système de gestion des commandes et données |
+| **CGE** | Clock Gate Efficiency — Efficacité du clock gating (ratio cycles désactivés / inactivité) |
+| **Clock Gating** | Désactivation du signal d'horloge d'un composant inactif pour annuler la puissance dynamique |
+| **C-State** | Core State — Niveau d'inactivité du processeur (C0=actif à C4+=Deep Sleep) |
+| **DVFS** | Dynamic Voltage and Frequency Scaling — Ajustement dynamique tension/fréquence |
+| **EDP** | Energy-Delay Product — Métrique combinant énergie et temps d'exécution ($P \cdot T^2$) |
+| **ESOC** | European Space Operations Centre — Centre de contrôle des opérations spatiales de l'ESA |
+| **FDIR** | Failure Detection Isolation and Recovery — Algorithme matériel/logiciel de tolérance aux pannes |
+| **GALS** | Globally Asynchronous Locally Synchronous — Architecture de domaines d'horloge asynchrones |
+| **HLT** | Halt — Instruction x86 suspendant le CPU jusqu'à interruption |
+| **ICG** | Integrated Clock Gating — Cellule CMOS avec latch pour clock gating sans glitches |
+| **MWAIT** | Monitor Wait — Instruction x86 de sommeil avec surveillance d'adresse mémoire |
+| **OSPM** | OS-directed Power Management — Gestion d'énergie pilotée par le noyau (ACPI) |
+| **PMIC** | Power Management IC — Circuit intégré de gestion d'alimentation (I2C) |
+| **P-State** | Performance State — Couple tension/fréquence DVFS en état actif (C0) |
+| **Power Gating** | Coupure physique de l'alimentation d'un bloc matériel (sleep transistors) |
+| **RTC** | Real-Time Clock — Horloge temps réel à oscillateur quartz |
+| **SCB_SCR** | System Control Register — Registre ARM contrôlant SLEEPDEEP et SLEEPONEXIT |
+| **SEV** | Send Event — Instruction ARM réveillant un cœur en WFE |
+| **Tickless Kernel** | Noyau sans tic périodique (Linux NO_HZ, FreeRTOS configUSE_TICKLESS_IDLE) |
+| **WFE** | Wait For Event — Instruction ARM pour spinlocks écoénergétiques |
+| **WFI** | Wait For Interrupt — Instruction ARM pour l'idle loop du noyau |
+| **XTAL** | Crystal Oscillator — Quartz oscillateur fournissant le signal de base pour l'horloge |
 
 ---
 
@@ -2079,8 +2384,22 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 3. Bennett et al., "Quantum Teleportation", *PRL* 1993
 4. Litinski, "Magic State Distillation", *Quantum* 2019
 
+## Chapitre 9 — Gestion Énergétique
+1. Cadence, "CMOS Power Consumption". TI SCAA035
+2. Northwestern ECE, "Leakage current: Moore's law meets static power"
+3. arXiv:2601.08539, "Kernel-Level DVFS"
+4. AnySilicon, "Clock Gating Guide"
+5. AnySilicon, "Power Gating Guide"
+6. MSOE, "Dynamic Voltage and Frequency Scaling"
+7. ACPI Specification 6.5 (UEFI Forum)
+8. Wikipedia, "HLT". Felix Cloutier, "MWAIT". Linux `intel_idle.c`
+9. ARM Developer, "WFI and WFE". Reddit r/embedded
+10. Red Hat, "Tickless Kernel". FreeRTOS Tickless Mode
+11. Linux `drivers/cpuidle/governors/menu.c`. LWN.net
+12-14. ESA Rosetta mission documentation. NASA NTRS. AIAA SpaceOps 2014
+
 ---
 
 *LplKernel — Architecture d'un Moteur Déterministe FullDive*
-*Version 1.0 — Mars 2026*
-*Synthèse de 16 rapports de recherche*
+*Version 1.1 — Mai 2026*
+*Synthèse de 17 rapports de recherche*
