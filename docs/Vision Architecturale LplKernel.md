@@ -109,7 +109,7 @@ flowchart TD
     StandardDrv -->|PIO / DMA| Storage
     NetBypass -->|Configuration MAC/PHY| NIC
     GPUMux -->|Commandes PCIe| GPU
-    IO_Ctrls -->|Ticks Timer (APIC/PIT)| EDF
+    IO_Ctrls -->|"Ticks Timer (APIC/PIT)"| EDF
 
     %% ================= THE MAGIC: HARDWARE BYPASS =================
     %% These links represent the Zero-Copy / Bypass innovations
