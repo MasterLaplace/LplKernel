@@ -113,10 +113,10 @@ flowchart TD
 
     %% ================= THE MAGIC: HARDWARE BYPASS =================
     %% These links represent the Zero-Copy / Bypass innovations
-    NIC =====| "⚡ Zéro-Copy DMA RX/TX direct (Bypass)" | App2
-    GPU =====| "⚡ Mapping Fractionné direct (Bypass)" | App1
-    GPU =====| "⚡ Mapping Fractionné direct (Bypass)" | App3
-    RAM =====| "⚡ Accès direct via PKeys (SASOS)" | Userspace
+    NIC =====|"⚡ Zéro-Copy DMA RX/TX direct (Bypass)"| App2
+    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App1
+    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App3
+    RAM =====|"⚡ Accès direct via PKeys (SASOS)"| Userspace
 ```
 
 ## **📖 Explication de l'Architecture Fusionnée**
