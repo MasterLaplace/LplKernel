@@ -382,6 +382,7 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [ ] Round-robin ⭐ START HERE (simplest)
   - [ ] Priority-based
   - [ ] Multi-level feedback queue
+  - [ ] **EDF (Earliest Deadline First)** — Ordonnanceur Hard Real-Time (Test de Liu & Layland) pour les garanties temporelles VR
 - [ ] [Multiprocessor Scheduling](https://wiki.osdev.org/Multiprocessor_Scheduling)
 - [ ] [Blocking Process](https://wiki.osdev.org/Blocking_Process) - Sleep/wait
 
@@ -442,6 +443,11 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [DNS](https://en.wikipedia.org/wiki/Domain_Name_System) 🔗
 - [ ] [DHCP](https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol) 🔗
 
+### Réseau Hautes Performances (FullDive)
+- [ ] **Data Plane Network Bypass** : Contournement de la pile TCP/IP du noyau (façon DPDK).
+- [ ] **Zero-Copy DMA** : Mapping matériel direct entre le ring de réception de la carte réseau (NIC) et la mémoire utilisateur épinglée.
+- [ ] **Receive Side Scaling (RSS)** : Distribution matérielle du trafic UDP/TCP entrant sur les multiples cœurs SMP.
+
 ---
 
 ## 👤 Phase 9: User Space & System Calls (Difficulty ⭐⭐⭐)
@@ -455,12 +461,17 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] User/kernel space separation
 - [ ] TSS configuration for ring transitions (TSS entry exists but not initialized)
 
-### System Calls
+### System Calls & IPC
 - [ ] System call interface design
-- [ ] [ARM System Calls](https://wiki.osdev.org/ARM_System_Calls) (reference)
 - [ ] INT 0x80 / SYSENTER / SYSCALL ⭐ INT 0x80 simplest to start
 - [ ] System call table
 - [ ] Argument passing (via registers or stack)
+- [ ] **Interface Zero-Syscall Asynchrone** : Remplacement des syscalls classiques par des Ring-Buffers SPSC (Submission/Completion Queues) partagés entre le Ring 3 et le Ring 0.
+
+### Architecture d'Isolation
+- [ ] Mode Classique : Espace d'adressage virtuel séparé par processus (Tables de pages isolées).
+- [ ] **SASOS (Single Address Space OS)** : Espace virtuel unique partagé (Phase 10 / 64-bit).
+- [ ] **Isolation par PKeys (Memory Protection Keys)** : Protection des domaines en 2 cycles CPU sans flush TLB.
 
 ### Executable Loading
 - [ ] [ELF](https://wiki.osdev.org/ELF) - Executable and Linkable Format ⭐ START HERE
@@ -506,6 +517,18 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [Raspberry Pi Bare Bones](https://wiki.osdev.org/Raspberry_Pi_Bare_Bones)
 - [ ] [RISC-V](https://wiki.osdev.org/Category:RISC-V)
 - [ ] [PowerPC](https://wiki.osdev.org/Category:PowerPC)
+
+---
+
+## 🔗 Convergence Moteur : LplPlugin ↔ LplKernel
+
+Le moteur LplPlugin (espace utilisateur) et LplKernel ont vocation à fusionner en une architecture unique kernel-centric en 5 phases :
+
+- [ ] **Phase U1** : Fondations déterministes. LplKernel fournit le contrat de tick stable (`clock_*`) consommé par LplPlugin.
+- [ ] **Phase U2** : Simulation et autorité réseau. Prédiction et réconciliation robustes sous un jitter réseau de 50-200 ms.
+- [ ] **Phase U3** : Fermeture de la boucle BCI. Télémétrie et action avec une latence MTP (Motion-to-Photon) mesurée $< 20$ ms.
+- [ ] **Phase U4** : Convergence Kernel-Centric. Intégration des composants critiques du moteur directement en modules noyau.
+- [ ] **Phase U5** : Scaling et Validation. Déploiement et tests en charge de l'architecture SMP unifiée.
 
 ---
 

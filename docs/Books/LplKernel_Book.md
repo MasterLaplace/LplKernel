@@ -24,12 +24,12 @@ Ce livre est organisé en **cinq parties** suivant une progression logique des c
 
 | Profil | Parcours Recommandé |
 |:---|:---|
-| **Architecte Système / Kernel** | Ch. 1 → Ch. 2 → Ch. 3 → Ch. 9 → Ch. 8 |
+| **Architecte Système / Kernel** | Ch. 1 → Ch. 2 → Ch. 3 → Ch. 9 → Ch. 10 |
 | **Développeur Moteur de Jeu** | Ch. 1 → Ch. 3 → Ch. 4 → Ch. 5 → Ch. 6 |
-| **Ingénieur Réseau / Multijoueur** | Ch. 3 → Ch. 6 → Ch. 2 |
+| **Ingénieur Réseau / Multijoueur** | Ch. 3 → Ch. 6 → Ch. 2 → Ch. 10 |
 | **Chercheur en BCI / Neurosciences** | Ch. 7 → Ch. 2 (Lock-Free) → Ch. 5 (Rendu VR) |
 | **Ingénieur Embarqué / IoT** | Ch. 9 → Ch. 2 → Ch. 3 (Soft-Float) → Ch. 7 |
-| **Lecture Exhaustive** | Séquentielle : Ch. 1 à Ch. 9 |
+| **Lecture Exhaustive** | Séquentielle : Ch. 1 à Ch. 10 |
 
 ## Conventions
 
@@ -170,6 +170,28 @@ Le Lockstep impose que la simulation soit **parfaitement déterministe** — une
 
 Le Rollback Netcode, utilisé dans les jeux de combat compétitifs, combine le meilleur des deux mondes : il permet une simulation locale immédiate (zéro latence perçue) tout en gérant les désynchronisations en « revenant en arrière » (*rollback*) pour rejouer les ticks avec les inputs corrigés. Ce mécanisme exige à la fois le déterminisme strict et la capacité de sauvegarder/restaurer des snapshots d'état à très haute fréquence — une opération qui impose des contraintes sévères sur la gestion mémoire (Chapitre 2).
 
+### 1.4.3 Le Contrat de Timer Déterministe
+
+Quel que soit le modèle de synchronisation retenu, le tick autoritaire requiert un signal temporel fiable et prédictible — un **contrat de propriété du timer** qui détermine quelle source matérielle génère les interruptions périodiques.
+
+LplKernel implémente ce contrat via une couche d'abstraction `clock_*` indépendante du backend matériel :
+
+| API | Rôle |
+|:---|:---|
+| `clock_initialize()` | Sélectionne le backend timer selon le profil et les capacités matérielles |
+| `clock_get_tick_hz()` | Retourne la fréquence de tick effective (ex: 100 Hz) |
+| `clock_get_tick_count()` | Retourne le compteur monotone de ticks depuis le boot |
+| `clock_read_walltime()` | Lecture horloge murale (RTC, polling uniquement) |
+
+**Politique par profil** : En Phase 3 du noyau, les deux profils (client et serveur) utilisent **PIT IRQ0** comme propriétaire du tick à 100 Hz. Cette fréquence de bring-up est verrouillée intentionnellement pour la continuité déterministe. La RTC fournit l'heure murale en mode polling uniquement — elle n'est *jamais* propriétaire du tick scheduler.
+
+**Migration APIC** : Le backend APIC est disponible en tant que chemin expérimental :
+1. Late-init : mapping MMIO du LAPIC après init du paging/PMM.
+2. Calibration : mesure de fréquence du timer APIC via référence PIT.
+3. Handoff : transfert de propriété du tick vers l'APIC en mode périodique, masquage de PIT IRQ0.
+
+Le design-clé est que le code moteur/runtime ne doit **jamais** référencer directement les symboles PIT/RTC/PIC — seules les APIs `clock_*` sont contractuelles. Lors de la migration vers APIC ou SMP, le backend change mais l'interface reste identique.
+
 ## 1.5 Synthèse : Le Cahier des Charges Architectural
 
 L'analyse des noyaux OS et moteur révèle un ensemble de contraintes non négociables pour l'architecture de LplKernel :
@@ -230,6 +252,15 @@ Le mécanisme dominant depuis des décennies est le **Buddy System** (système d
 
 **Inconvénient** : La fragmentation interne est élevée. Une demande de 5 Ko nécessite l'allocation d'un bloc de 8 Ko, gaspillant 3 Ko. De plus, les allocations de blocs physiquement contigus de grande taille deviennent difficiles lorsque la mémoire est fragmentée — un problème critique pour le DMA (Direct Memory Access) des périphériques GPU et BCI.
 
+> **Implémentation LplKernel — PMM Double Stratégie**
+>
+> LplKernel implémente un PMM (*Physical Memory Manager*) à **double stratégie**, sélectionnée à la compilation par le flag `REALTIME_MODE` :
+>
+> - **Client** (`REALTIME_MODE=1`) : Une **pile LIFO de pages libres** (*free-list*) offrant un alloc/free en $O(1)$ déterministe absolu. Le PMM client couvre les pages 1 Mo–16 Mo (boot mapping), extensibles via `physical_memory_manager_extend_mapping()`. Aucune opération de fusion (*coalescing*) n'est effectuée — la prédictibilité temporelle prime sur l'optimisation de la fragmentation.
+> - **Serveur** (`REALTIME_MODE=0`) : Un **Buddy Allocator complet** avec API d'ordre (`allocate_order(n)`, `free_order(addr, n)`) pour allouer des blocs de $2^n$ pages physiquement contigus. La fusion automatique des copains est active, instrumentée par un histogramme d'ordres libres (o0..o18), des watermarks haut/bas, un ratio de fragmentation, et des compteurs de garde (rejected-free, double-free).
+>
+> Les deux chemins partagent une couche de **détection UAF** (*Use-After-Free*) : le compteur `pmm_uaf_detection_count` est incrémenté lorsqu'un motif empoisonné (`0xDEADBEEF` / `0xFEEDFACE`) est détecté dans une page censée être libre, signalant un accès post-libération. L'ensemble est validé par 8 smoke tests (coalescing, stress, order, watermark, fragmentation, UAF).
+
 ### 2.2.2 L'Allocateur d'Objets — SLAB, SLUB, SLOB
 
 Le Buddy System est trop grossier pour les petites allocations fréquentes du noyau (structures `inode`, tampons de socket, descripteurs de processus). C'est Jeff Bonwick qui introduisit, en 1994 pour SunOS, le concept de **Slab Allocation** : des caches d'objets pré-initialisés, triés par taille, qui éliminent le coût de l'initialisation répétée.[^3]
@@ -267,6 +298,24 @@ Cette distinction entre allocations « dormantes » et « atomiques » est un co
 La sécurité des allocateurs noyau est un champ de bataille permanent. Les techniques d'exploitation modernes (Use-After-Free, heap spraying, Slab-out-of-bounds) tirent parti de la prévisibilité de la disposition mémoire dans le tas noyau.[^7]
 
 Le noyau Linux 6.19 a introduit un allocateur de slab dédié par **buckets** (seaux) pour isoler les objets dans des compartiments spécifiques, réduisant la probabilité qu'un attaquant puisse manipuler la disposition mémoire. En complément, **KFENCE** (*Kernel Electric-Fence*) est un détecteur d'erreurs mémoire basé sur l'échantillonnage statistique : il insère des pages de garde (*guard pages*) autour d'un échantillon aléatoire d'objets alloués, détectant les accès hors limites et les use-after-free avec un surcoût négligeable (~1 %) en production.[^8]
+
+### 2.2.6 Implémentation LplKernel : `kmalloc` à Double Profil
+
+Le noyau LplKernel implémente son propre allocateur `kmalloc`/`kfree` dont la stratégie diverge radicalement selon le profil de compilation :
+
+**Profil Client** (`REALTIME_MODE=1`) — Stratégie `slab+first-fit-client` :
+- **Pool de boot fixe** : 8 pages physiques pré-allouées à l'initialisation du tas. Aucune croissance du pool via PMM en cours d'exécution.
+- **Caches Slab déterministes** ($O(1)$) : trois classes de taille (16 B, 64 B, 256 B), chacune protégée par un *free-cookie* anti-double-free (`0x534C4131`).
+- **First-fit** pour les tailles restantes, alimenté exclusivement par les pages de boot.
+- **Règle de la Hot Loop** : `kmalloc` est **interdit** pendant la boucle chaude de simulation. L'API d'enforcement (`kernel_heap_hot_loop_enter()` / `kernel_heap_hot_loop_leave()`) trace la profondeur d'imbrication et incrémente un compteur de violations si une allocation est tentée en zone interdite. Cette règle est validée par un smoke test dédié.
+
+**Profil Serveur** (`REALTIME_MODE=0`) — Stratégie `sizeclass+first-fit-server` :
+- **Buckets de taille** ($O(1)$) : 7 free-lists par taille (8, 16, 32, 64, 128, 256, 512 B), avec compteurs de hit et de remplissage par classe.
+- **First-fit fallback** pour les allocations hors-bucket.
+- **Allocations larges** ($>$ `PAGE_SIZE`) redirigées vers l'allocateur buddy à ordre.
+- **Domaines d'allocation** : le serveur supporte un *scaffold* multi-domaines où le sélecteur de domaine est piloté par le slot logique CPU (APIC ID compacté en slot stable). Chaque domaine possède ses propres compteurs de refill, fallback, sonde distante et hit distant — préparant le sharding per-CPU puis per-NUMA sans modifier le comportement actuel.
+
+**Gardes partagés** (les deux profils) : validation magic du header sur chaque chemin, compteur de free rejeté, compteur de double-free, canary par objet sensible, patterns de poison (`0xFEEDFACE`) activables en build debug.
 
 ## 2.3 Niveau Moteur : Allocateurs Personnalisés
 
@@ -494,6 +543,16 @@ Pour un serveur de build LplKernel gérant des milliers de connexions, chaque in
 
 L'évolution récente des Sheaves SLUB intègre cette conscience NUMA via les **barns** (granges) par nœud — les objets libérés sur un nœud NUMA sont préférentiellement recyclés sur ce même nœud.
 
+> **Implémentation LplKernel — SMP, Topologie CPU et NUMA**
+>
+> Le serveur LplKernel implémente une infrastructure SMP progressive :
+>
+> 1. **Topologie CPU** : Le sous-système `cpu_topology` découvre les cœurs via parsing MADT (ACPI), enregistre chaque APIC ID découvert, les compacte en slots logiques stables (supportant les APIC ID non contigus), et maintient un bitmap d'état en ligne (*online*) par slot avec un compteur de CPU actifs. Le BSP (*Bootstrap Processor*) est automatiquement marqué en ligne à l'initialisation.
+> 2. **Démarrage AP** (*Application Processors*) : Un trampoline en mémoire basse est installé au vecteur SIPI `0x08`. Le BSP dispatch une séquence INIT/SIPI vers chaque AP découvert, validée par un marqueur d'acquittement (`ack_word=0x4150`) et un handoff en mode protégé/paginé vers le point d'entrée C de l'AP (`application_processor_startup_initialize_cpu`). La télémétrie enregistre les tentatives, retransmissions, et timeouts par AP.
+> 3. **Domaines d'allocation** : Chaque slot CPU est lié à un domaine d'allocation via `cpu_topology_bind_slot_to_domain()`. Le heap serveur route les allocations à travers cette table de binding, permettant une politique de placement local-first. Des compteurs par domaine suivent les refills, fallbacks, sondes distantes et hits distants.
+> 4. **IPI et TLB Shootdown** : Un chemin IPI basique est présent pour la synchronisation des métadonnées mémoire et l'invalidation TLB inter-cœurs. Le mode x2APIC est supporté avec fallback xAPIC.
+> 5. **Feuille de route NUMA** : Extension des domaines d'allocation en domaines par nœud NUMA, politique de placement local-first explicite, chemin de fallback cross-node avec télémétrie local-vs-remote, et compteurs de hit rate par nœud.
+
 ### 2.5.3 Huge Pages
 
 La traduction d'adresses virtuelles en adresses physiques s'effectue via les tables de pages, avec un cache matériel dédié : le **TLB** (*Translation Lookaside Buffer*). Avec des pages de 4 Ko, un TLB de 1024 entrées ne couvre que 4 Mo de mémoire — insuffisant pour un moteur qui manipule des gigaoctets de données de géométrie et de textures.[^16]
@@ -539,6 +598,59 @@ Pour le client FullDive, le mode **CDMM** (*Coherent Driver-based Memory Managem
 | **Entités** | Pool Allocator (intrusive freelist) | Recyclage $O(1)$ des projectiles, particules |
 | **Transfert BCI** | Ring Buffer SPSC lock-free | Zéro mutex entre acquisition et traitement |
 | **GPU** | Mémoire épinglée via CDMM | Latence MTP minimale |
+
+> **Règles Mémoire Client LplKernel — Enforcement Temps Réel**
+>
+> La règle non négociable du client est : **zéro allocation dynamique dans la hot loop**. En dehors de la boucle chaude, seuls les caches slab client (16/64/256 B) et le small pool first-fit sur pages de boot fixes sont autorisés. En boucle chaude, seuls les allocateurs pré-alloués (frame arena, pool, ring buffer) sont permis — aucun site d'appel `kmalloc`/`kfree`.
+>
+> L'enforcement runtime est assuré par :
+> - La profondeur hot-loop doit revenir à 0 après chaque étape de frame.
+> - Le compteur de violations hot-loop doit rester stable en boucle nominale.
+> - Les compteurs de garde du heap ne doivent pas augmenter en boucle nominale.
+>
+> **Allocateurs spécialisés validés** : Frame Arena (bump allocator, 2 KiB bootstrap, reset-per-frame, 5 smoke tests), Pool Allocator (64 B, 32 slots, free-list $O(1)$, 2 smoke tests), Ring Buffer SPSC (32 B slots, 32 entrées, FIFO déterministe, 2 smoke tests), Stack Allocator (push/pop_all LIFO, 1 smoke test), TLSF (segregated fit $O(1)$, WCET borné ≤ 168 instructions x86, 4 smoke tests). Au total, **47 smoke tests** validés en QEMU couvrant les deux profils.
+
+### 2.6.3 Paging Runtime : De `boot.s` à l'API Dynamique
+
+L'implémentation du paging runtime dans LplKernel illustre un piège classique des noyaux higher-half et mérite un traitement détaillé en tant que leçon d'architecture.
+
+**Le Problème Initial** : La première implémentation de `paging_init()` commettait plusieurs erreurs fondamentales :
+1. **Structures non portables** : Des unions imbriquées avec bitfields ne respectaient pas l'alignement strict 32-bit requis par le CPU. Les entrées de Page Directory et Page Table doivent faire exactement 4 octets.
+2. **Écrasement du paging de boot** : La fonction re-mappait toute la mémoire en identity mapping (1:1), détruisant le mapping higher-half (0xC0000000) configuré par `boot.s`.
+3. **Confusion virt/phys** : L'opérateur `&` en C retourne une adresse *virtuelle* (≥ 0xC0000000 dans un noyau higher-half), mais les entrées PDE/PTE exigent des adresses *physiques*. L'écriture directe de `&entries[...]` dans les entrées provoquait un triple fault immédiat.
+4. **Rechargement CR3 inutile** : Recharger CR3 après le boot invalide le TLB et écrase le page directory déjà actif.
+
+**La Solution Correcte** :
+
+```c
+// Types conformes Intel/OSDev — pas de bitfields, juste uint32_t + macros
+typedef uint32_t PageDirectoryEntry_t;
+typedef uint32_t PageTableEntry_t;
+
+#define PAGE_PRESENT        0x001
+#define PAGE_WRITE          0x002
+#define PAGE_USER           0x004
+#define PAGE_DIRECTORY_INDEX(v) (((uint32_t)(v) >> 22) & 0x3FF)
+#define PAGE_TABLE_INDEX(v)    (((uint32_t)(v) >> 12) & 0x3FF)
+#define PAGE_FRAME_ADDR(e)     ((e) & 0xFFFFF000)
+
+// Initialisation : récupérer le PD de boot.s, ne PAS recharger CR3
+void paging_init_runtime(void) {
+    current_page_directory = boot_page_directory; // Symbole exporté par boot.s
+}
+
+// Conversion explicite virt→phys (fondamentale en higher-half)
+static inline uint32_t virt_to_phys(uint32_t virt) {
+    return (virt >= KERNEL_VIRTUAL_BASE) ? virt - KERNEL_VIRTUAL_BASE : virt;
+}
+```
+
+L'API runtime (`paging_map_page()`, `paging_unmap_page()`) gère la création dynamique de page tables quand un PDE est absent, avec réclamation automatique des page tables vides lors du démappage. L'instruction `invlpg` invalide le TLB pour une seule page, évitant le coût d'un flush complet du TLB (`mov cr3, cr3`).
+
+**Concepts clés du Higher-Half** :
+- L'entrée 768 du Page Directory (3 Go / 4 Mo = 768) mappe l'espace noyau.
+- Au boot, un identity mapping temporaire coexiste avec le mapping higher-half pour que le code de transition puisse s'exécuter. Il est retiré après le `jmp` vers l'espace higher-half.
+- Le TLB cache les traductions virt→phys. Toute modification d'une PTE *doit* être suivie d'un `invlpg` sous peine d'utiliser une traduction périmée.
 
 ## 2.7 Synthèse
 
@@ -2190,6 +2302,270 @@ La règle d'or est la même que pour Rosetta : **faire le travail le plus rapide
 
 ---
 
+# Chapitre 10 : Vision Architecturale — Innovations Natives
+
+## 10.1 Introduction : Au-delà du Kernel Généraliste
+
+Les systèmes d'exploitation généralistes (Linux, Windows, macOS) ont été conçus pour l'équité et l'universalité : servir simultanément un navigateur web, un compilateur, un serveur de base de données et un lecteur vidéo. Cette universalité a un coût structurel — des couches d'abstraction empilées au fil des décennies (`chroot` → `namespaces` → `cgroups` → containers → orchestrateurs) qui ajoutent de la latence, de la complexité et des copies mémoire inutiles.
+
+LplKernel adopte une philosophie inverse : le noyau ne sert qu'à un seul objectif — orchestrer un moteur VR/FullDive déterministe client-serveur. Cette spécialisation radicale ouvre la porte à des innovations architecturales impossibles sur un OS généraliste. Ce chapitre explore les axes de rupture qui constitueront les fondations des phases avancées du noyau.[^1]
+
+## 10.2 L'Interface Zero-Syscall : Ring-Buffers Asynchrones
+
+### 10.2.1 Le Coût Caché du Changement de Contexte
+
+Dans un OS classique, chaque interaction application → noyau (lecture fichier, envoi réseau, allocation mémoire) transite par un appel système (`INT 0x80`, `SYSENTER`, `SYSCALL`). Ce mécanisme force un **changement de contexte** : vidage des pipelines d'exécution du CPU, transition Ring 3 → Ring 0, pollution du cache L1/L2 d'instructions. Sur une architecture x86 moderne, un syscall simple coûte entre 100 et 400 cycles CPU — inacceptable quand le budget de frame est de 11 ms (90 Hz).[^1]
+
+### 10.2.2 Le Modèle Submission/Completion Queue
+
+LplKernel supprime les syscalls bloquants en généralisant le paradigme de `io_uring` (Linux 5.1+) à **toutes** les interactions kernel-userspace :
+
+1. L'espace utilisateur et le noyau partagent une zone de mémoire contenant deux anneaux circulaires (*ring buffers*) : une **Submission Queue** (SQ) et une **Completion Queue** (CQ).
+2. Quand un processus veut lire un fichier, envoyer un paquet ou demander de la mémoire, il *poste* la requête dans la SQ sans aucune interruption ni changement de Ring.
+3. Un ou plusieurs threads noyau dédiés, exécutés sur des cœurs SMP distincts, *pollent* la SQ à la vitesse de la RAM, exécutent la demande et déposent le résultat dans la CQ.
+4. Le processus consulte la CQ de manière asynchrone lorsqu'il est prêt.
+
+**Résultat** : zéro changement de contexte, zéro interruption du thread applicatif. Le pipeline d'instructions CPU n'est jamais vidé. Le cache L1 reste chaud. C'est le Graal absolu pour la simulation temps réel — le thread de rendu VR en Ring 3 n'est *jamais* interrompu.
+
+L'infrastructure existante de LplKernel (Ring Buffer SPSC client, SMP multi-cœur, APIC/IPI) constitue les briques de base de cette architecture. Le Ring Buffer 32 B / 32 entrées implémenté en Phase 4 en est le prototype fonctionnel.
+
+## 10.3 Single Address Space OS (SASOS) et Sécurité par Capacités
+
+### 10.3.1 Le Paradigme Classique et ses Limites
+
+Dans un OS traditionnel, chaque processus possède son propre espace d'adressage virtuel, isolé par des tables de pages séparées. Tout changement de contexte entre processus force un vidage du **TLB** (*Translation Lookaside Buffer*), détruisant les traductions virt→phys cachées et provoquant une avalanche de cache misses.
+
+### 10.3.2 L'Espace d'Adressage Unique
+
+En mode 64-bit (objectif Phase 10), LplKernel peut adopter le modèle **SASOS** (*Single Address Space Operating System*) : tous les processus — y compris le noyau — partagent le **même** espace d'adressage virtuel de 128 To ($2^{47}$ octets en x86-64 canonical addressing).
+
+L'isolation ne se fait plus par des tables de pages séparées, mais par des **Memory Protection Keys** (PKeys) matérielles — une fonctionnalité Intel depuis Skylake (bit MPK dans CPUID). Chaque page est étiquetée avec une clé de protection (4 bits, soit 16 domaines), et le registre `PKRU` (*Protection Key Rights for User pages*) est écrit en **2 cycles CPU** via l'instruction `WRPKRU`, sans flush du TLB.
+
+| Mécanisme | Coût Context-Switch | Flush TLB | Domaines |
+|:---|:---|:---|:---|
+| **Tables de pages séparées** | Lourd (rechargement CR3) | Oui | Illimité |
+| **SASOS + PKeys** | Minimal (écriture PKRU) | Non | 16 (extensible) |
+
+### 10.3.3 Sécurité par Capacités
+
+La sécurité n'est plus gérée par des droits utilisateur UNIX (UID/GID, `chmod`) mais par des **capacités** — des tokens cryptographiques locaux forgés par le noyau. Si une application détient la capacité (un pointeur authentifié) vers un fichier, un device réseau ou une zone mémoire, elle a le droit de l'utiliser. C'est le principe du **Zero Trust** appliqué au niveau du processeur, éliminant toute la surface d'attaque liée à l'escalade de privilèges traditionnelle.
+
+## 10.4 Auto-Resizing Natif et Time-Travel RAM
+
+### 10.4.1 Redimensionnement à Chaud
+
+Les solutions de conteneurisation actuelles (Docker, Kubernetes) s'appuient sur l'OS hôte pour la gestion des ressources, ajoutant des couches d'abstraction coûteuses. LplKernel intègre le **redimensionnement natif** directement dans le noyau :
+
+- **Demand Paging (Lazy Allocation)** : Le noyau alloue les pages physiques uniquement lors d'un Page Fault — quand le processus accède réellement à l'adresse. La mémoire promise mais non touchée ne consomme aucune RAM physique.
+- **Ballooning Natif** : Lorsque le système détecte une pression mémoire (seuil de `free_pages` trop bas), le noyau peut demander à ses propres processus de libérer des pages non critiques ou de compresser la mémoire en ligne (*zswap natif*), augmentant la capacité effective sans interaction externe.
+- **Zero-Copy Resizing** : En contrôlant directement les tables de pages, le noyau déplace des blocs de données entre processus sans copie mémoire — une simple manipulation des entrées PDE/PTE. Les données ne bougent pas physiquement ; seul le mapping change.
+
+### 10.4.2 Time-Travel RAM : Git pour la Mémoire Vive
+
+Le Copy-On-Write (COW), déjà utilisé par `fork()` sous UNIX, est poussé à l'extrême dans LplKernel pour offrir un versioning natif de la mémoire :
+
+- **Snapshot instantané** : Le noyau « photographie » l'état RAM d'un processus en 0 ms — il suffit de marquer toutes les pages en lecture seule et d'incrémenter le compteur de référence dans le PMM. Aucune copie n'est effectuée.
+- **Instant Rollback** : Si un processus crashe, le noyau le ramène à son état d'il y a $n$ secondes en restaurant le mapping snapshot. C'est la fondation du Rollback Netcode (Chapitre 6) appliquée au niveau mémoire.
+- **Fork instantané** : Dupliquer un processus lourd (ex: un modèle IA local ayant chargé ses poids en VRAM) partageant la même RAM physique en lecture seule jusqu'à ce qu'un des forks modifie une page — qui est alors copiée à la demande.
+
+## 10.5 Ordonnanceur EDF : Garanties Temporelles Absolues
+
+### 10.5.1 Limites du Round-Robin
+
+L'ordonnancement Round-Robin classique distribue le temps CPU de manière « équitable » — chaque tâche reçoit un quantum de temps identique. Cette équité est incompatible avec les systèmes temps réel : une tâche de rendu VR qui rate son deadline de 2 ms provoque une frame perdue et un malaise vestibulaire chez l'utilisateur.
+
+### 10.5.2 Earliest Deadline First (EDF)
+
+L'ordonnanceur **EDF** (*Earliest Deadline First*) remplace la notion de priorité statique par une **garantie temporelle contractuelle**. Chaque tâche déclare un SLA (*Service Level Agreement*) de la forme :
+
+$$\text{« J'ai besoin de } C \text{ ms de CPU pur d'ici les } T \text{ prochaines ms. »}$$
+
+Par exemple : « Le thread de rendu VR a besoin de 2 ms toutes les 11 ms » (90 Hz). Le noyau vérifie mathématiquement la faisabilité via le **test de Liu \& Layland** :
+
+$$U = \sum_{i=1}^{n} \frac{C_i}{T_i} \leq 1$$
+
+où $U$ est l'utilisation CPU totale, $C_i$ le temps d'exécution pire cas de la tâche $i$, et $T_i$ sa période. Si $U \leq 1$, le système est **ordonnançable** — toutes les deadlines seront respectées, mathématiquement garanti.
+
+L'EDF est optimal pour les systèmes uniprocesseur : il peut ordonnancer tout ensemble de tâches pour lequel un ordonnancement valide existe. Sur SMP, des extensions comme le **Global-EDF** ou le **Partitioned-EDF** (affectation par cœur) complètent le modèle.
+
+## 10.6 Data Plane Network : Bypass TCP/IP et Zero-Copy DMA
+
+### 10.6.1 Le Problème de la Pile Réseau Classique
+
+Dans un OS standard, un paquet réseau entrant suit un chemin tortueux : la carte réseau (NIC) écrit dans un buffer DMA du noyau → le noyau copie les données dans un buffer de socket → l'application copie depuis le socket vers son propre buffer. Chaque étape implique une copie mémoire et un changement de contexte. Pour la communication inter-conteneurs sur le même hôte, cette pile traversée est particulièrement absurde.
+
+### 10.6.2 Le Bypass Natif
+
+LplKernel configure la NIC pour qu'elle transfère les paquets via DMA **directement** dans la RAM de l'application utilisateur (ici, le serveur Flakkari), en utilisant **RSS** (*Receive Side Scaling*) pour distribuer le trafic matériellement par file de réception :
+
+1. L'application demande au noyau de mapper le RX Ring de la NIC dans son espace d'adressage.
+2. Le noyau configure les descripteurs DMA de la NIC pour écrire dans ces pages utilisateur (épinglées via `kernel_pinned_alloc`).
+3. Aucun traitement de paquet par le noyau. La pile TCP/IP classique est contournée.
+4. Pour la communication intra-hôte (deux conteneurs sur la même machine), le noyau remplace la pile réseau par un **Shared Memory Ring** totalement transparent pour l'application — des latences de l'ordre de la nanoseconde.
+
+### 10.6.3 Réseau Zero-Copy pour le FullDive
+
+Pour le rendu VR distant ou l'IA distribuée, le chemin optimal est NIC → DMA → RAM applicative → GPU. LplKernel peut mapper la mémoire DMA de la NIC directement dans l'espace d'adressage accessible au GPU (via les pages épinglées CDMM, cf. Chapitre 2), créant un pipeline **NIC → GPU** sans aucune copie CPU intermédiaire.
+
+## 10.7 Multiplexage Matériel GPU/NPU Natif
+
+L'assignation de matériel spécialisé (GPU, NPU, TPU) à des processus isolés est un problème non résolu par les OS actuels. Les solutions existantes sont soit monolithiques (passthrough PCIe complet) soit propriétaires (NVIDIA vGPU).
+
+LplKernel aborde le problème nativement : le noyau abstrait les accélérateurs matériels et les expose comme une **ressource fluide**, au même titre que la RAM ou le temps CPU. Un processus peut demander : « alloue-moi 15 % de la puissance de calcul tensoriel ». Le noyau multiplexe les accès au matériel en temps réel, de manière agnostique vis-à-vis du constructeur.
+
+Cette approche repose sur le **GPU System Processor** (GSP) — le processeur RISC-V intégré dans les GPU NVIDIA depuis l'architecture Turing (cf. Chapitre 5) — qui peut être programmé pour arbitrer les contextes GPU sans intervention CPU.
+
+## 10.8 Observabilité Zero-Cost
+
+Les solutions de monitoring actuelles (Prometheus, Datadog) consomment un pourcentage significatif de CPU pour l'instrumentation. LplKernel intègre une API d'observabilité directement dans l'ordonnanceur et le gestionnaire mémoire :
+
+- Des **buffers circulaires lock-free** en espace utilisateur (Ring Buffers SPSC, cf. Chapitre 2) reçoivent les événements d'instrumentation sans aucun changement de contexte.
+- Le noyau écrit les métriques (allocations, ticks, interruptions, latences) à la vitesse de la RAM, sans `write()` syscall.
+- L'agent de monitoring lit ces buffers à son rythme, en mode asynchrone.
+
+Le coût mesuré de cette instrumentation est strictement borné à la vitesse d'une écriture mémoire séquentielle — essentiellement **0 %** de CPU supplémentaire par rapport à un noyau non instrumenté.
+
+## 10.9 La Convergence Kernel-Engine : LplPlugin → LplKernel
+
+### 10.9.1 La Vision Unifiée
+
+LplPlugin (le moteur/engine côté espace utilisateur) et LplKernel sont conçus pour converger progressivement. L'objectif final est que le moteur soit compilé comme une librairie kernel-adjacent (similaire à `libc`/`libk`), intégrée directement dans le noyau — éliminant la frontière user/kernel pour les chemins critiques.
+
+Cette convergence suit une feuille de route en 5 phases unifiées :
+
+| Phase | Objectif | Exit Criteria |
+|:---|:---|:---|
+| **U1** | Fondations déterministes (timer, mémoire) | Contrat de tick stable consommé par le plugin |
+| **U2** | Simulation + autorité réseau | Prédiction/réconciliation robustes sous jitter 50-200 ms |
+| **U3** | BCI boucle fermée | Latence boucle BCI < 20 ms mesurable et reproductible |
+| **U4** | Convergence kernel-centric | Première tranche d'intégration kernel-native benchmarkée |
+| **U5** | Scale et validation | Métriques de déterminisme et de scale démontrées |
+
+### 10.9.2 Matrice de Dépendances Croisées
+
+Les deux projets se nourrissent mutuellement :
+
+- **Kernel → Plugin** : Politique de timer/interruption déterministe, garanties mémoire pour les sections de boucle déterministe, interfaces réseau/driver bas-niveau.
+- **Plugin → Kernel** : Contrats runtime (cadence de tick, flux de données, contraintes de réconciliation), exigences mesurées de latence et débit alimentant les priorités kernel, priorités de migration pour la réduction de dépendances.
+
+### 10.9.3 KPIs de Suivi Continu
+
+| Domaine | Métrique | Cible |
+|:---|:---|:---|
+| **Déterminisme** | Taux de cohérence replay/hash | 100 % sur scénarios fixes |
+| **Déterminisme** | Enveloppe de drift/jitter du tick client | < 100 µs |
+| **Latence** | Boucle fermée BCI end-to-end | < 20 ms |
+| **Latence** | Fenêtre de stabilisation réconciliation réseau | < 200 ms |
+| **Scale** | Débit d'entités stables serveur | Cible phase courante |
+| **Fiabilité** | Taux de pass des smoke tests IRQ/exception | 100 % |
+
+## 10.10 Diagramme d'Architecture Complet
+
+L'architecture fusionnée de LplKernel est représentée ci-dessous. Les composants sont codés par couleur : 🟦 Kernel Core (fondations Phases 1-5), 🟪 Innovation Native (vision long terme), 🟩 Espace Utilisateur, ⬛ Hardware, 🟧 Interface asynchrone.
+
+```mermaid
+flowchart TD
+    classDef hardware fill:#2d3436,stroke:#b2bec3,stroke-width:2px,color:#dfe6e9
+    classDef kernel_core fill:#0984e3,stroke:#74b9ff,stroke-width:2px,color:#fff
+    classDef innovation fill:#6c5ce7,stroke:#a29bfe,stroke-width:3px,color:#fff
+    classDef userspace fill:#00b894,stroke:#55efc4,stroke-width:2px,color:#fff
+    classDef interface fill:#e17055,stroke:#fab1a0,stroke-width:2px,color:#fff
+
+    subgraph Userspace ["Espace Utilisateur (SASOS)"]
+        direction LR
+        App1["Moteur VR / Rendu (PKey 0x1)"]:::userspace
+        App2["Serveur Flakkari (PKey 0x2)"]:::userspace
+        App3["Modele IA Distribue (PKey 0x3)"]:::userspace
+    end
+
+    subgraph Interface ["Frontiere Asynchrone (Zero Context-Switch)"]
+        direction LR
+        RB_Net["Ring-Buffer Reseau (SQ/CQ)"]:::interface
+        RB_Sys["Ring-Buffer Systeme (Mem, I/O, IPC)"]:::interface
+    end
+
+    subgraph Kernel ["LplKernel Space (Ring 0)"]
+        direction TB
+        subgraph Boot_Init ["Boot et CPU Init (Ph. 1-3)"]
+            Boot["GRUB / Multiboot Higher-Half"]:::kernel_core
+            Protect["GDT et TSS Ring 0/3"]:::kernel_core
+            Intr["IDT et Exceptions (#PF, #GP, #DF)"]:::kernel_core
+            SMPInit["AP Trampoline INIT/SIPI"]:::kernel_core
+        end
+        subgraph Sched ["Ordonnancement (Ph. 6+)"]
+            EDF["Scheduler EDF Hard Real-Time"]:::innovation
+            SMP["SMP Manager Affinite NUMA"]:::kernel_core
+            IPC["Zero-Copy IPC Router"]:::innovation
+        end
+        subgraph Mem ["Sous-systeme Memoire (Ph. 4+)"]
+            SASOS["VMM SASOS Isolation PKeys"]:::innovation
+            VMM["VMM Classique Virt-Phys"]:::kernel_core
+            PMM["PMM Buddy/Slab/Arena/Pools"]:::kernel_core
+            AutoResize["Auto-Resizing Ballooning"]:::innovation
+            Snapshot["Time-Travel RAM COW Fork"]:::innovation
+        end
+        subgraph Drivers ["Pilotes I/O (Ph. 5+)"]
+            StandardDrv["PS/2, Serial, VGA, ATA"]:::kernel_core
+            GPUMux["Multiplexeur GPU/NPU"]:::innovation
+            NetBypass["Data Plane Network Bypass"]:::innovation
+            Observability["Telemetry Zero-Cost"]:::innovation
+        end
+    end
+
+    subgraph Hardware ["Couche Materielle"]
+        direction LR
+        CPU["CPU x86_64 (LAPIC, MMU)"]:::hardware
+        RAMh["RAM (Noeuds NUMA)"]:::hardware
+        IO_Ctrls["IOAPIC, PIT, RTC"]:::hardware
+        NIC["NIC avec RSS"]:::hardware
+        GPU["GPU / NPU"]:::hardware
+    end
+
+    App1 <-->|"Ops Sys Async"| RB_Sys
+    App2 <-->|"Paquets Tx/Rx"| RB_Net
+    RB_Sys <-->|"Polling Threads Kernel"| Sched
+    RB_Net <-->|"Routage File"| NetBypass
+    SMP -->|"Execution IPI"| CPU
+    PMM -->|"R/W RAM"| RAMh
+    StandardDrv -->|"IRQ EOI DMA"| IO_Ctrls
+    NetBypass -->|"Config MAC/PHY"| NIC
+    GPUMux -->|"Commandes PCIe"| GPU
+    IO_Ctrls -->|"Ticks Timer"| EDF
+    NIC ====|"Zero-Copy DMA Bypass"| App2
+    GPU ====|"Mapping Fractionne Bypass"| App1
+```
+
+## 10.11 Synthèse
+
+L'architecture visionnaire de LplKernel redéfinit la relation entre matériel et application. Le noyau n'est plus un intermédiaire lourd mais un **orchestrateur d'accès direct** :
+
+| Innovation | Gain | Fondation Existante |
+|:---|:---|:---|
+| Zero-Syscall Ring-Buffers | 0 context-switch applicatif | Ring Buffer SPSC (Phase 4) |
+| SASOS + PKeys | 0 flush TLB, isolation matérielle | Paging runtime + VMM (Phase 4) |
+| Auto-Resizing / COW | Fork/rollback en 0 ms | PMM page management |
+| EDF Scheduler | Garantie temporelle mathématique | Timer contract `clock_*` (Phase 3) |
+| Data Plane Network | Latence réseau en µs | Pinned memory + DMA (Phase 4) |
+| GPU/NPU Multiplexing | Fractionnement natif sans hyperviseur | GSP Turing (Chapitre 5) |
+| Zero-Cost Telemetry | 0 % CPU monitoring | Ring Buffer + SPSC architecture |
+| Convergence Kernel-Engine | Élimination frontière user/kernel | Architecture duale client/serveur |
+
+La conteneurisation actuelle s'est construite *par-dessus* des concepts des années 1990 (chroot, namespaces). Penser ces problématiques dès les fondations d'un nouveau système change totalement la donne — et c'est exactement ce que LplKernel accomplit.
+
+### Notes de bas de page — Chapitre 10
+
+[^1]: Discussion architecturale sur les innovations natives de LplKernel — Auto-resizing, Zero-Syscall, SASOS, EDF, Data Plane Network, GPU Multiplexing, Time-Travel RAM.
+
+[^2]: Linux `io_uring` (2019) — Interface asynchrone par ring buffers pour les I/O, inspirant le modèle généralisé de LplKernel.
+
+[^3]: Intel Memory Protection Keys (MPK) — CPUID bit 3 in leaf 7, sub-leaf 0. `WRPKRU`/`RDPKRU` instructions, 2 cycles d'exécution.
+
+[^4]: C. L. Liu et J. W. Layland, « Scheduling Algorithms for Multiprogramming in a Hard-Real-Time Environment », *Journal of the ACM*, vol. 20, no. 1, 1973 — Preuve d'optimalité d'EDF.
+
+[^5]: DPDK (Data Plane Development Kit) — Framework open-source de bypass réseau kernel. LplKernel intègre nativement les principes à un niveau plus profond.
+
+---
+
 # ANNEXES
 
 ---
@@ -2219,10 +2595,14 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 
 | Terme | Définition |
 |:---|:---|
+| **ACPI** | Advanced Configuration and Power Interface — Standard industriel de gestion de l'énergie |
 | **ADC** | Analog-to-Digital Converter — Convertisseur analogique-numérique |
 | **AIRM** | Affine-Invariant Riemannian Metric — Distance géodésique sur la variété des matrices SPD |
 | **AoS / SoA** | Array of Structs / Struct of Arrays — Layouts mémoire pour les données ECS |
+| **AP** | Application Processor — Cœur CPU secondaire sur architecture SMP |
+| **APIC** | Advanced Programmable Interrupt Controller — Contrôleur matériel gérant SMP et IPI |
 | **BCI** | Brain-Computer Interface — Interface cerveau-ordinateur |
+| **BSP** | Bootstrap Processor — Cœur CPU principal exécutant le code d'initialisation |
 | **CDMM** | Coherent Driver-based Memory Management — Gestion mémoire GPU NVIDIA |
 | **CFS** | Completely Fair Scheduler — Ordonnanceur par défaut de Linux |
 | **CMA** | Contiguous Memory Allocator — Allocateur de mémoire physiquement contiguë |
@@ -2232,18 +2612,22 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 | **DMA** | Direct Memory Access — Transfert mémoire sans intervention du CPU |
 | **DOD** | Data-Oriented Design — Conception guidée par la localité des données |
 | **DRM** | Direct Rendering Manager — Sous-système graphique du noyau Linux |
+| **DVFS** | Dynamic Voltage and Frequency Scaling — Ajustement de tension/fréquence CPU |
 | **ECS** | Entity-Component-System — Architecture de moteur de jeu |
+| **EDF** | Earliest Deadline First — Ordonnanceur temps réel dynamique |
 | **EEG** | Electroencephalogram — Mesure de l'activité électrique cérébrale |
 | **EMG** | Electromyogram — Mesure de l'activité électrique musculaire |
 | **EOG** | Electrooculogram — Mesure de l'activité électrique oculaire |
 | **ERD** | Event-Related Desynchronization — Diminution de puissance spectrale locale |
 | **FABRIK** | Forward And Backward Reaching Inverse Kinematics — Algorithme d'IK itératif |
 | **Fatbinary** | Conteneur NVIDIA embarquant PTX + SASS pour multiples architectures GPU |
+| **FDIR** | Fault Detection, Isolation, and Recovery — Tolérance aux pannes (aérospatial) |
 | **FMA** | Fused Multiply-Add — Instruction combinant multiplication et addition en une opération |
 | **FNV** | Fowler-Noll-Vo — Fonction de hachage non-cryptographique |
 | **FPU** | Floating-Point Unit — Unité matérielle de calcul en virgule flottante |
 | **FTQC** | Fault-Tolerant Quantum Computer — Ordinateur quantique tolérant aux pannes |
 | **FullDive** | Immersion VR totale avec interface neurale directe |
+| **GALS** | Globally Asynchronous, Locally Synchronous — Architecture CPU sans horloge globale |
 | **GEM** | Graphics Execution Manager — Gestionnaire mémoire GPU pour architectures UMA (Intel) |
 | **GFP** | Get Free Pages — Flags d'allocation mémoire noyau Linux |
 | **GGPO** | Good Game Peace Out — Bibliothèque de Rollback Netcode |
@@ -2252,12 +2636,16 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 | **HFT** | High-Frequency Trading — Trading haute fréquence |
 | **ICA** | Independent Component Analysis — Décomposition en composantes indépendantes |
 | **IK** | Inverse Kinematics — Cinématique inverse |
+| **IPI** | Inter-Processor Interrupt — Interruption générée par un processeur vers un autre |
 | **ITRUSST** | International Transcranial Ultrasonic Stimulation Safety and Standards |
+| **KFENCE** | Kernel Electric-Fence — Détecteur statistique d'erreurs mémoire OOB/UAF |
 | **KMS** | Kernel Mode Setting — Gestion des sorties vidéo par le noyau |
 | **LQF** | Logarithmic Quantum Forking — Fork quantique à coût logarithmique |
 | **LSL** | Lab Streaming Layer — Protocole de synchronisation de flux physiologiques |
 | **LUT** | Look-Up Table — Table de correspondance pré-calculée |
+| **MADT** | Multiple APIC Description Table — Table ACPI décrivant la topologie d'interruptions |
 | **MESI** | Modified, Exclusive, Shared, Invalid — Protocole de cohérence de cache |
+| **MPK/PKeys** | Memory Protection Keys — Isolation de l'espace d'adressage via matériel |
 | **MTP** | Motion-to-Photon — Latence entre mouvement et affichage |
 | **NISQ** | Noisy Intermediate-Scale Quantum — Dispositif quantique de 50-1000 qubits bruités |
 | **NUMA** | Non-Uniform Memory Access — Architecture mémoire asymétrique |
@@ -2265,7 +2653,9 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 | **QMD** | Queue Meta Data — Structure de commandes MMIO pour lancer du code GPU NVIDIA |
 | **QOS** | Quantum Operating System — Système d'exploitation quantique |
 | **RMAPI** | Resource Manager API — API du gestionnaire de ressources du pilote NVIDIA |
+| **RSS** | Receive Side Scaling — Distribution matérielle du trafic réseau entrant |
 | **RTOS** | Real-Time Operating System — Système d'exploitation temps réel |
+| **SASOS** | Single Address Space OS — OS partageant un espace virtuel unique de 64 bits |
 | **SIMD** | Single Instruction, Multiple Data — Parallélisme de données |
 | **SLUB** | Unqueued Slab Allocator — Allocateur d'objets noyau Linux |
 | **SPD** | Symmetric Positive-Definite — Matrice symétrique définie positive |
@@ -2397,6 +2787,13 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 10. Red Hat, "Tickless Kernel". FreeRTOS Tickless Mode
 11. Linux `drivers/cpuidle/governors/menu.c`. LWN.net
 12-14. ESA Rosetta mission documentation. NASA NTRS. AIAA SpaceOps 2014
+
+## Chapitre 10 — Vision Architecturale
+1. LplKernel Architectural Notes — SASOS, Zero-Syscall, EDF
+2. Linux Kernel Documentation — `io_uring`
+3. Intel Architecture Software Developer's Manual — Memory Protection Keys (MPK/PKRU)
+4. C. L. Liu & J. W. Layland, "Scheduling Algorithms for Multiprogramming in a Hard-Real-Time Environment" (1973)
+5. DPDK (Data Plane Development Kit) Documentation
 
 ---
 
