@@ -74,6 +74,16 @@ Pour un projet de moteur de jeu, le choix de l'architecture sous-jacente a des i
 
 Les RTOS méritent une attention particulière dans le contexte du FullDive. Contrairement aux OS à temps partagé (Linux, Windows) où l'ordonnanceur vise l'équité (*fairness*) entre les processus, un RTOS garantit des **bornes temporelles strictes** (hard real-time) ou moyennes (soft real-time) sur le temps de réponse.
 
+#### L'Ordonnancement Hard Real-Time (EDF)
+
+Au-delà de la simple préemption, un moteur FullDive exige un déterminisme absolu sur les délais d'exécution. L'algorithme canonique pour ces garanties est l'**EDF (Earliest Deadline First)**. Le théorème fondamental de Liu & Layland (1973) démontre que sur un processeur unique, EDF peut atteindre une utilisation de 100 % du CPU tout en respectant toutes les échéances, à condition que la somme des utilisations des tâches soit $\le 1$.
+
+Cependant, le passage aux architectures multi-cœurs (SMP) introduit l'**anomalie de Dhall** : dans un ordonnancement EDF global (GEDF), une tâche à très faible utilisation peut faire échouer l'exécution d'une tâche critique, ruinant les garanties temporelles. 
+
+> **Architecture LplKernel — Partitioned-EDF**
+>
+> Pour contourner l'anomalie de Dhall, LplKernel s'oriente vers un modèle **Partitioned-EDF** (ou semi-partitionné). Les tâches critiques (comme la boucle de rendu VR ou l'acquisition BCI) sont *épinglées* (pinned) sur des cœurs physiques dédiés. La granularité du recalibrage temporel est assurée par le timer de l'APIC en mode **TSC-Deadline**, offrant une précision au cycle d'horloge près, indispensable pour éviter le jitter dans le traitement des signaux neuronaux.
+
 | Caractéristique | OS à Temps Partagé (Linux) | RTOS (QNX, FreeRTOS) |
 |:---|:---|:---|
 | **Objectif** | Équité entre les processus | Respect des délais stricts |
@@ -299,6 +309,10 @@ La sécurité des allocateurs noyau est un champ de bataille permanent. Les tech
 
 Le noyau Linux 6.19 a introduit un allocateur de slab dédié par **buckets** (seaux) pour isoler les objets dans des compartiments spécifiques, réduisant la probabilité qu'un attaquant puisse manipuler la disposition mémoire. En complément, **KFENCE** (*Kernel Electric-Fence*) est un détecteur d'erreurs mémoire basé sur l'échantillonnage statistique : il insère des pages de garde (*guard pages*) autour d'un échantillon aléatoire d'objets alloués, détectant les accès hors limites et les use-after-free avec un surcoût négligeable (~1 %) en production.[^8]
 
+> **Implémentation LplKernel — KFENCE Zéro-Coût**
+>
+> Pour sécuriser le tas du noyau sans introduire la latence d'un outil lourd comme KASAN, LplKernel s'inspire du modèle KFENCE en pré-allouant un pool fixe d'objets où chaque objet est entouré de pages de garde non mappées (via `PROT_NONE`). En alignant aléatoirement les allocations à l'extrême gauche ou à l'extrême droite de la page physique, tout dépassement de tampon (Buffer Overflow) déborde instantanément sur la page non mappée, déclenchant un *Page Fault* matériel (zéro instruction de vérification logicielle dans le chemin critique).
+
 ### 2.2.6 Implémentation LplKernel : `kmalloc` à Double Profil
 
 Le noyau LplKernel implémente son propre allocateur `kmalloc`/`kfree` dont la stratégie diverge radicalement selon le profil de compilation :
@@ -520,6 +534,8 @@ Les processeurs modernes accèdent à la mémoire par **lignes de cache** (typiq
 
 1. **Accès non alignés** : Un accès qui chevauche deux lignes de cache nécessite deux lectures au lieu d'une, doublant la latence.
 2. **False sharing** : Lorsque deux threads modifient des variables indépendantes qui résident sur la même ligne de cache, le protocole de cohérence de cache (MESI) force des invalidations inutiles entre les cœurs, effondrant les performances.[^14]
+
+Ce phénomène est particulièrement destructeur dans les structures Lock-Free inter-cœurs, comme les **SPSC Ring Buffers (BipBuffer)** utilisés pour router les événements matériels vers la simulation. Si le pointeur de lecture atomique (`read_index`) et le pointeur d'écriture atomique (`write_index`) résident sur la même ligne de 64 octets, le producteur invalidera continuellement le cache du consommateur, divisant la bande passante par dix.
 
 ```cpp
 // MAUVAIS : les deux atomiques partagent la même ligne de cache
@@ -1422,6 +1438,8 @@ Le pipeline de rendu de LplKernel combine :
 
 Le réseau est, par nature, l'antithèse du déterminisme. La latence varie imprévisiblement (jitter), les paquets arrivent dans le désordre ou sont perdus, et la bande passante est partagée avec des flux incontrôlables. L'infrastructure réseau d'un moteur déterministe doit **masquer** cette incertitude tout en préservant la cohérence de l'état synchronisé entre toutes les machines.[^1]
 
+Pour atteindre des latences sous-millisecondes requises par la VR multijoueur, LplKernel implémente un **Kernel Bypass** réseau inspiré de l'architecture **DPDK** (Data Plane Development Kit). Au lieu de subir le coût des interruptions matérielles et des multiples copies en mémoire de la pile TCP/IP classique, le pilote réseau (ex: Intel 8254x ou i217) mappe directement ses anneaux de descripteurs matériels (*Descriptor Rings*) dans une zone mémoire physique contiguë (allouée via le Buddy Allocator sous forme de `MBUFs`). Le CPU scrute ces anneaux en boucle (Polling), réalisant un transfert **Zero-Copy DMA** absolu. Couplé au **Receive Side Scaling (RSS)**, la carte réseau hache elle-même les paquets UDP entrants et les distribue matériellement sur les différents cœurs CPU du système SMP.
+
 ## 6.2 Modèles de Synchronisation Approfondis
 
 ### 6.2.1 Lockstep Déterministe
@@ -1661,7 +1679,17 @@ La suppression des artefacts est un prérequis avant toute analyse spectrale. Le
 
 L'**ADS1299** de Texas Instruments est le composant clé : un ADC sigma-delta 24 bits à 8 canaux, spécifiquement conçu pour la biopotentiel. Son rapport signal-bruit (SNR) de 120 dB permet de capturer les signaux EEG de l'ordre du microvolt avec une résolution suffisante pour l'analyse spectrale fine.[^4]
 
-### 7.3.2 Le Casque Galea
+> **Détails d'Acquisition LplKernel (Cyton)**
+>
+> Pour l'intégration *bare-metal* sans dépendre de bibliothèques de haut niveau, le pilote LplKernel communique avec le dongle RFduino de l'OpenBCI via le bus UART émulé (puce FTDI). Le baudrate doit impérativement être fixé à **115200 bauds**. L'émission du caractère ASCII `b` déclenche le flux binaire. Chaque trame de 33 octets (cadencée à 250 Hz) est interceptée par l'ISR matériel et insérée instantanément dans un SPSC Lock-Free Ring Buffer pour éviter l'écrasement du FIFO matériel du contrôleur 16550A.
+
+### 7.3.2 Traitement du Signal et État FPU (AVX)
+
+Le traitement brut de ces trames EEG par des frameworks mathématiques fait massivement appel au calcul vectoriel pour exécuter des algorithmes de filtrage spatial (comme le CSP, *Common Spatial Pattern*). Ces calculs exploitent les registres étendus **AVX/AVX-512** (YMM/ZMM).
+
+Dans un OS classique, le changement de contexte gère cela. Dans LplKernel, il est **critique** de comprendre que l'instruction historique `FXSAVE` ne sauvegarde que les registres x87 et SSE. Lors de la préemption du thread BCI par l'ordonnanceur EDF, LplKernel doit utiliser l'instruction **`XSAVE`** (activée en positionnant le bit `CR4.OSXSAVE` et en configurant le masque `XCR0`) pour préserver l'intégrité des calculs vectoriels, sous peine de corrompre totalement la classification des états cognitifs.
+
+### 7.3.3 Le Casque Galea
 
 Le **Galea** (OpenBCI) est un casque intégré combinant EEG, EMG, EOG, EDA (activité électrodermale) et PPG (photopléthysmographie) dans un facteur de forme VR. Il représente la convergence la plus avancée entre le hardware BCI et la VR, et est la cible matérielle principale du système FullDive de LplKernel.
 
@@ -2146,13 +2174,21 @@ Les **C-States** définissent les niveaux d'inactivité du processeur dans l'ét
 
 Les **P-States** (Performance States) implémentent le DVFS dans C0 : P0 = fréquence/tension max, Pn = couples progressivement réduits. Les **D-States** (D0 à D3) contrôlent individuellement l'alimentation des périphériques.[^7]
 
+> **Contrôle Fin du DVFS sous x86**
+>
+> La modification du P-State sur les processeurs Intel s'effectue traditionnellement en écrivant dans le registre MSR `IA32_PERF_CTL`. Cependant, confier la décision au système d'exploitation nécessite de connaître la *charge réelle* du CPU. Les processeurs modernes intègrent donc deux compteurs MSR matériels : **`IA32_APERF`** (Active Performance) qui compte les cycles uniquement pendant que le CPU tourne, et **`IA32_MPERF`** (Maximum Performance) qui compte les cycles à la fréquence nominale absolue. Le ratio `APERF / MPERF` donne au gouverneur de fréquence (comme le driver `intel_pstate` de Linux ou l'EDF scheduler de LplKernel) une mesure d'activité parfaite pour calculer dynamiquement la tension minimale requise, sans tuer les garanties temporelles.
+
 ## 9.5 Implémentation Assembleur : Les Instructions d'Arrêt
 
 ### 9.5.1 x86 : HLT et MWAIT
 
 L'instruction **HLT** (*Halt*, opcode `0xF4`) suspend l'exécution du processeur jusqu'à une interruption matérielle, plaçant le CPU en C1. Présente depuis le 8086, elle n'a été utilisée pour l'économie d'énergie qu'à partir du DX4 (1994).[^8]
 
-Sa limite : dans un système multiprocesseur, réveiller un cœur en HLT nécessite une **IPI** (*Inter-Processor Interrupt*) coûteuse. Les extensions SSE3 ont introduit **MONITOR/MWAIT** pour résoudre ce problème :
+Sa limite : dans un système multiprocesseur, réveiller un cœur en HLT nécessite un routage complexe de l'APIC et une **IPI** (*Inter-Processor Interrupt*) coûteuse en latence. Pour un moteur temps réel réagissant aux événements BCI et réseau sous la milliseconde, cette latence de réveil est inacceptable.
+
+> **Implémentation LplKernel — Réveil Instantané**
+>
+> LplKernel n'utilise pas `HLT` dans son *idle loop*. À la place, il exploite la paire d'instructions matérielles **`MONITOR`** / **`MWAIT`**. Le cœur inactif arme le `MONITOR` sur l'adresse de la structure *Ring Buffer* de la carte réseau ou du capteur BCI, puis appelle `MWAIT` pour entrer dans un C-State profond (C3/C6) et couper son alimentation. Dès que le périphérique DMA écrit le paquet en mémoire physique, la modification de la ligne de cache réveille *instantanément* le CPU, évitant tout le cheminement tortueux d'une interruption IRQ traditionnelle.
 
 ```asm
 ; x86 : mise en veille avec surveillance d'adresse mémoire
@@ -2316,12 +2352,16 @@ LplKernel adopte une philosophie inverse : le noyau ne sert qu'à un seul object
 
 Dans un OS classique, chaque interaction application → noyau (lecture fichier, envoi réseau, allocation mémoire) transite par un appel système (`INT 0x80`, `SYSENTER`, `SYSCALL`). Ce mécanisme force un **changement de contexte** : vidage des pipelines d'exécution du CPU, transition Ring 3 → Ring 0, pollution du cache L1/L2 d'instructions. Sur une architecture x86 moderne, un syscall simple coûte entre 100 et 400 cycles CPU — inacceptable quand le budget de frame est de 11 ms (90 Hz).[^1]
 
+> ⚠️ **Le Piège Mortel de `SWAPGS`**
+>
+> Lors de l'utilisation de l'instruction `SYSCALL` (très rapide), le processeur passe en Ring 0 sans changer la pile (`RSP` pointe toujours vers la pile utilisateur). Le noyau doit exécuter `SWAPGS` pour basculer le registre `GS` vers la structure interne du CPU (`MSR_KERNEL_GS_BASE`) afin d'accéder à la pile noyau sécurisée. **Cependant**, si une interruption matérielle (NMI ou IRQ timer) survient alors que le processeur est *déjà* en Ring 0, le handler d'interruption ne doit surtout pas exécuter aveuglément `SWAPGS`, car cela inverserait le registre GS vers l'espace utilisateur, provoquant un crash absolu (Double Fault) au moindre accès mémoire suivant. C'est l'un des bugs les plus subtils et destructeurs en OSDev.
+
 ### 10.2.2 Le Modèle Submission/Completion Queue
 
 LplKernel supprime les syscalls bloquants en généralisant le paradigme de `io_uring` (Linux 5.1+) à **toutes** les interactions kernel-userspace :
 
 1. L'espace utilisateur et le noyau partagent une zone de mémoire contenant deux anneaux circulaires (*ring buffers*) : une **Submission Queue** (SQ) et une **Completion Queue** (CQ).
-2. Quand un processus veut lire un fichier, envoyer un paquet ou demander de la mémoire, il *poste* la requête dans la SQ sans aucune interruption ni changement de Ring.
+2. Quand un processus veut interagir avec le matériel, il *poste* la requête dans la SQ sans aucune interruption ni changement de Ring.
 3. Un ou plusieurs threads noyau dédiés, exécutés sur des cœurs SMP distincts, *pollent* la SQ à la vitesse de la RAM, exécutent la demande et déposent le résultat dans la CQ.
 4. Le processus consulte la CQ de manière asynchrone lorsqu'il est prêt.
 
@@ -2337,14 +2377,16 @@ Dans un OS traditionnel, chaque processus possède son propre espace d'adressage
 
 ### 10.3.2 L'Espace d'Adressage Unique
 
-En mode 64-bit (objectif Phase 10), LplKernel peut adopter le modèle **SASOS** (*Single Address Space Operating System*) : tous les processus — y compris le noyau — partagent le **même** espace d'adressage virtuel de 128 To ($2^{47}$ octets en x86-64 canonical addressing).
+En mode 64-bit (objectif Phase 10), LplKernel peut adopter le modèle **SASOS** (*Single Address Space Operating System*), popularisé par le projet de recherche **Theseus OS**. Dans ce paradigme, tous les processus — y compris le noyau — partagent le **même** espace d'adressage virtuel de 128 To ($2^{47}$ octets en x86-64 canonical addressing).
 
-L'isolation ne se fait plus par des tables de pages séparées, mais par des **Memory Protection Keys** (PKeys) matérielles — une fonctionnalité Intel depuis Skylake (bit MPK dans CPUID). Chaque page est étiquetée avec une clé de protection (4 bits, soit 16 domaines), et le registre `PKRU` (*Protection Key Rights for User pages*) est écrit en **2 cycles CPU** via l'instruction `WRPKRU`, sans flush du TLB.
+L'isolation ne se fait plus par des tables de pages séparées, mais par l'isolation intra-linguistique (comme la sémantique de possession en Rust ou les `std::unique_ptr` stricts en C++) doublée d'une protection matérielle de nouvelle génération : les **Memory Protection Keys** (PKeys ou PKU) intégrées aux processeurs Intel depuis Skylake.
+
+Chaque page (PTE) est étiquetée avec une clé de protection (4 bits, soit 16 domaines d'isolation matérielle). Le registre 32-bits `PKRU` (*Protection Key Rights for User pages*) dicte les droits de lecture/écriture pour chacune de ces 16 clés. La puissance de cette technologie réside dans le fait que ce registre `PKRU` peut être modifié depuis l'espace utilisateur via l'instruction `WRPKRU` en seulement **2 cycles CPU**, de façon totalement synchrone et **sans aucun flush du TLB**.
 
 | Mécanisme | Coût Context-Switch | Flush TLB | Domaines |
 |:---|:---|:---|:---|
 | **Tables de pages séparées** | Lourd (rechargement CR3) | Oui | Illimité |
-| **SASOS + PKeys** | Minimal (écriture PKRU) | Non | 16 (extensible) |
+| **SASOS + PKeys** | Minimal (écriture PKRU en 2 cycles) | Non | 16 (extensible via ré-étiquetage) |
 
 ### 10.3.3 Sécurité par Capacités
 
@@ -2837,6 +2879,223 @@ Le code complet des design patterns implémentés dans le contexte du moteur Ful
 
 ---
 
+# Annexe D : Diagramme d'Exécution Détaillé (LplKernel Sequence Flow)
+
+Ce diagramme trace l'exécution de LplKernel à un niveau de détail extrême. Il combine les appels de fonctions réels du code source actuel (C/ASM) avec une projection architecturale des implémentations futures (EDF, SASOS, Zero-Syscall) définies dans la Roadmap et le Chapitre 10.
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    %% ==========================================
+    %% PARTICIPANTS
+    %% ==========================================
+    box rgb(30, 30, 30) Hardware & Boot
+        participant HW as 🖥️ HW (CPU/RAM/NIC/APIC)
+        participant GRUB as 💿 GRUB (Multiboot)
+    end
+
+    box rgb(10, 40, 80) Kernel Core (Ring 0)
+        participant Boot as ⚙️ boot.S (ASM)
+        participant BSP as 🧠 CPU 0 (kernel.c)
+        participant AP as 🧠 CPUs 1-N (Trampoline)
+        participant Intr as ⚡ IDT & APIC
+        participant Sched as ⏱️ Scheduler (EDF)
+    end
+
+    box rgb(60, 20, 80) Kernel Subsystems
+        participant Mem as 💾 PMM & VMM (SASOS)
+        participant Alloc as 📦 Allocators (Slab/Arena)
+        participant Drv as 🔌 PCI & Drivers
+        participant Net as ⚡ Data Plane (Bypass)
+    end
+
+    box rgb(10, 60, 40) Userspace (Ring 3 - PKey Isolated)
+        participant LplPlugin as 🎮 LplPlugin (VR Engine)
+        participant Flakkari as 🌐 Flakkari (UDP Server)
+    end
+
+    %% ==========================================
+    %% PHASE 1-3 : BOOTLOADER ET HIGHER-HALF
+    %% ==========================================
+    rect rgb(0, 50, 100)
+    Note over HW,Boot: Phases 1-3 : Amorce & Higher-Half Paging (Actuel)
+
+    HW->>GRUB: Power On, POST, BIOS/UEFI Handoff
+    GRUB->>GRUB: Parse grub.cfg, Load Kernel ELF
+    GRUB->>Boot: Jump to _start (EAX=0x2BADB002, EBX=Multiboot_Info)
+    activate Boot
+
+    Boot->>Boot: Set up early Page Directory (Identity + 0xC0000000)
+    Boot->>HW: Enable Paging (CR0, CR3, CR4)
+    Boot->>Boot: Jump to Higher Half (lea ecx, 4f&#59; jmp ecx)
+    Boot->>Boot: Setup early kernel stack (esp = stack_top)
+    Boot->>BSP: call kernel_initialize()
+    deactivate Boot
+    activate BSP
+    end
+
+    %% ==========================================
+    %% PHASE 1-3 : ARCHITECTURE DE BASE
+    %% ==========================================
+    rect rgb(20, 60, 120)
+    Note over BSP,Intr: Phases 1-3 : CPU & Interrupts (Actuel)
+
+    BSP->>Drv: serial_initialize(COM1, 9600)
+    BSP->>BSP: terminal_initialize() & kernel_splash_initialize()
+    BSP->>BSP: write_multiboot_info(EBX) -> RAM Map
+
+    BSP->>BSP: global_descriptor_table_initialize()
+    BSP->>HW: lgdt [GDT] (Ring 0, Ring 3, TSS)
+
+    BSP->>Intr: interrupt_descriptor_table_initialize()
+    BSP->>Intr: Enregistre isr_stubs (0-47)
+    BSP->>HW: lidt [IDT]
+
+    BSP->>Intr: clock_initialize() (Contrat temporel de base)
+    BSP->>BSP: cpu_topology_initialize()
+    end
+
+    %% ==========================================
+    %% PHASE 4 : VMM, PMM ET ALLOCATEURS
+    %% ==========================================
+    rect rgb(50, 0, 100)
+    Note over BSP,Alloc: Phase 4 : Sous-système Mémoire Complet (Actuel)
+
+    BSP->>Mem: paging_initialize_runtime()
+    Mem->>HW: Flush TLB (invlpg)
+    BSP->>Mem: kernel_vmm_initialize()
+
+    BSP->>Mem: physical_memory_manager_initialize()
+    Note right of Mem: Initialise Buddy Allocator (PMM Pass 1)
+
+    BSP->>HW: advanced_configuration_and_power_interface_madt_initialize()
+    HW-->>BSP: Retourne Tables ACPI (LAPIC, IOAPIC, ISO)
+    BSP->>BSP: numa_policy_initialize()
+
+    BSP->>Mem: physical_memory_manager_extend_mapping()
+    Note right of Mem: Mappe toute la RAM découverte par Multiboot (PMM Pass 2)
+
+    BSP->>Alloc: kernel_heap_initialize()
+    Note right of Alloc: Setup Slab Allocator (Size classes)
+
+    par Allocateurs Haut Niveau
+        BSP->>Alloc: kernel_frame_arena_initialize(16KB)
+        BSP->>Alloc: kernel_stack_allocator_initialize(16KB)
+        BSP->>Alloc: kernel_pool_allocator_initialize(64B, 128 obj)
+        BSP->>Alloc: kernel_pinned_memory_initialize() (DMA-Ready)
+    end
+
+    BSP->>Alloc: kernel_ring_buffer_initialize_ex(SPSC Mode)
+    Note right of Alloc: Préparation pour IPC Zero-Syscall
+    end
+
+    %% ==========================================
+    %% PHASE 5 : MULTICŒUR & MATÉRIEL
+    %% ==========================================
+    rect rgb(100, 50, 0)
+    Note over HW,AP: Phase 3 & 5 : SMP, APIC & Routage IO (Actuel)
+
+    BSP->>Intr: input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold()
+    BSP->>Intr: ioapic_set_isa_route_destination(IRQ1_KBD, Core0)
+
+    BSP->>Intr: advanced_pic_timer_backend_late_initialize()
+    Note right of Intr: Active x2APIC (MSR 0x830)
+
+    BSP->>AP: kernel_smp_try_start_discovered_aps()
+    loop Pour chaque CPU détecté (ACPI MADT)
+        BSP->>HW: Send IPI (INIT)
+        BSP->>HW: Send IPI (SIPI) avec vecteur Trampoline
+        activate AP
+        HW->>AP: Boot CPU Secondaire en Real Mode
+        AP->>AP: ap_trampoline.S (Paging, GDT, Stack)
+        AP->>AP: ap_startup.c -> ap_spin_wait()
+        AP-->>BSP: ACK "I am alive"
+    end
+
+    BSP->>Intr: advanced_pic_timer_backend_calibrate_with_pit()
+    BSP->>Intr: enable_periodic_mode(frequency_hz)
+
+    BSP->>BSP: kernel_smoke_batch_run_initialization_tests()
+    BSP->>Drv: framebuffer_init() (VBE LFB)
+    end
+
+    %% ==========================================
+    %% VISION PHASE 6-10 : ARCHITECTURE FUTURISTE
+    %% ==========================================
+    rect rgb(100, 0, 50)
+    Note over BSP,LplPlugin: 🚀 VISION FUTURISTE (Phases 6 à 10 & U1-U5)
+
+    %% Phase 6 : Ordonnancement
+    Note over Sched,Mem: [Phase 6] Initialisation Ordonnanceur EDF
+    BSP->>Sched: scheduler_edf_initialize()
+    BSP->>Sched: create_kernel_worker_threads()
+    Sched->>AP: Assign Workers aux cœurs dédiés (Affinité NUMA)
+
+    %% Phase 10 : SASOS
+    Note over Mem,LplPlugin: [Phase 10] SASOS & Memory Protection Keys (MPK)
+    BSP->>Mem: vmm_sasos_enable_global_address_space()
+    LplPlugin->>Mem: sasos_allocate_pkey_domain()
+    Mem-->>LplPlugin: Retourne PKey 0x1
+    LplPlugin->>HW: wrpkru (Hardware lock en 2 cycles)
+
+    %% Phase 8 : Réseau
+    Note over Drv,Flakkari: [Phase 8] Data Plane Network Bypass
+    BSP->>Drv: pci_enumerate_and_init_nic()
+    Flakkari->>Net: network_bypass_map_rx_to_userspace(PKey 0x2)
+    Net->>Drv: Configure NIC DMA RX Ring -> Pinned RAM (Flakkari)
+
+    %% Phase 9 : Zero-Syscall IPC
+    Note over Alloc,LplPlugin: [Phase 9] Interface Zero-Syscall (Ring Buffers)
+    LplPlugin->>Alloc: ipc_create_zero_syscall_channel(PKey 0x1)
+    Alloc-->>LplPlugin: Retourne {SubmissionQueue, CompletionQueue}
+    end
+
+    %% ==========================================
+    %% RUNTIME : LA BOUCLE "FULLDIVE"
+    %% ==========================================
+    rect rgb(0, 100, 50)
+    Note over HW,LplPlugin: ♾️ Runtime Loop : Moteur VR Déterministe
+
+    BSP->>BSP: kernel_main()
+
+    par Trame de Simulation VR (Zero-Syscall)
+        LplPlugin->>Alloc: SPSC_Submit(OP_READ_SENSORS)
+        Note right of LplPlugin: LplPlugin continue ses calculs (Aucun INT 0x80)
+
+        AP (Worker)->>Alloc: SPSC_Poll() -> Détecte OP_READ_SENSORS
+        AP (Worker)->>Drv: Extrait les données matérielles
+        AP (Worker)->>Alloc: SPSC_Complete(Data)
+
+        LplPlugin->>Alloc: Lit le résultat au prochain tick
+    and Réseau Bypass
+        HW->>Net: Paquet UDP Reçu sur la carte réseau
+        Net->>HW: DMA automatique (Hardware RSS) vers RAM Flakkari
+        Note right of Flakkari: Zéro interruption CPU. RAM mise à jour par magie matérielle.
+    and Hard Real-Time (EDF)
+        HW->>Intr: Timer Tick (APIC)
+        Intr->>Sched: timer_tick_interrupt()
+        Sched->>Sched: edf_recalculate_deadlines()
+        opt Si SLA VR menacé
+            Sched->>HW: context_switch_fast(LplPlugin)
+            Note right of Sched: Préemption stricte pour garantir MTP < 20ms
+        end
+    end
+    end
+```
+
+### Dictionnaire des Fonctionnalités Anticipées
+
+Pour rendre ce diagramme "immersif", plusieurs fonctions conceptuelles ont été extrapolées à partir de la Roadmap :
+
+*   **`scheduler_edf_initialize()`** : Point d'entrée de la Phase 6. Remplace le RR par un calcul de deadline absolu (Liu & Layland).
+*   **`vmm_sasos_enable_global_address_space()`** : Transition vers la Phase 10 (64-bit). Élimine les changements de CR3 entre processus.
+*   **`sasos_allocate_pkey_domain()`** : Distribue une clé matérielle MPK. Le processus utilise l'instruction assembleur `wrpkru` pour s'isoler en 2 cycles CPU.
+*   **`network_bypass_map_rx_to_userspace()`** : Implémentation du Data Plane (Phase 8). Le kernel épingle des frames physiques (`kernel_pinned_memory_initialize`) et dit à la carte réseau d'y écrire directement.
+*   **`ipc_create_zero_syscall_channel()`** : Concrétisation de la Phase 9. Alloue un *Ring Buffer SPSC* partagé entre le Ring 3 et le Ring 0. Le CPU AP (Worker) fait du polling (spin) sur ce buffer, éliminant les coûteux changements de contexte causés par `INT 0x80`.
+
+---
+
 *LplKernel — Architecture d'un Moteur Déterministe FullDive*
-*Version 1.1 — Mai 2026*
-*Synthèse de 17 rapports de recherche*
+*Version 1.2 — Juin 2026*
+*Synthèse de multiples rapports de recherche et diagrammes*

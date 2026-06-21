@@ -210,6 +210,10 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [Calling Conventions](https://wiki.osdev.org/Calling_Conventions)
 - [ ] [System V ABI](https://wiki.osdev.org/System_V_ABI)
 
+#### 📚 Ressources Deep Research (Phase 2)
+- **Spécifications** : [Intel SDM Vol. 3A - Ch.3/Ch.4](https://cdrdv2-public.intel.com/789582/325384-sdm-vol-3abcd.pdf)
+- ⚠️ **Piège à éviter** : Le TSS en mode 64-bit ne gère plus le hardware task switching mais est obligatoire pour fournir les pointeurs RSP0 et la table IST (Interrupt Stack Table) vitale pour catcher un Double Fault.
+
 ---
 
 ## ⚡ Phase 3: Interrupts & Exceptions (Difficulty ⭐⭐)
@@ -265,6 +269,10 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [CMOS](https://wiki.osdev.org/CMOS) - CMOS clock
 - [ ] [Detecting CPU Speed](https://wiki.osdev.org/Detecting_CPU_Speed)
 
+#### 📚 Ressources Deep Research (Phase 3)
+- **Spécifications** : [Intel SDM Vol. 3A - Ch.6/Ch.10 (APIC)](https://cdrdv2-public.intel.com/789582/325384-sdm-vol-3abcd.pdf), [ACPI MADT Spec](https://uefi.org/acpi/specs)
+- ⚠️ **Piège à éviter** : L'accès x2APIC (MSR) est plus rapide que le Local APIC classique (MMIO). Pour démarrer les APs, le code trampoline 16-bit réel doit se situer dans la mémoire basse (<1MB). Le vieux PIC doit être masqué (0xFF) pour éviter les conflits.
+
 ---
 
 ## 🧠 Phase 4: Memory Management (Difficulty ⭐⭐)
@@ -299,6 +307,13 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [ ] Simple linked list allocator
   - [x] [Slab Allocator](https://en.wikipedia.org/wiki/Slab_allocation) 🔗
   - [x] kmalloc/kfree implementation
+  - [ ] **KFENCE (Kernel Electric-Fence)** : Détecteur probabiliste d'erreurs mémoire OOB/UAF.
+  - [ ] **Lock-Free SPSC Ring Buffers** : Files d'attente natives pour IPC ultra-rapide.
+
+#### 📚 Ressources Deep Research (Phase 4)
+- **Spécifications** : [Intel SDM Vol. 3A - Ch.4.10](https://cdrdv2-public.intel.com/789582/325384-sdm-vol-3abcd.pdf), [Linux KFENCE Docs](https://www.kernel.org/doc/Documentation/dev-tools/kfence.rst)
+- **Dépôts** : [bbqueue (SPSC BipBuffer)](https://github.com/jamesmunns/bbqueue)
+- ⚠️ **Piège à éviter** : Toujours exécuter `INVLPG` après une modif VMM. En SMP, un IPI "TLB Shootdown" est requis. Dans les SPSC lock-free, maîtrisez les barrières mémoires atomiques pour éviter le *False Sharing*.
 
 ---
 
@@ -314,6 +329,9 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [Mouse Input](https://wiki.osdev.org/Mouse_Input)
   - [ ] PS/2 mouse
   - [ ] USB mouse (advanced)
+- [ ] **Interfaces BCI (Brain-Computer Interface)**
+  - [ ] High-frequency USB/Serial polling pour casque OpenBCI.
+  - [ ] Parsing et filtrage (Notch/Bandpass) natif des trames EEG.
 
 ### Storage Devices
 - [ ] [ATA](https://wiki.osdev.org/Category:ATA) - IDE/PATA hard disks
@@ -361,6 +379,11 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [RSDP](https://wiki.osdev.org/RSDP)
 - [ ] [AML](https://wiki.osdev.org/AML) - ACPI Machine Language
 
+#### 📚 Ressources Deep Research (Phase 5)
+- **Spécifications** : [NVMe Spec v2.0](https://nvmexpress.org/developers/nvme-specification/), [AHCI Spec](https://www.intel.com/content/www/us/en/io/serial-ata/serial-ata-ahci-spec-rev1-3-1.html), [OpenBCI Data Format](https://docs.openbci.com/Cyton/CytonDataFormat/)
+- **Dépôts** : [OpenViBE Src](https://github.com/openvibe)
+- ⚠️ **Piège à éviter** : L'ATA PIO gèle le CPU (polling) : à bannir pour le temps réel. Le driver NVMe exige un alignement mémoire sur 4KB (PRP). Le dongle BCI doit être lu très rapidement dans un SPSC pour ne pas écraser le FIFO matériel (16550A).
+
 ---
 
 ## 🧵 Phase 6: Multitasking & Scheduling (Difficulty ⭐⭐⭐)
@@ -373,9 +396,11 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [Processes and Threads](https://wiki.osdev.org/Processes_and_Threads)
 - [ ] [Brendan's Multi-tasking Tutorial](https://wiki.osdev.org/Brendan%27s_Multi-tasking_Tutorial)
 - [ ] [Context Switching](https://wiki.osdev.org/Context_Switching)
+  - [ ] **FPU / SSE State Save & Restore** : Gestion matérielle (FXSAVE/FXRSTOR) des registres flottants.
 - [ ] Process Control Block (PCB)
 - [ ] Thread Control Block (TCB)
 - [ ] [Task State Segment](https://wiki.osdev.org/Task_State_Segment) - Initialize TSS for ring transitions
+- [ ] **Support Mathématique & Déterminisme** : Soft-Float ou virgule fixe (CORDIC, Q16.16) pour éviter la corruption d'état FPU dans les handlers stricts.
 
 ### Scheduling
 - [ ] [Scheduling Algorithms](https://wiki.osdev.org/Scheduling_Algorithms)
@@ -406,6 +431,11 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [ ] SMP (Symmetric Multiprocessing)
   - [ ] AP (Application Processor) initialization
   - [ ] Per-CPU data structures
+
+#### 📚 Ressources Deep Research (Phase 6)
+- **Spécifications** : [Intel SDM Vol. 1 - Ch.13 (XSAVE)](https://cdrdv2-public.intel.com/789582/325384-sdm-vol-3abcd.pdf), [Liu & Layland, 1973 (EDF)](https://dl.acm.org/doi/10.1145/321738.321743)
+- **Docs** : [Linux SCHED_DEADLINE](https://docs.kernel.org/scheduler/sched-deadline.html)
+- ⚠️ **Piège à éviter** : `FXSAVE` ne gère que les anciens registres FPU/SSE. Pour les registres YMM/ZMM utilisés par la VR/BCI, utiliser `XSAVE` activé via `CR4.OSXSAVE`. L'ordonnancement EDF global sur SMP (GEDF) souffre de l'anomalie de Dhall ; privilégiez l'EDF partitionné.
 
 ---
 
@@ -448,6 +478,10 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] **Zero-Copy DMA** : Mapping matériel direct entre le ring de réception de la carte réseau (NIC) et la mémoire utilisateur épinglée.
 - [ ] **Receive Side Scaling (RSS)** : Distribution matérielle du trafic UDP/TCP entrant sur les multiples cœurs SMP.
 
+#### 📚 Ressources Deep Research (Phase 8)
+- **Spécifications** : [Intel 8254x Dev Manual](https://www.intel.com/content/dam/doc/manual/pci-pci-x-family-gbe-controllers-software-dev-manual.pdf), [DPDK Architecture Docs](https://doc.dpdk.org/guides/prog_guide/index.html)
+- ⚠️ **Piège à éviter** : Un modèle Zero-Copy exige l'allocation de mémoire réseau physiquement contiguë (MBUFs). L'activation du RSS (Receive Side Scaling) nécessite de programmer la Redirection Table (RETA) du NIC.
+
 ---
 
 ## 👤 Phase 9: User Space & System Calls (Difficulty ⭐⭐⭐)
@@ -480,6 +514,11 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
   - [ ] Dynamic linking
 - [ ] [PE](https://wiki.osdev.org/PE) - Portable Executable (Windows)
 - [ ] Process creation (fork/exec)
+
+#### 📚 Ressources Deep Research (Phase 9)
+- **Spécifications** : [Intel SDM Vol. 3A - Ch.5.10 (Fast Syscalls)](https://cdrdv2-public.intel.com/789582/325384-sdm-vol-3abcd.pdf), [Linux PKEYS Docs](https://www.kernel.org/doc/html/v6.5/core-api/protection-keys.html)
+- **Dépôts** : [Theseus OS (SASOS)](https://github.com/theseus-os/Theseus)
+- ⚠️ **Piège à éviter (CRITIQUE)** : La bascule via `SYSCALL` ne change pas la pile. Vous devez exécuter `SWAPGS`. Mais si une IRQ frappe pendant que vous êtes en Ring 0, ne ré-exécutez pas `SWAPGS`, cela inverserait le segment GS et entraînerait un crash absolu !
 
 ---
 
@@ -517,6 +556,30 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 - [ ] [Raspberry Pi Bare Bones](https://wiki.osdev.org/Raspberry_Pi_Bare_Bones)
 - [ ] [RISC-V](https://wiki.osdev.org/Category:RISC-V)
 - [ ] [PowerPC](https://wiki.osdev.org/Category:PowerPC)
+
+#### 📚 Ressources Deep Research (Phase 10)
+- **Spécifications** : [UEFI Spec](https://uefi.org/specifications), [ELF Spec](https://refspecs.linuxfoundation.org/elf/elf.pdf)
+- ⚠️ **Piège à éviter** : Le chargeur ELF doit pouvoir mapper les sections selon les droits d'accès PKEY pour l'isolation SASOS. La table de pagination (PML4) doit être correctement construite avant d'activer le bit LMA.
+
+---
+
+## ⚡ Phase 11: Power Management & Green Computing (Difficulty ⭐⭐⭐⭐)
+
+> ⚠️ **STATUS**: Not started - Crucial for BCI and VR constrained hardware.
+
+### ACPI & States
+- [ ] **C-States (CPU Sleep States)** : Implémentation de `HLT` et `MWAIT` (C1, C2, C3).
+- [ ] **P-States (Performance States)** : Support basique de l'Intel SpeedStep.
+
+### Optimisations Kernel
+- [ ] **Tickless Kernel (NO_HZ)** : Désactivation du timer périodique quand le CPU est inactif pour économiser la batterie.
+- [ ] **DVFS (Dynamic Voltage and Frequency Scaling)** : Ajustement dynamique de la fréquence processeur selon la charge du Scheduler EDF.
+- [ ] **Clock Gating / Power Gating** : Interface avec l'ACPI pour éteindre complètement les sous-systèmes non utilisés (ex: PHY réseau éteint en mode offline).
+
+#### 📚 Ressources Deep Research (Phase 11)
+- **Spécifications** : [ACPI Spec v6.6](https://uefi.org/acpi), [Intel SDM Vol. 3B - Ch.14 (Power)](https://cdrdv2-public.intel.com/789582/325384-sdm-vol-3abcd.pdf)
+- **Dépôts** : [Linux intel_pstate](https://github.com/torvalds/linux/blob/master/drivers/cpufreq/intel_pstate.c)
+- ⚠️ **Piège à éviter** : L'instruction `HLT` classique introduit de la latence au réveil. La combinaison `MONITOR` / `MWAIT` permet au processeur de s'endormir et de se réveiller instantanément lors d'une écriture en RAM par un périphérique (ex: DMA réseau).
 
 ---
 
