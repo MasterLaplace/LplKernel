@@ -14,9 +14,9 @@
 
 ## Vision du Projet
 
-Le projet LplKernel est né d'une ambition singulière : concevoir, à partir de zéro (*from scratch*), un moteur client-serveur déterministe capable de supporter des expériences de Réalité Virtuelle immersive — jusqu'au concept théorique du *FullDive*, où l'interface entre le cerveau humain et la machine s'efface entièrement.
+Le projet LplKernel est né d'une ambition singulière : concevoir, à partir de zéro (*from scratch*), un moteur client-serveur déterministe capable de supporter des expériences de Réalité Virtuelle immersive, allant même jusqu'au concept théorique du *FullDive*, où l'interface entre le cerveau humain et la machine s'efface entièrement.
 
-Cette ambition impose de maîtriser simultanément des domaines habituellement cloisonnés : l'architecture des systèmes d'exploitation, la gestion mémoire temps réel, l'arithmétique déterministe, le rendu graphique bas niveau, la synchronisation réseau, le traitement du signal neuronal et même les fondements théoriques de l'informatique quantique. Ce livre constitue la synthèse exhaustive de ces recherches — un document de référence unique fusionnant les analyses techniques, les formules mathématiques, les exemples de code et les sources académiques qui ont guidé chaque décision architecturale du projet.
+Cette ambition impose de maîtriser simultanément des domaines habituellement cloisonnés : l'architecture des systèmes d'exploitation, la gestion mémoire temps réel, l'arithmétique déterministe, le rendu graphique bas niveau, la synchronisation réseau, le traitement du signal neuronal et même les fondements théoriques de l'informatique quantique. Ce livre constitue la synthèse exhaustive de ces recherches ; un document de référence unique fusionnant les analyses techniques, les formules mathématiques, les exemples de code et les sources académiques qui ont guidé chaque décision architecturale du projet.
 
 ## Comment Lire ce Livre
 
@@ -166,9 +166,9 @@ Le modèle retenu pour LplKernel est le **serveur autoritaire**, où le serveur 
 | **Serveur Autoritaire + Prédiction** | Le client prédit localement, le serveur corrige. | Faible (masquée par la prédiction) | Haute | FPS, Action (Overwatch) |
 | **Rollback Netcode** | Simulation locale immédiate. Si un input distant arrive en retard, rollback + resimulation. | Très faible | Très haute | Jeux de combat (GGPO) |
 
-Le Lockstep impose que la simulation soit **parfaitement déterministe** — une séquence d'inputs identique doit produire un état bit-à-bit identique sur toutes les machines. Cette exigence a des conséquences architecturales profondes qui seront détaillées au Chapitre 3 (arithmétique à virgule fixe) et au Chapitre 6 (infrastructure réseau).
+Le Lockstep impose que la simulation soit **parfaitement déterministe**, plus précisément, une séquence d'inputs identique doit produire un état bit-à-bit identique sur toutes les machines. Cette exigence a des conséquences architecturales profondes qui seront détaillées au Chapitre 3 (arithmétique à virgule fixe) et au Chapitre 6 (infrastructure réseau).
 
-Le Rollback Netcode, utilisé dans les jeux de combat compétitifs, combine le meilleur des deux mondes : il permet une simulation locale immédiate (zéro latence perçue) tout en gérant les désynchronisations en « revenant en arrière » (*rollback*) pour rejouer les ticks avec les inputs corrigés. Ce mécanisme exige à la fois le déterminisme strict et la capacité de sauvegarder/restaurer des snapshots d'état à très haute fréquence — une opération qui impose des contraintes sévères sur la gestion mémoire (Chapitre 2).
+Le Rollback Netcode, utilisé dans les jeux de combat compétitifs, combine le meilleur des deux mondes : il permet une simulation locale immédiate (zéro latence perçue) tout en gérant les désynchronisations en « revenant en arrière » (*rollback*) pour rejouer les ticks avec les inputs corrigés. Ce mécanisme exige à la fois le déterminisme strict et la capacité de sauvegarder/restaurer des snapshots d'état à très haute fréquence, ce qui est une opération qui impose des contraintes sévères sur la gestion mémoire (Chapitre 2).
 
 ### 1.4.3 Le Contrat de Timer Déterministe
 
@@ -2461,78 +2461,118 @@ Les deux projets se nourrissent mutuellement :
 
 ## 10.10 Diagramme d'Architecture Complet
 
-L'architecture fusionnée de LplKernel est représentée ci-dessous. Les composants sont codés par couleur : 🟦 Kernel Core (fondations Phases 1-5), 🟪 Innovation Native (vision long terme), 🟩 Espace Utilisateur, ⬛ Hardware, 🟧 Interface asynchrone.
+L'architecture fusionnée de LplKernel est représentée ci-dessous. Les composants sont codés par couleur :
+- 🟦 Kernel Core (fondations Phases 1-5)
+- 🟪 Innovation Native (vision long terme)
+- 🟩 Espace Utilisateur
+- ⬛ Hardware
+- 🟧 Interface asynchrone
 
 ```mermaid
 flowchart TD
-    classDef hardware fill:#2d3436,stroke:#b2bec3,stroke-width:2px,color:#dfe6e9
-    classDef kernel_core fill:#0984e3,stroke:#74b9ff,stroke-width:2px,color:#fff
-    classDef innovation fill:#6c5ce7,stroke:#a29bfe,stroke-width:3px,color:#fff
-    classDef userspace fill:#00b894,stroke:#55efc4,stroke-width:2px,color:#fff
-    classDef interface fill:#e17055,stroke:#fab1a0,stroke-width:2px,color:#fff
+    %% ================= STYLES =================
+    classDef hardware fill:#2d3436,stroke:#b2bec3,stroke-width:2px,color:#dfe6e9;
+    classDef kernel_core fill:#0984e3,stroke:#74b9ff,stroke-width:2px,color:#fff;
+    classDef innovation fill:#6c5ce7,stroke:#a29bfe,stroke-width:3px,color:#fff;
+    classDef userspace fill:#00b894,stroke:#55efc4,stroke-width:2px,color:#fff;
+    classDef interface fill:#e17055,stroke:#fab1a0,stroke-width:2px,color:#fff;
 
-    subgraph Userspace ["Espace Utilisateur (SASOS)"]
+    %% ================= USERSPACE =================
+    subgraph Userspace ["Espace Utilisateur (Single Address Space - SASOS)"]
         direction LR
-        App1["Moteur VR / Rendu (PKey 0x1)"]:::userspace
-        App2["Serveur Flakkari (PKey 0x2)"]:::userspace
-        App3["Modele IA Distribue (PKey 0x3)"]:::userspace
+        App1["🎮 Moteur VR / Rendu<br>(PKey: 0x1)"]:::userspace
+        App2["🌐 Serveur Flakkari<br>(PKey: 0x2)"]:::userspace
+        App3["🧠 Modèle IA Distribué<br>(PKey: 0x3)"]:::userspace
     end
 
-    subgraph Interface ["Frontiere Asynchrone (Zero Context-Switch)"]
+    %% ================= INTERFACE =================
+    subgraph Interface ["Frontière Asynchrone Kernel-User (Zero Context-Switch)"]
         direction LR
-        RB_Net["Ring-Buffer Reseau (SQ/CQ)"]:::interface
-        RB_Sys["Ring-Buffer Systeme (Mem, I/O, IPC)"]:::interface
+        RB_Net["Ring-Buffer Réseau<br>(Submission/Completion)"]:::interface
+        RB_Sys["Ring-Buffer Système<br>(Mémoire, I/O, IPC)"]:::interface
     end
 
+    %% ================= KERNEL SPACE =================
     subgraph Kernel ["LplKernel Space (Ring 0)"]
         direction TB
-        subgraph Boot_Init ["Boot et CPU Init (Ph. 1-3)"]
-            Boot["GRUB / Multiboot Higher-Half"]:::kernel_core
-            Protect["GDT et TSS Ring 0/3"]:::kernel_core
-            Intr["IDT et Exceptions (#PF, #GP, #DF)"]:::kernel_core
-            SMPInit["AP Trampoline INIT/SIPI"]:::kernel_core
+
+        subgraph Boot_Init ["Boot & CPU Init (Phase 1-3)"]
+            direction LR
+            Boot["GRUB / Multiboot<br>Higher-Half Boot"]:::kernel_core
+            Protect["GDT & TSS<br>Ring 0 / Ring 3"]:::kernel_core
+            Intr["IDT & Exceptions<br>(#PF, #GP, #DF)"]:::kernel_core
+            SMPInit["AP Trampoline<br>INIT/SIPI Dispatch"]:::kernel_core
         end
-        subgraph Sched ["Ordonnancement (Ph. 6+)"]
-            EDF["Scheduler EDF Hard Real-Time"]:::innovation
-            SMP["SMP Manager Affinite NUMA"]:::kernel_core
-            IPC["Zero-Copy IPC Router"]:::innovation
+
+        subgraph Sched ["Ordonnancement & Topologie (Phase 6+)"]
+            direction LR
+            EDF["⏱️ Scheduler EDF<br>(Earliest Deadline First)<br>Garanties Hard Real-Time"]:::innovation
+            SMP["Multi-Core SMP Manager<br>Affinité CPU & NUMA Policy"]:::kernel_core
+            IPC["Zero-Copy IPC Router<br>Mémoire Partagée Native"]:::innovation
         end
-        subgraph Mem ["Sous-systeme Memoire (Ph. 4+)"]
-            SASOS["VMM SASOS Isolation PKeys"]:::innovation
-            VMM["VMM Classique Virt-Phys"]:::kernel_core
-            PMM["PMM Buddy/Slab/Arena/Pools"]:::kernel_core
-            AutoResize["Auto-Resizing Ballooning"]:::innovation
-            Snapshot["Time-Travel RAM COW Fork"]:::innovation
+
+        subgraph Mem ["Sous-système Mémoire (Phase 4+)"]
+            direction LR
+            SASOS["VMM SASOS<br>Isolation par Capacités (PKeys)"]:::innovation
+            VMM["VMM Classique<br>Virt->Phys, Page Tables"]:::kernel_core
+            PMM["PMM & Allocateurs<br>Buddy, Slab, Frame Arena, Pools"]:::kernel_core
+            AutoResize["🎈 Auto-Resizing Natif<br>Ballooning & Lazy Alloc"]:::innovation
+            Snapshot["📸 Time-Travel RAM<br>Insta-Fork / Copy-On-Write"]:::innovation
         end
-        subgraph Drivers ["Pilotes I/O (Ph. 5+)"]
-            StandardDrv["PS/2, Serial, VGA, ATA"]:::kernel_core
-            GPUMux["Multiplexeur GPU/NPU"]:::innovation
-            NetBypass["Data Plane Network Bypass"]:::innovation
-            Observability["Telemetry Zero-Cost"]:::innovation
+
+        subgraph Drivers ["Pilotes & I/O (Phase 5+)"]
+            direction LR
+            StandardDrv["Pilotes Base<br>PS/2, Serial, VGA, ATA"]:::kernel_core
+            GPUMux["💻 Multiplexeur HW<br>Fractionnement GPU/NPU"]:::innovation
+            NetBypass["⚡ Data Plane Network<br>Bypass Stack TCP/IP"]:::innovation
+            Observability["👁️ Telemetry Zero-Cost<br>Buffers Circulaires"]:::innovation
         end
+
+        %% Internal Kernel Routing
+        Boot --> Protect --> Intr --> SMPInit
+        Intr -.->|#PF Page Fault| Mem
+        Intr -.->|Interrupts| Drivers
+        Sched <-->|Gestion des Tâches| Mem
+        Sched <-->|Syscalls Asynchrones| Drivers
     end
 
-    subgraph Hardware ["Couche Materielle"]
+    %% ================= HARDWARE =================
+    subgraph Hardware ["Couche Matérielle (Hardware)"]
         direction LR
-        CPU["CPU x86_64 (LAPIC, MMU)"]:::hardware
-        RAMh["RAM (Noeuds NUMA)"]:::hardware
-        IO_Ctrls["IOAPIC, PIT, RTC"]:::hardware
-        NIC["NIC avec RSS"]:::hardware
-        GPU["GPU / NPU"]:::hardware
+        CPU["CPU x86_64<br>(LAPIC, x2APIC, MMU)"]:::hardware
+        RAM["Mémoire Physique<br>(Nœuds NUMA)"]:::hardware
+        IO_Ctrls["Contrôleurs<br>(IOAPIC, PIT, RTC)"]:::hardware
+        Storage["Stockage<br>(ATA PIO, NVMe)"]:::hardware
+        NIC["Carte Réseau<br>(NIC avec RSS)"]:::hardware
+        GPU["Accélérateurs<br>(GPU / NPU)"]:::hardware
     end
 
-    App1 <-->|"Ops Sys Async"| RB_Sys
-    App2 <-->|"Paquets Tx/Rx"| RB_Net
-    RB_Sys <-->|"Polling Threads Kernel"| Sched
-    RB_Net <-->|"Routage File"| NetBypass
-    SMP -->|"Execution IPI"| CPU
-    PMM -->|"R/W RAM"| RAMh
-    StandardDrv -->|"IRQ EOI DMA"| IO_Ctrls
-    NetBypass -->|"Config MAC/PHY"| NIC
-    GPUMux -->|"Commandes PCIe"| GPU
-    IO_Ctrls -->|"Ticks Timer"| EDF
-    NIC ====|"Zero-Copy DMA Bypass"| App2
-    GPU ====|"Mapping Fractionne Bypass"| App1
+    %% ================= EXTERNAL CONNECTIONS =================
+
+    %% Userspace <--> Interface
+    App1 <-->|Opérations Sys Asynchrones| RB_Sys
+    App2 <-->|Paquets Tx/Rx| RB_Net
+    App3 <-->|Appels IPC/Sys| RB_Sys
+
+    %% Interface <--> Kernel
+    RB_Sys <-->|Polling par Threads Kernel dédiés| Sched
+    RB_Net <-->|Routage direct de la file| NetBypass
+
+    %% Kernel <--> Hardware
+    SMP -->|Exécution & IPI| CPU
+    PMM -->|Lecture/Écriture RAM| RAM
+    StandardDrv -->|IRQ / EOI / DMA| IO_Ctrls
+    StandardDrv -->|PIO / DMA| Storage
+    NetBypass -->|Configuration MAC/PHY| NIC
+    GPUMux -->|Commandes PCIe| GPU
+    IO_Ctrls -->|"Ticks Timer (APIC/PIT)"| EDF
+
+    %% ================= THE MAGIC: HARDWARE BYPASS =================
+    %% These links represent the Zero-Copy / Direct Access Bypass innovations
+    NIC =====|"⚡ Zéro-Copy DMA RX/TX direct (Bypass)"| App2
+    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App1
+    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App3
+    RAM =====|"⚡ Accès direct via PKeys (SASOS)"| Userspace
 ```
 
 ## 10.11 Synthèse
