@@ -78,7 +78,7 @@ Les RTOS méritent une attention particulière dans le contexte du FullDive. Con
 
 Au-delà de la simple préemption, un moteur FullDive exige un déterminisme absolu sur les délais d'exécution. L'algorithme canonique pour ces garanties est l'**EDF (Earliest Deadline First)**. Le théorème fondamental de Liu & Layland (1973) démontre que sur un processeur unique, EDF peut atteindre une utilisation de 100 % du CPU tout en respectant toutes les échéances, à condition que la somme des utilisations des tâches soit $\le 1$.
 
-Cependant, le passage aux architectures multi-cœurs (SMP) introduit l'**anomalie de Dhall** : dans un ordonnancement EDF global (GEDF), une tâche à très faible utilisation peut faire échouer l'exécution d'une tâche critique, ruinant les garanties temporelles. 
+Cependant, le passage aux architectures multi-cœurs (SMP) introduit l'**anomalie de Dhall** : dans un ordonnancement EDF global (GEDF), une tâche à très faible utilisation peut faire échouer l'exécution d'une tâche critique, ruinant les garanties temporelles.
 
 > **Architecture LplKernel — Partitioned-EDF**
 >
