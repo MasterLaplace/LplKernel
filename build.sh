@@ -25,6 +25,12 @@ for arg in "$@"; do
             export REALTIME_MODE=0
             export GRAPHICS_MODE=0
             ;;
+        --azerty)
+            export KEYBOARD_LAYOUT=fr
+            ;;
+        --qwerty)
+            export KEYBOARD_LAYOUT=us
+            ;;
         --compile-db)
             USE_COMPILEDB=1
             ;;
@@ -46,7 +52,7 @@ done
 
 # Auto-clean when the build mode changes to avoid stale object files.
 LAST_MODE_FILE=".last_build_mode"
-CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} APIC_SMOKE=$APIC_SMOKE_TEST_PERIODIC_MODE"
+CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} APIC_SMOKE=$APIC_SMOKE_TEST_PERIODIC_MODE KEYBOARD=${KEYBOARD_LAYOUT:-us}"
 
 if [ -f "$LAST_MODE_FILE" ]; then
     LAST_MODE=$(cat "$LAST_MODE_FILE")
@@ -66,11 +72,11 @@ echo "Building with graphics mode: $GRAPHICS_MODE"
 
 for PROJECT in $PROJECTS; do
     if [ "$USE_COMPILEDB" -eq 1 ]; then
-        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" compiledb $MAKE -j"$JOBS" install)
+        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" KEYBOARD_LAYOUT="${KEYBOARD_LAYOUT:-us}" compiledb $MAKE -j"$JOBS" install)
         jq --indent 1 'map(.arguments += ["-resource-dir=/nonexistent"])' \
             $PROJECT/compile_commands.json > tmp                          \
             && mv tmp $PROJECT/compile_commands.json
     else
-        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" $MAKE -j"$JOBS" install)
+        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" KEYBOARD_LAYOUT="${KEYBOARD_LAYOUT:-us}" $MAKE -j"$JOBS" install)
     fi
 done

@@ -8,6 +8,7 @@
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/drivers/helpers/keyboard_helper.h>
 #include <kernel/drivers/keyboard.h>
+#include <kernel/drivers/ps2_keyboard.h>
 #include <kernel/drivers/tty.h>
 #include <kernel/memory/heap.h>
 
@@ -29,6 +30,18 @@ static uint8_t kernel_string_equals(const char *lhs, const char *rhs)
 
 static void kernel_console_print_prompt(void) { terminal_write_string("\n> "); }
 
+static const char *kernel_console_layout_name(void)
+{
+    switch (personal_system_2_keyboard_get_layout())
+    {
+        case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY:
+            return "fr (AZERTY)";
+        case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY:
+        default:
+            return "us (QWERTY)";
+    }
+}
+
 static void kernel_console_execute_command(Serial_t *com1, const char *command)
 {
     if (!command || !*command)
@@ -36,7 +49,7 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
 
     if (kernel_string_equals(command, "help"))
     {
-        terminal_write_string("\ncommands: help, stats, ap, kbd, exit\n");
+        terminal_write_string("\ncommands: help, stats, ap, kbd, layout, exit\n");
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: cmd help\n");
         return;
     }
@@ -82,6 +95,28 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
         terminal_write_string(", dropped=");
         terminal_write_number((long) keyboard_get_dropped_char_count(), 10u);
         terminal_write_string("\n");
+        return;
+    }
+
+    if (kernel_string_equals(command, "layout"))
+    {
+        terminal_write_string("\n[layout] current=");
+        terminal_write_string(kernel_console_layout_name());
+        terminal_write_string(" (use: layout us | layout fr)\n");
+        return;
+    }
+
+    if (kernel_string_equals(command, "layout us"))
+    {
+        personal_system_2_keyboard_set_layout(PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY);
+        terminal_write_string("\n[layout] switched to us (QWERTY)\n");
+        return;
+    }
+
+    if (kernel_string_equals(command, "layout fr"))
+    {
+        personal_system_2_keyboard_set_layout(PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY);
+        terminal_write_string("\n[layout] switched to fr (AZERTY)\n");
         return;
     }
 

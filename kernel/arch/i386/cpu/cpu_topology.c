@@ -129,6 +129,21 @@ void cpu_topology_mark_apic_id_online(uint32_t apic_id)
     }
 }
 
+void cpu_topology_unmark_apic_id_online(uint32_t apic_id)
+{
+    uint32_t slot = cpu_topology_register_apic_id_internal(apic_id & 0xFFu);
+
+    if (slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS)
+        return;
+
+    if (cpu_topology_online_by_slot[slot])
+    {
+        cpu_topology_online_by_slot[slot] = 0u;
+        if (cpu_topology_online_cpu_count > 0u)
+            --cpu_topology_online_cpu_count;
+    }
+}
+
 void cpu_topology_mark_runtime_cpu_online(void)
 {
     if (!cpu_topology_apic_id_valid)

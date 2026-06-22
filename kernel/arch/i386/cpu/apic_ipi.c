@@ -32,6 +32,10 @@
 #define LAPIC_ICR_DEST_SHORT_ALL_INCL  (2u << 18)
 #define LAPIC_ICR_DEST_SHORT_ALL_EXCL  (3u << 18)
 
+/* Upper bound on the TLB-shootdown ACK spin so a missing or unresponsive target
+   CPU (a wedged AP, or a stale online count) can never hang the kernel. */
+#define APIC_IPI_TLB_SHOOTDOWN_SPIN_LIMIT 1000000u
+
 static uint32_t apic_ipi_lapic_base = 0u;
 static uint32_t apic_ipi_init_attempt_count = 0u;
 static uint32_t apic_ipi_sipi_attempt_count = 0u;
@@ -40,6 +44,7 @@ static uint32_t apic_ipi_startup_sequence_success_count = 0u;
 
 static volatile uint32_t apic_ipi_tlb_shootdown_addr = 0u;
 static volatile uint32_t apic_ipi_tlb_shootdown_pending = 0u;
+static uint32_t apic_ipi_tlb_shootdown_timeout_count = 0u;
 
 static void apic_ipi_tlb_shootdown_handler(const InterruptFrame_t *frame)
 {
@@ -175,12 +180,25 @@ void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
 
     advanced_pic_ipi_send_fixed(0u, 0x40u, 3u);
 
+    uint32_t spin_guard = 0u;
     while (apic_ipi_tlb_shootdown_pending > 0u)
     {
         __asm__ volatile("pause");
+
+        if (++spin_guard >= APIC_IPI_TLB_SHOOTDOWN_SPIN_LIMIT)
+        {
+            /* A target never acknowledged (unresponsive or phantom CPU). Stop
+               waiting so a shootdown can never hang the kernel; the local TLB
+               is still invalidated below. */
+            apic_ipi_tlb_shootdown_pending = 0u;
+            ++apic_ipi_tlb_shootdown_timeout_count;
+            break;
+        }
     }
 
     paging_invlpg(virt_addr);
 }
+
+uint32_t advanced_pic_ipi_get_tlb_shootdown_timeout_count(void) { return apic_ipi_tlb_shootdown_timeout_count; }
 
 void advanced_pic_ipi_broadcast_tlb_flush(void) { advanced_pic_ipi_broadcast_tlb_shootdown(0xFFFFFFFFu); }

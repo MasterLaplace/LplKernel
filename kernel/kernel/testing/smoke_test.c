@@ -573,6 +573,12 @@ void kernel_smoke_test_run_cpu_topology_online_bookkeeping(Serial_t *serial_port
 
     bool pass = local_count_ok && local_online_ok && next_count_ok && next_online_ok;
 
+    /* Restore global state: this smoke marks a synthetic CPU online; leaving it
+       set would inflate the online count and make later TLB shootdowns spin
+       forever waiting for an ACK from a CPU that does not exist. */
+    if (!next_online_before)
+        cpu_topology_unmark_apic_id_online(next_apic);
+
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: topology online bookkeeping smoke: local_slot=");
     serial_write_int(serial_port, (int32_t) local_slot);
     serial_write_string(serial_port, ", local_online=");

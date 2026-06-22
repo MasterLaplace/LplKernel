@@ -13,7 +13,7 @@ This is the kernel of the Laplace project.
 to build the kernel, you need to install the following dependencies:
 ```sh
 sudo apt update
-sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo
+sudo apt install build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev texinfo grub-pc-bin grub-common xorriso
 
 mkdir -p ~/src
 cd ~/src

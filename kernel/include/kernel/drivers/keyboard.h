@@ -11,9 +11,11 @@
 #include <stdint.h>
 
 /**
- * @brief Install minimal IRQ1 keyboard handler.
+ * @brief Install the IRQ1 keyboard handler.
  *
- * The handler currently logs raw scan codes to COM1 and sends EOI.
+ * The handler is intentionally minimal: it reads the raw scan code, pushes it
+ * onto a lock-free SPSC ring and sends EOI. Decoding happens later on the
+ * consumer side (see keyboard_try_pop_char), keeping interrupt latency bounded.
  */
 extern void keyboard_interrupt_initialize(void);
 
@@ -33,7 +35,7 @@ extern uint32_t keyboard_get_printable_count(void);
 extern char keyboard_get_last_printable_char(void);
 
 /**
- * @brief Return number of decoded chars currently queued.
+ * @brief Return number of raw scan codes pending decode in the SPSC ring.
  */
 extern uint32_t keyboard_get_pending_char_count(void);
 
@@ -46,7 +48,7 @@ extern uint32_t keyboard_get_pending_char_count(void);
 extern uint8_t keyboard_try_pop_char(char *out_char);
 
 /**
- * @brief Return number of decoded chars dropped because queue was full.
+ * @brief Return number of raw scan codes dropped because the SPSC ring was full.
  */
 extern uint32_t keyboard_get_dropped_char_count(void);
 

@@ -126,4 +126,13 @@ extern uint32_t advanced_pic_ipi_get_startup_sequence_attempt_count(void);
  */
 extern uint32_t advanced_pic_ipi_get_startup_sequence_success_count(void);
 
+/**
+ * @brief Return number of TLB shootdowns that gave up waiting for an ACK.
+ *
+ * Non-zero means a target CPU never acknowledged within the spin bound
+ * (unresponsive or phantom CPU); the shootdown was abandoned rather than
+ * hanging the kernel.
+ */
+extern uint32_t advanced_pic_ipi_get_tlb_shootdown_timeout_count(void);
+
 #endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_IPI_H */
