@@ -6,36 +6,28 @@ static const char *peripheral_component_interconnect_class_name(uint8_t class_co
 {
     switch (class_code)
     {
-        case 0x00u:
-            return "unclassified";
-        case 0x01u:
-            return "mass-storage";
-        case 0x02u:
-            return "network";
-        case 0x03u:
-            return "display";
-        case 0x04u:
-            return "multimedia";
-        case 0x06u:
-            return "bridge";
-        case 0x07u:
-            return "communication";
-        case 0x0Cu:
-            return "serial-bus";
-        default:
-            return "other";
+    case 0x00u: return "unclassified";
+    case 0x01u: return "mass-storage";
+    case 0x02u: return "network";
+    case 0x03u: return "display";
+    case 0x04u: return "multimedia";
+    case 0x06u: return "bridge";
+    case 0x07u: return "communication";
+    case 0x0Cu: return "serial-bus";
+    default: return "other";
     }
 }
 
-static void peripheral_component_interconnect_write_base_address_registers(
-    Serial_t *serial, const PeripheralComponentInterconnectDevice_t *device)
+static void
+peripheral_component_interconnect_write_base_address_registers(Serial_t *serial,
+                                                               const PeripheralComponentInterconnectDevice_t *device)
 {
     for (uint8_t index = 0u; index < PERIPHERAL_COMPONENT_INTERCONNECT_BASE_ADDRESS_REGISTER_COUNT; ++index)
     {
         PeripheralComponentInterconnectBaseAddressRegister_t bar;
 
-        if (!peripheral_component_interconnect_read_base_address_register(device->bus, device->device,
-                                                                          device->function, index, &bar))
+        if (!peripheral_component_interconnect_read_base_address_register(device->bus, device->device, device->function,
+                                                                          index, &bar))
             continue;
 
         serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]:   BAR");

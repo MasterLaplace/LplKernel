@@ -194,8 +194,7 @@ uint8_t peripheral_component_interconnect_read_base_address_register(
     uint32_t base_low = original & 0xFFFFFFF0u;
     uint32_t base_high = 0u;
     if (out_bar->is_64bit && index < (PERIPHERAL_COMPONENT_INTERCONNECT_BASE_ADDRESS_REGISTER_COUNT - 1u))
-        base_high = peripheral_component_interconnect_config_read_dword(bus, device, function,
-                                                                       (uint8_t) (offset + 4u));
+        base_high = peripheral_component_interconnect_config_read_dword(bus, device, function, (uint8_t) (offset + 4u));
 
     out_bar->base = ((uint64_t) base_high << 32u) | (uint64_t) base_low;
 

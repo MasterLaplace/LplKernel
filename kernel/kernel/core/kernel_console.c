@@ -36,11 +36,9 @@ static const char *kernel_console_layout_name(void)
 {
     switch (personal_system_2_keyboard_get_layout())
     {
-        case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY:
-            return "fr (AZERTY)";
-        case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY:
-        default:
-            return "us (QWERTY)";
+    case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY: return "fr (AZERTY)";
+    case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY:
+    default: return "us (QWERTY)";
     }
 }
 

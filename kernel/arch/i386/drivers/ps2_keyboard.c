@@ -22,21 +22,21 @@
 /* ---- United States QWERTY -------------------------------------------- */
 
 static const char personal_system_2_layout_us_base[128] = {
-    0x00, '\033', '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  /* 0x00-0x09 */
-    '9',  '0',    '-',  '=',  '\b', '\t', 'q',  'w',  'e',  'r',  /* 0x0A-0x13 */
-    't',  'y',    'u',  'i',  'o',  'p',  '[',  ']',  '\n', 0x00, /* 0x14-0x1D */
-    'a',  's',    'd',  'f',  'g',  'h',  'j',  'k',  'l',  ';',  /* 0x1E-0x27 */
-    '\'', '`',    0x00, '\\', 'z',  'x',  'c',  'v',  'b',  'n',  /* 0x28-0x31 */
-    'm',  ',',    '.',  '/',  0x00, '*',  0x00, ' ',  0x00, 0x00, /* 0x32-0x3B */
+    0x00, '\033', '1',  '2',  '3',  '4',  '5',  '6', '7',  '8',  /* 0x00-0x09 */
+    '9',  '0',    '-',  '=',  '\b', '\t', 'q',  'w', 'e',  'r',  /* 0x0A-0x13 */
+    't',  'y',    'u',  'i',  'o',  'p',  '[',  ']', '\n', 0x00, /* 0x14-0x1D */
+    'a',  's',    'd',  'f',  'g',  'h',  'j',  'k', 'l',  ';',  /* 0x1E-0x27 */
+    '\'', '`',    0x00, '\\', 'z',  'x',  'c',  'v', 'b',  'n',  /* 0x28-0x31 */
+    'm',  ',',    '.',  '/',  0x00, '*',  0x00, ' ', 0x00, 0x00, /* 0x32-0x3B */
 };
 
 static const char personal_system_2_layout_us_shift[128] = {
-    0x00, '\033', '!',  '@',  '#',  '$',  '%',  '^',  '&',  '*',  /* 0x00-0x09 */
-    '(',  ')',    '_',  '+',  '\b', '\t', 'Q',  'W',  'E',  'R',  /* 0x0A-0x13 */
-    'T',  'Y',    'U',  'I',  'O',  'P',  '{',  '}',  '\n', 0x00, /* 0x14-0x1D */
-    'A',  'S',    'D',  'F',  'G',  'H',  'J',  'K',  'L',  ':',  /* 0x1E-0x27 */
-    '\"', '~',    0x00, '|',  'Z',  'X',  'C',  'V',  'B',  'N',  /* 0x28-0x31 */
-    'M',  '<',    '>',  '?',  0x00, '*',  0x00, ' ',  0x00, 0x00, /* 0x32-0x3B */
+    0x00, '\033', '!',  '@', '#',  '$',  '%',  '^', '&',  '*',  /* 0x00-0x09 */
+    '(',  ')',    '_',  '+', '\b', '\t', 'Q',  'W', 'E',  'R',  /* 0x0A-0x13 */
+    'T',  'Y',    'U',  'I', 'O',  'P',  '{',  '}', '\n', 0x00, /* 0x14-0x1D */
+    'A',  'S',    'D',  'F', 'G',  'H',  'J',  'K', 'L',  ':',  /* 0x1E-0x27 */
+    '\"', '~',    0x00, '|', 'Z',  'X',  'C',  'V', 'B',  'N',  /* 0x28-0x31 */
+    'M',  '<',    '>',  '?', 0x00, '*',  0x00, ' ', 0x00, 0x00, /* 0x32-0x3B */
 };
 
 /* Standard US QWERTY has no AltGr level. */
@@ -53,42 +53,118 @@ static const char personal_system_2_layout_us_altgr[128] = {0};
 
 static const char personal_system_2_layout_fr_base[128] = {
     [0x01] = '\033',
-    [0x02] = '&',        [0x03] = (char) 0x82 /* é */, [0x04] = '"',  [0x05] = '\'',
-    [0x06] = '(',        [0x07] = '-',  [0x08] = (char) 0x8A /* è */,  [0x09] = '_',
-    [0x0A] = (char) 0x87 /* ç */, [0x0B] = (char) 0x85 /* à */, [0x0C] = ')', [0x0D] = '=',
-    [0x0E] = '\b',       [0x0F] = '\t',
-    [0x10] = 'a',        [0x11] = 'z',  [0x12] = 'e',  [0x13] = 'r',  [0x14] = 't',
-    [0x15] = 'y',        [0x16] = 'u',  [0x17] = 'i',  [0x18] = 'o',  [0x19] = 'p',
-    [0x1A] = '^',        [0x1B] = '$',  [0x1C] = '\n',
-    [0x1E] = 'q',        [0x1F] = 's',  [0x20] = 'd',  [0x21] = 'f',  [0x22] = 'g',
-    [0x23] = 'h',        [0x24] = 'j',  [0x25] = 'k',  [0x26] = 'l',  [0x27] = 'm',
-    [0x28] = (char) 0x97 /* ù */, [0x29] = (char) 0xFD /* ² */, [0x2B] = '*',
-    [0x2C] = 'w',        [0x2D] = 'x',  [0x2E] = 'c',  [0x2F] = 'v',  [0x30] = 'b',
-    [0x31] = 'n',        [0x32] = ',',  [0x33] = ';',  [0x34] = ':',  [0x35] = '!',
-    [0x37] = '*',        [0x39] = ' ',
+    [0x02] = '&',
+    [0x03] = (char) 0x82 /* é */,
+    [0x04] = '"',
+    [0x05] = '\'',
+    [0x06] = '(',
+    [0x07] = '-',
+    [0x08] = (char) 0x8A /* è */,
+    [0x09] = '_',
+    [0x0A] = (char) 0x87 /* ç */,
+    [0x0B] = (char) 0x85 /* à */,
+    [0x0C] = ')',
+    [0x0D] = '=',
+    [0x0E] = '\b',
+    [0x0F] = '\t',
+    [0x10] = 'a',
+    [0x11] = 'z',
+    [0x12] = 'e',
+    [0x13] = 'r',
+    [0x14] = 't',
+    [0x15] = 'y',
+    [0x16] = 'u',
+    [0x17] = 'i',
+    [0x18] = 'o',
+    [0x19] = 'p',
+    [0x1A] = '^',
+    [0x1B] = '$',
+    [0x1C] = '\n',
+    [0x1E] = 'q',
+    [0x1F] = 's',
+    [0x20] = 'd',
+    [0x21] = 'f',
+    [0x22] = 'g',
+    [0x23] = 'h',
+    [0x24] = 'j',
+    [0x25] = 'k',
+    [0x26] = 'l',
+    [0x27] = 'm',
+    [0x28] = (char) 0x97 /* ù */,
+    [0x29] = (char) 0xFD /* ² */,
+    [0x2B] = '*',
+    [0x2C] = 'w',
+    [0x2D] = 'x',
+    [0x2E] = 'c',
+    [0x2F] = 'v',
+    [0x30] = 'b',
+    [0x31] = 'n',
+    [0x32] = ',',
+    [0x33] = ';',
+    [0x34] = ':',
+    [0x35] = '!',
+    [0x37] = '*',
+    [0x39] = ' ',
 };
 
 static const char personal_system_2_layout_fr_shift[128] = {
     [0x01] = '\033',
-    [0x02] = '1',  [0x03] = '2',  [0x04] = '3',  [0x05] = '4',  [0x06] = '5',
-    [0x07] = '6',  [0x08] = '7',  [0x09] = '8',  [0x0A] = '9',  [0x0B] = '0',
-    [0x0C] = (char) 0xF8 /* ° */, [0x0D] = '+',
-    [0x0E] = '\b', [0x0F] = '\t',
-    [0x10] = 'A',  [0x11] = 'Z',  [0x12] = 'E',  [0x13] = 'R',  [0x14] = 'T',
-    [0x15] = 'Y',  [0x16] = 'U',  [0x17] = 'I',  [0x18] = 'O',  [0x19] = 'P',
-    [0x1B] = (char) 0x9C /* £ */, [0x1C] = '\n',
-    [0x1E] = 'Q',  [0x1F] = 'S',  [0x20] = 'D',  [0x21] = 'F',  [0x22] = 'G',
-    [0x23] = 'H',  [0x24] = 'J',  [0x25] = 'K',  [0x26] = 'L',  [0x27] = 'M',
-    [0x28] = '%',  [0x29] = (char) 0xFC /* ³ */, [0x2B] = (char) 0xE6 /* µ */,
-    [0x2C] = 'W',  [0x2D] = 'X',  [0x2E] = 'C',  [0x2F] = 'V',  [0x30] = 'B',
-    [0x31] = 'N',  [0x32] = '?',  [0x33] = '.',  [0x34] = '/',  [0x35] = (char) 0x15 /* § */,
-    [0x37] = '*',  [0x39] = ' ',
+    [0x02] = '1',
+    [0x03] = '2',
+    [0x04] = '3',
+    [0x05] = '4',
+    [0x06] = '5',
+    [0x07] = '6',
+    [0x08] = '7',
+    [0x09] = '8',
+    [0x0A] = '9',
+    [0x0B] = '0',
+    [0x0C] = (char) 0xF8 /* ° */,
+    [0x0D] = '+',
+    [0x0E] = '\b',
+    [0x0F] = '\t',
+    [0x10] = 'A',
+    [0x11] = 'Z',
+    [0x12] = 'E',
+    [0x13] = 'R',
+    [0x14] = 'T',
+    [0x15] = 'Y',
+    [0x16] = 'U',
+    [0x17] = 'I',
+    [0x18] = 'O',
+    [0x19] = 'P',
+    [0x1B] = (char) 0x9C /* £ */,
+    [0x1C] = '\n',
+    [0x1E] = 'Q',
+    [0x1F] = 'S',
+    [0x20] = 'D',
+    [0x21] = 'F',
+    [0x22] = 'G',
+    [0x23] = 'H',
+    [0x24] = 'J',
+    [0x25] = 'K',
+    [0x26] = 'L',
+    [0x27] = 'M',
+    [0x28] = '%',
+    [0x29] = (char) 0xFC /* ³ */,
+    [0x2B] = (char) 0xE6 /* µ */,
+    [0x2C] = 'W',
+    [0x2D] = 'X',
+    [0x2E] = 'C',
+    [0x2F] = 'V',
+    [0x30] = 'B',
+    [0x31] = 'N',
+    [0x32] = '?',
+    [0x33] = '.',
+    [0x34] = '/',
+    [0x35] = (char) 0x15 /* § */,
+    [0x37] = '*',
+    [0x39] = ' ',
 };
 
 static const char personal_system_2_layout_fr_altgr[128] = {
-    [0x03] = '~',  [0x04] = '#',  [0x05] = '{',  [0x06] = '[',  [0x07] = '|',
-    [0x08] = '`',  [0x09] = '\\', [0x0A] = '^',  [0x0B] = '@',  [0x0C] = ']',
-    [0x0D] = '}',
+    [0x03] = '~',  [0x04] = '#', [0x05] = '{', [0x06] = '[', [0x07] = '|', [0x08] = '`',
+    [0x09] = '\\', [0x0A] = '^', [0x0B] = '@', [0x0C] = ']', [0x0D] = '}',
 };
 
 /* ---- Modifier and layout state --------------------------------------- */
@@ -114,17 +190,17 @@ static void personal_system_2_keyboard_select_tables(const char **out_base, cons
 {
     switch (personal_system_2_active_layout)
     {
-        case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY:
-            *out_base = personal_system_2_layout_fr_base;
-            *out_shift = personal_system_2_layout_fr_shift;
-            *out_altgr = personal_system_2_layout_fr_altgr;
-            return;
-        case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY:
-        default:
-            *out_base = personal_system_2_layout_us_base;
-            *out_shift = personal_system_2_layout_us_shift;
-            *out_altgr = personal_system_2_layout_us_altgr;
-            return;
+    case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY:
+        *out_base = personal_system_2_layout_fr_base;
+        *out_shift = personal_system_2_layout_fr_shift;
+        *out_altgr = personal_system_2_layout_fr_altgr;
+        return;
+    case PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY:
+    default:
+        *out_base = personal_system_2_layout_us_base;
+        *out_shift = personal_system_2_layout_us_shift;
+        *out_altgr = personal_system_2_layout_us_altgr;
+        return;
     }
 }
 
@@ -177,37 +253,23 @@ char personal_system_2_keyboard_decode_scancode(uint8_t scancode)
     {
         switch (code)
         {
-            case 0x1Du: /* right ctrl */
-                personal_system_2_ctrl_right_state = pressed;
-                return 0x00;
-            case 0x38u: /* right alt (AltGr) */
-                personal_system_2_alt_right_state = pressed;
-                return 0x00;
-            default: /* arrows, keypad enter, etc.: not produced here */
-                return 0x00;
+        case 0x1Du: /* right ctrl */ personal_system_2_ctrl_right_state = pressed; return 0x00;
+        case 0x38u: /* right alt (AltGr) */ personal_system_2_alt_right_state = pressed; return 0x00;
+        default: /* arrows, keypad enter, etc.: not produced here */ return 0x00;
         }
     }
 
     switch (code)
     {
-        case 0x2Au: /* left shift */
-            personal_system_2_shift_left_state = pressed;
-            return 0x00;
-        case 0x36u: /* right shift */
-            personal_system_2_shift_right_state = pressed;
-            return 0x00;
-        case 0x1Du: /* left ctrl */
-            personal_system_2_ctrl_left_state = pressed;
-            return 0x00;
-        case 0x38u: /* left alt */
-            personal_system_2_alt_left_state = pressed;
-            return 0x00;
-        case 0x3Au: /* caps lock toggles on press only */
-            if (pressed)
-                personal_system_2_caps_lock_state ^= 1u;
-            return 0x00;
-        default:
-            break;
+    case 0x2Au: /* left shift */ personal_system_2_shift_left_state = pressed; return 0x00;
+    case 0x36u: /* right shift */ personal_system_2_shift_right_state = pressed; return 0x00;
+    case 0x1Du: /* left ctrl */ personal_system_2_ctrl_left_state = pressed; return 0x00;
+    case 0x38u: /* left alt */ personal_system_2_alt_left_state = pressed; return 0x00;
+    case 0x3Au: /* caps lock toggles on press only */
+        if (pressed)
+            personal_system_2_caps_lock_state ^= 1u;
+        return 0x00;
+    default: break;
     }
 
     if (is_break)
