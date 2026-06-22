@@ -24,6 +24,27 @@ asmutils_output_byte:
     popl %ebp
     ret
 
+.globl asmutils_input_dword
+.type asmutils_input_dword, @function
+asmutils_input_dword:
+    pushl %ebp
+    movl %esp, %ebp
+    movl 8(%ebp), %edx
+    inl %dx, %eax
+    popl %ebp
+    ret
+
+.globl asmutils_output_dword
+.type asmutils_output_dword, @function
+asmutils_output_dword:
+    pushl %ebp
+    movl %esp, %ebp
+    movl 8(%ebp), %edx
+    movl 12(%ebp), %eax
+    outl %eax, %dx
+    popl %ebp
+    ret
+
 # Interrupt Control
 .globl asmutils_enable_interrupts
 .type asmutils_enable_interrupts, @function

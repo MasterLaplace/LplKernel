@@ -32,11 +32,11 @@ static inline void interrupt_descriptor_table_encode_flat_entry(InterruptDescrip
     if (!entry)
         return;
 
-    entry->isr_low = (uint32_t) isr & 0xFFFFu;
+    entry->isr_low = (uint32_t) (uintptr_t) isr & 0xFFFFu;
     entry->selector = k_code_selector;
     entry->reserved = 0u;
     entry->type_attributes = *(InterruptDescriptorTableTypeAttributes_t *) &flags;
-    entry->isr_high = (uint32_t) isr >> 16u;
+    entry->isr_high = (uint32_t) (uintptr_t) isr >> 16u;
 }
 
 __attribute__((unused)) static inline void
@@ -46,12 +46,12 @@ interrupt_descriptor_table_encode_long_entry(InterruptDescriptorTableLongModeEnt
     if (!entry)
         return;
 
-    entry->isr_low = (uint64_t) isr & 0xFFFFu;
+    entry->isr_low = (uint64_t) (uintptr_t) isr & 0xFFFFu;
     entry->selector = k_code_selector;
     entry->interrupt_stack_table = 0u;
     entry->type_attributes = *(InterruptDescriptorTableTypeAttributes_t *) &flags;
-    entry->isr_mid = ((uint64_t) isr >> 16u) & 0xFFFFu;
-    entry->isr_high = ((uint64_t) isr >> 32u) & 0xFFFFFFFFu;
+    entry->isr_mid = ((uint64_t) (uintptr_t) isr >> 16u) & 0xFFFFu;
+    entry->isr_high = ((uint64_t) (uintptr_t) isr >> 32u) & 0xFFFFFFFFu;
     entry->reserved = 0u;
 }
 

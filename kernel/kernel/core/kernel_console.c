@@ -4,6 +4,8 @@
 #include <kernel/cpu/ap_trampoline.h>
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/helpers/pci_helper.h>
+#include <kernel/cpu/pci.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/drivers/helpers/keyboard_helper.h>
@@ -49,7 +51,7 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
 
     if (kernel_string_equals(command, "help"))
     {
-        terminal_write_string("\ncommands: help, stats, ap, kbd, layout, exit\n");
+        terminal_write_string("\ncommands: help, stats, ap, kbd, layout, pci, exit\n");
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: cmd help\n");
         return;
     }
@@ -95,6 +97,16 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
         terminal_write_string(", dropped=");
         terminal_write_number((long) keyboard_get_dropped_char_count(), 10u);
         terminal_write_string("\n");
+        return;
+    }
+
+    if (kernel_string_equals(command, "pci"))
+    {
+        peripheral_component_interconnect_scan();
+        terminal_write_string("\n[pci] ");
+        terminal_write_number((long) peripheral_component_interconnect_get_device_count(), 10u);
+        terminal_write_string(" device(s) (full list on serial)\n");
+        write_peripheral_component_interconnect_info(com1);
         return;
     }
 

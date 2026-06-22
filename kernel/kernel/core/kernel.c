@@ -17,11 +17,13 @@
 #include <kernel/cpu/helpers/cpu_topology_helper.h>
 #include <kernel/cpu/helpers/gdt_helper.h>
 #include <kernel/cpu/helpers/ioapic_helper.h>
+#include <kernel/cpu/helpers/pci_helper.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
+#include <kernel/cpu/pci.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
@@ -121,7 +123,7 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     terminal_initialize();
 
-    kernel_splash_initialize(15);
+    kernel_splash_initialize(17);
     kernel_splash_update("Initializing Serial COM1 (9600 baud)");
 
     if (!multiboot_info)
@@ -290,6 +292,10 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     kernel_smoke_batch_run_initialization_tests(&com1);
     kernel_splash_update("System Smoke Target Executions");
+
+    peripheral_component_interconnect_scan();
+    write_peripheral_component_interconnect_info(&com1);
+    kernel_splash_update("PCI Bus Enumeration");
 
     write_keyboard_runtime_info(&com1);
 

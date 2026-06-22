@@ -1,4 +1,5 @@
 #include <kernel/cpu/ap_startup.h>
+#include <kernel/cpu/apic_timer.h>
 
 static uint32_t kernel_cr3_cached = 0u;
 static ApplicationProcessorLocalContext_t ap_local_context = {0};
