@@ -1,0 +1,3 @@
+[submodule "LplPlugin"]
+	path = LplPlugin
+	url = https://github.com/MasterLaplace/LplPlugin.git

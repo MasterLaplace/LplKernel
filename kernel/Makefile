@@ -16,7 +16,18 @@ INCLUDEDIR?=$(PREFIX)/include
 CFLAGS:=$(CFLAGS) -ffreestanding -Wall -Wextra
 CPPFLAGS:=$(CPPFLAGS) -D__is_kernel -Iinclude
 LDFLAGS:=$(LDFLAGS)
-LIBS:=$(LIBS) -nostdlib -lk -lgcc
+# -lengine BEFORE -lk: the engine's operator new/kstd code calls kmalloc/kfree
+# (resolved from libk), and the engine archive members are pulled on demand by
+# the kernel's references (e.g. libengine_p0_smoke).
+LIBS:=$(LIBS) -nostdlib -lengine -lk -lgcc
+
+# Freestanding C++ runtime support (operator new/delete + Itanium ABI stubs +
+# kernel_std support). No exceptions/RTTI/threadsafe-statics: the kernel ships
+# no unwinder/typeinfo/guard runtime. Compiled with the C++ driver ($(CXX)).
+# Drop -nostdinc for C++: the freestanding libstdc++ headers (<cstddef>, etc.)
+# live in the toolchain include dir, which -nostdinc would hide. libk headers
+# remain reachable via the sysroot -isystem path.
+CXXFLAGS:=$(filter-out -nostdinc,$(CFLAGS)) -std=gnu++23 -fno-exceptions -fno-rtti -fno-threadsafe-statics
 
 # Graphics mode support (passed from build script)
 GRAPHICS_MODE?=0
@@ -47,6 +58,8 @@ kernel/core/kernel_splash.o \
 kernel/core/kernel_smp.o \
 kernel/core/kernel_smoke_batch.o \
 kernel/core/kernel.o \
+cxx/cxx_runtime.o \
+cxx/kstd_support.o \
 kernel/memory/helpers/pmm_helper.o \
 kernel/memory/helpers/heap_helper.o \
 kernel/memory/helpers/core_allocators_helper.o \
@@ -69,7 +82,7 @@ $(ARCHDIR)/crtend.o \
 $(ARCHDIR)/boot/crtn.o \
 
 .PHONY: all clean install install-headers install-kernel
-.SUFFIXES: .o .c .s .S
+.SUFFIXES: .o .c .s .S .cpp
 
 all: lpl.kernel
 
@@ -88,6 +101,9 @@ $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o:
 
 .S.o:
 	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS) $(ASFLAGS)
+
+.cpp.o:
+	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 clean:
 	rm -f lpl.kernel

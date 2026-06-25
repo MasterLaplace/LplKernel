@@ -2,6 +2,7 @@
 #include <kernel/config.h>
 
 #include <kernel/boot/helpers/multiboot_info_helper.h>
+#include <kernel/boot/init_array.h>
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
@@ -48,6 +49,8 @@
 #include <kernel/core/kernel_smoke_batch.h>
 #include <kernel/core/kernel_smp.h>
 #include <kernel/core/kernel_splash.h>
+
+#include <libengine/libengine.h>
 
 #define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES     16384u
 #define KERNEL_STACK_ALLOCATOR_DEFAULT_CAPACITY_BYTES 16384u
@@ -307,6 +310,41 @@ __attribute__((constructor)) void kernel_initialize(void)
 
 void kernel_main(void)
 {
+    /* Static-initialization smoke test: proves the C++ constructor machinery
+       (linker.ld .ctors/.init_array + _init + kernel_run_global_constructors)
+       fired before kernel_main. Required foundation for the libengine C++ module. */
+    if (kernel_constructor_self_test_passed())
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: C++ constructor self-test: PASS\n");
+    else
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: C++ constructor self-test: FAIL\n");
+
+    /* P0 determinism smoke: the freestanding LplPlugin engine (libengine.a)
+       computes Fixed32 / CORDIC results whose raw Q16.16 bit patterns are
+       fixed by the math sources. Printed here and compared, byte-for-byte,
+       against the Linux/xmake oracle to prove bit-identical cross-target math
+       (the HARD determinism contract, P0 exit gate). */
+    {
+        libengine_p0_smoke_result_t smoke;
+        libengine_p0_smoke(&smoke);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } smoke_rows[] = {
+            {"  sin(pi/4)   = ", (uint32_t) smoke.cordic_sin_quarter_pi_raw},
+            {"  cos(pi/4)   = ", (uint32_t) smoke.cordic_cos_quarter_pi_raw},
+            {"  atan2(1,1)  = ", (uint32_t) smoke.cordic_atan2_one_one_raw},
+            {"  3.0 * 0.5   = ", (uint32_t) smoke.fixed_mul_three_half_raw},
+            {"  1.0 / 3.0   = ", (uint32_t) smoke.fixed_div_one_three_raw},
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P0 determinism smoke (raw Q16.16):\n");
+        for (size_t i = 0u; i < sizeof(smoke_rows) / sizeof(smoke_rows[0]); ++i)
+        {
+            serial_write_string(&com1, smoke_rows[i].label);
+            serial_write_hex32(&com1, smoke_rows[i].value);
+            serial_write_string(&com1, "\n");
+        }
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();

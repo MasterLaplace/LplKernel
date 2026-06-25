@@ -99,6 +99,43 @@ Pipeline outputs:
 nix run github:MasterLaplace/LplKernel
 ```
 
+## Keyboard layout
+
+LplKernel ships several keyboard layouts. The default is **US QWERTY**.
+
+### Choose the layout at build time
+
+Pass `--azerty` (French AZERTY) or `--qwerty` (US QWERTY, the default) to
+`build.sh`. The flag combines with the profile flags and is forwarded by
+`iso.sh` / `qemu.sh` (they source `build.sh`):
+
+```sh
+./build.sh --client --azerty   # deterministic client, French AZERTY
+./build.sh --server            # throughput server, US QWERTY (default)
+./qemu.sh  --client --azerty   # build + ISO + run, French AZERTY
+```
+
+Changing the layout flag is recorded in `.last_build_mode` and triggers an
+automatic clean rebuild, so stale objects never leak across layouts.
+
+### Switch the layout at runtime
+
+In **text-mode** builds (`--server` / `--text`) the interactive console exposes
+a `layout` command:
+
+```
+> layout        # show the active layout
+> layout fr     # switch to French AZERTY
+> layout us     # switch to US QWERTY
+```
+
+> In graphics/client builds the interactive command parser is disabled, so the
+> build-time flag (`--azerty` / `--qwerty`) is the way to choose the layout there.
+
+> The guest performs the scancode → character mapping itself, so selecting the
+> layout that matches your physical keyboard is sufficient. QEMU's `-k` option
+> only affects VNC sessions and is not needed for the local display.
+
 ## Debugging
 
 The project is configured for VSCode debugging with GDB and QEMU integration.

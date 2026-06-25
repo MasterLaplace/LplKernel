@@ -1,0 +1,80 @@
+DEFAULT_HOST!=../default-host.sh
+HOST?=DEFAULT_HOST
+HOSTARCH!=../target-triplet-to-arch.sh $(HOST)
+
+CXXFLAGS?=-O2 -g
+CPPFLAGS?=
+LIBS?=
+
+DESTDIR?=
+PREFIX?=/usr/local
+EXEC_PREFIX?=$(PREFIX)
+INCLUDEDIR?=$(PREFIX)/include
+LIBDIR?=$(EXEC_PREFIX)/lib
+
+# Root of the single-source-of-truth LplPlugin tree (exported by config.sh;
+# defaults to a sibling checkout for standalone `make` invocations).
+LPLPLUGIN_ROOT?=$(abspath ../../LplPlugin)
+
+# Freestanding C++23, no exceptions/RTTI/threadsafe-statics (the kernel provides
+# no unwinder, no typeinfo, no guard-variable runtime). LPL_TARGET_KERNEL=1
+# routes every lpl/std/* umbrella to kernel_std instead of hosted libstdc++.
+CXXFLAGS:=$(CXXFLAGS) -std=gnu++23 -ffreestanding -fno-exceptions -fno-rtti \
+          -fno-threadsafe-statics -Wall -Wextra
+CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
+          -Iinclude \
+          -I$(LPLPLUGIN_ROOT)/core/include \
+          -I$(LPLPLUGIN_ROOT)/math/include
+
+ARCHDIR=arch/$(HOSTARCH)
+
+include $(ARCHDIR)/make.config
+
+CXXFLAGS:=$(CXXFLAGS) $(ARCH_CXXFLAGS)
+CPPFLAGS:=$(CPPFLAGS) $(ARCH_CPPFLAGS)
+
+# Engine objects mirror the LplPlugin source tree under obj/ so no .o ever lands
+# in the (submodule / sibling) LplPlugin checkout.
+ENGINE_OBJS=$(addprefix obj/,$(ARCH_ENGINE_SRCS:.cpp=.o))
+
+# libengine-local sources (the C-callable facade / smoke entry points).
+LOCAL_OBJS=\
+obj/local/p0_smoke.o \
+
+OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)
+
+BINARIES=libengine.a
+
+.PHONY: all clean install install-headers install-libs
+
+all: $(BINARIES)
+
+libengine.a: $(OBJS)
+	$(AR) rcs $@ $(OBJS)
+
+# Engine sources, pulled from LPLPLUGIN_ROOT.
+obj/%.o: $(LPLPLUGIN_ROOT)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+
+# libengine-local sources.
+obj/local/%.o: src/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+
+clean:
+	rm -f $(BINARIES) *.a
+	rm -rf obj
+
+install: install-headers install-libs
+
+install-headers:
+	mkdir -p $(DESTDIR)$(INCLUDEDIR)
+	cp -R --preserve=timestamps include/. $(DESTDIR)$(INCLUDEDIR)/.
+
+install-libs: $(BINARIES)
+	mkdir -p $(DESTDIR)$(LIBDIR)
+	cp $(BINARIES) $(DESTDIR)$(LIBDIR)
+
+-include $(ENGINE_OBJS:.o=.d)
+-include $(LOCAL_OBJS:.o=.d)

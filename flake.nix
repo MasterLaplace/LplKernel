@@ -36,12 +36,12 @@
       pkgs' = self.packages.${pkgs.system};
       inherit (pkgs) lib callPackage writeShellScriptBin;
     in {
-      binutils = callPackage ./nix/binutils-2-36.nix {};
+      binutils = callPackage ./nix/binutils-2-42.nix {};
 
       # gcc invoke ar through the environment (AR), but has as hardcorded
       as = callPackage ./nix/as.nix pkgs';
 
-      gcc = callPackage ./nix/gcc-10-2-0.nix pkgs';
+      gcc = callPackage ./nix/gcc-14-2-0.nix pkgs';
 
       libc = callPackage ./nix/libc.nix pkgs';
 

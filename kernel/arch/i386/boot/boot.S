@@ -132,6 +132,22 @@ higher_half_entry:
     movl $stack_top, %esp
     movl $stack_top, %ebp
 
+    /* Enable SSE/SSE2 (required by the freestanding engine module, libengine,
+       which is compiled -msse2 -mfpmath=sse for the deterministic hardware
+       sqrtsd path). Without this, any SSE instruction faults with #UD.
+         CR0.EM (bit 2) = 0 : do NOT emulate the FPU (allow real x87/SSE)
+         CR0.MP (bit 1) = 1 : monitor coprocessor
+         CR4.OSFXSR     (bit 9)  = 1 : enable FXSAVE/FXRSTOR + SSE
+         CR4.OSXMMEXCPT (bit 10) = 1 : unmasked SIMD FP exceptions -> #XF
+       (FXSAVE/FXRSTOR on context switch is wired later, in P3.) */
+    movl %cr0, %eax
+    andl $0xFFFFFFFB, %eax      /* clear EM  */
+    orl  $0x00000002, %eax      /* set   MP  */
+    movl %eax, %cr0
+    movl %cr4, %eax
+    orl  $0x00000600, %eax      /* set OSFXSR | OSXMMEXCPT */
+    movl %eax, %cr4
+
     /* Convert multiboot info: physical addr + KERNEL_START = virtual addr */
     movl %edx, %ebx
     addl $KERNEL_START, %ebx
@@ -142,10 +158,15 @@ higher_half_entry:
     /* Also push it for compatibility (though kernel_main won't use it now) */
     pushl %ebx
 
-    /* Call constructors, kernel, destructors */
+    /* Call constructors, kernel, destructors.
+       _init walks the legacy .ctors list (gcc 10.2.0); kernel_run_global_constructors
+       walks .init_array (newer toolchains). Exactly one is populated, so neither
+       set of constructors runs twice. */
     call _init
+    call kernel_run_global_constructors
     call kernel_main
     addl $4, %esp           /* Clean stack */
+    call kernel_run_global_destructors
     call _fini
 
     /* Halt */
