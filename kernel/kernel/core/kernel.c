@@ -464,18 +464,18 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } hal_rows[] = {
-            {"display_ok=",      hal.display_available  },
-            {", width=",         hal.surface_width      },
-            {", height=",        hal.surface_height     },
-            {", bpp=",           hal.surface_bpp        },
-            {", clear_raw=",     hal.clear_readback_raw },
-            {", clear_ok=",      hal.clear_readback_ok  },
-            {", tick_hz=",       hal.clock_tick_hertz   },
-            {", tick=",          hal.clock_tick_observed},
-            {", tsc_ok=",        hal.clock_tsc_advanced },
-            {", input_ok=",      hal.input_query_ok     },
-            {", input_pending=", hal.input_pending_count},
-            {", gpu_alloc_ok=",  hal.gpu_alloc_ok       },
+            {"display_ok=",      hal.display_available   },
+            {", width=",         hal.surface_width       },
+            {", height=",        hal.surface_height      },
+            {", bpp=",           hal.surface_bpp         },
+            {", clear_raw=",     hal.clear_readback_raw  },
+            {", clear_ok=",      hal.clear_readback_ok   },
+            {", tick_hz=",       hal.clock_tick_hertz    },
+            {", tick=",          hal.clock_tick_observed },
+            {", tsc_ok=",        hal.clock_tsc_advanced  },
+            {", input_ok=",      hal.input_query_ok      },
+            {", input_pending=", hal.input_pending_count },
+            {", gpu_alloc_ok=",  hal.gpu_alloc_ok        },
             {", gpu_phys_ok=",   hal.gpu_physical_nonzero},
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P2 HAL smoke: ");

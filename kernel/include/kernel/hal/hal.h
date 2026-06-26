@@ -18,7 +18,7 @@
 #define KERNEL_HAL_HAL_H
 
 #ifndef __cplusplus
-#include <stdbool.h>
+#    include <stdbool.h>
 #endif
 #include <stdint.h>
 
@@ -32,12 +32,12 @@ extern "C" {
 
 /** @brief Linear-framebuffer surface description (KMS-like, no ownership). */
 typedef struct {
-    uint32_t *buffer;           /* virtual address of the framebuffer        */
-    uint32_t physical_address;  /* physical address (for GPU attach later)   */
-    uint32_t width;             /* visible width in pixels                   */
-    uint32_t height;            /* visible height in pixels                  */
-    uint32_t pitch;             /* bytes per scanline                        */
-    uint8_t bits_per_pixel;     /* bits per pixel                            */
+    uint32_t *buffer;          /* virtual address of the framebuffer        */
+    uint32_t physical_address; /* physical address (for GPU attach later)   */
+    uint32_t width;            /* visible width in pixels                   */
+    uint32_t height;           /* visible height in pixels                  */
+    uint32_t pitch;            /* bytes per scanline                        */
+    uint8_t bits_per_pixel;    /* bits per pixel                            */
 } hal_surface_descriptor_t;
 
 /**
