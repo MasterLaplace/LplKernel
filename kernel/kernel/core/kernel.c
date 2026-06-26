@@ -397,6 +397,33 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P1 scheduler smoke: the ECS DAG scheduler runs four systems over the
+       single-threaded inline job system. The wave structure and execution order
+       are deterministic, so these values match the Linux/xmake oracle. */
+    {
+        libengine_p1_scheduler_smoke_result_t sched;
+        libengine_p1_scheduler_smoke(&sched);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } sched_rows[] = {
+            {"systems=", sched.system_count},
+            {", build_ok=", sched.build_ok},
+            {", exec_mask=", sched.exec_mask},
+            {", executed=", sched.executed_count},
+            {", first=", sched.first_marker},
+            {", last=", sched.last_marker},
+            {", phase_cb=", sched.phase_cb_fired},
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P1 scheduler smoke: ");
+        for (size_t i = 0u; i < sizeof(sched_rows) / sizeof(sched_rows[0]); ++i)
+        {
+            serial_write_string(&com1, sched_rows[i].label);
+            serial_write_hex32(&com1, sched_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();

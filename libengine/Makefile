@@ -27,7 +27,8 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/math/include \
           -I$(LPLPLUGIN_ROOT)/memory/include \
           -I$(LPLPLUGIN_ROOT)/container/include \
-          -I$(LPLPLUGIN_ROOT)/ecs/include
+          -I$(LPLPLUGIN_ROOT)/ecs/include \
+          -I$(LPLPLUGIN_ROOT)/concurrency/include
 
 ARCHDIR=arch/$(HOSTARCH)
 
@@ -45,6 +46,7 @@ LOCAL_OBJS=\
 obj/local/p0_smoke.o \
 obj/local/p1_smoke.o \
 obj/local/p1_ecs_smoke.o \
+obj/local/p1_sched_smoke.o \
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)
 

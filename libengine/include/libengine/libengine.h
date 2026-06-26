@@ -75,6 +75,24 @@ typedef struct {
 
 extern void libengine_p1_ecs_smoke(libengine_p1_ecs_smoke_result_t *out);
 
+/*
+** P1 scheduler smoke. Drives the ECS SystemScheduler: four systems across two
+** phases with a write/read hazard force a fixed DAG (A -> {B,D} -> C). The DAG
+** is dispatched over the single-threaded InlineJobSystem, so the wave structure
+** and execution order are deterministic and match the Linux/xmake oracle.
+*/
+typedef struct {
+    uint32_t system_count;   /* registered systems (expect 4)                       */
+    uint32_t build_ok;       /* buildGraph() found a valid topological order        */
+    uint32_t exec_mask;      /* bit set per executed system, markers 1..4 => 0x1E   */
+    uint32_t executed_count; /* systems that ran this tick (expect 4)               */
+    uint32_t first_marker;   /* first system to run — phase Input => 1              */
+    uint32_t last_marker;    /* last system to run — depends on B's output => 3     */
+    uint32_t phase_cb_fired; /* post-Input phase callback fired exactly once        */
+} libengine_p1_scheduler_smoke_result_t;
+
+extern void libengine_p1_scheduler_smoke(libengine_p1_scheduler_smoke_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif
