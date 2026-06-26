@@ -450,6 +450,43 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P2 HAL smoke: the engine platform backends (lpl::platform) run through
+       their kernel HAL implementations — display surface query/clear/readback,
+       the clock tick/timestamp contract, the input ring drain, and a pinned
+       graphics-memory allocate/translate/free. Proves the kernel platform seam
+       is wired end to end (P2 HAL bring-up gate). These values are observability
+       only (surface geometry is QEMU-config dependent; clock is wall-clock),
+       NOT part of the bit-identical determinism contract. */
+    {
+        libengine_p2_hal_smoke_result_t hal;
+        libengine_p2_hal_smoke(&hal);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } hal_rows[] = {
+            {"display_ok=",      hal.display_available  },
+            {", width=",         hal.surface_width      },
+            {", height=",        hal.surface_height     },
+            {", bpp=",           hal.surface_bpp        },
+            {", clear_raw=",     hal.clear_readback_raw },
+            {", clear_ok=",      hal.clear_readback_ok  },
+            {", tick_hz=",       hal.clock_tick_hertz   },
+            {", tick=",          hal.clock_tick_observed},
+            {", tsc_ok=",        hal.clock_tsc_advanced },
+            {", input_ok=",      hal.input_query_ok     },
+            {", input_pending=", hal.input_pending_count},
+            {", gpu_alloc_ok=",  hal.gpu_alloc_ok       },
+            {", gpu_phys_ok=",   hal.gpu_physical_nonzero},
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P2 HAL smoke: ");
+        for (size_t i = 0u; i < sizeof(hal_rows) / sizeof(hal_rows[0]); ++i)
+        {
+            serial_write_string(&com1, hal_rows[i].label);
+            serial_write_hex32(&com1, hal_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();

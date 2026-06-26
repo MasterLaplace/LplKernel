@@ -29,7 +29,8 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/container/include \
           -I$(LPLPLUGIN_ROOT)/ecs/include \
           -I$(LPLPLUGIN_ROOT)/concurrency/include \
-          -I$(LPLPLUGIN_ROOT)/physics/include
+          -I$(LPLPLUGIN_ROOT)/physics/include \
+          -I$(LPLPLUGIN_ROOT)/platform/include
 
 ARCHDIR=arch/$(HOSTARCH)
 
@@ -49,6 +50,7 @@ obj/local/p1_smoke.o \
 obj/local/p1_ecs_smoke.o \
 obj/local/p1_sched_smoke.o \
 obj/local/p1_physics_smoke.o \
+obj/local/p2_hal_smoke.o \
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)
 

@@ -112,6 +112,35 @@ typedef struct {
 
 extern void libengine_p1_physics_smoke(libengine_p1_physics_smoke_result_t *out);
 
+/*
+** P2 HAL smoke. Drives the engine platform backends (lpl::platform) through
+** their kernel HAL implementations: query the display surface + clear it and
+** read a pixel back, read the clock tick/timestamp contract, drain the input
+** ring, and allocate/translate/free pinned graphics memory. This proves the
+** kernel platform seam is wired end to end (the P2 HAL bring-up gate). Unlike
+** the P0/P1 smokes these values are NOT part of the bit-identical determinism
+** contract: the surface geometry is host/QEMU-configuration dependent, and the
+** tick/timestamp are wall-clock (non-deterministic by construction) — they are
+** observability, not oracle-checked state.
+*/
+typedef struct {
+    uint32_t display_available;    /* a framebuffer surface was reported          */
+    uint32_t surface_width;        /* surface width in pixels                     */
+    uint32_t surface_height;       /* surface height in pixels                    */
+    uint32_t surface_bpp;          /* surface bits per pixel                      */
+    uint32_t clear_readback_raw;   /* pixel(0,0) as 0x00RRGGBB after a clear       */
+    uint32_t clear_readback_ok;    /* readback matched the written color           */
+    uint32_t clock_tick_hertz;     /* clock backend reported frequency (Hz)        */
+    uint32_t clock_tick_observed;  /* tickCount() snapshot (non-deterministic)     */
+    uint32_t clock_tsc_advanced;   /* timestamp counter advanced and is non-zero   */
+    uint32_t input_query_ok;       /* input ring drained without fault             */
+    uint32_t input_pending_count;  /* decoded characters waiting (0 when headless) */
+    uint32_t gpu_alloc_ok;         /* pinned graphics-memory allocation succeeded  */
+    uint32_t gpu_physical_nonzero; /* physical address resolved for the allocation */
+} libengine_p2_hal_smoke_result_t;
+
+extern void libengine_p2_hal_smoke(libengine_p2_hal_smoke_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif
