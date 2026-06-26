@@ -332,9 +332,9 @@ void kernel_main(void)
         } smoke_rows[] = {
             {"  sin(pi/4)   = ", (uint32_t) smoke.cordic_sin_quarter_pi_raw},
             {"  cos(pi/4)   = ", (uint32_t) smoke.cordic_cos_quarter_pi_raw},
-            {"  atan2(1,1)  = ", (uint32_t) smoke.cordic_atan2_one_one_raw},
-            {"  3.0 * 0.5   = ", (uint32_t) smoke.fixed_mul_three_half_raw},
-            {"  1.0 / 3.0   = ", (uint32_t) smoke.fixed_div_one_three_raw},
+            {"  atan2(1,1)  = ", (uint32_t) smoke.cordic_atan2_one_one_raw },
+            {"  3.0 * 0.5   = ", (uint32_t) smoke.fixed_mul_three_half_raw },
+            {"  1.0 / 3.0   = ", (uint32_t) smoke.fixed_div_one_three_raw  },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P0 determinism smoke (raw Q16.16):\n");
         for (size_t i = 0u; i < sizeof(smoke_rows) / sizeof(smoke_rows[0]); ++i)
@@ -377,16 +377,16 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } ecs_rows[] = {
-            {"created=", ecs.created_count},
-            {", live=", ecs.live_after_create},
-            {", first_raw=", ecs.first_entity_raw},
-            {", destroy_ok=", ecs.destroyed_ok},
-            {", live_after_destroy=", ecs.live_after_destroy},
-            {", recycle_slot_ok=", ecs.recycle_slot_lifo_ok},
-            {", recycle_gen_ok=", ecs.recycle_generation_ok},
-            {", stale_dead_ok=", ecs.stale_id_dead_ok},
-            {", live_final=", ecs.live_final},
-            {", part_count=", ecs.partition_entity_count},
+            {"created=",              ecs.created_count         },
+            {", live=",               ecs.live_after_create     },
+            {", first_raw=",          ecs.first_entity_raw      },
+            {", destroy_ok=",         ecs.destroyed_ok          },
+            {", live_after_destroy=", ecs.live_after_destroy    },
+            {", recycle_slot_ok=",    ecs.recycle_slot_lifo_ok  },
+            {", recycle_gen_ok=",     ecs.recycle_generation_ok },
+            {", stale_dead_ok=",      ecs.stale_id_dead_ok      },
+            {", live_final=",         ecs.live_final            },
+            {", part_count=",         ecs.partition_entity_count},
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P1 ECS smoke: ");
         for (size_t i = 0u; i < sizeof(ecs_rows) / sizeof(ecs_rows[0]); ++i)
@@ -407,13 +407,13 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } sched_rows[] = {
-            {"systems=", sched.system_count},
-            {", build_ok=", sched.build_ok},
-            {", exec_mask=", sched.exec_mask},
-            {", executed=", sched.executed_count},
-            {", first=", sched.first_marker},
-            {", last=", sched.last_marker},
-            {", phase_cb=", sched.phase_cb_fired},
+            {"systems=",     sched.system_count  },
+            {", build_ok=",  sched.build_ok      },
+            {", exec_mask=", sched.exec_mask     },
+            {", executed=",  sched.executed_count},
+            {", first=",     sched.first_marker  },
+            {", last=",      sched.last_marker   },
+            {", phase_cb=",  sched.phase_cb_fired},
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P1 scheduler smoke: ");
         for (size_t i = 0u; i < sizeof(sched_rows) / sizeof(sched_rows[0]); ++i)
@@ -434,12 +434,12 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } phys_rows[] = {
-            {"seeded=", phys.entities_seeded},
-            {", stepped=", phys.entities_stepped},
-            {", step_ok=", phys.step_ok},
-            {", pos_y_raw=", phys.position_y_raw},
-            {", vel_y_raw=", phys.velocity_y_raw},
-            {", fell_ok=", phys.fell_under_gravity_ok},
+            {"seeded=",      phys.entities_seeded      },
+            {", stepped=",   phys.entities_stepped     },
+            {", step_ok=",   phys.step_ok              },
+            {", pos_y_raw=", phys.position_y_raw       },
+            {", vel_y_raw=", phys.velocity_y_raw       },
+            {", fell_ok=",   phys.fell_under_gravity_ok},
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P1 physics smoke: ");
         for (size_t i = 0u; i < sizeof(phys_rows) / sizeof(phys_rows[0]); ++i)
