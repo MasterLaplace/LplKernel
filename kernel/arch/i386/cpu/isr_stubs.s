@@ -96,6 +96,18 @@ ISR_NOERR 47    # IRQ15 Secondary ATA / spurious
 ISR_NOERR 64    # 0x40: TLB Shootdown IPI
 ISR_NOERR 128   # 0x80: syscall gate (DPL3)
 
+# ---- FPU / SSE state save area ---------------------------------------------
+#
+# CR4.OSFXSR is set in boot.S so FXSAVE/FXRSTOR cover all 512 bytes of FPU+SSE
+# state (x87 + MMX + XMM0-XMM7 + MXCSR). Single static buffer — one CPU for now.
+
+.section .bss
+.align 16
+isr_fpu_save_area:
+    .skip 512
+
+.section .text
+
 # ---- Common ISR stub ------------------------------------------------------
 #
 # Stack layout just before pusha (at entry to this label):
@@ -128,9 +140,13 @@ isr_common_stub:
     movw %ax, %fs
     movw %ax, %gs
 
+    fxsave isr_fpu_save_area    # preserve x87/MMX/XMM0-7/MXCSR across C dispatch
+
     pushl %esp                  # pass pointer to InterruptFrame_t as argument
     call  interrupt_service_routine_dispatch
     addl  $4, %esp              # discard argument
+
+    fxrstor isr_fpu_save_area   # restore FPU/SSE state
 
     popl  %eax                  # restore original data segment
     movw %ax, %ds

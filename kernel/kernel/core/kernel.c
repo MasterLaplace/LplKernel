@@ -487,6 +487,34 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P3 render smoke: KernelDisplayRenderer software-rasterises a rotating
+       Fixed32-authored triangle over the IDisplayBackend HAL. Skipped silently
+       when no framebuffer is available (text-mode boot). */
+    if (framebuffer_available())
+    {
+        libengine_p3_render_smoke_result_t p3;
+        libengine_p3_render_smoke(&p3);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } p3_rows[] = {
+            {"display_ok=",    p3.display_available},
+            {", init_ok=",     p3.renderer_init_ok },
+            {", frames=",      p3.frames_rendered  },
+            {", ticks=",       p3.ticks_elapsed    },
+            {", centre_px=",   p3.centre_pixel_raw },
+            {", visible=",     p3.triangle_visible },
+            {", smoke_ok=",    p3.smoke_ok         },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P3 render smoke: ");
+        for (size_t i = 0u; i < sizeof(p3_rows) / sizeof(p3_rows[0]); ++i)
+        {
+            serial_write_string(&com1, p3_rows[i].label);
+            serial_write_hex32(&com1, p3_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();

@@ -141,6 +141,29 @@ typedef struct {
 
 extern void libengine_p2_hal_smoke(libengine_p2_hal_smoke_result_t *out);
 
+/*
+** P3 render smoke. Exercises the KernelDisplayRenderer (software rasterizer)
+** over the kernel IDisplayBackend: N fixed-timestep frames, each advancing
+** the Fixed32 rotation angle (deterministic CORDIC authority) and rasterising
+** the triangle into the LFB via the HAL. Proves the P3 exit gate:
+**   - FXSAVE/FXRSTOR in the ISR stub preserves FPU/SSE state across IRQs
+**   - The software rasteriser writes triangle pixels to the surface
+**   - The Fixed32 angle authority drives rotation deterministically
+** The centre_pixel_raw and ticks_elapsed fields are observability only
+** (wall-clock + QEMU-config dependent); smoke_ok is the gate.
+*/
+typedef struct {
+    uint32_t display_available; /* framebuffer surface was available            */
+    uint32_t renderer_init_ok;  /* KernelDisplayRenderer::init() succeeded      */
+    uint32_t frames_rendered;   /* frames that completed beginFrame+endFrame     */
+    uint32_t ticks_elapsed;     /* wall-clock ticks for the N frames (modular)  */
+    uint32_t centre_pixel_raw;  /* pixel at (cx,cy) after last frame, 0xRRGGBB  */
+    uint32_t triangle_visible;  /* centre pixel != background colour            */
+    uint32_t smoke_ok;          /* overall gate: init + frames + visible        */
+} libengine_p3_render_smoke_result_t;
+
+extern void libengine_p3_render_smoke(libengine_p3_render_smoke_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

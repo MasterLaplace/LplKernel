@@ -144,7 +144,8 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "ecs/include"),
         path.join(LPLPLUGIN_ROOT, "concurrency/include"),
         path.join(LPLPLUGIN_ROOT, "physics/include"),
-        path.join(LPLPLUGIN_ROOT, "platform/include")
+        path.join(LPLPLUGIN_ROOT, "platform/include"),
+        path.join(LPLPLUGIN_ROOT, "render/include")
     )
     -- Engine sources (single source of truth), mirroring ARCH_ENGINE_SRCS.
     add_files(
@@ -162,7 +163,8 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "physics/src/AntiTunneling.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/Octree.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/CpuPhysicsBackend.cpp"),
-        path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp")
+        path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp"),
+        path.join(LPLPLUGIN_ROOT, "render/src/kernel/KernelDisplayRenderer.cpp")
     )
     -- libengine-local C-facade / smoke entry points.
     add_files("libengine/src/*.cpp")
