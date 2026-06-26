@@ -5,6 +5,10 @@
 *.iso
 *.kernel
 
+# xmake build output + cache
+build/
+.xmake/
+
 # Bootloader files
 iso/boot/grub/
 sysroot
