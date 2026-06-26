@@ -10,6 +10,7 @@
 #include <kernel/cpu/paging.h>
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/vmm.h>
 #include <string.h>
 
 /* Global framebuffer state */
@@ -79,6 +80,10 @@ static uint32_t *map_framebuffer(uint32_t phys_addr, uint32_t size)
     pde->page_table_base = pt_phys >> 12;
 
     asmutils_invalidate_translation_lookaside_buffer();
+
+    /* Register the virtual range with the VMM so pinned-memory and other
+       VMM-aware allocators cannot hand out the same pages. */
+    kernel_vmm_reserve_at((void *) virt_addr, num_pages);
 
     return (uint32_t *) virt_addr;
 }

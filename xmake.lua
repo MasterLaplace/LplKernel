@@ -282,11 +282,22 @@ task("iso")
 task_end()
 
 task("qemu")
-    set_menu({usage = "xmake qemu", description = "Boot lpl.kernel in QEMU (serial on stdio)"})
+    set_menu({usage = "xmake qemu", description = "Boot in QEMU: graphical window + serial console on the tty"})
     on_run(function ()
-        os.exec("xmake build lpl-kernel")
-        local kernel = table.unpack(os.files(path.join(os.scriptdir(), "build/**/lpl.kernel")))
-        assert(kernel, "lpl.kernel not found — run `xmake` first")
-        os.execv("qemu-system-i386", {"-kernel", kernel, "-serial", "stdio", "-display", "none", "-no-reboot"})
+        -- Window shown (default display) + serial multiplexed with the QEMU
+        -- monitor on the controlling tty (-serial mon:stdio). In graphics mode
+        -- we boot the GRUB ISO with -vga std so the VBE linear framebuffer
+        -- actually exists (the QEMU -kernel multiboot path has none → text mode).
+        if has_config("graphics") then
+            os.exec("xmake iso")
+            os.execv("qemu-system-i386", {"-cdrom", path.join(os.scriptdir(), "lpl.iso"),
+                "-m", "256M", "-vga", "std", "-serial", "mon:stdio", "-no-reboot"})
+        else
+            os.exec("xmake build lpl-kernel")
+            local kernel = table.unpack(os.files(path.join(os.scriptdir(), "build/**/lpl.kernel")))
+            assert(kernel, "lpl.kernel not found — run `xmake` first")
+            os.execv("qemu-system-i386", {"-kernel", kernel,
+                "-m", "256M", "-serial", "mon:stdio", "-no-reboot"})
+        end
     end)
 task_end()

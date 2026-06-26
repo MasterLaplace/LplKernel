@@ -29,16 +29,22 @@ void *kernel_pinned_alloc(uint32_t size)
 
     uint32_t pages_needed = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 
-    uint32_t start_virt = pinned_virtual_cursor;
-
-    if (!kernel_vmm_reserve_at((void *) start_virt, pages_needed))
+    /* Let the VMM find the first free virtual range so pinned allocations
+       are never handed a range already claimed by the framebuffer or others. */
+    void *reserved = kernel_vmm_reserve_pages(pages_needed);
+    if (!reserved)
         return NULL;
+
+    uint32_t start_virt = (uint32_t) (uintptr_t) reserved;
 
     for (uint32_t i = 0u; i < pages_needed; ++i)
     {
         uint32_t phys = physical_memory_manager_page_frame_allocate();
         if (phys == 0u)
+        {
+            kernel_vmm_free_pages(reserved, i);
             return NULL;
+        }
 
         PageDirectoryEntry_t pde = {0};
         pde.present = 1;
@@ -52,12 +58,15 @@ void *kernel_pinned_alloc(uint32_t size)
         pte.available = 1;
 
         if (!paging_map_page(start_virt + (i * PAGE_SIZE), phys, pde, pte))
+        {
+            kernel_vmm_free_pages(reserved, i);
             return NULL;
+        }
 
         ++pinned_allocated_pages;
     }
 
-    pinned_virtual_cursor += (pages_needed * PAGE_SIZE);
+    pinned_virtual_cursor = start_virt + (pages_needed * PAGE_SIZE);
 
     return (void *) start_virt;
 }
