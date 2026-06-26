@@ -16,6 +16,7 @@ sysroot
 !.vscode/tasks.json
 .Test/
 .github/
+.claude/
 docs/
 .tmp_refs/
 

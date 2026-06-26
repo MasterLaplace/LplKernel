@@ -34,6 +34,47 @@ typedef struct {
 
 extern void libengine_p0_smoke(libengine_p0_smoke_result_t *out);
 
+/*
+** P1 memory smoke. Exercises the engine's ArenaAllocator (lpl::memory) backed,
+** on the kernel target, by the kernel heap (kmalloc) through the lpl/std/cstdlib
+** umbrella. Proves the dependency-injected allocator seam works in-kernel: O(1)
+** bump allocation with alignment, ownership query, O(1) reset, and graceful
+** out-of-capacity failure. `used_after_allocations_bytes` is deterministic (the
+** allocation sizes/alignments are fixed and the kmalloc slab is 8-byte aligned),
+** so it matches the Linux/xmake oracle byte-for-byte.
+*/
+typedef struct {
+    uint32_t allocations_aligned_ok;       /* every block honoured its requested alignment */
+    uint32_t owns_pointer_ok;              /* ownsPtr true inside the arena, false outside  */
+    uint32_t used_after_allocations_bytes; /* arena.used() after the fixed allocations       */
+    uint32_t reset_reclaims_all_ok;        /* used() == 0 after reset()                      */
+    uint32_t exhaustion_returns_null_ok;   /* an over-capacity allocate() returns nullptr    */
+} libengine_p1_arena_smoke_result_t;
+
+extern void libengine_p1_arena_smoke(libengine_p1_arena_smoke_result_t *out);
+
+/*
+** P1 ECS smoke. Exercises the engine's archetype/chunk SoA storage and the
+** lock-free entity Registry (Treiber-stack slot free-list with generation
+** counters) entirely in-kernel. Every field is fixed by the deterministic
+** create/destroy sequence (10 created, slots 2/4/6 destroyed, slot 6 recycled
+** first as generation 1), so it matches the Linux/xmake oracle byte-for-byte.
+*/
+typedef struct {
+    uint32_t created_count;          /* entities successfully created (expect 10)       */
+    uint32_t live_after_create;      /* registry liveCount after creation (expect 10)   */
+    uint32_t first_entity_raw;       /* raw id of the first entity (gen 0, slot 0 => 0) */
+    uint32_t destroyed_ok;           /* all three destroy() calls succeeded             */
+    uint32_t live_after_destroy;     /* liveCount after destroying 3 (expect 7)         */
+    uint32_t recycle_slot_lifo_ok;   /* first recycled slot is 6 (LIFO free-list)       */
+    uint32_t recycle_generation_ok;  /* recycled entity carries generation 1            */
+    uint32_t stale_id_dead_ok;       /* the old (gen 0, slot 6) id reports !isAlive      */
+    uint32_t live_final;             /* liveCount after refilling (expect 10)           */
+    uint32_t partition_entity_count; /* entities across the partition's chunks (expect 10) */
+} libengine_p1_ecs_smoke_result_t;
+
+extern void libengine_p1_ecs_smoke(libengine_p1_ecs_smoke_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

@@ -24,7 +24,10 @@ CXXFLAGS:=$(CXXFLAGS) -std=gnu++23 -ffreestanding -fno-exceptions -fno-rtti \
 CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -Iinclude \
           -I$(LPLPLUGIN_ROOT)/core/include \
-          -I$(LPLPLUGIN_ROOT)/math/include
+          -I$(LPLPLUGIN_ROOT)/math/include \
+          -I$(LPLPLUGIN_ROOT)/memory/include \
+          -I$(LPLPLUGIN_ROOT)/container/include \
+          -I$(LPLPLUGIN_ROOT)/ecs/include
 
 ARCHDIR=arch/$(HOSTARCH)
 
@@ -40,6 +43,8 @@ ENGINE_OBJS=$(addprefix obj/,$(ARCH_ENGINE_SRCS:.cpp=.o))
 # libengine-local sources (the C-callable facade / smoke entry points).
 LOCAL_OBJS=\
 obj/local/p0_smoke.o \
+obj/local/p1_smoke.o \
+obj/local/p1_ecs_smoke.o \
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)
 

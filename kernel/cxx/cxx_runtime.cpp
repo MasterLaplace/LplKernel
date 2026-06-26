@@ -84,7 +84,14 @@ enum class align_val_t : __SIZE_TYPE__ {};
 struct nothrow_t {
     explicit nothrow_t() = default;
 };
-}
+
+/* std::terminate() is referenced by the freestanding libstdc++ at every noexcept
+   boundary (via std::__terminate). With -fno-exceptions there is nothing to
+   unwind, so a reached terminate is an unrecoverable logic error: halt. */
+[[noreturn]] void terminate() noexcept;
+} // namespace std
+
+[[noreturn]] void std::terminate() noexcept { kernel_cxx_fatal(); }
 
 /* ---- Non-aligned operators ---- */
 

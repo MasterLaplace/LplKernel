@@ -57,6 +57,15 @@ public:
             emplace_back(value);
     }
 
+    // Iterator-range constructor. The enable_if disambiguates from the
+    // (count, value) constructor when called with two integral arguments.
+    template <typename InputIt, typename = std::enable_if_t<!std::is_integral_v<InputIt>>>
+    vector(InputIt first, InputIt last, const Allocator &allocator = Allocator()) : _allocator(allocator)
+    {
+        for (; first != last; ++first)
+            emplace_back(*first);
+    }
+
     vector(const vector &other) : _allocator(other._allocator)
     {
         reserve(other._size);

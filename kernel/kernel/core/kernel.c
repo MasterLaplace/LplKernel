@@ -345,6 +345,58 @@ void kernel_main(void)
         }
     }
 
+    /* P1 memory smoke: the engine ArenaAllocator (lpl::memory) runs in-kernel
+       with its slab served by kmalloc through the lpl/std/cstdlib umbrella.
+       Proves the dependency-injected allocator seam (allocate/align/ownsPtr/
+       reset/exhaustion). used() is fixed by the allocation sizes, so it matches
+       the Linux/xmake oracle (P1 memory-DI exit criterion). */
+    {
+        libengine_p1_arena_smoke_result_t arena;
+        libengine_p1_arena_smoke(&arena);
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P1 arena smoke: aligned_ok=");
+        serial_write_hex32(&com1, arena.allocations_aligned_ok);
+        serial_write_string(&com1, ", owns_ok=");
+        serial_write_hex32(&com1, arena.owns_pointer_ok);
+        serial_write_string(&com1, ", used=");
+        serial_write_hex32(&com1, arena.used_after_allocations_bytes);
+        serial_write_string(&com1, ", reset_ok=");
+        serial_write_hex32(&com1, arena.reset_reclaims_all_ok);
+        serial_write_string(&com1, ", exhaustion_null_ok=");
+        serial_write_hex32(&com1, arena.exhaustion_returns_null_ok);
+        serial_write_string(&com1, "\n");
+    }
+
+    /* P1 ECS smoke: the archetype/chunk SoA storage and lock-free entity
+       Registry run headless in-kernel. Each value is fixed by the deterministic
+       create/destroy sequence, so it matches the Linux/xmake oracle (P1 ECS
+       exit criterion). */
+    {
+        libengine_p1_ecs_smoke_result_t ecs;
+        libengine_p1_ecs_smoke(&ecs);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } ecs_rows[] = {
+            {"created=", ecs.created_count},
+            {", live=", ecs.live_after_create},
+            {", first_raw=", ecs.first_entity_raw},
+            {", destroy_ok=", ecs.destroyed_ok},
+            {", live_after_destroy=", ecs.live_after_destroy},
+            {", recycle_slot_ok=", ecs.recycle_slot_lifo_ok},
+            {", recycle_gen_ok=", ecs.recycle_generation_ok},
+            {", stale_dead_ok=", ecs.stale_id_dead_ok},
+            {", live_final=", ecs.live_final},
+            {", part_count=", ecs.partition_entity_count},
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P1 ECS smoke: ");
+        for (size_t i = 0u; i < sizeof(ecs_rows) / sizeof(ecs_rows[0]); ++i)
+        {
+            serial_write_string(&com1, ecs_rows[i].label);
+            serial_write_hex32(&com1, ecs_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();
