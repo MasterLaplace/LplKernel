@@ -93,6 +93,25 @@ typedef struct {
 
 extern void libengine_p1_scheduler_smoke(libengine_p1_scheduler_smoke_result_t *out);
 
+/*
+** P1 physics smoke. Runs one CpuPhysicsBackend tick over real ECS chunk storage
+** (three Position/Velocity/Mass entities at rest at y=100, no AABB so the pass
+** is pure gravity integration). After one 1/60 s step the semi-implicit Euler +
+** 0.995 velocity damping fix position.y/velocity.y exactly. The float math runs
+** on SSE with -ffp-contract=off, so the raw IEEE bit patterns match the
+** Linux/xmake oracle byte-for-byte — the P1 ECS+physics determinism gate.
+*/
+typedef struct {
+    uint32_t entities_seeded;       /* entities written into chunk buffers (expect 3)   */
+    uint32_t entities_stepped;      /* entities the physics tick processed (expect 3)   */
+    uint32_t step_ok;               /* CpuPhysicsBackend::step returned success         */
+    uint32_t position_y_raw;        /* IEEE-754 bits of position.y after the step       */
+    uint32_t velocity_y_raw;        /* IEEE-754 bits of velocity.y after the step       */
+    uint32_t fell_under_gravity_ok; /* every entity moved down with negative velocity   */
+} libengine_p1_physics_smoke_result_t;
+
+extern void libengine_p1_physics_smoke(libengine_p1_physics_smoke_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

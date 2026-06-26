@@ -424,6 +424,32 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P1 physics smoke: one CpuPhysicsBackend gravity-integration tick over ECS
+       chunk storage. The float results run on SSE (-ffp-contract=off), so the
+       raw IEEE bit patterns match the Linux/xmake oracle (P1 ECS+physics gate). */
+    {
+        libengine_p1_physics_smoke_result_t phys;
+        libengine_p1_physics_smoke(&phys);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } phys_rows[] = {
+            {"seeded=", phys.entities_seeded},
+            {", stepped=", phys.entities_stepped},
+            {", step_ok=", phys.step_ok},
+            {", pos_y_raw=", phys.position_y_raw},
+            {", vel_y_raw=", phys.velocity_y_raw},
+            {", fell_ok=", phys.fell_under_gravity_ok},
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P1 physics smoke: ");
+        for (size_t i = 0u; i < sizeof(phys_rows) / sizeof(phys_rows[0]); ++i)
+        {
+            serial_write_string(&com1, phys_rows[i].label);
+            serial_write_hex32(&com1, phys_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();
