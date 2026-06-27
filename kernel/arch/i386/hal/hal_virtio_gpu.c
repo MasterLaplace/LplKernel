@@ -14,6 +14,8 @@
 #include <kernel/hal/hal.h>
 
 #include <kernel/cpu/pci.h>
+#include <kernel/cpu/paging.h>
+#include <kernel/memory/vmm.h>
 
 /* Red Hat / virtio PCI vendor id. */
 #define VIRTIO_PCI_VENDOR_ID 0x1AF4u
@@ -25,6 +27,23 @@
 
 /* Modern virtio-pci devices use ids >= 0x1040. */
 #define VIRTIO_PCI_MODERN_DEVICE_ID_BASE 0x1040u
+
+/* PCI status-register bit 4 advertises a capability list; the list head is a
+ * byte pointer at config offset 0x34. Each capability begins with an 8-bit id
+ * followed by an 8-bit pointer to the next capability (0 terminates). */
+#define PCI_STATUS_CAPABILITIES_LIST 0x0010u
+#define PCI_REGISTER_CAPABILITIES_POINTER 0x34u
+#define PCI_CAP_ID_VENDOR_SPECIFIC 0x09u
+
+/* Layout of a virtio_pci_cap structure inside the capability list. */
+#define VIRTIO_PCI_CAP_OFFSET_CFG_TYPE 3u  /* u8  cfg_type                */
+#define VIRTIO_PCI_CAP_OFFSET_BAR      4u  /* u8  bar index               */
+#define VIRTIO_PCI_CAP_OFFSET_OFFSET   8u  /* le32 offset within the BAR  */
+#define VIRTIO_PCI_CAP_OFFSET_LENGTH   12u /* le32 length of the structure */
+#define VIRTIO_PCI_NOTIFY_CAP_OFFSET_MULTIPLIER 16u /* le32 (notify only) */
+
+/* Guard against a malformed / cyclic capability list. */
+#define VIRTIO_PCI_CAP_WALK_LIMIT 48u
 
 static bool is_virtio_gpu(const PeripheralComponentInterconnectDevice_t *dev)
 {
@@ -79,4 +98,127 @@ bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info)
         return true;
     }
     return false;
+}
+
+/* Select the destination cap slot for a virtio cfg_type, or NULL to ignore. */
+static hal_virtio_pci_cap_t *cap_slot_for_type(hal_virtio_gpu_mapping_t *mapping, uint8_t cfg_type)
+{
+    switch (cfg_type)
+    {
+        case HAL_VIRTIO_PCI_CAP_COMMON_CFG: return &mapping->common;
+        case HAL_VIRTIO_PCI_CAP_NOTIFY_CFG: return &mapping->notify;
+        case HAL_VIRTIO_PCI_CAP_ISR_CFG:    return &mapping->isr;
+        case HAL_VIRTIO_PCI_CAP_DEVICE_CFG: return &mapping->device;
+        default:                            return (void *) 0;
+    }
+}
+
+/* Walk the PCI capability list, recording every virtio cfg structure. */
+static void walk_virtio_capabilities(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mapping_t *mapping)
+{
+    const uint16_t status =
+        peripheral_component_interconnect_config_read_word(info->bus, info->device, info->function,
+                                                           PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_STATUS);
+    if ((status & PCI_STATUS_CAPABILITIES_LIST) == 0u)
+        return;
+
+    uint8_t pointer = peripheral_component_interconnect_config_read_byte(info->bus, info->device, info->function,
+                                                                        PCI_REGISTER_CAPABILITIES_POINTER);
+    for (uint32_t guard = 0u; pointer != 0u && guard < VIRTIO_PCI_CAP_WALK_LIMIT; ++guard)
+    {
+        const uint8_t cap_id = peripheral_component_interconnect_config_read_byte(info->bus, info->device,
+                                                                                 info->function, pointer);
+        const uint8_t next = peripheral_component_interconnect_config_read_byte(
+            info->bus, info->device, info->function, (uint8_t) (pointer + 1u));
+
+        if (cap_id == PCI_CAP_ID_VENDOR_SPECIFIC)
+        {
+            const uint8_t cfg_type = peripheral_component_interconnect_config_read_byte(
+                info->bus, info->device, info->function, (uint8_t) (pointer + VIRTIO_PCI_CAP_OFFSET_CFG_TYPE));
+            hal_virtio_pci_cap_t *slot = cap_slot_for_type(mapping, cfg_type);
+            if (slot != (void *) 0)
+            {
+                slot->present = 1u;
+                slot->bar = peripheral_component_interconnect_config_read_byte(
+                    info->bus, info->device, info->function, (uint8_t) (pointer + VIRTIO_PCI_CAP_OFFSET_BAR));
+                slot->offset = peripheral_component_interconnect_config_read_dword(
+                    info->bus, info->device, info->function, (uint8_t) (pointer + VIRTIO_PCI_CAP_OFFSET_OFFSET));
+                slot->length = peripheral_component_interconnect_config_read_dword(
+                    info->bus, info->device, info->function, (uint8_t) (pointer + VIRTIO_PCI_CAP_OFFSET_LENGTH));
+                if (cfg_type == HAL_VIRTIO_PCI_CAP_NOTIFY_CFG)
+                    mapping->notify_off_multiplier = peripheral_component_interconnect_config_read_dword(
+                        info->bus, info->device, info->function,
+                        (uint8_t) (pointer + VIRTIO_PCI_NOTIFY_CAP_OFFSET_MULTIPLIER));
+            }
+        }
+        pointer = next;
+    }
+}
+
+/* Map an MMIO BAR window into kernel virtual space (cache-disabled).
+ * Returns the VA base of the BAR (page-aligned), or 0 on failure. */
+static uint32_t map_mmio_window(uint32_t phys_base_raw, uint32_t size)
+{
+    if (phys_base_raw == 0u || size == 0u)
+        return 0u;
+
+    const uint32_t page_offset = phys_base_raw & 0xFFFu;
+    const uint32_t phys_base = phys_base_raw & 0xFFFFF000u;
+    const uint32_t span = page_offset + size;
+    const uint32_t page_count = (span + 0xFFFu) >> 12;
+
+    /* Let the VMM pick a free virtual range (collision-safe) and map each page
+     * onto the device's physical BAR pages. */
+    void *virt = kernel_vmm_reserve_pages(page_count);
+    if (virt == (void *) 0)
+        return 0u;
+
+    const PageDirectoryEntry_t pde_flags = {.present = 1u, .read_write = 1u};
+    const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u, .cache_disable = 1u, .write_through = 1u};
+
+    const uint32_t virt_base = (uint32_t) virt;
+    for (uint32_t i = 0u; i < page_count; ++i)
+    {
+        if (!paging_map_page(virt_base + (i << 12), phys_base + (i << 12), pde_flags, pte_flags))
+        {
+            kernel_vmm_free_pages(virt, page_count);
+            return 0u;
+        }
+    }
+    /* VA of the BAR base; caller adds each cap.offset to reach a structure. */
+    return virt_base + page_offset;
+}
+
+bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mapping_t *out_mapping)
+{
+    if (info == (void *) 0 || out_mapping == (void *) 0 || !info->present)
+        return false;
+
+    *out_mapping = (hal_virtio_gpu_mapping_t){0};
+
+    walk_virtio_capabilities(info, out_mapping);
+
+    /* The common configuration structure is mandatory for a usable device. */
+    if (!out_mapping->common.present)
+        return false;
+
+    /* The cfg structures live in the BAR named by the capability (typically a
+     * single shared BAR), NOT necessarily the first MMIO BAR the probe found.
+     * Decode that BAR's real base + size and map the whole window. */
+    PeripheralComponentInterconnectBaseAddressRegister_t bar;
+    if (!peripheral_component_interconnect_read_base_address_register(info->bus, info->device, info->function,
+                                                                     out_mapping->common.bar, &bar) ||
+        bar.is_io)
+        return false;
+
+    const uint32_t mmio_virtual_base = map_mmio_window((uint32_t) bar.base, (uint32_t) bar.size);
+    if (mmio_virtual_base == 0u)
+        return false;
+
+    out_mapping->mapped = 1u;
+    out_mapping->mmio_bar_index = out_mapping->common.bar;
+    out_mapping->mmio_virtual_base = mmio_virtual_base;
+    out_mapping->mmio_physical_base = (uint32_t) bar.base;
+    out_mapping->mmio_size = (uint32_t) bar.size;
+    return true;
 }

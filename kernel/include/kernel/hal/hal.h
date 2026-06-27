@@ -137,6 +137,56 @@ typedef struct {
  */
 bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info);
 
+/* virtio-pci capability cfg_type values (from the virtio 1.x spec). */
+#define HAL_VIRTIO_PCI_CAP_COMMON_CFG 1u /* common configuration               */
+#define HAL_VIRTIO_PCI_CAP_NOTIFY_CFG 2u /* notification area                  */
+#define HAL_VIRTIO_PCI_CAP_ISR_CFG    3u /* ISR status                         */
+#define HAL_VIRTIO_PCI_CAP_DEVICE_CFG 4u /* device-specific configuration      */
+#define HAL_VIRTIO_PCI_CAP_PCI_CFG    5u /* alternate PCI-config access window  */
+
+/** @brief One decoded virtio-pci capability structure location (within a BAR). */
+typedef struct {
+    uint8_t present;  /* non-zero when this cfg_type capability was found */
+    uint8_t bar;      /* which BAR holds the structure                   */
+    uint32_t offset;  /* byte offset of the structure within the BAR     */
+    uint32_t length;  /* length of the structure in bytes                */
+} hal_virtio_pci_cap_t;
+
+/**
+ * @brief Mapped virtio-pci configuration windows for a virtio-gpu function.
+ *
+ * The capability list is walked to locate the common/notify/isr/device cfg
+ * structures, and the MMIO BAR backing them is mapped into kernel virtual
+ * space (cache-disabled). Each structure is then reachable at
+ * @ref mmio_virtual_base + cap.offset (when cap.bar == @ref mmio_bar_index).
+ */
+typedef struct {
+    uint8_t mapped;             /* non-zero when the MMIO window was mapped     */
+    uint8_t mmio_bar_index;     /* BAR slot that was mapped                     */
+    uint32_t mmio_virtual_base; /* kernel VA of the mapped BAR window           */
+    uint32_t mmio_physical_base;/* physical base of the mapped BAR window       */
+    uint32_t mmio_size;         /* size of the mapped window in bytes           */
+    uint32_t notify_off_multiplier; /* notify capability multiplier            */
+    hal_virtio_pci_cap_t common;
+    hal_virtio_pci_cap_t notify;
+    hal_virtio_pci_cap_t isr;
+    hal_virtio_pci_cap_t device;
+} hal_virtio_gpu_mapping_t;
+
+/**
+ * @brief Walk the virtio-pci capability list and map the device MMIO window.
+ *
+ * Reads the PCI capability list for the function described by @p info, records
+ * the common/notify/isr/device cfg structure locations, and maps the MMIO BAR
+ * those structures live in into kernel virtual space. Requires @p info from a
+ * successful hal_virtio_gpu_probe().
+ *
+ * @param info Probe result identifying the virtio-gpu function.
+ * @param out_mapping Destination for the decoded + mapped configuration.
+ * @return true when the common cfg was found and the BAR was mapped.
+ */
+bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mapping_t *out_mapping);
+
 #ifdef __cplusplus
 }
 #endif

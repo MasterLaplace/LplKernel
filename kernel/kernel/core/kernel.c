@@ -325,6 +325,38 @@ __attribute__((constructor)) void kernel_initialize(void)
                 serial_write_hex32(&com1, vgpu_rows[i].value);
             }
             serial_write_string(&com1, "\n");
+
+            /* Walk the virtio-pci capability list and map the MMIO window so a
+               later display backend can drive the device through its cfg
+               structures. */
+            hal_virtio_gpu_mapping_t vgpu_map;
+            if (hal_virtio_gpu_map(&vgpu, &vgpu_map))
+            {
+                const struct {
+                    const char *label;
+                    uint32_t value;
+                } map_rows[] = {
+                    {"mmio_va=",        vgpu_map.mmio_virtual_base       },
+                    {", bar=",          (uint32_t) vgpu_map.mmio_bar_index},
+                    {", size=",         vgpu_map.mmio_size               },
+                    {", common@",       vgpu_map.common.offset           },
+                    {", notify@",       vgpu_map.notify.offset           },
+                    {", notify_mult=",  vgpu_map.notify_off_multiplier   },
+                    {", isr@",          vgpu_map.isr.offset              },
+                    {", device@",       vgpu_map.device.offset           },
+                };
+                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu map: ");
+                for (size_t i = 0u; i < sizeof(map_rows) / sizeof(map_rows[0]); ++i)
+                {
+                    serial_write_string(&com1, map_rows[i].label);
+                    serial_write_hex32(&com1, map_rows[i].value);
+                }
+                serial_write_string(&com1, "\n");
+            }
+            else
+            {
+                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu map: failed (no common cfg / MMIO map)\n");
+            }
         }
         else
         {
