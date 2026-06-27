@@ -214,6 +214,44 @@ typedef struct {
  */
 bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_gpu_device_t *out_device);
 
+/** @brief A programmed split virtqueue (descriptor table + avail + used ring). */
+typedef struct {
+    uint8_t ready;             /* non-zero once enabled on the device         */
+    uint16_t queue_index;      /* which virtqueue this is                     */
+    uint16_t queue_size;       /* number of descriptors                       */
+    uint16_t last_used_index;  /* consumer cursor into the used ring          */
+    uint16_t free_head;        /* next free descriptor index                  */
+    uint32_t desc_address;     /* VA of the descriptor table                  */
+    uint32_t avail_address;    /* VA of the available ring                    */
+    uint32_t used_address;     /* VA of the used ring                         */
+    uint32_t notify_address;   /* VA to write queue_index into to notify      */
+    uint32_t ring_physical_base; /* physical base of the backing page         */
+    void *ring_backing;        /* VA of the backing page (for free)           */
+} hal_virtio_virtqueue_t;
+
+/**
+ * @brief Allocate and program a split virtqueue, enabling it on the device.
+ *
+ * Selects @p queue_index, backs the descriptor/avail/used rings with one pinned
+ * (physically contiguous) zeroed page, programs queue_desc/driver/device with
+ * their physical addresses, and sets queue_enable. The whole ring set must fit
+ * in a single 4 KiB page (true for the virtio-gpu controlq/cursorq sizes).
+ *
+ * @param device A device brought up by hal_virtio_gpu_bringup().
+ * @param mapping The mapping the device was brought up from (for the notify BAR).
+ * @param queue_index Virtqueue to program (0 = controlq, 1 = cursorq).
+ * @param out_queue Destination for the programmed virtqueue.
+ * @return true when the queue was allocated, programmed and enabled.
+ */
+bool hal_virtio_gpu_setup_queue(const hal_virtio_gpu_device_t *device, const hal_virtio_gpu_mapping_t *mapping,
+                                uint16_t queue_index, hal_virtio_virtqueue_t *out_queue);
+
+/**
+ * @brief Set DRIVER_OK, completing device initialisation (queues must be set).
+ * @return the device_status read back after the write.
+ */
+uint8_t hal_virtio_gpu_driver_ok(const hal_virtio_gpu_device_t *device);
+
 #ifdef __cplusplus
 }
 #endif

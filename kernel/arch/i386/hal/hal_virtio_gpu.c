@@ -16,6 +16,7 @@
 #include <kernel/cpu/pci.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/memory/vmm.h>
+#include <kernel/memory/pinned_memory.h>
 
 /* Red Hat / virtio PCI vendor id. */
 #define VIRTIO_PCI_VENDOR_ID 0x1AF4u
@@ -54,6 +55,11 @@
 #define VIRTIO_PCI_COMMON_DEVICE_STATUS         0x14u /* u8   */
 #define VIRTIO_PCI_COMMON_QUEUE_SELECT          0x16u /* le16 */
 #define VIRTIO_PCI_COMMON_QUEUE_SIZE            0x18u /* le16 */
+#define VIRTIO_PCI_COMMON_QUEUE_ENABLE          0x1Cu /* le16 */
+#define VIRTIO_PCI_COMMON_QUEUE_NOTIFY_OFF      0x1Eu /* le16 */
+#define VIRTIO_PCI_COMMON_QUEUE_DESC            0x20u /* le64 */
+#define VIRTIO_PCI_COMMON_QUEUE_DRIVER          0x28u /* le64 (avail ring)   */
+#define VIRTIO_PCI_COMMON_QUEUE_DEVICE          0x30u /* le64 (used ring)    */
 
 /* device_status bits. */
 #define VIRTIO_STATUS_ACKNOWLEDGE 0x01u
@@ -301,4 +307,93 @@ bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_
 
     out_device->ready = 1u;
     return true;
+}
+
+/* Split-virtqueue ring sizes for a queue of @p size descriptors. */
+#define VIRTQ_DESC_BYTES(size)  (16u * (uint32_t) (size))
+#define VIRTQ_AVAIL_BYTES(size) (6u + 2u * (uint32_t) (size))
+#define VIRTQ_USED_BYTES(size)  (6u + 8u * (uint32_t) (size))
+
+/* Round @p value up to the next multiple of @p align (a power of two). */
+static inline uint32_t align_up(uint32_t value, uint32_t align) { return (value + (align - 1u)) & ~(align - 1u); }
+
+/* Program a 64-bit common-cfg field from a 32-bit physical address (hi = 0). */
+static void write_queue_address64(uint32_t common, uint32_t field_offset, uint32_t physical)
+{
+    mmio_write32(common + field_offset, physical);
+    mmio_write32(common + field_offset + 4u, 0u);
+}
+
+bool hal_virtio_gpu_setup_queue(const hal_virtio_gpu_device_t *device, const hal_virtio_gpu_mapping_t *mapping,
+                                uint16_t queue_index, hal_virtio_virtqueue_t *out_queue)
+{
+    if (device == (void *) 0 || mapping == (void *) 0 || out_queue == (void *) 0 || !device->ready)
+        return false;
+
+    *out_queue = (hal_virtio_virtqueue_t){0};
+
+    const uint32_t common = device->common_cfg_address;
+    mmio_write16(common + VIRTIO_PCI_COMMON_QUEUE_SELECT, queue_index);
+
+    const uint16_t queue_size = mmio_read16(common + VIRTIO_PCI_COMMON_QUEUE_SIZE);
+    if (queue_size == 0u)
+        return false; /* queue not available */
+
+    /* Lay the descriptor table, avail ring and used ring out inside one page. */
+    const uint32_t avail_offset = VIRTQ_DESC_BYTES(queue_size);
+    const uint32_t used_offset = align_up(avail_offset + VIRTQ_AVAIL_BYTES(queue_size), 16u);
+    const uint32_t total = used_offset + VIRTQ_USED_BYTES(queue_size);
+    if (total > 4096u)
+        return false; /* would need a multi-page (non-contiguous) backing */
+
+    void *backing = kernel_pinned_alloc(4096u);
+    if (backing == (void *) 0)
+        return false;
+
+    /* Zero the rings (avail/used idx must start at 0). */
+    for (uint32_t i = 0u; i < 4096u / 4u; ++i)
+        ((volatile uint32_t *) backing)[i] = 0u;
+
+    uint32_t ring_physical = 0u;
+    if (!hal_graphics_memory_physical_address(backing, &ring_physical))
+    {
+        kernel_pinned_free(backing, 4096u);
+        return false;
+    }
+
+    const uint32_t backing_va = (uint32_t) backing;
+
+    /* Notify address: notify BAR offset + queue_notify_off * multiplier. */
+    const uint16_t notify_off = mmio_read16(common + VIRTIO_PCI_COMMON_QUEUE_NOTIFY_OFF);
+    const uint32_t notify_address =
+        mapping->mmio_virtual_base + mapping->notify.offset + (uint32_t) notify_off * mapping->notify_off_multiplier;
+
+    /* Program the ring physical addresses and enable the queue. */
+    write_queue_address64(common, VIRTIO_PCI_COMMON_QUEUE_DESC, ring_physical);
+    write_queue_address64(common, VIRTIO_PCI_COMMON_QUEUE_DRIVER, ring_physical + avail_offset);
+    write_queue_address64(common, VIRTIO_PCI_COMMON_QUEUE_DEVICE, ring_physical + used_offset);
+    mmio_write16(common + VIRTIO_PCI_COMMON_QUEUE_ENABLE, 1u);
+
+    out_queue->ready = 1u;
+    out_queue->queue_index = queue_index;
+    out_queue->queue_size = queue_size;
+    out_queue->desc_address = backing_va;
+    out_queue->avail_address = backing_va + avail_offset;
+    out_queue->used_address = backing_va + used_offset;
+    out_queue->notify_address = notify_address;
+    out_queue->ring_physical_base = ring_physical;
+    out_queue->ring_backing = backing;
+    return true;
+}
+
+uint8_t hal_virtio_gpu_driver_ok(const hal_virtio_gpu_device_t *device)
+{
+    if (device == (void *) 0 || !device->ready)
+        return 0u;
+
+    const uint32_t status_reg = device->common_cfg_address + VIRTIO_PCI_COMMON_DEVICE_STATUS;
+    const uint8_t status =
+        (uint8_t) (VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
+    mmio_write8(status_reg, status);
+    return mmio_read8(status_reg);
 }

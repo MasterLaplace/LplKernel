@@ -374,6 +374,36 @@ __attribute__((constructor)) void kernel_initialize(void)
                     serial_write_hex32(&com1, dev_rows[i].value);
                 }
                 serial_write_string(&com1, "\n");
+
+                /* Program the control virtqueue and complete init (DRIVER_OK). */
+                if (bringup_ok)
+                {
+                    hal_virtio_virtqueue_t controlq;
+                    if (hal_virtio_gpu_setup_queue(&vgpu_dev, &vgpu_map, 0u, &controlq))
+                    {
+                        const uint8_t final_status = hal_virtio_gpu_driver_ok(&vgpu_dev);
+                        const struct {
+                            const char *label;
+                            uint32_t value;
+                        } q_rows[] = {
+                            {"controlq size=", (uint32_t) controlq.queue_size       },
+                            {", ring_phys=",   controlq.ring_physical_base           },
+                            {", notify_va=",   controlq.notify_address               },
+                            {", driver_ok status=", (uint32_t) final_status          },
+                        };
+                        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu queue: ");
+                        for (size_t i = 0u; i < sizeof(q_rows) / sizeof(q_rows[0]); ++i)
+                        {
+                            serial_write_string(&com1, q_rows[i].label);
+                            serial_write_hex32(&com1, q_rows[i].value);
+                        }
+                        serial_write_string(&com1, "\n");
+                    }
+                    else
+                    {
+                        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu queue: setup FAILED\n");
+                    }
+                }
             }
             else
             {
