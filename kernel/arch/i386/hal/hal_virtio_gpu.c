@@ -18,6 +18,8 @@
 #include <kernel/memory/vmm.h>
 #include <kernel/memory/pinned_memory.h>
 
+#include <string.h>
+
 /* Red Hat / virtio PCI vendor id. */
 #define VIRTIO_PCI_VENDOR_ID 0x1AF4u
 
@@ -351,8 +353,7 @@ bool hal_virtio_gpu_setup_queue(const hal_virtio_gpu_device_t *device, const hal
         return false;
 
     /* Zero the rings (avail/used idx must start at 0). */
-    for (uint32_t i = 0u; i < 4096u / 4u; ++i)
-        ((volatile uint32_t *) backing)[i] = 0u;
+    memset(backing, 0, 4096u);
 
     uint32_t ring_physical = 0u;
     if (!hal_graphics_memory_physical_address(backing, &ring_physical))
@@ -493,8 +494,7 @@ bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_g
     void *buffer = kernel_pinned_alloc(4096u);
     if (buffer == (void *) 0)
         return false;
-    for (uint32_t i = 0u; i < 4096u / 4u; ++i)
-        ((volatile uint32_t *) buffer)[i] = 0u;
+    memset(buffer, 0, 4096u);
 
     uint32_t buffer_physical = 0u;
     if (!hal_graphics_memory_physical_address(buffer, &buffer_physical))
@@ -563,15 +563,25 @@ static void write64(uint32_t address, uint32_t low) /* hi = 0 on i686 32-bit phy
     ring_write32(address + 4u, 0u);
 }
 
+/* Write a command control header (type @0) followed by a virtio_gpu_rect @24
+ * {x, y, width, height} — the shared prefix of SET_SCANOUT / TRANSFER_TO_HOST_2D
+ * / RESOURCE_FLUSH. Command-specific fields follow at offset 40. */
+static void write_command_rect(uint32_t cmd_va, uint32_t command, uint32_t x, uint32_t y, uint32_t width,
+                               uint32_t height)
+{
+    ring_write32(cmd_va + 0u, command);
+    ring_write32(cmd_va + 24u, x);
+    ring_write32(cmd_va + 28u, y);
+    ring_write32(cmd_va + 32u, width);
+    ring_write32(cmd_va + 36u, height);
+}
+
 /* Send a single-buffer request expecting an OK_NODATA response. The request is
  * pre-filled at command_buffer + CMD_REQUEST_OFFSET; returns the response type. */
 static uint32_t send_nodata_command(const hal_virtio_gpu_scanout_t *scanout, uint32_t request_length,
                                     uint16_t extra_segment_count, const virtq_segment_t *extra_segments)
 {
-    uint32_t cmd_physical = 0u;
-    if (!hal_graphics_memory_physical_address(scanout->command_buffer, &cmd_physical))
-        return 0u;
-
+    const uint32_t cmd_physical = scanout->command_buffer_physical;
     const uint32_t cmd_va = (uint32_t) scanout->command_buffer;
     ring_write32(cmd_va + CMD_RESPONSE_OFFSET, 0u); /* clear stale response type */
 
@@ -654,9 +664,12 @@ bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width
     if (out_scanout->command_buffer == (void *) 0 || out_scanout->framebuffer == (void *) 0)
         goto fail;
 
+    /* Resolve the command buffer's physical address once (constant for life). */
+    if (!hal_graphics_memory_physical_address(out_scanout->command_buffer, &out_scanout->command_buffer_physical))
+        goto fail;
+
     /* Start with a black surface. */
-    for (uint32_t i = 0u; i < out_scanout->framebuffer_size / 4u; ++i)
-        out_scanout->framebuffer[i] = 0u;
+    memset(out_scanout->framebuffer, 0, out_scanout->framebuffer_size);
 
     const uint32_t cmd_va = (uint32_t) out_scanout->command_buffer;
 
@@ -716,11 +729,7 @@ bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width
     }
 
     /* 3. SET_SCANOUT (bind the resource to the display). */
-    ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_SET_SCANOUT);
-    ring_write32(cmd_va + 24u, 0u);      /* rect.x      */
-    ring_write32(cmd_va + 28u, 0u);      /* rect.y      */
-    ring_write32(cmd_va + 32u, width);   /* rect.width  */
-    ring_write32(cmd_va + 36u, height);  /* rect.height */
+    write_command_rect(cmd_va, VIRTIO_GPU_CMD_SET_SCANOUT, 0u, 0u, width, height);
     ring_write32(cmd_va + 40u, out_scanout->scanout_id);
     ring_write32(cmd_va + 44u, out_scanout->resource_id);
     if (send_nodata_command(out_scanout, 48u, 0u, (void *) 0) != VIRTIO_GPU_RESP_OK_NODATA)
@@ -746,25 +755,17 @@ bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout)
     const uint32_t cmd_va = (uint32_t) scanout->command_buffer;
 
     /* 4. TRANSFER_TO_HOST_2D (push the whole surface to the host resource). */
-    ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D);
-    ring_write32(cmd_va + 24u, 0u);             /* rect.x      */
-    ring_write32(cmd_va + 28u, 0u);             /* rect.y      */
-    ring_write32(cmd_va + 32u, scanout->width); /* rect.width  */
-    ring_write32(cmd_va + 36u, scanout->height);/* rect.height */
-    write64(cmd_va + 40u, 0u);                  /* offset      */
+    write_command_rect(cmd_va, VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D, 0u, 0u, scanout->width, scanout->height);
+    write64(cmd_va + 40u, 0u);              /* offset      */
     ring_write32(cmd_va + 48u, scanout->resource_id);
-    ring_write32(cmd_va + 52u, 0u);             /* padding     */
+    ring_write32(cmd_va + 52u, 0u);         /* padding     */
     if (send_nodata_command(scanout, 56u, 0u, (void *) 0) != VIRTIO_GPU_RESP_OK_NODATA)
         return false;
 
     /* 5. RESOURCE_FLUSH (present the transferred contents). */
-    ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_RESOURCE_FLUSH);
-    ring_write32(cmd_va + 24u, 0u);
-    ring_write32(cmd_va + 28u, 0u);
-    ring_write32(cmd_va + 32u, scanout->width);
-    ring_write32(cmd_va + 36u, scanout->height);
+    write_command_rect(cmd_va, VIRTIO_GPU_CMD_RESOURCE_FLUSH, 0u, 0u, scanout->width, scanout->height);
     ring_write32(cmd_va + 40u, scanout->resource_id);
-    ring_write32(cmd_va + 44u, 0u);             /* padding     */
+    ring_write32(cmd_va + 44u, 0u);         /* padding     */
     return send_nodata_command(scanout, 48u, 0u, (void *) 0) == VIRTIO_GPU_RESP_OK_NODATA;
 }
 

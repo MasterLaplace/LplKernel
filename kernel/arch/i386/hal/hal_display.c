@@ -54,6 +54,8 @@ bool hal_display_query_surface(hal_surface_descriptor_t *out_descriptor)
     return true;
 }
 
+bool hal_display_available(void) { return hal_virtio_gpu_display_active() || framebuffer_available(); }
+
 void hal_display_clear(uint32_t color_rgb)
 {
     if (hal_virtio_gpu_display_active())

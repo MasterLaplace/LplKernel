@@ -46,6 +46,12 @@ typedef struct {
  */
 bool hal_display_query_surface(hal_surface_descriptor_t *out_descriptor);
 
+/**
+ * @brief True when any display backend (virtio-gpu scanout or software LFB) can
+ *        present, i.e. hal_display_query_surface() would succeed.
+ */
+bool hal_display_available(void);
+
 /** @brief Clear the whole surface to an 0x00RRGGBB color. */
 void hal_display_clear(uint32_t color_rgb);
 
@@ -289,7 +295,8 @@ typedef struct {
     uint32_t *framebuffer;    /* guest BGRX surface (width*height pixels)          */
     uint32_t framebuffer_size;/* surface size in bytes                            */
     hal_virtio_virtqueue_t *queue; /* controlq used for present commands          */
-    void *command_buffer;     /* internal scratch (request/response + SG entries) */
+    void *command_buffer;     /* internal scratch (request/response)              */
+    uint32_t command_buffer_physical; /* cached physical base of command_buffer    */
 } hal_virtio_gpu_scanout_t;
 
 /**
