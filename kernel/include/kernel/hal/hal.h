@@ -187,6 +187,33 @@ typedef struct {
  */
 bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mapping_t *out_mapping);
 
+/* virtio-gpu always exposes exactly two virtqueues: controlq + cursorq. */
+#define HAL_VIRTIO_GPU_MAX_QUEUES 2u
+
+/** @brief Result of the virtio device bring-up handshake. */
+typedef struct {
+    uint8_t ready;          /* non-zero when FEATURES_OK stuck (device usable) */
+    uint8_t device_status;  /* final device_status register value             */
+    uint16_t num_queues;    /* number of virtqueues the device exposes        */
+    uint32_t mmio_virtual_base;     /* echoed from the mapping                 */
+    uint32_t common_cfg_address;    /* VA of the virtio_pci_common_cfg         */
+    uint16_t queue_size[HAL_VIRTIO_GPU_MAX_QUEUES]; /* size of queues 0..1     */
+} hal_virtio_gpu_device_t;
+
+/**
+ * @brief Run the virtio device-initialisation handshake on a mapped device.
+ *
+ * Resets the device, sets ACKNOWLEDGE | DRIVER, negotiates features (accepting
+ * VIRTIO_F_VERSION_1 only), commits FEATURES_OK and verifies it stuck, then
+ * reads num_queues and the size of each virtqueue. DRIVER_OK is deferred until
+ * the virtqueues are allocated and programmed (a later slice).
+ *
+ * @param mapping A mapped device from hal_virtio_gpu_map().
+ * @param out_device Destination for the bring-up result.
+ * @return true when the device accepted the driver and FEATURES_OK stuck.
+ */
+bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_gpu_device_t *out_device);
+
 #ifdef __cplusplus
 }
 #endif

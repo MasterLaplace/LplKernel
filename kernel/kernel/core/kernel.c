@@ -352,6 +352,28 @@ __attribute__((constructor)) void kernel_initialize(void)
                     serial_write_hex32(&com1, map_rows[i].value);
                 }
                 serial_write_string(&com1, "\n");
+
+                /* Run the virtio device-init handshake (reset / ACK / DRIVER /
+                   features / FEATURES_OK) and read the virtqueue sizes. */
+                hal_virtio_gpu_device_t vgpu_dev;
+                const bool bringup_ok = hal_virtio_gpu_bringup(&vgpu_map, &vgpu_dev);
+                const struct {
+                    const char *label;
+                    uint32_t value;
+                } dev_rows[] = {
+                    {"status=",     (uint32_t) vgpu_dev.device_status   },
+                    {", num_q=",    (uint32_t) vgpu_dev.num_queues      },
+                    {", q0_size=",  (uint32_t) vgpu_dev.queue_size[0]   },
+                    {", q1_size=",  (uint32_t) vgpu_dev.queue_size[1]   },
+                };
+                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu bringup: ");
+                serial_write_string(&com1, bringup_ok ? "ok " : "FAILED ");
+                for (size_t i = 0u; i < sizeof(dev_rows) / sizeof(dev_rows[0]); ++i)
+                {
+                    serial_write_string(&com1, dev_rows[i].label);
+                    serial_write_hex32(&com1, dev_rows[i].value);
+                }
+                serial_write_string(&com1, "\n");
             }
             else
             {

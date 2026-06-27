@@ -45,6 +45,35 @@
 /* Guard against a malformed / cyclic capability list. */
 #define VIRTIO_PCI_CAP_WALK_LIMIT 48u
 
+/* virtio_pci_common_cfg field offsets (virtio 1.x spec, little-endian). */
+#define VIRTIO_PCI_COMMON_DEVICE_FEATURE_SELECT 0x00u /* le32 */
+#define VIRTIO_PCI_COMMON_DEVICE_FEATURE        0x04u /* le32 */
+#define VIRTIO_PCI_COMMON_DRIVER_FEATURE_SELECT 0x08u /* le32 */
+#define VIRTIO_PCI_COMMON_DRIVER_FEATURE        0x0Cu /* le32 */
+#define VIRTIO_PCI_COMMON_NUM_QUEUES            0x12u /* le16 */
+#define VIRTIO_PCI_COMMON_DEVICE_STATUS         0x14u /* u8   */
+#define VIRTIO_PCI_COMMON_QUEUE_SELECT          0x16u /* le16 */
+#define VIRTIO_PCI_COMMON_QUEUE_SIZE            0x18u /* le16 */
+
+/* device_status bits. */
+#define VIRTIO_STATUS_ACKNOWLEDGE 0x01u
+#define VIRTIO_STATUS_DRIVER      0x02u
+#define VIRTIO_STATUS_DRIVER_OK   0x04u
+#define VIRTIO_STATUS_FEATURES_OK 0x08u
+#define VIRTIO_STATUS_FAILED      0x80u
+
+/* VIRTIO_F_VERSION_1 is feature bit 32 -> bit 0 of feature word 1. */
+#define VIRTIO_FEATURE_WORD_VERSION_1 1u
+#define VIRTIO_F_VERSION_1_BIT        0x00000001u
+
+/* MMIO accessors over the cache-disabled BAR mapping. */
+static inline uint8_t mmio_read8(uint32_t address) { return *(volatile uint8_t *) address; }
+static inline uint16_t mmio_read16(uint32_t address) { return *(volatile uint16_t *) address; }
+static inline uint32_t mmio_read32(uint32_t address) { return *(volatile uint32_t *) address; }
+static inline void mmio_write8(uint32_t address, uint8_t value) { *(volatile uint8_t *) address = value; }
+static inline void mmio_write16(uint32_t address, uint16_t value) { *(volatile uint16_t *) address = value; }
+static inline void mmio_write32(uint32_t address, uint32_t value) { *(volatile uint32_t *) address = value; }
+
 static bool is_virtio_gpu(const PeripheralComponentInterconnectDevice_t *dev)
 {
     if (dev->vendor_id != VIRTIO_PCI_VENDOR_ID)
@@ -220,5 +249,56 @@ bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mappin
     out_mapping->mmio_virtual_base = mmio_virtual_base;
     out_mapping->mmio_physical_base = (uint32_t) bar.base;
     out_mapping->mmio_size = (uint32_t) bar.size;
+    return true;
+}
+
+bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_gpu_device_t *out_device)
+{
+    if (mapping == (void *) 0 || out_device == (void *) 0 || !mapping->mapped || !mapping->common.present)
+        return false;
+
+    *out_device = (hal_virtio_gpu_device_t){0};
+
+    /* The common cfg lives at the mapped BAR base + the capability offset. */
+    const uint32_t common = mapping->mmio_virtual_base + mapping->common.offset;
+    const uint32_t status_reg = common + VIRTIO_PCI_COMMON_DEVICE_STATUS;
+
+    /* 1. Reset: write 0, then re-read until the device clears its status. */
+    mmio_write8(status_reg, 0u);
+    (void) mmio_read8(status_reg); /* flush the reset */
+
+    /* 2. Acknowledge the device and signal that a driver is present. */
+    mmio_write8(status_reg, VIRTIO_STATUS_ACKNOWLEDGE);
+    mmio_write8(status_reg, (uint8_t) (VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER));
+
+    /* 3. Negotiate features: accept only VIRTIO_F_VERSION_1 (modern device). */
+    mmio_write32(common + VIRTIO_PCI_COMMON_DRIVER_FEATURE_SELECT, VIRTIO_FEATURE_WORD_VERSION_1);
+    mmio_write32(common + VIRTIO_PCI_COMMON_DRIVER_FEATURE, VIRTIO_F_VERSION_1_BIT);
+    mmio_write32(common + VIRTIO_PCI_COMMON_DRIVER_FEATURE_SELECT, 0u);
+    mmio_write32(common + VIRTIO_PCI_COMMON_DRIVER_FEATURE, 0u);
+
+    /* 4. Commit FEATURES_OK and verify the device kept it set. */
+    mmio_write8(status_reg,
+                (uint8_t) (VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK));
+    const uint8_t status = mmio_read8(status_reg);
+
+    out_device->device_status = status;
+    out_device->mmio_virtual_base = mapping->mmio_virtual_base;
+    out_device->common_cfg_address = common;
+    out_device->num_queues = mmio_read16(common + VIRTIO_PCI_COMMON_NUM_QUEUES);
+
+    if ((status & VIRTIO_STATUS_FEATURES_OK) == 0u || (status & VIRTIO_STATUS_FAILED) != 0u)
+        return false; /* device rejected our feature set */
+
+    /* 5. Read the size of each virtqueue (DRIVER_OK deferred until rings exist). */
+    const uint16_t queue_count =
+        (out_device->num_queues < HAL_VIRTIO_GPU_MAX_QUEUES) ? out_device->num_queues : HAL_VIRTIO_GPU_MAX_QUEUES;
+    for (uint16_t queue = 0u; queue < queue_count; ++queue)
+    {
+        mmio_write16(common + VIRTIO_PCI_COMMON_QUEUE_SELECT, queue);
+        out_device->queue_size[queue] = mmio_read16(common + VIRTIO_PCI_COMMON_QUEUE_SIZE);
+    }
+
+    out_device->ready = 1u;
     return true;
 }
