@@ -419,6 +419,36 @@ __attribute__((constructor)) void kernel_initialize(void)
                             serial_write_hex32(&com1, info_rows[i].value);
                         }
                         serial_write_string(&com1, "\n");
+
+                        /* Full 2D lifecycle: create a scanout, draw a test
+                           pattern, present it through the GPU. */
+                        if (info_ok && info.width != 0u && info.height != 0u)
+                        {
+                            hal_virtio_gpu_scanout_t scanout;
+                            const bool scanout_ok =
+                                hal_virtio_gpu_create_scanout(&controlq, info.width, info.height, &scanout);
+                            if (scanout_ok)
+                            {
+                                /* BGRX gradient so a present is visually obvious. */
+                                for (uint32_t y = 0u; y < scanout.height; ++y)
+                                    for (uint32_t x = 0u; x < scanout.width; ++x)
+                                    {
+                                        const uint32_t r = (x * 255u) / scanout.width;
+                                        const uint32_t b = (y * 255u) / scanout.height;
+                                        scanout.framebuffer[y * scanout.width + x] = (r << 16) | 0x4000u | b;
+                                    }
+                                const bool flush_ok = hal_virtio_gpu_flush(&scanout);
+                                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu present: ");
+                                serial_write_string(&com1, flush_ok ? "ok res_id=" : "flush FAILED res_id=");
+                                serial_write_hex32(&com1, scanout.resource_id);
+                                serial_write_string(&com1, "\n");
+                            }
+                            else
+                            {
+                                serial_write_string(&com1,
+                                    "[" KERNEL_SYSTEM_STRING "]: virtio-gpu present: create_scanout FAILED\n");
+                            }
+                        }
                     }
                     else
                     {

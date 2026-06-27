@@ -274,6 +274,49 @@ typedef struct {
  */
 bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_gpu_display_info_t *out_info);
 
+/**
+ * @brief A live virtio-gpu scanout: a host 2D resource bound to a display.
+ *
+ * @ref framebuffer is a guest-owned BGRX (32bpp) surface the caller draws into;
+ * hal_virtio_gpu_flush() pushes its contents to the host and presents them.
+ */
+typedef struct {
+    uint8_t ready;            /* non-zero when the scanout is bound + presentable */
+    uint32_t resource_id;     /* host resource id                                 */
+    uint32_t scanout_id;      /* display index this resource is bound to          */
+    uint32_t width;           /* surface width in pixels                          */
+    uint32_t height;          /* surface height in pixels                         */
+    uint32_t *framebuffer;    /* guest BGRX surface (width*height pixels)          */
+    uint32_t framebuffer_size;/* surface size in bytes                            */
+    hal_virtio_virtqueue_t *queue; /* controlq used for present commands          */
+    void *command_buffer;     /* internal scratch (request/response + SG entries) */
+} hal_virtio_gpu_scanout_t;
+
+/**
+ * @brief Create a 2D host resource, back it with guest memory, and bind it to a
+ *        scanout (RESOURCE_CREATE_2D + RESOURCE_ATTACH_BACKING + SET_SCANOUT).
+ *
+ * Allocates a guest BGRX framebuffer, attaches it to the host resource via a
+ * coalesced scatter-gather page list, and binds the resource to scanout 0. On
+ * success the caller draws into @ref hal_virtio_gpu_scanout_t::framebuffer and
+ * calls hal_virtio_gpu_flush() to present.
+ *
+ * @param queue A programmed controlq from hal_virtio_gpu_setup_queue().
+ * @param width Surface width in pixels.
+ * @param height Surface height in pixels.
+ * @param out_scanout Destination for the created scanout.
+ * @return true when the resource was created, backed and bound.
+ */
+bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width, uint32_t height,
+                                   hal_virtio_gpu_scanout_t *out_scanout);
+
+/**
+ * @brief Present the current framebuffer contents (TRANSFER_TO_HOST_2D +
+ *        RESOURCE_FLUSH) for the whole surface.
+ * @return true when both commands completed with OK_NODATA.
+ */
+bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout);
+
 #ifdef __cplusplus
 }
 #endif

@@ -437,14 +437,27 @@ static void write_descriptor(const hal_virtio_virtqueue_t *queue, uint16_t slot,
     ring_write16(desc + 14u, next);
 }
 
-/* Submit a two-descriptor request/response chain (head = desc 0), notify the
- * device, and poll the used ring for completion. Returns true on completion. */
-static bool submit_command(hal_virtio_virtqueue_t *queue, uint32_t request_physical, uint32_t request_length,
-                           uint32_t response_physical, uint32_t response_length)
+/* One buffer in a descriptor chain. */
+typedef struct {
+    uint32_t physical;       /* physical base of the buffer          */
+    uint32_t length;         /* buffer length in bytes               */
+    uint8_t device_writable; /* non-zero = device writes (response)  */
+} virtq_segment_t;
+
+/* Submit a descriptor chain (head = desc 0), notify the device, and poll the
+ * used ring for completion. Each segment becomes one chained descriptor.
+ * Returns true on completion. */
+static bool submit_chain(hal_virtio_virtqueue_t *queue, const virtq_segment_t *segments, uint16_t count)
 {
-    /* desc 0: device-readable request, chained to desc 1: device-writable resp. */
-    write_descriptor(queue, 0u, request_physical, request_length, VIRTQ_DESC_F_NEXT, 1u);
-    write_descriptor(queue, 1u, response_physical, response_length, VIRTQ_DESC_F_WRITE, 0u);
+    if (count == 0u || count > queue->queue_size)
+        return false;
+
+    for (uint16_t i = 0u; i < count; ++i)
+    {
+        const uint16_t flags = (uint16_t) ((segments[i].device_writable ? VIRTQ_DESC_F_WRITE : 0u) |
+                                           ((i + 1u < count) ? VIRTQ_DESC_F_NEXT : 0u));
+        write_descriptor(queue, i, segments[i].physical, segments[i].length, flags, (uint16_t) (i + 1u));
+    }
 
     /* Publish descriptor head 0 into the available ring. */
     const uint16_t avail_idx = ring_read16(queue->avail_address + 2u);
@@ -498,8 +511,11 @@ bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_g
     /* Fill the request control header (type = GET_DISPLAY_INFO, rest zero). */
     ring_write32(request_va + 0u, VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
 
-    bool ok = submit_command(queue, request_physical, VIRTIO_GPU_CTRL_HDR_BYTES, response_physical,
-                             VIRTIO_GPU_DISPLAY_INFO_BYTES);
+    const virtq_segment_t segments[] = {
+        {request_physical, VIRTIO_GPU_CTRL_HDR_BYTES, 0u},
+        {response_physical, VIRTIO_GPU_DISPLAY_INFO_BYTES, 1u},
+    };
+    bool ok = submit_chain(queue, segments, 2u);
     if (ok)
     {
         out_info->response_type = ring_read32(response_va + 0u);
@@ -513,4 +529,241 @@ bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_g
 
     kernel_pinned_free(buffer, 4096u);
     return ok;
+}
+
+/* ----------------------------------------------------------------------------
+ * 2D display lifecycle (RESOURCE_CREATE_2D / ATTACH_BACKING / SET_SCANOUT /
+ * TRANSFER_TO_HOST_2D / RESOURCE_FLUSH)
+ * ------------------------------------------------------------------------- */
+
+#define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D      0x0101u
+#define VIRTIO_GPU_CMD_SET_SCANOUT             0x0103u
+#define VIRTIO_GPU_CMD_RESOURCE_FLUSH          0x0104u
+#define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D     0x0105u
+#define VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING 0x0106u
+#define VIRTIO_GPU_RESP_OK_NODATA              0x1100u
+#define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM       2u
+
+/* The single scanout/resource this HAL drives (one display, software present). */
+#define VIRTIO_GPU_SCANOUT_RESOURCE_ID 1u
+#define VIRTIO_GPU_SCANOUT_ID          0u
+
+/* command_buffer page layout: request header and response (entries live in a
+ * separate, possibly multi-page, pinned buffer chained as its own descriptors). */
+#define CMD_REQUEST_OFFSET  0u
+#define CMD_RESPONSE_OFFSET 256u  /* requests stay well under 256 bytes      */
+
+/* Upper bound on chained descriptors per command (request + entry pages + resp).
+ * 16 segments => up to 14 entry pages => 14*256 = 3584 SG entries. */
+#define VIRTIO_GPU_MAX_CHAIN_SEGMENTS 16u
+
+static void write64(uint32_t address, uint32_t low) /* hi = 0 on i686 32-bit phys */
+{
+    ring_write32(address + 0u, low);
+    ring_write32(address + 4u, 0u);
+}
+
+/* Send a single-buffer request expecting an OK_NODATA response. The request is
+ * pre-filled at command_buffer + CMD_REQUEST_OFFSET; returns the response type. */
+static uint32_t send_nodata_command(const hal_virtio_gpu_scanout_t *scanout, uint32_t request_length,
+                                    uint16_t extra_segment_count, const virtq_segment_t *extra_segments)
+{
+    uint32_t cmd_physical = 0u;
+    if (!hal_graphics_memory_physical_address(scanout->command_buffer, &cmd_physical))
+        return 0u;
+
+    const uint32_t cmd_va = (uint32_t) scanout->command_buffer;
+    ring_write32(cmd_va + CMD_RESPONSE_OFFSET, 0u); /* clear stale response type */
+
+    virtq_segment_t segments[VIRTIO_GPU_MAX_CHAIN_SEGMENTS];
+    uint16_t count = 0u;
+    segments[count++] = (virtq_segment_t){cmd_physical + CMD_REQUEST_OFFSET, request_length, 0u};
+    for (uint16_t i = 0u; i < extra_segment_count; ++i)
+    {
+        if (count + 1u >= VIRTIO_GPU_MAX_CHAIN_SEGMENTS)
+            return 0u; /* chain would overflow (leave room for the response) */
+        segments[count++] = extra_segments[i];
+    }
+    segments[count++] = (virtq_segment_t){cmd_physical + CMD_RESPONSE_OFFSET, VIRTIO_GPU_CTRL_HDR_BYTES, 1u};
+
+    if (!submit_chain(scanout->queue, segments, count))
+        return 0u;
+    return ring_read32(cmd_va + CMD_RESPONSE_OFFSET);
+}
+
+/* Write a coalesced scatter-gather list of the framebuffer's physical pages into
+ * @p entries_va. Returns the entry count, or 0 on failure. Pinned pages are
+ * allocated frame-by-frame, so this typically yields one entry per page. */
+static uint32_t build_backing_entries(const hal_virtio_gpu_scanout_t *scanout, uint32_t entries_va,
+                                      uint32_t max_entries)
+{
+    uint32_t remaining = scanout->framebuffer_size;
+    uint32_t page_va = (uint32_t) scanout->framebuffer;
+    uint32_t count = 0u;
+    uint32_t previous_end = 0u;
+    bool have_previous = false;
+
+    while (remaining != 0u)
+    {
+        const uint32_t chunk = (remaining < 4096u) ? remaining : 4096u;
+        uint32_t page_physical = 0u;
+        if (!hal_graphics_memory_physical_address((const void *) page_va, &page_physical))
+            return 0u;
+
+        if (have_previous && page_physical == previous_end)
+        {
+            /* Extend the last entry's length (contiguous run). */
+            const uint32_t last = entries_va + (count - 1u) * 16u;
+            ring_write32(last + 8u, ring_read32(last + 8u) + chunk);
+        }
+        else
+        {
+            if (count >= max_entries)
+                return 0u; /* entry buffer exhausted */
+            const uint32_t entry = entries_va + count * 16u;
+            write64(entry + 0u, page_physical); /* addr      */
+            ring_write32(entry + 8u, chunk);    /* length    */
+            ring_write32(entry + 12u, 0u);      /* padding   */
+            ++count;
+        }
+
+        previous_end = page_physical + chunk;
+        have_previous = true;
+        page_va += 4096u;
+        remaining -= chunk;
+    }
+    return count;
+}
+
+bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width, uint32_t height,
+                                   hal_virtio_gpu_scanout_t *out_scanout)
+{
+    if (queue == (void *) 0 || out_scanout == (void *) 0 || !queue->ready || width == 0u || height == 0u)
+        return false;
+
+    *out_scanout = (hal_virtio_gpu_scanout_t){0};
+    out_scanout->queue = queue;
+    out_scanout->width = width;
+    out_scanout->height = height;
+    out_scanout->resource_id = VIRTIO_GPU_SCANOUT_RESOURCE_ID;
+    out_scanout->scanout_id = VIRTIO_GPU_SCANOUT_ID;
+    out_scanout->framebuffer_size = width * height * 4u;
+
+    out_scanout->command_buffer = kernel_pinned_alloc(4096u);
+    out_scanout->framebuffer = (uint32_t *) kernel_pinned_alloc(out_scanout->framebuffer_size);
+    if (out_scanout->command_buffer == (void *) 0 || out_scanout->framebuffer == (void *) 0)
+        goto fail;
+
+    /* Start with a black surface. */
+    for (uint32_t i = 0u; i < out_scanout->framebuffer_size / 4u; ++i)
+        out_scanout->framebuffer[i] = 0u;
+
+    const uint32_t cmd_va = (uint32_t) out_scanout->command_buffer;
+
+    /* 1. RESOURCE_CREATE_2D. */
+    ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_RESOURCE_CREATE_2D);
+    ring_write32(cmd_va + 24u, out_scanout->resource_id);
+    ring_write32(cmd_va + 28u, VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM);
+    ring_write32(cmd_va + 32u, width);
+    ring_write32(cmd_va + 36u, height);
+    if (send_nodata_command(out_scanout, 40u, 0u, (void *) 0) != VIRTIO_GPU_RESP_OK_NODATA)
+        goto fail;
+
+    /* 2. RESOURCE_ATTACH_BACKING (scatter-gather page list). The entry list can
+       span several pages; back it with its own pinned buffer and chain each of
+       its (contiguous) pages as a separate device-readable descriptor. */
+    {
+        const uint32_t fb_pages = (out_scanout->framebuffer_size + 4095u) / 4096u;
+        const uint32_t entries_bytes = fb_pages * 16u;
+        uint32_t *entries_buffer = (uint32_t *) kernel_pinned_alloc(entries_bytes);
+        if (entries_buffer == (void *) 0)
+            goto fail;
+
+        const uint32_t entry_count = build_backing_entries(out_scanout, (uint32_t) entries_buffer, fb_pages);
+        if (entry_count == 0u)
+        {
+            kernel_pinned_free(entries_buffer, entries_bytes);
+            goto fail;
+        }
+
+        /* One descriptor per (contiguous) page of the entry list. */
+        const uint32_t used_bytes = entry_count * 16u;
+        const uint32_t entry_pages = (used_bytes + 4095u) / 4096u;
+        virtq_segment_t entry_segments[VIRTIO_GPU_MAX_CHAIN_SEGMENTS];
+        bool entries_ok = (entry_pages <= VIRTIO_GPU_MAX_CHAIN_SEGMENTS - 2u);
+        for (uint32_t p = 0u; entries_ok && p < entry_pages; ++p)
+        {
+            uint32_t page_physical = 0u;
+            if (!hal_graphics_memory_physical_address((const void *) ((uint32_t) entries_buffer + p * 4096u),
+                                                      &page_physical))
+            {
+                entries_ok = false;
+                break;
+            }
+            const uint32_t span = used_bytes - p * 4096u;
+            entry_segments[p] = (virtq_segment_t){page_physical, (span < 4096u) ? span : 4096u, 0u};
+        }
+
+        ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
+        ring_write32(cmd_va + 24u, out_scanout->resource_id);
+        ring_write32(cmd_va + 28u, entry_count);
+        const bool attach_ok =
+            entries_ok &&
+            send_nodata_command(out_scanout, 32u, (uint16_t) entry_pages, entry_segments) == VIRTIO_GPU_RESP_OK_NODATA;
+        kernel_pinned_free(entries_buffer, entries_bytes);
+        if (!attach_ok)
+            goto fail;
+    }
+
+    /* 3. SET_SCANOUT (bind the resource to the display). */
+    ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_SET_SCANOUT);
+    ring_write32(cmd_va + 24u, 0u);      /* rect.x      */
+    ring_write32(cmd_va + 28u, 0u);      /* rect.y      */
+    ring_write32(cmd_va + 32u, width);   /* rect.width  */
+    ring_write32(cmd_va + 36u, height);  /* rect.height */
+    ring_write32(cmd_va + 40u, out_scanout->scanout_id);
+    ring_write32(cmd_va + 44u, out_scanout->resource_id);
+    if (send_nodata_command(out_scanout, 48u, 0u, (void *) 0) != VIRTIO_GPU_RESP_OK_NODATA)
+        goto fail;
+
+    out_scanout->ready = 1u;
+    return true;
+
+fail:
+    if (out_scanout->framebuffer != (void *) 0)
+        kernel_pinned_free(out_scanout->framebuffer, out_scanout->framebuffer_size);
+    if (out_scanout->command_buffer != (void *) 0)
+        kernel_pinned_free(out_scanout->command_buffer, 4096u);
+    *out_scanout = (hal_virtio_gpu_scanout_t){0};
+    return false;
+}
+
+bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout)
+{
+    if (scanout == (void *) 0 || !scanout->ready)
+        return false;
+
+    const uint32_t cmd_va = (uint32_t) scanout->command_buffer;
+
+    /* 4. TRANSFER_TO_HOST_2D (push the whole surface to the host resource). */
+    ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D);
+    ring_write32(cmd_va + 24u, 0u);             /* rect.x      */
+    ring_write32(cmd_va + 28u, 0u);             /* rect.y      */
+    ring_write32(cmd_va + 32u, scanout->width); /* rect.width  */
+    ring_write32(cmd_va + 36u, scanout->height);/* rect.height */
+    write64(cmd_va + 40u, 0u);                  /* offset      */
+    ring_write32(cmd_va + 48u, scanout->resource_id);
+    ring_write32(cmd_va + 52u, 0u);             /* padding     */
+    if (send_nodata_command(scanout, 56u, 0u, (void *) 0) != VIRTIO_GPU_RESP_OK_NODATA)
+        return false;
+
+    /* 5. RESOURCE_FLUSH (present the transferred contents). */
+    ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_RESOURCE_FLUSH);
+    ring_write32(cmd_va + 24u, 0u);
+    ring_write32(cmd_va + 28u, 0u);
+    ring_write32(cmd_va + 32u, scanout->width);
+    ring_write32(cmd_va + 36u, scanout->height);
+    ring_write32(cmd_va + 40u, scanout->resource_id);
+    ring_write32(cmd_va + 44u, 0u);             /* padding     */
+    return send_nodata_command(scanout, 48u, 0u, (void *) 0) == VIRTIO_GPU_RESP_OK_NODATA;
 }
