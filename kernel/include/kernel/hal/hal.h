@@ -317,6 +317,34 @@ bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width
  */
 bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout);
 
+/* ----------------------------------------------------------------------------
+ * Persistent virtio-gpu display routing (kernel-internal)
+ *
+ * hal_virtio_gpu_display_init() runs the whole probe -> bring-up -> queue ->
+ * scanout setup once and stashes the live scanout in static state. hal_display
+ * routes its surface/clear/read/present through these when a scanout is active,
+ * and falls back to the software-LFB framebuffer otherwise. The engine sees
+ * only the stable hal_display_* contract and never knows which backend won.
+ * ------------------------------------------------------------------------- */
+
+/** @brief Bring up a virtio-gpu scanout for hal_display; false if unavailable. */
+bool hal_virtio_gpu_display_init(void);
+
+/** @brief True when a virtio-gpu scanout is live (hal_display should route here). */
+bool hal_virtio_gpu_display_active(void);
+
+/** @brief Fill @p out_descriptor from the active scanout surface. */
+bool hal_virtio_gpu_display_query(hal_surface_descriptor_t *out_descriptor);
+
+/** @brief Clear the scanout surface to a packed 0x00RRGGBB color (no present). */
+void hal_virtio_gpu_display_clear(uint32_t color_rgb);
+
+/** @brief Read back one scanout pixel as 0x00RRGGBB. */
+uint32_t hal_virtio_gpu_display_read_pixel(uint32_t x, uint32_t y);
+
+/** @brief Present the scanout (TRANSFER_TO_HOST_2D + RESOURCE_FLUSH). */
+void hal_virtio_gpu_display_present(void);
+
 #ifdef __cplusplus
 }
 #endif

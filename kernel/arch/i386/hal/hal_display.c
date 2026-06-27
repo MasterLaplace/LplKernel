@@ -31,7 +31,14 @@ static inline uint32_t hal_rgb_from_color(color_t color)
 
 bool hal_display_query_surface(hal_surface_descriptor_t *out_descriptor)
 {
-    if (out_descriptor == NULL || !framebuffer_available())
+    if (out_descriptor == NULL)
+        return false;
+
+    /* A live virtio-gpu scanout takes priority over the software LFB. */
+    if (hal_virtio_gpu_display_active())
+        return hal_virtio_gpu_display_query(out_descriptor);
+
+    if (!framebuffer_available())
         return false;
 
     const framebuffer_info_t *info = framebuffer_get_info();
@@ -49,6 +56,11 @@ bool hal_display_query_surface(hal_surface_descriptor_t *out_descriptor)
 
 void hal_display_clear(uint32_t color_rgb)
 {
+    if (hal_virtio_gpu_display_active())
+    {
+        hal_virtio_gpu_display_clear(color_rgb);
+        return;
+    }
     if (!framebuffer_available())
         return;
     framebuffer_clear(hal_color_from_rgb(color_rgb));
@@ -56,6 +68,8 @@ void hal_display_clear(uint32_t color_rgb)
 
 uint32_t hal_display_read_pixel(uint32_t x, uint32_t y)
 {
+    if (hal_virtio_gpu_display_active())
+        return hal_virtio_gpu_display_read_pixel(x, y);
     if (!framebuffer_available())
         return 0u;
     return hal_rgb_from_color(framebuffer_get_pixel(x, y));
@@ -63,6 +77,8 @@ uint32_t hal_display_read_pixel(uint32_t x, uint32_t y)
 
 void hal_display_present(void)
 {
-    /* Software-LFB renders directly into scanout memory; present is a no-op.
-       The VirtIO-GPU backend will issue RESOURCE_FLUSH / atomic flip here. */
+    /* Software-LFB renders straight into scanout memory (no-op present); the
+       virtio-gpu backend issues TRANSFER_TO_HOST_2D + RESOURCE_FLUSH here. */
+    if (hal_virtio_gpu_display_active())
+        hal_virtio_gpu_display_present();
 }

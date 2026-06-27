@@ -301,170 +301,27 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_peripheral_component_interconnect_info(&com1);
     kernel_splash_update("PCI Bus Enumeration");
 
-    /* VirtIO-GPU discovery (P4): locate a virtio-gpu function + its MMIO BAR so
-       a later display backend can map it. Software-LFB remains the fallback. */
+    /* VirtIO-GPU display (P4): bring up the full probe -> map -> handshake ->
+       virtqueue -> scanout path once and stash it. When it succeeds hal_display
+       routes the engine's surface/present through the GPU; otherwise the
+       software-LFB framebuffer remains the active backend. */
+    if (hal_virtio_gpu_display_init())
     {
-        hal_virtio_gpu_info_t vgpu;
-        if (hal_virtio_gpu_probe(&vgpu))
-        {
-            const struct {
-                const char *label;
-                uint32_t value;
-            } vgpu_rows[] = {
-                {"present=1 device_id=", (uint32_t) vgpu.device_id},
-                {", modern=",            (uint32_t) vgpu.is_modern},
-                {", bus=",               (uint32_t) vgpu.bus      },
-                {", slot=",              (uint32_t) vgpu.device   },
-                {", mmio_base=",         vgpu.mmio_base           },
-                {", mmio_size=",         vgpu.mmio_size           },
-            };
-            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu probe: ");
-            for (size_t i = 0u; i < sizeof(vgpu_rows) / sizeof(vgpu_rows[0]); ++i)
-            {
-                serial_write_string(&com1, vgpu_rows[i].label);
-                serial_write_hex32(&com1, vgpu_rows[i].value);
-            }
-            serial_write_string(&com1, "\n");
+        hal_surface_descriptor_t surface;
+        (void) hal_virtio_gpu_display_query(&surface);
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display active: ");
+        serial_write_hex32(&com1, surface.width);
+        serial_write_string(&com1, "x");
+        serial_write_hex32(&com1, surface.height);
+        serial_write_string(&com1, "\n");
 
-            /* Walk the virtio-pci capability list and map the MMIO window so a
-               later display backend can drive the device through its cfg
-               structures. */
-            hal_virtio_gpu_mapping_t vgpu_map;
-            if (hal_virtio_gpu_map(&vgpu, &vgpu_map))
-            {
-                const struct {
-                    const char *label;
-                    uint32_t value;
-                } map_rows[] = {
-                    {"mmio_va=",        vgpu_map.mmio_virtual_base       },
-                    {", bar=",          (uint32_t) vgpu_map.mmio_bar_index},
-                    {", size=",         vgpu_map.mmio_size               },
-                    {", common@",       vgpu_map.common.offset           },
-                    {", notify@",       vgpu_map.notify.offset           },
-                    {", notify_mult=",  vgpu_map.notify_off_multiplier   },
-                    {", isr@",          vgpu_map.isr.offset              },
-                    {", device@",       vgpu_map.device.offset           },
-                };
-                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu map: ");
-                for (size_t i = 0u; i < sizeof(map_rows) / sizeof(map_rows[0]); ++i)
-                {
-                    serial_write_string(&com1, map_rows[i].label);
-                    serial_write_hex32(&com1, map_rows[i].value);
-                }
-                serial_write_string(&com1, "\n");
-
-                /* Run the virtio device-init handshake (reset / ACK / DRIVER /
-                   features / FEATURES_OK) and read the virtqueue sizes. */
-                hal_virtio_gpu_device_t vgpu_dev;
-                const bool bringup_ok = hal_virtio_gpu_bringup(&vgpu_map, &vgpu_dev);
-                const struct {
-                    const char *label;
-                    uint32_t value;
-                } dev_rows[] = {
-                    {"status=",     (uint32_t) vgpu_dev.device_status   },
-                    {", num_q=",    (uint32_t) vgpu_dev.num_queues      },
-                    {", q0_size=",  (uint32_t) vgpu_dev.queue_size[0]   },
-                    {", q1_size=",  (uint32_t) vgpu_dev.queue_size[1]   },
-                };
-                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu bringup: ");
-                serial_write_string(&com1, bringup_ok ? "ok " : "FAILED ");
-                for (size_t i = 0u; i < sizeof(dev_rows) / sizeof(dev_rows[0]); ++i)
-                {
-                    serial_write_string(&com1, dev_rows[i].label);
-                    serial_write_hex32(&com1, dev_rows[i].value);
-                }
-                serial_write_string(&com1, "\n");
-
-                /* Program the control virtqueue and complete init (DRIVER_OK). */
-                if (bringup_ok)
-                {
-                    hal_virtio_virtqueue_t controlq;
-                    if (hal_virtio_gpu_setup_queue(&vgpu_dev, &vgpu_map, 0u, &controlq))
-                    {
-                        const uint8_t final_status = hal_virtio_gpu_driver_ok(&vgpu_dev);
-                        const struct {
-                            const char *label;
-                            uint32_t value;
-                        } q_rows[] = {
-                            {"controlq size=", (uint32_t) controlq.queue_size       },
-                            {", ring_phys=",   controlq.ring_physical_base           },
-                            {", notify_va=",   controlq.notify_address               },
-                            {", driver_ok status=", (uint32_t) final_status          },
-                        };
-                        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu queue: ");
-                        for (size_t i = 0u; i < sizeof(q_rows) / sizeof(q_rows[0]); ++i)
-                        {
-                            serial_write_string(&com1, q_rows[i].label);
-                            serial_write_hex32(&com1, q_rows[i].value);
-                        }
-                        serial_write_string(&com1, "\n");
-
-                        /* First full virtqueue round-trip: GET_DISPLAY_INFO. */
-                        hal_virtio_gpu_display_info_t info;
-                        const bool info_ok = hal_virtio_gpu_get_display_info(&controlq, &info);
-                        const struct {
-                            const char *label;
-                            uint32_t value;
-                        } info_rows[] = {
-                            {"resp=",      info.response_type },
-                            {", enabled=", info.enabled       },
-                            {", width=",   info.width         },
-                            {", height=",  info.height        },
-                        };
-                        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display: ");
-                        serial_write_string(&com1, info_ok ? "ok " : "FAILED ");
-                        for (size_t i = 0u; i < sizeof(info_rows) / sizeof(info_rows[0]); ++i)
-                        {
-                            serial_write_string(&com1, info_rows[i].label);
-                            serial_write_hex32(&com1, info_rows[i].value);
-                        }
-                        serial_write_string(&com1, "\n");
-
-                        /* Full 2D lifecycle: create a scanout, draw a test
-                           pattern, present it through the GPU. */
-                        if (info_ok && info.width != 0u && info.height != 0u)
-                        {
-                            hal_virtio_gpu_scanout_t scanout;
-                            const bool scanout_ok =
-                                hal_virtio_gpu_create_scanout(&controlq, info.width, info.height, &scanout);
-                            if (scanout_ok)
-                            {
-                                /* BGRX gradient so a present is visually obvious. */
-                                for (uint32_t y = 0u; y < scanout.height; ++y)
-                                    for (uint32_t x = 0u; x < scanout.width; ++x)
-                                    {
-                                        const uint32_t r = (x * 255u) / scanout.width;
-                                        const uint32_t b = (y * 255u) / scanout.height;
-                                        scanout.framebuffer[y * scanout.width + x] = (r << 16) | 0x4000u | b;
-                                    }
-                                const bool flush_ok = hal_virtio_gpu_flush(&scanout);
-                                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu present: ");
-                                serial_write_string(&com1, flush_ok ? "ok res_id=" : "flush FAILED res_id=");
-                                serial_write_hex32(&com1, scanout.resource_id);
-                                serial_write_string(&com1, "\n");
-                            }
-                            else
-                            {
-                                serial_write_string(&com1,
-                                    "[" KERNEL_SYSTEM_STRING "]: virtio-gpu present: create_scanout FAILED\n");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu queue: setup FAILED\n");
-                    }
-                }
-            }
-            else
-            {
-                serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu map: failed (no common cfg / MMIO map)\n");
-            }
-        }
-        else
-        {
-            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu probe: present=0 (software-LFB only)\n");
-        }
+        /* Liveness: clear to a recognisable color and present through the GPU. */
+        hal_display_clear(0x00102040u);
+        hal_display_present();
+    }
+    else
+    {
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display: unavailable (software-LFB only)\n");
     }
 
     write_keyboard_runtime_info(&com1);

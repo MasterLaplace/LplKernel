@@ -767,3 +767,90 @@ bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout)
     ring_write32(cmd_va + 44u, 0u);             /* padding     */
     return send_nodata_command(scanout, 48u, 0u, (void *) 0) == VIRTIO_GPU_RESP_OK_NODATA;
 }
+
+/* ----------------------------------------------------------------------------
+ * Persistent display routing — drives hal_display_* when a scanout is live
+ * ------------------------------------------------------------------------- */
+
+/* Default geometry when the device reports no preferred mode. */
+#define VIRTIO_GPU_DEFAULT_WIDTH  1024u
+#define VIRTIO_GPU_DEFAULT_HEIGHT 768u
+
+static hal_virtio_gpu_mapping_t g_mapping;
+static hal_virtio_gpu_device_t g_device;
+static hal_virtio_virtqueue_t g_controlq;
+static hal_virtio_gpu_scanout_t g_scanout;
+static bool g_display_ready = false;
+
+bool hal_virtio_gpu_display_init(void)
+{
+    if (g_display_ready)
+        return true;
+
+    hal_virtio_gpu_info_t info;
+    if (!hal_virtio_gpu_probe(&info))
+        return false;
+    if (!hal_virtio_gpu_map(&info, &g_mapping))
+        return false;
+    if (!hal_virtio_gpu_bringup(&g_mapping, &g_device))
+        return false;
+    if (!hal_virtio_gpu_setup_queue(&g_device, &g_mapping, 0u, &g_controlq))
+        return false;
+    if (hal_virtio_gpu_driver_ok(&g_device) == 0u)
+        return false;
+
+    /* Prefer the device's reported geometry; fall back to a safe default. */
+    uint32_t width = VIRTIO_GPU_DEFAULT_WIDTH;
+    uint32_t height = VIRTIO_GPU_DEFAULT_HEIGHT;
+    hal_virtio_gpu_display_info_t display;
+    if (hal_virtio_gpu_get_display_info(&g_controlq, &display) && display.width != 0u && display.height != 0u)
+    {
+        width = display.width;
+        height = display.height;
+    }
+
+    if (!hal_virtio_gpu_create_scanout(&g_controlq, width, height, &g_scanout))
+        return false;
+
+    g_display_ready = true;
+    return true;
+}
+
+bool hal_virtio_gpu_display_active(void) { return g_display_ready; }
+
+bool hal_virtio_gpu_display_query(hal_surface_descriptor_t *out_descriptor)
+{
+    if (out_descriptor == (void *) 0 || !g_display_ready)
+        return false;
+
+    out_descriptor->buffer = g_scanout.framebuffer;
+    out_descriptor->physical_address = 0u; /* scatter-gather backed; no single base */
+    out_descriptor->width = g_scanout.width;
+    out_descriptor->height = g_scanout.height;
+    out_descriptor->pitch = g_scanout.width * 4u;
+    out_descriptor->bits_per_pixel = 32u;
+    return true;
+}
+
+void hal_virtio_gpu_display_clear(uint32_t color_rgb)
+{
+    if (!g_display_ready)
+        return;
+    /* BGRX surface: a packed 0x00RRGGBB value maps directly. */
+    const uint32_t pixels = g_scanout.width * g_scanout.height;
+    for (uint32_t i = 0u; i < pixels; ++i)
+        g_scanout.framebuffer[i] = color_rgb;
+}
+
+uint32_t hal_virtio_gpu_display_read_pixel(uint32_t x, uint32_t y)
+{
+    if (!g_display_ready || x >= g_scanout.width || y >= g_scanout.height)
+        return 0u;
+    return g_scanout.framebuffer[y * g_scanout.width + x] & 0x00FFFFFFu;
+}
+
+void hal_virtio_gpu_display_present(void)
+{
+    if (g_display_ready)
+        (void) hal_virtio_gpu_flush(&g_scanout);
+}
