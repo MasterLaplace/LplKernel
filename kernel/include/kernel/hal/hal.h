@@ -103,6 +103,40 @@ void hal_graphics_memory_free(void *pointer, uint32_t size_bytes);
  */
 bool hal_graphics_memory_physical_address(const void *virtual_address, uint32_t *out_physical_address);
 
+/* ----------------------------------------------------------------------------
+ * VirtIO-GPU discovery (P4 display-backend hardening)
+ *
+ * Probe-only for now: locate a virtio-gpu PCI function and decode its MMIO BAR
+ * so a later display backend can map the device and run the 2D lifecycle. The
+ * full driver (virtqueues, RESOURCE_CREATE_2D / ATTACH_BACKING / SET_SCANOUT /
+ * TRANSFER_TO_HOST / RESOURCE_FLUSH) lands on top of this discovery seam.
+ * ------------------------------------------------------------------------- */
+
+/** @brief Result of a virtio-gpu PCI probe. */
+typedef struct {
+    bool present;            /* a virtio-gpu function was found              */
+    uint8_t bus;             /* PCI bus of the found function                */
+    uint8_t device;          /* PCI device (slot)                           */
+    uint8_t function;        /* PCI function                                */
+    uint16_t device_id;      /* PCI device id (0x1050 modern / 0x1010 xitnl) */
+    uint8_t is_modern;       /* device_id >= 0x1040 (modern virtio-pci)     */
+    uint32_t mmio_base;      /* decoded MMIO BAR base (0 when none)         */
+    uint32_t mmio_size;      /* MMIO BAR size in bytes (0 when none)        */
+    uint8_t mmio_bar_index;  /* which BAR slot the MMIO region came from    */
+} hal_virtio_gpu_info_t;
+
+/**
+ * @brief Scan the enumerated PCI devices for a virtio-gpu function.
+ *
+ * Matches Red Hat / virtio vendor id 0x1AF4 with the GPU device ids (modern
+ * 0x1050 or transitional 0x1010), and decodes the first MMIO BAR. Requires a
+ * prior peripheral_component_interconnect_scan().
+ *
+ * @param out_info Destination for the probe result (present=false when none).
+ * @return true when a virtio-gpu function was found.
+ */
+bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info);
+
 #ifdef __cplusplus
 }
 #endif

@@ -25,6 +25,7 @@
 #include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pci.h>
+#include <kernel/hal/hal.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
@@ -299,6 +300,37 @@ __attribute__((constructor)) void kernel_initialize(void)
     peripheral_component_interconnect_scan();
     write_peripheral_component_interconnect_info(&com1);
     kernel_splash_update("PCI Bus Enumeration");
+
+    /* VirtIO-GPU discovery (P4): locate a virtio-gpu function + its MMIO BAR so
+       a later display backend can map it. Software-LFB remains the fallback. */
+    {
+        hal_virtio_gpu_info_t vgpu;
+        if (hal_virtio_gpu_probe(&vgpu))
+        {
+            const struct {
+                const char *label;
+                uint32_t value;
+            } vgpu_rows[] = {
+                {"present=1 device_id=", (uint32_t) vgpu.device_id},
+                {", modern=",            (uint32_t) vgpu.is_modern},
+                {", bus=",               (uint32_t) vgpu.bus      },
+                {", slot=",              (uint32_t) vgpu.device   },
+                {", mmio_base=",         vgpu.mmio_base           },
+                {", mmio_size=",         vgpu.mmio_size           },
+            };
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu probe: ");
+            for (size_t i = 0u; i < sizeof(vgpu_rows) / sizeof(vgpu_rows[0]); ++i)
+            {
+                serial_write_string(&com1, vgpu_rows[i].label);
+                serial_write_hex32(&com1, vgpu_rows[i].value);
+            }
+            serial_write_string(&com1, "\n");
+        }
+        else
+        {
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu probe: present=0 (software-LFB only)\n");
+        }
+    }
 
     write_keyboard_runtime_info(&com1);
 
