@@ -540,6 +540,33 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P4 image smoke: the portable lpl::image module run in-kernel; its
+       signature must match the Linux oracle (tests/test-image-parity). */
+    {
+        libengine_p4_image_smoke_result_t img;
+        libengine_p4_image_smoke(&img);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } img_rows[] = {
+            {"red_hue=",     img.red_hue       },
+            {", green_hue=", img.green_hue      },
+            {", blue_hue=",  img.blue_hue       },
+            {", gray_rt=",   img.gray_roundtrip },
+            {", white_luma=",img.white_luma     },
+            {", hist255=",   img.hist_red_count },
+            {", centre=",    img.centre_pixel   },
+            {", smoke_ok=",  img.smoke_ok       },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P4 image smoke: ");
+        for (size_t i = 0u; i < sizeof(img_rows) / sizeof(img_rows[0]); ++i)
+        {
+            serial_write_string(&com1, img_rows[i].label);
+            serial_write_hex32(&com1, img_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     /* Engine boot facade: the single real entry point the engine exposes to the
        kernel. Driven bounded (max_frames=5) here so the boot continues into the
        post-boot smoke batch; a production boot would pass max_frames=0 and let

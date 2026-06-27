@@ -31,6 +31,7 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/concurrency/include \
           -I$(LPLPLUGIN_ROOT)/physics/include \
           -I$(LPLPLUGIN_ROOT)/platform/include \
+          -I$(LPLPLUGIN_ROOT)/image/include \
           -I$(LPLPLUGIN_ROOT)/render/include \
           -I$(LPLPLUGIN_ROOT)/engine/include
 
@@ -54,6 +55,7 @@ obj/local/p1_sched_smoke.o \
 obj/local/p1_physics_smoke.o \
 obj/local/p2_hal_smoke.o \
 obj/local/p3_render_smoke.o \
+obj/local/p4_image_smoke.o \
 obj/local/lplplugin_init.o \
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)

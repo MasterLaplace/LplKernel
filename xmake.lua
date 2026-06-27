@@ -145,6 +145,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "concurrency/include"),
         path.join(LPLPLUGIN_ROOT, "physics/include"),
         path.join(LPLPLUGIN_ROOT, "platform/include"),
+        path.join(LPLPLUGIN_ROOT, "image/include"),
         path.join(LPLPLUGIN_ROOT, "render/include"),
         path.join(LPLPLUGIN_ROOT, "engine/include")
     )
@@ -165,6 +166,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "physics/src/Octree.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/CpuPhysicsBackend.cpp"),
         path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp"),
+        path.join(LPLPLUGIN_ROOT, "image/src/Image.cpp"),
         path.join(LPLPLUGIN_ROOT, "render/src/Camera.cpp"),
         path.join(LPLPLUGIN_ROOT, "render/src/kernel/KernelDisplayRenderer.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/Config.cpp"),

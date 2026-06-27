@@ -165,6 +165,25 @@ typedef struct {
 extern void libengine_p3_render_smoke(libengine_p3_render_smoke_result_t *out);
 
 /*
+** P4 image smoke. Exercises the portable lpl::image module (integer-only color
+** + Image container) inside the kernel and reports a determinism signature that
+** MUST match the Linux oracle (tests/test-image-parity) bit-for-bit — image ops
+** are non-authoritative but kept integer-exact to avoid cross-target drift.
+*/
+typedef struct {
+    uint32_t red_hue;        /* rgbToHsb(red).hue       -> 0                    */
+    uint32_t green_hue;      /* rgbToHsb(green).hue     -> 120                  */
+    uint32_t blue_hue;       /* rgbToHsb(blue).hue      -> 240                  */
+    uint32_t gray_roundtrip; /* hsbToRgb(rgbToHsb(gray)) == gray (1/0)          */
+    uint32_t white_luma;     /* luminanceOf(white)      -> 255                  */
+    uint32_t hist_red_count; /* histogram of 4x4 red: red[255] -> 16           */
+    uint32_t centre_pixel;   /* bilinear centre of a 2x2 gradient, 0x00RRGGBB  */
+    uint32_t smoke_ok;       /* all of the above match expected values          */
+} libengine_p4_image_smoke_result_t;
+
+extern void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out);
+
+/*
 ** Engine boot facade (extern "C"). This is the single real entry point the
 ** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
 ** are up — the in-kernel equivalent of main() constructing and running the
