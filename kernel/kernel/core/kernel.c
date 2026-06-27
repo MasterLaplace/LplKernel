@@ -512,9 +512,10 @@ void kernel_main(void)
     }
 
     /* P3 render smoke: KernelDisplayRenderer software-rasterises a rotating
-       Fixed32-authored triangle over the IDisplayBackend HAL. Skipped silently
-       when no framebuffer is available (text-mode boot). */
-    if (framebuffer_available())
+       Fixed32-authored triangle over the IDisplayBackend HAL. Runs whenever a
+       presentable surface exists — the software LFB or a virtio-gpu scanout —
+       and is skipped only on a pure text-mode boot. */
+    if (framebuffer_available() || hal_virtio_gpu_display_active())
     {
         libengine_p3_render_smoke_result_t p3;
         libengine_p3_render_smoke(&p3);
@@ -543,7 +544,7 @@ void kernel_main(void)
        kernel. Driven bounded (max_frames=5) here so the boot continues into the
        post-boot smoke batch; a production boot would pass max_frames=0 and let
        the engine own the main loop. */
-    if (framebuffer_available())
+    if (framebuffer_available() || hal_virtio_gpu_display_active())
     {
         lplplugin_boot_info_t boot = {.abi_version = LPLPLUGIN_BOOT_ABI_VERSION, .max_frames = 5u};
         lplplugin_boot_result_t boot_res;
