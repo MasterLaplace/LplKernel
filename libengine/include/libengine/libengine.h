@@ -178,6 +178,7 @@ typedef struct {
     uint32_t white_luma;     /* luminanceOf(white)      -> 255                  */
     uint32_t hist_red_count; /* histogram of 4x4 red: red[255] -> 16           */
     uint32_t centre_pixel;   /* bilinear centre of a 2x2 gradient, 0x00RRGGBB  */
+    uint32_t painter_signature; /* FNV-1a fold of a fixed Painter scene         */
     uint32_t smoke_ok;       /* all of the above match expected values          */
 } libengine_p4_image_smoke_result_t;
 

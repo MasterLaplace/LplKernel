@@ -11,6 +11,7 @@
 #include "libengine/libengine.h"
 
 #include <lpl/image/Image.hpp>
+#include <lpl/image/Painter.hpp>
 
 extern "C" void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out)
 {
@@ -41,6 +42,10 @@ extern "C" void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out)
     grad.set(0, 1, image::packRgba(0, 255, 0));
     grad.set(1, 1, image::packRgba(0, 0, 255));
     out->centre_pixel = grad.sampleBilinear(0x8000u, 0x8000u) & 0x00FFFFFFu;
+
+    image::Image scene(32u, 32u);
+    image::paintParityScene(scene);
+    out->painter_signature = image::foldSignature(scene);
 
     out->smoke_ok = (out->red_hue == 0u && out->green_hue == 120u && out->blue_hue == 240u &&
                      out->gray_roundtrip == 1u && out->white_luma == 255u && out->hist_red_count == 16u)
