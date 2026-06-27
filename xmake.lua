@@ -165,6 +165,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "physics/src/Octree.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/CpuPhysicsBackend.cpp"),
         path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp"),
+        path.join(LPLPLUGIN_ROOT, "render/src/Camera.cpp"),
         path.join(LPLPLUGIN_ROOT, "render/src/kernel/KernelDisplayRenderer.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/Config.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/GameLoop.cpp")
