@@ -164,6 +164,50 @@ typedef struct {
 
 extern void libengine_p3_render_smoke(libengine_p3_render_smoke_result_t *out);
 
+/*
+** Engine boot facade (extern "C"). This is the single real entry point the
+** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
+** are up — the in-kernel equivalent of main() constructing and running the
+** LplPlugin engine. It constructs a KernelPlatform (the four HAL backends) and
+** the KernelDisplayRenderer, then drives a clock-paced render loop over the
+** platform IClockBackend / IDisplayBackend.
+**
+** boot_info carries the caller-provided boot parameters:
+**   - abi_version : must equal LPLPLUGIN_BOOT_ABI_VERSION (reject on mismatch).
+**   - max_frames  : 0 = run until shutdown is requested; >0 = render exactly
+**                   that many frames then return (bounded boot smoke / CI).
+** The HAL handles and engine arena are reached engine-side through the
+** KernelPlatform, which wraps the global kernel HAL; future ABI revisions will
+** pass them explicitly here once the arena is pre-reserved by the kernel.
+**
+** Returns 0 on a clean init+run+shutdown, non-zero on an init failure (the
+** out result carries the detailed per-stage status when non-NULL).
+**
+** NOTE: the loop is currently inlined here rather than delegating to
+** lpl::engine::GameLoop. GameLoop is now freestanding-ready (it is reparented
+** onto IClockBackend and uses lpl::pmr::function), but pulling it into
+** libengine.a still requires lpl::engine::Config to route <string> through the
+** lpl/std umbrella (kernel_std::string) instead of std::string. Until that
+** conversion lands, this facade owns the fixed-cadence loop directly.
+*/
+#define LPLPLUGIN_BOOT_ABI_VERSION 1u
+
+typedef struct {
+    uint32_t abi_version; /* caller sets to LPLPLUGIN_BOOT_ABI_VERSION          */
+    uint32_t max_frames;  /* 0 = run until shutdown; >0 = bounded render count  */
+} lplplugin_boot_info_t;
+
+typedef struct {
+    uint32_t abi_ok;            /* boot_info->abi_version matched                */
+    uint32_t platform_ok;       /* KernelPlatform constructed                    */
+    uint32_t display_available; /* a framebuffer surface was reported            */
+    uint32_t renderer_init_ok;  /* KernelDisplayRenderer::init() succeeded       */
+    uint32_t frames_rendered;   /* frames that completed begin+end this run      */
+    uint32_t shutdown_clean;    /* renderer shut down without fault              */
+} lplplugin_boot_result_t;
+
+extern int lplplugin_initialize(const lplplugin_boot_info_t *boot, lplplugin_boot_result_t *out);
+
 #ifdef __cplusplus
 }
 #endif

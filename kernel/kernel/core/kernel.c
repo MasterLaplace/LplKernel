@@ -515,6 +515,36 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* Engine boot facade: the single real entry point the engine exposes to the
+       kernel. Driven bounded (max_frames=5) here so the boot continues into the
+       post-boot smoke batch; a production boot would pass max_frames=0 and let
+       the engine own the main loop. */
+    if (framebuffer_available())
+    {
+        lplplugin_boot_info_t boot = {.abi_version = LPLPLUGIN_BOOT_ABI_VERSION, .max_frames = 5u};
+        lplplugin_boot_result_t boot_res;
+        const int boot_rc = lplplugin_initialize(&boot, &boot_res);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } boot_rows[] = {
+            {"rc=",          (uint32_t) boot_rc        },
+            {", abi_ok=",    boot_res.abi_ok           },
+            {", platform=",  boot_res.platform_ok      },
+            {", display=",   boot_res.display_available},
+            {", init_ok=",   boot_res.renderer_init_ok },
+            {", frames=",    boot_res.frames_rendered  },
+            {", shutdown=",  boot_res.shutdown_clean   },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: lplplugin_initialize: ");
+        for (size_t i = 0u; i < sizeof(boot_rows) / sizeof(boot_rows[0]); ++i)
+        {
+            serial_write_string(&com1, boot_rows[i].label);
+            serial_write_hex32(&com1, boot_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();
