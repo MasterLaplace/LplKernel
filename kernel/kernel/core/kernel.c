@@ -398,6 +398,27 @@ __attribute__((constructor)) void kernel_initialize(void)
                             serial_write_hex32(&com1, q_rows[i].value);
                         }
                         serial_write_string(&com1, "\n");
+
+                        /* First full virtqueue round-trip: GET_DISPLAY_INFO. */
+                        hal_virtio_gpu_display_info_t info;
+                        const bool info_ok = hal_virtio_gpu_get_display_info(&controlq, &info);
+                        const struct {
+                            const char *label;
+                            uint32_t value;
+                        } info_rows[] = {
+                            {"resp=",      info.response_type },
+                            {", enabled=", info.enabled       },
+                            {", width=",   info.width         },
+                            {", height=",  info.height        },
+                        };
+                        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display: ");
+                        serial_write_string(&com1, info_ok ? "ok " : "FAILED ");
+                        for (size_t i = 0u; i < sizeof(info_rows) / sizeof(info_rows[0]); ++i)
+                        {
+                            serial_write_string(&com1, info_rows[i].label);
+                            serial_write_hex32(&com1, info_rows[i].value);
+                        }
+                        serial_write_string(&com1, "\n");
                     }
                     else
                     {

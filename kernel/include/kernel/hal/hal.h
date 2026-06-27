@@ -252,6 +252,28 @@ bool hal_virtio_gpu_setup_queue(const hal_virtio_gpu_device_t *device, const hal
  */
 uint8_t hal_virtio_gpu_driver_ok(const hal_virtio_gpu_device_t *device);
 
+/** @brief Decoded VIRTIO_GPU_CMD_GET_DISPLAY_INFO response (scanout 0). */
+typedef struct {
+    uint32_t response_type; /* control-header type (0x1101 = OK_DISPLAY_INFO) */
+    uint32_t enabled;       /* non-zero when scanout 0 is enabled             */
+    uint32_t width;         /* scanout 0 preferred width                      */
+    uint32_t height;        /* scanout 0 preferred height                     */
+} hal_virtio_gpu_display_info_t;
+
+/**
+ * @brief Issue VIRTIO_GPU_CMD_GET_DISPLAY_INFO and read back scanout 0.
+ *
+ * Builds a request/response descriptor chain on @p queue, publishes it to the
+ * available ring, rings the notify doorbell, polls the used ring for
+ * completion, and decodes the first scanout's geometry. This is the first full
+ * round-trip over the virtqueue and the template the 2D lifecycle reuses.
+ *
+ * @param queue A programmed controlq from hal_virtio_gpu_setup_queue().
+ * @param out_info Destination for the decoded display info.
+ * @return true when the command completed and the response was OK_DISPLAY_INFO.
+ */
+bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_gpu_display_info_t *out_info);
+
 #ifdef __cplusplus
 }
 #endif

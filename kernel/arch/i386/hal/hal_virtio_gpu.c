@@ -397,3 +397,120 @@ uint8_t hal_virtio_gpu_driver_ok(const hal_virtio_gpu_device_t *device)
     mmio_write8(status_reg, status);
     return mmio_read8(status_reg);
 }
+
+/* ----------------------------------------------------------------------------
+ * Control-command submission (split virtqueue request/response round-trip)
+ * ------------------------------------------------------------------------- */
+
+/* Split-virtqueue descriptor flags. */
+#define VIRTQ_DESC_F_NEXT  0x0001u /* buffer continues in the next descriptor */
+#define VIRTQ_DESC_F_WRITE 0x0002u /* device-writable (else device-readable)  */
+
+/* virtio_gpu_ctrl_hdr layout (24 bytes) + the commands we use. */
+#define VIRTIO_GPU_CTRL_HDR_BYTES 24u
+#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO 0x0100u
+#define VIRTIO_GPU_RESP_OK_DISPLAY_INFO 0x1101u
+
+/* virtio_gpu_resp_display_info: ctrl_hdr + 16 * virtio_gpu_display_one(24B). */
+#define VIRTIO_GPU_MAX_SCANOUTS 16u
+#define VIRTIO_GPU_DISPLAY_ONE_BYTES 24u
+#define VIRTIO_GPU_DISPLAY_INFO_BYTES (VIRTIO_GPU_CTRL_HDR_BYTES + VIRTIO_GPU_MAX_SCANOUTS * VIRTIO_GPU_DISPLAY_ONE_BYTES)
+
+/* Bounded spin waiting for the device to populate the used ring. */
+#define VIRTIO_GPU_POLL_LIMIT 100000000u
+
+/* Normal-memory accessors for the rings (volatile so polling is not hoisted). */
+static inline uint16_t ring_read16(uint32_t address) { return *(volatile uint16_t *) address; }
+static inline uint32_t ring_read32(uint32_t address) { return *(volatile uint32_t *) address; }
+static inline void ring_write16(uint32_t address, uint16_t value) { *(volatile uint16_t *) address = value; }
+static inline void ring_write32(uint32_t address, uint32_t value) { *(volatile uint32_t *) address = value; }
+
+/* Write a split-virtqueue descriptor (16 bytes) at descriptor index @p slot. */
+static void write_descriptor(const hal_virtio_virtqueue_t *queue, uint16_t slot, uint32_t buffer_physical,
+                             uint32_t length, uint16_t flags, uint16_t next)
+{
+    const uint32_t desc = queue->desc_address + (uint32_t) slot * 16u;
+    ring_write32(desc + 0u, buffer_physical); /* addr low                    */
+    ring_write32(desc + 4u, 0u);              /* addr high (i686 32-bit phys) */
+    ring_write32(desc + 8u, length);
+    ring_write16(desc + 12u, flags);
+    ring_write16(desc + 14u, next);
+}
+
+/* Submit a two-descriptor request/response chain (head = desc 0), notify the
+ * device, and poll the used ring for completion. Returns true on completion. */
+static bool submit_command(hal_virtio_virtqueue_t *queue, uint32_t request_physical, uint32_t request_length,
+                           uint32_t response_physical, uint32_t response_length)
+{
+    /* desc 0: device-readable request, chained to desc 1: device-writable resp. */
+    write_descriptor(queue, 0u, request_physical, request_length, VIRTQ_DESC_F_NEXT, 1u);
+    write_descriptor(queue, 1u, response_physical, response_length, VIRTQ_DESC_F_WRITE, 0u);
+
+    /* Publish descriptor head 0 into the available ring. */
+    const uint16_t avail_idx = ring_read16(queue->avail_address + 2u);
+    ring_write16(queue->avail_address + 4u + (uint32_t) (avail_idx % queue->queue_size) * 2u, 0u);
+    __sync_synchronize();
+    ring_write16(queue->avail_address + 2u, (uint16_t) (avail_idx + 1u));
+    __sync_synchronize();
+
+    /* Ring the doorbell. */
+    mmio_write16(queue->notify_address, queue->queue_index);
+
+    /* Wait for the device to advance the used ring. */
+    for (uint32_t spin = 0u; spin < VIRTIO_GPU_POLL_LIMIT; ++spin)
+    {
+        if (ring_read16(queue->used_address + 2u) != queue->last_used_index)
+        {
+            __sync_synchronize();
+            queue->last_used_index = (uint16_t) (queue->last_used_index + 1u);
+            return true;
+        }
+    }
+    return false; /* device never completed the request */
+}
+
+bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_gpu_display_info_t *out_info)
+{
+    if (queue == (void *) 0 || out_info == (void *) 0 || !queue->ready)
+        return false;
+
+    *out_info = (hal_virtio_gpu_display_info_t){0};
+
+    /* One pinned page backs both the request header and the response buffer. */
+    void *buffer = kernel_pinned_alloc(4096u);
+    if (buffer == (void *) 0)
+        return false;
+    for (uint32_t i = 0u; i < 4096u / 4u; ++i)
+        ((volatile uint32_t *) buffer)[i] = 0u;
+
+    uint32_t buffer_physical = 0u;
+    if (!hal_graphics_memory_physical_address(buffer, &buffer_physical))
+    {
+        kernel_pinned_free(buffer, 4096u);
+        return false;
+    }
+
+    const uint32_t request_va = (uint32_t) buffer;
+    const uint32_t response_va = request_va + 2048u;
+    const uint32_t request_physical = buffer_physical;
+    const uint32_t response_physical = buffer_physical + 2048u;
+
+    /* Fill the request control header (type = GET_DISPLAY_INFO, rest zero). */
+    ring_write32(request_va + 0u, VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
+
+    bool ok = submit_command(queue, request_physical, VIRTIO_GPU_CTRL_HDR_BYTES, response_physical,
+                             VIRTIO_GPU_DISPLAY_INFO_BYTES);
+    if (ok)
+    {
+        out_info->response_type = ring_read32(response_va + 0u);
+        /* pmodes[0] follows the response header: rect{x,y,width,height}, enabled. */
+        const uint32_t scanout0 = response_va + VIRTIO_GPU_CTRL_HDR_BYTES;
+        out_info->width = ring_read32(scanout0 + 8u);
+        out_info->height = ring_read32(scanout0 + 12u);
+        out_info->enabled = ring_read32(scanout0 + 16u);
+        ok = (out_info->response_type == VIRTIO_GPU_RESP_OK_DISPLAY_INFO);
+    }
+
+    kernel_pinned_free(buffer, 4096u);
+    return ok;
+}
