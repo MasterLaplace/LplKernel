@@ -6,19 +6,16 @@
 **
 ** Single real entry point the kernel calls from kernel_main once the heap, PCI,
 ** clock and framebuffer HAL are up. Constructs a KernelPlatform (the four HAL
-** backends) and the KernelDisplayRenderer, then drives a clock-paced render
-** loop over the platform IClockBackend / IDisplayBackend. This is the in-kernel
-** sibling of a hosted main() that builds and runs the LplPlugin engine.
-**
-** The fixed-cadence loop is inlined here for now rather than delegating to
-** lpl::engine::GameLoop: GameLoop is freestanding-ready (reparented onto
-** IClockBackend, lpl::pmr::function callbacks) but pulling it into libengine.a
-** still needs lpl::engine::Config to route <string> through lpl/std. Until that
-** lands, this facade owns the loop directly. The structure mirrors GameLoop so
-** the swap is mechanical once Config is converted.
+** backends) and the KernelDisplayRenderer, then drives the engine's own
+** lpl::engine::GameLoop (fixed-timestep, paced by the platform IClockBackend)
+** with render callbacks targeting the IDisplayBackend. This is the in-kernel
+** sibling of a hosted main() that builds and runs the LplPlugin engine, and it
+** exercises the freestanding GameLoop end to end.
 */
 #include "libengine/libengine.h"
 
+#include <lpl/engine/Config.hpp>
+#include <lpl/engine/GameLoop.hpp>
 #include <lpl/platform/kernel/KernelPlatform.hpp>
 #include <lpl/render/kernel/KernelDisplayRenderer.hpp>
 
@@ -61,34 +58,30 @@ extern "C" int lplplugin_initialize(const lplplugin_boot_info_t *boot, lplplugin
     result.renderer_init_ok = 1u;
 
     // -----------------------------------------------------------------------
-    // Clock-paced render loop. max_frames == 0 means "run until shutdown" (a
-    // real boot owns the main loop); any positive value renders exactly that
-    // many frames then returns (bounded boot smoke / CI). The IClockBackend is
-    // sampled for wall-clock pacing only — it never feeds the Fixed32 authority
-    // that drives the triangle rotation.
+    // Engine game loop. The fixed timestep advances the Fixed32 rotation
+    // authority; the render callback rasterises + presents one frame. The
+    // IClockBackend paces wall time only (never the Fixed32 authority).
+    // max_frames == 0 runs until shutdown (a real boot owns the loop); any
+    // positive value renders that many frames then requests stop.
     // -----------------------------------------------------------------------
-    platform::IClockBackend &clock = platform.clock();
-    const bool bounded = (boot->max_frames != 0u);
+    const engine::Config config = engine::Config::Builder{}.build();
+    engine::GameLoop loop{config, platform.clock()};
 
-    u32 lastTick = clock.tickCount();
-    for (u32 frame = 0u; !bounded || frame < boot->max_frames; ++frame)
-    {
-        // Pace to the clock: advance one simulation tick per observed clock
-        // tick edge so the cadence tracks wall time rather than spinning flat
-        // out. On a headless/zero-Hz clock this degrades to free-running.
-        if (clock.tickHertz() != 0u)
-        {
-            u32 now = clock.tickCount();
-            while (now == lastTick)
-                now = clock.tickCount();
-            lastTick = now;
-        }
+    const u32 maxFrames = boot->max_frames;
+    u32 framesRendered = 0u;
 
-        renderer.tick();       // advance Fixed32 rotation angle (deterministic)
-        renderer.beginFrame(); // clear to background
-        renderer.endFrame();   // rasterise triangle + present
-        ++result.frames_rendered;
-    }
+    engine::LoopCallbacks callbacks;
+    callbacks.fixedUpdate = [&renderer](core::f64 /*dt*/) { renderer.tick(); };
+    callbacks.render = [&renderer, &framesRendered, &loop, maxFrames](core::f64 /*alpha*/) {
+        renderer.beginFrame();
+        renderer.endFrame();
+        ++framesRendered;
+        if (maxFrames != 0u && framesRendered >= maxFrames)
+            loop.requestStop();
+    };
+
+    loop.run(callbacks);
+    result.frames_rendered = framesRendered;
 
     renderer.shutdown();
     result.shutdown_clean = 1u;

@@ -31,7 +31,8 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/concurrency/include \
           -I$(LPLPLUGIN_ROOT)/physics/include \
           -I$(LPLPLUGIN_ROOT)/platform/include \
-          -I$(LPLPLUGIN_ROOT)/render/include
+          -I$(LPLPLUGIN_ROOT)/render/include \
+          -I$(LPLPLUGIN_ROOT)/engine/include
 
 ARCHDIR=arch/$(HOSTARCH)
 
