@@ -642,6 +642,8 @@ void kernel_main(void)
             {", v0_y=",      (uint32_t) rnd.angle0_vertex0_y},
             {", in_front=",  rnd.angle0_in_front           },
             {", quarter_sig=",rnd.quarter_screen_sig       },
+            {", cull_vis=",  rnd.cull_visible              },
+            {", cull_sig=",  rnd.cull_visible_sig          },
             {", render_ok=", rnd.render_ok                 },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P5 render smoke: ");

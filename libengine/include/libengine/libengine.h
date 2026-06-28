@@ -236,6 +236,9 @@ typedef struct {
     int32_t angle0_vertex0_y;   /* floored screen Y of cube vertex 0 (witness)          */
     uint32_t angle0_in_front;   /* vertices with w > 0 at angle 0 -> 8                   */
     uint32_t quarter_screen_sig;/* screen fold at pi/4 (must differ from angle0)         */
+    uint32_t cull_total;        /* instance grid size -> 49 (7x7)                       */
+    uint32_t cull_visible;      /* instances surviving the frustum cull -> 40           */
+    uint32_t cull_visible_sig;  /* FNV-1a fold of the visible-index list                */
     uint32_t render_ok;         /* all expected invariants held                         */
 } libengine_p5_render_smoke_result_t;
 

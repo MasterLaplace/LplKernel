@@ -31,9 +31,15 @@ extern "C" void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *ou
     out->angle0_in_front = r0.in_front_count;
     out->quarter_screen_sig = rq.screen_signature;
 
+    const auto cull = render::cullParityInstanceGrid(1280u, 800u);
+    out->cull_total = cull.total;
+    out->cull_visible = cull.visible;
+    out->cull_visible_sig = cull.visible_signature;
+
     out->render_ok = (r0.in_front_count == 8u && rq.in_front_count == 8u &&
                       rq.screen_signature != r0.screen_signature && r0.vertex0_x > 0 && r0.vertex0_x < 1280 &&
-                      r0.vertex0_y > 0 && r0.vertex0_y < 800)
+                      r0.vertex0_y > 0 && r0.vertex0_y < 800 && cull.total == 49u && cull.visible > 0u &&
+                      cull.visible < cull.total)
                          ? 1u
                          : 0u;
 }
