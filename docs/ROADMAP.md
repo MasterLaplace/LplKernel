@@ -11,6 +11,37 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 ### 🎯 Current Position: **Phase 5 Device Drivers** ⬅️ YOU ARE HERE
 **Next Goal**: Advance Phase 5 keyboard layout policy and begin storage driver integration.
 
+> **Note:** the OSDev phase numbering below (Phase 0–10) tracks the *kernel OS*
+> primitives. A **separate convergence track (P0–P6)** integrates the LplPlugin
+> engine into the kernel as `libengine.a` (Model B); see the section directly
+> below and `.claude/plans/`. The two numbering schemes are independent.
+
+### 🔀 LplPlugin Convergence Track (Model B) — P0–P6 ✅ COMPLETE
+
+The engine is the single source of truth; its portable modules compile
+`-ffreestanding` into `libengine.a` and link into `lpl.kernel` like `libk`. The
+kernel adds only a thin C graphics HAL (virtio-gpu + software-LFB behind one
+display backend). HARD determinism: authoritative state is Fixed32/CORDIC; the
+non-authoritative render math is float (SSE, `-ffp-contract=off`) and is proven
+**bit-identical** between the Linux oracle and the i686 kernel.
+
+- ✅ **P0**: toolchain upgrade (gcc14/C++23) + linker ctors + `kernel_std` + `libengine.a` (core+math freestanding)
+- ✅ **P1**: memory DI + ECS/physics/scheduler headless, deterministic vs oracle
+- ✅ **P2**: platform HAL seam (clock/display/input/gpu-memory) + Linux backends + boot facade
+- ✅ **P3**: FXSAVE/FXRSTOR in ISR + software-rasterized triangle through `IDisplayBackend`
+- ✅ **P4**: full virtio-gpu 2D driver (5-step lifecycle, scatter-gather) + engine 2D (image/painter/PPM/scene-graph)
+- ✅ **P5**: 3D — projection/camera, depth-buffered rasterizer, instancing+frustum cull, textures, classical lighting, multi-viewport + render-to-texture
+- ✅ **P6**: topology (Bézier/Catmull-Rom/tessellation/Delaunay), software ray tracing, metallic/roughness PBR + HDRI tone-mapping, immutable command buffers + Late-Latching, foveated rasterizer
+
+**Verified end-to-end:** all 7 oracle parity suites green; the kernel boots
+(`-device virtio-gpu-pci`) printing every P0–P6 smoke with matching signatures
+and `*_ok=1`. The keystone determinism rule: projection/specular/PBR derive
+`tan`/`pow` from CORDIC + integer-exponent multiply (never `tanf`/`powf`, which
+are neither freestanding-linkable nor deterministic); only the hardware `sqrt`
+is used directly. **Deferred (one item):** full `Engine.cpp` reparent off
+GLFW/sockets — it drags in the net/BCI/multiplayer stack and stays host-only;
+the freestanding render path is already proven via `libengine`.
+
 ### Phase Completion Status:
 - ✅ **Phase 0**: Prerequisites & Environment Setup - **100% Complete**
   - Cross-compiler ✅, Makefiles ✅, QEMU ✅, Multiboot ✅
