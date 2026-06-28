@@ -22,6 +22,11 @@ constexpr lpl::core::u32 kSigH = 64u;
 lpl::core::u32 g_sigColor[kSigW * kSigH];
 lpl::core::f32 g_sigDepth[kSigW * kSigH];
 
+constexpr lpl::core::u32 kMvW = 128u;
+constexpr lpl::core::u32 kMvH = 96u;
+lpl::core::u32 g_mvColor[kMvW * kMvH];
+lpl::core::f32 g_mvDepth[kMvW * kMvH];
+
 constexpr lpl::core::u32 kVisW = 320u;
 constexpr lpl::core::u32 kVisH = 240u;
 lpl::core::u32 g_visColor[kVisW * kVisH];
@@ -47,6 +52,13 @@ extern "C" void libengine_p5_render_present_smoke(libengine_p5_render_present_re
     render::renderLitCube(sigTarget, math::Fixed32::fromInt(0), render::ShadingModel::BlinnPhong);
     out->lit_cube_sig = render::foldTarget(sigTarget);
 
+    // Multi-viewport (128x96) and render-to-texture (96x64) folds.
+    render::RenderTarget mvTarget{g_mvColor, g_mvDepth, kMvW, kMvH};
+    render::renderMultiViewport(mvTarget);
+    out->multiviewport_sig = render::foldTarget(mvTarget);
+    render::renderToTextureCube(sigTarget, math::Fixed32::fromInt(0));
+    out->rtt_sig = render::foldTarget(sigTarget);
+
     platform::kernel::KernelPlatform platformBackends;
     platform::IDisplayBackend &display = platformBackends.display();
 
@@ -58,9 +70,9 @@ extern "C" void libengine_p5_render_present_smoke(libengine_p5_render_present_re
     out->width = surface.width;
     out->height = surface.height;
 
-    // Render a higher-resolution Blinn-Phong lit cube for the on-screen present.
+    // Render a higher-resolution 2x2 multi-viewport composite for the present.
     render::RenderTarget visTarget{g_visColor, g_visDepth, kVisW, kVisH};
-    render::renderLitCube(visTarget, math::Fixed32::fromInt(0), render::ShadingModel::BlinnPhong);
+    render::renderMultiViewport(visTarget);
 
     // Nearest-neighbour upscale into the real surface (pitch-aware).
     const u32 pitchPixels = (surface.pitch != 0u ? surface.pitch : surface.width * 4u) / 4u;

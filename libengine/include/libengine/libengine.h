@@ -260,6 +260,8 @@ typedef struct {
     uint32_t cube_signature;    /* FNV-1a fold of the 96x64 offscreen flat cube       */
     uint32_t textured_cube_sig; /* FNV-1a fold of the 96x64 offscreen textured cube   */
     uint32_t lit_cube_sig;      /* FNV-1a fold of the 96x64 Blinn-Phong lit cube      */
+    uint32_t multiviewport_sig; /* FNV-1a fold of the 2x2 multi-viewport composite    */
+    uint32_t rtt_sig;           /* FNV-1a fold of the render-to-texture cube          */
     uint32_t present_ok;        /* rasterized + presented without error               */
 } libengine_p5_render_present_result_t;
 
