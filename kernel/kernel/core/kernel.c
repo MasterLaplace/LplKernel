@@ -658,6 +658,42 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P6 smoke: advanced rendering (topology, software ray tracing, metallic/
+       roughness PBR + HDRI tone map, immutable command buffers with
+       Late-Latching, foveated rasterization). Every signature must match the
+       Linux oracle (tests/test-p6-parity) bit-for-bit. */
+    {
+        libengine_p6_smoke_result_t p6;
+        libengine_p6_smoke(&p6);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } p6_rows[] = {
+            {"catmull_sig=",   p6.catmull_sig      },
+            {", saddle_sig=",  p6.saddle_sig       },
+            {", del_tris=",    p6.delaunay_tris    },
+            {", del_sig=",     p6.delaunay_sig     },
+            {", ray_hits=",    p6.ray_hits         },
+            {", ray_sig=",     p6.ray_image_sig    },
+            {", gold_rein=",   p6.pbr_gold_reinhard},
+            {", gold_aces=",   p6.pbr_gold_aces    },
+            {", plastic_aces=",p6.pbr_plastic_aces },
+            {", cmd_rec=",     p6.cmd_recording_sig},
+            {", latch0=",      p6.cmd_latched0_sig },
+            {", latch1=",      p6.cmd_latched1_sig },
+            {", fov_shaded=",  p6.foveated_shaded  },
+            {", fov_sig=",     p6.foveated_image_sig},
+            {", p6_ok=",       p6.p6_ok            },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P6 smoke: ");
+        for (size_t i = 0u; i < sizeof(p6_rows) / sizeof(p6_rows[0]); ++i)
+        {
+            serial_write_string(&com1, p6_rows[i].label);
+            serial_write_hex32(&com1, p6_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     /* P4 image present: paint a 2D scene and blit it onto the display scanout
        through the HAL (Image -> hal_display -> virtio-gpu/LFB). Runs last so the
        2D scene is what stays on screen. */

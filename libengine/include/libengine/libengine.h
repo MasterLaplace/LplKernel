@@ -268,6 +268,35 @@ typedef struct {
 extern void libengine_p5_render_present_smoke(libengine_p5_render_present_result_t *out);
 
 /*
+** P6 smoke. Advanced rendering on the kernel target: curve/surface topology
+** (Catmull-Rom, parametric saddle, Delaunay), software ray tracing, metallic/
+** roughness PBR with HDRI tone mapping, immutable command buffers with
+** Late-Latching of Fixed32 poses, and foveated rasterization. Authoritative
+** state is Fixed32; render math is float (SSE, -ffp-contract=off). Every
+** signature below must match the Linux oracle (tests/test-p6-parity) bit-for-bit.
+*/
+typedef struct {
+    uint32_t catmull_sig;       /* fold of the Catmull-Rom loop samples              */
+    uint32_t saddle_sig;        /* fold of the parametric saddle surface vertices    */
+    uint32_t delaunay_tris;     /* Delaunay triangle count -> 6                      */
+    uint32_t delaunay_sig;      /* fold of the Delaunay triangle index list          */
+    uint32_t ray_hits;          /* primary rays that hit geometry                    */
+    uint32_t ray_image_sig;     /* fold of the ray-traced image                      */
+    uint32_t pbr_gold_reinhard; /* gold metal, Reinhard tone map, 0x00RRGGBB         */
+    uint32_t pbr_gold_aces;     /* gold metal, ACES tone map                         */
+    uint32_t pbr_plastic_aces;  /* blue dielectric, ACES tone map                    */
+    uint32_t cmd_recording_sig; /* fold of the immutable command-buffer recording    */
+    uint32_t cmd_latched0_sig;  /* late-latched submit fold, pose set 0              */
+    uint32_t cmd_latched1_sig;  /* late-latched submit fold, mutated poses           */
+    uint32_t foveated_shaded;   /* foveated representative fragments shaded           */
+    uint32_t foveated_full;     /* full-rate fragment count (width*height)           */
+    uint32_t foveated_image_sig;/* fold of the replicated foveated image             */
+    uint32_t p6_ok;             /* all expected invariants held                      */
+} libengine_p6_smoke_result_t;
+
+extern void libengine_p6_smoke(libengine_p6_smoke_result_t *out);
+
+/*
 ** Engine boot facade (extern "C"). This is the single real entry point the
 ** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
 ** are up — the in-kernel equivalent of main() constructing and running the
