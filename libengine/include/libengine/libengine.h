@@ -239,6 +239,7 @@ typedef struct {
     uint32_t cull_total;        /* instance grid size -> 49 (7x7)                       */
     uint32_t cull_visible;      /* instances surviving the frustum cull -> 40           */
     uint32_t cull_visible_sig;  /* FNV-1a fold of the visible-index list                */
+    uint32_t tex_sample_sig;    /* FNV-1a fold of 64 bilinear texture samples           */
     uint32_t render_ok;         /* all expected invariants held                         */
 } libengine_p5_render_smoke_result_t;
 
@@ -254,7 +255,8 @@ typedef struct {
     uint32_t display_available; /* surface present?                                   */
     uint32_t width;             /* surface width                                      */
     uint32_t height;            /* surface height                                     */
-    uint32_t cube_signature;    /* FNV-1a fold of the 96x64 offscreen cube (angle 0)  */
+    uint32_t cube_signature;    /* FNV-1a fold of the 96x64 offscreen flat cube       */
+    uint32_t textured_cube_sig; /* FNV-1a fold of the 96x64 offscreen textured cube   */
     uint32_t present_ok;        /* rasterized + presented without error               */
 } libengine_p5_render_present_result_t;
 

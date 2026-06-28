@@ -12,6 +12,7 @@
 #include "libengine/libengine.h"
 
 #include <lpl/render/RenderParity.hpp>
+#include <lpl/render/Texture.hpp>
 
 extern "C" void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *out)
 {
@@ -35,6 +36,16 @@ extern "C" void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *ou
     out->cull_total = cull.total;
     out->cull_visible = cull.visible;
     out->cull_visible_sig = cull.visible_signature;
+
+    // Texture sampling determinism: fold a diagonal of bilinear samples.
+    const auto tex = render::Texture::makeChecker(64u, 64u, 0x00FF0000u, 0x000000FFu, 8u);
+    core::u32 texSig = 0x811C9DC5u;
+    for (core::u32 i = 0; i < 64u; ++i)
+    {
+        const core::u32 uq = (i * 65536u) / 64u;
+        texSig = render::detail::fnv1aStep(texSig, tex.sampleBilinear(uq, uq));
+    }
+    out->tex_sample_sig = texSig;
 
     out->render_ok = (r0.in_front_count == 8u && rq.in_front_count == 8u &&
                       rq.screen_signature != r0.screen_signature && r0.vertex0_x > 0 && r0.vertex0_x < 1280 &&

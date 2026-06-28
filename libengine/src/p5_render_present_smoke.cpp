@@ -13,6 +13,7 @@
 
 #include <lpl/platform/kernel/KernelPlatform.hpp>
 #include <lpl/render/SoftwareRasterizer.hpp>
+#include <lpl/render/Texture.hpp>
 
 namespace {
 // Offscreen render targets in BSS (kept off the kernel stack/heap).
@@ -36,10 +37,13 @@ extern "C" void libengine_p5_render_present_smoke(libengine_p5_render_present_re
         return;
     *out = libengine_p5_render_present_result_t{};
 
-    // Offscreen fold (must match the oracle's 96x64 cube signature).
+    // Offscreen folds (must match the oracle's 96x64 cube signatures).
+    const auto checker = render::Texture::makeChecker(64u, 64u, 0x00FF0000u, 0x000000FFu, 8u);
     render::RenderTarget sigTarget{g_sigColor, g_sigDepth, kSigW, kSigH};
     render::renderCube(sigTarget, math::Fixed32::fromInt(0));
     out->cube_signature = render::foldTarget(sigTarget);
+    render::renderTexturedCube(sigTarget, math::Fixed32::fromInt(0), checker);
+    out->textured_cube_sig = render::foldTarget(sigTarget);
 
     platform::kernel::KernelPlatform platformBackends;
     platform::IDisplayBackend &display = platformBackends.display();
@@ -52,9 +56,9 @@ extern "C" void libengine_p5_render_present_smoke(libengine_p5_render_present_re
     out->width = surface.width;
     out->height = surface.height;
 
-    // Render a higher-resolution cube for the on-screen present.
+    // Render a higher-resolution textured cube for the on-screen present.
     render::RenderTarget visTarget{g_visColor, g_visDepth, kVisW, kVisH};
-    render::renderCube(visTarget, math::Fixed32::fromInt(0));
+    render::renderTexturedCube(visTarget, math::Fixed32::fromInt(0), checker);
 
     // Nearest-neighbour upscale into the real surface (pitch-aware).
     const u32 pitchPixels = (surface.pitch != 0u ? surface.pitch : surface.width * 4u) / 4u;
