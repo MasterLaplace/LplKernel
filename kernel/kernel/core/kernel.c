@@ -645,6 +645,8 @@ void kernel_main(void)
             {", cull_vis=",  rnd.cull_visible              },
             {", cull_sig=",  rnd.cull_visible_sig          },
             {", tex_sig=",   rnd.tex_sample_sig            },
+            {", lambert=",   rnd.lambert_rgb               },
+            {", blinn=",     rnd.blinn_rgb                 },
             {", render_ok=", rnd.render_ok                 },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P5 render smoke: ");
@@ -697,6 +699,7 @@ void kernel_main(void)
             {", height=",     r3d.height           },
             {", cube_sig=",   r3d.cube_signature   },
             {", tex_cube_sig=",r3d.textured_cube_sig},
+            {", lit_cube_sig=",r3d.lit_cube_sig     },
             {", present_ok=", r3d.present_ok        },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P5 render present: ");

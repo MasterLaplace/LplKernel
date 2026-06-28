@@ -11,6 +11,7 @@
 */
 #include "libengine/libengine.h"
 
+#include <lpl/render/Lighting.hpp>
 #include <lpl/render/RenderParity.hpp>
 #include <lpl/render/Texture.hpp>
 
@@ -46,6 +47,19 @@ extern "C" void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *ou
         texSig = render::detail::fnv1aStep(texSig, tex.sampleBilinear(uq, uq));
     }
     out->tex_sample_sig = texSig;
+
+    // Classical lighting of a reference fragment (directional light).
+    render::Material mat;
+    mat.albedo = render::Vec3f(0.8f, 0.7f, 0.6f);
+    mat.shininess = 32u;
+    render::Light dir;
+    dir.type = render::LightType::Directional;
+    dir.direction = render::Vec3f(-0.4f, -0.7f, -0.6f);
+    const render::Vec3f N(0.0f, 0.0f, 1.0f);
+    const render::Vec3f frag(0.0f, 0.0f, 1.0f);
+    const render::Vec3f eye(0.0f, 0.0f, 5.0f);
+    out->lambert_rgb = render::shadeToRgb(render::ShadingModel::Lambert, mat, &dir, 1u, N, frag, eye);
+    out->blinn_rgb = render::shadeToRgb(render::ShadingModel::BlinnPhong, mat, &dir, 1u, N, frag, eye);
 
     out->render_ok = (r0.in_front_count == 8u && rq.in_front_count == 8u &&
                       rq.screen_signature != r0.screen_signature && r0.vertex0_x > 0 && r0.vertex0_x < 1280 &&

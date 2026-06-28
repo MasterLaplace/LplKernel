@@ -44,6 +44,8 @@ extern "C" void libengine_p5_render_present_smoke(libengine_p5_render_present_re
     out->cube_signature = render::foldTarget(sigTarget);
     render::renderTexturedCube(sigTarget, math::Fixed32::fromInt(0), checker);
     out->textured_cube_sig = render::foldTarget(sigTarget);
+    render::renderLitCube(sigTarget, math::Fixed32::fromInt(0), render::ShadingModel::BlinnPhong);
+    out->lit_cube_sig = render::foldTarget(sigTarget);
 
     platform::kernel::KernelPlatform platformBackends;
     platform::IDisplayBackend &display = platformBackends.display();
@@ -56,9 +58,9 @@ extern "C" void libengine_p5_render_present_smoke(libengine_p5_render_present_re
     out->width = surface.width;
     out->height = surface.height;
 
-    // Render a higher-resolution textured cube for the on-screen present.
+    // Render a higher-resolution Blinn-Phong lit cube for the on-screen present.
     render::RenderTarget visTarget{g_visColor, g_visDepth, kVisW, kVisH};
-    render::renderTexturedCube(visTarget, math::Fixed32::fromInt(0), checker);
+    render::renderLitCube(visTarget, math::Fixed32::fromInt(0), render::ShadingModel::BlinnPhong);
 
     // Nearest-neighbour upscale into the real surface (pitch-aware).
     const u32 pitchPixels = (surface.pitch != 0u ? surface.pitch : surface.width * 4u) / 4u;
