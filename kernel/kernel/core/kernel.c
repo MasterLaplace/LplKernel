@@ -599,6 +599,33 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P4 scene smoke: the deterministic 2D scene graph (Fixed32 transforms +
+       undo/redo + selection); raw values must match the Linux oracle. */
+    {
+        libengine_p4_scene_smoke_result_t scn;
+        libengine_p4_scene_smoke(&scn);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } scn_rows[] = {
+            {"world_tx=",  scn.world_tx_raw         },
+            {", world_ty=",scn.world_ty_raw         },
+            {", undo_tx=", scn.undo_tx_raw          },
+            {", redo_tx=", scn.redo_tx_raw          },
+            {", sel=",     scn.selection            },
+            {", rot_x=",   (uint32_t) scn.rot_x_raw },
+            {", rot_y=",   (uint32_t) scn.rot_y_raw },
+            {", scene_ok=",scn.scene_ok             },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P4 scene smoke: ");
+        for (size_t i = 0u; i < sizeof(scn_rows) / sizeof(scn_rows[0]); ++i)
+        {
+            serial_write_string(&com1, scn_rows[i].label);
+            serial_write_hex32(&com1, scn_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     /* P4 image present: paint a 2D scene and blit it onto the display scanout
        through the HAL (Image -> hal_display -> virtio-gpu/LFB). Runs last so the
        2D scene is what stays on screen. */

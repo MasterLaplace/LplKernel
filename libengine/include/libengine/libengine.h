@@ -203,6 +203,25 @@ typedef struct {
 extern void libengine_p4_image_present_smoke(libengine_p4_image_present_smoke_result_t *out);
 
 /*
+** P4 scene smoke. Exercises the lpl::scene graph (Fixed32 affine transforms,
+** parent/child world composition, undo/redo, multi-select) in-kernel and
+** reports raw Fixed32 values that must match the Linux oracle
+** (tests/test-scene-parity) bit-for-bit (Fixed32/CORDIC authority).
+*/
+typedef struct {
+    uint32_t world_tx_raw;  /* child world translation x, Q16.16 raw -> 15<<16  */
+    uint32_t world_ty_raw;  /* child world translation y, Q16.16 raw -> 20<<16  */
+    uint32_t undo_tx_raw;   /* child local tx after one undo, raw -> 5<<16      */
+    uint32_t redo_tx_raw;   /* child local tx after redo, raw -> 7<<16          */
+    uint32_t selection;     /* selection count after select(root,child)         */
+    int32_t rot_x_raw;      /* fromTRS(90deg).apply(1,0).x raw -> ~0            */
+    int32_t rot_y_raw;      /* fromTRS(90deg).apply(1,0).y raw -> ~65536        */
+    uint32_t scene_ok;      /* all expected values matched                      */
+} libengine_p4_scene_smoke_result_t;
+
+extern void libengine_p4_scene_smoke(libengine_p4_scene_smoke_result_t *out);
+
+/*
 ** Engine boot facade (extern "C"). This is the single real entry point the
 ** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
 ** are up — the in-kernel equivalent of main() constructing and running the

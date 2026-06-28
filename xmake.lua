@@ -146,6 +146,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "physics/include"),
         path.join(LPLPLUGIN_ROOT, "platform/include"),
         path.join(LPLPLUGIN_ROOT, "image/include"),
+        path.join(LPLPLUGIN_ROOT, "scene/include"),
         path.join(LPLPLUGIN_ROOT, "render/include"),
         path.join(LPLPLUGIN_ROOT, "engine/include")
     )
@@ -169,6 +170,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "image/src/Image.cpp"),
         path.join(LPLPLUGIN_ROOT, "image/src/Painter.cpp"),
         path.join(LPLPLUGIN_ROOT, "image/src/Codec.cpp"),
+        path.join(LPLPLUGIN_ROOT, "scene/src/Scene.cpp"),
         path.join(LPLPLUGIN_ROOT, "render/src/Camera.cpp"),
         path.join(LPLPLUGIN_ROOT, "render/src/kernel/KernelDisplayRenderer.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/Config.cpp"),
