@@ -626,6 +626,33 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P5 render smoke: project a Fixed32-authored unit cube (CORDIC rotation)
+       through a perspective camera; the folded screen/depth signatures must
+       match the Linux oracle (tests/test-render-parity) bit-for-bit. */
+    {
+        libengine_p5_render_smoke_result_t rnd;
+        libengine_p5_render_smoke(&rnd);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } rnd_rows[] = {
+            {"screen_sig=",  rnd.angle0_screen_sig         },
+            {", depth_sig=", rnd.angle0_depth_sig          },
+            {", v0_x=",      (uint32_t) rnd.angle0_vertex0_x},
+            {", v0_y=",      (uint32_t) rnd.angle0_vertex0_y},
+            {", in_front=",  rnd.angle0_in_front           },
+            {", quarter_sig=",rnd.quarter_screen_sig       },
+            {", render_ok=", rnd.render_ok                 },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P5 render smoke: ");
+        for (size_t i = 0u; i < sizeof(rnd_rows) / sizeof(rnd_rows[0]); ++i)
+        {
+            serial_write_string(&com1, rnd_rows[i].label);
+            serial_write_hex32(&com1, rnd_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     /* P4 image present: paint a 2D scene and blit it onto the display scanout
        through the HAL (Image -> hal_display -> virtio-gpu/LFB). Runs last so the
        2D scene is what stays on screen. */

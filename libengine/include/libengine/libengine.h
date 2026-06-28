@@ -222,6 +222,26 @@ typedef struct {
 extern void libengine_p4_scene_smoke(libengine_p4_scene_smoke_result_t *out);
 
 /*
+** P5 render smoke. Projects a Fixed32-authored unit cube (CORDIC model
+** rotation) through a perspective camera and folds the resulting screen
+** coordinates + depths. Geometry/rotation is authoritative Fixed32; the
+** view/projection/divide is float (SSE, -ffp-contract=off). The folded
+** signatures must match the Linux oracle (tests/test-render-parity)
+** bit-for-bit.
+*/
+typedef struct {
+    uint32_t angle0_screen_sig; /* FNV-1a fold of all 8 floored screen (x,y) at angle 0 */
+    uint32_t angle0_depth_sig;  /* FNV-1a fold of all 8 quantized NDC depths at angle 0  */
+    int32_t angle0_vertex0_x;   /* floored screen X of cube vertex 0 (witness)          */
+    int32_t angle0_vertex0_y;   /* floored screen Y of cube vertex 0 (witness)          */
+    uint32_t angle0_in_front;   /* vertices with w > 0 at angle 0 -> 8                   */
+    uint32_t quarter_screen_sig;/* screen fold at pi/4 (must differ from angle0)         */
+    uint32_t render_ok;         /* all expected invariants held                         */
+} libengine_p5_render_smoke_result_t;
+
+extern void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *out);
+
+/*
 ** Engine boot facade (extern "C"). This is the single real entry point the
 ** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
 ** are up — the in-kernel equivalent of main() constructing and running the
