@@ -557,6 +557,7 @@ void kernel_main(void)
             {", hist255=",   img.hist_red_count },
             {", centre=",    img.centre_pixel   },
             {", paint_sig=", img.painter_signature},
+            {", ppm_sig=",   img.ppm_signature  },
             {", smoke_ok=",  img.smoke_ok       },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P4 image smoke: ");

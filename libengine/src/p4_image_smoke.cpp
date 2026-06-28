@@ -10,8 +10,10 @@
 */
 #include "libengine/libengine.h"
 
+#include <lpl/image/Codec.hpp>
 #include <lpl/image/Image.hpp>
 #include <lpl/image/Painter.hpp>
+#include <lpl/std/vector.hpp>
 
 extern "C" void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out)
 {
@@ -46,6 +48,13 @@ extern "C" void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out)
     image::Image scene(32u, 32u);
     image::paintParityScene(scene);
     out->painter_signature = image::foldSignature(scene);
+
+    // PPM round-trip: encode the scene, decode it back, fold the result. RGB is
+    // preserved exactly (alpha is reset opaque by PPM), so this is deterministic.
+    pmr::vector<core::u8> encoded;
+    image::Image decoded;
+    if (image::writePpm(scene, encoded) && image::readPpm(encoded.data(), encoded.size(), decoded))
+        out->ppm_signature = image::foldSignature(decoded);
 
     out->smoke_ok = (out->red_hue == 0u && out->green_hue == 120u && out->blue_hue == 240u &&
                      out->gray_roundtrip == 1u && out->white_luma == 255u && out->hist_red_count == 16u)
