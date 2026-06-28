@@ -120,15 +120,15 @@ bool hal_graphics_memory_physical_address(const void *virtual_address, uint32_t 
 
 /** @brief Result of a virtio-gpu PCI probe. */
 typedef struct {
-    bool present;            /* a virtio-gpu function was found              */
-    uint8_t bus;             /* PCI bus of the found function                */
-    uint8_t device;          /* PCI device (slot)                           */
-    uint8_t function;        /* PCI function                                */
-    uint16_t device_id;      /* PCI device id (0x1050 modern / 0x1010 xitnl) */
-    uint8_t is_modern;       /* device_id >= 0x1040 (modern virtio-pci)     */
-    uint32_t mmio_base;      /* decoded MMIO BAR base (0 when none)         */
-    uint32_t mmio_size;      /* MMIO BAR size in bytes (0 when none)        */
-    uint8_t mmio_bar_index;  /* which BAR slot the MMIO region came from    */
+    bool present;           /* a virtio-gpu function was found              */
+    uint8_t bus;            /* PCI bus of the found function                */
+    uint8_t device;         /* PCI device (slot)                           */
+    uint8_t function;       /* PCI function                                */
+    uint16_t device_id;     /* PCI device id (0x1050 modern / 0x1010 xitnl) */
+    uint8_t is_modern;      /* device_id >= 0x1040 (modern virtio-pci)     */
+    uint32_t mmio_base;     /* decoded MMIO BAR base (0 when none)         */
+    uint32_t mmio_size;     /* MMIO BAR size in bytes (0 when none)        */
+    uint8_t mmio_bar_index; /* which BAR slot the MMIO region came from    */
 } hal_virtio_gpu_info_t;
 
 /**
@@ -152,10 +152,10 @@ bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info);
 
 /** @brief One decoded virtio-pci capability structure location (within a BAR). */
 typedef struct {
-    uint8_t present;  /* non-zero when this cfg_type capability was found */
-    uint8_t bar;      /* which BAR holds the structure                   */
-    uint32_t offset;  /* byte offset of the structure within the BAR     */
-    uint32_t length;  /* length of the structure in bytes                */
+    uint8_t present; /* non-zero when this cfg_type capability was found */
+    uint8_t bar;     /* which BAR holds the structure                   */
+    uint32_t offset; /* byte offset of the structure within the BAR     */
+    uint32_t length; /* length of the structure in bytes                */
 } hal_virtio_pci_cap_t;
 
 /**
@@ -167,11 +167,11 @@ typedef struct {
  * @ref mmio_virtual_base + cap.offset (when cap.bar == @ref mmio_bar_index).
  */
 typedef struct {
-    uint8_t mapped;             /* non-zero when the MMIO window was mapped     */
-    uint8_t mmio_bar_index;     /* BAR slot that was mapped                     */
-    uint32_t mmio_virtual_base; /* kernel VA of the mapped BAR window           */
-    uint32_t mmio_physical_base;/* physical base of the mapped BAR window       */
-    uint32_t mmio_size;         /* size of the mapped window in bytes           */
+    uint8_t mapped;                 /* non-zero when the MMIO window was mapped     */
+    uint8_t mmio_bar_index;         /* BAR slot that was mapped                     */
+    uint32_t mmio_virtual_base;     /* kernel VA of the mapped BAR window           */
+    uint32_t mmio_physical_base;    /* physical base of the mapped BAR window       */
+    uint32_t mmio_size;             /* size of the mapped window in bytes           */
     uint32_t notify_off_multiplier; /* notify capability multiplier            */
     hal_virtio_pci_cap_t common;
     hal_virtio_pci_cap_t notify;
@@ -198,11 +198,11 @@ bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mappin
 
 /** @brief Result of the virtio device bring-up handshake. */
 typedef struct {
-    uint8_t ready;          /* non-zero when FEATURES_OK stuck (device usable) */
-    uint8_t device_status;  /* final device_status register value             */
-    uint16_t num_queues;    /* number of virtqueues the device exposes        */
-    uint32_t mmio_virtual_base;     /* echoed from the mapping                 */
-    uint32_t common_cfg_address;    /* VA of the virtio_pci_common_cfg         */
+    uint8_t ready;                                  /* non-zero when FEATURES_OK stuck (device usable) */
+    uint8_t device_status;                          /* final device_status register value             */
+    uint16_t num_queues;                            /* number of virtqueues the device exposes        */
+    uint32_t mmio_virtual_base;                     /* echoed from the mapping                 */
+    uint32_t common_cfg_address;                    /* VA of the virtio_pci_common_cfg         */
     uint16_t queue_size[HAL_VIRTIO_GPU_MAX_QUEUES]; /* size of queues 0..1     */
 } hal_virtio_gpu_device_t;
 
@@ -222,17 +222,17 @@ bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_
 
 /** @brief A programmed split virtqueue (descriptor table + avail + used ring). */
 typedef struct {
-    uint8_t ready;             /* non-zero once enabled on the device         */
-    uint16_t queue_index;      /* which virtqueue this is                     */
-    uint16_t queue_size;       /* number of descriptors                       */
-    uint16_t last_used_index;  /* consumer cursor into the used ring          */
-    uint16_t free_head;        /* next free descriptor index                  */
-    uint32_t desc_address;     /* VA of the descriptor table                  */
-    uint32_t avail_address;    /* VA of the available ring                    */
-    uint32_t used_address;     /* VA of the used ring                         */
-    uint32_t notify_address;   /* VA to write queue_index into to notify      */
+    uint8_t ready;               /* non-zero once enabled on the device         */
+    uint16_t queue_index;        /* which virtqueue this is                     */
+    uint16_t queue_size;         /* number of descriptors                       */
+    uint16_t last_used_index;    /* consumer cursor into the used ring          */
+    uint16_t free_head;          /* next free descriptor index                  */
+    uint32_t desc_address;       /* VA of the descriptor table                  */
+    uint32_t avail_address;      /* VA of the available ring                    */
+    uint32_t used_address;       /* VA of the used ring                         */
+    uint32_t notify_address;     /* VA to write queue_index into to notify      */
     uint32_t ring_physical_base; /* physical base of the backing page         */
-    void *ring_backing;        /* VA of the backing page (for free)           */
+    void *ring_backing;          /* VA of the backing page (for free)           */
 } hal_virtio_virtqueue_t;
 
 /**
@@ -287,15 +287,15 @@ bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_g
  * hal_virtio_gpu_flush() pushes its contents to the host and presents them.
  */
 typedef struct {
-    uint8_t ready;            /* non-zero when the scanout is bound + presentable */
-    uint32_t resource_id;     /* host resource id                                 */
-    uint32_t scanout_id;      /* display index this resource is bound to          */
-    uint32_t width;           /* surface width in pixels                          */
-    uint32_t height;          /* surface height in pixels                         */
-    uint32_t *framebuffer;    /* guest BGRX surface (width*height pixels)          */
-    uint32_t framebuffer_size;/* surface size in bytes                            */
-    hal_virtio_virtqueue_t *queue; /* controlq used for present commands          */
-    void *command_buffer;     /* internal scratch (request/response)              */
+    uint8_t ready;                    /* non-zero when the scanout is bound + presentable */
+    uint32_t resource_id;             /* host resource id                                 */
+    uint32_t scanout_id;              /* display index this resource is bound to          */
+    uint32_t width;                   /* surface width in pixels                          */
+    uint32_t height;                  /* surface height in pixels                         */
+    uint32_t *framebuffer;            /* guest BGRX surface (width*height pixels)          */
+    uint32_t framebuffer_size;        /* surface size in bytes                            */
+    hal_virtio_virtqueue_t *queue;    /* controlq used for present commands          */
+    void *command_buffer;             /* internal scratch (request/response)              */
     uint32_t command_buffer_physical; /* cached physical base of command_buffer    */
 } hal_virtio_gpu_scanout_t;
 

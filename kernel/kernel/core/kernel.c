@@ -25,13 +25,13 @@
 #include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pci.h>
-#include <kernel/hal/hal.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/drivers/helpers/keyboard_helper.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/ps2_keyboard.h>
+#include <kernel/hal/hal.h>
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/helpers/core_allocators_helper.h>
@@ -549,16 +549,16 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } img_rows[] = {
-            {"red_hue=",     img.red_hue       },
-            {", green_hue=", img.green_hue      },
-            {", blue_hue=",  img.blue_hue       },
-            {", gray_rt=",   img.gray_roundtrip },
-            {", white_luma=",img.white_luma     },
-            {", hist255=",   img.hist_red_count },
-            {", centre=",    img.centre_pixel   },
-            {", paint_sig=", img.painter_signature},
-            {", ppm_sig=",   img.ppm_signature  },
-            {", smoke_ok=",  img.smoke_ok       },
+            {"red_hue=",      img.red_hue          },
+            {", green_hue=",  img.green_hue        },
+            {", blue_hue=",   img.blue_hue         },
+            {", gray_rt=",    img.gray_roundtrip   },
+            {", white_luma=", img.white_luma       },
+            {", hist255=",    img.hist_red_count   },
+            {", centre=",     img.centre_pixel     },
+            {", paint_sig=",  img.painter_signature},
+            {", ppm_sig=",    img.ppm_signature    },
+            {", smoke_ok=",   img.smoke_ok         },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P4 image smoke: ");
         for (size_t i = 0u; i < sizeof(img_rows) / sizeof(img_rows[0]); ++i)
@@ -582,13 +582,13 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } boot_rows[] = {
-            {"rc=",          (uint32_t) boot_rc        },
-            {", abi_ok=",    boot_res.abi_ok           },
-            {", platform=",  boot_res.platform_ok      },
-            {", display=",   boot_res.display_available},
-            {", init_ok=",   boot_res.renderer_init_ok },
-            {", frames=",    boot_res.frames_rendered  },
-            {", shutdown=",  boot_res.shutdown_clean   },
+            {"rc=",         (uint32_t) boot_rc        },
+            {", abi_ok=",   boot_res.abi_ok           },
+            {", platform=", boot_res.platform_ok      },
+            {", display=",  boot_res.display_available},
+            {", init_ok=",  boot_res.renderer_init_ok },
+            {", frames=",   boot_res.frames_rendered  },
+            {", shutdown=", boot_res.shutdown_clean   },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: lplplugin_initialize: ");
         for (size_t i = 0u; i < sizeof(boot_rows) / sizeof(boot_rows[0]); ++i)
@@ -608,14 +608,14 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } scn_rows[] = {
-            {"world_tx=",  scn.world_tx_raw         },
-            {", world_ty=",scn.world_ty_raw         },
-            {", undo_tx=", scn.undo_tx_raw          },
-            {", redo_tx=", scn.redo_tx_raw          },
-            {", sel=",     scn.selection            },
-            {", rot_x=",   (uint32_t) scn.rot_x_raw },
-            {", rot_y=",   (uint32_t) scn.rot_y_raw },
-            {", scene_ok=",scn.scene_ok             },
+            {"world_tx=",   scn.world_tx_raw        },
+            {", world_ty=", scn.world_ty_raw        },
+            {", undo_tx=",  scn.undo_tx_raw         },
+            {", redo_tx=",  scn.redo_tx_raw         },
+            {", sel=",      scn.selection           },
+            {", rot_x=",    (uint32_t) scn.rot_x_raw},
+            {", rot_y=",    (uint32_t) scn.rot_y_raw},
+            {", scene_ok=", scn.scene_ok            },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P4 scene smoke: ");
         for (size_t i = 0u; i < sizeof(scn_rows) / sizeof(scn_rows[0]); ++i)
@@ -636,18 +636,18 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } rnd_rows[] = {
-            {"screen_sig=",  rnd.angle0_screen_sig         },
-            {", depth_sig=", rnd.angle0_depth_sig          },
-            {", v0_x=",      (uint32_t) rnd.angle0_vertex0_x},
-            {", v0_y=",      (uint32_t) rnd.angle0_vertex0_y},
-            {", in_front=",  rnd.angle0_in_front           },
-            {", quarter_sig=",rnd.quarter_screen_sig       },
-            {", cull_vis=",  rnd.cull_visible              },
-            {", cull_sig=",  rnd.cull_visible_sig          },
-            {", tex_sig=",   rnd.tex_sample_sig            },
-            {", lambert=",   rnd.lambert_rgb               },
-            {", blinn=",     rnd.blinn_rgb                 },
-            {", render_ok=", rnd.render_ok                 },
+            {"screen_sig=",    rnd.angle0_screen_sig          },
+            {", depth_sig=",   rnd.angle0_depth_sig           },
+            {", v0_x=",        (uint32_t) rnd.angle0_vertex0_x},
+            {", v0_y=",        (uint32_t) rnd.angle0_vertex0_y},
+            {", in_front=",    rnd.angle0_in_front            },
+            {", quarter_sig=", rnd.quarter_screen_sig         },
+            {", cull_vis=",    rnd.cull_visible               },
+            {", cull_sig=",    rnd.cull_visible_sig           },
+            {", tex_sig=",     rnd.tex_sample_sig             },
+            {", lambert=",     rnd.lambert_rgb                },
+            {", blinn=",       rnd.blinn_rgb                  },
+            {", render_ok=",   rnd.render_ok                  },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P5 render smoke: ");
         for (size_t i = 0u; i < sizeof(rnd_rows) / sizeof(rnd_rows[0]); ++i)
@@ -669,21 +669,21 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } p6_rows[] = {
-            {"catmull_sig=",   p6.catmull_sig      },
-            {", saddle_sig=",  p6.saddle_sig       },
-            {", del_tris=",    p6.delaunay_tris    },
-            {", del_sig=",     p6.delaunay_sig     },
-            {", ray_hits=",    p6.ray_hits         },
-            {", ray_sig=",     p6.ray_image_sig    },
-            {", gold_rein=",   p6.pbr_gold_reinhard},
-            {", gold_aces=",   p6.pbr_gold_aces    },
-            {", plastic_aces=",p6.pbr_plastic_aces },
-            {", cmd_rec=",     p6.cmd_recording_sig},
-            {", latch0=",      p6.cmd_latched0_sig },
-            {", latch1=",      p6.cmd_latched1_sig },
-            {", fov_shaded=",  p6.foveated_shaded  },
-            {", fov_sig=",     p6.foveated_image_sig},
-            {", p6_ok=",       p6.p6_ok            },
+            {"catmull_sig=",    p6.catmull_sig       },
+            {", saddle_sig=",   p6.saddle_sig        },
+            {", del_tris=",     p6.delaunay_tris     },
+            {", del_sig=",      p6.delaunay_sig      },
+            {", ray_hits=",     p6.ray_hits          },
+            {", ray_sig=",      p6.ray_image_sig     },
+            {", gold_rein=",    p6.pbr_gold_reinhard },
+            {", gold_aces=",    p6.pbr_gold_aces     },
+            {", plastic_aces=", p6.pbr_plastic_aces  },
+            {", cmd_rec=",      p6.cmd_recording_sig },
+            {", latch0=",       p6.cmd_latched0_sig  },
+            {", latch1=",       p6.cmd_latched1_sig  },
+            {", fov_shaded=",   p6.foveated_shaded   },
+            {", fov_sig=",      p6.foveated_image_sig},
+            {", p6_ok=",        p6.p6_ok             },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P6 smoke: ");
         for (size_t i = 0u; i < sizeof(p6_rows) / sizeof(p6_rows[0]); ++i)
@@ -705,11 +705,11 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } present_rows[] = {
-            {"display=",   present.display_available},
-            {", width=",   present.width            },
-            {", height=",  present.height           },
-            {", img_sig=", present.image_signature  },
-            {", present_ok=", present.present_ok     },
+            {"display=",      present.display_available},
+            {", width=",      present.width            },
+            {", height=",     present.height           },
+            {", img_sig=",    present.image_signature  },
+            {", present_ok=", present.present_ok       },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P4 image present: ");
         for (size_t i = 0u; i < sizeof(present_rows) / sizeof(present_rows[0]); ++i)
@@ -730,15 +730,15 @@ void kernel_main(void)
             const char *label;
             uint32_t value;
         } r3d_rows[] = {
-            {"display=",      r3d.display_available},
-            {", width=",      r3d.width            },
-            {", height=",     r3d.height           },
-            {", cube_sig=",   r3d.cube_signature   },
-            {", tex_cube_sig=",r3d.textured_cube_sig},
-            {", lit_cube_sig=",r3d.lit_cube_sig     },
-            {", mv_sig=",     r3d.multiviewport_sig},
-            {", rtt_sig=",    r3d.rtt_sig          },
-            {", present_ok=", r3d.present_ok        },
+            {"display=",        r3d.display_available},
+            {", width=",        r3d.width            },
+            {", height=",       r3d.height           },
+            {", cube_sig=",     r3d.cube_signature   },
+            {", tex_cube_sig=", r3d.textured_cube_sig},
+            {", lit_cube_sig=", r3d.lit_cube_sig     },
+            {", mv_sig=",       r3d.multiviewport_sig},
+            {", rtt_sig=",      r3d.rtt_sig          },
+            {", present_ok=",   r3d.present_ok       },
         };
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P5 render present: ");
         for (size_t i = 0u; i < sizeof(r3d_rows) / sizeof(r3d_rows[0]); ++i)

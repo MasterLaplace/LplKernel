@@ -13,10 +13,10 @@
  */
 #include <kernel/hal/hal.h>
 
-#include <kernel/cpu/pci.h>
 #include <kernel/cpu/paging.h>
-#include <kernel/memory/vmm.h>
+#include <kernel/cpu/pci.h>
 #include <kernel/memory/pinned_memory.h>
+#include <kernel/memory/vmm.h>
 
 #include <string.h>
 
@@ -25,7 +25,7 @@
 
 /* virtio-gpu PCI device ids: modern is 0x1040 + virtio device type (16 = GPU)
  * = 0x1050; the transitional device exposes the legacy id 0x1010. */
-#define VIRTIO_GPU_DEVICE_ID_MODERN 0x1050u
+#define VIRTIO_GPU_DEVICE_ID_MODERN       0x1050u
 #define VIRTIO_GPU_DEVICE_ID_TRANSITIONAL 0x1010u
 
 /* Modern virtio-pci devices use ids >= 0x1040. */
@@ -34,15 +34,15 @@
 /* PCI status-register bit 4 advertises a capability list; the list head is a
  * byte pointer at config offset 0x34. Each capability begins with an 8-bit id
  * followed by an 8-bit pointer to the next capability (0 terminates). */
-#define PCI_STATUS_CAPABILITIES_LIST 0x0010u
+#define PCI_STATUS_CAPABILITIES_LIST      0x0010u
 #define PCI_REGISTER_CAPABILITIES_POINTER 0x34u
-#define PCI_CAP_ID_VENDOR_SPECIFIC 0x09u
+#define PCI_CAP_ID_VENDOR_SPECIFIC        0x09u
 
 /* Layout of a virtio_pci_cap structure inside the capability list. */
-#define VIRTIO_PCI_CAP_OFFSET_CFG_TYPE 3u  /* u8  cfg_type                */
-#define VIRTIO_PCI_CAP_OFFSET_BAR      4u  /* u8  bar index               */
-#define VIRTIO_PCI_CAP_OFFSET_OFFSET   8u  /* le32 offset within the BAR  */
-#define VIRTIO_PCI_CAP_OFFSET_LENGTH   12u /* le32 length of the structure */
+#define VIRTIO_PCI_CAP_OFFSET_CFG_TYPE          3u  /* u8  cfg_type                */
+#define VIRTIO_PCI_CAP_OFFSET_BAR               4u  /* u8  bar index               */
+#define VIRTIO_PCI_CAP_OFFSET_OFFSET            8u  /* le32 offset within the BAR  */
+#define VIRTIO_PCI_CAP_OFFSET_LENGTH            12u /* le32 length of the structure */
 #define VIRTIO_PCI_NOTIFY_CAP_OFFSET_MULTIPLIER 16u /* le32 (notify only) */
 
 /* Guard against a malformed / cyclic capability list. */
@@ -86,8 +86,7 @@ static bool is_virtio_gpu(const PeripheralComponentInterconnectDevice_t *dev)
 {
     if (dev->vendor_id != VIRTIO_PCI_VENDOR_ID)
         return false;
-    return dev->device_id == VIRTIO_GPU_DEVICE_ID_MODERN ||
-           dev->device_id == VIRTIO_GPU_DEVICE_ID_TRANSITIONAL;
+    return dev->device_id == VIRTIO_GPU_DEVICE_ID_MODERN || dev->device_id == VIRTIO_GPU_DEVICE_ID_TRANSITIONAL;
 }
 
 bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info)
@@ -101,8 +100,7 @@ bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info)
     const uint32_t count = peripheral_component_interconnect_get_device_count();
     for (uint32_t i = 0u; i < count; ++i)
     {
-        const PeripheralComponentInterconnectDevice_t *dev =
-            peripheral_component_interconnect_get_device(i);
+        const PeripheralComponentInterconnectDevice_t *dev = peripheral_component_interconnect_get_device(i);
         if (dev == (void *) 0 || !is_virtio_gpu(dev))
             continue;
 
@@ -119,7 +117,7 @@ bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info)
         {
             PeripheralComponentInterconnectBaseAddressRegister_t bar;
             if (!peripheral_component_interconnect_read_base_address_register(dev->bus, dev->device, dev->function,
-                                                                             index, &bar))
+                                                                              index, &bar))
                 continue;
             if (bar.is_io)
             {
@@ -142,31 +140,30 @@ static hal_virtio_pci_cap_t *cap_slot_for_type(hal_virtio_gpu_mapping_t *mapping
 {
     switch (cfg_type)
     {
-        case HAL_VIRTIO_PCI_CAP_COMMON_CFG: return &mapping->common;
-        case HAL_VIRTIO_PCI_CAP_NOTIFY_CFG: return &mapping->notify;
-        case HAL_VIRTIO_PCI_CAP_ISR_CFG:    return &mapping->isr;
-        case HAL_VIRTIO_PCI_CAP_DEVICE_CFG: return &mapping->device;
-        default:                            return (void *) 0;
+    case HAL_VIRTIO_PCI_CAP_COMMON_CFG: return &mapping->common;
+    case HAL_VIRTIO_PCI_CAP_NOTIFY_CFG: return &mapping->notify;
+    case HAL_VIRTIO_PCI_CAP_ISR_CFG: return &mapping->isr;
+    case HAL_VIRTIO_PCI_CAP_DEVICE_CFG: return &mapping->device;
+    default: return (void *) 0;
     }
 }
 
 /* Walk the PCI capability list, recording every virtio cfg structure. */
 static void walk_virtio_capabilities(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mapping_t *mapping)
 {
-    const uint16_t status =
-        peripheral_component_interconnect_config_read_word(info->bus, info->device, info->function,
-                                                           PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_STATUS);
+    const uint16_t status = peripheral_component_interconnect_config_read_word(
+        info->bus, info->device, info->function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_STATUS);
     if ((status & PCI_STATUS_CAPABILITIES_LIST) == 0u)
         return;
 
     uint8_t pointer = peripheral_component_interconnect_config_read_byte(info->bus, info->device, info->function,
-                                                                        PCI_REGISTER_CAPABILITIES_POINTER);
+                                                                         PCI_REGISTER_CAPABILITIES_POINTER);
     for (uint32_t guard = 0u; pointer != 0u && guard < VIRTIO_PCI_CAP_WALK_LIMIT; ++guard)
     {
-        const uint8_t cap_id = peripheral_component_interconnect_config_read_byte(info->bus, info->device,
-                                                                                 info->function, pointer);
-        const uint8_t next = peripheral_component_interconnect_config_read_byte(
-            info->bus, info->device, info->function, (uint8_t) (pointer + 1u));
+        const uint8_t cap_id =
+            peripheral_component_interconnect_config_read_byte(info->bus, info->device, info->function, pointer);
+        const uint8_t next = peripheral_component_interconnect_config_read_byte(info->bus, info->device, info->function,
+                                                                                (uint8_t) (pointer + 1u));
 
         if (cap_id == PCI_CAP_ID_VENDOR_SPECIFIC)
         {
@@ -244,7 +241,7 @@ bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mappin
      * Decode that BAR's real base + size and map the whole window. */
     PeripheralComponentInterconnectBaseAddressRegister_t bar;
     if (!peripheral_component_interconnect_read_base_address_register(info->bus, info->device, info->function,
-                                                                     out_mapping->common.bar, &bar) ||
+                                                                      out_mapping->common.bar, &bar) ||
         bar.is_io)
         return false;
 
@@ -286,8 +283,7 @@ bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_
     mmio_write32(common + VIRTIO_PCI_COMMON_DRIVER_FEATURE, 0u);
 
     /* 4. Commit FEATURES_OK and verify the device kept it set. */
-    mmio_write8(status_reg,
-                (uint8_t) (VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK));
+    mmio_write8(status_reg, (uint8_t) (VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK));
     const uint8_t status = mmio_read8(status_reg);
 
     out_device->device_status = status;
@@ -393,8 +389,8 @@ uint8_t hal_virtio_gpu_driver_ok(const hal_virtio_gpu_device_t *device)
         return 0u;
 
     const uint32_t status_reg = device->common_cfg_address + VIRTIO_PCI_COMMON_DEVICE_STATUS;
-    const uint8_t status =
-        (uint8_t) (VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK);
+    const uint8_t status = (uint8_t) (VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK |
+                                      VIRTIO_STATUS_DRIVER_OK);
     mmio_write8(status_reg, status);
     return mmio_read8(status_reg);
 }
@@ -408,14 +404,15 @@ uint8_t hal_virtio_gpu_driver_ok(const hal_virtio_gpu_device_t *device)
 #define VIRTQ_DESC_F_WRITE 0x0002u /* device-writable (else device-readable)  */
 
 /* virtio_gpu_ctrl_hdr layout (24 bytes) + the commands we use. */
-#define VIRTIO_GPU_CTRL_HDR_BYTES 24u
+#define VIRTIO_GPU_CTRL_HDR_BYTES       24u
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO 0x0100u
 #define VIRTIO_GPU_RESP_OK_DISPLAY_INFO 0x1101u
 
 /* virtio_gpu_resp_display_info: ctrl_hdr + 16 * virtio_gpu_display_one(24B). */
-#define VIRTIO_GPU_MAX_SCANOUTS 16u
+#define VIRTIO_GPU_MAX_SCANOUTS      16u
 #define VIRTIO_GPU_DISPLAY_ONE_BYTES 24u
-#define VIRTIO_GPU_DISPLAY_INFO_BYTES (VIRTIO_GPU_CTRL_HDR_BYTES + VIRTIO_GPU_MAX_SCANOUTS * VIRTIO_GPU_DISPLAY_ONE_BYTES)
+#define VIRTIO_GPU_DISPLAY_INFO_BYTES                                                                                  \
+    (VIRTIO_GPU_CTRL_HDR_BYTES + VIRTIO_GPU_MAX_SCANOUTS * VIRTIO_GPU_DISPLAY_ONE_BYTES)
 
 /* Bounded spin waiting for the device to populate the used ring. */
 #define VIRTIO_GPU_POLL_LIMIT 100000000u
@@ -512,7 +509,7 @@ bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_g
     ring_write32(request_va + 0u, VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
 
     const virtq_segment_t segments[] = {
-        {request_physical, VIRTIO_GPU_CTRL_HDR_BYTES, 0u},
+        {request_physical,  VIRTIO_GPU_CTRL_HDR_BYTES,     0u},
         {response_physical, VIRTIO_GPU_DISPLAY_INFO_BYTES, 1u},
     };
     bool ok = submit_chain(queue, segments, 2u);
@@ -551,7 +548,7 @@ bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_g
 /* command_buffer page layout: request header and response (entries live in a
  * separate, possibly multi-page, pinned buffer chained as its own descriptors). */
 #define CMD_REQUEST_OFFSET  0u
-#define CMD_RESPONSE_OFFSET 256u  /* requests stay well under 256 bytes      */
+#define CMD_RESPONSE_OFFSET 256u /* requests stay well under 256 bytes      */
 
 /* Upper bound on chained descriptors per command (request + entry pages + resp).
  * 16 segments => up to 14 entry pages => 14*256 = 3584 SG entries. */
@@ -720,9 +717,8 @@ bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width
         ring_write32(cmd_va + 0u, VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING);
         ring_write32(cmd_va + 24u, out_scanout->resource_id);
         ring_write32(cmd_va + 28u, entry_count);
-        const bool attach_ok =
-            entries_ok &&
-            send_nodata_command(out_scanout, 32u, (uint16_t) entry_pages, entry_segments) == VIRTIO_GPU_RESP_OK_NODATA;
+        const bool attach_ok = entries_ok && send_nodata_command(out_scanout, 32u, (uint16_t) entry_pages,
+                                                                 entry_segments) == VIRTIO_GPU_RESP_OK_NODATA;
         kernel_pinned_free(entries_buffer, entries_bytes);
         if (!attach_ok)
             goto fail;
@@ -756,16 +752,16 @@ bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout)
 
     /* 4. TRANSFER_TO_HOST_2D (push the whole surface to the host resource). */
     write_command_rect(cmd_va, VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D, 0u, 0u, scanout->width, scanout->height);
-    write64(cmd_va + 40u, 0u);              /* offset      */
+    write64(cmd_va + 40u, 0u); /* offset      */
     ring_write32(cmd_va + 48u, scanout->resource_id);
-    ring_write32(cmd_va + 52u, 0u);         /* padding     */
+    ring_write32(cmd_va + 52u, 0u); /* padding     */
     if (send_nodata_command(scanout, 56u, 0u, (void *) 0) != VIRTIO_GPU_RESP_OK_NODATA)
         return false;
 
     /* 5. RESOURCE_FLUSH (present the transferred contents). */
     write_command_rect(cmd_va, VIRTIO_GPU_CMD_RESOURCE_FLUSH, 0u, 0u, scanout->width, scanout->height);
     ring_write32(cmd_va + 40u, scanout->resource_id);
-    ring_write32(cmd_va + 44u, 0u);         /* padding     */
+    ring_write32(cmd_va + 44u, 0u); /* padding     */
     return send_nodata_command(scanout, 48u, 0u, (void *) 0) == VIRTIO_GPU_RESP_OK_NODATA;
 }
 

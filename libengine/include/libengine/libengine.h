@@ -171,16 +171,16 @@ extern void libengine_p3_render_smoke(libengine_p3_render_smoke_result_t *out);
 ** are non-authoritative but kept integer-exact to avoid cross-target drift.
 */
 typedef struct {
-    uint32_t red_hue;        /* rgbToHsb(red).hue       -> 0                    */
-    uint32_t green_hue;      /* rgbToHsb(green).hue     -> 120                  */
-    uint32_t blue_hue;       /* rgbToHsb(blue).hue      -> 240                  */
-    uint32_t gray_roundtrip; /* hsbToRgb(rgbToHsb(gray)) == gray (1/0)          */
-    uint32_t white_luma;     /* luminanceOf(white)      -> 255                  */
-    uint32_t hist_red_count; /* histogram of 4x4 red: red[255] -> 16           */
-    uint32_t centre_pixel;   /* bilinear centre of a 2x2 gradient, 0x00RRGGBB  */
+    uint32_t red_hue;           /* rgbToHsb(red).hue       -> 0                    */
+    uint32_t green_hue;         /* rgbToHsb(green).hue     -> 120                  */
+    uint32_t blue_hue;          /* rgbToHsb(blue).hue      -> 240                  */
+    uint32_t gray_roundtrip;    /* hsbToRgb(rgbToHsb(gray)) == gray (1/0)          */
+    uint32_t white_luma;        /* luminanceOf(white)      -> 255                  */
+    uint32_t hist_red_count;    /* histogram of 4x4 red: red[255] -> 16           */
+    uint32_t centre_pixel;      /* bilinear centre of a 2x2 gradient, 0x00RRGGBB  */
     uint32_t painter_signature; /* FNV-1a fold of a fixed Painter scene         */
-    uint32_t ppm_signature;  /* FNV-1a fold after a PPM write->read round-trip  */
-    uint32_t smoke_ok;       /* all of the above match expected values          */
+    uint32_t ppm_signature;     /* FNV-1a fold after a PPM write->read round-trip  */
+    uint32_t smoke_ok;          /* all of the above match expected values          */
 } libengine_p4_image_smoke_result_t;
 
 extern void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out);
@@ -209,14 +209,14 @@ extern void libengine_p4_image_present_smoke(libengine_p4_image_present_smoke_re
 ** (tests/test-scene-parity) bit-for-bit (Fixed32/CORDIC authority).
 */
 typedef struct {
-    uint32_t world_tx_raw;  /* child world translation x, Q16.16 raw -> 15<<16  */
-    uint32_t world_ty_raw;  /* child world translation y, Q16.16 raw -> 20<<16  */
-    uint32_t undo_tx_raw;   /* child local tx after one undo, raw -> 5<<16      */
-    uint32_t redo_tx_raw;   /* child local tx after redo, raw -> 7<<16          */
-    uint32_t selection;     /* selection count after select(root,child)         */
-    int32_t rot_x_raw;      /* fromTRS(90deg).apply(1,0).x raw -> ~0            */
-    int32_t rot_y_raw;      /* fromTRS(90deg).apply(1,0).y raw -> ~65536        */
-    uint32_t scene_ok;      /* all expected values matched                      */
+    uint32_t world_tx_raw; /* child world translation x, Q16.16 raw -> 15<<16  */
+    uint32_t world_ty_raw; /* child world translation y, Q16.16 raw -> 20<<16  */
+    uint32_t undo_tx_raw;  /* child local tx after one undo, raw -> 5<<16      */
+    uint32_t redo_tx_raw;  /* child local tx after redo, raw -> 7<<16          */
+    uint32_t selection;    /* selection count after select(root,child)         */
+    int32_t rot_x_raw;     /* fromTRS(90deg).apply(1,0).x raw -> ~0            */
+    int32_t rot_y_raw;     /* fromTRS(90deg).apply(1,0).y raw -> ~65536        */
+    uint32_t scene_ok;     /* all expected values matched                      */
 } libengine_p4_scene_smoke_result_t;
 
 extern void libengine_p4_scene_smoke(libengine_p4_scene_smoke_result_t *out);
@@ -230,19 +230,19 @@ extern void libengine_p4_scene_smoke(libengine_p4_scene_smoke_result_t *out);
 ** bit-for-bit.
 */
 typedef struct {
-    uint32_t angle0_screen_sig; /* FNV-1a fold of all 8 floored screen (x,y) at angle 0 */
-    uint32_t angle0_depth_sig;  /* FNV-1a fold of all 8 quantized NDC depths at angle 0  */
-    int32_t angle0_vertex0_x;   /* floored screen X of cube vertex 0 (witness)          */
-    int32_t angle0_vertex0_y;   /* floored screen Y of cube vertex 0 (witness)          */
-    uint32_t angle0_in_front;   /* vertices with w > 0 at angle 0 -> 8                   */
-    uint32_t quarter_screen_sig;/* screen fold at pi/4 (must differ from angle0)         */
-    uint32_t cull_total;        /* instance grid size -> 49 (7x7)                       */
-    uint32_t cull_visible;      /* instances surviving the frustum cull -> 40           */
-    uint32_t cull_visible_sig;  /* FNV-1a fold of the visible-index list                */
-    uint32_t tex_sample_sig;    /* FNV-1a fold of 64 bilinear texture samples           */
-    uint32_t lambert_rgb;       /* Lambert shade of a reference fragment, 0x00RRGGBB    */
-    uint32_t blinn_rgb;         /* Blinn-Phong shade of the same fragment               */
-    uint32_t render_ok;         /* all expected invariants held                         */
+    uint32_t angle0_screen_sig;  /* FNV-1a fold of all 8 floored screen (x,y) at angle 0 */
+    uint32_t angle0_depth_sig;   /* FNV-1a fold of all 8 quantized NDC depths at angle 0  */
+    int32_t angle0_vertex0_x;    /* floored screen X of cube vertex 0 (witness)          */
+    int32_t angle0_vertex0_y;    /* floored screen Y of cube vertex 0 (witness)          */
+    uint32_t angle0_in_front;    /* vertices with w > 0 at angle 0 -> 8                   */
+    uint32_t quarter_screen_sig; /* screen fold at pi/4 (must differ from angle0)         */
+    uint32_t cull_total;         /* instance grid size -> 49 (7x7)                       */
+    uint32_t cull_visible;       /* instances surviving the frustum cull -> 40           */
+    uint32_t cull_visible_sig;   /* FNV-1a fold of the visible-index list                */
+    uint32_t tex_sample_sig;     /* FNV-1a fold of 64 bilinear texture samples           */
+    uint32_t lambert_rgb;        /* Lambert shade of a reference fragment, 0x00RRGGBB    */
+    uint32_t blinn_rgb;          /* Blinn-Phong shade of the same fragment               */
+    uint32_t render_ok;          /* all expected invariants held                         */
 } libengine_p5_render_smoke_result_t;
 
 extern void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *out);
@@ -276,22 +276,22 @@ extern void libengine_p5_render_present_smoke(libengine_p5_render_present_result
 ** signature below must match the Linux oracle (tests/test-p6-parity) bit-for-bit.
 */
 typedef struct {
-    uint32_t catmull_sig;       /* fold of the Catmull-Rom loop samples              */
-    uint32_t saddle_sig;        /* fold of the parametric saddle surface vertices    */
-    uint32_t delaunay_tris;     /* Delaunay triangle count -> 6                      */
-    uint32_t delaunay_sig;      /* fold of the Delaunay triangle index list          */
-    uint32_t ray_hits;          /* primary rays that hit geometry                    */
-    uint32_t ray_image_sig;     /* fold of the ray-traced image                      */
-    uint32_t pbr_gold_reinhard; /* gold metal, Reinhard tone map, 0x00RRGGBB         */
-    uint32_t pbr_gold_aces;     /* gold metal, ACES tone map                         */
-    uint32_t pbr_plastic_aces;  /* blue dielectric, ACES tone map                    */
-    uint32_t cmd_recording_sig; /* fold of the immutable command-buffer recording    */
-    uint32_t cmd_latched0_sig;  /* late-latched submit fold, pose set 0              */
-    uint32_t cmd_latched1_sig;  /* late-latched submit fold, mutated poses           */
-    uint32_t foveated_shaded;   /* foveated representative fragments shaded           */
-    uint32_t foveated_full;     /* full-rate fragment count (width*height)           */
-    uint32_t foveated_image_sig;/* fold of the replicated foveated image             */
-    uint32_t p6_ok;             /* all expected invariants held                      */
+    uint32_t catmull_sig;        /* fold of the Catmull-Rom loop samples              */
+    uint32_t saddle_sig;         /* fold of the parametric saddle surface vertices    */
+    uint32_t delaunay_tris;      /* Delaunay triangle count -> 6                      */
+    uint32_t delaunay_sig;       /* fold of the Delaunay triangle index list          */
+    uint32_t ray_hits;           /* primary rays that hit geometry                    */
+    uint32_t ray_image_sig;      /* fold of the ray-traced image                      */
+    uint32_t pbr_gold_reinhard;  /* gold metal, Reinhard tone map, 0x00RRGGBB         */
+    uint32_t pbr_gold_aces;      /* gold metal, ACES tone map                         */
+    uint32_t pbr_plastic_aces;   /* blue dielectric, ACES tone map                    */
+    uint32_t cmd_recording_sig;  /* fold of the immutable command-buffer recording    */
+    uint32_t cmd_latched0_sig;   /* late-latched submit fold, pose set 0              */
+    uint32_t cmd_latched1_sig;   /* late-latched submit fold, mutated poses           */
+    uint32_t foveated_shaded;    /* foveated representative fragments shaded           */
+    uint32_t foveated_full;      /* full-rate fragment count (width*height)           */
+    uint32_t foveated_image_sig; /* fold of the replicated foveated image             */
+    uint32_t p6_ok;              /* all expected invariants held                      */
 } libengine_p6_smoke_result_t;
 
 extern void libengine_p6_smoke(libengine_p6_smoke_result_t *out);
