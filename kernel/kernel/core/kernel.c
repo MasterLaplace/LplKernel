@@ -679,6 +679,31 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P5 render present: rasterize the depth-buffered 3D cube and present a
+       scaled copy onto the scanout. The offscreen fold must match the oracle. */
+    if (hal_display_available())
+    {
+        libengine_p5_render_present_result_t r3d;
+        libengine_p5_render_present_smoke(&r3d);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } r3d_rows[] = {
+            {"display=",      r3d.display_available},
+            {", width=",      r3d.width            },
+            {", height=",     r3d.height           },
+            {", cube_sig=",   r3d.cube_signature   },
+            {", present_ok=", r3d.present_ok        },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P5 render present: ");
+        for (size_t i = 0u; i < sizeof(r3d_rows) / sizeof(r3d_rows[0]); ++i)
+        {
+            serial_write_string(&com1, r3d_rows[i].label);
+            serial_write_hex32(&com1, r3d_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();

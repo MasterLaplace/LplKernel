@@ -242,6 +242,22 @@ typedef struct {
 extern void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *out);
 
 /*
+** P5 render present. Rasterizes the depth-buffered cube into an offscreen
+** buffer and presents a scaled copy onto the display scanout through the HAL
+** (IDisplayBackend). The 96x64 offscreen fold (cube_signature) must match the
+** Linux oracle (tests/test-render-parity cube angle0 sig) bit-for-bit.
+*/
+typedef struct {
+    uint32_t display_available; /* surface present?                                   */
+    uint32_t width;             /* surface width                                      */
+    uint32_t height;            /* surface height                                     */
+    uint32_t cube_signature;    /* FNV-1a fold of the 96x64 offscreen cube (angle 0)  */
+    uint32_t present_ok;        /* rasterized + presented without error               */
+} libengine_p5_render_present_result_t;
+
+extern void libengine_p5_render_present_smoke(libengine_p5_render_present_result_t *out);
+
+/*
 ** Engine boot facade (extern "C"). This is the single real entry point the
 ** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
 ** are up — the in-kernel equivalent of main() constructing and running the
