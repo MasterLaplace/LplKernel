@@ -185,6 +185,23 @@ typedef struct {
 extern void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out);
 
 /*
+** P4 image present smoke. Paints a demo 2D scene (gradient + shapes via the
+** lpl::image Painter) into a full-surface Image and blits it onto the display
+** scanout through the IDisplayBackend HAL, then presents. Proves the
+** Image -> hal_display -> (virtio-gpu | software-LFB) path. Skipped when no
+** surface is available (text-mode boot).
+*/
+typedef struct {
+    uint32_t display_available; /* a presentable surface was found             */
+    uint32_t width;             /* surface width                               */
+    uint32_t height;            /* surface height                              */
+    uint32_t image_signature;   /* FNV-1a fold of the painted scene             */
+    uint32_t present_ok;        /* blit + present completed                     */
+} libengine_p4_image_present_smoke_result_t;
+
+extern void libengine_p4_image_present_smoke(libengine_p4_image_present_smoke_result_t *out);
+
+/*
 ** Engine boot facade (extern "C"). This is the single real entry point the
 ** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
 ** are up — the in-kernel equivalent of main() constructing and running the

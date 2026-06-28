@@ -56,6 +56,7 @@ obj/local/p1_physics_smoke.o \
 obj/local/p2_hal_smoke.o \
 obj/local/p3_render_smoke.o \
 obj/local/p4_image_smoke.o \
+obj/local/p4_image_present_smoke.o \
 obj/local/lplplugin_init.o \
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)

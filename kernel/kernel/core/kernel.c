@@ -598,6 +598,32 @@ void kernel_main(void)
         serial_write_string(&com1, "\n");
     }
 
+    /* P4 image present: paint a 2D scene and blit it onto the display scanout
+       through the HAL (Image -> hal_display -> virtio-gpu/LFB). Runs last so the
+       2D scene is what stays on screen. */
+    if (hal_display_available())
+    {
+        libengine_p4_image_present_smoke_result_t present;
+        libengine_p4_image_present_smoke(&present);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } present_rows[] = {
+            {"display=",   present.display_available},
+            {", width=",   present.width            },
+            {", height=",  present.height           },
+            {", img_sig=", present.image_signature  },
+            {", present_ok=", present.present_ok     },
+        };
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: libengine P4 image present: ");
+        for (size_t i = 0u; i < sizeof(present_rows) / sizeof(present_rows[0]); ++i)
+        {
+            serial_write_string(&com1, present_rows[i].label);
+            serial_write_hex32(&com1, present_rows[i].value);
+        }
+        serial_write_string(&com1, "\n");
+    }
+
     if (framebuffer_available())
     {
         kernel_splash_finish();
