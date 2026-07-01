@@ -5,10 +5,10 @@
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
 
-#include <kernel/boot/init_array.h>
-#include <kernel/hal/hal.h>
+#    include <kernel/boot/init_array.h>
+#    include <kernel/hal/hal.h>
 
-#include <libengine/libengine.h>
+#    include <libengine/libengine.h>
 
 void libengine_smoke_run_all(Serial_t *com1)
 {

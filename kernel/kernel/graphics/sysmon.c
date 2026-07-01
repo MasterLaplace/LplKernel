@@ -20,28 +20,28 @@
 /* ------------------------------------------------------------------------- */
 /* Tunables                                                                  */
 /* ------------------------------------------------------------------------- */
-#define SYSMON_BUDDY_ORDERS    11u
-#define SYSMON_SIZE_CLASSES    12u
-#define SYSMON_FLOW_LANES       4u
-#define SYSMON_FLOW_PARTICLES  96u
-#define SYSMON_SPIN_CAP    4000000u /* watchdog on the per-frame pacing spin */
+#define SYSMON_BUDDY_ORDERS   11u
+#define SYSMON_SIZE_CLASSES   12u
+#define SYSMON_FLOW_LANES     4u
+#define SYSMON_FLOW_PARTICLES 96u
+#define SYSMON_SPIN_CAP       4000000u /* watchdog on the per-frame pacing spin */
 
 /* ------------------------------------------------------------------------- */
 /* Surface drawing layer — renders into the HAL display buffer (virtio-gpu or */
 /* software-LFB), then hal_display_present() flips it. Colors are 0x00RRGGBB. */
 /* ------------------------------------------------------------------------- */
-static uint32_t *g_buf;       /* active draw target (back buffer if any)   */
-static uint32_t g_pitch_px;   /* pixels per scanline of the draw target    */
-static uint32_t g_w, g_h;     /* visible dimensions                        */
+static uint32_t *g_buf;     /* active draw target (back buffer if any)   */
+static uint32_t g_pitch_px; /* pixels per scanline of the draw target    */
+static uint32_t g_w, g_h;   /* visible dimensions                        */
 
 /* Double buffering: render into g_back (tightly packed, pitch == width),
    then blit the whole frame into the scanout in one pass and present. This
    removes the tearing of drawing straight into live scanout memory (the
    software-LFB path) and gives the virtio-gpu path one clean transfer. If the
    back buffer cannot be allocated we fall back to drawing into the scanout. */
-static uint32_t *g_surface;    /* scanout virtual address                  */
+static uint32_t *g_surface; /* scanout virtual address                  */
 static uint32_t g_surf_pitch_px;
-static uint32_t *g_back;       /* back buffer (NULL => direct/no double-buf) */
+static uint32_t *g_back; /* back buffer (NULL => direct/no double-buf) */
 
 static void sysmon_blit_present(void)
 {
@@ -145,18 +145,14 @@ static uint32_t g_baseline_pages;
 /* ------------------------------------------------------------------------- */
 /* Small helpers                                                             */
 /* ------------------------------------------------------------------------- */
-static uint32_t sm_clampu(uint32_t v, uint32_t lo, uint32_t hi)
-{
-    return v < lo ? lo : (v > hi ? hi : v);
-}
+static uint32_t sm_clampu(uint32_t v, uint32_t lo, uint32_t hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 static uint32_t sm_lerp(uint32_t a, uint32_t b, uint32_t t_milli)
 {
     const uint32_t t = sm_clampu(t_milli, 0u, 1000u);
     const uint8_t ar = (a >> 16) & 0xFFu, ag = (a >> 8) & 0xFFu, ab = a & 0xFFu;
     const uint8_t br = (b >> 16) & 0xFFu, bg = (b >> 8) & 0xFFu, bb = b & 0xFFu;
-    return sm_rgb((uint8_t) ((ar * (1000u - t) + br * t) / 1000u),
-                  (uint8_t) ((ag * (1000u - t) + bg * t) / 1000u),
+    return sm_rgb((uint8_t) ((ar * (1000u - t) + br * t) / 1000u), (uint8_t) ((ag * (1000u - t) + bg * t) / 1000u),
                   (uint8_t) ((ab * (1000u - t) + bb * t) / 1000u));
 }
 
@@ -436,9 +432,9 @@ static void sysmon_draw_frame(uint32_t frame)
         const uint32_t enq_delta = (g_now.ring_enqueue - g_prev.ring_enqueue);
         const uint32_t deq_delta = (g_now.ring_dequeue - g_prev.ring_dequeue);
         const uint32_t gpu_delta = (g_now.pinned_allocated - g_prev.pinned_allocated);
-        const uint32_t heap_delta = (g_now.heap_small_free_blocks > g_prev.heap_small_free_blocks)
-                                        ? (g_now.heap_small_free_blocks - g_prev.heap_small_free_blocks)
-                                        : (g_prev.heap_small_free_blocks - g_now.heap_small_free_blocks);
+        const uint32_t heap_delta = (g_now.heap_small_free_blocks > g_prev.heap_small_free_blocks) ?
+                                        (g_now.heap_small_free_blocks - g_prev.heap_small_free_blocks) :
+                                        (g_prev.heap_small_free_blocks - g_now.heap_small_free_blocks);
         sysmon_flow_spawn(0u, enq_delta ? enq_delta : ((frame % 20u == 0u) ? 1u : 0u), 14u);
         sysmon_flow_spawn(1u, deq_delta ? deq_delta : ((frame % 26u == 0u) ? 1u : 0u), 12u);
         sysmon_flow_spawn(2u, gpu_delta ? gpu_delta : ((frame % 45u == 0u) ? 1u : 0u), 9u);
@@ -526,8 +522,8 @@ void kernel_sysmon_run(Serial_t *com1)
         g_pitch_px = g_surf_pitch_px;
     }
 
-    serial_write_string(com1, g_back ? "[" KERNEL_SYSTEM_STRING "]: sysmon live (double-buffered, press any key)\n"
-                                     : "[" KERNEL_SYSTEM_STRING "]: sysmon live (direct, press any key)\n");
+    serial_write_string(com1, g_back ? "[" KERNEL_SYSTEM_STRING "]: sysmon live (double-buffered, press any key)\n" :
+                                       "[" KERNEL_SYSTEM_STRING "]: sysmon live (direct, press any key)\n");
 
     for (uint32_t lane = 0u; lane < SYSMON_FLOW_LANES; ++lane)
         for (uint32_t i = 0u; i < SYSMON_FLOW_PARTICLES; ++i)

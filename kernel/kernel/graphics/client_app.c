@@ -5,12 +5,12 @@
 
 #if !defined(LPL_PLUGIN_UNAVAILABLE)
 
-#include <kernel/cpu/clock.h>
-#include <kernel/drivers/keyboard.h>
-#include <kernel/graphics/font8x16.h>
-#include <kernel/hal/hal.h>
+#    include <kernel/cpu/clock.h>
+#    include <kernel/drivers/keyboard.h>
+#    include <kernel/graphics/font8x16.h>
+#    include <kernel/hal/hal.h>
 
-#include <libengine/libengine.h>
+#    include <libengine/libengine.h>
 
 /* --- Minimal text overlay (8x16 bitmap font, MSB = leftmost pixel). Drawn on
    the display surface only — non-authoritative, never folded. -------------- */
@@ -70,7 +70,8 @@ void kernel_client_app_run(Serial_t *com1)
     const uint32_t pitch_px = surface.pitch / 4u;
     uint32_t *dst = surface.buffer;
 
-    serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: client app live (WASD=cam Q/E=zoom P=possess N=next X=exit)\n");
+    serial_write_string(com1,
+                        "[" KERNEL_SYSTEM_STRING "]: client app live (WASD=cam Q/E=zoom P=possess N=next X=exit)\n");
     libengine_sim_init();
     const uint32_t entity_count = libengine_sim_entity_count();
 
@@ -96,10 +97,26 @@ void kernel_client_app_run(Serial_t *com1)
             {
             case 'a': cam_yaw -= 0.08f; break;
             case 'd': cam_yaw += 0.08f; break;
-            case 'w': cam_pitch += 0.06f; if (cam_pitch > 1.40f) cam_pitch = 1.40f; break;
-            case 's': cam_pitch -= 0.06f; if (cam_pitch < -1.40f) cam_pitch = -1.40f; break;
-            case 'q': cam_dist -= 0.6f; if (cam_dist < 2.0f) cam_dist = 2.0f; break;
-            case 'e': cam_dist += 0.6f; if (cam_dist > 40.0f) cam_dist = 40.0f; break;
+            case 'w':
+                cam_pitch += 0.06f;
+                if (cam_pitch > 1.40f)
+                    cam_pitch = 1.40f;
+                break;
+            case 's':
+                cam_pitch -= 0.06f;
+                if (cam_pitch < -1.40f)
+                    cam_pitch = -1.40f;
+                break;
+            case 'q':
+                cam_dist -= 0.6f;
+                if (cam_dist < 2.0f)
+                    cam_dist = 2.0f;
+                break;
+            case 'e':
+                cam_dist += 0.6f;
+                if (cam_dist > 40.0f)
+                    cam_dist = 40.0f;
+                break;
             case 'p': possess = (possess < 0) ? 0 : -1; break;
             case 'n':
                 if (possess >= 0 && entity_count > 0u)
