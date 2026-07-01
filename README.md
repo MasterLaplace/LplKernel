@@ -210,6 +210,34 @@ i686-elf-gdb kernel/lpl.kernel
 - QEMU installed (`qemu-system-i386`)
 - GDB with i686-elf support
 
+## Portfolio / Live demo
+
+The Laplace project has a showcase site (Astro + Tailwind) in [`site/`](site/) that presents
+LplKernel, LplPlugin, and the origin projects (Engine-3D, Flakkari), plus a blog/papers section.
+Its headline feature is an **in-browser boot of the kernel** via the [v86](https://github.com/copy/v86)
+WASM emulator — visitors can run both the text-console and graphics profiles without installing
+anything.
+
+- **Hosting:** GitHub Pages, served from the `gh-pages` branch. The site source stays on `main`
+  under `site/`; only the built output is published to `gh-pages` (never polluting `main`).
+- **CI:** [`.github/workflows/deploy_portfolio.yml`](.github/workflows/deploy_portfolio.yml) runs on
+  every push to `main`. It reuses the cached i686-elf toolchain, rebuilds `lpl-client.iso` /
+  `lpl-server.iso` via `pipeline_profiles.sh`, builds the Astro site, embeds the fresh ISOs, and
+  publishes to `gh-pages` — so the live demo always matches the latest commit.
+- **One-time setup:** after the first successful run, set **Settings → Pages → Source: Branch
+  `gh-pages` / (root)**.
+
+Local development:
+
+```sh
+cd site
+npm install
+npm run fetch-v86              # vendor the v86 runtime blobs
+../pipeline_profiles.sh        # build the ISOs (from repo root)
+cp ../lpl-*.iso public/isos/   # let the local emulator find them
+npm run dev
+```
+
 ## Roadmap
 
 The kernel development and its objectives are listed in the project roadmap. Consult the roadmap to see the planned features, progress status, and next steps:

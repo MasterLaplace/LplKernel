@@ -1,0 +1,37 @@
+---
+import "../styles/global.css";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "The Laplace Project",
+  description = "LplKernel + LplPlugin — a native, zero-copy kernel-space game/graphics engine. Boot it in your browser.",
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}/favicon.svg`} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="generator" content={Astro.generator} />
+  </head>
+  <body class="font-sans text-lpl-text antialiased">
+    <Nav />
+    <main class="mx-auto max-w-6xl px-4">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

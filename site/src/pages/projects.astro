@@ -1,0 +1,89 @@
+---
+import Base from "../layouts/Base.astro";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<Base title="Projects — The Laplace Project">
+  <section class="py-16 max-w-3xl">
+    <h1 class="text-3xl font-bold mb-2">Projects &amp; lineage</h1>
+    <p class="text-lpl-muted mb-12">
+      The Laplace project is the endpoint of a lineage. Two early projects proved out the ideas; a
+      third unified them; and the kernel gave them a home in ring-0.
+    </p>
+
+    <!-- Current -->
+    <div class="space-y-10">
+      <article class="lpl-panel rounded-xl p-6">
+        <div class="flex items-center gap-3 mb-2">
+          <h2 class="text-xl font-semibold">LplKernel</h2>
+          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-accent2/40 bg-lpl-accent2/10 text-lpl-accent2">core</span>
+        </div>
+        <p class="text-lpl-muted mb-3">
+          A from-scratch i686 kernel written in C, C++23 and assembly: GDT/IDT, paging with a
+          determinism-first physical memory manager, SMP bring-up over APIC/IOAPIC, PCI enumeration,
+          PS/2 input with switchable layouts, and — the point of the whole exercise — LplPlugin
+          compiled natively into kernel space.
+        </p>
+        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/LplKernel" target="_blank" rel="noopener">github.com/MasterLaplace/LplKernel ↗</a>
+      </article>
+
+      <article class="lpl-panel rounded-xl p-6">
+        <div class="flex items-center gap-3 mb-2">
+          <h2 class="text-xl font-semibold">LplPlugin</h2>
+          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-accent/40 bg-lpl-accent/10 text-lpl-accent">active</span>
+        </div>
+        <p class="text-lpl-muted mb-3">
+          The dual-build (client|server) engine: graphics, physics, and an ECS with a Structure-of-
+          Arrays memory model. It started as the "best-architecture-possible" successor to Engine-3D
+          and Flakkari, and grew into a complete engine that supersedes both — now embeddable
+          directly into the kernel for a zero-copy data path.
+        </p>
+        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/LplPlugin" target="_blank" rel="noopener">github.com/MasterLaplace/LplPlugin ↗</a>
+      </article>
+    </div>
+
+    <!-- Retrospective -->
+    <h2 class="text-2xl font-semibold mt-16 mb-3">The origins</h2>
+    <p class="text-lpl-muted mb-8">
+      These two are older, each with its own history, and were the premises of something larger.
+      They aren't archived — they're the foundations that prove the evolution.
+    </p>
+
+    <div class="space-y-10">
+      <article class="lpl-panel rounded-xl p-6">
+        <div class="flex items-center gap-3 mb-2">
+          <h2 class="text-xl font-semibold">Engine-3D</h2>
+          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-border bg-white/5 text-lpl-muted">legacy · origin</span>
+        </div>
+        <p class="text-lpl-muted">
+          The first graphics engine. Pure C with CSFML only for pixel output — all the 3D maths and
+          rasterization were hand-written, alongside a minimalist physics core. It was a playground
+          for every feature that looked interesting at the time, and the place where the appetite
+          for doing the low-level work yourself began.
+        </p>
+      </article>
+
+      <article class="lpl-panel rounded-xl p-6">
+        <div class="flex items-center gap-3 mb-2">
+          <h2 class="text-xl font-semibold">Flakkari</h2>
+          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-border bg-white/5 text-lpl-muted">legacy · origin</span>
+        </div>
+        <p class="text-lpl-muted">
+          A game server with an integrated ECS and minimalist physics, able to host several game
+          instances at once over its own protocol. Systems and components were varied enough that a
+          JSON scene file declared which systems to enable, which entities to pre-register with which
+          components, and supported entity templating — the direct ancestor of LplPlugin's server
+          build.
+        </p>
+      </article>
+    </div>
+
+    <div class="mt-12 rounded-xl border border-lpl-border p-6">
+      <p class="text-lpl-muted text-sm">
+        Want the technical story of how these merged and moved into ring-0? Read the
+        <a class="text-lpl-accent" href={`${base}/blog`}>papers &amp; postmortems</a>.
+      </p>
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,18 @@
+{
+  "name": "laplace-portfolio",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Portfolio / showcase site for the Laplace project (LplKernel + LplPlugin)",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "fetch-v86": "sh scripts/fetch-v86.sh"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "astro": "^5.6.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

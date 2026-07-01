@@ -1,0 +1,12 @@
+# Astro
+dist/
+.astro/
+node_modules/
+
+# Vendored v86 runtime (fetched via scripts/fetch-v86.sh)
+public/v86/*.js
+public/v86/*.wasm
+public/v86/*.bin
+
+# Built ISOs copied in for local preview
+public/isos/*.iso

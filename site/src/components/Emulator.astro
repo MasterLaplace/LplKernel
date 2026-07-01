@@ -1,0 +1,172 @@
+---
+// In-browser boot of LplKernel via v86 (WASM x86 emulator).
+// The v86 runtime lives in /public/v86 (fetched by scripts/fetch-v86.sh / CI),
+// and the ISOs are copied into /isos by the deploy workflow.
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<section id="demo" class="scroll-mt-20">
+  <div class="lpl-panel lpl-glow rounded-2xl p-4 sm:p-6" data-emulator data-base={base}>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h2 class="text-xl font-semibold">Boot it in your browser</h2>
+        <p class="text-sm text-lpl-muted">
+          LplKernel runs locally in your tab via <span class="font-mono">v86</span> — no install, no
+          backend. Each ISO is ~3&nbsp;MB and downloads on demand.
+        </p>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <button
+          type="button"
+          data-profile="server"
+          class="px-3 py-1.5 rounded-lg border border-lpl-border bg-lpl-accent/10 text-lpl-accent font-mono"
+          >Text console</button
+        >
+        <button
+          type="button"
+          data-profile="client"
+          class="px-3 py-1.5 rounded-lg border border-lpl-border text-lpl-muted font-mono hover:text-lpl-text"
+          >Graphics</button
+        >
+      </div>
+    </div>
+
+    <div class="relative rounded-xl overflow-hidden border border-lpl-border bg-black">
+      <div
+        data-screen
+        class="min-h-[420px] flex items-center justify-center"
+      >
+        <div class="text-center p-8" data-splash>
+          <button
+            type="button"
+            data-boot
+            class="px-5 py-2.5 rounded-lg bg-lpl-accent text-[#04121a] font-semibold font-mono hover:brightness-110"
+            >▶ Boot LplKernel (text)</button
+          >
+          <p class="mt-3 text-xs text-lpl-muted" data-status>
+            Click to download the ISO and start the emulator.
+          </p>
+        </div>
+        <!-- v86 render targets (populated on boot) -->
+        <div data-v86-container class="hidden">
+          <div
+            data-v86-text
+            style="white-space: pre; font: 14px/14px var(--font-mono); color: #d6deeb; padding: 12px;"
+          >
+          </div>
+          <canvas data-v86-canvas style="display:none"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <p class="mt-3 text-xs text-lpl-muted">
+      In the <strong>text</strong> profile you can type commands: <span class="font-mono"
+        >help, stats, kbd, layout fr, pci</span
+      >. Click the screen to capture your keyboard. Runs single-threaded (GitHub Pages can't set
+      cross-origin isolation headers), so boot takes a few seconds.
+    </p>
+  </div>
+</section>
+
+<script>
+  type V86Ctor = new (options: Record<string, unknown>) => { destroy?: () => void };
+
+  const PROFILES = {
+    server: { iso: "lpl-server.iso", graphics: false, label: "text" },
+    client: { iso: "lpl-client.iso", graphics: true, label: "graphics" },
+  } as const;
+  type ProfileKey = keyof typeof PROFILES;
+
+  function loadScript(src: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) return resolve();
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(s);
+    });
+  }
+
+  function initEmulator(root: HTMLElement) {
+    const base = root.dataset.base ?? "";
+    const status = root.querySelector<HTMLElement>("[data-status]");
+    const splash = root.querySelector<HTMLElement>("[data-splash]");
+    const container = root.querySelector<HTMLElement>("[data-v86-container]");
+    const textEl = root.querySelector<HTMLElement>("[data-v86-text]");
+    const canvasEl = root.querySelector<HTMLCanvasElement>("[data-v86-canvas]");
+    const bootBtn = root.querySelector<HTMLButtonElement>("[data-boot]");
+    const profileBtns = root.querySelectorAll<HTMLButtonElement>("[data-profile]");
+
+    let current: { destroy?: () => void } | null = null;
+    let selected: ProfileKey = "server";
+
+    const setStatus = (msg: string) => {
+      if (status) status.textContent = msg;
+    };
+
+    if (typeof WebAssembly === "undefined") {
+      setStatus("Your browser does not support WebAssembly, so the emulator can't run.");
+      if (bootBtn) bootBtn.disabled = true;
+      return;
+    }
+
+    function selectProfile(key: ProfileKey) {
+      selected = key;
+      profileBtns.forEach((b) => {
+        const active = b.dataset.profile === key;
+        b.classList.toggle("bg-lpl-accent/10", active);
+        b.classList.toggle("text-lpl-accent", active);
+        b.classList.toggle("text-lpl-muted", !active);
+      });
+      if (bootBtn && current === null) {
+        bootBtn.textContent = `▶ Boot LplKernel (${PROFILES[key].label})`;
+      }
+      // Switching profile after boot restarts with the new ISO.
+      if (current !== null) boot();
+    }
+
+    async function boot() {
+      const profile = PROFILES[selected];
+      try {
+        if (current?.destroy) current.destroy();
+        current = null;
+        if (splash) splash.style.display = "none";
+        if (container) container.classList.remove("hidden");
+        if (textEl) textEl.style.display = profile.graphics ? "none" : "block";
+        if (canvasEl) canvasEl.style.display = profile.graphics ? "block" : "none";
+        setStatus(`Loading v86 runtime and ${profile.iso}…`);
+
+        await loadScript(`${base}/v86/libv86.js`);
+        const V86 = (window as unknown as { V86?: V86Ctor }).V86;
+        if (!V86) throw new Error("v86 runtime unavailable");
+
+        current = new V86({
+          wasm_path: `${base}/v86/v86.wasm`,
+          bios: { url: `${base}/v86/seabios.bin` },
+          vga_bios: { url: `${base}/v86/vgabios.bin` },
+          cdrom: { url: `${base}/isos/${profile.iso}` },
+          autostart: true,
+          memory_size: 128 * 1024 * 1024,
+          vga_memory_size: 16 * 1024 * 1024,
+          screen_container: container as HTMLElement,
+          disable_keyboard: false,
+        });
+        setStatus("");
+      } catch (err) {
+        if (splash) splash.style.display = "block";
+        if (container) container.classList.add("hidden");
+        setStatus(`Could not start the emulator: ${(err as Error).message}`);
+      }
+    }
+
+    profileBtns.forEach((b) =>
+      b.addEventListener("click", () => selectProfile(b.dataset.profile as ProfileKey)),
+    );
+    bootBtn?.addEventListener("click", boot);
+  }
+
+  document
+    .querySelectorAll<HTMLElement>("[data-emulator]")
+    .forEach((el) => initEmulator(el));
+</script>

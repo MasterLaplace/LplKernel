@@ -1,0 +1,107 @@
+name: Deploy Portfolio
+
+concurrency:
+  group: deploy-portfolio
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # push the built site to the gh-pages branch
+
+jobs:
+  deploy:
+    timeout-minutes: 40
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      # --- Cross-toolchain (shared cache with build_lplkernel.yml) ---
+      - name: Cache downloaded toolchain sources
+        uses: actions/cache@v5
+        with:
+          path: ~/src
+          key: ${{ runner.os }}-lplkernel-src-v1
+
+      - name: Restore toolchain cache
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/i686-elf
+          key: ${{ runner.os }}-lplkernel-toolchain-v1
+
+      - name: Install deps and build cross-toolchain (if not cached)
+        run: |
+          set -e
+          if [ -x /usr/local/i686-elf/bin/i686-elf-gcc ]; then
+            echo "Cross toolchain already installed — skipping build"
+            echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          sudo apt-get update
+          sudo apt-get install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev \
+            texinfo wget make ninja-build xorriso grub-pc-bin mtools dosfstools
+
+          mkdir -p ~/src && cd ~/src
+          [ -d binutils-2.36 ] || { wget -q http://ftp.gnu.org/gnu/binutils/binutils-2.36.tar.gz && tar -xzf binutils-2.36.tar.gz; }
+          [ -d gcc-10.2.0 ]    || { wget -q http://ftp.gnu.org/gnu/gcc/gcc-10.2.0/gcc-10.2.0.tar.gz && tar -xzf gcc-10.2.0.tar.gz; }
+
+          mkdir -p build-binutils && cd build-binutils
+          ../binutils-2.36/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --disable-werror
+          make -j$(nproc) && sudo make install
+
+          mkdir -p ../build-gcc && cd ../build-gcc
+          ../gcc-10.2.0/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --enable-languages=c,c++ --without-headers
+          make -j$(nproc) all-gcc all-target-libgcc
+          sudo make install-gcc && sudo make install-target-libgcc
+          echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Ensure ISO host tools
+        run: sudo apt-get update && sudo apt-get install -y xorriso grub-pc-bin mtools dosfstools
+
+      # --- Build both kernel ISOs ---
+      - name: Build ISOs (client + server)
+        run: |
+          set -e
+          ./pipeline_profiles.sh
+          test -f lpl-client.iso
+          test -f lpl-server.iso
+
+      # --- Build the Astro site ---
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build site
+        working-directory: site
+        run: |
+          set -e
+          npm ci || npm install
+          npm run fetch-v86
+          npm run build
+          mkdir -p dist/isos
+          cp ../lpl-client.iso dist/isos/lpl-client.iso
+          cp ../lpl-server.iso dist/isos/lpl-server.iso
+          # SPA/relative-path safety + disable Jekyll on Pages
+          touch dist/.nojekyll
+
+      # --- Publish to gh-pages (never touches main) ---
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site/dist
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: "deploy: portfolio site from ${{ github.sha }}"
