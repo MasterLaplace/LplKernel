@@ -1,0 +1,35 @@
+---
+interface Props {
+  name: string;
+  tag: string;
+  status: "active" | "core" | "legacy";
+  href?: string;
+  lang: string;
+}
+const { name, tag, status, href, lang } = Astro.props;
+const statusStyles = {
+  active: "text-lpl-accent border-lpl-accent/40 bg-lpl-accent/10",
+  core: "text-lpl-accent2 border-lpl-accent2/40 bg-lpl-accent2/10",
+  legacy: "text-lpl-muted border-lpl-border bg-white/5",
+};
+const Wrapper = href ? "a" : "div";
+---
+
+<Wrapper
+  href={href}
+  {...href ? { target: "_blank", rel: "noopener" } : {}}
+  class="lpl-panel rounded-xl p-5 block hover:border-lpl-accent/50 transition-colors group"
+>
+  <div class="flex items-center justify-between gap-3 mb-2">
+    <h3 class="font-mono font-semibold text-lpl-text group-hover:text-lpl-accent transition-colors">
+      {name}
+    </h3>
+    <span class={`text-[11px] px-2 py-0.5 rounded-full border ${statusStyles[status]}`}>{status}</span>
+  </div>
+  <p class="text-sm text-lpl-muted mb-3"><slot /></p>
+  <div class="flex items-center gap-2 text-xs text-lpl-muted font-mono">
+    <span>{lang}</span>
+    <span>·</span>
+    <span>{tag}</span>
+  </div>
+</Wrapper>

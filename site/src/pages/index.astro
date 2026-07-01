@@ -1,0 +1,145 @@
+---
+import Base from "../layouts/Base.astro";
+import Emulator from "../components/Emulator.astro";
+import ProjectCard from "../components/ProjectCard.astro";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const highlights = [
+  {
+    title: "Kernel-space engine",
+    body: "LplPlugin is compiled natively into LplKernel and runs in ring-0 — no syscall boundary between the engine and the hardware.",
+  },
+  {
+    title: "Zero-copy data path",
+    body: "UDP packets are injected from the NIC toward the GPU without intermediate copies, collapsing the classic network→render latency chain.",
+  },
+  {
+    title: "Lock-free concurrency",
+    body: "SPSC ring buffers with acquire/release barriers and generational IDs (ABA-safe) drive the interrupt→main-loop hand-off.",
+  },
+  {
+    title: "Cache-friendly ECS",
+    body: "Structure-of-Arrays layout keeps hot component data contiguous, and spatial partitioning (Morton / Octree) tames O(N²) at MMO scale.",
+  },
+];
+
+const benchmarks = [
+  { value: "23 µs", label: "10,000 entities, physics step (CUDA)" },
+  { value: "70.15 µs", label: "average network loop frame time" },
+  { value: "ring-0", label: "engine ↔ hardware, no syscall boundary" },
+  { value: "2 profiles", label: "deterministic client · throughput server" },
+];
+---
+
+<Base>
+  <!-- Hero -->
+  <section class="py-16 sm:py-24">
+    <p class="font-mono text-lpl-accent text-sm mb-4">// systems engineering · from rasterizer to kernel</p>
+    <h1 class="text-4xl sm:text-6xl font-bold tracking-tight max-w-3xl">
+      The <span class="text-lpl-accent">Laplace</span> Project
+    </h1>
+    <p class="mt-6 max-w-2xl text-lg text-lpl-muted">
+      A native operating-system kernel with a dual-build game &amp; graphics engine fused directly
+      into kernel space. Six years of low-level engineering — a software rasterizer, an ECS game
+      server, and finally a zero-copy kernel you can boot right here in your browser.
+    </p>
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a
+        href="#demo"
+        class="px-5 py-2.5 rounded-lg bg-lpl-accent text-[#04121a] font-semibold hover:brightness-110"
+        >Boot the kernel ↓</a
+      >
+      <a
+        href={`${base}/projects`}
+        class="px-5 py-2.5 rounded-lg border border-lpl-border text-lpl-text hover:border-lpl-accent/50"
+        >Explore the projects</a
+      >
+    </div>
+  </section>
+
+  <!-- Live demo -->
+  <Emulator />
+
+  <!-- Architecture highlights -->
+  <section class="py-20">
+    <h2 class="text-2xl font-semibold mb-2">Engineering locks we broke</h2>
+    <p class="text-lpl-muted mb-8 max-w-2xl">
+      The interesting parts aren't the features — they're the constraints. Here is what made the
+      architecture hard, and how it's solved.
+    </p>
+    <div class="grid sm:grid-cols-2 gap-4">
+      {
+        highlights.map((h) => (
+          <div class="lpl-panel rounded-xl p-5">
+            <h3 class="font-semibold text-lpl-accent mb-1">{h.title}</h3>
+            <p class="text-sm text-lpl-muted">{h.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  <!-- Benchmarks -->
+  <section class="py-8">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {
+        benchmarks.map((b) => (
+          <div class="lpl-panel rounded-xl p-5 text-center">
+            <div class="font-mono text-2xl sm:text-3xl font-bold text-lpl-accent">{b.value}</div>
+            <div class="text-xs text-lpl-muted mt-2">{b.label}</div>
+          </div>
+        ))
+      }
+    </div>
+    <p class="text-xs text-lpl-muted mt-3 text-center">
+      Figures from stress tests — see the <a href={`${base}/blog`} class="text-lpl-accent">papers</a> for
+      methodology.
+    </p>
+  </section>
+
+  <!-- Projects -->
+  <section class="py-20">
+    <h2 class="text-2xl font-semibold mb-8">The lineage</h2>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-2 gap-4">
+      <ProjectCard
+        name="LplKernel"
+        tag="OS kernel · i686"
+        status="core"
+        lang="C / C++23 / ASM"
+        href="https://github.com/MasterLaplace/LplKernel"
+      >
+        A from-scratch kernel: paging, SMP bring-up, APIC/IOAPIC, PCI, a determinism-first PMM, and
+        LplPlugin running natively in ring-0.
+      </ProjectCard>
+      <ProjectCard
+        name="LplPlugin"
+        tag="engine · client|server"
+        status="active"
+        lang="C++"
+        href="https://github.com/MasterLaplace/LplPlugin"
+      >
+        The dual-build engine — graphics, physics, ECS — that supersedes and unifies the two earlier
+        projects, now embeddable directly into the kernel.
+      </ProjectCard>
+      <ProjectCard
+        name="Engine-3D"
+        tag="the origin · 3D rasterizer"
+        status="legacy"
+        lang="C + CSFML"
+      >
+        The first graphics engine: hand-rolled 3D math and software rasterization in pure C, with a
+        minimalist physics core. Where it all started.
+      </ProjectCard>
+      <ProjectCard
+        name="Flakkari"
+        tag="the origin · game server"
+        status="legacy"
+        lang="C++"
+      >
+        An ECS game server with its own protocol, JSON-driven scenes, entity templating, and
+        multi-instance hosting — the networking ancestor of LplPlugin's server build.
+      </ProjectCard>
+    </div>
+  </section>
+</Base>

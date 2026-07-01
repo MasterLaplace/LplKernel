@@ -1,0 +1,52 @@
+---
+import { getCollection } from "astro:content";
+import Base from "../../layouts/Base.astro";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+// Drafts are shown too (badged), so the section isn't empty while prose is in progress.
+const posts = (await getCollection("blog")).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+
+const kindLabel: Record<string, string> = {
+  "systems-paper": "Systems paper",
+  postmortem: "Postmortem",
+  benchmark: "Benchmark",
+  note: "Note",
+};
+---
+
+<Base title="Blog & Papers — The Laplace Project">
+  <section class="py-16">
+    <h1 class="text-3xl font-bold mb-2">Blog &amp; Papers</h1>
+    <p class="text-lpl-muted mb-10 max-w-2xl">
+      Systems papers, technical postmortems, and benchmarks from building the Laplace stack.
+    </p>
+
+    {posts.length === 0 && <p class="text-lpl-muted">No posts published yet.</p>}
+
+    <ul class="space-y-4">
+      {
+        posts.map((post) => (
+          <li>
+            <a
+              href={`${base}/blog/${post.id}`}
+              class="lpl-panel rounded-xl p-5 block hover:border-lpl-accent/50 transition-colors group"
+            >
+              <div class="flex items-center gap-3 mb-1 text-xs font-mono text-lpl-muted">
+                <span class="text-lpl-accent">{kindLabel[post.data.kind]}</span>
+                <span>·</span>
+                <time>{post.data.date.toISOString().slice(0, 10)}</time>
+                {post.data.draft && <span class="text-lpl-accent2">· draft</span>}
+              </div>
+              <h2 class="font-semibold text-lg group-hover:text-lpl-accent transition-colors">
+                {post.data.title}
+              </h2>
+              <p class="text-sm text-lpl-muted mt-1">{post.data.description}</p>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</Base>

@@ -1,0 +1,42 @@
+---
+import { getCollection, render } from "astro:content";
+import Base from "../../layouts/Base.astro";
+
+export async function getStaticPaths() {
+  const posts = await getCollection("blog");
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<Base title={`${post.data.title} — The Laplace Project`} description={post.data.description}>
+  <article class="py-16 max-w-3xl mx-auto">
+    <a href={`${base}/blog`} class="text-sm text-lpl-accent">← Blog &amp; Papers</a>
+    <header class="mt-6 mb-8">
+      {post.data.draft && (
+        <p class="text-xs font-mono text-lpl-accent2 mb-2">
+          ⚠ DRAFT — outline scaffolded from notes, prose to be written.
+        </p>
+      )}
+      <h1 class="text-3xl sm:text-4xl font-bold">{post.data.title}</h1>
+      <p class="text-lpl-muted mt-2">{post.data.description}</p>
+      <time class="text-xs font-mono text-lpl-muted">{post.data.date.toISOString().slice(0, 10)}</time>
+    </header>
+    <div
+      class="prose-lpl max-w-none space-y-4 leading-relaxed
+             [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-8 [&_h2]:text-lpl-text
+             [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-6
+             [&_p]:text-lpl-muted [&_li]:text-lpl-muted [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1
+             [&_code]:font-mono [&_code]:text-lpl-accent [&_a]:text-lpl-accent
+             [&_pre]:lpl-panel [&_pre]:rounded-xl [&_pre]:p-4 [&_pre]:overflow-x-auto"
+    >
+      <Content />
+    </div>
+  </article>
+</Base>

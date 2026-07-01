@@ -51,7 +51,10 @@ endif
 # Drop -nostdinc for C++: the freestanding libstdc++ headers (<cstddef>, etc.)
 # live in the toolchain include dir, which -nostdinc would hide. libk headers
 # remain reachable via the sysroot -isystem path.
-CXXFLAGS:=$(filter-out -nostdinc,$(CFLAGS)) -std=gnu++23 -fno-exceptions -fno-rtti -fno-threadsafe-statics
+# gnu++17 (not gnu++23): the kernel's own runtime uses no C++20/23 features, so
+# it builds on older cross toolchains (e.g. the CI's gcc 10). C++23 stays a
+# libengine-only requirement — libengine has its own gcc14/gnu++23 build.
+CXXFLAGS:=$(filter-out -nostdinc,$(CFLAGS)) -std=gnu++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics
 
 # Graphics mode support (passed from build script)
 GRAPHICS_MODE?=0

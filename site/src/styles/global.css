@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/* Laplace design tokens — dark, technical, systems-paper aesthetic. */
+@theme {
+  --color-lpl-bg: #0a0e14;
+  --color-lpl-panel: #111722;
+  --color-lpl-border: #1e2a3a;
+  --color-lpl-accent: #5eead4;
+  --color-lpl-accent2: #818cf8;
+  --color-lpl-text: #d6deeb;
+  --color-lpl-muted: #8a97ab;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: var(--color-lpl-bg);
+  color: var(--color-lpl-text);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(60rem 40rem at 80% -10%, rgba(129, 140, 248, 0.12), transparent),
+    radial-gradient(50rem 30rem at 0% 0%, rgba(94, 234, 212, 0.08), transparent);
+}
+
+::selection {
+  background: var(--color-lpl-accent);
+  color: #04121a;
+}
+
+.lpl-panel {
+  background-color: var(--color-lpl-panel);
+  border: 1px solid var(--color-lpl-border);
+}
+
+.lpl-glow {
+  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.15), 0 20px 60px -20px rgba(129, 140, 248, 0.35);
+}

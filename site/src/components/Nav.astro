@@ -1,0 +1,36 @@
+---
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const links = [
+  { href: `${base}/`, label: "Home" },
+  { href: `${base}/#demo`, label: "Live demo" },
+  { href: `${base}/projects`, label: "Projects" },
+  { href: `${base}/blog`, label: "Blog / Papers" },
+];
+---
+
+<header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70">
+  <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3">
+    <a href={`${base}/`} class="font-mono font-bold tracking-tight text-lpl-text">
+      <span class="text-lpl-accent">λ</span> Laplace<span class="text-lpl-muted">.project</span>
+    </a>
+    <ul class="flex items-center gap-5 text-sm">
+      {
+        links.map((l) => (
+          <li>
+            <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href={l.href}>
+              {l.label}
+            </a>
+          </li>
+        ))
+      }
+      <li>
+        <a
+          class="text-lpl-muted hover:text-lpl-accent transition-colors"
+          href="https://github.com/MasterLaplace"
+          target="_blank"
+          rel="noopener">GitHub ↗</a
+        >
+      </li>
+    </ul>
+  </nav>
+</header>
