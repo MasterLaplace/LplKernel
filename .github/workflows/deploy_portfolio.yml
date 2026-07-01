@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   deploy:
-    timeout-minutes: 40
+    timeout-minutes: 90
     runs-on: ubuntu-latest
 
     steps:
@@ -24,18 +24,20 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      # --- Cross-toolchain (shared cache with build_lplkernel.yml) ---
+      # --- Cross-toolchain (GCC 14 — LplPlugin/libengine require -std=gnu++23) ---
+      # Distinct cache keys from build_lplkernel.yml's GCC 10 toolchain so the two
+      # never clobber each other.
       - name: Cache downloaded toolchain sources
         uses: actions/cache@v5
         with:
           path: ~/src
-          key: ${{ runner.os }}-lplkernel-src-v1
+          key: ${{ runner.os }}-lplkernel-src-gcc14-v1
 
       - name: Restore toolchain cache
         uses: actions/cache@v5
         with:
           path: /usr/local/i686-elf
-          key: ${{ runner.os }}-lplkernel-toolchain-v1
+          key: ${{ runner.os }}-lplkernel-toolchain-gcc14-v1
 
       - name: Install deps and build cross-toolchain (if not cached)
         run: |
@@ -43,6 +45,7 @@ jobs:
           if [ -x /usr/local/i686-elf/bin/i686-elf-gcc ]; then
             echo "Cross toolchain already installed — skipping build"
             echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
+            i686-elf-g++ --version | head -1
             exit 0
           fi
 
@@ -50,19 +53,26 @@ jobs:
           sudo apt-get install -y build-essential bison flex libgmp3-dev libmpc-dev libmpfr-dev \
             texinfo wget make ninja-build xorriso grub-pc-bin mtools dosfstools
 
+          BINUTILS=binutils-2.42
+          GCC=gcc-14.2.0
           mkdir -p ~/src && cd ~/src
-          [ -d binutils-2.36 ] || { wget -q http://ftp.gnu.org/gnu/binutils/binutils-2.36.tar.gz && tar -xzf binutils-2.36.tar.gz; }
-          [ -d gcc-10.2.0 ]    || { wget -q http://ftp.gnu.org/gnu/gcc/gcc-10.2.0/gcc-10.2.0.tar.gz && tar -xzf gcc-10.2.0.tar.gz; }
+          [ -d "$BINUTILS" ] || { wget -q "http://ftp.gnu.org/gnu/binutils/${BINUTILS}.tar.gz" && tar -xzf "${BINUTILS}.tar.gz"; }
+          [ -d "$GCC" ]      || { wget -q "http://ftp.gnu.org/gnu/gcc/${GCC}/${GCC}.tar.gz" && tar -xzf "${GCC}.tar.gz"; }
+
+          # GCC needs gmp/mpfr/mpc; download_prerequisites vendors matching versions.
+          (cd "$GCC" && ./contrib/download_prerequisites)
 
           mkdir -p build-binutils && cd build-binutils
-          ../binutils-2.36/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --disable-werror
-          make -j$(nproc) && sudo make install
+          "../${BINUTILS}/configure" --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --disable-werror
+          make -j"$(nproc)" && sudo make install
 
           mkdir -p ../build-gcc && cd ../build-gcc
-          ../gcc-10.2.0/configure --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --enable-languages=c,c++ --without-headers
-          make -j$(nproc) all-gcc all-target-libgcc
-          sudo make install-gcc && sudo make install-target-libgcc
+          "../${GCC}/configure" --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --enable-languages=c,c++ --without-headers
+          # MAKEINFO=true avoids doc-build failures on runners without a usable makeinfo.
+          make -j"$(nproc)" all-gcc all-target-libgcc MAKEINFO=true
+          sudo make install-gcc install-target-libgcc MAKEINFO=true
           echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
+          /usr/local/i686-elf/bin/i686-elf-g++ --version | head -1
 
       - name: Ensure ISO host tools
         run: sudo apt-get update && sudo apt-get install -y xorriso grub-pc-bin mtools dosfstools
