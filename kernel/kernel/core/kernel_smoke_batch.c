@@ -140,6 +140,7 @@ void kernel_smoke_batch_run_post_boot_tests(Serial_t *com1)
     if (KERNEL_SMOKE_TEST_ENABLE_DOUBLE_FAULT)
         kernel_smoke_test_run_double_fault_exception();
 
-    if (KERNEL_SMOKE_TEST_ENABLE_GRAPHICS_DEMO)
-        kernel_smoke_test_run_graphics_demo(com1);
+    /* The old static graphics demo is superseded by the live system monitor
+       (kernel_sysmon_run), invoked from kernel_main over the HAL display so it
+       works on the virtio-gpu scanout, not just the multiboot LFB. */
 }

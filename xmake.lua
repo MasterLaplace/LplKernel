@@ -32,6 +32,11 @@ if not LPLPLUGIN_ROOT or LPLPLUGIN_ROOT == "" then
     end
 end
 
+-- Optional engine module: if the LplPlugin source tree is not present, the
+-- kernel still builds standalone (no libengine, smoke battery stubbed out). This
+-- is the "no xmake/LplPlugin → fallback to a plain kernel" path.
+local LPLPLUGIN_AVAILABLE = os.isdir(path.join(LPLPLUGIN_ROOT, "core/include"))
+
 -- ---------------------------------------------------------------------------
 -- Cross toolchain: i686-elf-gcc/g++/ar. Assembly + link go through the gcc
 -- driver (matching the Makefile's .s.o / link rules using $(CC)).
@@ -53,6 +58,13 @@ toolchain("i686elf")
         end
     end)
 toolchain_end()
+
+-- Build modes: `xmake f -m debug` (default, ships the smoke battery) or
+-- `xmake f -m release` (production image, smoke battery compiled out). The
+-- optimize/symbols level is pinned below to -O2 -g in BOTH modes so the
+-- bit-identical determinism signatures never depend on the mode; the mode only
+-- toggles whether the diagnostic smoke battery is built in.
+add_rules("mode.debug", "mode.release")
 
 set_toolchains("i686elf")
 set_languages("gnu11", "gnuxx23")
@@ -89,7 +101,18 @@ option("keyboard")
     set_description("Keyboard layout: us=QWERTY, fr=AZERTY")
 option_end()
 
+option("smoke")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Compile the libengine P0..P6 + kernel smoke/diagnostic battery into the image")
+option_end()
+
 local GRAPHICS_MODE = has_config("graphics") and 1 or 0
+-- The smoke battery is built when explicitly requested, never in release mode (a
+-- production image), and only when the engine is actually linked in (it calls
+-- libengine_* symbols). `--smoke=n`, `-m release`, or a missing LplPlugin each
+-- compile it out.
+local ENABLE_SMOKE = has_config("smoke") and not is_mode("release") and LPLPLUGIN_AVAILABLE
 
 -- ===========================================================================
 -- libk — freestanding C support library (libc/ FREEOBJS, libk variant).
@@ -121,6 +144,7 @@ target_end()
 -- (Linux) oracle. -mstackrealign because the i386 kernel stack is not yet
 -- 16-byte aligned on entry. LPL_TARGET_KERNEL=1 routes lpl/std/* to kernel_std.
 -- ===========================================================================
+if LPLPLUGIN_AVAILABLE then
 target("libengine")
     set_kind("static")
     set_basename("engine")
@@ -148,7 +172,8 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "image/include"),
         path.join(LPLPLUGIN_ROOT, "scene/include"),
         path.join(LPLPLUGIN_ROOT, "render/include"),
-        path.join(LPLPLUGIN_ROOT, "engine/include")
+        path.join(LPLPLUGIN_ROOT, "engine/include"),
+        path.join(LPLPLUGIN_ROOT, "samples/include")
     )
     -- Engine sources (single source of truth), mirroring ARCH_ENGINE_SRCS.
     add_files(
@@ -179,6 +204,7 @@ target("libengine")
     -- libengine-local C-facade / smoke entry points.
     add_files("libengine/src/*.cpp")
 target_end()
+end -- if LPLPLUGIN_AVAILABLE
 
 -- ===========================================================================
 -- lpl.kernel — the kernel image. Custom link to honour the crt ordering
@@ -187,7 +213,13 @@ target_end()
 target("lpl-kernel")
     set_kind("binary")
     set_filename("lpl.kernel")
-    add_deps("libengine", "libk")
+    add_deps("libk")
+    if LPLPLUGIN_AVAILABLE then
+        add_deps("libengine")
+    else
+        -- No engine: stub the smoke facade + skip the smoke battery entirely.
+        add_defines("LPL_PLUGIN_UNAVAILABLE=1")
+    end
 
     -- C: freestanding, no standard includes (headers come from -I dirs below).
     add_cflags("-nostdinc", "-ffreestanding", "-Wall", "-Wextra", {force = true})
@@ -203,6 +235,9 @@ target("lpl-kernel")
     add_asflags("-DMULTIBOOT_VERSION=1", "-DGRAPHICS_MODE=" .. GRAPHICS_MODE,
                 "-Ikernel", "-Wa,-Ikernel", {force = true})
 
+    if ENABLE_SMOKE then
+        add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS")
+    end
     if has_config("realtime") then
         add_defines("LPL_KERNEL_REAL_TIME_MODE")
     end
@@ -244,15 +279,18 @@ target("lpl-kernel")
         local crtbegin = os.iorunv(cc, {"-print-file-name=crtbegin.o"}):trim()
         local crtend = os.iorunv(cc, {"-print-file-name=crtend.o"}):trim()
 
-        local libengine = target:dep("libengine"):targetfile()
+        local libengine = target:dep("libengine") and target:dep("libengine"):targetfile() or nil
         local libk = target:dep("libk"):targetfile()
         local out = target:targetfile()
 
         -- $(CC) -T linker.ld -o lpl.kernel <free flags> crti crtbegin OBJS \
-        --       -nostdlib -lengine -lk -lgcc crtend crtn
+        --       -nostdlib [-lengine] -lk -lgcc crtend crtn
+        -- libengine is linked before libk (its operator new / kstd calls resolve
+        -- from libk); it is omitted entirely when LplPlugin is unavailable.
         local argv = {"-T", linker, "-o", out, "-ffreestanding", "-O2", "-g", "-nostdlib", crti, crtbegin}
         table.join2(argv, rest)
-        table.join2(argv, {libengine, libk, "-lgcc", crtend, crtn})
+        if libengine then table.insert(argv, libengine) end
+        table.join2(argv, {libk, "-lgcc", crtend, crtn})
 
         os.mkdir(path.directory(out))
         if option.get("verbose") then cprint("${dim}%s %s", cc, table.concat(argv, " ")) end
@@ -310,6 +348,27 @@ task("qemu")
             assert(kernel, "lpl.kernel not found — run `xmake` first")
             os.execv("qemu-system-i386", {"-kernel", kernel,
                 "-m", "256M", "-serial", "mon:stdio", "-no-reboot"})
+        end
+    end)
+task_end()
+
+task("debug")
+    set_menu({usage = "xmake debug", description = "Build (debug) + boot QEMU halted with a gdb stub (-s -S)"})
+    on_run(function ()
+        -- Boot QEMU with the gdb stub on :1234, CPU halted (-S) until a debugger
+        -- attaches and continues. Serial goes to serial.log so VS Code can run
+        -- this as a background preLaunchTask. The kernel is built with -g, so the
+        -- artefact under build/ carries full symbols (see launch.json `file`).
+        os.exec("xmake build lpl-kernel")
+        local kernel = table.unpack(os.files(path.join(os.scriptdir(), "build/**/lpl.kernel")))
+        assert(kernel, "lpl.kernel not found — run `xmake` first")
+        local serial = path.join(os.scriptdir(), "serial.log")
+        local common = {"-m", "256M", "-s", "-S", "-serial", "file:" .. serial, "-no-reboot"}
+        cprint("${yellow}[debug]${clear} QEMU halted on tcp::1234 — attach gdb (F5). serial -> %s", serial)
+        if has_config("graphics") then
+            os.execv("qemu-system-i386", table.join({"-kernel", kernel, "-device", "virtio-gpu-pci"}, common))
+        else
+            os.execv("qemu-system-i386", table.join({"-kernel", kernel}, common))
         end
     end)
 task_end()

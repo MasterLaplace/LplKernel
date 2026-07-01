@@ -149,8 +149,8 @@ the freestanding render path is already proven via `libengine`.
 - [x] [GCC Cross-Compiler](https://wiki.osdev.org/GCC_Cross-Compiler) - Build a cross-compiler for i686-elf
 - [x] [Build System](https://wiki.osdev.org/Makefile) - Setup Makefiles
 - [x] [VSCode for Debugging](https://wiki.osdev.org/User:TheCool1Kevin/VSCode_Debug) - Debug configuration ✅
-- [ ] [CMake Build System](https://wiki.osdev.org/CMake_Build_System) - Alternative build system
-- [ ] [OS Specific Toolchain](https://wiki.osdev.org/OS_Specific_Toolchain) - Adapt GCC/Binutils to your platform
+- [x] [CMake Build System](https://wiki.osdev.org/CMake_Build_System) - Alternative build system — provided via **xmake** (`xmake.lua`), a faithful native port of the `config.sh`/`headers.sh`/`build.sh` Makefile build, offered alongside the zero-dependency shell scripts. Supports `-m debug|release` modes (release compiles the smoke/diagnostic battery out) and the `--graphics/--realtime/--keyboard/--smoke` options. (CMake intentionally not used.)
+- [x] [OS Specific Toolchain](https://wiki.osdev.org/OS_Specific_Toolchain) — upgraded **i686-elf-gcc 14 / C++23** cross-toolchain (in `~/opt/cross14`) is the project-specific toolchain. A move to an x86_64 long-mode toolchain is under evaluation (see the convergence track / arch analysis).
 
 ### Testing & Debugging
 - [x] [QEMU](https://wiki.osdev.org/QEMU) - Primary emulator

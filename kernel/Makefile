@@ -15,11 +15,35 @@ INCLUDEDIR?=$(PREFIX)/include
 
 CFLAGS:=$(CFLAGS) -ffreestanding -Wall -Wextra
 CPPFLAGS:=$(CPPFLAGS) -D__is_kernel -Iinclude
+
 LDFLAGS:=$(LDFLAGS)
-# -lengine BEFORE -lk: the engine's operator new/kstd code calls kmalloc/kfree
-# (resolved from libk), and the engine archive members are pulled on demand by
-# the kernel's references (e.g. libengine_p0_smoke).
+# Engine is optional (ENABLE_LIBENGINE, exported by config.sh). When present,
+# -lengine goes BEFORE -lk: the engine's operator new/kstd code calls kmalloc/
+# kfree (resolved from libk) and its archive members are pulled on demand by the
+# kernel's references (e.g. libengine_p0_smoke). When absent, the kernel links
+# without it, the smoke battery is forced off, and LPL_PLUGIN_UNAVAILABLE is set.
+ENABLE_LIBENGINE?=1
+ifeq ($(ENABLE_LIBENGINE),1)
 LIBS:=$(LIBS) -nostdlib -lengine -lk -lgcc
+# Relink the kernel whenever the engine archive changes. -lengine is resolved
+# from the sysroot, so a rebuilt libengine.a (e.g. after an LplPlugin header
+# edit) would otherwise leave a stale engine baked into lpl.kernel. wildcard
+# keeps standalone `make` (no DESTDIR/sysroot) from gaining a bogus prereq.
+ENGINE_ARCHIVE:=$(wildcard $(DESTDIR)/usr/lib/libengine.a)
+else
+LIBS:=$(LIBS) -nostdlib -lk -lgcc
+CPPFLAGS:=$(CPPFLAGS) -DLPL_PLUGIN_UNAVAILABLE=1
+SMOKE_TESTS:=0
+endif
+
+# Smoke/diagnostic battery (libengine P0..P6 + kernel smoke batch). ON by default
+# for the script/Makefile build (debug); it calls libengine_* so it is forced off
+# when the engine is absent. Pass SMOKE_TESTS=0 (or xmake "release") to compile
+# the whole battery out of a production image.
+SMOKE_TESTS?=1
+ifeq ($(SMOKE_TESTS),1)
+CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS
+endif
 
 # Freestanding C++ runtime support (operator new/delete + Itanium ABI stubs +
 # kernel_std support). No exceptions/RTTI/threadsafe-statics: the kernel ships
@@ -57,6 +81,9 @@ kernel/core/kernel_console.o \
 kernel/core/kernel_splash.o \
 kernel/core/kernel_smp.o \
 kernel/core/kernel_smoke_batch.o \
+kernel/core/libengine_smoke.o \
+kernel/graphics/sysmon.o \
+kernel/graphics/client_app.o \
 kernel/core/kernel.o \
 cxx/cxx_runtime.o \
 cxx/kstd_support.o \
@@ -86,7 +113,7 @@ $(ARCHDIR)/boot/crtn.o \
 
 all: lpl.kernel
 
-lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld
+lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld $(ENGINE_ARCHIVE)
 	$(CC) -T $(ARCHDIR)/linker.ld -o $@ $(CFLAGS) $(LINK_LIST)
 	grub-file --is-x86-multiboot lpl.kernel
 

@@ -20,6 +20,18 @@ if [ -z "${LPLPLUGIN_ROOT:-}" ]; then
     fi
 fi
 
+# The engine module is optional: when the LplPlugin source tree is absent, build
+# a plain kernel (no libengine, smoke battery compiled out) instead of failing.
+# This is the "no xmake / no LplPlugin -> fallback kernel" path.
+if [ -n "${LPLPLUGIN_ROOT:-}" ] && [ -d "${LPLPLUGIN_ROOT}/core/include" ]; then
+    export ENABLE_LIBENGINE=1
+else
+    export ENABLE_LIBENGINE=0
+    SYSTEM_HEADER_PROJECTS="libc kernel"
+    PROJECTS="libc kernel"
+    echo "[config] LplPlugin not found -> building a plain kernel (ENABLE_LIBENGINE=0)"
+fi
+
 export PREFIX=/usr
 export EXEC_PREFIX=$PREFIX
 export BOOTDIR=/boot

@@ -297,6 +297,48 @@ typedef struct {
 extern void libengine_p6_smoke(libengine_p6_smoke_result_t *out);
 
 /*
+** Simulation parity fold. Runs the active sample simulation (currently the
+** CubePile crowd: N entities with Fixed32 position/velocity advanced by a
+** deterministic gravity + floor-bounce + AABB-collision tick, each rasterized as
+** a depth-buffered cube). Authoritative state is Fixed32 (bit-identical host vs
+** kernel); the float render's folded image is bit-identical too. Both signatures
+** below must match the Linux oracle (tests/parity) bit-for-bit.
+*/
+typedef struct {
+    uint32_t state_sig_8;  /* authoritative Fixed32 state fold after 8 ticks    */
+    uint32_t image_sig_8;  /* rendered image fold after 8 ticks                 */
+    uint32_t state_sig_64; /* authoritative state fold after 64 ticks           */
+    uint32_t image_sig_64; /* rendered image fold after 64 ticks                */
+    uint32_t sim_ok;       /* invariants held (state evolved, image non-trivial) */
+} libengine_sim_fold_result_t;
+
+extern void libengine_sim_fold(libengine_sim_fold_result_t *out);
+
+/*
+** Live simulation present facade (the visible client payload). Stateful: the sim
+** persists across frames. A host calls _init once, then drives the decoupled
+** step/render pair: call _step exactly tick_hz times per second to keep the
+** simulation real-time correct, and _render as often as the display allows
+** (_render is pure — no simulation advance — so frame rate can exceed the sim
+** rate). _render returns the internal target's packed pixels + dimensions for
+** the host to scale/blit onto its display. @p phase lets the host pass the real
+** tick so time-based effects track wall-clock. This is the generic, sim-agnostic
+** seam — the host knows nothing about which simulation is active.
+*/
+extern void libengine_sim_init(void);
+extern void libengine_sim_step(void);
+extern uint32_t libengine_sim_entity_count(void);
+
+/*
+** Render through a host-driven orbit camera: @p yaw / @p pitch / @p dist orbit a
+** target; @p possess (>= 0) makes the camera follow (and highlight) that entity,
+** -1 orbits the scene centre. Non-authoritative (camera + lighting are render
+** only). Returns the internal target's pixels + dimensions for the host to blit.
+*/
+extern const uint32_t *libengine_sim_render(float yaw, float pitch, float dist, int32_t possess, uint32_t *out_w,
+                                            uint32_t *out_h);
+
+/*
 ** Engine boot facade (extern "C"). This is the single real entry point the
 ** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
 ** are up — the in-kernel equivalent of main() constructing and running the

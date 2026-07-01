@@ -2,25 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug LplKernel with GDB + QEMU",
+            "name": "Debug LplKernel (xmake + QEMU + GDB)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/kernel/lpl.kernel",
+            "program": "${workspaceFolder}/build/linux/x86_64/debug/lpl.kernel",
             "cwd": "${workspaceFolder}",
             "args": [],
-            "stopAtEntry": true,
+            "stopAtEntry": false,
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
             "miDebuggerPath": "gdb",
-            "miDebuggerArgs": "",
             "targetArchitecture": "x86",
             "setupCommands": [
-                {
-                    "description": "Wait for QEMU to start",
-                    "text": "shell sleep 2",
-                    "ignoreFailures": true
-                },
                 {
                     "description": "Set architecture to i386",
                     "text": "set architecture i386",
@@ -32,38 +26,57 @@
                     "ignoreFailures": true
                 },
                 {
-                    "description": "Set disassembly flavor to Intel",
+                    "description": "Intel disassembly",
                     "text": "-gdb-set disassembly-flavor intel",
                     "ignoreFailures": true
                 },
                 {
-                    "description": "Load kernel symbols",
-                    "text": "file ${workspaceFolder}/kernel/lpl.kernel",
+                    "description": "Load kernel symbols (built with -g)",
+                    "text": "file ${workspaceFolder}/build/linux/x86_64/debug/lpl.kernel",
                     "ignoreFailures": false
                 },
                 {
-                    "description": "Connect to QEMU remote debugger",
+                    "description": "Connect to the QEMU gdb stub (-s = tcp::1234)",
                     "text": "target remote localhost:1234",
                     "ignoreFailures": false
                 },
                 {
-                    "description": "Set breakpoint at kernel_main",
+                    "description": "Break at kernel_main",
                     "text": "break kernel_main",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set breakpoint at kernel_initialize",
-                    "text": "break kernel_initialize",
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "Launch QEMU with GDB",
+            "preLaunchTask": "Debug: xmake build + QEMU (-s -S)",
             "postDebugTask": "Kill QEMU",
             "logging": {
-                "engineLogging": true,
-                "trace": true,
-                "traceResponse": true
+                "engineLogging": false
             }
+        }
+    ],
+    "inputs": [
+        {
+            "id": "profile",
+            "type": "pickString",
+            "description": "Kernel profile",
+            "options": [
+                { "label": "client (graphics, realtime)", "value": "--realtime=y --graphics=y" },
+                { "label": "server (tty/console)", "value": "--realtime=n --graphics=n" }
+            ],
+            "default": "--realtime=y --graphics=y"
+        },
+        {
+            "id": "keyboard",
+            "type": "pickString",
+            "description": "Keyboard layout",
+            "options": ["us", "fr"],
+            "default": "us"
+        },
+        {
+            "id": "smoke",
+            "type": "pickString",
+            "description": "Smoke / diagnostic battery",
+            "options": ["y", "n"],
+            "default": "y"
         }
     ]
 }

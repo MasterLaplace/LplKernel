@@ -34,7 +34,8 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/image/include \
           -I$(LPLPLUGIN_ROOT)/scene/include \
           -I$(LPLPLUGIN_ROOT)/render/include \
-          -I$(LPLPLUGIN_ROOT)/engine/include
+          -I$(LPLPLUGIN_ROOT)/engine/include \
+          -I$(LPLPLUGIN_ROOT)/samples/include
 
 ARCHDIR=arch/$(HOSTARCH)
 
@@ -62,6 +63,7 @@ obj/local/p4_scene_smoke.o \
 obj/local/p5_render_smoke.o \
 obj/local/p5_render_present_smoke.o \
 obj/local/p6_smoke.o \
+obj/local/sim_runtime.o \
 obj/local/lplplugin_init.o \
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)

@@ -205,6 +205,36 @@
                 "clear": true
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Debug: xmake build + QEMU (-s -S)",
+            "detail": "Configure (debug) with the picked profile, build with symbols, boot QEMU halted on :1234 for F5.",
+            "type": "shell",
+            "command": "export PATH=\"$HOME/opt/cross14/bin:$PATH\"; xmake f -m debug ${input:profile} --keyboard=${input:keyboard} --smoke=${input:smoke} -y && xmake debug",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^\\[debug\\].*$",
+                    "file": 1,
+                    "location": 2,
+                    "message": 3
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^\\[debug\\] QEMU halted",
+                    "endsPattern": "^\\[debug\\] QEMU halted"
+                }
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "dedicated",
+                "showReuseMessage": false
+            }
         }
     ]
 }
