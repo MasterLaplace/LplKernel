@@ -31,13 +31,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/src
-          key: ${{ runner.os }}-lplkernel-src-gcc14-v1
+          key: ${{ runner.os }}-lplkernel-src-gcc14-v2
 
       - name: Restore toolchain cache
         uses: actions/cache@v5
         with:
           path: /usr/local/i686-elf
-          key: ${{ runner.os }}-lplkernel-toolchain-gcc14-v1
+          key: ${{ runner.os }}-lplkernel-toolchain-gcc14-v2
 
       - name: Install deps and build cross-toolchain (if not cached)
         run: |
@@ -67,10 +67,14 @@ jobs:
           make -j"$(nproc)" && sudo make install
 
           mkdir -p ../build-gcc && cd ../build-gcc
-          "../${GCC}/configure" --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --enable-languages=c,c++ --without-headers
+          # Mirror the local cross toolchain exactly: freestanding libstdc++
+          # (--disable-hosted-libstdcxx) provides <cstddef>, <cstdint>, etc.
+          "../${GCC}/configure" --target=i686-elf --prefix=/usr/local/i686-elf \
+            --disable-nls --enable-languages=c,c++ --without-headers \
+            --disable-libssp --disable-libquadmath --disable-libcc1 --disable-hosted-libstdcxx
           # MAKEINFO=true avoids doc-build failures on runners without a usable makeinfo.
-          make -j"$(nproc)" all-gcc all-target-libgcc MAKEINFO=true
-          sudo make install-gcc install-target-libgcc MAKEINFO=true
+          make -j"$(nproc)" all-gcc all-target-libgcc all-target-libstdc++-v3 MAKEINFO=true
+          sudo make install-gcc install-target-libgcc install-target-libstdc++-v3 MAKEINFO=true
           echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
           /usr/local/i686-elf/bin/i686-elf-g++ --version | head -1
 
