@@ -36,15 +36,15 @@ jobs:
       - name: Restore toolchain cache
         uses: actions/cache@v5
         with:
-          path: /usr/local/i686-elf
-          key: ${{ runner.os }}-lplkernel-toolchain-gcc14-v2
+          path: ~/i686-elf
+          key: ${{ runner.os }}-lplkernel-toolchain-gcc14-v3
 
       - name: Install deps and build cross-toolchain (if not cached)
         run: |
           set -e
-          if [ -x /usr/local/i686-elf/bin/i686-elf-gcc ]; then
+          if [ -x "$HOME/i686-elf/bin/i686-elf-gcc" ]; then
             echo "Cross toolchain already installed — skipping build"
-            echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
+            echo "PATH=$HOME/i686-elf/bin:$PATH" >> $GITHUB_ENV
             i686-elf-g++ --version | head -1
             exit 0
           fi
@@ -63,20 +63,20 @@ jobs:
           (cd "$GCC" && ./contrib/download_prerequisites)
 
           mkdir -p build-binutils && cd build-binutils
-          "../${BINUTILS}/configure" --target=i686-elf --prefix=/usr/local/i686-elf --disable-nls --disable-werror
-          make -j"$(nproc)" && sudo make install
+          "../${BINUTILS}/configure" --target=i686-elf --prefix="$HOME/i686-elf" --disable-nls --disable-werror
+          make -j"$(nproc)" && make install
 
           mkdir -p ../build-gcc && cd ../build-gcc
           # Mirror the local cross toolchain exactly: freestanding libstdc++
           # (--disable-hosted-libstdcxx) provides <cstddef>, <cstdint>, etc.
-          "../${GCC}/configure" --target=i686-elf --prefix=/usr/local/i686-elf \
+          "../${GCC}/configure" --target=i686-elf --prefix="$HOME/i686-elf" \
             --disable-nls --enable-languages=c,c++ --without-headers \
             --disable-libssp --disable-libquadmath --disable-libcc1 --disable-hosted-libstdcxx
           # MAKEINFO=true avoids doc-build failures on runners without a usable makeinfo.
           make -j"$(nproc)" all-gcc all-target-libgcc all-target-libstdc++-v3 MAKEINFO=true
-          sudo make install-gcc install-target-libgcc install-target-libstdc++-v3 MAKEINFO=true
-          echo "PATH=/usr/local/i686-elf/bin:$PATH" >> $GITHUB_ENV
-          /usr/local/i686-elf/bin/i686-elf-g++ --version | head -1
+          make install-gcc install-target-libgcc install-target-libstdc++-v3 MAKEINFO=true
+          echo "PATH=$HOME/i686-elf/bin:$PATH" >> $GITHUB_ENV
+          "$HOME/i686-elf/bin/i686-elf-g++" --version | head -1
 
       - name: Ensure ISO host tools
         run: sudo apt-get update && sudo apt-get install -y xorriso grub-pc-bin mtools dosfstools
@@ -91,9 +91,9 @@ jobs:
 
       # --- Build the Astro site ---
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Build site
         working-directory: site
