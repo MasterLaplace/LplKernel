@@ -3,6 +3,10 @@ dist/
 .astro/
 node_modules/
 
+# Generated from docs/Books/LplKernel_Book.md by scripts/split-book.mjs
+src/content/book/
+src/generated/
+
 # Vendored v86 runtime (fetched via scripts/fetch-v86.sh)
 public/v86/*.js
 public/v86/*.wasm

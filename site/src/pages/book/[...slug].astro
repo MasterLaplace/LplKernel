@@ -1,0 +1,60 @@
+---
+import { getCollection, render } from "astro:content";
+import BookLayout from "../../layouts/BookLayout.astro";
+
+export async function getStaticPaths() {
+  const entries = (await getCollection("book")).sort((a, b) => a.data.order - b.data.order);
+  return entries.map((entry, i) => ({
+    params: { slug: entry.data.slug },
+    props: {
+      entry,
+      prev: entries[i - 1] ?? null,
+      next: entries[i + 1] ?? null,
+    },
+  }));
+}
+
+const { entry, prev, next } = Astro.props;
+const { Content } = await render(entry);
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const shortTitle = (t: string) => t.replace(/\s+—.*/, "").replace(/\s*:\s*/, " · ");
+---
+
+<BookLayout title={shortTitle(entry.data.title)} activeSlug={entry.data.slug}>
+  {
+    entry.data.part && (
+      <p class="font-mono text-xs uppercase tracking-wider text-lpl-muted mb-2">{entry.data.part}</p>
+    )
+  }
+  <h1 class="text-3xl sm:text-4xl font-bold mb-8">{entry.data.title}</h1>
+
+  <article class="book-prose">
+    <Content />
+  </article>
+
+  <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm">
+    {
+      prev ? (
+        <a href={`${base}/book/${prev.data.slug}`} class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">
+          ← {shortTitle(prev.data.title)}
+        </a>
+      ) : (
+        <span />
+      )
+    }
+    {
+      next ? (
+        <a
+          href={`${base}/book/${next.data.slug}`}
+          class="text-lpl-accent hover:brightness-110 text-right max-w-[45%]"
+        >
+          {shortTitle(next.data.title)} →
+        </a>
+      ) : (
+        <a href={`${base}/book`} class="text-lpl-accent text-right">
+          Retour au sommaire →
+        </a>
+      )
+    }
+  </nav>
+</BookLayout>

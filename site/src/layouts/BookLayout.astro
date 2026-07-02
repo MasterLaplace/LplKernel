@@ -1,0 +1,96 @@
+---
+import "../styles/global.css";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import { getCollection } from "astro:content";
+import meta from "../generated/book-meta";
+
+interface Props {
+  title?: string;
+  activeSlug?: string;
+}
+const { title, activeSlug } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const entries = (await getCollection("book")).sort((a, b) => a.data.order - b.data.order);
+
+// Group the flat chapter list into sidebar sections (Préambule, Parties, Annexes).
+type Group = { label: string | null; items: typeof entries };
+const groups: Group[] = [];
+for (const e of entries) {
+  let label: string | null = null;
+  if (e.data.kind === "chapter") label = e.data.part ?? "Chapitres";
+  else if (e.data.kind === "annexe") label = "Annexes";
+  else if (e.data.kind === "epilogue") label = "Épilogue";
+  const last = groups[groups.length - 1];
+  if (last && last.label === label) last.items.push(e);
+  else groups.push({ label, items: [e] });
+}
+
+const shortTitle = (t: string) => t.replace(/\s+—.*/, "").replace(/\s*:\s*/, " · ");
+---
+
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+    <title>{title ? `${title} — ${meta.title}` : meta.title}</title>
+    <meta name="description" content={meta.subtitle} />
+  </head>
+  <body class="font-sans text-lpl-text antialiased">
+    <Nav />
+    <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-[18rem_1fr] gap-8">
+      <!-- Sidebar TOC -->
+      <aside class="hidden lg:block py-10">
+        <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2">
+          <a href={`${base}/book`} class="block font-mono text-sm text-lpl-accent mb-4 hover:brightness-110">
+            ← Sommaire du livre
+          </a>
+          {
+            groups.map((g) => (
+              <div class="mb-5">
+                {g.label && (
+                  <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2">
+                    {g.label}
+                  </p>
+                )}
+                <ul class="space-y-1">
+                  {g.items.map((e) => (
+                    <li>
+                      <a
+                        href={`${base}/book/${e.data.slug}`}
+                        class={`block text-sm rounded px-2 py-1 transition-colors ${
+                          e.data.slug === activeSlug
+                            ? "bg-lpl-accent/10 text-lpl-accent"
+                            : "text-lpl-muted hover:text-lpl-text"
+                        }`}
+                      >
+                        {shortTitle(e.data.title)}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          }
+        </div>
+      </aside>
+
+      <!-- Content -->
+      <main class="py-10 min-w-0">
+        <slot />
+      </main>
+    </div>
+    <Footer />
+
+    <!-- Mermaid: render the diagram blocks emitted by the remark plugin.
+         is:inline keeps Astro/Vite from bundling the remote ESM import. -->
+    <script is:inline type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+    </script>
+  </body>
+</html>

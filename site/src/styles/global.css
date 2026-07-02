@@ -38,3 +38,102 @@ body {
 .lpl-glow {
   box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.15), 0 20px 60px -20px rgba(129, 140, 248, 0.35);
 }
+
+/* Rich prose for rendered book chapters. */
+.book-prose {
+  line-height: 1.75;
+  color: var(--color-lpl-text);
+  max-width: 46rem;
+}
+.book-prose > * + * {
+  margin-top: 1rem;
+}
+.book-prose h2 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-top: 2.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--color-lpl-border);
+}
+.book-prose h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  color: var(--color-lpl-accent);
+}
+.book-prose h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+}
+.book-prose p,
+.book-prose li {
+  color: var(--color-lpl-text);
+}
+.book-prose a {
+  color: var(--color-lpl-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.book-prose ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.book-prose ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.book-prose blockquote {
+  border-left: 3px solid var(--color-lpl-accent);
+  padding-left: 1rem;
+  color: var(--color-lpl-muted);
+  font-style: italic;
+}
+.book-prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--color-lpl-accent);
+  background: rgba(94, 234, 212, 0.08);
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+}
+.book-prose pre {
+  background: #0d1117 !important;
+  border: 1px solid var(--color-lpl-border);
+  border-radius: 0.6rem;
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.85rem;
+}
+.book-prose pre.mermaid {
+  background: var(--color-lpl-panel) !important;
+  border: 1px solid var(--color-lpl-border);
+  text-align: center;
+}
+.book-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  display: block;
+  overflow-x: auto;
+}
+.book-prose th,
+.book-prose td {
+  border: 1px solid var(--color-lpl-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.book-prose th {
+  background: var(--color-lpl-panel);
+  color: var(--color-lpl-accent);
+}
+.book-prose hr {
+  border: none;
+  border-top: 1px solid var(--color-lpl-border);
+  margin: 2rem 0;
+}
+.book-prose .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0;
+}
