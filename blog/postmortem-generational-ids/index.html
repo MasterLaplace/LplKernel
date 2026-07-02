@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><title>The Impostor Problem: Killing ABA with Generational IDs — The Laplace Project</title><meta name="description" content="A technical postmortem on a subtle entity-reuse bug in the ECS, and the atomic generational-handle fix."><meta property="og:title" content="The Impostor Problem: Killing ABA with Generational IDs — The Laplace Project"><meta property="og:description" content="A technical postmortem on a subtle entity-reuse bug in the ECS, and the atomic generational-handle fix."><meta property="og:type" content="website"><meta name="generator" content="Astro v5.18.2"><link rel="stylesheet" href="/LplKernel/_astro/_slug_.CzR5TaRm.css"></head> <body class="font-sans text-lpl-text antialiased"> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent">λ</span> Laplace<span class="text-lpl-muted">.project</span> </a> <ul class="flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers </a> </li> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener">GitHub ↗</a> </li> </ul> </nav> </header> <main class="mx-auto max-w-6xl px-4">  <article class="py-16 max-w-3xl mx-auto"> <a href="/LplKernel/blog" class="text-sm text-lpl-accent">← Blog &amp; Papers</a> <header class="mt-6 mb-8"> <p class="text-xs font-mono text-lpl-accent2 mb-2">
+⚠ DRAFT — outline scaffolded from notes, prose to be written.
+</p> <h1 class="text-3xl sm:text-4xl font-bold">The Impostor Problem: Killing ABA with Generational IDs</h1> <p class="text-lpl-muted mt-2">A technical postmortem on a subtle entity-reuse bug in the ECS, and the atomic generational-handle fix.</p> <time class="text-xs font-mono text-lpl-muted">2026-06-15</time> </header> <div class="prose-lpl max-w-none space-y-4 leading-relaxed
+             [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-8 [&_h2]:text-lpl-text
+             [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-6
+             [&_p]:text-lpl-muted [&_li]:text-lpl-muted [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1
+             [&_code]:font-mono [&_code]:text-lpl-accent [&_a]:text-lpl-accent
+             [&_pre]:lpl-panel [&_pre]:rounded-xl [&_pre]:p-4 [&_pre]:overflow-x-auto"> <h2 id="the-symptom">The symptom</h2>
+<p><em>Draft outline — replace with the real war story.</em></p>
+<p>An entity would occasionally receive a message meant for a long-dead entity that once held the
+same slot. The classic <strong>ABA problem</strong>: a handle is freed, the slot is reused, and a stale handle
+now points at a different entity that looks identical.</p>
+<h2 id="root-cause">Root cause</h2>
+<ul>
+<li>Handles were raw indices into the component arrays.</li>
+<li>Reuse of a slot made an old handle silently valid again.</li>
+</ul>
+<h2 id="the-fix-generational-ids">The fix: generational IDs</h2>
+<ul>
+<li>Pack a <code>(index, generation)</code> pair into each handle.</li>
+<li>Bump the generation atomically on free/reuse.</li>
+<li>A lookup validates the generation before dereferencing — stale handles are rejected.</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c"><code><span class="line"><span style="color:#6A737D">// handle = (generation &#x3C;&#x3C; INDEX_BITS) | index</span></span></code></pre>
+<h2 id="why-it-had-to-be-atomic">Why it had to be atomic</h2>
+<ul>
+<li>The free/reuse path races with lookups on other cores.</li>
+<li>Discuss the memory ordering used and why.</li>
+</ul>
+<h2 id="aftermath">Aftermath</h2>
+<ul>
+<li>What testing caught it, and the invariant now enforced.</li>
+</ul> </div> </article>  </main> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> </body></html>

@@ -1,0 +1,377 @@
+<!DOCTYPE html><html lang="fr"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"><title>Chapitre 10 · Vision architecturale, innovations natives — LplKernel : architecture d&#39;un moteur déterministe FullDive</title><meta name="description" content="De la gestion mémoire noyau aux interfaces cerveau-ordinateur"><link rel="stylesheet" href="/LplKernel/_astro/_slug_.CzR5TaRm.css"></head> <body class="font-sans text-lpl-text antialiased"> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent">λ</span> Laplace<span class="text-lpl-muted">.project</span> </a> <ul class="flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers </a> </li> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener">GitHub ↗</a> </li> </ul> </nav> </header> <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-[18rem_1fr] gap-8"> <!-- Sidebar TOC --> <aside class="hidden lg:block py-10"> <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2"> <a href="/LplKernel/book" class="block font-mono text-sm text-lpl-accent mb-4 hover:brightness-110">
+← Sommaire du livre
+</a> <div class="mb-5">  <ul class="space-y-1"> <li> <a href="/LplKernel/book/preambule" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Préambule </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE I : Fondations système </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-1" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 1 · Anatomie d&#39;un noyau, OS ou moteur </a> </li><li> <a href="/LplKernel/book/chapitre-2" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 2 · Gestion mémoire, du noyau au moteur </a> </li><li> <a href="/LplKernel/book/chapitre-3" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 3 · Déterminisme et arithmétique à virgule fixe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE II : Architecture et rendu </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-4" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 4 · Paradigmes architecturaux et design patterns </a> </li><li> <a href="/LplKernel/book/chapitre-5" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 5 · GPU, Vulkan et animation procédurale </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE III : Réseau et synchronisation </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-6" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 6 · Infrastructure réseau déterministe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE IV : Interfaces cerveau-ordinateur </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-7" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 7 · BCI, EEG et neurofeedback pour le FullDive </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE V : Horizons </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-8" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 8 · Des noyaux classiques aux systèmes quantiques </a> </li><li> <a href="/LplKernel/book/chapitre-9" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale </a> </li><li> <a href="/LplKernel/book/chapitre-10" class="block text-sm rounded px-2 py-1 transition-colors bg-lpl-accent/10 text-lpl-accent"> Chapitre 10 · Vision architecturale, innovations natives </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> Annexes </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/annexe-a" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe A · Code compilable, design patterns du FullDive Engine </a> </li><li> <a href="/LplKernel/book/annexe-b" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe B · Glossaire technique </a> </li><li> <a href="/LplKernel/book/annexe-c" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe C · Index des sources par chapitre </a> </li><li> <a href="/LplKernel/book/annexe-d" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe D · Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow) </a> </li> </ul> </div> </div> </aside> <!-- Content --> <main class="py-10 min-w-0"> <p class="font-mono text-xs uppercase tracking-wider text-lpl-muted mb-2">PARTIE V : Horizons</p><h1 class="text-3xl sm:text-4xl font-bold mb-8">Chapitre 10 : Vision architecturale, innovations natives</h1> <article class="book-prose"> <h2 id="101-introduction-au-delà-du-kernel-généraliste">10.1 Introduction : au-delà du kernel généraliste</h2>
+<p>Les systèmes d’exploitation généralistes (Linux, Windows, macOS) ont été conçus pour l’équité et l’universalité : servir simultanément un navigateur web, un compilateur, un serveur de base de données et un lecteur vidéo. Cette universalité a un coût structurel : des couches d’abstraction empilées au fil des décennies (<code>chroot</code> → <code>namespaces</code> → <code>cgroups</code> → containers → orchestrateurs) qui ajoutent de la latence, de la complexité et des copies mémoire inutiles.</p>
+<p>LplKernel adopte une philosophie inverse : le noyau ne sert qu’à un seul objectif, orchestrer un moteur VR/FullDive déterministe client-serveur. Cette spécialisation radicale ouvre la porte à des innovations architecturales impossibles sur un OS généraliste. Ce chapitre explore les axes de rupture qui constitueront les fondations des phases avancées du noyau.<sup><a href="#user-content-fn-1" id="user-content-fnref-1" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup></p>
+<h2 id="102-linterface-zero-syscall-ring-buffers-asynchrones">10.2 L’interface Zero-Syscall : ring-buffers asynchrones</h2>
+<h3 id="1021-le-coût-caché-du-changement-de-contexte">10.2.1 Le coût caché du changement de contexte</h3>
+<p>Dans un OS classique, chaque interaction application → noyau (lecture fichier, envoi réseau, allocation mémoire) transite par un appel système (<code>INT 0x80</code>, <code>SYSENTER</code>, <code>SYSCALL</code>). Ce mécanisme force un changement de contexte : vidage des pipelines d’exécution du CPU, transition Ring 3 → Ring 0, pollution du cache L1/L2 d’instructions. Sur une architecture x86 moderne, un syscall simple coûte entre 100 et 400 cycles CPU, inacceptable quand le budget de frame est de 11 ms (90 Hz).<sup><a href="#user-content-fn-1" id="user-content-fnref-1-2" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup></p>
+<blockquote>
+<p><strong>Le piège mortel de <code>SWAPGS</code></strong></p>
+<p>Lors de l’utilisation de l’instruction <code>SYSCALL</code> (très rapide), le processeur passe en Ring 0 sans changer la pile (<code>RSP</code> pointe toujours vers la pile utilisateur). Le noyau doit exécuter <code>SWAPGS</code> pour basculer le registre <code>GS</code> vers la structure interne du CPU (<code>MSR_KERNEL_GS_BASE</code>) afin d’accéder à la pile noyau sécurisée. Sauf que si une interruption matérielle (NMI ou IRQ timer) survient alors que le processeur est <em>déjà</em> en Ring 0, le handler d’interruption ne doit surtout pas exécuter aveuglément <code>SWAPGS</code> : cela inverserait le registre GS vers l’espace utilisateur, ce qui provoquerait un crash absolu (Double Fault) au moindre accès mémoire suivant. C’est l’un des bugs les plus subtils et destructeurs en OSDev.</p>
+</blockquote>
+<h3 id="1022-le-modèle-submissioncompletion-queue">10.2.2 Le modèle Submission/Completion Queue</h3>
+<p>LplKernel supprime les syscalls bloquants en généralisant le paradigme de <code>io_uring</code> (Linux 5.1+) à toutes les interactions kernel-userspace :</p>
+<ol>
+<li>L’espace utilisateur et le noyau partagent une zone de mémoire contenant deux anneaux circulaires (<em>ring buffers</em>) : une <strong>Submission Queue</strong> (SQ) et une <strong>Completion Queue</strong> (CQ).</li>
+<li>Quand un processus veut interagir avec le matériel, il <em>poste</em> la requête dans la SQ sans aucune interruption ni changement de Ring.</li>
+<li>Un ou plusieurs threads noyau dédiés, exécutés sur des cœurs SMP distincts, <em>pollent</em> la SQ à la vitesse de la RAM, exécutent la demande et déposent le résultat dans la CQ.</li>
+<li>Le processus consulte la CQ de manière asynchrone lorsqu’il est prêt.</li>
+</ol>
+<p>Résultat : zéro changement de contexte, zéro interruption du thread applicatif. Le pipeline d’instructions CPU n’est jamais vidé. Le cache L1 reste chaud. C’est le Graal absolu pour la simulation temps réel : le thread de rendu VR en Ring 3 n’est <em>jamais</em> interrompu.</p>
+<p>L’infrastructure existante de LplKernel (Ring Buffer SPSC client, SMP multi-cœur, APIC/IPI) forme les briques de base de cette architecture. Le Ring Buffer 32 B / 32 entrées implémenté en Phase 4 en est le prototype fonctionnel.</p>
+<h2 id="103-single-address-space-os-sasos-et-sécurité-par-capacités">10.3 Single Address Space OS (SASOS) et sécurité par capacités</h2>
+<h3 id="1031-le-paradigme-classique-et-ses-limites">10.3.1 Le paradigme classique et ses limites</h3>
+<p>Dans un OS traditionnel, chaque processus possède son propre espace d’adressage virtuel, isolé par des tables de pages séparées. Tout changement de contexte entre processus force un vidage du <strong>TLB</strong> (<em>Translation Lookaside Buffer</em>), ce qui détruit les traductions virt→phys cachées et provoque une avalanche de cache misses.</p>
+<h3 id="1032-lespace-dadressage-unique">10.3.2 L’espace d’adressage unique</h3>
+<p>En mode 64-bit (objectif Phase 10), LplKernel peut adopter le modèle <strong>SASOS</strong> (<em>Single Address Space Operating System</em>), popularisé par le projet de recherche <strong>Theseus OS</strong>. Dans ce paradigme, tous les processus, y compris le noyau, partagent le même espace d’adressage virtuel de 128 To (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>2</mn><mn>47</mn></msup></mrow><annotation encoding="application/x-tex">2^{47}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">47</span></span></span></span></span></span></span></span></span></span></span></span> octets en x86-64 canonical addressing).</p>
+<p>L’isolation ne se fait plus par des tables de pages séparées, mais par l’isolation intra-linguistique (comme la sémantique de possession en Rust ou les <code>std::unique_ptr</code> stricts en C++) doublée d’une protection matérielle de nouvelle génération : les <strong>Memory Protection Keys</strong> (PKeys ou PKU) intégrées aux processeurs Intel depuis Skylake.</p>
+<p>Chaque page (PTE) est étiquetée avec une clé de protection (4 bits, soit 16 domaines d’isolation matérielle). Le registre 32-bits <code>PKRU</code> (<em>Protection Key Rights for User pages</em>) dicte les droits de lecture/écriture pour chacune de ces 16 clés. La force de cette technologie tient à ce que le registre <code>PKRU</code> peut être modifié depuis l’espace utilisateur via l’instruction <code>WRPKRU</code> en seulement 2 cycles CPU, de façon parfaitement synchrone et sans aucun flush du TLB.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Mécanisme</th><th align="left">Coût Context-Switch</th><th align="left">Flush TLB</th><th align="left">Domaines</th></tr></thead><tbody><tr><td align="left"><strong>Tables de pages séparées</strong></td><td align="left">Lourd (rechargement CR3)</td><td align="left">Oui</td><td align="left">Illimité</td></tr><tr><td align="left"><strong>SASOS + PKeys</strong></td><td align="left">Minimal (écriture PKRU en 2 cycles)</td><td align="left">Non</td><td align="left">16 (extensible via ré-étiquetage)</td></tr></tbody></table>
+<h3 id="1033-sécurité-par-capacités">10.3.3 Sécurité par capacités</h3>
+<p>La sécurité n’est plus gérée par des droits utilisateur UNIX (UID/GID, <code>chmod</code>), mais par des capacités : des tokens cryptographiques locaux forgés par le noyau. Si une application détient la capacité (un pointeur authentifié) vers un fichier, un device réseau ou une zone mémoire, elle a le droit de l’utiliser. C’est le principe du <strong>Zero Trust</strong> appliqué au niveau du processeur, ce qui élimine toute la surface d’attaque liée à l’escalade de privilèges traditionnelle.</p>
+<h2 id="104-auto-resizing-natif-et-time-travel-ram">10.4 Auto-resizing natif et Time-Travel RAM</h2>
+<h3 id="1041-redimensionnement-à-chaud">10.4.1 Redimensionnement à chaud</h3>
+<p>Les solutions de conteneurisation actuelles (Docker, Kubernetes) s’appuient sur l’OS hôte pour la gestion des ressources, ajoutant des couches d’abstraction coûteuses. LplKernel intègre le redimensionnement natif directement dans le noyau :</p>
+<ul>
+<li><strong>Demand Paging (Lazy Allocation)</strong> : le noyau alloue les pages physiques uniquement lors d’un Page Fault, quand le processus accède réellement à l’adresse. La mémoire promise mais non touchée ne consomme aucune RAM physique.</li>
+<li><strong>Ballooning Natif</strong> : Lorsque le système détecte une pression mémoire (seuil de <code>free_pages</code> trop bas), le noyau peut demander à ses propres processus de libérer des pages non critiques ou de compresser la mémoire en ligne (<em>zswap natif</em>), augmentant la capacité effective sans interaction externe.</li>
+<li><strong>Zero-Copy Resizing</strong> : en contrôlant directement les tables de pages, le noyau déplace des blocs de données entre processus sans copie mémoire : une simple manipulation des entrées PDE/PTE. Les données ne bougent pas physiquement, seul le mapping change.</li>
+</ul>
+<h3 id="1042-time-travel-ram-git-pour-la-mémoire-vive">10.4.2 Time-Travel RAM : Git pour la mémoire vive</h3>
+<p>Le Copy-On-Write (COW), déjà utilisé par <code>fork()</code> sous UNIX, est poussé à l’extrême dans LplKernel pour offrir un versioning natif de la mémoire :</p>
+<ul>
+<li>Snapshot instantané : le noyau « photographie » l’état RAM d’un processus en 0 ms. Il suffit de marquer toutes les pages en lecture seule et d’incrémenter le compteur de référence dans le PMM ; aucune copie n’est effectuée.</li>
+<li>Instant Rollback : si un processus crashe, le noyau le ramène à son état d’il y a <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> secondes en restaurant le mapping snapshot. C’est la fondation du Rollback Netcode (Chapitre 6) appliquée au niveau mémoire.</li>
+<li>Fork instantané : dupliquer un processus lourd (par exemple un modèle IA local qui a chargé ses poids en VRAM) en partageant la même RAM physique en lecture seule, jusqu’à ce qu’un des forks modifie une page, alors copiée à la demande.</li>
+</ul>
+<h2 id="105-ordonnanceur-edf-garanties-temporelles-absolues">10.5 Ordonnanceur EDF : garanties temporelles absolues</h2>
+<h3 id="1051-limites-du-round-robin">10.5.1 Limites du Round-Robin</h3>
+<p>L’ordonnancement Round-Robin classique distribue le temps CPU de manière « équitable » : chaque tâche reçoit un quantum de temps identique. Cette équité est incompatible avec les systèmes temps réel : une tâche de rendu VR qui rate son deadline de 2 ms provoque une frame perdue et un malaise vestibulaire chez l’utilisateur.</p>
+<h3 id="1052-earliest-deadline-first-edf">10.5.2 Earliest Deadline First (EDF)</h3>
+<p>L’ordonnanceur <strong>EDF</strong> (<em>Earliest Deadline First</em>) remplace la notion de priorité statique par une garantie temporelle contractuelle. Chaque tâche déclare un SLA (<em>Service Level Agreement</em>) de la forme :</p>
+<p><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>« J’ai besoin de </mtext><mi>C</mi><mtext> ms de CPU pur d’ici les </mtext><mi>T</mi><mtext> prochaines ms. »</mtext></mrow><annotation encoding="application/x-tex">\text{« J'ai besoin de } C \text{ ms de CPU pur d'ici les } T \text{ prochaines ms. »}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">« J’ai besoin de </span></span><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="mord text"><span class="mord"> ms de CPU pur d’ici les </span></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord text"><span class="mord"> prochaines ms. »</span></span></span></span></span></p>
+<p>Par exemple : « Le thread de rendu VR a besoin de 2 ms toutes les 11 ms » (90 Hz). Le noyau vérifie mathématiquement la faisabilité via le <strong>test de Liu &#x26; Layland</strong> :</p>
+<p><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mo>=</mo><msubsup><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></msubsup><mfrac><msub><mi>C</mi><mi>i</mi></msub><msub><mi>T</mi><mi>i</mi></msub></mfrac><mo>≤</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">U = \sum_{i=1}^{n} \frac{C_i}{T_i} \leq 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">U</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.3335em;vertical-align:-0.4451em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8043em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8884em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.1389em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.4101em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.0715em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4451em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span></p>
+<p>où <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi></mrow><annotation encoding="application/x-tex">U</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">U</span></span></span></span> est l’utilisation CPU totale, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">C_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> le temps d’exécution pire cas de la tâche <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span>, et <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">T_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> sa période. Si <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mo>≤</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">U \leq 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">U</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>, le système est ordonnançable : toutes les deadlines seront respectées, mathématiquement garanti.</p>
+<p>L’EDF est optimal pour les systèmes uniprocesseur : il peut ordonnancer tout ensemble de tâches pour lequel un ordonnancement valide existe. Sur SMP, des extensions comme le <strong>Global-EDF</strong> ou le <strong>Partitioned-EDF</strong> (affectation par cœur) complètent le modèle.</p>
+<h2 id="106-data-plane-network-bypass-tcpip-et-zero-copy-dma">10.6 Data Plane Network : bypass TCP/IP et Zero-Copy DMA</h2>
+<h3 id="1061-le-problème-de-la-pile-réseau-classique">10.6.1 Le problème de la pile réseau classique</h3>
+<p>Dans un OS standard, un paquet réseau entrant suit un chemin tortueux : la carte réseau (NIC) écrit dans un buffer DMA du noyau → le noyau copie les données dans un buffer de socket → l’application copie depuis le socket vers son propre buffer. Chaque étape implique une copie mémoire et un changement de contexte. Pour la communication inter-conteneurs sur le même hôte, cette pile traversée est particulièrement absurde.</p>
+<h3 id="1062-le-bypass-natif">10.6.2 Le bypass natif</h3>
+<p>LplKernel configure la NIC pour qu’elle transfère les paquets via DMA directement dans la RAM de l’application utilisateur (ici, le serveur Flakkari), en utilisant <strong>RSS</strong> (<em>Receive Side Scaling</em>) pour distribuer le trafic matériellement par file de réception :</p>
+<ol>
+<li>L’application demande au noyau de mapper le RX Ring de la NIC dans son espace d’adressage.</li>
+<li>Le noyau configure les descripteurs DMA de la NIC pour écrire dans ces pages utilisateur (épinglées via <code>kernel_pinned_alloc</code>).</li>
+<li>Aucun traitement de paquet par le noyau. La pile TCP/IP classique est contournée.</li>
+<li>Pour la communication intra-hôte (deux conteneurs sur la même machine), le noyau remplace la pile réseau par un <strong>Shared Memory Ring</strong> transparent pour l’application, avec des latences de l’ordre de la nanoseconde.</li>
+</ol>
+<h3 id="1063-réseau-zero-copy-pour-le-fulldive">10.6.3 Réseau Zero-Copy pour le FullDive</h3>
+<p>Pour le rendu VR distant ou l’IA distribuée, le chemin optimal est NIC → DMA → RAM applicative → GPU. LplKernel peut mapper la mémoire DMA de la NIC directement dans l’espace d’adressage accessible au GPU (via les pages épinglées CDMM, cf. Chapitre 2), ce qui crée un pipeline NIC → GPU sans aucune copie CPU intermédiaire.</p>
+<h2 id="107-multiplexage-matériel-gpunpu-natif">10.7 Multiplexage matériel GPU/NPU natif</h2>
+<p>L’assignation de matériel spécialisé (GPU, NPU, TPU) à des processus isolés est un problème non résolu par les OS actuels. Les solutions existantes sont soit monolithiques (passthrough PCIe complet) soit propriétaires (NVIDIA vGPU).</p>
+<p>LplKernel aborde le problème nativement : le noyau abstrait les accélérateurs matériels et les expose comme une ressource fluide, au même titre que la RAM ou le temps CPU. Un processus peut demander : « alloue-moi 15 % de la puissance de calcul tensoriel ». Le noyau multiplexe les accès au matériel en temps réel, de manière agnostique vis-à-vis du constructeur.</p>
+<p>Cette approche repose sur le <strong>GPU System Processor</strong> (GSP), le processeur RISC-V intégré dans les GPU NVIDIA depuis l’architecture Turing (cf. Chapitre 5), programmable pour arbitrer les contextes GPU sans intervention CPU.</p>
+<h2 id="108-observabilité-zero-cost">10.8 Observabilité Zero-Cost</h2>
+<p>Les solutions de monitoring actuelles (Prometheus, Datadog) consomment un pourcentage significatif de CPU pour l’instrumentation. LplKernel intègre une API d’observabilité directement dans l’ordonnanceur et le gestionnaire mémoire :</p>
+<ul>
+<li>Des buffers circulaires lock-free en espace utilisateur (Ring Buffers SPSC, cf. Chapitre 2) reçoivent les événements d’instrumentation sans aucun changement de contexte.</li>
+<li>Le noyau écrit les métriques (allocations, ticks, interruptions, latences) à la vitesse de la RAM, sans <code>write()</code> syscall.</li>
+<li>L’agent de monitoring lit ces buffers à son rythme, en mode asynchrone.</li>
+</ul>
+<p>Le coût mesuré de cette instrumentation est strictement borné à la vitesse d’une écriture mémoire séquentielle, essentiellement 0 % de CPU supplémentaire par rapport à un noyau non instrumenté.</p>
+<h2 id="109-la-convergence-kernel-engine-lplplugin--lplkernel">10.9 La convergence kernel-engine : LplPlugin → LplKernel</h2>
+<h3 id="1091-la-vision-unifiée">10.9.1 La vision unifiée</h3>
+<p>LplPlugin (le moteur/engine côté espace utilisateur) et LplKernel sont conçus pour converger progressivement. L’objectif final est que le moteur soit compilé comme une librairie kernel-adjacent (similaire à <code>libc</code>/<code>libk</code>), intégrée directement dans le noyau, ce qui élimine la frontière user/kernel pour les chemins critiques.</p>
+<p>Cette convergence suit une feuille de route en 5 phases unifiées :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Phase</th><th align="left">Objectif</th><th align="left">Exit Criteria</th></tr></thead><tbody><tr><td align="left"><strong>U1</strong></td><td align="left">Fondations déterministes (timer, mémoire)</td><td align="left">Contrat de tick stable consommé par le plugin</td></tr><tr><td align="left"><strong>U2</strong></td><td align="left">Simulation + autorité réseau</td><td align="left">Prédiction/réconciliation robustes sous jitter 50-200 ms</td></tr><tr><td align="left"><strong>U3</strong></td><td align="left">BCI boucle fermée</td><td align="left">Latence boucle BCI &#x3C; 20 ms mesurable et reproductible</td></tr><tr><td align="left"><strong>U4</strong></td><td align="left">Convergence kernel-centric</td><td align="left">Première tranche d’intégration kernel-native benchmarkée</td></tr><tr><td align="left"><strong>U5</strong></td><td align="left">Scale et validation</td><td align="left">Métriques de déterminisme et de scale démontrées</td></tr></tbody></table>
+<h3 id="1092-matrice-de-dépendances-croisées">10.9.2 Matrice de dépendances croisées</h3>
+<p>Les deux projets se nourrissent mutuellement :</p>
+<ul>
+<li>Kernel → Plugin : politique de timer/interruption déterministe, garanties mémoire pour les sections de boucle déterministe, interfaces réseau/driver bas-niveau.</li>
+<li>Plugin → Kernel : contrats runtime (cadence de tick, flux de données, contraintes de réconciliation), exigences mesurées de latence et débit qui alimentent les priorités kernel, priorités de migration pour la réduction de dépendances.</li>
+</ul>
+<h3 id="1093-kpis-de-suivi-continu">10.9.3 KPIs de suivi continu</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Domaine</th><th align="left">Métrique</th><th align="left">Cible</th></tr></thead><tbody><tr><td align="left"><strong>Déterminisme</strong></td><td align="left">Taux de cohérence replay/hash</td><td align="left">100 % sur scénarios fixes</td></tr><tr><td align="left"><strong>Déterminisme</strong></td><td align="left">Enveloppe de drift/jitter du tick client</td><td align="left">&#x3C; 100 µs</td></tr><tr><td align="left"><strong>Latence</strong></td><td align="left">Boucle fermée BCI end-to-end</td><td align="left">&#x3C; 20 ms</td></tr><tr><td align="left"><strong>Latence</strong></td><td align="left">Fenêtre de stabilisation réconciliation réseau</td><td align="left">&#x3C; 200 ms</td></tr><tr><td align="left"><strong>Scale</strong></td><td align="left">Débit d’entités stables serveur</td><td align="left">Cible phase courante</td></tr><tr><td align="left"><strong>Fiabilité</strong></td><td align="left">Taux de pass des smoke tests IRQ/exception</td><td align="left">100 %</td></tr></tbody></table>
+<h2 id="1010-diagramme-darchitecture-complet">10.10 Diagramme d’architecture complet</h2>
+<p>L’architecture fusionnée de LplKernel est représentée ci-dessous. Les composants sont codés par couleur :</p>
+<ul>
+<li>Bleu : Kernel Core (fondations Phases 1-5)</li>
+<li>Violet : Innovation Native (vision long terme)</li>
+<li>Vert : Espace Utilisateur</li>
+<li>Noir : Hardware</li>
+<li>Orange : Interface asynchrone</li>
+</ul>
+<pre class="mermaid">flowchart TD
+    %% ================= STYLES =================
+    classDef hardware fill:#2d3436,stroke:#b2bec3,stroke-width:2px,color:#dfe6e9;
+    classDef kernel_core fill:#0984e3,stroke:#74b9ff,stroke-width:2px,color:#fff;
+    classDef innovation fill:#6c5ce7,stroke:#a29bfe,stroke-width:3px,color:#fff;
+    classDef userspace fill:#00b894,stroke:#55efc4,stroke-width:2px,color:#fff;
+    classDef interface fill:#e17055,stroke:#fab1a0,stroke-width:2px,color:#fff;
+
+    %% ================= USERSPACE =================
+    subgraph Userspace ["Espace Utilisateur (Single Address Space - SASOS)"]
+        direction LR
+        App1["🎮 Moteur VR / Rendu<br>(PKey: 0x1)"]:::userspace
+        App2["🌐 Serveur Flakkari<br>(PKey: 0x2)"]:::userspace
+        App3["🧠 Modèle IA Distribué<br>(PKey: 0x3)"]:::userspace
+    end
+
+    %% ================= INTERFACE =================
+    subgraph Interface ["Frontière Asynchrone Kernel-User (Zero Context-Switch)"]
+        direction LR
+        RB_Net["Ring-Buffer Réseau<br>(Submission/Completion)"]:::interface
+        RB_Sys["Ring-Buffer Système<br>(Mémoire, I/O, IPC)"]:::interface
+    end
+
+    %% ================= KERNEL SPACE =================
+    subgraph Kernel ["LplKernel Space (Ring 0)"]
+        direction TB
+
+        subgraph Boot_Init ["Boot &#x26; CPU Init (Phase 1-3)"]
+            direction LR
+            Boot["GRUB / Multiboot<br>Higher-Half Boot"]:::kernel_core
+            Protect["GDT &#x26; TSS<br>Ring 0 / Ring 3"]:::kernel_core
+            Intr["IDT &#x26; Exceptions<br>(#PF, #GP, #DF)"]:::kernel_core
+            SMPInit["AP Trampoline<br>INIT/SIPI Dispatch"]:::kernel_core
+        end
+
+        subgraph Sched ["Ordonnancement &#x26; Topologie (Phase 6+)"]
+            direction LR
+            EDF["⏱️ Scheduler EDF<br>(Earliest Deadline First)<br>Garanties Hard Real-Time"]:::innovation
+            SMP["Multi-Core SMP Manager<br>Affinité CPU &#x26; NUMA Policy"]:::kernel_core
+            IPC["Zero-Copy IPC Router<br>Mémoire Partagée Native"]:::innovation
+        end
+
+        subgraph Mem ["Sous-système Mémoire (Phase 4+)"]
+            direction LR
+            SASOS["VMM SASOS<br>Isolation par Capacités (PKeys)"]:::innovation
+            VMM["VMM Classique<br>Virt->Phys, Page Tables"]:::kernel_core
+            PMM["PMM &#x26; Allocateurs<br>Buddy, Slab, Frame Arena, Pools"]:::kernel_core
+            AutoResize["🎈 Auto-Resizing Natif<br>Ballooning &#x26; Lazy Alloc"]:::innovation
+            Snapshot["📸 Time-Travel RAM<br>Insta-Fork / Copy-On-Write"]:::innovation
+        end
+
+        subgraph Drivers ["Pilotes &#x26; I/O (Phase 5+)"]
+            direction LR
+            StandardDrv["Pilotes Base<br>PS/2, Serial, VGA, ATA"]:::kernel_core
+            GPUMux["💻 Multiplexeur HW<br>Fractionnement GPU/NPU"]:::innovation
+            NetBypass["⚡ Data Plane Network<br>Bypass Stack TCP/IP"]:::innovation
+            Observability["👁️ Telemetry Zero-Cost<br>Buffers Circulaires"]:::innovation
+        end
+
+        %% Internal Kernel Routing
+        Boot --> Protect --> Intr --> SMPInit
+        Intr -.->|#PF Page Fault| Mem
+        Intr -.->|Interrupts| Drivers
+        Sched &#x3C;-->|Gestion des Tâches| Mem
+        Sched &#x3C;-->|Syscalls Asynchrones| Drivers
+    end
+
+    %% ================= HARDWARE =================
+    subgraph Hardware ["Couche Matérielle (Hardware)"]
+        direction LR
+        CPU["CPU x86_64<br>(LAPIC, x2APIC, MMU)"]:::hardware
+        RAM["Mémoire Physique<br>(Nœuds NUMA)"]:::hardware
+        IO_Ctrls["Contrôleurs<br>(IOAPIC, PIT, RTC)"]:::hardware
+        Storage["Stockage<br>(ATA PIO, NVMe)"]:::hardware
+        NIC["Carte Réseau<br>(NIC avec RSS)"]:::hardware
+        GPU["Accélérateurs<br>(GPU / NPU)"]:::hardware
+    end
+
+    %% ================= EXTERNAL CONNECTIONS =================
+
+    %% Userspace &#x3C;--> Interface
+    App1 &#x3C;-->|Opérations Sys Asynchrones| RB_Sys
+    App2 &#x3C;-->|Paquets Tx/Rx| RB_Net
+    App3 &#x3C;-->|Appels IPC/Sys| RB_Sys
+
+    %% Interface &#x3C;--> Kernel
+    RB_Sys &#x3C;-->|Polling par Threads Kernel dédiés| Sched
+    RB_Net &#x3C;-->|Routage direct de la file| NetBypass
+
+    %% Kernel &#x3C;--> Hardware
+    SMP -->|Exécution &#x26; IPI| CPU
+    PMM -->|Lecture/Écriture RAM| RAM
+    StandardDrv -->|IRQ / EOI / DMA| IO_Ctrls
+    StandardDrv -->|PIO / DMA| Storage
+    NetBypass -->|Configuration MAC/PHY| NIC
+    GPUMux -->|Commandes PCIe| GPU
+    IO_Ctrls -->|"Ticks Timer (APIC/PIT)"| EDF
+
+    %% ================= THE MAGIC: HARDWARE BYPASS =================
+    %% These links represent the Zero-Copy / Direct Access Bypass innovations
+    NIC =====|"⚡ Zéro-Copy DMA RX/TX direct (Bypass)"| App2
+    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App1
+    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App3
+    RAM =====|"⚡ Accès direct via PKeys (SASOS)"| Userspace</pre>
+<h2 id="1011-synthèse">10.11 Synthèse</h2>
+<p>L’architecture visionnaire de LplKernel redéfinit la relation entre matériel et application. Le noyau n’est plus un intermédiaire lourd mais un orchestrateur d’accès direct :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Innovation</th><th align="left">Gain</th><th align="left">Fondation Existante</th></tr></thead><tbody><tr><td align="left">Zero-Syscall Ring-Buffers</td><td align="left">0 context-switch applicatif</td><td align="left">Ring Buffer SPSC (Phase 4)</td></tr><tr><td align="left">SASOS + PKeys</td><td align="left">0 flush TLB, isolation matérielle</td><td align="left">Paging runtime + VMM (Phase 4)</td></tr><tr><td align="left">Auto-Resizing / COW</td><td align="left">Fork/rollback en 0 ms</td><td align="left">PMM page management</td></tr><tr><td align="left">EDF Scheduler</td><td align="left">Garantie temporelle mathématique</td><td align="left">Timer contract <code>clock_*</code> (Phase 3)</td></tr><tr><td align="left">Data Plane Network</td><td align="left">Latence réseau en µs</td><td align="left">Pinned memory + DMA (Phase 4)</td></tr><tr><td align="left">GPU/NPU Multiplexing</td><td align="left">Fractionnement natif sans hyperviseur</td><td align="left">GSP Turing (Chapitre 5)</td></tr><tr><td align="left">Zero-Cost Telemetry</td><td align="left">0 % CPU monitoring</td><td align="left">Ring Buffer + SPSC architecture</td></tr><tr><td align="left">Convergence Kernel-Engine</td><td align="left">Élimination frontière user/kernel</td><td align="left">Architecture duale client/serveur</td></tr></tbody></table>
+<p>La conteneurisation actuelle s’est construite <em>par-dessus</em> des concepts des années 1990 (chroot, namespaces). Penser ces problématiques dès les fondations d’un nouveau système change la donne, et c’est exactement ce que LplKernel accomplit.</p>
+<h3 id="notes-de-bas-de-page-du-chapitre-10">Notes de bas de page du chapitre 10</h3>
+<hr>
+<h1 id="annexes">ANNEXES</h1>
+<hr>
+<section data-footnotes="" class="footnotes"><h2 class="sr-only" id="footnote-label">Footnotes</h2>
+<ol>
+<li id="user-content-fn-1">
+<p>Discussion architecturale sur les innovations natives de LplKernel, Auto-resizing, Zero-Syscall, SASOS, EDF, Data Plane Network, GPU Multiplexing, Time-Travel RAM. <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-1-2" data-footnote-backref="" aria-label="Back to reference 1-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+</ol>
+</section> </article> <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm"> <a href="/LplKernel/book/chapitre-9" class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">
+← Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale </a> <a href="/LplKernel/book/annexe-a" class="text-lpl-accent hover:brightness-110 text-right max-w-[45%]"> Annexe A · Code compilable, design patterns du FullDive Engine →
+</a> </nav>  </main> </div> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> <!-- Mermaid: render the diagram blocks emitted by the remark plugin.
+         is:inline keeps Astro/Vite from bundling the remote ESM import. --> <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+    </script> </body> </html>

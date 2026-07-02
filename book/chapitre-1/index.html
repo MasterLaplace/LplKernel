@@ -1,0 +1,268 @@
+<!DOCTYPE html><html lang="fr"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"><title>Chapitre 1 · Anatomie d&#39;un noyau, OS ou moteur — LplKernel : architecture d&#39;un moteur déterministe FullDive</title><meta name="description" content="De la gestion mémoire noyau aux interfaces cerveau-ordinateur"><link rel="stylesheet" href="/LplKernel/_astro/_slug_.CzR5TaRm.css"></head> <body class="font-sans text-lpl-text antialiased"> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent">λ</span> Laplace<span class="text-lpl-muted">.project</span> </a> <ul class="flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers </a> </li> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener">GitHub ↗</a> </li> </ul> </nav> </header> <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-[18rem_1fr] gap-8"> <!-- Sidebar TOC --> <aside class="hidden lg:block py-10"> <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2"> <a href="/LplKernel/book" class="block font-mono text-sm text-lpl-accent mb-4 hover:brightness-110">
+← Sommaire du livre
+</a> <div class="mb-5">  <ul class="space-y-1"> <li> <a href="/LplKernel/book/preambule" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Préambule </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE I : Fondations système </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-1" class="block text-sm rounded px-2 py-1 transition-colors bg-lpl-accent/10 text-lpl-accent"> Chapitre 1 · Anatomie d&#39;un noyau, OS ou moteur </a> </li><li> <a href="/LplKernel/book/chapitre-2" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 2 · Gestion mémoire, du noyau au moteur </a> </li><li> <a href="/LplKernel/book/chapitre-3" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 3 · Déterminisme et arithmétique à virgule fixe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE II : Architecture et rendu </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-4" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 4 · Paradigmes architecturaux et design patterns </a> </li><li> <a href="/LplKernel/book/chapitre-5" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 5 · GPU, Vulkan et animation procédurale </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE III : Réseau et synchronisation </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-6" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 6 · Infrastructure réseau déterministe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE IV : Interfaces cerveau-ordinateur </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-7" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 7 · BCI, EEG et neurofeedback pour le FullDive </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE V : Horizons </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-8" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 8 · Des noyaux classiques aux systèmes quantiques </a> </li><li> <a href="/LplKernel/book/chapitre-9" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale </a> </li><li> <a href="/LplKernel/book/chapitre-10" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 10 · Vision architecturale, innovations natives </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> Annexes </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/annexe-a" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe A · Code compilable, design patterns du FullDive Engine </a> </li><li> <a href="/LplKernel/book/annexe-b" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe B · Glossaire technique </a> </li><li> <a href="/LplKernel/book/annexe-c" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe C · Index des sources par chapitre </a> </li><li> <a href="/LplKernel/book/annexe-d" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe D · Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow) </a> </li> </ul> </div> </div> </aside> <!-- Content --> <main class="py-10 min-w-0"> <p class="font-mono text-xs uppercase tracking-wider text-lpl-muted mb-2">PARTIE I : Fondations système</p><h1 class="text-3xl sm:text-4xl font-bold mb-8">Chapitre 1 : Anatomie d&#39;un noyau, OS ou moteur</h1> <article class="book-prose"> <h2 id="11-introduction-deux-mondes-un-même-mot">1.1 Introduction : deux mondes, un même mot</h2>
+<p>Le terme « noyau » (<em>kernel</em>) recouvre deux réalités radicalement différentes en ingénierie logicielle. Et cette ambiguïté-là piège quiconque se lance dans la conception d’un moteur de jeu <em>from scratch</em>.</p>
+<p>D’un côté, le <strong>noyau de système d’exploitation</strong> (OS Kernel, Linux, Windows NT, les micro-noyaux comme seL4 ou QNX) est le composant logiciel qui gère directement le matériel : allocation de mémoire physique, ordonnancement des processus, pilotes de périphériques, gestion des interruptions. C’est le gardien des ressources matérielles : il opère en mode superviseur (Ring 0 sur x86), avec un accès illimité à tout l’espace d’adressage.<sup><a href="#user-content-fn-1" id="user-content-fnref-1" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup></p>
+<p>De l’autre, le <strong>noyau d’un moteur de jeu</strong> (Engine Kernel/Core), lui, est la boucle centrale de simulation, le <em>heartbeat</em> du moteur, qui orchestre chaque tick de la logique de jeu : lecture des entrées, simulation physique, mise à jour de l’état du monde, rendu graphique. Ce « noyau » opère en espace utilisateur (Ring 3), soumis aux contraintes et aux abstractions imposées par le système d’exploitation sous-jacent.<sup><a href="#user-content-fn-2" id="user-content-fnref-2" data-footnote-ref="" aria-describedby="footnote-label">2</a></sup></p>
+<p>La distinction compte : le noyau OS gère le temps (ordonnancement, interruptions d’horloge, timers) quand le noyau moteur, lui, le consomme, à une cadence qu’il s’impose lui-même. Il faut avoir cette dualité en tête avant d’aborder l’allocation mémoire, le déterminisme ou la synchronisation réseau.</p>
+<h2 id="12-le-noyau-os-architectures-et-compromis">1.2 Le noyau OS : architectures et compromis</h2>
+<h3 id="121-monolithique-ou-micro-noyau">1.2.1 Monolithique ou micro-noyau</h3>
+<p>L’architecture d’un noyau OS se situe sur un spectre entre deux extrêmes :</p>
+<ul>
+<li>
+<p><strong>Noyau monolithique</strong> (Linux, FreeBSD) : l’ensemble des services système (ordonnanceur, système de fichiers, pile réseau, pilotes) s’exécute dans un espace d’adressage unique en mode privilégié. L’avantage est la performance brute : les appels entre sous-systèmes sont de simples appels de fonctions, sans surcoût de changement de contexte ni de passage de messages. L’inconvénient est la fragilité : un bogue dans un pilote graphique peut provoquer un <em>Kernel Panic</em> qui arrête instantanément toute la machine.<sup><a href="#user-content-fn-3" id="user-content-fnref-3" data-footnote-ref="" aria-describedby="footnote-label">3</a></sup></p>
+</li>
+<li>
+<p><strong>Micro-noyau</strong> (QNX, seL4, L4) : le noyau est réduit au minimum vital, gestion de la mémoire virtuelle, ordonnancement des threads et mécanisme de communication inter-processus (IPC) par passage de messages. Les pilotes, systèmes de fichiers et piles réseau s’exécutent en espace utilisateur, isolés les uns des autres. La robustesse est supérieure : un pilote défaillant peut être redémarré sans affecter le système. Le coût est un surcoût de latence lié au passage de messages IPC entre les services.<sup><a href="#user-content-fn-4" id="user-content-fnref-4" data-footnote-ref="" aria-describedby="footnote-label">4</a></sup></p>
+</li>
+<li>
+<p><strong>Noyau hybride</strong> (Windows NT, macOS/XNU) : un compromis pragmatique où certains services critiques (pilotes graphiques, système de fichiers) sont intégrés dans l’espace noyau pour la performance, tandis que d’autres restent en espace utilisateur pour l’isolation.</p>
+</li>
+</ul>
+<p>Pour un moteur de jeu, ce choix d’architecture sous-jacente n’est pas neutre. Un noyau monolithique comme Linux a une latence d’appel système minimale et un accès direct aux primitives de mémoire partagée, mais il expose le moteur aux instabilités des pilotes tiers. Un RTOS (Real-Time Operating System) micro-noyau comme QNX garantit à l’inverse des latences bornées (indispensable pour les interfaces matérielles BCI), au prix d’un écosystème de pilotes plus restreint.</p>
+<h3 id="122-le-système-dexploitation-en-temps-réel-rtos">1.2.2 Le système d’exploitation en temps réel (RTOS)</h3>
+<p>Dans le contexte du FullDive, les RTOS sont un cas à part. Là où l’ordonnanceur d’un OS à temps partagé (Linux, Windows) vise l’équité (<em>fairness</em>) entre les processus, un RTOS garantit des bornes temporelles strictes (hard real-time) ou moyennes (soft real-time) sur le temps de réponse.</p>
+<h4 id="lordonnancement-hard-real-time-edf">L’ordonnancement hard real-time (EDF)</h4>
+<p>Au-delà de la simple préemption, un moteur FullDive exige un déterminisme absolu sur les délais d’exécution. L’algorithme canonique pour ces garanties est l’<strong>EDF (Earliest Deadline First)</strong>. Le théorème fondamental de Liu &#x26; Layland (1973) démontre que sur un processeur unique, EDF peut atteindre une utilisation de 100 % du CPU tout en respectant toutes les échéances, à condition que la somme des utilisations des tâches soit <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>≤</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\le 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7719em;vertical-align:-0.136em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>.</p>
+<p>Sauf que le passage aux architectures multi-cœurs (SMP) introduit l’<strong>anomalie de Dhall</strong> : dans un ordonnancement EDF global (GEDF), une tâche à très faible utilisation peut faire échouer une tâche critique et ruiner les garanties temporelles.</p>
+<blockquote>
+<p><strong>Architecture LplKernel : Partitioned-EDF</strong></p>
+<p>Pour contourner l’anomalie de Dhall, LplKernel s’oriente vers un modèle <strong>Partitioned-EDF</strong> (ou semi-partitionné). Les tâches critiques (comme la boucle de rendu VR ou l’acquisition BCI) sont <em>épinglées</em> (pinned) sur des cœurs physiques dédiés. La granularité du recalibrage temporel est assurée par le timer de l’APIC en mode <strong>TSC-Deadline</strong>, avec une précision au cycle d’horloge près, indispensable pour éviter le jitter dans le traitement des signaux neuronaux.</p>
+</blockquote>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Caractéristique</th><th align="left">OS à Temps Partagé (Linux)</th><th align="left">RTOS (QNX, FreeRTOS)</th></tr></thead><tbody><tr><td align="left"><strong>Objectif</strong></td><td align="left">Équité entre les processus</td><td align="left">Respect des délais stricts</td></tr><tr><td align="left"><strong>Ordonnancement</strong></td><td align="left">CFS (Completely Fair Scheduler)</td><td align="left">Priorité fixe avec préemption</td></tr><tr><td align="left"><strong>Latence d’interruption</strong></td><td align="left">~10-100 µs (variable)</td><td align="left">~1-10 µs (bornée)</td></tr><tr><td align="left"><strong>Changement de contexte</strong></td><td align="left">~1-10 µs (variable)</td><td align="left">~0.5-2 µs (déterministe)</td></tr><tr><td align="left"><strong>Cas d’usage</strong></td><td align="left">Serveurs, desktops, mobiles</td><td align="left">Automobile, médical, aérospatial</td></tr></tbody></table>
+<p>Pour le matériel BCI (OpenBCI, Galea), la communication avec les ADC (convertisseurs analogique-numérique) requiert une cadence d’échantillonnage stable. Un jitter (gigue) sur la lecture des échantillons EEG de seulement 2 ms peut introduire des artefacts spectraux parasites dans les bandes Mu (8-12 Hz) et Beta (13-30 Hz), et fausser complètement la classification des états cognitifs.<sup><a href="#user-content-fn-5" id="user-content-fnref-5" data-footnote-ref="" aria-describedby="footnote-label">5</a></sup> C’est pourquoi les systèmes d’acquisition BCI professionnels s’appuient généralement sur des RTOS ou, à défaut, sur des threads noyau hautement prioritaires avec isolation complète sur un cœur CPU dédié (<em>CPU pinning</em>).</p>
+<h2 id="13-le-noyau-moteur-la-boucle-de-simulation">1.3 Le noyau moteur : la boucle de simulation</h2>
+<h3 id="131-la-boucle-de-jeu-fondamentale">1.3.1 La boucle de jeu fondamentale</h3>
+<p>Tout moteur de jeu repose sur la <em>Game Loop</em> : une boucle infinie qui répète inlassablement trois opérations.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>while (running) {</span></span>
+<span class="line"><span>    ProcessInput();</span></span>
+<span class="line"><span>    UpdateSimulation(dt);</span></span>
+<span class="line"><span>    Render();</span></span>
+<span class="line"><span>}</span></span></code></pre>
+<p>La question, la vraie, est : quelle valeur donner à <code>dt</code> ? De cette réponse dépend tout le reste : le moteur est déterministe ou non, et donc capable ou non de tenir une synchronisation réseau fiable.</p>
+<h3 id="132-le-pas-de-temps-fixe-fixed-timestep">1.3.2 Le pas de temps fixe (Fixed Timestep)</h3>
+<p>Dans une boucle naïve, <code>dt</code> est le temps écoulé depuis la dernière itération, un pas de temps variable (<em>variable timestep</em>). Cette approche est catastrophique pour le déterminisme : la simulation physique produit des résultats légèrement différents selon le framerate, ce qui rend impossibles les techniques de synchronisation réseau comme le <em>Lockstep</em> ou le <em>Rollback Netcode</em>.</p>
+<p>La solution canonique est le <strong>pas de temps fixe</strong> : la simulation logique avance par incréments constants (par exemple, <code>dt = 1/60 s = 16.667 ms</code>), indépendamment du framerate de rendu. L’implémentation standard utilise un accumulateur de temps :</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">const</span><span style="color:#F97583"> double</span><span style="color:#E1E4E8"> FIXED_DT </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 1.0</span><span style="color:#F97583"> /</span><span style="color:#79B8FF"> 60.0</span><span style="color:#E1E4E8">;</span><span style="color:#6A737D">  // 60 ticks par seconde</span></span>
+<span class="line"><span style="color:#F97583">double</span><span style="color:#E1E4E8"> accumulator </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0.0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">double</span><span style="color:#E1E4E8"> previousTime </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetTime</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">while</span><span style="color:#E1E4E8"> (running) {</span></span>
+<span class="line"><span style="color:#F97583">    double</span><span style="color:#E1E4E8"> currentTime </span><span style="color:#F97583">=</span><span style="color:#B392F0"> GetTime</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#F97583">    double</span><span style="color:#E1E4E8"> frameTime </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> currentTime </span><span style="color:#F97583">-</span><span style="color:#E1E4E8"> previousTime;</span></span>
+<span class="line"><span style="color:#E1E4E8">    previousTime </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> currentTime;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">    // Limiter le frameTime pour éviter la "spirale de la mort"</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (frameTime </span><span style="color:#F97583">></span><span style="color:#79B8FF"> 0.25</span><span style="color:#E1E4E8">) frameTime </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0.25</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    accumulator </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> frameTime;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">    ProcessInput</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">    // Simulation à pas fixe</span></span>
+<span class="line"><span style="color:#F97583">    while</span><span style="color:#E1E4E8"> (accumulator </span><span style="color:#F97583">>=</span><span style="color:#E1E4E8"> FIXED_DT) {</span></span>
+<span class="line"><span style="color:#B392F0">        SimulateFixedStep</span><span style="color:#E1E4E8">(FIXED_DT);</span></span>
+<span class="line"><span style="color:#E1E4E8">        accumulator </span><span style="color:#F97583">-=</span><span style="color:#E1E4E8"> FIXED_DT;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">    // Interpolation pour le rendu (entre deux états de simulation)</span></span>
+<span class="line"><span style="color:#F97583">    double</span><span style="color:#E1E4E8"> alpha </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> accumulator </span><span style="color:#F97583">/</span><span style="color:#E1E4E8"> FIXED_DT;</span></span>
+<span class="line"><span style="color:#B392F0">    Render</span><span style="color:#E1E4E8">(alpha);</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Le garde-fou <code>if (frameTime > 0.25)</code> limite les dégâts : si une frame prend exceptionnellement longtemps (par exemple, lors d’un chargement d’asset), l’accumulateur pourrait gonfler de plusieurs secondes de retard et forcer le moteur à enchaîner des dizaines de ticks de simulation d’affilée pour « rattraper ». C’est la <strong>spirale de la mort</strong> (<em>death spiral</em>) : le temps de simulation dépasse le temps réel, et les performances s’effondrent.<sup><a href="#user-content-fn-6" id="user-content-fnref-6" data-footnote-ref="" aria-describedby="footnote-label">6</a></sup></p>
+<h3 id="133-découplage-simulationrendu">1.3.3 Découplage simulation/rendu</h3>
+<p>Le pas de temps fixe amène une propriété architecturale de fond : la simulation et le rendu sont découplés. La simulation tourne à une fréquence fixe (60 Hz, 120 Hz), tandis que le rendu peut tourner à n’importe quelle fréquence (30 FPS sur mobile, 144 FPS sur un écran gaming, 90 Hz imposé par un casque VR).</p>
+<p>Pour éviter les saccades visuelles entre deux ticks de simulation, le moteur effectue une <strong>interpolation</strong> de l’état visuel en utilisant le facteur <code>alpha</code> (le ratio d’avancement dans le tick courant). L’état rendu est ainsi une combinaison linéaire entre l’état précédent et l’état courant :</p>
+<p><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mtext>position</mtext><mrow><mi>r</mi><mi>e</mi><mi>n</mi><mi>d</mi><mi>u</mi></mrow></msub><mo>=</mo><msub><mtext>position</mtext><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mo>×</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="false">)</mo><mo>+</mo><msub><mtext>position</mtext><mi>t</mi></msub><mo>×</mo><mi>α</mi></mrow><annotation encoding="application/x-tex">\text{position}_{rendu} = \text{position}_{t-1} \times (1 - \alpha) + \text{position}_{t} \times \alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.912em;vertical-align:-0.2441em;"></span><span class="mord"><span class="mord text"><span class="mord">position</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.242em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">n</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight">u</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2441em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9703em;vertical-align:-0.3025em;"></span><span class="mord"><span class="mord text"><span class="mord">position</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.207em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3025em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.912em;vertical-align:-0.2441em;"></span><span class="mord"><span class="mord text"><span class="mord">position</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1864em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2441em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span></p>
+<p>Ce découplage sépare les préoccupations : la logique de simulation peut être testée isolément (sans rendu), rejouée à l’identique (replay), et synchronisée sur le réseau. Trois propriétés qu’un moteur multijoueur déterministe ne peut pas s’offrir autrement.</p>
+<h2 id="14-le-modèle-client-serveur-et-le-tick-autoritaire">1.4 Le modèle client-serveur et le tick autoritaire</h2>
+<h3 id="141-larchitecture-autoritaire">1.4.1 L’architecture autoritaire</h3>
+<p>Dans un jeu multijoueur, tout tourne autour d’une question d’autorité : qui décide de l’état du monde ?</p>
+<p>Deux postures sont possibles. Le <strong>client autoritaire</strong> simule localement et informe le serveur : simple, mais vulnérable à la triche, le client peut mentir sur sa position, ses dégâts, etc. Le <strong>serveur autoritaire</strong> est la seule source de vérité : les clients envoient leurs <em>inputs</em> (commandes), le serveur les applique dans sa simulation et renvoie l’état résultant. La triche est drastiquement réduite, mais la latence réseau introduit un retard perceptible.<sup><a href="#user-content-fn-7" id="user-content-fnref-7" data-footnote-ref="" aria-describedby="footnote-label">7</a></sup></p>
+<p>Le modèle retenu pour LplKernel est le <strong>serveur autoritaire</strong>, où le serveur exécute la simulation à pas fixe et diffuse l’état à tous les clients. Les clients effectuent une <strong>prédiction locale</strong> (ils simulent immédiatement l’effet de leurs propres inputs) puis réconcilient leur état avec celui du serveur lorsqu’ils reçoivent une mise à jour.</p>
+<h3 id="142-trois-modèles-de-synchronisation">1.4.2 Trois modèles de synchronisation</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Modèle</th><th align="left">Principe</th><th align="left">Latence Perçue</th><th align="left">Complexité</th><th align="left">Usage Typique</th></tr></thead><tbody><tr><td align="left"><strong>Lockstep Déterministe</strong></td><td align="left">Tous les clients exécutent les mêmes inputs au même tick. Attente mutuelle.</td><td align="left">Élevée (dépend du joueur le plus lent)</td><td align="left">Moyenne</td><td align="left">RTS (StarCraft, AoE)</td></tr><tr><td align="left"><strong>Serveur Autoritaire + Prédiction</strong></td><td align="left">Le client prédit localement, le serveur corrige.</td><td align="left">Faible (masquée par la prédiction)</td><td align="left">Haute</td><td align="left">FPS, Action (Overwatch)</td></tr><tr><td align="left"><strong>Rollback Netcode</strong></td><td align="left">Simulation locale immédiate. Si un input distant arrive en retard, rollback + resimulation.</td><td align="left">Très faible</td><td align="left">Très haute</td><td align="left">Jeux de combat (GGPO)</td></tr></tbody></table>
+<p>Le Lockstep impose une simulation parfaitement déterministe. Plus précisément : une même séquence d’inputs doit produire un état bit-à-bit identique sur toutes les machines. Cette exigence a des conséquences architecturales profondes qui seront détaillées au Chapitre 3 (arithmétique à virgule fixe) et au Chapitre 6 (infrastructure réseau).</p>
+<p>Le Rollback Netcode, lui, courant dans les jeux de combat compétitifs, réunit les deux avantages : il permet une simulation locale immédiate (zéro latence perçue) tout en gérant les désynchronisations en « revenant en arrière » (<em>rollback</em>) pour rejouer les ticks avec les inputs corrigés. Il exige à la fois un déterminisme strict et la capacité de sauvegarder ou restaurer des snapshots d’état à très haute fréquence, une opération qui pèse lourd sur la gestion mémoire (Chapitre 2).</p>
+<h3 id="143-le-contrat-de-timer-déterministe">1.4.3 Le contrat de timer déterministe</h3>
+<p>Quel que soit le modèle de synchronisation retenu, le tick autoritaire requiert un signal temporel fiable et prédictible : un <strong>contrat de propriété du timer</strong> qui détermine quelle source matérielle génère les interruptions périodiques.</p>
+<p>LplKernel implémente ce contrat via une couche d’abstraction <code>clock_*</code> indépendante du backend matériel :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">API</th><th align="left">Rôle</th></tr></thead><tbody><tr><td align="left"><code>clock_initialize()</code></td><td align="left">Sélectionne le backend timer selon le profil et les capacités matérielles</td></tr><tr><td align="left"><code>clock_get_tick_hz()</code></td><td align="left">Retourne la fréquence de tick effective (ex: 100 Hz)</td></tr><tr><td align="left"><code>clock_get_tick_count()</code></td><td align="left">Retourne le compteur monotone de ticks depuis le boot</td></tr><tr><td align="left"><code>clock_read_walltime()</code></td><td align="left">Lecture horloge murale (RTC, polling uniquement)</td></tr></tbody></table>
+<p><strong>Politique par profil</strong> : En Phase 3 du noyau, les deux profils (client et serveur) utilisent <strong>PIT IRQ0</strong> comme propriétaire du tick à 100 Hz. Cette fréquence de bring-up est verrouillée intentionnellement pour la continuité déterministe. La RTC fournit l’heure murale en mode polling uniquement : elle n’est <em>jamais</em> propriétaire du tick scheduler.</p>
+<p><strong>Migration APIC</strong> : Le backend APIC est disponible en tant que chemin expérimental :</p>
+<ol>
+<li>Late-init : mapping MMIO du LAPIC après init du paging/PMM.</li>
+<li>Calibration : mesure de fréquence du timer APIC via référence PIT.</li>
+<li>Handoff : transfert de propriété du tick vers l’APIC en mode périodique, masquage de PIT IRQ0.</li>
+</ol>
+<p>Le design-clé est que le code moteur/runtime ne doit jamais référencer directement les symboles PIT/RTC/PIC : seules les APIs <code>clock_*</code> sont contractuelles. Lors de la migration vers APIC ou SMP, le backend change mais l’interface reste identique.</p>
+<h2 id="15-synthèse-le-cahier-des-charges-architectural">1.5 Synthèse : le cahier des charges architectural</h2>
+<p>L’analyse des noyaux OS et moteur révèle un ensemble de contraintes non négociables pour l’architecture de LplKernel :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Contrainte</th><th align="left">Origine</th><th align="left">Conséquence Architecturale</th></tr></thead><tbody><tr><td align="left"><strong>Pas de temps fixe</strong></td><td align="left">Déterminisme réseau</td><td align="left">Boucle de simulation découplée du rendu</td></tr><tr><td align="left"><strong>Latence bornée</strong></td><td align="left">Matériel BCI (EEG)</td><td align="left">Thread d’acquisition isolé, CPU pinning</td></tr><tr><td align="left"><strong>Autorité serveur</strong></td><td align="left">Anti-triche, cohérence</td><td align="left">Prédiction client + réconciliation</td></tr><tr><td align="left"><strong>Snapshot rapide</strong></td><td align="left">Rollback Netcode</td><td align="left">Allocateurs mémoire déterministes (Ch. 2)</td></tr><tr><td align="left"><strong>Bit-exact</strong></td><td align="left">Lockstep</td><td align="left">Arithmétique à virgule fixe (Ch. 3)</td></tr><tr><td align="left"><strong>Isolation des pannes</strong></td><td align="left">Stabilité production</td><td align="left">Architecture modulaire (Ch. 4)</td></tr></tbody></table>
+<p>Ces contraintes s’appliquent à tous les chapitres suivants. Le chapitre 2 abordera la première d’entre elles en profondeur : comment allouer et gérer la mémoire de manière à satisfaire simultanément les exigences de performance, de déterminisme et de latence bornée.</p>
+<h3 id="notes-de-bas-de-page-du-chapitre-1">Notes de bas de page du chapitre 1</h3>
+<hr>
+<section data-footnotes="" class="footnotes"><h2 class="sr-only" id="footnote-label">Footnotes</h2>
+<ol>
+<li id="user-content-fn-1">
+<p>L’architecture x86 définit 4 niveaux de privilège (Ring 0 à Ring 3). Le noyau OS s’exécute en Ring 0 avec un accès complet au matériel, tandis que les applications utilisateur s’exécutent en Ring 3 avec des permissions restreintes. <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-2">
+<p>La distinction entre « kernel » OS et « kernel » moteur est un piège récurrent dans la littérature technique anglophone, où le même terme est utilisé sans qualification. <a href="#user-content-fnref-2" data-footnote-backref="" aria-label="Back to reference 2" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-3">
+<p>Le noyau Linux, bien que monolithique, supporte les modules chargeables (<em>Loadable Kernel Modules</em>) qui permettent d’ajouter ou de retirer des pilotes sans recompiler le noyau. Cela atténue certains inconvénients du monolithisme, sans pour autant offrir l’isolation d’un micro-noyau. <a href="#user-content-fnref-3" data-footnote-backref="" aria-label="Back to reference 3" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-4">
+<p>Les micro-noyaux modernes comme seL4 ont été formellement vérifiés, c’est-à-dire qu’une preuve mathématique garantit l’absence de certaines classes de bogues (déréférenciation de pointeur nul, débordement de tampon, etc.). <a href="#user-content-fnref-4" data-footnote-backref="" aria-label="Back to reference 4" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-5">
+<p>Le théorème de Nyquist-Shannon impose que la fréquence d’échantillonnage soit au minimum le double de la fréquence maximale du signal d’intérêt. Pour capturer la bande Beta (jusqu’à 30 Hz), le minimum théorique est donc de 60 Hz ; en pratique, on échantillonne bien plus haut, pour la résolution spectrale et le rejet des artefacts. La carte OpenBCI Cyton opère ainsi à 250 Hz sur 8 canaux. <a href="#user-content-fnref-5" data-footnote-backref="" aria-label="Back to reference 5" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-6">
+<p>Gaffer on Games, « Fix Your Timestep! » : article de référence sur l’implémentation correcte d’une boucle à pas de temps fixe avec accumulateur et interpolation. <a href="#user-content-fnref-6" data-footnote-backref="" aria-label="Back to reference 6" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-7">
+<p>Gabriel Gambetta, « Fast-Paced Multiplayer » : série d’articles détaillant l’architecture client-serveur avec prédiction et réconciliation, considérée comme une référence dans l’industrie. <a href="#user-content-fnref-7" data-footnote-backref="" aria-label="Back to reference 7" class="data-footnote-backref">↩</a></p>
+</li>
+</ol>
+</section> </article> <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm"> <a href="/LplKernel/book/preambule" class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">
+← Préambule </a> <a href="/LplKernel/book/chapitre-2" class="text-lpl-accent hover:brightness-110 text-right max-w-[45%]"> Chapitre 2 · Gestion mémoire, du noyau au moteur →
+</a> </nav>  </main> </div> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> <!-- Mermaid: render the diagram blocks emitted by the remark plugin.
+         is:inline keeps Astro/Vite from bundling the remote ESM import. --> <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+    </script> </body> </html>

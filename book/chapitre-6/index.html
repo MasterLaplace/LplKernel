@@ -1,0 +1,185 @@
+<!DOCTYPE html><html lang="fr"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"><title>Chapitre 6 · Infrastructure réseau déterministe — LplKernel : architecture d&#39;un moteur déterministe FullDive</title><meta name="description" content="De la gestion mémoire noyau aux interfaces cerveau-ordinateur"><link rel="stylesheet" href="/LplKernel/_astro/_slug_.CzR5TaRm.css"></head> <body class="font-sans text-lpl-text antialiased"> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent">λ</span> Laplace<span class="text-lpl-muted">.project</span> </a> <ul class="flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers </a> </li> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener">GitHub ↗</a> </li> </ul> </nav> </header> <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-[18rem_1fr] gap-8"> <!-- Sidebar TOC --> <aside class="hidden lg:block py-10"> <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2"> <a href="/LplKernel/book" class="block font-mono text-sm text-lpl-accent mb-4 hover:brightness-110">
+← Sommaire du livre
+</a> <div class="mb-5">  <ul class="space-y-1"> <li> <a href="/LplKernel/book/preambule" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Préambule </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE I : Fondations système </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-1" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 1 · Anatomie d&#39;un noyau, OS ou moteur </a> </li><li> <a href="/LplKernel/book/chapitre-2" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 2 · Gestion mémoire, du noyau au moteur </a> </li><li> <a href="/LplKernel/book/chapitre-3" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 3 · Déterminisme et arithmétique à virgule fixe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE II : Architecture et rendu </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-4" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 4 · Paradigmes architecturaux et design patterns </a> </li><li> <a href="/LplKernel/book/chapitre-5" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 5 · GPU, Vulkan et animation procédurale </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE III : Réseau et synchronisation </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-6" class="block text-sm rounded px-2 py-1 transition-colors bg-lpl-accent/10 text-lpl-accent"> Chapitre 6 · Infrastructure réseau déterministe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE IV : Interfaces cerveau-ordinateur </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-7" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 7 · BCI, EEG et neurofeedback pour le FullDive </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE V : Horizons </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-8" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 8 · Des noyaux classiques aux systèmes quantiques </a> </li><li> <a href="/LplKernel/book/chapitre-9" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale </a> </li><li> <a href="/LplKernel/book/chapitre-10" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 10 · Vision architecturale, innovations natives </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> Annexes </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/annexe-a" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe A · Code compilable, design patterns du FullDive Engine </a> </li><li> <a href="/LplKernel/book/annexe-b" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe B · Glossaire technique </a> </li><li> <a href="/LplKernel/book/annexe-c" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe C · Index des sources par chapitre </a> </li><li> <a href="/LplKernel/book/annexe-d" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe D · Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow) </a> </li> </ul> </div> </div> </aside> <!-- Content --> <main class="py-10 min-w-0"> <p class="font-mono text-xs uppercase tracking-wider text-lpl-muted mb-2">PARTIE III : Réseau et synchronisation</p><h1 class="text-3xl sm:text-4xl font-bold mb-8">Chapitre 6 : Infrastructure réseau déterministe</h1> <article class="book-prose"> <h2 id="61-introduction-le-réseau-comme-source-dincertitude">6.1 Introduction : le réseau comme source d’incertitude</h2>
+<p>Le réseau est, par nature, l’antithèse du déterminisme. La latence varie imprévisiblement (jitter), les paquets arrivent dans le désordre ou sont perdus, et la bande passante est partagée avec des flux incontrôlables. L’infrastructure réseau d’un moteur déterministe doit masquer cette incertitude tout en préservant la cohérence de l’état synchronisé entre toutes les machines.<sup><a href="#user-content-fn-1" id="user-content-fnref-1" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup></p>
+<p>Pour atteindre des latences sous-millisecondes requises par la VR multijoueur, LplKernel implémente un <strong>Kernel Bypass</strong> réseau inspiré de l’architecture <strong>DPDK</strong> (Data Plane Development Kit). Au lieu de subir le coût des interruptions matérielles et des multiples copies en mémoire de la pile TCP/IP classique, le pilote réseau (ex: Intel 8254x ou i217) mappe directement ses anneaux de descripteurs matériels (<em>Descriptor Rings</em>) dans une zone mémoire physique contiguë (allouée via le Buddy Allocator sous forme de <code>MBUFs</code>). Le CPU scrute ces anneaux en boucle (Polling), ce qui réalise un transfert <strong>Zero-Copy DMA</strong> absolu. Couplé au <strong>Receive Side Scaling (RSS)</strong>, la carte réseau hache elle-même les paquets UDP entrants et les distribue matériellement sur les différents cœurs CPU du système SMP.</p>
+<h2 id="62-modèles-de-synchronisation-approfondis">6.2 Modèles de synchronisation approfondis</h2>
+<h3 id="621-lockstep-déterministe">6.2.1 Lockstep déterministe</h3>
+<p>Le Lockstep est le modèle le plus ancien et le plus strict. Tous les clients transmettent leurs inputs pour le tick <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span></span> ; chaque client attend d’avoir reçu les inputs de <em>tous</em> les autres clients avant de simuler le tick <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span></span>. La simulation étant déterministe (Chapitre 3), l’état résultant est identique sur toutes les machines.</p>
+<p>L’avantage : la bande passante est minimale, seuls les inputs transitent, pas l’état du monde (quelques octets par tick au lieu de kilooctets). D’où son usage dans les RTS (<em>StarCraft</em>, <em>Age of Empires</em>), où l’on simule des milliers d’unités, ce qui rend la synchronisation d’état impraticable.</p>
+<p>L’inconvénient : la latence perçue est celle du joueur le plus lent. Si un joueur a un ping de 200 ms, <em>tous</em> les joueurs subissent 200 ms de délai.</p>
+<h3 id="622-rollback-netcode-ggpo">6.2.2 Rollback Netcode (GGPO)</h3>
+<p>Le Rollback Netcode, formalisé par la bibliothèque <strong>GGPO</strong> (Good Game Peace Out) pour les jeux de combat, est un mécanisme sophistiqué en trois temps :</p>
+<ol>
+<li>Prédiction : Le client simule immédiatement en utilisant le dernier input connu de l’adversaire (ou une prédiction basée sur l’historique).</li>
+<li>Réception : Lorsqu’un input distant arrive (potentiellement en retard), le client vérifie s’il diffère de la prédiction.</li>
+<li>Rollback et resimulation : Si l’input réel diffère de la prédiction, le client revient en arrière au tick où la divergence a eu lieu, applique l’input correct, puis resimule tous les ticks jusqu’au tick courant.</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> RollbackNetcode</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">ProcessRemoteInput</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint32_t</span><span style="color:#FFAB70"> tick</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">Input</span><span style="color:#FFAB70"> remoteInput</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (tick </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> m_currentTick) {</span></span>
+<span class="line"><span style="color:#6A737D">        // Input en retard — rollback nécessaire</span></span>
+<span class="line"><span style="color:#B392F0">        RestoreSnapshot</span><span style="color:#E1E4E8">(tick);</span><span style="color:#6A737D">            // Restaurer l'état au tick T</span></span>
+<span class="line"><span style="color:#E1E4E8">        m_inputBuffer[tick] </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> remoteInput;</span><span style="color:#6A737D"> // Corriger l'input</span></span>
+<span class="line"><span style="color:#6A737D">        // Resimulation rapide : du tick T au tick courant</span></span>
+<span class="line"><span style="color:#F97583">        for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">uint32_t</span><span style="color:#E1E4E8"> t </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> tick; t </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> m_currentTick; </span><span style="color:#F97583">++</span><span style="color:#E1E4E8">t) {</span></span>
+<span class="line"><span style="color:#B392F0">            SimulateFixedStep</span><span style="color:#E1E4E8">(m_inputBuffer[t]);</span></span>
+<span class="line"><span style="color:#B392F0">            SaveSnapshot</span><span style="color:#E1E4E8">(t </span><span style="color:#F97583">+</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Ce mécanisme exige :</p>
+<ul>
+<li>Snapshots rapides : La sauvegarde/restauration de l’état doit être quasi-instantanée. Les allocateurs Arena (Chapitre 2) sont idéaux : un <code>memcpy</code> du bloc complet suffit.</li>
+<li>Simulation rapide : La resimulation de N ticks doit être plus rapide que le temps réel. Les systèmes ECS (Chapitre 4) avec itération SoA permettent de resimuler 8+ ticks dans le budget d’une frame.</li>
+<li>Déterminisme absolu : La resimulation doit produire exactement le même état qu’une simulation directe.</li>
+</ul>
+<h2 id="63-sérialisation-le-bitstream">6.3 Sérialisation : le Bitstream</h2>
+<h3 id="631-pourquoi-pas-memcpy">6.3.1 Pourquoi pas <code>memcpy</code> ?</h3>
+<p>La sérialisation naïve par <code>memcpy</code> d’une structure C++ sur le réseau est problématique :</p>
+<ul>
+<li>Padding : Le compilateur insère des octets de bourrage pour l’alignement, gaspillant de la bande passante.</li>
+<li>Endianness : Un serveur big-endian (rare mais possible en embarqué) et un client little-endian interpréteront les octets différemment.</li>
+<li>Portabilité : La taille des types (<code>int</code>, <code>long</code>, pointeurs) varie entre les architectures.</li>
+</ul>
+<h3 id="632-le-bitstream">6.3.2 Le Bitstream</h3>
+<p>Un <strong>Bitstream</strong> est un tampon binaire qui sérialise les données bit par bit, sans padding ni gaspillage :</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> Bitstream</span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#B392F0">    std</span><span style="color:#E1E4E8">::vector</span><span style="color:#F97583">&#x3C;uint8_t></span><span style="color:#E1E4E8"> m_buffer;</span></span>
+<span class="line"><span style="color:#F97583">    size_t</span><span style="color:#E1E4E8"> m_bitOffset </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">public:</span></span>
+<span class="line"><span style="color:#F97583">    void</span><span style="color:#B392F0"> WriteBits</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint32_t</span><span style="color:#FFAB70"> value</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">uint8_t</span><span style="color:#FFAB70"> numBits</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">        for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">int</span><span style="color:#E1E4E8"> i </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> numBits </span><span style="color:#F97583">-</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">; i </span><span style="color:#F97583">>=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">--</span><span style="color:#E1E4E8">i) {</span></span>
+<span class="line"><span style="color:#F97583">            size_t</span><span style="color:#E1E4E8"> byteIndex </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> m_bitOffset </span><span style="color:#F97583">/</span><span style="color:#79B8FF"> 8</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">            size_t</span><span style="color:#E1E4E8"> bitIndex </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> m_bitOffset </span><span style="color:#F97583">%</span><span style="color:#79B8FF"> 8</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">            if</span><span style="color:#E1E4E8"> (byteIndex </span><span style="color:#F97583">>=</span><span style="color:#E1E4E8"> m_buffer.</span><span style="color:#B392F0">size</span><span style="color:#E1E4E8">())</span></span>
+<span class="line"><span style="color:#E1E4E8">                m_buffer.</span><span style="color:#B392F0">push_back</span><span style="color:#E1E4E8">(</span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">);</span></span>
+<span class="line"><span style="color:#F97583">            if</span><span style="color:#E1E4E8"> (value </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">1</span><span style="color:#F97583">u</span><span style="color:#F97583"> &#x3C;&#x3C;</span><span style="color:#E1E4E8"> i))</span></span>
+<span class="line"><span style="color:#E1E4E8">                m_buffer[byteIndex] </span><span style="color:#F97583">|=</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">1</span><span style="color:#F97583">u</span><span style="color:#F97583"> &#x3C;&#x3C;</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">7</span><span style="color:#F97583"> -</span><span style="color:#E1E4E8"> bitIndex));</span></span>
+<span class="line"><span style="color:#F97583">            ++</span><span style="color:#E1E4E8">m_bitOffset;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    uint32_t</span><span style="color:#B392F0"> ReadBits</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint8_t</span><span style="color:#FFAB70"> numBits</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">        uint32_t</span><span style="color:#E1E4E8"> result </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">        for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">int</span><span style="color:#E1E4E8"> i </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> numBits </span><span style="color:#F97583">-</span><span style="color:#79B8FF"> 1</span><span style="color:#E1E4E8">; i </span><span style="color:#F97583">>=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">; </span><span style="color:#F97583">--</span><span style="color:#E1E4E8">i) {</span></span>
+<span class="line"><span style="color:#F97583">            size_t</span><span style="color:#E1E4E8"> byteIndex </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> m_bitOffset </span><span style="color:#F97583">/</span><span style="color:#79B8FF"> 8</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">            size_t</span><span style="color:#E1E4E8"> bitIndex </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> m_bitOffset </span><span style="color:#F97583">%</span><span style="color:#79B8FF"> 8</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#F97583">            if</span><span style="color:#E1E4E8"> (m_buffer[byteIndex] </span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">1</span><span style="color:#F97583">u</span><span style="color:#F97583"> &#x3C;&#x3C;</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">7</span><span style="color:#F97583"> -</span><span style="color:#E1E4E8"> bitIndex)))</span></span>
+<span class="line"><span style="color:#E1E4E8">                result </span><span style="color:#F97583">|=</span><span style="color:#E1E4E8"> (</span><span style="color:#79B8FF">1</span><span style="color:#F97583">u</span><span style="color:#F97583"> &#x3C;&#x3C;</span><span style="color:#E1E4E8"> i);</span></span>
+<span class="line"><span style="color:#F97583">            ++</span><span style="color:#E1E4E8">m_bitOffset;</span></span>
+<span class="line"><span style="color:#E1E4E8">        }</span></span>
+<span class="line"><span style="color:#F97583">        return</span><span style="color:#E1E4E8"> result;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<h3 id="633-bit-packing-et-quantization">6.3.3 Bit-packing et quantization</h3>
+<p>Pour minimiser la bande passante, les données sont compressées sémantiquement :</p>
+<ul>
+<li><strong>Bit-packing</strong> : un booléen utilise 1 bit (pas 8). Un angle de rotation (0-360°) quantifié sur 10 bits donne une résolution de 0.35°, suffisante pour le gameplay, avec 10 bits au lieu de 32.</li>
+<li><strong>Quantization</strong> : Les positions flottantes sont converties en entiers avec une résolution fixe. Une position dans un monde de 1000m, quantifiée sur 16 bits, donne une résolution de 15 mm.</li>
+<li><strong>Delta compression</strong> : Seules les différences par rapport à l’état précédent sont envoyées. Si une entité n’a pas bougé, 0 bits sont transmis pour sa position.<sup><a href="#user-content-fn-2" id="user-content-fnref-2" data-footnote-ref="" aria-describedby="footnote-label">2</a></sup></li>
+</ul>
+<h2 id="64-state-hashing-et-détection-de-désynchronisation">6.4 State Hashing et détection de désynchronisation</h2>
+<h3 id="641-le-hash-détat">6.4.1 Le hash d’état</h3>
+<p>Pour détecter les désynchronisations entre le serveur et les clients (dues à un bug, une corruption mémoire ou une tentative de triche), l’état de la simulation est hashé à chaque tick. Le hash est calculé sur les données critiques : positions, vitesses, états d’entités.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">uint64_t</span><span style="color:#B392F0"> HashGameState</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">const</span><span style="color:#B392F0"> GameState</span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> state</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    uint64_t</span><span style="color:#E1E4E8"> hash </span><span style="color:#F97583">=</span><span style="color:#F97583"> 0x</span><span style="color:#79B8FF">cbf29ce484222325</span><span style="color:#F97583">ULL</span><span style="color:#E1E4E8">;</span><span style="color:#6A737D"> // FNV-1a offset basis</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">const</span><span style="color:#F97583"> auto&#x26;</span><span style="color:#E1E4E8"> entity : state.entities) {</span></span>
+<span class="line"><span style="color:#6A737D">        // Hash chaque composant déterministe</span></span>
+<span class="line"><span style="color:#E1E4E8">        hash </span><span style="color:#F97583">^=</span><span style="color:#B392F0"> HashBytes</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">entity.position, </span><span style="color:#F97583">sizeof</span><span style="color:#E1E4E8">(entity.position));</span></span>
+<span class="line"><span style="color:#E1E4E8">        hash </span><span style="color:#F97583">*=</span><span style="color:#F97583"> 0x</span><span style="color:#79B8FF">100000001b3</span><span style="color:#F97583">ULL</span><span style="color:#E1E4E8">;</span><span style="color:#6A737D"> // FNV-1a prime</span></span>
+<span class="line"><span style="color:#E1E4E8">        hash </span><span style="color:#F97583">^=</span><span style="color:#B392F0"> HashBytes</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">&#x26;</span><span style="color:#E1E4E8">entity.velocity, </span><span style="color:#F97583">sizeof</span><span style="color:#E1E4E8">(entity.velocity));</span></span>
+<span class="line"><span style="color:#E1E4E8">        hash </span><span style="color:#F97583">*=</span><span style="color:#F97583"> 0x</span><span style="color:#79B8FF">100000001b3</span><span style="color:#F97583">ULL</span><span style="color:#E1E4E8">;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#F97583">    return</span><span style="color:#E1E4E8"> hash;</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Les clients transmettent périodiquement leur hash au serveur. Si un hash client diverge du hash serveur pour le même tick, une désynchronisation est détectée. Le serveur peut alors forcer une resynchronisation complète ou bloquer le client suspect.</p>
+<h3 id="642-diagnostic-de-désynchronisation">6.4.2 Diagnostic de désynchronisation</h3>
+<p>Lorsqu’une désynchronisation est détectée, le système enregistre les snapshots complets des états client et serveur au tick divergent. On peut alors faire un diagnostic <em>post-mortem</em> : comparer chaque composant pour identifier la source de la divergence (erreur d’arrondi, race condition, bug logique).</p>
+<h2 id="65-le-replay-system">6.5 Le Replay System</h2>
+<p>Le <strong>Command Pattern</strong> (Chapitre 4) transforme chaque input joueur en un objet sérialisable. En enregistrant la séquence chronologique de toutes les commandes de tous les joueurs, le moteur peut rejouer une partie complète :</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp"><code><span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> ReplayFrame</span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#F97583">    uint32_t</span><span style="color:#E1E4E8"> tick;</span></span>
+<span class="line"><span style="color:#F97583">    uint8_t</span><span style="color:#E1E4E8">  playerIndex;</span></span>
+<span class="line"><span style="color:#E1E4E8">    Input    input;</span><span style="color:#6A737D">  // Sérialisé en Bitstream</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#B392F0">std</span><span style="color:#E1E4E8">::vector</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">ReplayFrame</span><span style="color:#F97583">></span><span style="color:#E1E4E8"> replayLog;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// Enregistrement</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> RecordInput</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint32_t</span><span style="color:#FFAB70"> tick</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">uint8_t</span><span style="color:#FFAB70"> player</span><span style="color:#E1E4E8">, </span><span style="color:#B392F0">Input</span><span style="color:#FFAB70"> input</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#E1E4E8">    replayLog.</span><span style="color:#B392F0">push_back</span><span style="color:#E1E4E8">({tick, player, input});</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// Rejeu</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> Replay</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">const</span><span style="color:#B392F0"> std</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">vector</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">ReplayFrame</span><span style="color:#E1E4E8">></span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> log</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#E1E4E8">    GameState state </span><span style="color:#F97583">=</span><span style="color:#B392F0"> InitialState</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">const</span><span style="color:#F97583"> auto&#x26;</span><span style="color:#E1E4E8"> frame : log) {</span></span>
+<span class="line"><span style="color:#F97583">        while</span><span style="color:#E1E4E8"> (state.tick </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> frame.tick)</span></span>
+<span class="line"><span style="color:#B392F0">            SimulateFixedStep</span><span style="color:#E1E4E8">(state, {});</span><span style="color:#6A737D">  // Ticks vides</span></span>
+<span class="line"><span style="color:#B392F0">        ApplyInput</span><span style="color:#E1E4E8">(state, frame.playerIndex, frame.input);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Le replay est rendu possible par le déterminisme : les mêmes inputs reproduisent identiquement les mêmes résultats. C’est un outil de débogage puissant et un mécanisme anti-triche (le serveur peut rejouer l’enregistrement pour vérifier la validité des actions signalées).</p>
+<h2 id="66-communication-inter-threads-spsc-lock-free">6.6 Communication inter-threads : SPSC lock-free</h2>
+<p>Le thread réseau (réception de paquets) et le thread de simulation ne doivent jamais se bloquer mutuellement via un mutex. La solution, c’est la queue SPSC lock-free (Single-Producer, Single-Consumer) détaillée au Chapitre 2 (Ring Buffer).</p>
+<p>Le flux est :</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Réseau (Thread 1) → [SPSC Queue] → Simulation (Thread 2)</span></span>
+<span class="line"><span>    ↑ Réception paquets UDP                 ↑ Lecture des inputs</span></span>
+<span class="line"><span>    ↓ Envoi paquets UDP     [SPSC Queue] ←  ↓ Production d'état</span></span></code></pre>
+<p>Chaque queue est un Ring Buffer avec des atomiques <code>acquire</code>/<code>release</code>. Le thread réseau ne bloque jamais le thread de simulation, et vice versa : une propriété décisive pour tenir le pas de temps fixe sous les 16.67 ms.</p>
+<h2 id="67-synthèse">6.7 Synthèse</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Composant</th><th align="left">Technologie</th><th align="left">Rôle</th></tr></thead><tbody><tr><td align="left"><strong>Sérialisation</strong></td><td align="left">Bitstream + bit-packing</td><td align="left">Compression maximale des paquets</td></tr><tr><td align="left"><strong>Synchronisation</strong></td><td align="left">Rollback Netcode + Lockstep (hybride)</td><td align="left">Latence minimale + déterminisme</td></tr><tr><td align="left"><strong>Intégrité</strong></td><td align="left">State Hashing (FNV-1a)</td><td align="left">Détection de désynchronisation</td></tr><tr><td align="left"><strong>Diagnostic</strong></td><td align="left">Replay System (Command Pattern)</td><td align="left">Rejeu déterministe + anti-triche</td></tr><tr><td align="left"><strong>Concurrence</strong></td><td align="left">SPSC Lock-Free Ring Buffers</td><td align="left">Zéro contention entre threads</td></tr></tbody></table>
+<h3 id="notes-de-bas-de-page-du-chapitre-6">Notes de bas de page du chapitre 6</h3>
+<hr>
+<section data-footnotes="" class="footnotes"><h2 class="sr-only" id="footnote-label">Footnotes</h2>
+<ol>
+<li id="user-content-fn-1">
+<p>Glenn Fiedler, « Networking for Game Programmers », série d’articles de référence sur les architectures réseau pour les jeux multijoueur. <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-2">
+<p>Glenn Fiedler, « Reading and Writing Packets » et « Serialization Strategies », détails sur le bit-packing et la sérialisation optimisée. <a href="#user-content-fnref-2" data-footnote-backref="" aria-label="Back to reference 2" class="data-footnote-backref">↩</a></p>
+</li>
+</ol>
+</section> </article> <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm"> <a href="/LplKernel/book/chapitre-5" class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">
+← Chapitre 5 · GPU, Vulkan et animation procédurale </a> <a href="/LplKernel/book/chapitre-7" class="text-lpl-accent hover:brightness-110 text-right max-w-[45%]"> Chapitre 7 · BCI, EEG et neurofeedback pour le FullDive →
+</a> </nav>  </main> </div> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> <!-- Mermaid: render the diagram blocks emitted by the remark plugin.
+         is:inline keeps Astro/Vite from bundling the remote ESM import. --> <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+    </script> </body> </html>
