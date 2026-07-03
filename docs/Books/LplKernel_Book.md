@@ -673,11 +673,11 @@ La hiérarchie complète de la gestion mémoire dans LplKernel forme une pyramid
 
 ```mermaid
 graph TD
-    A["Application<br/>Arena / Pool / Stack<br/><i>Allocateurs moteur O(1)</i>"]
-    B["TLSF / O1Heap<br/><i>Allocations dynamiques déterministes</i>"]
-    C["SLUB + Sheaves<br/><i>Allocateur slab noyau</i>"]
-    D["Buddy System<br/><i>Allocateur de pages physiques</i>"]
-    E["Matériel (NUMA, Cache, TLB, PCIe)<br/><i>Contraintes physiques</i>"]
+    A["Application<br/>Arena / Pool / Stack<br/><i>Engine allocators O(1)</i>"]
+    B["TLSF / O1Heap<br/><i>Deterministic dynamic allocations</i>"]
+    C["SLUB + Sheaves<br/><i>Kernel slab allocator</i>"]
+    D["Buddy System<br/><i>Physical page allocator</i>"]
+    E["Hardware (NUMA, Cache, TLB, PCIe)<br/><i>Physical constraints</i>"]
     A --> B --> C --> D --> E
 ```
 
@@ -1573,10 +1573,10 @@ Le thread réseau (réception de paquets) et le thread de simulation ne doivent 
 Le flux est :
 ```mermaid
 graph LR
-    Net["Réseau (Thread 1)<br/>Réception / envoi paquets UDP"]
-    Sim["Simulation (Thread 2)<br/>Lecture inputs / production d'état"]
-    Net -->|"SPSC Queue : inputs reçus"| Sim
-    Sim -->|"SPSC Queue : état produit"| Net
+    Net["Network (Thread 1)<br/>UDP packet receive / send"]
+    Sim["Simulation (Thread 2)<br/>Read inputs / produce state"]
+    Net -->|"SPSC Queue: received inputs"| Sim
+    Sim -->|"SPSC Queue: produced state"| Net
 ```
 
 Chaque queue est un Ring Buffer avec des atomiques `acquire`/`release`. Le thread réseau ne bloque jamais le thread de simulation, et vice versa : une propriété décisive pour tenir le pas de temps fixe sous les 16.67 ms.
@@ -1795,10 +1795,10 @@ La **tFUS** utilise des ultrasons focalisés pour stimuler des régions cérébr
 ```mermaid
 graph TD
     A["OpenBCI (Cyton / Galea)<br/>250 Hz"] --> B[BrainFlow] --> C[LSL] --> D["OpenViBE / Plugin C++"]
-    D --> E["Filtrage (0.5-45 Hz)<br/>ICA (retrait EOG)<br/>CSP (Common Spatial Pattern)<br/>Extraction PSD (FFT)"]
-    E --> F["Métriques<br/>Schumacher R(t) → Relaxation<br/>Sollfrank D_M → Stabilité<br/>AIRM δ_R → Classification"]
+    D --> E["Filtering (0.5-45 Hz)<br/>ICA (EOG removal)<br/>CSP (Common Spatial Pattern)<br/>PSD Extraction (FFT)"]
+    E --> F["Metrics<br/>Schumacher R(t) → Relaxation<br/>Sollfrank D_M → Stability<br/>AIRM δ_R → Classification"]
     F --> G["Ring Buffer SPSC Lock-Free"]
-    G --> H["Moteur LplKernel → Adaptation VR"]
+    G --> H["LplKernel Engine → VR Adaptation"]
 ```
 
 ### Notes de bas de page du chapitre 7
@@ -2490,18 +2490,18 @@ flowchart TD
     classDef interface fill:#e17055,stroke:#fab1a0,stroke-width:2px,color:#fff;
 
     %% ================= USERSPACE =================
-    subgraph Userspace ["Espace Utilisateur (Single Address Space - SASOS)"]
+    subgraph Userspace ["User Space (Single Address Space - SASOS)"]
         direction LR
-        App1["🎮 Moteur VR / Rendu<br>(PKey: 0x1)"]:::userspace
-        App2["🌐 Serveur Flakkari<br>(PKey: 0x2)"]:::userspace
-        App3["🧠 Modèle IA Distribué<br>(PKey: 0x3)"]:::userspace
+        App1["🎮 VR Engine / Rendering<br>(PKey: 0x1)"]:::userspace
+        App2["🌐 Flakkari Server<br>(PKey: 0x2)"]:::userspace
+        App3["🧠 Distributed AI Model<br>(PKey: 0x3)"]:::userspace
     end
 
     %% ================= INTERFACE =================
-    subgraph Interface ["Frontière Asynchrone Kernel-User (Zero Context-Switch)"]
+    subgraph Interface ["Asynchronous Kernel-User Boundary (Zero Context-Switch)"]
         direction LR
-        RB_Net["Ring-Buffer Réseau<br>(Submission/Completion)"]:::interface
-        RB_Sys["Ring-Buffer Système<br>(Mémoire, I/O, IPC)"]:::interface
+        RB_Net["Network Ring-Buffer<br>(Submission/Completion)"]:::interface
+        RB_Sys["System Ring-Buffer<br>(Memory, I/O, IPC)"]:::interface
     end
 
     %% ================= KERNEL SPACE =================
@@ -2516,75 +2516,75 @@ flowchart TD
             SMPInit["AP Trampoline<br>INIT/SIPI Dispatch"]:::kernel_core
         end
 
-        subgraph Sched ["Ordonnancement & Topologie (Phase 6+)"]
+        subgraph Sched ["Scheduling & Topology (Phase 6+)"]
             direction LR
-            EDF["⏱️ Scheduler EDF<br>(Earliest Deadline First)<br>Garanties Hard Real-Time"]:::innovation
-            SMP["Multi-Core SMP Manager<br>Affinité CPU & NUMA Policy"]:::kernel_core
-            IPC["Zero-Copy IPC Router<br>Mémoire Partagée Native"]:::innovation
+            EDF["⏱️ Scheduler EDF<br>(Earliest Deadline First)<br>Hard Real-Time Guarantees"]:::innovation
+            SMP["Multi-Core SMP Manager<br>CPU Affinity & NUMA Policy"]:::kernel_core
+            IPC["Zero-Copy IPC Router<br>Native Shared Memory"]:::innovation
         end
 
-        subgraph Mem ["Sous-système Mémoire (Phase 4+)"]
+        subgraph Mem ["Memory Subsystem (Phase 4+)"]
             direction LR
-            SASOS["VMM SASOS<br>Isolation par Capacités (PKeys)"]:::innovation
-            VMM["VMM Classique<br>Virt->Phys, Page Tables"]:::kernel_core
-            PMM["PMM & Allocateurs<br>Buddy, Slab, Frame Arena, Pools"]:::kernel_core
-            AutoResize["🎈 Auto-Resizing Natif<br>Ballooning & Lazy Alloc"]:::innovation
+            SASOS["VMM SASOS<br>Capability-Based Isolation (PKeys)"]:::innovation
+            VMM["Classic VMM<br>Virt->Phys, Page Tables"]:::kernel_core
+            PMM["PMM & Allocators<br>Buddy, Slab, Frame Arena, Pools"]:::kernel_core
+            AutoResize["🎈 Native Auto-Resizing<br>Ballooning & Lazy Alloc"]:::innovation
             Snapshot["📸 Time-Travel RAM<br>Insta-Fork / Copy-On-Write"]:::innovation
         end
 
-        subgraph Drivers ["Pilotes & I/O (Phase 5+)"]
+        subgraph Drivers ["Drivers & I/O (Phase 5+)"]
             direction LR
-            StandardDrv["Pilotes Base<br>PS/2, Serial, VGA, ATA"]:::kernel_core
-            GPUMux["💻 Multiplexeur HW<br>Fractionnement GPU/NPU"]:::innovation
-            NetBypass["⚡ Data Plane Network<br>Bypass Stack TCP/IP"]:::innovation
-            Observability["👁️ Telemetry Zero-Cost<br>Buffers Circulaires"]:::innovation
+            StandardDrv["Base Drivers<br>PS/2, Serial, VGA, ATA"]:::kernel_core
+            GPUMux["💻 HW Multiplexer<br>GPU/NPU Partitioning"]:::innovation
+            NetBypass["⚡ Network Data Plane<br>TCP/IP Stack Bypass"]:::innovation
+            Observability["👁️ Zero-Cost Telemetry<br>Circular Buffers"]:::innovation
         end
 
         %% Internal Kernel Routing
         Boot --> Protect --> Intr --> SMPInit
         Intr -.->|#PF Page Fault| Mem
         Intr -.->|Interrupts| Drivers
-        Sched <-->|Gestion des Tâches| Mem
-        Sched <-->|Syscalls Asynchrones| Drivers
+        Sched <-->|Task Management| Mem
+        Sched <-->|Asynchronous Syscalls| Drivers
     end
 
     %% ================= HARDWARE =================
-    subgraph Hardware ["Couche Matérielle (Hardware)"]
+    subgraph Hardware ["Hardware Layer"]
         direction LR
         CPU["CPU x86_64<br>(LAPIC, x2APIC, MMU)"]:::hardware
-        RAM["Mémoire Physique<br>(Nœuds NUMA)"]:::hardware
-        IO_Ctrls["Contrôleurs<br>(IOAPIC, PIT, RTC)"]:::hardware
-        Storage["Stockage<br>(ATA PIO, NVMe)"]:::hardware
-        NIC["Carte Réseau<br>(NIC avec RSS)"]:::hardware
-        GPU["Accélérateurs<br>(GPU / NPU)"]:::hardware
+        RAM["Physical Memory<br>(NUMA Nodes)"]:::hardware
+        IO_Ctrls["Controllers<br>(IOAPIC, PIT, RTC)"]:::hardware
+        Storage["Storage<br>(ATA PIO, NVMe)"]:::hardware
+        NIC["Network Card<br>(NIC with RSS)"]:::hardware
+        GPU["Accelerators<br>(GPU / NPU)"]:::hardware
     end
 
     %% ================= EXTERNAL CONNECTIONS =================
 
     %% Userspace <--> Interface
-    App1 <-->|Opérations Sys Asynchrones| RB_Sys
-    App2 <-->|Paquets Tx/Rx| RB_Net
-    App3 <-->|Appels IPC/Sys| RB_Sys
+    App1 <-->|Asynchronous Sys Operations| RB_Sys
+    App2 <-->|Tx/Rx Packets| RB_Net
+    App3 <-->|IPC/Sys Calls| RB_Sys
 
     %% Interface <--> Kernel
-    RB_Sys <-->|Polling par Threads Kernel dédiés| Sched
-    RB_Net <-->|Routage direct de la file| NetBypass
+    RB_Sys <-->|Polling by dedicated Kernel Threads| Sched
+    RB_Net <-->|Direct queue routing| NetBypass
 
     %% Kernel <--> Hardware
-    SMP -->|Exécution & IPI| CPU
-    PMM -->|Lecture/Écriture RAM| RAM
+    SMP -->|Execution & IPI| CPU
+    PMM -->|RAM Read/Write| RAM
     StandardDrv -->|IRQ / EOI / DMA| IO_Ctrls
     StandardDrv -->|PIO / DMA| Storage
-    NetBypass -->|Configuration MAC/PHY| NIC
-    GPUMux -->|Commandes PCIe| GPU
-    IO_Ctrls -->|"Ticks Timer (APIC/PIT)"| EDF
+    NetBypass -->|MAC/PHY Configuration| NIC
+    GPUMux -->|PCIe Commands| GPU
+    IO_Ctrls -->|"Timer Ticks (APIC/PIT)"| EDF
 
     %% ================= THE MAGIC: HARDWARE BYPASS =================
     %% These links represent the Zero-Copy / Direct Access Bypass innovations
-    NIC =====|"⚡ Zéro-Copy DMA RX/TX direct (Bypass)"| App2
-    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App1
-    GPU =====|"⚡ Mapping Fractionné direct (Bypass)"| App3
-    RAM =====|"⚡ Accès direct via PKeys (SASOS)"| Userspace
+    NIC =====|"⚡ Direct Zero-Copy DMA RX/TX (Bypass)"| App2
+    GPU =====|"⚡ Direct Partitioned Mapping (Bypass)"| App1
+    GPU =====|"⚡ Direct Partitioned Mapping (Bypass)"| App3
+    RAM =====|"⚡ Direct access via PKeys (SASOS)"| Userspace
 ```
 
 ## 10.11 Synthèse
@@ -2882,10 +2882,10 @@ sequenceDiagram
     end
 
     %% ==========================================
-    %% PHASE 1-3 : BOOTLOADER ET HIGHER-HALF
+    %% PHASE 1-3: BOOTLOADER AND HIGHER-HALF
     %% ==========================================
     rect rgb(0, 50, 100)
-    Note over HW,Boot: Phases 1-3 : Amorce & Higher-Half Paging (Actuel)
+    Note over HW,Boot: Phases 1-3: Boot & Higher-Half Paging (Current)
 
     HW->>GRUB: Power On, POST, BIOS/UEFI Handoff
     GRUB->>GRUB: Parse grub.cfg, Load Kernel ELF
@@ -2894,7 +2894,7 @@ sequenceDiagram
 
     Boot->>Boot: Set up early Page Directory (Identity + 0xC0000000)
     Boot->>HW: Enable Paging (CR0, CR3, CR4)
-    Boot->>Boot: Jump to Higher Half (lea ecx, 4f&#59; jmp ecx)
+    Boot->>Boot: Jump to Higher Half (lea ecx, 4f then jmp ecx)
     Boot->>Boot: Setup early kernel stack (esp = stack_top)
     Boot->>BSP: call kernel_initialize()
     deactivate Boot
@@ -2902,10 +2902,10 @@ sequenceDiagram
     end
 
     %% ==========================================
-    %% PHASE 1-3 : ARCHITECTURE DE BASE
+    %% PHASE 1-3: BASE ARCHITECTURE
     %% ==========================================
     rect rgb(20, 60, 120)
-    Note over BSP,Intr: Phases 1-3 : CPU & Interrupts (Actuel)
+    Note over BSP,Intr: Phases 1-3: CPU & Interrupts (Current)
 
     BSP->>Drv: serial_initialize(COM1, 9600)
     BSP->>BSP: terminal_initialize() & kernel_splash_initialize()
@@ -2915,37 +2915,37 @@ sequenceDiagram
     BSP->>HW: lgdt [GDT] (Ring 0, Ring 3, TSS)
 
     BSP->>Intr: interrupt_descriptor_table_initialize()
-    BSP->>Intr: Enregistre isr_stubs (0-47)
+    BSP->>Intr: Register isr_stubs (0-47)
     BSP->>HW: lidt [IDT]
 
-    BSP->>Intr: clock_initialize() (Contrat temporel de base)
+    BSP->>Intr: clock_initialize() (Base timing contract)
     BSP->>BSP: cpu_topology_initialize()
     end
 
     %% ==========================================
-    %% PHASE 4 : VMM, PMM ET ALLOCATEURS
+    %% PHASE 4: VMM, PMM AND ALLOCATORS
     %% ==========================================
     rect rgb(50, 0, 100)
-    Note over BSP,Alloc: Phase 4 : Sous-système Mémoire Complet (Actuel)
+    Note over BSP,Alloc: Phase 4: Full Memory Subsystem (Current)
 
     BSP->>Mem: paging_initialize_runtime()
     Mem->>HW: Flush TLB (invlpg)
     BSP->>Mem: kernel_vmm_initialize()
 
     BSP->>Mem: physical_memory_manager_initialize()
-    Note right of Mem: Initialise Buddy Allocator (PMM Pass 1)
+    Note right of Mem: Initialize Buddy Allocator (PMM Pass 1)
 
     BSP->>HW: advanced_configuration_and_power_interface_madt_initialize()
-    HW-->>BSP: Retourne Tables ACPI (LAPIC, IOAPIC, ISO)
+    HW-->>BSP: Return ACPI Tables (LAPIC, IOAPIC, ISO)
     BSP->>BSP: numa_policy_initialize()
 
     BSP->>Mem: physical_memory_manager_extend_mapping()
-    Note right of Mem: Mappe toute la RAM découverte par Multiboot (PMM Pass 2)
+    Note right of Mem: Map all RAM discovered by Multiboot (PMM Pass 2)
 
     BSP->>Alloc: kernel_heap_initialize()
     Note right of Alloc: Setup Slab Allocator (Size classes)
 
-    par Allocateurs Haut Niveau
+    par High-Level Allocators
         BSP->>Alloc: kernel_frame_arena_initialize(16KB)
         BSP->>Alloc: kernel_stack_allocator_initialize(16KB)
         BSP->>Alloc: kernel_pool_allocator_initialize(64B, 128 obj)
@@ -2953,27 +2953,27 @@ sequenceDiagram
     end
 
     BSP->>Alloc: kernel_ring_buffer_initialize_ex(SPSC Mode)
-    Note right of Alloc: Préparation pour IPC Zero-Syscall
+    Note right of Alloc: Preparation for Zero-Syscall IPC
     end
 
     %% ==========================================
-    %% PHASE 5 : MULTICŒUR & MATÉRIEL
+    %% PHASE 5: MULTICORE & HARDWARE
     %% ==========================================
     rect rgb(100, 50, 0)
-    Note over HW,AP: Phase 3 & 5 : SMP, APIC & Routage IO (Actuel)
+    Note over HW,AP: Phase 3 & 5: SMP, APIC & IO Routing (Current)
 
     BSP->>Intr: input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold()
     BSP->>Intr: ioapic_set_isa_route_destination(IRQ1_KBD, Core0)
 
     BSP->>Intr: advanced_pic_timer_backend_late_initialize()
-    Note right of Intr: Active x2APIC (MSR 0x830)
+    Note right of Intr: Enable x2APIC (MSR 0x830)
 
     BSP->>AP: kernel_smp_try_start_discovered_aps()
-    loop Pour chaque CPU détecté (ACPI MADT)
+    loop For each detected CPU (ACPI MADT)
         BSP->>HW: Send IPI (INIT)
-        BSP->>HW: Send IPI (SIPI) avec vecteur Trampoline
+        BSP->>HW: Send IPI (SIPI) with Trampoline vector
         activate AP
-        HW->>AP: Boot CPU Secondaire en Real Mode
+        HW->>AP: Boot Secondary CPU in Real Mode
         AP->>AP: ap_trampoline.S (Paging, GDT, Stack)
         AP->>AP: ap_startup.c -> ap_spin_wait()
         AP-->>BSP: ACK "I am alive"
@@ -2987,65 +2987,65 @@ sequenceDiagram
     end
 
     %% ==========================================
-    %% VISION PHASE 6-10 : ARCHITECTURE FUTURISTE
+    %% VISION PHASE 6-10: FUTURISTIC ARCHITECTURE
     %% ==========================================
     rect rgb(100, 0, 50)
-    Note over BSP,LplPlugin: 🚀 VISION FUTURISTE (Phases 6 à 10 & U1-U5)
+    Note over BSP,LplPlugin: 🚀 FUTURE VISION (Phases 6 to 10 & U1-U5)
 
-    %% Phase 6 : Ordonnancement
-    Note over Sched,Mem: [Phase 6] Initialisation Ordonnanceur EDF
+    %% Phase 6: Scheduling
+    Note over Sched,Mem: [Phase 6] EDF Scheduler Initialization
     BSP->>Sched: scheduler_edf_initialize()
     BSP->>Sched: create_kernel_worker_threads()
-    Sched->>AP: Assign Workers aux cœurs dédiés (Affinité NUMA)
+    Sched->>AP: Assign Workers to dedicated cores (NUMA Affinity)
 
-    %% Phase 10 : SASOS
+    %% Phase 10: SASOS
     Note over Mem,LplPlugin: [Phase 10] SASOS & Memory Protection Keys (MPK)
     BSP->>Mem: vmm_sasos_enable_global_address_space()
     LplPlugin->>Mem: sasos_allocate_pkey_domain()
-    Mem-->>LplPlugin: Retourne PKey 0x1
-    LplPlugin->>HW: wrpkru (Hardware lock en 2 cycles)
+    Mem-->>LplPlugin: Return PKey 0x1
+    LplPlugin->>HW: wrpkru (Hardware lock in 2 cycles)
 
-    %% Phase 8 : Réseau
+    %% Phase 8: Network
     Note over Drv,Flakkari: [Phase 8] Data Plane Network Bypass
     BSP->>Drv: pci_enumerate_and_init_nic()
     Flakkari->>Net: network_bypass_map_rx_to_userspace(PKey 0x2)
     Net->>Drv: Configure NIC DMA RX Ring -> Pinned RAM (Flakkari)
 
-    %% Phase 9 : Zero-Syscall IPC
+    %% Phase 9: Zero-Syscall IPC
     Note over Alloc,LplPlugin: [Phase 9] Interface Zero-Syscall (Ring Buffers)
     LplPlugin->>Alloc: ipc_create_zero_syscall_channel(PKey 0x1)
-    Alloc-->>LplPlugin: Retourne {SubmissionQueue, CompletionQueue}
+    Alloc-->>LplPlugin: Return {SubmissionQueue, CompletionQueue}
     end
 
     %% ==========================================
-    %% RUNTIME : LA BOUCLE "FULLDIVE"
+    %% RUNTIME: THE "FULLDIVE" LOOP
     %% ==========================================
     rect rgb(0, 100, 50)
-    Note over HW,LplPlugin: ♾️ Runtime Loop : Moteur VR Déterministe
+    Note over HW,LplPlugin: ♾️ Runtime Loop: Deterministic VR Engine
 
     BSP->>BSP: kernel_main()
 
-    par Trame de Simulation VR (Zero-Syscall)
+    par VR Simulation Frame (Zero-Syscall)
         LplPlugin->>Alloc: SPSC_Submit(OP_READ_SENSORS)
-        Note right of LplPlugin: LplPlugin continue ses calculs (Aucun INT 0x80)
+        Note right of LplPlugin: LplPlugin keeps computing (No INT 0x80)
 
-        Note over AP: CPU AP dédié en rôle Worker
-        AP->>Alloc: SPSC_Poll() -> Détecte OP_READ_SENSORS
-        AP->>Drv: Extrait les données matérielles
+        Note over AP: AP CPU dedicated as Worker
+        AP->>Alloc: SPSC_Poll() -> Detects OP_READ_SENSORS
+        AP->>Drv: Extract hardware data
         AP->>Alloc: SPSC_Complete(Data)
 
-        LplPlugin->>Alloc: Lit le résultat au prochain tick
-    and Réseau Bypass
-        HW->>Net: Paquet UDP Reçu sur la carte réseau
-        Net->>HW: DMA automatique (Hardware RSS) vers RAM Flakkari
-        Note right of Flakkari: Zéro interruption CPU. RAM mise à jour par magie matérielle.
+        LplPlugin->>Alloc: Read result on next tick
+    and Network Bypass
+        HW->>Net: UDP Packet received on NIC
+        Net->>HW: Automatic DMA (Hardware RSS) to Flakkari RAM
+        Note right of Flakkari: Zero CPU interrupt. RAM updated by hardware magic.
     and Hard Real-Time (EDF)
         HW->>Intr: Timer Tick (APIC)
         Intr->>Sched: timer_tick_interrupt()
         Sched->>Sched: edf_recalculate_deadlines()
-        opt Si SLA VR menacé
+        opt If VR SLA at risk
             Sched->>HW: context_switch_fast(LplPlugin)
-            Note right of Sched: Préemption stricte pour garantir MTP < 20ms
+            Note right of Sched: Strict preemption to guarantee MTP < 20ms
         end
     end
     end
