@@ -110,24 +110,30 @@ body {
   border: 1px solid var(--color-lpl-border);
   text-align: center;
 }
-.book-prose table {
+.book-prose table,
+.prose-lpl table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
   display: block;
   overflow-x: auto;
+  margin: 1rem 0;
 }
 .book-prose th,
-.book-prose td {
+.book-prose td,
+.prose-lpl th,
+.prose-lpl td {
   border: 1px solid var(--color-lpl-border);
   padding: 0.5rem 0.75rem;
   text-align: left;
 }
-.book-prose th {
+.book-prose th,
+.prose-lpl th {
   background: var(--color-lpl-panel);
   color: var(--color-lpl-accent);
 }
-.book-prose hr {
+.book-prose hr,
+.prose-lpl hr {
   border: none;
   border-top: 1px solid var(--color-lpl-border);
   margin: 2rem 0;
