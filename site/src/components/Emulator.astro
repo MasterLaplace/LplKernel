@@ -6,7 +6,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 
 <section id="demo" class="scroll-mt-20">
-  <div class="lpl-panel lpl-glow rounded-2xl p-4 sm:p-6" data-emulator data-base={base}>
+  <div class="lpl-panel lpl-glow rounded-none p-4 sm:p-6" data-emulator data-base={base}>
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
       <div>
         <h2 class="text-xl font-semibold">Boot it in your browser</h2>
@@ -19,19 +19,19 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
         <button
           type="button"
           data-profile="server"
-          class="px-3 py-1.5 rounded-lg border border-lpl-border bg-lpl-accent/10 text-lpl-accent font-mono"
+          class="px-3 py-1.5 rounded-none border border-lpl-border bg-lpl-accent/10 text-lpl-accent font-mono"
           >Text console</button
         >
         <button
           type="button"
           data-profile="client"
-          class="px-3 py-1.5 rounded-lg border border-lpl-border text-lpl-muted font-mono hover:text-lpl-text"
+          class="px-3 py-1.5 rounded-none border border-lpl-border text-lpl-muted font-mono hover:text-lpl-text"
           >Graphics</button
         >
       </div>
     </div>
 
-    <div class="relative rounded-xl overflow-hidden border border-lpl-border bg-black">
+    <div class="relative rounded-none overflow-hidden border border-lpl-border bg-black">
       <div
         data-screen
         class="min-h-[420px] flex items-center justify-center"
@@ -40,7 +40,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           <button
             type="button"
             data-boot
-            class="px-5 py-2.5 rounded-lg bg-lpl-accent text-[#04121a] font-semibold font-mono hover:brightness-110"
+            class="px-5 py-2.5 rounded-none bg-lpl-accent text-[#04121a] font-semibold font-mono hover:brightness-110"
             >▶ Boot LplKernel (text)</button
           >
           <p class="mt-3 text-xs text-lpl-muted" data-status>

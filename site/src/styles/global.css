@@ -2,13 +2,13 @@
 
 /* Laplace design tokens — dark, technical, systems-paper aesthetic. */
 @theme {
-  --color-lpl-bg: #0a0e14;
-  --color-lpl-panel: #111722;
-  --color-lpl-border: #1e2a3a;
-  --color-lpl-accent: #5eead4;
-  --color-lpl-accent2: #818cf8;
-  --color-lpl-text: #d6deeb;
-  --color-lpl-muted: #8a97ab;
+  --color-lpl-bg: #0a0a0a;
+  --color-lpl-panel: #0a0a0a;
+  --color-lpl-border: #333333;
+  --color-lpl-accent: #ff8c00;
+  --color-lpl-accent2: #ff6b00;
+  --color-lpl-text: #e0e0e0;
+  --color-lpl-muted: #888888;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -20,9 +20,6 @@ html {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(60rem 40rem at 80% -10%, rgba(129, 140, 248, 0.12), transparent),
-    radial-gradient(50rem 30rem at 0% 0%, rgba(94, 234, 212, 0.08), transparent);
 }
 
 ::selection {
@@ -36,7 +33,7 @@ body {
 }
 
 .lpl-glow {
-  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.15), 0 20px 60px -20px rgba(129, 140, 248, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 140, 0, 0.15), 0 20px 60px -20px rgba(255, 107, 0, 0.25);
 }
 
 /* Rich prose for rendered book chapters. */
@@ -93,14 +90,14 @@ body {
   font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--color-lpl-accent);
-  background: rgba(94, 234, 212, 0.08);
+  background: rgba(255, 140, 0, 0.08);
   padding: 0.1em 0.35em;
-  border-radius: 0.3rem;
+  border-radius: 0;
 }
 .book-prose pre {
   background: #0d1117 !important;
   border: 1px solid var(--color-lpl-border);
-  border-radius: 0.6rem;
+  border-radius: 0;
   padding: 1rem;
   overflow-x: auto;
   font-size: 0.85rem;

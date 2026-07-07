@@ -14,10 +14,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 
     <!-- Current -->
     <div class="space-y-10">
-      <article class="lpl-panel rounded-xl p-6">
+      <article class="lpl-panel rounded-none p-6">
         <div class="flex items-center gap-3 mb-2">
           <h2 class="text-xl font-semibold">LplKernel</h2>
-          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-accent2/40 bg-lpl-accent2/10 text-lpl-accent2">core</span>
+          <span class="text-[11px] px-2 py-0.5 rounded-none border border-lpl-accent2/40 bg-lpl-accent2/10 text-lpl-accent2">core</span>
         </div>
         <p class="text-lpl-muted mb-3">
           A from-scratch i686 kernel written in C, C++23 and assembly: GDT/IDT, paging with a
@@ -28,10 +28,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
         <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/LplKernel" target="_blank" rel="noopener">github.com/MasterLaplace/LplKernel ↗</a>
       </article>
 
-      <article class="lpl-panel rounded-xl p-6">
+      <article class="lpl-panel rounded-none p-6">
         <div class="flex items-center gap-3 mb-2">
           <h2 class="text-xl font-semibold">LplPlugin</h2>
-          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-accent/40 bg-lpl-accent/10 text-lpl-accent">active</span>
+          <span class="text-[11px] px-2 py-0.5 rounded-none border border-lpl-accent/40 bg-lpl-accent/10 text-lpl-accent">active</span>
         </div>
         <p class="text-lpl-muted mb-3">
           The dual-build (client|server) engine: graphics, physics, and an ECS with a Structure-of-
@@ -51,10 +51,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     </p>
 
     <div class="space-y-10">
-      <article class="lpl-panel rounded-xl p-6">
+      <article class="lpl-panel rounded-none p-6">
         <div class="flex items-center gap-3 mb-2">
           <h2 class="text-xl font-semibold">Engine-3D</h2>
-          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-border bg-white/5 text-lpl-muted">legacy · origin</span>
+          <span class="text-[11px] px-2 py-0.5 rounded-none border border-lpl-border bg-white/5 text-lpl-muted">legacy · origin</span>
         </div>
         <p class="text-lpl-muted">
           The first graphics engine. Pure C with CSFML only for pixel output — all the 3D maths and
@@ -65,10 +65,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
         <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/Engine-3D" target="_blank" rel="noopener">github.com/MasterLaplace/Engine-3D ↗</a>
       </article>
 
-      <article class="lpl-panel rounded-xl p-6">
+      <article class="lpl-panel rounded-none p-6">
         <div class="flex items-center gap-3 mb-2">
           <h2 class="text-xl font-semibold">Flakkari</h2>
-          <span class="text-[11px] px-2 py-0.5 rounded-full border border-lpl-border bg-white/5 text-lpl-muted">legacy · origin</span>
+          <span class="text-[11px] px-2 py-0.5 rounded-none border border-lpl-border bg-white/5 text-lpl-muted">legacy · origin</span>
         </div>
         <p class="text-lpl-muted">
           A game server with an integrated ECS and minimalist physics, able to host several game
@@ -81,7 +81,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
       </article>
     </div>
 
-    <div class="mt-12 rounded-xl border border-lpl-border p-6">
+    <div class="mt-12 rounded-none border border-lpl-border p-6">
       <p class="text-lpl-muted text-sm">
         Want the technical story of how these merged and moved into ring-0? Read the
         <a class="text-lpl-accent" href={`${base}/blog`}>papers &amp; postmortems</a>.

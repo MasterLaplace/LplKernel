@@ -47,12 +47,12 @@ const benchmarks = [
     <div class="mt-8 flex flex-wrap gap-3">
       <a
         href="#demo"
-        class="px-5 py-2.5 rounded-lg bg-lpl-accent text-[#04121a] font-semibold hover:brightness-110"
+        class="px-5 py-2.5 rounded-none bg-lpl-accent text-[#04121a] font-semibold hover:brightness-110"
         >Boot the kernel ↓</a
       >
       <a
         href={`${base}/projects`}
-        class="px-5 py-2.5 rounded-lg border border-lpl-border text-lpl-text hover:border-lpl-accent/50"
+        class="px-5 py-2.5 rounded-none border border-lpl-border text-lpl-text hover:border-lpl-accent/50"
         >Explore the projects</a
       >
     </div>
@@ -71,7 +71,7 @@ const benchmarks = [
     <div class="grid sm:grid-cols-2 gap-4">
       {
         highlights.map((h) => (
-          <div class="lpl-panel rounded-xl p-5">
+          <div class="lpl-panel rounded-none p-5">
             <h3 class="font-semibold text-lpl-accent mb-1">{h.title}</h3>
             <p class="text-sm text-lpl-muted">{h.body}</p>
           </div>
@@ -85,7 +85,7 @@ const benchmarks = [
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {
         benchmarks.map((b) => (
-          <div class="lpl-panel rounded-xl p-5 text-center">
+          <div class="lpl-panel rounded-none p-5 text-center">
             <div class="font-mono text-2xl sm:text-3xl font-bold text-lpl-accent">{b.value}</div>
             <div class="text-xs text-lpl-muted mt-2">{b.label}</div>
           </div>
