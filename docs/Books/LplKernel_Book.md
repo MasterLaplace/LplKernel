@@ -80,9 +80,7 @@ Au-delà de la simple préemption, un moteur FullDive exige un déterminisme abs
 
 Sauf que le passage aux architectures multi-cœurs (SMP) introduit l'**anomalie de Dhall** : dans un ordonnancement EDF global (GEDF), une tâche à très faible utilisation peut faire échouer une tâche critique et ruiner les garanties temporelles.
 
-> **Architecture LplKernel : Partitioned-EDF**
->
-> Pour contourner l'anomalie de Dhall, LplKernel s'oriente vers un modèle **Partitioned-EDF** (ou semi-partitionné). Les tâches critiques (comme la boucle de rendu VR ou l'acquisition BCI) sont *épinglées* (pinned) sur des cœurs physiques dédiés. La granularité du recalibrage temporel est assurée par le timer de l'APIC en mode **TSC-Deadline**, avec une précision au cycle d'horloge près, indispensable pour éviter le jitter dans le traitement des signaux neuronaux.
+Pour contourner cette anomalie, LplKernel s'oriente vers un modèle **Partitioned-EDF** (ou semi-partitionné) : les tâches critiques, typiquement la boucle de rendu VR ou l'acquisition BCI, sont épinglées (*pinned*) sur des cœurs physiques dédiés, ce qui ramène chaque cœur au cas mono-processeur où les garanties de Liu & Layland restent valables. La granularité du recalibrage temporel repose sur le timer de l'APIC en mode TSC-Deadline, précis au cycle d'horloge près. Sans cette précision, le jitter s'invite dans le traitement des signaux neuronaux.
 
 | Caractéristique | OS à Temps Partagé (Linux) | RTOS (QNX, FreeRTOS) |
 |:---|:---|:---|
@@ -157,6 +155,8 @@ $$\text{position}_{rendu} = \text{position}_{t-1} \times (1 - \alpha) + \text{po
 
 Ce découplage sépare les préoccupations : la logique de simulation peut être testée isolément (sans rendu), rejouée à l'identique (replay), et synchronisée sur le réseau. Trois propriétés qu'un moteur multijoueur déterministe ne peut pas s'offrir autrement.
 
+Concrètement, le profil client de LplKernel exécute exactement cette boucle : une simulation autoritaire à pas fixe, et un rendu non capé qui interpole entre deux états. La frontière est stricte des deux côtés. La caméra orbitale, l'éclairage et la grille de débogage vivent côté rendu, en flottant, hors de l'état autoritaire : on peut les manipuler librement, image par image, sans toucher au déterminisme de la simulation qui avance à sa propre cadence.
+
 ## 1.4 Le modèle client-serveur et le tick autoritaire
 
 ### 1.4.1 L'architecture autoritaire
@@ -165,7 +165,7 @@ Dans un jeu multijoueur, tout tourne autour d'une question d'autorité : qui d�
 
 Deux postures sont possibles. Le **client autoritaire** simule localement et informe le serveur : simple, mais vulnérable à la triche, le client peut mentir sur sa position, ses dégâts, etc. Le **serveur autoritaire** est la seule source de vérité : les clients envoient leurs *inputs* (commandes), le serveur les applique dans sa simulation et renvoie l'état résultant. La triche est drastiquement réduite, mais la latence réseau introduit un retard perceptible.[^7]
 
-Le modèle retenu pour LplKernel est le **serveur autoritaire**, où le serveur exécute la simulation à pas fixe et diffuse l'état à tous les clients. Les clients effectuent une **prédiction locale** (ils simulent immédiatement l'effet de leurs propres inputs) puis réconcilient leur état avec celui du serveur lorsqu'ils reçoivent une mise à jour.
+Le modèle retenu pour LplKernel est le **serveur autoritaire**, où le serveur exécute la simulation à pas fixe et diffuse l'état à tous les clients. Les clients effectuent une **prédiction locale** (ils simulent immédiatement l'effet de leurs propres inputs) puis réconcilient leur état avec celui du serveur lorsqu'ils reçoivent une mise à jour. Ce choix vient en droite ligne de **Flakkari**, le serveur de jeu qui a précédé le projet : l'architecture *server-authoritative* et les paquets dynamiques y avaient déjà fait leurs preuves, et le moteur en hérite comme d'un acquis plutôt que d'un pari.
 
 ### 1.4.2 Trois modèles de synchronisation
 
@@ -177,7 +177,7 @@ Le modèle retenu pour LplKernel est le **serveur autoritaire**, où le serveur 
 
 Le Lockstep impose une simulation parfaitement déterministe. Plus précisément : une même séquence d'inputs doit produire un état bit-à-bit identique sur toutes les machines. Cette exigence a des conséquences architecturales profondes qui seront détaillées au Chapitre 3 (arithmétique à virgule fixe) et au Chapitre 6 (infrastructure réseau).
 
-Le Rollback Netcode, lui, courant dans les jeux de combat compétitifs, réunit les deux avantages : il permet une simulation locale immédiate (zéro latence perçue) tout en gérant les désynchronisations en « revenant en arrière » (*rollback*) pour rejouer les ticks avec les inputs corrigés. Il exige à la fois un déterminisme strict et la capacité de sauvegarder ou restaurer des snapshots d'état à très haute fréquence, une opération qui pèse lourd sur la gestion mémoire (Chapitre 2).
+Le Rollback Netcode, lui, courant dans les jeux de combat compétitifs, réunit les deux avantages : il permet une simulation locale immédiate (zéro latence perçue) tout en gérant les désynchronisations en « revenant en arrière » (*rollback*) pour rejouer les ticks avec les inputs corrigés. Il exige à la fois un déterminisme strict et la capacité de sauvegarder ou restaurer des snapshots d'état à très haute fréquence, une opération qui pèse lourd sur la gestion mémoire (Chapitre 2). Le moteur prépare déjà ce terrain : son module de sérialisation capture des snapshots d'état et rejoue une session à l'identique, brique sur laquelle la stratégie de rollback réseau viendra se poser (Chapitre 6).
 
 ### 1.4.3 Le contrat de timer déterministe
 
@@ -213,6 +213,8 @@ L'analyse des noyaux OS et moteur révèle un ensemble de contraintes non négoc
 | **Snapshot rapide** | Rollback Netcode | Allocateurs mémoire déterministes (Ch. 2) |
 | **Bit-exact** | Lockstep | Arithmétique à virgule fixe (Ch. 3) |
 | **Isolation des pannes** | Stabilité production | Architecture modulaire (Ch. 4) |
+
+À ces contraintes s'ajoute une discipline transversale, héritée des premières phases du projet : mesurer avant d'optimiser. Chaque complexité ajoutée doit être justifiée par des données de performance réelles, pas par une intuition. L'expérience du moteur l'a confirmé plus d'une fois : un simple tableau statique a battu un allocateur *slab* sophistiqué, et c'est la mesure, pas le raisonnement de salon, qui a tranché.
 
 Ces contraintes s'appliquent à tous les chapitres suivants. Le chapitre 2 abordera la première d'entre elles en profondeur : comment allouer et gérer la mémoire de manière à satisfaire simultanément les exigences de performance, de déterminisme et de latence bornée.
 
@@ -261,14 +263,9 @@ L'avantage : la fusion rapide limite la fragmentation externe, avec une complex
 
 L'inconvénient, c'est la fragmentation interne, élevée : une demande de 5 Ko force l'allocation d'un bloc de 8 Ko, et 3 Ko partent en pure perte. Les blocs physiquement contigus de grande taille deviennent eux aussi difficiles à obtenir dès que la mémoire se fragmente, un problème critique pour le DMA (Direct Memory Access) des périphériques GPU et BCI.
 
-> **Implémentation LplKernel : PMM à double stratégie**
->
-> LplKernel implémente un PMM (*Physical Memory Manager*) à **double stratégie**, sélectionnée à la compilation par le flag `REALTIME_MODE` :
->
-> - **Client** (`REALTIME_MODE=1`) : Une **pile LIFO de pages libres** (*free-list*) offrant un alloc/free en $O(1)$ déterministe absolu. Le PMM client couvre les pages de 1 Mo à 16 Mo (boot mapping), extensibles via `physical_memory_manager_extend_mapping()`. Aucune opération de fusion (*coalescing*) n'est effectuée : la prédictibilité temporelle prime sur l'optimisation de la fragmentation.
-> - **Serveur** (`REALTIME_MODE=0`) : Un **Buddy Allocator complet** avec API d'ordre (`allocate_order(n)`, `free_order(addr, n)`) pour allouer des blocs de $2^n$ pages physiquement contigus. La fusion automatique des copains est active, instrumentée par un histogramme d'ordres libres (o0..o18), des watermarks haut/bas, un ratio de fragmentation, et des compteurs de garde (rejected-free, double-free).
->
-> Les deux chemins partagent une couche de **détection UAF** (*Use-After-Free*) : le compteur `pmm_uaf_detection_count` est incrémenté lorsqu'un motif empoisonné (`0xDEADBEEF` / `0xFEEDFACE`) est détecté dans une page censée être libre, signalant un accès post-libération. L'ensemble est validé par 8 smoke tests (coalescing, stress, order, watermark, fragmentation, UAF).
+LplKernel implémente pour sa part un PMM (*Physical Memory Manager*) à double stratégie, sélectionnée à la compilation par le flag `REALTIME_MODE`, et ce choix découle directement du compromis exposé ci-dessus. Le profil client opte pour une pile LIFO de pages libres : allocation et libération en $O(1)$ déterministe absolu, couverture des pages de 1 Mo à 16 Mo (boot mapping) extensible via `physical_memory_manager_extend_mapping()`, et aucune fusion de blocs. Autrement dit, la prédictibilité temporelle prime sur l'optimisation de la fragmentation. Le profil serveur embarque à l'inverse un Buddy Allocator complet, avec une API d'ordre (`allocate_order(n)`, `free_order(addr, n)`) pour obtenir des blocs de $2^n$ pages physiquement contigus, la fusion automatique des copains, et toute l'instrumentation qui va avec : histogramme d'ordres libres (o0..o18), watermarks haut et bas, ratio de fragmentation, compteurs de garde (rejected-free, double-free).
+
+Les deux chemins partagent une couche de détection UAF (*Use-After-Free*) : le compteur `pmm_uaf_detection_count` s'incrémente dès qu'un motif empoisonné (`0xDEADBEEF` / `0xFEEDFACE`) apparaît dans une page censée être libre, signe d'un accès post-libération. L'ensemble est validé par 8 smoke tests (coalescing, stress, order, watermark, fragmentation, UAF).
 
 ### 2.2.2 L'allocateur d'objets : SLAB, SLUB, SLOB
 
@@ -300,6 +297,8 @@ Le comportement de l'allocateur noyau est guidé par les **GFP flags** (*Get Fre
 - `GFP_NOWAIT` / `GFP_ATOMIC` : Allocation depuis un contexte atomique (gestionnaire d'interruption matérielle). Le sommeil est interdit : l'allocation échoue si aucun bloc n'est immédiatement disponible.
 - `GFP_DMA` : L'allocation doit provenir d'une zone de mémoire accessible par les contrôleurs DMA (typiquement les premiers 16 Mo sur les vieilles architectures x86).[^6]
 
+La distinction se paie en production. Le module noyau Linux du moteur, qui intercepte les paquets UDP dans un hook Netfilter, s'exécute de facto en contexte d'interruption réseau : `GFP_ATOMIC` y est obligatoire, et son gestionnaire d'échec d'initialisation suit le pattern noyau classique de la cascade de `goto`. L'oublier compile très bien, et plante plus tard, au premier sommeil en contexte atomique.
+
 Cette distinction entre allocations « dormantes » et « atomiques » se retrouve, transformée, dans la gestion mémoire des moteurs temps réel : une allocation à latence variable passe pendant le chargement, jamais pendant la simulation.
 
 ### 2.2.5 Sécurité : KFENCE et allocateurs par buckets
@@ -308,9 +307,7 @@ La sécurité des allocateurs noyau est un champ de bataille permanent. Les tech
 
 Le noyau Linux 6.19 a introduit un allocateur de slab dédié par **buckets** (seaux) pour isoler les objets dans des compartiments spécifiques, réduisant la probabilité qu'un attaquant puisse manipuler la disposition mémoire. En complément, **KFENCE** (*Kernel Electric-Fence*) est un détecteur d'erreurs mémoire basé sur l'échantillonnage statistique : il insère des pages de garde (*guard pages*) autour d'un échantillon aléatoire d'objets alloués, détectant les accès hors limites et les use-after-free avec un surcoût négligeable (~1 %) en production.[^8]
 
-> **Implémentation LplKernel : KFENCE à coût nul**
->
-> Pour sécuriser le tas du noyau sans introduire la latence d'un outil lourd comme KASAN, LplKernel s'inspire du modèle KFENCE en pré-allouant un pool fixe d'objets où chaque objet est entouré de pages de garde non mappées (via `PROT_NONE`). En alignant aléatoirement les allocations à l'extrême gauche ou à l'extrême droite de la page physique, tout dépassement de tampon (Buffer Overflow) déborde instantanément sur la page non mappée, déclenchant un *Page Fault* matériel (zéro instruction de vérification logicielle dans le chemin critique).
+LplKernel s'inspire directement de ce modèle pour sécuriser son tas sans la latence d'un outil lourd comme KASAN : un pool fixe d'objets est pré-alloué, chaque objet entouré de pages de garde non mappées (via `PROT_NONE`). En alignant aléatoirement les allocations à l'extrême gauche ou à l'extrême droite de la page physique, tout dépassement de tampon déborde instantanément sur la page non mappée et déclenche un *Page Fault* matériel. Zéro instruction de vérification logicielle dans le chemin critique : c'est le matériel qui fait la police.
 
 ### 2.2.6 Implémentation LplKernel : `kmalloc` à double profil
 
@@ -497,6 +494,8 @@ public:
 
 `std::atomic` avec des ordres mémoire explicites (`acquire`/`release`) garantit l'absence de data races sans le moindre mutex. Le `alignas(64)` sur `m_head` et `m_tail` place chaque compteur sur sa propre ligne de cache (64 octets sur la plupart des architectures), ce qui évite le **false sharing** : deux variables atomiques indépendantes qui partagent la même ligne de cache et déclenchent des invalidations parasites entre les cœurs qui les modifient en même temps.[^11]
 
+Le même schéma, transposé côté noyau Linux, porte le transport réseau zero-copy du moteur : les anneaux RX et TX vivent dans une mémoire partagée mmap'ée entre le module noyau et le processus utilisateur, têtes et queues atomiques comprises. Le paquet écrit par le hook Netfilter est lu tel quel par la simulation, sans une seule copie (chapitre 6).
+
 Cette implémentation SPSC (*Single-Producer, Single-Consumer*) est plus performante qu'un `boost::lockfree::spsc_queue` dans les cas simples, et elle est la structure de choix pour le transfert de données EEG entre le thread d'acquisition et le thread de traitement.
 
 ## 2.4 Allocateurs temps réel déterministes
@@ -558,15 +557,9 @@ Pour un serveur de build LplKernel gérant des milliers de connexions, chaque in
 
 L'évolution récente des Sheaves SLUB intègre cette conscience NUMA via les **barns** (granges) par nœud : les objets libérés sur un nœud NUMA sont préférentiellement recyclés sur ce même nœud.
 
-> **Implémentation LplKernel : SMP, topologie CPU et NUMA**
->
-> Le serveur LplKernel implémente une infrastructure SMP progressive :
->
-> 1. **Topologie CPU** : Le sous-système `cpu_topology` découvre les cœurs via parsing MADT (ACPI), enregistre chaque APIC ID découvert, les compacte en slots logiques stables (supportant les APIC ID non contigus), et maintient un bitmap d'état en ligne (*online*) par slot avec un compteur de CPU actifs. Le BSP (*Bootstrap Processor*) est automatiquement marqué en ligne à l'initialisation.
-> 2. **Démarrage AP** (*Application Processors*) : Un trampoline en mémoire basse est installé au vecteur SIPI `0x08`. Le BSP dispatch une séquence INIT/SIPI vers chaque AP découvert, validée par un marqueur d'acquittement (`ack_word=0x4150`) et un handoff en mode protégé/paginé vers le point d'entrée C de l'AP (`application_processor_startup_initialize_cpu`). La télémétrie enregistre les tentatives, retransmissions, et timeouts par AP.
-> 3. **Domaines d'allocation** : Chaque slot CPU est lié à un domaine d'allocation via `cpu_topology_bind_slot_to_domain()`. Le heap serveur route les allocations à travers cette table de binding, pour une politique de placement local-first. Des compteurs par domaine suivent les refills, fallbacks, sondes distantes et hits distants.
-> 4. **IPI et TLB Shootdown** : Un chemin IPI basique est présent pour la synchronisation des métadonnées mémoire et l'invalidation TLB inter-cœurs. Le mode x2APIC est supporté avec fallback xAPIC.
-> 5. **Feuille de route NUMA** : Extension des domaines d'allocation en domaines par nœud NUMA, politique de placement local-first explicite, chemin de fallback cross-node avec télémétrie local-vs-remote, et compteurs de hit rate par nœud.
+Le serveur LplKernel construit cette conscience topologique par étapes. Le sous-système `cpu_topology` découvre d'abord les cœurs en parsant la table MADT (ACPI), enregistre chaque APIC ID, les compacte en slots logiques stables (les APIC ID non contigus sont donc supportés) et maintient un bitmap d'état *online* par slot ; le BSP (*Bootstrap Processor*) est marqué en ligne dès l'initialisation. Le démarrage des AP (*Application Processors*) passe ensuite par un trampoline en mémoire basse installé au vecteur SIPI `0x08` : le BSP dispatch une séquence INIT/SIPI vers chaque AP découvert, validée par un marqueur d'acquittement (`ack_word=0x4150`) et un handoff en mode protégé et paginé vers le point d'entrée C de l'AP (`application_processor_startup_initialize_cpu`), avec télémétrie des tentatives, retransmissions et timeouts.
+
+Côté mémoire, chaque slot CPU est lié à un domaine d'allocation via `cpu_topology_bind_slot_to_domain()` : le heap serveur route les allocations à travers cette table de binding, politique de placement local-first, avec des compteurs par domaine (refills, fallbacks, sondes distantes, hits distants). Un chemin IPI basique assure la synchronisation des métadonnées mémoire et l'invalidation TLB inter-cœurs (x2APIC supporté, fallback xAPIC). La suite logique est déjà tracée : étendre ces domaines en domaines par nœud NUMA, avec fallback cross-node instrumenté en local-vs-remote et taux de hit par nœud.
 
 ### 2.5.3 Huge Pages
 
@@ -588,6 +581,8 @@ Les **Huge Pages** (2 Mo ou 1 Go sur x86) augmentent considérablement la couver
 Le transfert de données entre la RAM système et la VRAM du GPU, via le bus PCIe, exige que les pages source soient épinglées (*pinned*), c'est-à-dire non échangeables (*non-swappable*). Sans épinglage, le système d'exploitation pourrait déplacer une page en plein transfert DMA, et provoquer une corruption ou un crash.
 
 Les API modernes (Vulkan, CUDA) fournissent des fonctions d'allocation de mémoire épinglée (`vkAllocateMemory` avec le flag `VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT`, `cudaMallocHost`). Ces allocations sont coûteuses (elles verrouillent les pages physiques, réduisant la flexibilité du gestionnaire de mémoire virtuelle), et doivent donc être effectuées au démarrage, jamais pendant la simulation.[^17]
+
+C'est exactement le rôle du **PinnedAllocator** du moteur : il alloue via `cudaHostAlloc` en mode *mapped* et *portable*, si bien que le même buffer est visible du CPU et du GPU sans copie intermédiaire. Détail appréciable : derrière un `#ifdef __CUDACC__`, il retombe sur une allocation alignée classique, ce qui permet de compiler tout le moteur au g++ sans CUDA, sans modifier une ligne du code appelant.
 
 ### 2.5.5 CDMM : coordination GPU/CPU via NVIDIA
 
@@ -614,16 +609,9 @@ Pour le client FullDive, le mode **CDMM** (*Coherent Driver-based Memory Managem
 | **Transfert BCI** | Ring Buffer SPSC lock-free | Zéro mutex entre acquisition et traitement |
 | **GPU** | Mémoire épinglée via CDMM | Latence MTP minimale |
 
-> **Règles mémoire client LplKernel : enforcement temps réel**
->
-> La règle non négociable du client est : **zéro allocation dynamique dans la hot loop**. En dehors de la boucle chaude, seuls les caches slab client (16/64/256 B) et le small pool first-fit sur pages de boot fixes sont autorisés. En boucle chaude, seuls les allocateurs pré-alloués (frame arena, pool, ring buffer) sont permis : aucun site d'appel `kmalloc`/`kfree`.
->
-> L'enforcement runtime est assuré par :
-> - La profondeur hot-loop doit revenir à 0 après chaque étape de frame.
-> - Le compteur de violations hot-loop doit rester stable en boucle nominale.
-> - Les compteurs de garde du heap ne doivent pas augmenter en boucle nominale.
->
-> **Allocateurs spécialisés validés** : Frame Arena (bump allocator, 2 KiB bootstrap, reset-per-frame, 5 smoke tests), Pool Allocator (64 B, 32 slots, free-list $O(1)$, 2 smoke tests), Ring Buffer SPSC (32 B slots, 32 entrées, FIFO déterministe, 2 smoke tests), Stack Allocator (push/pop_all LIFO, 1 smoke test), TLSF (segregated fit $O(1)$, WCET borné ≤ 168 instructions x86, 4 smoke tests). Au total, **47 smoke tests** validés en QEMU couvrant les deux profils.
+La règle non négociable du client se résume en une phrase : zéro allocation dynamique dans la hot loop. En dehors de la boucle chaude, seuls les caches slab client (16/64/256 B) et le small pool first-fit sur pages de boot fixes sont autorisés ; dans la boucle chaude, uniquement les allocateurs pré-alloués (frame arena, pool, ring buffer), sans aucun site d'appel `kmalloc`/`kfree`. L'enforcement est vérifié à l'exécution : la profondeur hot-loop doit revenir à 0 après chaque étape de frame, le compteur de violations doit rester stable en boucle nominale, et les compteurs de garde du heap ne doivent pas bouger.
+
+Les allocateurs spécialisés correspondants sont tous validés en QEMU : Frame Arena (bump allocator, 2 KiB bootstrap, reset par frame, 5 smoke tests), Pool Allocator (64 B, 32 slots, free-list $O(1)$, 2 smoke tests), Ring Buffer SPSC (slots de 32 B, 32 entrées, FIFO déterministe, 2 smoke tests), Stack Allocator (push/pop_all LIFO, 1 smoke test) et TLSF (segregated fit $O(1)$, WCET borné ≤ 168 instructions x86, 4 smoke tests). Au total, 47 smoke tests couvrent les deux profils.
 
 ### 2.6.3 Paging runtime : de `boot.s` à l'API dynamique
 
@@ -798,6 +786,8 @@ struct Fixed32 {
 };
 ```
 
+Le `Fixed32` du moteur est exactement ce format Q16.16, et c'est l'unique représentation autorisée de l'état autoritaire (positions, vitesses, temps de simulation). Son grand frère `Fixed64` exige un type entier de 128 bits pour les produits intermédiaires ; or `__int128` n'existe pas sur i686. Le code est donc gardé par `LPL_NO_INT128` : sur les cibles qui n'ont pas le type, la variante 64 bits disparaît de la compilation plutôt que de mentir silencieusement sur sa précision.
+
 ### 3.3.2 Multiplication et Division
 
 La multiplication de deux nombres Q16.16 nécessite un intermédiaire 64 bits pour éviter le débordement, puis un décalage pour réaligner le point fixe :
@@ -849,6 +839,8 @@ $$y_{i+1} = y_i + \sigma_i \cdot 2^{-i} \cdot x_i$$
 Où $\sigma_i = +1$ ou $-1$ selon le signe de l'angle restant. Après $N$ itérations, $(x_N, y_N)$ converge vers $(\cos\theta, \sin\theta)$ multiplié par un facteur constant $K = \prod \frac{1}{\sqrt{1+2^{-2i}}} \approx 0.6073$.
 
 Avec 16 itérations, CORDIC atteint une précision de 16 bits, ce qui tombe parfaitement pour un format Q16.16.
+
+Dans le moteur, CORDIC est la seule source trigonométrique du code lié au noyau. Aucune fonction de la libm ni aucun builtin transcendantal (`tanf`, `powf`, `expf`) n'y est toléré, parce qu'un binaire freestanding n'a tout simplement pas de libm, et qu'une libm hôte briserait de toute façon le déterminisme bit à bit. Concrètement, la projection perspective dérive `tan(fov/2)` de CORDIC, les puissances entières passent par un `intPow` en carrés successifs, et la seule racine carrée admise est l'instruction matérielle (`sqrtss`), cantonnée au chemin de rendu non autoritaire.
 
 ### 3.4.2 Tables de correspondance (LUT)
 
@@ -960,6 +952,8 @@ Pour garantir le déterminisme dans LplKernel, la règle tient en une phrase :
 
 Le rendu graphique, lui, peut se permettre des flottants : il n'affecte pas l'état logique. L'interface aussi. En revanche, la physique, la logique de jeu et le réseau, bref tout ce qui touche à l'état synchronisé, doivent passer par l'arithmétique entière déterministe.
 
+Cette règle se vérifie machinalement, pas sur la bonne volonté des contributeurs. Chaque brique du moteur portée vers le noyau s'accompagne d'un test de parité : un oracle Linux exécute la brique et replie ses résultats en signatures FNV-1a (offset `0x811C9DC5`, prime `0x01000193`) ; le même code, compilé pour i686 et embarqué dans le noyau, refait le calcul au boot dans QEMU et doit produire des signatures identiques bit pour bit. La moindre divergence (un flottant qui fuit dans l'état autoritaire, un flag de compilation oublié) casse la signature et se voit immédiatement. Quant aux chemins de rendu en flottant, ils sont compilés avec `-msse2 -mfpmath=sse -ffp-contract=off -fno-math-errno` des deux côtés, hôte comme noyau : même sur du non-autoritaire, autant que l'oracle et la cible calculent pareil.
+
 ### Notes de bas de page (chapitre 3)
 
 [^1]: Ruoyu Sun, « Game Networking Demystified, Part II: Deterministic ». Analyse exhaustive des sources d'indéterminisme dans les simulations réseau.
@@ -1040,6 +1034,8 @@ Cette organisation linéaire est aussi naturellement vectorisable par le compila
 
 Le layout **SoA** est le défaut recommandé pour tous les composants ECS itérés par les systèmes de simulation.
 
+Dans le moteur, ce stockage prend corps dans la **Partition** : des chunks SoA à double buffer, un tampon d'écriture et un tampon de lecture basculés par un `swapBuffers()` atomique à la fin du tick. Le double buffer coûte 2× la mémoire, mais uniquement sur les données chaudes : compromis accepté, et mesuré. La contention est distribuée de la même façon : un SpinLock par chunk plutôt qu'un verrou global, si bien que deux threads qui travaillent sur des chunks différents ne se croisent jamais. La migration d'une entité entre chunks, elle, s'appuie sur le *swap-and-pop* avec itération à rebours ; l'itération avant provoquait un bug subtil (l'élément permuté à la place du supprimé échappait au parcours), leçon apprise une fois et pour de bon.
+
 ## 4.3 Composition over inheritance
 
 Le principe de **composition sur l'héritage** (*Composition over Inheritance*) est le fondement architectural de l'ECS : les capacités d'une entité sont définies par la combinaison de ses composants, et non par sa position dans une hiérarchie de classes.
@@ -1104,6 +1100,8 @@ auto newState = state
 
 L'absence d'effets de bord garantit que le pipeline est rejouable : même `state` + même `inputBuffer` = même `newState`, tick après tick, machine après machine.
 
+Ce pipeline conceptuel a une incarnation directe : le **SystemScheduler** du moteur. Chaque système ECS déclare les composants qu'il lit et ceux qu'il écrit, et l'ordonnanceur en déduit automatiquement un graphe de dépendances (DAG) : deux systèmes sans conflit d'accès s'exécutent en parallèle sur le ThreadPool, une *latch* synchronisant chaque étage du graphe. Côté client, le pipeline résolu enchaîne typiquement la consommation du ring réseau, les entrées/sorties client, la physique puis les métriques neuronales ; côté serveur, la même mécanique produit un ordre différent, déduit des mêmes déclarations. Personne ne maintient d'ordre d'exécution à la main : c'est le graphe qui fait foi, et il reste déterministe puisque la topologie ne dépend que des déclarations, pas du timing.
+
 ## 4.6 Patterns de conception pour le moteur
 
 Au-delà de ces paradigmes architecturaux, plusieurs design patterns du GoF (*Gang of Four*) et des *Game Programming Patterns* sont fondamentaux pour l'architecture de LplKernel. Le code compilable complet de ces patterns est fourni en Annexe A.
@@ -1151,6 +1149,8 @@ Au-delà de ces paradigmes architecturaux, plusieurs design patterns du GoF (*Ga
 | **Dirty Flag** | Éviter les recalculs inutiles | Matrice de transformation recalculée si modifiée |
 | **Spatial Partition** | Requêtes de proximité efficaces | Grille spatiale, Octree pour collisions |
 
+Le pattern Spatial Partition mérite qu'on s'y attarde, parce que son implémentation dans le moteur condense plusieurs idées de ce chapitre. La structure d'indexation est une **FlatAtomicsHashMap**, table de hachage plate à opérations atomiques, sans nœuds chaînés ni allocation dynamique. Sa clé est un **code de Morton** : les bits des coordonnées spatiales sont entrelacés (`part1by1` en 2D, `part1by2` en 3D, avec un biais pour ramener les coordonnées négatives dans le domaine non signé), ce qui produit un ordre en Z (*Z-order curve*) où la proximité spatiale se traduit par la proximité numérique des clés. Le tout est empaqueté sur 64 bits, code de Morton et indice de pool compris : une seule valeur atomique suffit pour localiser une entité et sa cellule.
+
 ## 4.7 Synthèse architecturale
 
 L'architecture de LplKernel repose sur un empilement cohérent :
@@ -1160,6 +1160,8 @@ L'architecture de LplKernel repose sur un empilement cohérent :
 3. **DI** pour la testabilité et l'isolation des systèmes.
 4. **Fonctionnel** pour le déterminisme et la rejouabilité.
 5. **Patterns GoF** pour la résolution de problèmes récurrents.
+
+Cet empilement se reflète jusque dans le découpage physique du code : le moteur est une architecture plate de 20 bibliothèques statiques indépendantes (`lpl-core`, `lpl-math`, `lpl-ecs`, `lpl-physics`, `lpl-net`, `lpl-render`, `lpl-bci`…), chacune déclarant explicitement ses dépendances dans son propre `xmake.lua`. Aucun couplage caché : si un module a besoin d'un autre, ça se lit dans son manifeste de build, et le graphe de dépendances du projet est celui du linker. L'expérience a tranché en faveur de ce modèle plat contre le monolithe `engine/` initial : il passe à l'échelle, et il force chaque frontière à être pensée.
 
 In fine, le code compilable de l'Annexe A illustre chacun de ces patterns dans le contexte spécifique du moteur FullDive.
 
@@ -1250,6 +1252,8 @@ graph LR
 - **Render Pass** : Définit les attachements (color, depth, stencil) et les sous-passes. Le driver peut optimiser les transitions de layout mémoire.
 - **Pipeline State Objects** : Toute la configuration du pipeline (shaders, rasterizer, blending) est pré-compilée en un objet immuable, éliminant les changements d'état coûteux.
 
+Le moteur n'expose d'ailleurs jamais Vulkan directement à la simulation : tout passe par une interface `IRenderer`, derrière laquelle vivent deux backends de plein droit. Le premier est le renderer Vulkan, pour le client de bureau. Le second est un rasterizer logiciel complet (projection, tri, remplissage, éclairage PBR, jusqu'au ray tracer et au rendu fovéé), qui dessine dans un simple framebuffer mémoire. Et ce second backend a le même statut que le premier : les deux sont confrontés l'un à l'autre par un test de parité de rendu (*RenderParity*), qui vérifie qu'à scène identique ils produisent des images cohérentes. La même culture de l'oracle que pour la physique (Chapitre 3), appliquée aux pixels.
+
 ### 5.3.2 Synchronisation CPU-GPU
 
 La synchronisation entre le CPU et le GPU est le point le plus critique pour la latence :
@@ -1291,6 +1295,10 @@ LibreCUDA forge manuellement des `ioctl` (`NV_ESC_RM_ALLOC`, `NV_ESC_RM_CONTROL`
 3. Rédiger un paquet QMD et déclencher un *Doorbell*, une écriture dans un registre MMIO qui ordonne au processeur de commandes du GPU de lire la file et d'exécuter la charge.
 
 Cette approche, fascinante académiquement, nécessite un volume de rétro-ingénierie prohibitif pour un OS d'apprentissage. La stratégie retenue pour LplKernel est d'utiliser CUDA dans l'espace utilisateur Linux pour le traitement BCI (Chapitre 7), et Vulkan Compute pour le moteur.
+
+Cette impasse bare-metal éclaire aussi le choix du rasterizer logiciel évoqué plus haut : puisque écrire un pilote GPU natif est hors de portée d'un noyau d'apprentissage, le profil client de LplKernel rend ses images par le backend logiciel de `IRenderer`, qui écrit directement dans le framebuffer VBE exposé par la couche d'abstraction matérielle. Le chemin de rendu du moteur est ainsi prouvé *freestanding* : aucune API graphique, aucun pilote, juste des pixels calculés et copiés.
+
+Côté simulation, le moteur applique la stratégie annoncée : la physique existe en deux backends interchangeables, CPU et CUDA. Le noyau de calcul GPU (`PhysicsKernel.cu`) intègre les corps en Euler semi-implicite, et le backend GPU n'est compilé que si l'option `cuda` du build est active ; sans elle, des stubs inline prennent le relais et le moteur se construit au g++ pur. Le choix s'effectue à l'exécution derrière la configuration du moteur, sans que le code appelant ne distingue jamais les deux chemins.
 
 ## 5.5 Motion Matching et animation procédurale
 
@@ -1417,6 +1425,8 @@ Le réseau est, par nature, l'antithèse du déterminisme. La latence varie impr
 
 Pour atteindre des latences sous-millisecondes requises par la VR multijoueur, LplKernel implémente un **Kernel Bypass** réseau inspiré de l'architecture **DPDK** (Data Plane Development Kit). Au lieu de subir le coût des interruptions matérielles et des multiples copies en mémoire de la pile TCP/IP classique, le pilote réseau (ex: Intel 8254x ou i217) mappe directement ses anneaux de descripteurs matériels (*Descriptor Rings*) dans une zone mémoire physique contiguë (allouée via le Buddy Allocator sous forme de `MBUFs`). Le CPU scrute ces anneaux en boucle (Polling), ce qui réalise un transfert **Zero-Copy DMA** absolu. Couplé au **Receive Side Scaling (RSS)**, la carte réseau hache elle-même les paquets UDP entrants et les distribue matériellement sur les différents cœurs CPU du système SMP.
 
+Avant ce bypass complet, le moteur a déjà éprouvé la même philosophie sous Linux, avec son module noyau dédié. Un hook Netfilter posé en `NF_INET_PRE_ROUTING` intercepte les paquets UDP du port de jeu et répond `NF_DROP` : choix assumé, le paquet intercepté ne remonte jamais la pile TCP/IP, il n'existe que pour la simulation. Le hook écrit directement dans un anneau de réception logé dans une mémoire partagée mmap'ée entre le noyau et le processus moteur (têtes et queues atomiques), et l'expéditeur est identifié par son couple adresse/port source extrait de l'en-tête IP, sans socket par client. À l'émission, la logique est symétrique et regroupée : le moteur remplit l'anneau TX puis réveille un thread noyau d'un seul `ioctl`, un « kick » qui expédie N paquets d'un coup, bien moins cher que N appels `sendto()`. Et parce qu'on ne développe pas toujours avec un module noyau sous la main (WSL, intégration continue), un repli socket UDP classique reste disponible derrière la même interface : indispensable pour itérer vite.
+
 ## 6.2 Modèles de synchronisation approfondis
 
 ### 6.2.1 Lockstep déterministe
@@ -1454,6 +1464,8 @@ Ce mécanisme exige :
 - Snapshots rapides : La sauvegarde/restauration de l'état doit être quasi-instantanée. Les allocateurs Arena (Chapitre 2) sont idéaux : un `memcpy` du bloc complet suffit.
 - Simulation rapide : La resimulation de N ticks doit être plus rapide que le temps réel. Les systèmes ECS (Chapitre 4) avec itération SoA permettent de resimuler 8+ ticks dans le budget d'une frame.
 - Déterminisme absolu : La resimulation doit produire exactement le même état qu'une simulation directe.
+
+Le module réseau du moteur réserve d'ailleurs sa place à cette stratégie de rollback aux côtés du transport et du protocole. La gestion des sessions y suit une leçon apprise dans le module noyau : un SpinLock crée de la contention dès que les lectures dominent, et le suivi des sessions est précisément un cas « beaucoup de lectures, peu d'écritures ». La structure visée est donc du **RCU** (*Read-Copy-Update*) : les lecteurs traversent la table des sessions sans jamais prendre de verrou, et les mises à jour publient une nouvelle version atomiquement.
 
 ## 6.3 Sérialisation : le Bitstream
 
@@ -1566,6 +1578,8 @@ void Replay(const std::vector<ReplayFrame>& log) {
 
 Le replay est rendu possible par le déterminisme : les mêmes inputs reproduisent identiquement les mêmes résultats. C'est un outil de débogage puissant et un mécanisme anti-triche (le serveur peut rejouer l'enregistrement pour vérifier la validité des actions signalées).
 
+Dans le moteur, ce mécanisme a son module dédié, la sérialisation d'état et le replay déterministe : chaque composant qui participe à l'état autoritaire implémente une interface de sérialisation, un enregistreur capture les instantanés (*StateSnapshot*) et le flux d'inputs, et un lecteur rejoue la session à l'identique. C'est la brique commune du diagnostic de désynchronisation (§6.4.2), du futur rollback et des tests de régression : une partie enregistrée est un test reproductible.
+
 ## 6.6 Communication inter-threads : SPSC lock-free
 
 Le thread réseau (réception de paquets) et le thread de simulation ne doivent jamais se bloquer mutuellement via un mutex. La solution, c'est la queue SPSC lock-free (Single-Producer, Single-Consumer) détaillée au Chapitre 2 (Ring Buffer).
@@ -1580,6 +1594,8 @@ graph LR
 ```
 
 Chaque queue est un Ring Buffer avec des atomiques `acquire`/`release`. Le thread réseau ne bloque jamais le thread de simulation, et vice versa : une propriété décisive pour tenir le pas de temps fixe sous les 16.67 ms.
+
+Un dernier choix d'architecture mérite mention : client et serveur partagent une seule et même classe réseau. La duplication (un chemin client, un chemin serveur) finit toujours en dérive de protocole, chaque copie évoluant de son côté ; une implémentation unique, et header-only, élimine la dérive et les problèmes d'ordre de link du même coup.
 
 ## 6.7 Synthèse
 
@@ -1658,9 +1674,7 @@ La suppression des artefacts est un prérequis avant toute analyse spectrale. Le
 
 L'**ADS1299** de Texas Instruments est le composant clé : un ADC sigma-delta 24 bits à 8 canaux, conçu spécifiquement pour le biopotentiel. Son rapport signal-bruit (SNR) de 120 dB permet de capturer les signaux EEG de l'ordre du microvolt avec une résolution suffisante pour l'analyse spectrale fine.[^4]
 
-> **Détails d'acquisition LplKernel (Cyton)**
->
-> Pour l'intégration *bare-metal* sans dépendre de bibliothèques de haut niveau, le pilote LplKernel communique avec le dongle RFduino de l'OpenBCI via le bus UART émulé (puce FTDI). Le baudrate doit impérativement être fixé à 115200 bauds. L'émission du caractère ASCII `b` déclenche le flux binaire. Chaque trame de 33 octets (cadencée à 250 Hz) est interceptée par l'ISR matériel et insérée instantanément dans un SPSC Lock-Free Ring Buffer pour éviter l'écrasement du FIFO matériel du contrôleur 16550A.
+Le pilote *bare-metal* de LplKernel dialogue avec le dongle RFduino de l'OpenBCI par le bus UART émulé (puce FTDI), sans dépendre d'aucune bibliothèque de haut niveau. Le baudrate est fixé à 115200 bauds, et l'émission du caractère ASCII `b` déclenche le flux binaire. Chaque trame de 33 octets, cadencée à 250 Hz, est capturée par l'ISR matériel et poussée immédiatement dans un ring buffer SPSC lock-free, pour ne jamais laisser le FIFO du contrôleur 16550A déborder. On retrouve mot pour mot le schéma producteur/consommateur du Chapitre 2 : décodage zéro en contexte d'interruption, tout le travail côté consommateur.
 
 ### 7.3.2 Traitement du signal et état FPU (AVX)
 
@@ -1691,6 +1705,8 @@ Le **Galea** (OpenBCI) est un casque intégré qui réunit EEG, EMG, EOG, EDA (a
 
 **LSL** est un protocole de transport réseau conçu pour la synchronisation de flux de données physiologiques multi-modaux. Il résout un problème critique : synchroniser temporellement des flux provenant de sources différentes (EEG à 250 Hz, eye-tracking à 120 Hz, capteurs de mouvement à 90 Hz) avec une précision sub-milliseconde.
 
+Côté build, le module `bci/` du moteur consomme BrainFlow, liblsl et Eigen comme dépendances déclarées, résolues depuis le dépôt officiel de paquets xmake (elles y ont été intégrées en amont, ce qui a supprimé le besoin d'un fork maison). C'est aussi le seul module à réactiver les exceptions C++ (`-fexceptions`), là où tout le reste du moteur compile en `-fno-exceptions` : ces bibliothèques scientifiques en dépendent, et on isole l'entorse au lieu de l'imposer partout.
+
 ### 7.4.3 OpenViBE
 
 **OpenViBE** est un environnement de développement visuel pour le BCI, développé par l'Inria. Il fournit :
@@ -1713,6 +1729,8 @@ Où :
 
 Un $R(t)$ élevé indique une tension musculaire (l'utilisateur serre les mâchoires, fronce les sourcils, contracte le cou). Un $R(t)$ faible indique une relaxation. Le système de neurofeedback peut encourager la relaxation en modifiant l'expérience VR (éclairage plus doux, musique apaisante, réduction de la complexité visuelle).
 
+Dans le code, ce $R(t)$ n'arrive pas brut jusqu'à la simulation. Les échantillons du flux Cyton sont d'abord reconstruits depuis le format ADS1299 : chaque canal est codé sur 24 bits en complément à deux, qu'il faut donc étendre de signe vers 32 bits avant tout calcul. La PSD est estimée par canal via FFT, intégrée sur la bande 40-70 Hz, puis moyennée ; le résultat est enfin lissé par une moyenne mobile exponentielle (EMA) pour absorber le bruit inter-trames sans introduire de latence perceptible. La métrique qui pilote l'adaptation VR est cette valeur lissée, pas la mesure instantanée.
+
 ### 7.5.2 Stabilité EEG : la métrique de Sollfrank
 
 La métrique de Sollfrank quantifie la stabilité temporelle du signal EEG en mesurant la distance statistique entre les matrices de covariance calculées sur des fenêtres temporelles successives. Si l'état cognitif de l'utilisateur est stable, les matrices de covariance varient peu ; s'il est distrait ou stressé, elles fluctuent.
@@ -1722,6 +1740,8 @@ La **distance de Mahalanobis** entre deux distributions multivariées sert de me
 $$D_M(\mathbf{x}, \boldsymbol{\mu}, \Sigma) = \sqrt{(\mathbf{x} - \boldsymbol{\mu})^T \Sigma^{-1} (\mathbf{x} - \boldsymbol{\mu})}$$
 
 Où $\mathbf{x}$ est le vecteur de features courant, $\boldsymbol{\mu}$ la moyenne d'une distribution de référence (calibration), et $\Sigma$ la matrice de covariance de cette distribution.
+
+Deux détails d'implémentation comptent ici. La matrice de covariance de référence est estimée avec la correction de Bessel (division par $N-1$ et non $N$), pour un estimateur non biaisé sur un échantillon fini de calibration. Et l'inverse $\Sigma^{-1}$ n'appelle aucune routine externe dans le chemin embarqué : il passe par une inversion matricielle maison (`matrix_inv`), au même titre que la distance riemannienne s'appuie sur une décomposition propre interne. Le module reste ainsi maître de son arithmétique, condition d'un portage éventuel hors de l'espace utilisateur.
 
 ### 7.5.3 Géométrie riemannienne : AIRM
 
@@ -1761,6 +1781,8 @@ double RiemannianDistance(const MatrixXd& C1, const MatrixXd& C2) {
     return std::sqrt(sumLogSq);
 }
 ```
+
+Toutes ces métriques supposent une **calibration** préalable, propre à chaque utilisateur et à chaque session : c'est la phase qui capture les distributions de référence ($\boldsymbol{\mu}$, $\Sigma$, matrices SPD moyennes) à partir desquelles la stabilité et la classification prennent un sens. Ce sous-système de calibration est en cours d'intégration dans le module `bci/`, aux côtés des métriques qu'il alimente.
 
 ## 7.6 Paradigmes d'entrée BCI
 
@@ -1857,7 +1879,7 @@ Chacune de ces hypothèses est violée par la mécanique quantique : la mémoir
 
 Le **théorème de non-clonage** (*No-Cloning Theorem*), démontré par Wootters et Zurek en 1982, affirme qu'il est impossible de créer une copie exacte d'un état quantique arbitraire inconnu :[^2]
 
-$$\nexists \; U : U|\psi\rangle|0\rangle = |\psi\rangle|\psi\rangle \quad \forall |\psi\rangle$$
+$$\nexists \; U : U|\psi\rangle|0\rangle = |\psi\rangle|\psi\rangle \quad \forall |\psi\rangle$$
 
 La démonstration repose sur la linéarité de la mécanique quantique. Supposons qu'une telle « machine à cloner » unitaire $U$ existe. Elle devrait satisfaire simultanément :
 
@@ -1870,7 +1892,7 @@ $$\langle \psi | \phi \rangle = (\langle \psi | \phi \rangle)^2$$
 
 Cette égalité n'est satisfaite que si $\langle \psi | \phi \rangle = 0$ (états orthogonaux, comportement de bits classiques 0/1) ou $\langle \psi | \phi \rangle = 1$ (états identiques). Il n'existe donc aucune transformation unitaire universelle capable de cloner un état de superposition arbitraire.[^2]
 
-> La seule exception est le clonage imparfait, où une copie approximative avec une fidélité maximale de $5/6$ peut être générée, insuffisant pour du calcul exact, mais étudié en cryptographie quantique (attaques d'écoute).
+La seule exception est le clonage imparfait : une copie approximative, de fidélité maximale $5/6$, peut être produite. Insuffisant pour du calcul exact, mais étudié en cryptographie quantique, où il modélise les attaques d'écoute.
 
 ### 8.3.2 Conséquences dévastatrices pour le noyau
 
@@ -2144,9 +2166,7 @@ Les **C-States** définissent les niveaux d'inactivité du processeur dans l'ét
 
 Les **P-States** (Performance States) implémentent le DVFS dans C0 : P0 = fréquence/tension max, Pn = couples progressivement réduits. Les **D-States** (D0 à D3) contrôlent individuellement l'alimentation des périphériques.[^7]
 
-> **Contrôle Fin du DVFS sous x86**
->
-> La modification du P-State sur les processeurs Intel s'effectue traditionnellement en écrivant dans le registre MSR `IA32_PERF_CTL`. Cependant, confier la décision au système d'exploitation nécessite de connaître la *charge réelle* du CPU. Les processeurs modernes intègrent donc deux compteurs MSR matériels : **`IA32_APERF`** (Active Performance) qui compte les cycles uniquement pendant que le CPU tourne, et **`IA32_MPERF`** (Maximum Performance) qui compte les cycles à la fréquence nominale absolue. Le ratio `APERF / MPERF` donne au gouverneur de fréquence (comme le driver `intel_pstate` de Linux ou l'EDF scheduler de LplKernel) une mesure d'activité parfaite pour calculer dynamiquement la tension minimale requise, sans tuer les garanties temporelles.
+La modification du P-State sur les processeurs Intel s'effectue traditionnellement en écrivant dans le registre MSR `IA32_PERF_CTL`. Encore faut-il, pour confier la décision au système d'exploitation, connaître la *charge réelle* du CPU. Les processeurs modernes exposent pour cela deux compteurs MSR : `IA32_APERF` (Active Performance), qui ne compte les cycles que pendant que le CPU tourne effectivement, et `IA32_MPERF` (Maximum Performance), qui les compte à la fréquence nominale absolue. Le ratio `APERF / MPERF` donne au gouverneur de fréquence, qu'il s'agisse du driver `intel_pstate` de Linux ou de l'ordonnanceur EDF de LplKernel, une mesure d'activité exacte pour calculer dynamiquement la tension minimale requise sans sacrifier les garanties temporelles.
 
 ## 9.5 Implémentation assembleur : les instructions d'arrêt
 
@@ -2156,9 +2176,7 @@ L'instruction **HLT** (*Halt*, opcode `0xF4`) suspend l'exécution du processeur
 
 Sa limite : dans un système multiprocesseur, réveiller un cœur en HLT nécessite un routage complexe de l'APIC et une **IPI** (*Inter-Processor Interrupt*) coûteuse en latence. Pour un moteur temps réel réagissant aux événements BCI et réseau sous la milliseconde, cette latence de réveil est inacceptable.
 
-> **Implémentation LplKernel : réveil instantané**
->
-> LplKernel n'utilise pas `HLT` dans son *idle loop*. À la place, il exploite la paire d'instructions matérielles **`MONITOR`** / **`MWAIT`**. Le cœur inactif arme le `MONITOR` sur l'adresse de la structure *Ring Buffer* de la carte réseau ou du capteur BCI, puis appelle `MWAIT` pour entrer dans un C-State profond (C3/C6) et couper son alimentation. Dès que le périphérique DMA écrit le paquet en mémoire physique, la modification de la ligne de cache réveille *instantanément* le CPU, évitant tout le cheminement tortueux d'une interruption IRQ traditionnelle.
+C'est exactement ce que fait LplKernel dans sa boucle d'inactivité : plutôt que `HLT`, il emploie la paire d'instructions `MONITOR` / `MWAIT`. Le cœur inactif arme le `MONITOR` sur l'adresse du ring buffer de la carte réseau ou du capteur BCI, puis appelle `MWAIT` pour descendre dans un C-State profond (C3/C6) et couper son alimentation. Dès que le périphérique écrit le paquet en mémoire physique par DMA, la modification de la ligne de cache surveillée réveille le CPU instantanément, sans passer par le cheminement tortueux d'une interruption IRQ classique.
 
 ```asm
 ; x86 : mise en veille avec surveillance d'adresse mémoire
@@ -2322,9 +2340,7 @@ LplKernel adopte une philosophie inverse : le noyau ne sert qu'à un seul objec
 
 Dans un OS classique, chaque interaction application → noyau (lecture fichier, envoi réseau, allocation mémoire) transite par un appel système (`INT 0x80`, `SYSENTER`, `SYSCALL`). Ce mécanisme force un changement de contexte : vidage des pipelines d'exécution du CPU, transition Ring 3 → Ring 0, pollution du cache L1/L2 d'instructions. Sur une architecture x86 moderne, un syscall simple coûte entre 100 et 400 cycles CPU, inacceptable quand le budget de frame est de 11 ms (90 Hz).[^1]
 
-> **Le piège mortel de `SWAPGS`**
->
-> Lors de l'utilisation de l'instruction `SYSCALL` (très rapide), le processeur passe en Ring 0 sans changer la pile (`RSP` pointe toujours vers la pile utilisateur). Le noyau doit exécuter `SWAPGS` pour basculer le registre `GS` vers la structure interne du CPU (`MSR_KERNEL_GS_BASE`) afin d'accéder à la pile noyau sécurisée. Sauf que si une interruption matérielle (NMI ou IRQ timer) survient alors que le processeur est *déjà* en Ring 0, le handler d'interruption ne doit surtout pas exécuter aveuglément `SWAPGS` : cela inverserait le registre GS vers l'espace utilisateur, ce qui provoquerait un crash absolu (Double Fault) au moindre accès mémoire suivant. C'est l'un des bugs les plus subtils et destructeurs en OSDev.
+Un piège classique guette ici, autour de `SWAPGS`. L'instruction `SYSCALL`, très rapide, fait passer le processeur en Ring 0 sans changer de pile : `RSP` pointe encore sur la pile utilisateur. Le noyau doit donc exécuter `SWAPGS` pour basculer le registre `GS` vers sa structure interne (`MSR_KERNEL_GS_BASE`) et accéder à la pile noyau sécurisée. Sauf qu'une interruption matérielle (NMI ou IRQ timer) peut survenir alors que le processeur est *déjà* en Ring 0 : le handler ne doit surtout pas exécuter `SWAPGS` aveuglément, sous peine de renvoyer `GS` vers l'espace utilisateur et de provoquer une Double Fault au premier accès mémoire. C'est l'un des bugs les plus subtils et les plus destructeurs de l'OSDev.
 
 ### 10.2.2 Le modèle Submission/Completion Queue
 
@@ -2390,7 +2406,7 @@ L'ordonnancement Round-Robin classique distribue le temps CPU de manière « é
 
 L'ordonnanceur **EDF** (*Earliest Deadline First*) remplace la notion de priorité statique par une garantie temporelle contractuelle. Chaque tâche déclare un SLA (*Service Level Agreement*) de la forme :
 
-$$\text{« J'ai besoin de } C \text{ ms de CPU pur d'ici les } T \text{ prochaines ms. »}$$
+$$\text{« J'ai besoin de } C \text{ ms de CPU pur d'ici les } T \text{ prochaines ms. »}$$
 
 Par exemple : « Le thread de rendu VR a besoin de 2 ms toutes les 11 ms » (90 Hz). Le noyau vérifie mathématiquement la faisabilité via le **test de Liu \& Layland** :
 
@@ -2442,6 +2458,12 @@ Le coût mesuré de cette instrumentation est strictement borné à la vitesse d
 ### 10.9.1 La vision unifiée
 
 LplPlugin (le moteur/engine côté espace utilisateur) et LplKernel sont conçus pour converger progressivement. L'objectif final est que le moteur soit compilé comme une librairie kernel-adjacent (similaire à `libc`/`libk`), intégrée directement dans le noyau, ce qui élimine la frontière user/kernel pour les chemins critiques.
+
+Concrètement, cette convergence suit le **modèle B** : le noyau lie le moteur comme un module statique natif (`libengine.a`) derrière une mince couche d'abstraction matérielle (HAL) en C. Le noyau ne contient aucune logique de rendu, de scène, d'ECS ni de mathématiques ; toute cette logique reste dans le moteur, et reste multiplateforme. Le seam entre les deux est une poignée de fonctions C (`libengine_sim_init/step/render/fold`) que le noyau appelle sans jamais connaître la simulation active : celle-ci se choisit par un unique alias dans le runtime, ce qui rend le jeu enfichable et le noyau agnostique de son contenu. Quand le moteur est absent, le noyau détecte l'absence et démarre quand même en mode dégradé (`LPL_PLUGIN_UNAVAILABLE`).
+
+Cette intégration ne se fait pas à l'aveugle : chaque tranche fonctionnelle (une « slice ») portée du moteur vers le noyau se livre comme une unité vérifiable, selon un rituel invariable. Le code moteur vit dans son module LplPlugin. Un test de parité Linux exécute la tranche et imprime ses signatures. Un smoke reproduit la même tranche dans le noyau et replie les mêmes signatures (FNV-1a, cf. Chapitre 3). Les deux chemins de build sont mis à jour ensemble, le glob xmake automatique et la liste d'objets explicite du Makefile `libengine`. Enfin, le boot QEMU prouve que la signature repliée dans le noyau égale l'oracle Linux, bit pour bit. Une tranche n'est « finie » que lorsque cette égalité tient. C'est la discipline du Chapitre 3 généralisée à toute la convergence : rien n'entre dans le noyau sans oracle.
+
+Le data-plane suit la même trajectoire côté matériel. L'énumération PCI du noyau détecte déjà la carte e1000 (Intel 82540EM) exposée par QEMU, avec sa fenêtre MMIO ; le pilote natif qui s'y grefferait remplacerait le repli socket `/dev/lpl0` par le chemin zero-copy décrit plus haut, fermant la boucle entre le module réseau du moteur (Chapitre 6) et le silicium.
 
 Cette convergence suit une feuille de route en 5 phases unifiées :
 
@@ -2656,6 +2678,7 @@ Patterns couverts :
 | **AP** | Application Processor : Cœur CPU secondaire sur architecture SMP |
 | **APIC** | Advanced Programmable Interrupt Controller : Contrôleur matériel gérant SMP et IPI |
 | **BCI** | Brain-Computer Interface : Interface cerveau-ordinateur |
+| **Bessel (correction de)** | Division par $N-1$ (et non $N$) dans l'estimation d'une variance/covariance : estimateur non biaisé sur échantillon fini |
 | **BSP** | Bootstrap Processor : Cœur CPU principal exécutant le code d'initialisation |
 | **C-State** | Core State : Niveau d'inactivité du processeur (C0=actif à C4+=Deep Sleep) |
 | **CDMM** | Coherent Driver-based Memory Management : Gestion mémoire GPU NVIDIA |
@@ -2707,6 +2730,8 @@ Patterns couverts :
 | **LUT** | Look-Up Table : Table de correspondance pré-calculée |
 | **MADT** | Multiple APIC Description Table : Table ACPI décrivant la topologie d'interruptions |
 | **MESI** | Modified, Exclusive, Shared, Invalid : Protocole de cohérence de cache |
+| **Modèle B** | Contrat de convergence LplKernel↔LplPlugin : le noyau lie le moteur comme module statique (`libengine.a`) derrière un HAL C ; zéro logique moteur dans le noyau |
+| **Morton (code de)** | Entrelacement des bits des coordonnées (Z-order curve) : la proximité spatiale devient proximité numérique de la clé de hachage |
 | **MPK/PKeys** | Memory Protection Keys : Isolation de l'espace d'adressage via matériel |
 | **MTP** | Motion-to-Photon : Latence entre mouvement et affichage |
 | **MWAIT** | Monitor Wait : Instruction x86 de sommeil avec surveillance d'adresse mémoire |
@@ -2721,6 +2746,7 @@ Patterns couverts :
 | **QOS** | Quantum Operating System : Système d'exploitation quantique |
 | **RMAPI** | Resource Manager API : API du gestionnaire de ressources du pilote NVIDIA |
 | **RSS** | Receive Side Scaling : Distribution matérielle du trafic réseau entrant |
+| **RCU** | Read-Copy-Update : schéma de synchronisation où les lecteurs ne prennent aucun verrou et les écrivains publient une nouvelle version atomiquement ; idéal en lecture dominante |
 | **RTC** | Real-Time Clock : Horloge temps réel à oscillateur quartz |
 | **RTOS** | Real-Time Operating System : Système d'exploitation temps réel |
 | **SASOS** | Single Address Space OS : OS partageant un espace virtuel unique de 64 bits |
@@ -2728,6 +2754,7 @@ Patterns couverts :
 | **SEV** | Send Event : Instruction ARM réveillant un cœur en WFE |
 | **SIMD** | Single Instruction, Multiple Data : Parallélisme de données |
 | **SLUB** | Unqueued Slab Allocator : Allocateur d'objets noyau Linux |
+| **Slice (tranche de convergence)** | Unité vérifiable portée du moteur au noyau : header + test de parité Linux + smoke noyau + double build, validée par égalité de signature FNV-1a au boot QEMU |
 | **SPD** | Symmetric Positive-Definite : Matrice symétrique définie positive |
 | **SPSC** | Single-Producer, Single-Consumer : File d'attente sans verrou |
 | **SSVEP** | Steady-State Visually Evoked Potential : Potentiel évoqué visuel |
