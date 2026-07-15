@@ -1,0 +1,280 @@
+---
+import Base from "../layouts/Base.astro";
+import {
+  PROJECT_ORDER,
+  PROJECT_META,
+  STATUS_META,
+  tracksByProject,
+  statusCounts,
+  itemById,
+  type Status,
+} from "../data/roadmap";
+
+const statusOrder: Status[] = ["done", "in-progress", "planned", "idea"];
+const totals = statusCounts();
+const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+
+const projects = PROJECT_ORDER.map((p) => ({
+  key: p,
+  meta: PROJECT_META[p],
+  tracks: tracksByProject(p),
+  counts: statusCounts(p),
+}));
+---
+
+<Base
+  title="Roadmap — The Laplace Project"
+  description="Cross-project roadmap for LplKernel, the engine convergence, and LplPlugin — status, phases and dependencies in one place."
+>
+  <section class="py-14">
+    <h1 class="text-3xl font-bold mb-2">Roadmap</h1>
+    <p class="text-lpl-muted max-w-3xl mb-6">
+      One view over three moving parts: the <span class="text-lpl-accent">kernel</span> (OSDev
+      phases), the <span class="text-lpl-accent">convergence</span> that links the engine into
+      ring-0, and the <span class="text-lpl-accent">engine</span> itself. Dependencies that cross
+      from one project into another are drawn as <span class="text-lpl-accent2">merge</span> links —
+      that's where the two repos meet.
+    </p>
+
+    <!-- Legend -->
+    <div class="flex flex-wrap gap-4 text-xs text-lpl-muted mb-8">
+      {
+        statusOrder.map((s) => (
+          <span class="inline-flex items-center gap-1.5">
+            <span style={`color:${STATUS_META[s].color}`}>{STATUS_META[s].glyph}</span>
+            {STATUS_META[s].label}
+            <span class="text-lpl-border">·</span>
+            <span class="tabular-nums">{totals[s]}</span>
+          </span>
+        ))
+      }
+      <span class="text-lpl-border">|</span>
+      <span class="tabular-nums">{grandTotal} items total</span>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="flex flex-wrap items-center gap-2 mb-10 text-sm" id="filters">
+      <span class="text-lpl-muted mr-1">Project:</span>
+      <button data-project-filter="all" class="proj-btn is-active">All</button>
+      {
+        projects.map((p) => (
+          <button data-project-filter={p.key} class="proj-btn">
+            {p.meta.label}
+          </button>
+        ))
+      }
+      <span class="text-lpl-muted ml-4 mr-1">Status:</span>
+      {
+        statusOrder.map((s) => (
+          <button data-status-filter={s} class="stat-btn is-active" style={`--c:${STATUS_META[s].color}`}>
+            {STATUS_META[s].glyph} {STATUS_META[s].label}
+          </button>
+        ))
+      }
+    </div>
+
+    <!-- Projects -->
+    <div class="space-y-16">
+      {
+        projects.map((p) => (
+          <div class="project-block" data-project={p.key}>
+            <div class="flex items-baseline gap-3 mb-1 border-b border-lpl-border pb-2">
+              <h2 class="text-2xl font-bold font-mono" style={`color:${p.meta.accent}`}>
+                {p.meta.label}
+              </h2>
+              <span class="text-xs text-lpl-muted tabular-nums">
+                {p.counts.done} done · {p.counts["in-progress"]} active ·{" "}
+                {p.counts.planned + p.counts.idea} ahead
+              </span>
+            </div>
+            <p class="text-lpl-muted text-sm mb-8">{p.meta.blurb}</p>
+
+            <div class="space-y-10">
+              {p.tracks.map((track) => (
+                <div class="track-block">
+                  <div class="flex items-center gap-3 mb-4">
+                    <h3 class="text-sm font-mono uppercase tracking-wider text-lpl-text">
+                      {track.name}
+                    </h3>
+                    <div class="flex-1 h-px bg-lpl-border" />
+                    <span class="text-xs text-lpl-muted tabular-nums">{track.progress}%</span>
+                    <div class="w-24 h-1 bg-lpl-border/40">
+                      <div class="h-full" style={`width:${track.progress}%;background:${p.meta.accent}`} />
+                    </div>
+                  </div>
+
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    {track.items.map((it) => (
+                      <article
+                        id={`item-${it.id}`}
+                        class="roadmap-item lpl-panel rounded-none p-4 scroll-mt-24"
+                        data-project={it.project}
+                        data-status={it.status}
+                      >
+                        <div class="flex items-start gap-2 mb-1">
+                          <span
+                            class="mt-0.5 shrink-0"
+                            style={`color:${STATUS_META[it.status].color}`}
+                            title={STATUS_META[it.status].label}
+                          >
+                            {STATUS_META[it.status].glyph}
+                          </span>
+                          <h4 class="font-semibold leading-snug flex-1">{it.title}</h4>
+                          {it.phase && (
+                            <span class="text-[10px] font-mono px-1.5 py-0.5 border border-lpl-border text-lpl-muted shrink-0">
+                              {it.phase}
+                            </span>
+                          )}
+                        </div>
+
+                        {typeof it.progress === "number" && (
+                          <div class="flex items-center gap-2 mb-2 ml-6">
+                            <div class="flex-1 h-1 bg-lpl-border/40">
+                              <div
+                                class="h-full"
+                                style={`width:${it.progress}%;background:${STATUS_META[it.status].color}`}
+                              />
+                            </div>
+                            <span class="text-[10px] text-lpl-muted tabular-nums">{it.progress}%</span>
+                          </div>
+                        )}
+
+                        {it.detail && (
+                          <p class="text-xs text-lpl-muted leading-relaxed ml-6 mb-2">{it.detail}</p>
+                        )}
+
+                        {(it.dependsOn?.length || it.tags?.length) && (
+                          <div class="flex flex-wrap items-center gap-1.5 ml-6">
+                            {it.dependsOn?.map((dep) => {
+                              const target = itemById.get(dep);
+                              const cross = target && target.project !== it.project;
+                              return (
+                                <a
+                                  href={`#item-${dep}`}
+                                  class={`dep-chip text-[10px] font-mono px-1.5 py-0.5 border ${
+                                    cross
+                                      ? "border-lpl-accent2/60 text-lpl-accent2 bg-lpl-accent2/10"
+                                      : "border-lpl-border text-lpl-muted"
+                                  }`}
+                                  title={target ? target.title : dep}
+                                >
+                                  {cross ? "⤳ merge: " : "← "}
+                                  {target ? target.title : dep}
+                                </a>
+                              );
+                            })}
+                            {it.tags?.map((t) => (
+                              <span class="text-[10px] px-1.5 py-0.5 text-lpl-muted bg-white/5">#{t}</span>
+                            ))}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      }
+    </div>
+
+    <p id="empty-note" class="hidden text-center text-lpl-muted py-16">
+      Nothing matches this filter.
+    </p>
+
+    <div class="mt-16 rounded-none border border-lpl-border p-6">
+      <p class="text-lpl-muted text-sm">
+        This roadmap is a synthesized cross-project view. The exhaustive, item-by-item checklists
+        live in the repos: <code>LplKernel/docs/ROADMAP.md</code> and the LplPlugin wiki
+        (<code>Roadmap</code>, <code>Implementation-Status</code>, <code>Future-Ideas</code>).
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .proj-btn,
+  .stat-btn {
+    border: 1px solid var(--color-lpl-border);
+    padding: 0.25rem 0.6rem;
+    color: var(--color-lpl-muted);
+    transition: all 0.15s ease;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+  .proj-btn:hover,
+  .stat-btn:hover {
+    color: var(--color-lpl-text);
+    border-color: var(--color-lpl-muted);
+  }
+  .proj-btn.is-active {
+    color: var(--color-lpl-accent);
+    border-color: var(--color-lpl-accent);
+    background: rgba(255, 140, 0, 0.08);
+  }
+  .stat-btn.is-active {
+    color: var(--c);
+    border-color: color-mix(in srgb, var(--c) 60%, transparent);
+    background: color-mix(in srgb, var(--c) 12%, transparent);
+  }
+  .stat-btn:not(.is-active) {
+    opacity: 0.5;
+  }
+  .dep-chip:hover {
+    filter: brightness(1.4);
+  }
+</style>
+
+<script>
+  const state = {
+    project: "all",
+    statuses: new Set(["done", "in-progress", "planned", "idea"]),
+  };
+
+  const items = Array.from(document.querySelectorAll<HTMLElement>(".roadmap-item"));
+  const tracks = Array.from(document.querySelectorAll<HTMLElement>(".track-block"));
+  const blocks = Array.from(document.querySelectorAll<HTMLElement>(".project-block"));
+  const emptyNote = document.getElementById("empty-note");
+
+  function apply() {
+    let visible = 0;
+    for (const el of items) {
+      const okP = state.project === "all" || el.dataset.project === state.project;
+      const okS = state.statuses.has(el.dataset.status || "");
+      const show = okP && okS;
+      el.style.display = show ? "" : "none";
+      if (show) visible++;
+    }
+    // Hide tracks/projects that ended up empty.
+    for (const t of tracks) {
+      const any = t.querySelector<HTMLElement>('.roadmap-item:not([style*="display: none"])');
+      t.style.display = any ? "" : "none";
+    }
+    for (const b of blocks) {
+      const any = b.querySelector<HTMLElement>('.track-block:not([style*="display: none"])');
+      b.style.display = any ? "" : "none";
+    }
+    if (emptyNote) emptyNote.classList.toggle("hidden", visible !== 0);
+  }
+
+  document.querySelectorAll<HTMLElement>("[data-project-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.project = btn.dataset.projectFilter!;
+      document
+        .querySelectorAll("[data-project-filter]")
+        .forEach((b) => b.classList.toggle("is-active", b === btn));
+      apply();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-status-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const s = btn.dataset.statusFilter!;
+      if (state.statuses.has(s)) state.statuses.delete(s);
+      else state.statuses.add(s);
+      btn.classList.toggle("is-active", state.statuses.has(s));
+      apply();
+    });
+  });
+</script>
