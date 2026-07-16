@@ -17,6 +17,8 @@
 
 #include <lpl/samples/CubePile.hpp>
 
+#include <new>
+
 namespace {
 // The active simulation. Swapping this single alias plugs in a different sim.
 using ActiveSim = lpl::samples::CubePile;
@@ -68,10 +70,24 @@ constexpr lpl::core::u32 kPW = 480u;
 constexpr lpl::core::u32 kPH = 300u;
 lpl::core::u32 g_pcolor[kPW * kPH];
 lpl::core::f32 g_pdepth[kPW * kPH];
-ActiveSim g_sim;
+
+// The active sim owns an ecs::Registry (pmr → heap). Constructing it at C++
+// static-init time (init_array) would touch the kernel heap before kernel_main
+// has brought it up — an early fault, before any serial output. So the storage
+// lives in BSS and the object is placement-constructed lazily on the first
+// libengine_sim_init() call, which the kernel issues only after the heap is up.
+alignas(ActiveSim) unsigned char g_sim_storage[sizeof(ActiveSim)];
+ActiveSim *g_sim = nullptr;
+
+ActiveSim &sim()
+{
+    if (g_sim == nullptr)
+        g_sim = new (static_cast<void *>(g_sim_storage)) ActiveSim();
+    return *g_sim;
+}
 } // namespace
 
-extern "C" void libengine_sim_init(void) { g_sim.init(); }
+extern "C" void libengine_sim_init(void) { sim().init(); }
 
 extern "C" uint32_t libengine_sim_entity_count(void) { return lpl::samples::CubePile::count(); }
 
@@ -80,7 +96,7 @@ extern "C" uint32_t libengine_sim_entity_count(void) { return lpl::samples::Cube
 // the display allows (uncapped) — the classic fixed-timestep / render split.
 // Calling this exactly tick_hz times per second keeps animation speed
 // independent of frame rate.
-extern "C" void libengine_sim_step(void) { g_sim.step(); }
+extern "C" void libengine_sim_step(void) { sim().step(); }
 
 // Render the current state through the host-driven orbit camera and return the
 // pixels. Pure render (no step) — safe to call many times per simulation tick.
@@ -91,7 +107,7 @@ extern "C" const lpl::core::u32 *libengine_sim_render(float yaw, float pitch, fl
 {
     using namespace lpl;
     render::RenderTarget rt{g_pcolor, g_pdepth, kPW, kPH};
-    g_sim.render(rt, samples::CubePile::Camera{yaw, pitch, dist, possess});
+    sim().render(rt, samples::CubePile::Camera{yaw, pitch, dist, possess});
     if (out_w != nullptr)
         *out_w = kPW;
     if (out_h != nullptr)
