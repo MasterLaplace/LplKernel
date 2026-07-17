@@ -85,8 +85,7 @@ kernel/core/kernel_splash.o \
 kernel/core/kernel_smp.o \
 kernel/core/kernel_smoke_batch.o \
 kernel/core/libengine_smoke.o \
-kernel/graphics/sysmon.o \
-kernel/graphics/client_app.o \
+kernel/diag/sysmon.o \
 kernel/core/kernel.o \
 cxx/cxx_runtime.o \
 cxx/kstd_support.o \

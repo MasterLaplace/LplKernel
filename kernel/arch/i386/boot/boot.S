@@ -52,8 +52,16 @@ multiboot_header:
 #endif
 
 .section .bootstrap_stack, "aw", @nobits
+/* Canary word placed BELOW stack_bottom (the low, growth-facing end of the
+ * kernel stack). A stack overflow writes past stack_bottom into this word
+ * first; kernel_stack_guard_check() reports it instead of silently clobbering
+ * the adjacent .bss globals (which is how a 16 KiB stack used to corrupt
+ * lpl::core::gActiveLogger during the CubePile software-render pass). */
+.global stack_guard
+stack_guard:
+.skip 4
 stack_bottom:
-.skip 16384 /* 16 KiB */
+.skip 65536 /* 64 KiB — software rasterizer over 1024 entities needs headroom */
 stack_top:
 
 .section .bss, "aw", @nobits

@@ -1,9 +1,9 @@
 #define __LPL_KERNEL__
 #include <kernel/config.h>
 
-#include <kernel/graphics/sysmon.h>
+#include <kernel/diag/sysmon.h>
 
-#include <kernel/graphics/font8x16.h>
+#include <kernel/diag/font8x16.h>
 
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/pci.h>
@@ -28,7 +28,7 @@
 
 /* ------------------------------------------------------------------------- */
 /* Surface drawing layer — renders into the HAL display buffer (virtio-gpu or */
-/* software-LFB), then hal_display_present() flips it. Colors are 0x00RRGGBB. */
+/* software-LFB), then hardware_abstraction_layer_display_present() flips it. Colors are 0x00RRGGBB. */
 /* ------------------------------------------------------------------------- */
 static uint32_t *g_buf;     /* active draw target (back buffer if any)   */
 static uint32_t g_pitch_px; /* pixels per scanline of the draw target    */
@@ -55,7 +55,7 @@ static void sysmon_blit_present(void)
                 dst[x] = src[x];
         }
     }
-    hal_display_present();
+    hardware_abstraction_layer_display_present();
 }
 
 static inline uint32_t sm_rgb(uint8_t r, uint8_t g, uint8_t b)
@@ -495,8 +495,9 @@ static void sysmon_pace(void)
 
 void kernel_sysmon_run(Serial_t *com1)
 {
-    hal_surface_descriptor_t surface;
-    if (!hal_display_available() || !hal_display_query_surface(&surface) || surface.buffer == 0 ||
+    hardware_abstraction_layer_surface_descriptor_t surface;
+    if (!hardware_abstraction_layer_display_available() ||
+        !hardware_abstraction_layer_display_query_surface(&surface) || surface.buffer == 0 ||
         surface.bits_per_pixel != 32u || surface.width < 320u || surface.height < 240u)
     {
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: sysmon: no usable 32bpp display, skipped\n");

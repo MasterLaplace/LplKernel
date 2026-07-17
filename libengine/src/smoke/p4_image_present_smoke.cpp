@@ -4,7 +4,7 @@
 ** File description:
 ** P4 image present smoke — paints a 2D scene with the lpl::image Painter into a
 ** full-surface Image and blits it to the display scanout via the IDisplayBackend
-** HAL, then presents. Proves the Image -> hal_display -> GPU/LFB path end to end.
+** HAL, then presents. Proves the Image -> hardware_abstraction_layer_display -> GPU/LFB path end to end.
 */
 #include "libengine/libengine.h"
 

@@ -220,6 +220,15 @@ private:
     void reallocate(size_type new_capacity)
     {
         T *const fresh = _allocator.allocate(new_capacity);
+        /* Honour the out-of-memory contract stated at the top of this file.
+           Without this the failure is silent and far worse than a halt: _data
+           would be set to nullptr while _capacity claimed the requested size,
+           so the next emplace_back placement-news through a null pointer, and
+           resize()'s `while (_size < new_size) emplace_back(...)` never
+           terminates because the growth never takes. */
+        if (fresh == nullptr)
+            fatal("kstd::vector: out of memory growing storage");
+
         for (size_type i = 0u; i < _size; ++i)
         {
             ::new (static_cast<void *>(fresh + i)) T(std::move_if_noexcept(_data[i]));

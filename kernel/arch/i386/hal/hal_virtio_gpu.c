@@ -89,13 +89,13 @@ static bool is_virtio_gpu(const PeripheralComponentInterconnectDevice_t *dev)
     return dev->device_id == VIRTIO_GPU_DEVICE_ID_MODERN || dev->device_id == VIRTIO_GPU_DEVICE_ID_TRANSITIONAL;
 }
 
-bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info)
+bool hardware_abstraction_layer_virtio_gpu_probe(hardware_abstraction_layer_virtio_gpu_info_t *out_info)
 {
     if (out_info == (void *) 0)
         return false;
 
     /* Zero-initialise so present=false / all-zero on no match. */
-    *out_info = (hal_virtio_gpu_info_t){0};
+    *out_info = (hardware_abstraction_layer_virtio_gpu_info_t){0};
 
     const uint32_t count = peripheral_component_interconnect_get_device_count();
     for (uint32_t i = 0u; i < count; ++i)
@@ -136,20 +136,22 @@ bool hal_virtio_gpu_probe(hal_virtio_gpu_info_t *out_info)
 }
 
 /* Select the destination cap slot for a virtio cfg_type, or NULL to ignore. */
-static hal_virtio_pci_cap_t *cap_slot_for_type(hal_virtio_gpu_mapping_t *mapping, uint8_t cfg_type)
+static hardware_abstraction_layer_virtio_pci_cap_t *
+cap_slot_for_type(hardware_abstraction_layer_virtio_gpu_mapping_t *mapping, uint8_t cfg_type)
 {
     switch (cfg_type)
     {
-    case HAL_VIRTIO_PCI_CAP_COMMON_CFG: return &mapping->common;
-    case HAL_VIRTIO_PCI_CAP_NOTIFY_CFG: return &mapping->notify;
-    case HAL_VIRTIO_PCI_CAP_ISR_CFG: return &mapping->isr;
-    case HAL_VIRTIO_PCI_CAP_DEVICE_CFG: return &mapping->device;
+    case HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_COMMON_CFG: return &mapping->common;
+    case HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_NOTIFY_CFG: return &mapping->notify;
+    case HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_ISR_CFG: return &mapping->isr;
+    case HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_DEVICE_CFG: return &mapping->device;
     default: return (void *) 0;
     }
 }
 
 /* Walk the PCI capability list, recording every virtio cfg structure. */
-static void walk_virtio_capabilities(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mapping_t *mapping)
+static void walk_virtio_capabilities(const hardware_abstraction_layer_virtio_gpu_info_t *info,
+                                     hardware_abstraction_layer_virtio_gpu_mapping_t *mapping)
 {
     const uint16_t status = peripheral_component_interconnect_config_read_word(
         info->bus, info->device, info->function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_STATUS);
@@ -169,7 +171,7 @@ static void walk_virtio_capabilities(const hal_virtio_gpu_info_t *info, hal_virt
         {
             const uint8_t cfg_type = peripheral_component_interconnect_config_read_byte(
                 info->bus, info->device, info->function, (uint8_t) (pointer + VIRTIO_PCI_CAP_OFFSET_CFG_TYPE));
-            hal_virtio_pci_cap_t *slot = cap_slot_for_type(mapping, cfg_type);
+            hardware_abstraction_layer_virtio_pci_cap_t *slot = cap_slot_for_type(mapping, cfg_type);
             if (slot != (void *) 0)
             {
                 slot->present = 1u;
@@ -179,7 +181,7 @@ static void walk_virtio_capabilities(const hal_virtio_gpu_info_t *info, hal_virt
                     info->bus, info->device, info->function, (uint8_t) (pointer + VIRTIO_PCI_CAP_OFFSET_OFFSET));
                 slot->length = peripheral_component_interconnect_config_read_dword(
                     info->bus, info->device, info->function, (uint8_t) (pointer + VIRTIO_PCI_CAP_OFFSET_LENGTH));
-                if (cfg_type == HAL_VIRTIO_PCI_CAP_NOTIFY_CFG)
+                if (cfg_type == HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_NOTIFY_CFG)
                     mapping->notify_off_multiplier = peripheral_component_interconnect_config_read_dword(
                         info->bus, info->device, info->function,
                         (uint8_t) (pointer + VIRTIO_PCI_NOTIFY_CAP_OFFSET_MULTIPLIER));
@@ -223,12 +225,13 @@ static uint32_t map_mmio_window(uint32_t phys_base_raw, uint32_t size)
     return virt_base + page_offset;
 }
 
-bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mapping_t *out_mapping)
+bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_virtio_gpu_info_t *info,
+                                              hardware_abstraction_layer_virtio_gpu_mapping_t *out_mapping)
 {
     if (info == (void *) 0 || out_mapping == (void *) 0 || !info->present)
         return false;
 
-    *out_mapping = (hal_virtio_gpu_mapping_t){0};
+    *out_mapping = (hardware_abstraction_layer_virtio_gpu_mapping_t){0};
 
     walk_virtio_capabilities(info, out_mapping);
 
@@ -257,12 +260,13 @@ bool hal_virtio_gpu_map(const hal_virtio_gpu_info_t *info, hal_virtio_gpu_mappin
     return true;
 }
 
-bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_gpu_device_t *out_device)
+bool hardware_abstraction_layer_virtio_gpu_bringup(const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
+                                                  hardware_abstraction_layer_virtio_gpu_device_t *out_device)
 {
     if (mapping == (void *) 0 || out_device == (void *) 0 || !mapping->mapped || !mapping->common.present)
         return false;
 
-    *out_device = (hal_virtio_gpu_device_t){0};
+    *out_device = (hardware_abstraction_layer_virtio_gpu_device_t){0};
 
     /* The common cfg lives at the mapped BAR base + the capability offset. */
     const uint32_t common = mapping->mmio_virtual_base + mapping->common.offset;
@@ -296,7 +300,9 @@ bool hal_virtio_gpu_bringup(const hal_virtio_gpu_mapping_t *mapping, hal_virtio_
 
     /* 5. Read the size of each virtqueue (DRIVER_OK deferred until rings exist). */
     const uint16_t queue_count =
-        (out_device->num_queues < HAL_VIRTIO_GPU_MAX_QUEUES) ? out_device->num_queues : HAL_VIRTIO_GPU_MAX_QUEUES;
+        (out_device->num_queues < HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES)
+            ? out_device->num_queues
+            : HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES;
     for (uint16_t queue = 0u; queue < queue_count; ++queue)
     {
         mmio_write16(common + VIRTIO_PCI_COMMON_QUEUE_SELECT, queue);
@@ -322,13 +328,14 @@ static void write_queue_address64(uint32_t common, uint32_t field_offset, uint32
     mmio_write32(common + field_offset + 4u, 0u);
 }
 
-bool hal_virtio_gpu_setup_queue(const hal_virtio_gpu_device_t *device, const hal_virtio_gpu_mapping_t *mapping,
-                                uint16_t queue_index, hal_virtio_virtqueue_t *out_queue)
+bool hardware_abstraction_layer_virtio_gpu_setup_queue(const hardware_abstraction_layer_virtio_gpu_device_t *device,
+                                                      const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
+                                uint16_t queue_index, hardware_abstraction_layer_virtio_virtqueue_t *out_queue)
 {
     if (device == (void *) 0 || mapping == (void *) 0 || out_queue == (void *) 0 || !device->ready)
         return false;
 
-    *out_queue = (hal_virtio_virtqueue_t){0};
+    *out_queue = (hardware_abstraction_layer_virtio_virtqueue_t){0};
 
     const uint32_t common = device->common_cfg_address;
     mmio_write16(common + VIRTIO_PCI_COMMON_QUEUE_SELECT, queue_index);
@@ -352,7 +359,7 @@ bool hal_virtio_gpu_setup_queue(const hal_virtio_gpu_device_t *device, const hal
     memset(backing, 0, 4096u);
 
     uint32_t ring_physical = 0u;
-    if (!hal_graphics_memory_physical_address(backing, &ring_physical))
+    if (!hardware_abstraction_layer_graphics_memory_physical_address(backing, &ring_physical))
     {
         kernel_pinned_free(backing, 4096u);
         return false;
@@ -383,7 +390,7 @@ bool hal_virtio_gpu_setup_queue(const hal_virtio_gpu_device_t *device, const hal
     return true;
 }
 
-uint8_t hal_virtio_gpu_driver_ok(const hal_virtio_gpu_device_t *device)
+uint8_t hardware_abstraction_layer_virtio_gpu_driver_ok(const hardware_abstraction_layer_virtio_gpu_device_t *device)
 {
     if (device == (void *) 0 || !device->ready)
         return 0u;
@@ -424,7 +431,8 @@ static inline void ring_write16(uint32_t address, uint16_t value) { *(volatile u
 static inline void ring_write32(uint32_t address, uint32_t value) { *(volatile uint32_t *) address = value; }
 
 /* Write a split-virtqueue descriptor (16 bytes) at descriptor index @p slot. */
-static void write_descriptor(const hal_virtio_virtqueue_t *queue, uint16_t slot, uint32_t buffer_physical,
+static void write_descriptor(const hardware_abstraction_layer_virtio_virtqueue_t *queue, uint16_t slot,
+                             uint32_t buffer_physical,
                              uint32_t length, uint16_t flags, uint16_t next)
 {
     const uint32_t desc = queue->desc_address + (uint32_t) slot * 16u;
@@ -445,7 +453,8 @@ typedef struct {
 /* Submit a descriptor chain (head = desc 0), notify the device, and poll the
  * used ring for completion. Each segment becomes one chained descriptor.
  * Returns true on completion. */
-static bool submit_chain(hal_virtio_virtqueue_t *queue, const virtq_segment_t *segments, uint16_t count)
+static bool submit_chain(hardware_abstraction_layer_virtio_virtqueue_t *queue, const virtq_segment_t *segments,
+                         uint16_t count)
 {
     if (count == 0u || count > queue->queue_size)
         return false;
@@ -480,12 +489,14 @@ static bool submit_chain(hal_virtio_virtqueue_t *queue, const virtq_segment_t *s
     return false; /* device never completed the request */
 }
 
-bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_gpu_display_info_t *out_info)
+bool hardware_abstraction_layer_virtio_gpu_get_display_info(
+    hardware_abstraction_layer_virtio_virtqueue_t *queue,
+    hardware_abstraction_layer_virtio_gpu_display_info_t *out_info)
 {
     if (queue == (void *) 0 || out_info == (void *) 0 || !queue->ready)
         return false;
 
-    *out_info = (hal_virtio_gpu_display_info_t){0};
+    *out_info = (hardware_abstraction_layer_virtio_gpu_display_info_t){0};
 
     /* One pinned page backs both the request header and the response buffer. */
     void *buffer = kernel_pinned_alloc(4096u);
@@ -494,7 +505,7 @@ bool hal_virtio_gpu_get_display_info(hal_virtio_virtqueue_t *queue, hal_virtio_g
     memset(buffer, 0, 4096u);
 
     uint32_t buffer_physical = 0u;
-    if (!hal_graphics_memory_physical_address(buffer, &buffer_physical))
+    if (!hardware_abstraction_layer_graphics_memory_physical_address(buffer, &buffer_physical))
     {
         kernel_pinned_free(buffer, 4096u);
         return false;
@@ -575,7 +586,8 @@ static void write_command_rect(uint32_t cmd_va, uint32_t command, uint32_t x, ui
 
 /* Send a single-buffer request expecting an OK_NODATA response. The request is
  * pre-filled at command_buffer + CMD_REQUEST_OFFSET; returns the response type. */
-static uint32_t send_nodata_command(const hal_virtio_gpu_scanout_t *scanout, uint32_t request_length,
+static uint32_t send_nodata_command(const hardware_abstraction_layer_virtio_gpu_scanout_t *scanout,
+                                    uint32_t request_length,
                                     uint16_t extra_segment_count, const virtq_segment_t *extra_segments)
 {
     const uint32_t cmd_physical = scanout->command_buffer_physical;
@@ -601,7 +613,8 @@ static uint32_t send_nodata_command(const hal_virtio_gpu_scanout_t *scanout, uin
 /* Write a coalesced scatter-gather list of the framebuffer's physical pages into
  * @p entries_va. Returns the entry count, or 0 on failure. Pinned pages are
  * allocated frame-by-frame, so this typically yields one entry per page. */
-static uint32_t build_backing_entries(const hal_virtio_gpu_scanout_t *scanout, uint32_t entries_va,
+static uint32_t build_backing_entries(const hardware_abstraction_layer_virtio_gpu_scanout_t *scanout,
+                                      uint32_t entries_va,
                                       uint32_t max_entries)
 {
     uint32_t remaining = scanout->framebuffer_size;
@@ -614,7 +627,7 @@ static uint32_t build_backing_entries(const hal_virtio_gpu_scanout_t *scanout, u
     {
         const uint32_t chunk = (remaining < 4096u) ? remaining : 4096u;
         uint32_t page_physical = 0u;
-        if (!hal_graphics_memory_physical_address((const void *) page_va, &page_physical))
+        if (!hardware_abstraction_layer_graphics_memory_physical_address((const void *) page_va, &page_physical))
             return 0u;
 
         if (have_previous && page_physical == previous_end)
@@ -642,13 +655,14 @@ static uint32_t build_backing_entries(const hal_virtio_gpu_scanout_t *scanout, u
     return count;
 }
 
-bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width, uint32_t height,
-                                   hal_virtio_gpu_scanout_t *out_scanout)
+bool hardware_abstraction_layer_virtio_gpu_create_scanout(hardware_abstraction_layer_virtio_virtqueue_t *queue,
+                                                         uint32_t width, uint32_t height,
+                                   hardware_abstraction_layer_virtio_gpu_scanout_t *out_scanout)
 {
     if (queue == (void *) 0 || out_scanout == (void *) 0 || !queue->ready || width == 0u || height == 0u)
         return false;
 
-    *out_scanout = (hal_virtio_gpu_scanout_t){0};
+    *out_scanout = (hardware_abstraction_layer_virtio_gpu_scanout_t){0};
     out_scanout->queue = queue;
     out_scanout->width = width;
     out_scanout->height = height;
@@ -662,7 +676,8 @@ bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width
         goto fail;
 
     /* Resolve the command buffer's physical address once (constant for life). */
-    if (!hal_graphics_memory_physical_address(out_scanout->command_buffer, &out_scanout->command_buffer_physical))
+    if (!hardware_abstraction_layer_graphics_memory_physical_address(out_scanout->command_buffer,
+                                                                     &out_scanout->command_buffer_physical))
         goto fail;
 
     /* Start with a black surface. */
@@ -704,7 +719,8 @@ bool hal_virtio_gpu_create_scanout(hal_virtio_virtqueue_t *queue, uint32_t width
         for (uint32_t p = 0u; entries_ok && p < entry_pages; ++p)
         {
             uint32_t page_physical = 0u;
-            if (!hal_graphics_memory_physical_address((const void *) ((uint32_t) entries_buffer + p * 4096u),
+            if (!hardware_abstraction_layer_graphics_memory_physical_address(
+                    (const void *) ((uint32_t) entries_buffer + p * 4096u),
                                                       &page_physical))
             {
                 entries_ok = false;
@@ -739,11 +755,11 @@ fail:
         kernel_pinned_free(out_scanout->framebuffer, out_scanout->framebuffer_size);
     if (out_scanout->command_buffer != (void *) 0)
         kernel_pinned_free(out_scanout->command_buffer, 4096u);
-    *out_scanout = (hal_virtio_gpu_scanout_t){0};
+    *out_scanout = (hardware_abstraction_layer_virtio_gpu_scanout_t){0};
     return false;
 }
 
-bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout)
+bool hardware_abstraction_layer_virtio_gpu_flush(hardware_abstraction_layer_virtio_gpu_scanout_t *scanout)
 {
     if (scanout == (void *) 0 || !scanout->ready)
         return false;
@@ -766,56 +782,58 @@ bool hal_virtio_gpu_flush(hal_virtio_gpu_scanout_t *scanout)
 }
 
 /* ----------------------------------------------------------------------------
- * Persistent display routing — drives hal_display_* when a scanout is live
+ * Persistent display routing — drives hardware_abstraction_layer_display_* when a scanout is live
  * ------------------------------------------------------------------------- */
 
 /* Default geometry when the device reports no preferred mode. */
 #define VIRTIO_GPU_DEFAULT_WIDTH  1024u
 #define VIRTIO_GPU_DEFAULT_HEIGHT 768u
 
-static hal_virtio_gpu_mapping_t g_mapping;
-static hal_virtio_gpu_device_t g_device;
-static hal_virtio_virtqueue_t g_controlq;
-static hal_virtio_gpu_scanout_t g_scanout;
+static hardware_abstraction_layer_virtio_gpu_mapping_t g_mapping;
+static hardware_abstraction_layer_virtio_gpu_device_t g_device;
+static hardware_abstraction_layer_virtio_virtqueue_t g_controlq;
+static hardware_abstraction_layer_virtio_gpu_scanout_t g_scanout;
 static bool g_display_ready = false;
 
-bool hal_virtio_gpu_display_init(void)
+bool hardware_abstraction_layer_virtio_gpu_display_init(void)
 {
     if (g_display_ready)
         return true;
 
-    hal_virtio_gpu_info_t info;
-    if (!hal_virtio_gpu_probe(&info))
+    hardware_abstraction_layer_virtio_gpu_info_t info;
+    if (!hardware_abstraction_layer_virtio_gpu_probe(&info))
         return false;
-    if (!hal_virtio_gpu_map(&info, &g_mapping))
+    if (!hardware_abstraction_layer_virtio_gpu_map(&info, &g_mapping))
         return false;
-    if (!hal_virtio_gpu_bringup(&g_mapping, &g_device))
+    if (!hardware_abstraction_layer_virtio_gpu_bringup(&g_mapping, &g_device))
         return false;
-    if (!hal_virtio_gpu_setup_queue(&g_device, &g_mapping, 0u, &g_controlq))
+    if (!hardware_abstraction_layer_virtio_gpu_setup_queue(&g_device, &g_mapping, 0u, &g_controlq))
         return false;
-    if (hal_virtio_gpu_driver_ok(&g_device) == 0u)
+    if (hardware_abstraction_layer_virtio_gpu_driver_ok(&g_device) == 0u)
         return false;
 
     /* Prefer the device's reported geometry; fall back to a safe default. */
     uint32_t width = VIRTIO_GPU_DEFAULT_WIDTH;
     uint32_t height = VIRTIO_GPU_DEFAULT_HEIGHT;
-    hal_virtio_gpu_display_info_t display;
-    if (hal_virtio_gpu_get_display_info(&g_controlq, &display) && display.width != 0u && display.height != 0u)
+    hardware_abstraction_layer_virtio_gpu_display_info_t display;
+    if (hardware_abstraction_layer_virtio_gpu_get_display_info(&g_controlq, &display) && display.width != 0u &&
+        display.height != 0u)
     {
         width = display.width;
         height = display.height;
     }
 
-    if (!hal_virtio_gpu_create_scanout(&g_controlq, width, height, &g_scanout))
+    if (!hardware_abstraction_layer_virtio_gpu_create_scanout(&g_controlq, width, height, &g_scanout))
         return false;
 
     g_display_ready = true;
     return true;
 }
 
-bool hal_virtio_gpu_display_active(void) { return g_display_ready; }
+bool hardware_abstraction_layer_virtio_gpu_display_active(void) { return g_display_ready; }
 
-bool hal_virtio_gpu_display_query(hal_surface_descriptor_t *out_descriptor)
+bool hardware_abstraction_layer_virtio_gpu_display_query(
+    hardware_abstraction_layer_surface_descriptor_t *out_descriptor)
 {
     if (out_descriptor == (void *) 0 || !g_display_ready)
         return false;
@@ -829,7 +847,7 @@ bool hal_virtio_gpu_display_query(hal_surface_descriptor_t *out_descriptor)
     return true;
 }
 
-void hal_virtio_gpu_display_clear(uint32_t color_rgb)
+void hardware_abstraction_layer_virtio_gpu_display_clear(uint32_t color_rgb)
 {
     if (!g_display_ready)
         return;
@@ -839,15 +857,15 @@ void hal_virtio_gpu_display_clear(uint32_t color_rgb)
         g_scanout.framebuffer[i] = color_rgb;
 }
 
-uint32_t hal_virtio_gpu_display_read_pixel(uint32_t x, uint32_t y)
+uint32_t hardware_abstraction_layer_virtio_gpu_display_read_pixel(uint32_t x, uint32_t y)
 {
     if (!g_display_ready || x >= g_scanout.width || y >= g_scanout.height)
         return 0u;
     return g_scanout.framebuffer[y * g_scanout.width + x] & 0x00FFFFFFu;
 }
 
-void hal_virtio_gpu_display_present(void)
+void hardware_abstraction_layer_virtio_gpu_display_present(void)
 {
     if (g_display_ready)
-        (void) hal_virtio_gpu_flush(&g_scanout);
+        (void) hardware_abstraction_layer_virtio_gpu_flush(&g_scanout);
 }

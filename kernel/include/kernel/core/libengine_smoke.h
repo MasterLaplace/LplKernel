@@ -13,9 +13,9 @@
  * against the Linux/xmake oracle (the HARD determinism contract).
  *
  * Covers: the C++ constructor self-test, P0 determinism, P1 arena/ECS/scheduler/
- * physics, P2 HAL, P3 render, P4 image/scene + the lplplugin_initialize boot
- * facade, P5 render + render-present, P6 advanced rendering, and the P4 image
- * present that paints the final 2D scene onto the scanout.
+ * physics, P2 HAL, P3 render, P4 image/scene, the P4 image present that paints a
+ * 2D scene onto the scanout, P5 render + render-present, P6 advanced rendering,
+ * and the simulation parity fold (the sample sim's state/image signatures).
  *
  * @param com1 Pointer to the primary serial interface.
  */

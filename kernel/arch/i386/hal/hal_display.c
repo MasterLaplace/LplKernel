@@ -2,7 +2,7 @@
  * @file hal_display.c
  * @brief Software-LFB display backend for the engine HAL.
  *
- * Implements the hal_display_* contract over the Multiboot linear framebuffer
+ * Implements the hardware_abstraction_layer_display_* contract over the Multiboot linear framebuffer
  * driver. This is the "DRM/KMS scanout" seam: the engine renders through it
  * without knowing whether the surface is a software LFB or (later) a VirtIO-GPU
  * resource. Colors cross the ABI as packed 0x00RRGGBB and are translated to the
@@ -14,7 +14,7 @@
 
 #include <stddef.h>
 
-static inline color_t hal_color_from_rgb(uint32_t color_rgb)
+static inline color_t hardware_abstraction_layer_color_from_rgb(uint32_t color_rgb)
 {
     color_t color;
     color.r = (uint8_t) ((color_rgb >> 16) & 0xFFu);
@@ -24,19 +24,19 @@ static inline color_t hal_color_from_rgb(uint32_t color_rgb)
     return color;
 }
 
-static inline uint32_t hal_rgb_from_color(color_t color)
+static inline uint32_t hardware_abstraction_layer_rgb_from_color(color_t color)
 {
     return ((uint32_t) color.r << 16) | ((uint32_t) color.g << 8) | (uint32_t) color.b;
 }
 
-bool hal_display_query_surface(hal_surface_descriptor_t *out_descriptor)
+bool hardware_abstraction_layer_display_query_surface(hardware_abstraction_layer_surface_descriptor_t *out_descriptor)
 {
     if (out_descriptor == NULL)
         return false;
 
     /* A live virtio-gpu scanout takes priority over the software LFB. */
-    if (hal_virtio_gpu_display_active())
-        return hal_virtio_gpu_display_query(out_descriptor);
+    if (hardware_abstraction_layer_virtio_gpu_display_active())
+        return hardware_abstraction_layer_virtio_gpu_display_query(out_descriptor);
 
     if (!framebuffer_available())
         return false;
@@ -54,33 +54,36 @@ bool hal_display_query_surface(hal_surface_descriptor_t *out_descriptor)
     return true;
 }
 
-bool hal_display_available(void) { return hal_virtio_gpu_display_active() || framebuffer_available(); }
-
-void hal_display_clear(uint32_t color_rgb)
+bool hardware_abstraction_layer_display_available(void)
 {
-    if (hal_virtio_gpu_display_active())
+    return hardware_abstraction_layer_virtio_gpu_display_active() || framebuffer_available();
+}
+
+void hardware_abstraction_layer_display_clear(uint32_t color_rgb)
+{
+    if (hardware_abstraction_layer_virtio_gpu_display_active())
     {
-        hal_virtio_gpu_display_clear(color_rgb);
+        hardware_abstraction_layer_virtio_gpu_display_clear(color_rgb);
         return;
     }
     if (!framebuffer_available())
         return;
-    framebuffer_clear(hal_color_from_rgb(color_rgb));
+    framebuffer_clear(hardware_abstraction_layer_color_from_rgb(color_rgb));
 }
 
-uint32_t hal_display_read_pixel(uint32_t x, uint32_t y)
+uint32_t hardware_abstraction_layer_display_read_pixel(uint32_t x, uint32_t y)
 {
-    if (hal_virtio_gpu_display_active())
-        return hal_virtio_gpu_display_read_pixel(x, y);
+    if (hardware_abstraction_layer_virtio_gpu_display_active())
+        return hardware_abstraction_layer_virtio_gpu_display_read_pixel(x, y);
     if (!framebuffer_available())
         return 0u;
-    return hal_rgb_from_color(framebuffer_get_pixel(x, y));
+    return hardware_abstraction_layer_rgb_from_color(framebuffer_get_pixel(x, y));
 }
 
-void hal_display_present(void)
+void hardware_abstraction_layer_display_present(void)
 {
     /* Software-LFB renders straight into scanout memory (no-op present); the
        virtio-gpu backend issues TRANSFER_TO_HOST_2D + RESOURCE_FLUSH here. */
-    if (hal_virtio_gpu_display_active())
-        hal_virtio_gpu_display_present();
+    if (hardware_abstraction_layer_virtio_gpu_display_active())
+        hardware_abstraction_layer_virtio_gpu_display_present();
 }

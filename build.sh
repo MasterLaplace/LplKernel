@@ -52,7 +52,11 @@ done
 
 # Auto-clean when the build mode changes to avoid stale object files.
 LAST_MODE_FILE=".last_build_mode"
-CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} APIC_SMOKE=$APIC_SMOKE_TEST_PERIODIC_MODE KEYBOARD=${KEYBOARD_LAYOUT:-us}"
+# ENABLE_LIBENGINE is part of the fingerprint: it flips the -DLPL_PLUGIN_UNAVAILABLE
+# compile flag, which make cannot see on its own (it tracks source mtimes, not flags).
+# Without this, client_app.o / kernel.o keep a stale "no engine module" stub baked in
+# after the engine appears (or vice-versa). Including it forces an auto-clean on flip.
+CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} APIC_SMOKE=$APIC_SMOKE_TEST_PERIODIC_MODE KEYBOARD=${KEYBOARD_LAYOUT:-us} ENGINE=${ENABLE_LIBENGINE:-0}"
 
 if [ -f "$LAST_MODE_FILE" ]; then
     LAST_MODE=$(cat "$LAST_MODE_FILE")

@@ -31,6 +31,9 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/concurrency/include \
           -I$(LPLPLUGIN_ROOT)/physics/include \
           -I$(LPLPLUGIN_ROOT)/platform/include \
+          -I$(LPLPLUGIN_ROOT)/input/include \
+          -I$(LPLPLUGIN_ROOT)/net/include \
+          -I$(LPLPLUGIN_ROOT)/gpu/include \
           -I$(LPLPLUGIN_ROOT)/image/include \
           -I$(LPLPLUGIN_ROOT)/scene/include \
           -I$(LPLPLUGIN_ROOT)/render/include \
@@ -50,21 +53,21 @@ ENGINE_OBJS=$(addprefix obj/,$(ARCH_ENGINE_SRCS:.cpp=.o))
 
 # libengine-local sources (the C-callable facade / smoke entry points).
 LOCAL_OBJS=\
-obj/local/p0_smoke.o \
-obj/local/p1_smoke.o \
-obj/local/p1_ecs_smoke.o \
-obj/local/p1_sched_smoke.o \
-obj/local/p1_physics_smoke.o \
-obj/local/p2_hal_smoke.o \
-obj/local/p3_render_smoke.o \
-obj/local/p4_image_smoke.o \
-obj/local/p4_image_present_smoke.o \
-obj/local/p4_scene_smoke.o \
-obj/local/p5_render_smoke.o \
-obj/local/p5_render_present_smoke.o \
-obj/local/p6_smoke.o \
-obj/local/sim_runtime.o \
-obj/local/lplplugin_init.o \
+obj/local/smoke/p0_smoke.o \
+obj/local/smoke/p1_smoke.o \
+obj/local/smoke/p1_ecs_smoke.o \
+obj/local/smoke/p1_sched_smoke.o \
+obj/local/smoke/p1_physics_smoke.o \
+obj/local/smoke/p2_hal_smoke.o \
+obj/local/smoke/p3_render_smoke.o \
+obj/local/smoke/p4_image_smoke.o \
+obj/local/smoke/p4_image_present_smoke.o \
+obj/local/smoke/p4_scene_smoke.o \
+obj/local/smoke/p5_render_smoke.o \
+obj/local/smoke/p5_render_present_smoke.o \
+obj/local/smoke/p6_smoke.o \
+obj/local/smoke/sim_fold_smoke.o \
+obj/local/client_app.o \
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)
 

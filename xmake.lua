@@ -169,6 +169,11 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "concurrency/include"),
         path.join(LPLPLUGIN_ROOT, "physics/include"),
         path.join(LPLPLUGIN_ROOT, "platform/include"),
+        path.join(LPLPLUGIN_ROOT, "input/include"),
+        -- net/ is not compiled here (LPL_HAS_NET is left undefined); this is only
+        -- for the header-only lpl/net/Endpoint.hpp that EventQueue.hpp needs.
+        path.join(LPLPLUGIN_ROOT, "net/include"),
+        path.join(LPLPLUGIN_ROOT, "gpu/include"),
         path.join(LPLPLUGIN_ROOT, "image/include"),
         path.join(LPLPLUGIN_ROOT, "scene/include"),
         path.join(LPLPLUGIN_ROOT, "render/include"),
@@ -185,6 +190,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "ecs/src/Partition.cpp"),
         path.join(LPLPLUGIN_ROOT, "ecs/src/Registry.cpp"),
         path.join(LPLPLUGIN_ROOT, "ecs/src/SystemScheduler.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ecs/src/WorldPartition.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/CollisionDetector.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/CollisionSolver.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/SleepingPolicy.cpp"),
@@ -192,6 +198,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "physics/src/Octree.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/CpuPhysicsBackend.cpp"),
         path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp"),
+        path.join(LPLPLUGIN_ROOT, "input/src/InputManager.cpp"),
         path.join(LPLPLUGIN_ROOT, "image/src/Image.cpp"),
         path.join(LPLPLUGIN_ROOT, "image/src/Painter.cpp"),
         path.join(LPLPLUGIN_ROOT, "image/src/Codec.cpp"),
@@ -199,10 +206,15 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "render/src/Camera.cpp"),
         path.join(LPLPLUGIN_ROOT, "render/src/kernel/KernelDisplayRenderer.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/Config.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/GameLoop.cpp")
+        path.join(LPLPLUGIN_ROOT, "engine/src/GameLoop.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/MovementSystem.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/PhysicsSystem.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/Engine.cpp")
     )
-    -- libengine-local C-facade / smoke entry points.
-    add_files("libengine/src/*.cpp")
+    -- libengine-local: the kernel client entry (client_app.cpp, which constructs
+    -- lpl::engine::Engine) + the P0..P6 and parity-fold smoke/diagnostic entry
+    -- points, kept in their own src/smoke/ subtree.
+    add_files("libengine/src/*.cpp", "libengine/src/smoke/*.cpp")
 target_end()
 end -- if LPLPLUGIN_AVAILABLE
 

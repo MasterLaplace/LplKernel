@@ -1,4 +1,5 @@
 #define __LPL_KERNEL__
+#include <kernel/cpu/stack_guard.h>
 #include <kernel/config.h>
 
 #include <kernel/boot/helpers/multiboot_info_helper.h>
@@ -51,8 +52,16 @@
 #include <kernel/core/kernel_smp.h>
 #include <kernel/core/kernel_splash.h>
 #include <kernel/core/libengine_smoke.h>
-#include <kernel/graphics/client_app.h>
-#include <kernel/graphics/sysmon.h>
+#include <kernel/diag/sysmon.h>
+
+/* The engine module is optional: when LplPlugin is absent, config.sh drops
+   libengine from SYSTEM_HEADER_PROJECTS (so this header is never installed into
+   the sysroot) and the Makefile sets LPL_PLUGIN_UNAVAILABLE. The include must
+   sit under the same guard as the call, or the plain-kernel fallback stops
+   compiling. */
+#if !defined(LPL_PLUGIN_UNAVAILABLE)
+#    include <libengine/libengine.h>
+#endif
 
 #define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES     16384u
 #define KERNEL_STACK_ALLOCATOR_DEFAULT_CAPACITY_BYTES 16384u
@@ -304,14 +313,10 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_peripheral_component_interconnect_info(&com1);
     kernel_splash_update("PCI Bus Enumeration");
 
-    /* VirtIO-GPU display (P4): bring up the full probe -> map -> handshake ->
-       virtqueue -> scanout path once and stash it. When it succeeds hal_display
-       routes the engine's surface/present through the GPU; otherwise the
-       software-LFB framebuffer remains the active backend. */
-    if (hal_virtio_gpu_display_init())
+    if (hardware_abstraction_layer_virtio_gpu_display_init())
     {
-        hal_surface_descriptor_t surface;
-        (void) hal_virtio_gpu_display_query(&surface);
+        hardware_abstraction_layer_surface_descriptor_t surface;
+        (void) hardware_abstraction_layer_virtio_gpu_display_query(&surface);
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display active: ");
         serial_write_hex32(&com1, surface.width);
         serial_write_string(&com1, "x");
@@ -319,8 +324,8 @@ __attribute__((constructor)) void kernel_initialize(void)
         serial_write_string(&com1, "\n");
 
         /* Liveness: clear to a recognisable color and present through the GPU. */
-        hal_display_clear(0x00102040u);
-        hal_display_present();
+        hardware_abstraction_layer_display_clear(0x00102040u);
+        hardware_abstraction_layer_display_present();
     }
     else
     {
@@ -337,17 +342,22 @@ __attribute__((constructor)) void kernel_initialize(void)
 
 void kernel_main(void)
 {
-#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
-    /* Full libengine cross-target smoke/demo battery (P0..P6). Compiled out
-       of release/production images; see kernel/core/libengine_smoke.c. */
-    libengine_smoke_run_all(&com1);
-#endif /* LPL_KERNEL_ENABLE_SMOKE_TESTS */
+    /* Arm the stack-overflow canary before running any engine/smoke code, which
+       is where deep C++ call chains (software rasterizer, physics sort) live. */
+    kernel_stack_guard_arm();
 
-    if (framebuffer_available())
-    {
-        kernel_splash_finish();
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
-        kernel_smoke_batch_run_post_boot_tests(&com1);
+    kernel_smoke_batch_run_post_boot_tests(&com1);
+    libengine_smoke_run_all(&com1);
+#endif
+
+    if (hardware_abstraction_layer_display_available())
+    {
+#if defined(LPL_PLUGIN_UNAVAILABLE)
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: client app unavailable (no engine module)\n");
+        kernel_sysmon_run(&com1);
+#else
+        libengine_client_app_run();
 #endif
     }
     else
@@ -359,19 +369,9 @@ void kernel_main(void)
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_write_string(KERNEL_CONFIG_STRING);
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-    }
 
-    /* Client/graphics mode: hand the screen to the live system monitor (a
-       purely-visual, real-time view of memory/pages/bus/transfers) over the HAL
-       display — virtio-gpu scanout or software LFB. Loops until a key is
-       pressed, then drops to the interactive console. */
-    if (hal_display_available())
-    {
-        kernel_client_app_run(&com1); /* the live client application (sim payload) */
-        kernel_sysmon_run(&com1);     /* then the diagnostic system monitor        */
+        kernel_console_run_interactive_loop(&com1);
     }
-
-    kernel_console_run_interactive_loop(&com1);
 }
 
 __attribute__((destructor)) void kernel_cleanup(void)

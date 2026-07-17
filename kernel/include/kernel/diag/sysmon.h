@@ -1,5 +1,5 @@
-#ifndef KERNEL_GRAPHICS_SYSMON_H
-#define KERNEL_GRAPHICS_SYSMON_H
+#ifndef KERNEL_DIAG_SYSMON_H
+#define KERNEL_DIAG_SYSMON_H
 
 #include <kernel/drivers/serial.h>
 
@@ -24,4 +24,4 @@
  */
 extern void kernel_sysmon_run(Serial_t *com1);
 
-#endif /* KERNEL_GRAPHICS_SYSMON_H */
+#endif /* KERNEL_DIAG_SYSMON_H */

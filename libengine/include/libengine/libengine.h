@@ -7,6 +7,17 @@
 ** libengine.a is the LplPlugin engine compiled -ffreestanding into the kernel
 ** image (the C++ sibling of libk.a). This header is the ONLY surface the pure-C
 ** kernel includes; it must stay free of C++ and of any lpl/ engine type.
+**
+** Two kinds of entry point live here, and nothing else should be added lightly:
+**   - libengine_client_app_run: the real entry. It constructs lpl::engine::Engine
+**     with an injected platform and application, exactly as apps/client/main.cpp
+**     does on Linux. The kernel passes no engine state and holds no game logic.
+**   - the smoke/parity gates (P0..P6 + the simulation fold): C-callable only
+**     because the kernel's smoke battery is C. They are diagnostics, not an API.
+**
+** There is deliberately no C simulation facade (init/step/render/entity_count):
+** driving a sim from the kernel in C was scaffolding, and the IApplication seam
+** replaced it.
 */
 #ifndef _LIBENGINE_H
 #define _LIBENGINE_H
@@ -189,7 +200,7 @@ extern void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out);
 ** P4 image present smoke. Paints a demo 2D scene (gradient + shapes via the
 ** lpl::image Painter) into a full-surface Image and blits it onto the display
 ** scanout through the IDisplayBackend HAL, then presents. Proves the
-** Image -> hal_display -> (virtio-gpu | software-LFB) path. Skipped when no
+** Image -> hardware_abstraction_layer_display -> (virtio-gpu | software-LFB) path. Skipped when no
 ** surface is available (text-mode boot).
 */
 typedef struct {
@@ -315,72 +326,14 @@ typedef struct {
 extern void libengine_sim_fold(libengine_sim_fold_result_t *out);
 
 /*
-** Live simulation present facade (the visible client payload). Stateful: the sim
-** persists across frames. A host calls _init once, then drives the decoupled
-** step/render pair: call _step exactly tick_hz times per second to keep the
-** simulation real-time correct, and _render as often as the display allows
-** (_render is pure — no simulation advance — so frame rate can exceed the sim
-** rate). _render returns the internal target's packed pixels + dimensions for
-** the host to scale/blit onto its display. @p phase lets the host pass the real
-** tick so time-based effects track wall-clock. This is the generic, sim-agnostic
-** seam — the host knows nothing about which simulation is active.
+** Kernel client entry point — the freestanding mirror of apps/client/main.cpp.
+** Builds an engine Config, constructs lpl::engine::Engine with a KernelPlatform
+** and an application payload, then init/run/shutdown. Blocks until the payload
+** requests shutdown. The kernel passes no game state: which simulation runs is
+** decided entirely engine-side, by the payload libengine/src/client_app.cpp
+** injects.
 */
-extern void libengine_sim_init(void);
-extern void libengine_sim_step(void);
-extern uint32_t libengine_sim_entity_count(void);
-
-/*
-** Render through a host-driven orbit camera: @p yaw / @p pitch / @p dist orbit a
-** target; @p possess (>= 0) makes the camera follow (and highlight) that entity,
-** -1 orbits the scene centre. Non-authoritative (camera + lighting are render
-** only). Returns the internal target's pixels + dimensions for the host to blit.
-*/
-extern const uint32_t *libengine_sim_render(float yaw, float pitch, float dist, int32_t possess, uint32_t *out_w,
-                                            uint32_t *out_h);
-
-/*
-** Engine boot facade (extern "C"). This is the single real entry point the
-** kernel calls from kernel_main once the heap, PCI, clock and framebuffer HAL
-** are up — the in-kernel equivalent of main() constructing and running the
-** LplPlugin engine. It constructs a KernelPlatform (the four HAL backends) and
-** the KernelDisplayRenderer, then drives a clock-paced render loop over the
-** platform IClockBackend / IDisplayBackend.
-**
-** boot_info carries the caller-provided boot parameters:
-**   - abi_version : must equal LPLPLUGIN_BOOT_ABI_VERSION (reject on mismatch).
-**   - max_frames  : 0 = run until shutdown is requested; >0 = render exactly
-**                   that many frames then return (bounded boot smoke / CI).
-** The HAL handles and engine arena are reached engine-side through the
-** KernelPlatform, which wraps the global kernel HAL; future ABI revisions will
-** pass them explicitly here once the arena is pre-reserved by the kernel.
-**
-** Returns 0 on a clean init+run+shutdown, non-zero on an init failure (the
-** out result carries the detailed per-stage status when non-NULL).
-**
-** NOTE: the loop is currently inlined here rather than delegating to
-** lpl::engine::GameLoop. GameLoop is now freestanding-ready (it is reparented
-** onto IClockBackend and uses lpl::pmr::function), but pulling it into
-** libengine.a still requires lpl::engine::Config to route <string> through the
-** lpl/std umbrella (kernel_std::string) instead of std::string. Until that
-** conversion lands, this facade owns the fixed-cadence loop directly.
-*/
-#define LPLPLUGIN_BOOT_ABI_VERSION 1u
-
-typedef struct {
-    uint32_t abi_version; /* caller sets to LPLPLUGIN_BOOT_ABI_VERSION          */
-    uint32_t max_frames;  /* 0 = run until shutdown; >0 = bounded render count  */
-} lplplugin_boot_info_t;
-
-typedef struct {
-    uint32_t abi_ok;            /* boot_info->abi_version matched                */
-    uint32_t platform_ok;       /* KernelPlatform constructed                    */
-    uint32_t display_available; /* a framebuffer surface was reported            */
-    uint32_t renderer_init_ok;  /* KernelDisplayRenderer::init() succeeded       */
-    uint32_t frames_rendered;   /* frames that completed begin+end this run      */
-    uint32_t shutdown_clean;    /* renderer shut down without fault              */
-} lplplugin_boot_result_t;
-
-extern int lplplugin_initialize(const lplplugin_boot_info_t *boot, lplplugin_boot_result_t *out);
+extern void libengine_client_app_run(void);
 
 #ifdef __cplusplus
 }

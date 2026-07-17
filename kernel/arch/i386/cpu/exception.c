@@ -1,3 +1,4 @@
+#include <kernel/cpu/stack_guard.h>
 #include <kernel/cpu/exception.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
@@ -147,6 +148,9 @@ static void exception_handle_page_fault(const InterruptFrame_t *frame)
     exception_write_string("\r\n");
     exception_write_string("  eip            = ");
     exception_write_hex32(frame->eip);
+    exception_write_string("\r\n");
+    exception_write_string("  stack_guard    = ");
+    exception_write_string(kernel_stack_guard_intact() ? "intact" : "CLOBBERED (stack overflow?)");
     exception_write_string("\r\n");
     exception_halt_forever();
 }

@@ -1,9 +1,11 @@
-#ifndef KERNEL_GRAPHICS_FONT8X16_H
-#define KERNEL_GRAPHICS_FONT8X16_H
+#ifndef KERNEL_DIAG_FONT8X16_H
+#define KERNEL_DIAG_FONT8X16_H
 
 /* 8x16 bitmap font (256 glyphs, 1 byte per row, MSB = leftmost pixel).
    Generated from the public console font Lat15-Fixed16 (PSF1). Each glyph
-   is 16 bytes; index by (unsigned char). Used by the sysmon text overlay. */
+   is 16 bytes; index by (unsigned char). Used by the sysmon text overlay.
+   The engine has its own C++ twin of this table in lpl/image/Font8x16.hpp (it
+   cannot include this C header); the two are the same generated asset. */
 static const unsigned char kernel_font8x16[256][16] = {
     {0x00, 0x00, 0x00, 0x00, 0x3C, 0x42, 0x99, 0xA5, 0xA1, 0xA1, 0xA5, 0x99, 0x42, 0x3C, 0x00, 0x00}, /* 0 */
     {0x00, 0x00, 0x00, 0x00, 0x3C, 0x42, 0xB9, 0xA5, 0xA5, 0xB9, 0xA9, 0xA5, 0x42, 0x3C, 0x00, 0x00}, /* 1 */
@@ -263,4 +265,4 @@ static const unsigned char kernel_font8x16[256][16] = {
     {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x40, 0x40, 0x7E, 0x40, 0x40, 0x3E, 0x00, 0x00}, /* 255 */
 };
 
-#endif /* KERNEL_GRAPHICS_FONT8X16_H */
+#endif /* KERNEL_DIAG_FONT8X16_H */
