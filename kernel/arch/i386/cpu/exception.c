@@ -1,5 +1,5 @@
-#include <kernel/cpu/stack_guard.h>
 #include <kernel/cpu/exception.h>
+#include <kernel/cpu/stack_guard.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
 #define EXCEPTION_VECTOR_DEBUG_EXCEPTION          1u

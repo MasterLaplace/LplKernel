@@ -1,6 +1,6 @@
 #define __LPL_KERNEL__
-#include <kernel/cpu/stack_guard.h>
 #include <kernel/config.h>
+#include <kernel/cpu/stack_guard.h>
 
 #include <kernel/boot/helpers/multiboot_info_helper.h>
 #include <kernel/boot/init_array.h>

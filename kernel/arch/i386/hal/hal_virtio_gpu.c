@@ -226,7 +226,7 @@ static uint32_t map_mmio_window(uint32_t phys_base_raw, uint32_t size)
 }
 
 bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_virtio_gpu_info_t *info,
-                                              hardware_abstraction_layer_virtio_gpu_mapping_t *out_mapping)
+                                               hardware_abstraction_layer_virtio_gpu_mapping_t *out_mapping)
 {
     if (info == (void *) 0 || out_mapping == (void *) 0 || !info->present)
         return false;
@@ -261,7 +261,7 @@ bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_
 }
 
 bool hardware_abstraction_layer_virtio_gpu_bringup(const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
-                                                  hardware_abstraction_layer_virtio_gpu_device_t *out_device)
+                                                   hardware_abstraction_layer_virtio_gpu_device_t *out_device)
 {
     if (mapping == (void *) 0 || out_device == (void *) 0 || !mapping->mapped || !mapping->common.present)
         return false;
@@ -299,10 +299,9 @@ bool hardware_abstraction_layer_virtio_gpu_bringup(const hardware_abstraction_la
         return false; /* device rejected our feature set */
 
     /* 5. Read the size of each virtqueue (DRIVER_OK deferred until rings exist). */
-    const uint16_t queue_count =
-        (out_device->num_queues < HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES)
-            ? out_device->num_queues
-            : HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES;
+    const uint16_t queue_count = (out_device->num_queues < HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES) ?
+                                     out_device->num_queues :
+                                     HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES;
     for (uint16_t queue = 0u; queue < queue_count; ++queue)
     {
         mmio_write16(common + VIRTIO_PCI_COMMON_QUEUE_SELECT, queue);
@@ -329,8 +328,9 @@ static void write_queue_address64(uint32_t common, uint32_t field_offset, uint32
 }
 
 bool hardware_abstraction_layer_virtio_gpu_setup_queue(const hardware_abstraction_layer_virtio_gpu_device_t *device,
-                                                      const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
-                                uint16_t queue_index, hardware_abstraction_layer_virtio_virtqueue_t *out_queue)
+                                                       const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
+                                                       uint16_t queue_index,
+                                                       hardware_abstraction_layer_virtio_virtqueue_t *out_queue)
 {
     if (device == (void *) 0 || mapping == (void *) 0 || out_queue == (void *) 0 || !device->ready)
         return false;
@@ -432,8 +432,7 @@ static inline void ring_write32(uint32_t address, uint32_t value) { *(volatile u
 
 /* Write a split-virtqueue descriptor (16 bytes) at descriptor index @p slot. */
 static void write_descriptor(const hardware_abstraction_layer_virtio_virtqueue_t *queue, uint16_t slot,
-                             uint32_t buffer_physical,
-                             uint32_t length, uint16_t flags, uint16_t next)
+                             uint32_t buffer_physical, uint32_t length, uint16_t flags, uint16_t next)
 {
     const uint32_t desc = queue->desc_address + (uint32_t) slot * 16u;
     ring_write32(desc + 0u, buffer_physical); /* addr low                    */
@@ -587,8 +586,8 @@ static void write_command_rect(uint32_t cmd_va, uint32_t command, uint32_t x, ui
 /* Send a single-buffer request expecting an OK_NODATA response. The request is
  * pre-filled at command_buffer + CMD_REQUEST_OFFSET; returns the response type. */
 static uint32_t send_nodata_command(const hardware_abstraction_layer_virtio_gpu_scanout_t *scanout,
-                                    uint32_t request_length,
-                                    uint16_t extra_segment_count, const virtq_segment_t *extra_segments)
+                                    uint32_t request_length, uint16_t extra_segment_count,
+                                    const virtq_segment_t *extra_segments)
 {
     const uint32_t cmd_physical = scanout->command_buffer_physical;
     const uint32_t cmd_va = (uint32_t) scanout->command_buffer;
@@ -614,8 +613,7 @@ static uint32_t send_nodata_command(const hardware_abstraction_layer_virtio_gpu_
  * @p entries_va. Returns the entry count, or 0 on failure. Pinned pages are
  * allocated frame-by-frame, so this typically yields one entry per page. */
 static uint32_t build_backing_entries(const hardware_abstraction_layer_virtio_gpu_scanout_t *scanout,
-                                      uint32_t entries_va,
-                                      uint32_t max_entries)
+                                      uint32_t entries_va, uint32_t max_entries)
 {
     uint32_t remaining = scanout->framebuffer_size;
     uint32_t page_va = (uint32_t) scanout->framebuffer;
@@ -656,8 +654,8 @@ static uint32_t build_backing_entries(const hardware_abstraction_layer_virtio_gp
 }
 
 bool hardware_abstraction_layer_virtio_gpu_create_scanout(hardware_abstraction_layer_virtio_virtqueue_t *queue,
-                                                         uint32_t width, uint32_t height,
-                                   hardware_abstraction_layer_virtio_gpu_scanout_t *out_scanout)
+                                                          uint32_t width, uint32_t height,
+                                                          hardware_abstraction_layer_virtio_gpu_scanout_t *out_scanout)
 {
     if (queue == (void *) 0 || out_scanout == (void *) 0 || !queue->ready || width == 0u || height == 0u)
         return false;
@@ -720,8 +718,7 @@ bool hardware_abstraction_layer_virtio_gpu_create_scanout(hardware_abstraction_l
         {
             uint32_t page_physical = 0u;
             if (!hardware_abstraction_layer_graphics_memory_physical_address(
-                    (const void *) ((uint32_t) entries_buffer + p * 4096u),
-                                                      &page_physical))
+                    (const void *) ((uint32_t) entries_buffer + p * 4096u), &page_physical))
             {
                 entries_ok = false;
                 break;

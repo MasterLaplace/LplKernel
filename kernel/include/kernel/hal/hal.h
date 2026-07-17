@@ -228,18 +228,18 @@ typedef struct {
  * @return true when the common cfg was found and the BAR was mapped.
  */
 bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_virtio_gpu_info_t *info,
-                                              hardware_abstraction_layer_virtio_gpu_mapping_t *out_mapping);
+                                               hardware_abstraction_layer_virtio_gpu_mapping_t *out_mapping);
 
 /* virtio-gpu always exposes exactly two virtqueues: controlq + cursorq. */
 #define HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES 2u
 
 /** @brief Result of the virtio device bring-up handshake. */
 typedef struct {
-    uint8_t ready;                                  /* non-zero when FEATURES_OK stuck (device usable) */
-    uint8_t device_status;                          /* final device_status register value             */
-    uint16_t num_queues;                            /* number of virtqueues the device exposes        */
-    uint32_t mmio_virtual_base;                     /* echoed from the mapping                 */
-    uint32_t common_cfg_address;                    /* VA of the virtio_pci_common_cfg         */
+    uint8_t ready;               /* non-zero when FEATURES_OK stuck (device usable) */
+    uint8_t device_status;       /* final device_status register value             */
+    uint16_t num_queues;         /* number of virtqueues the device exposes        */
+    uint32_t mmio_virtual_base;  /* echoed from the mapping                 */
+    uint32_t common_cfg_address; /* VA of the virtio_pci_common_cfg         */
     uint16_t queue_size[HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES]; /* size of queues 0..1     */
 } hardware_abstraction_layer_virtio_gpu_device_t;
 
@@ -256,7 +256,7 @@ typedef struct {
  * @return true when the device accepted the driver and FEATURES_OK stuck.
  */
 bool hardware_abstraction_layer_virtio_gpu_bringup(const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
-                                                  hardware_abstraction_layer_virtio_gpu_device_t *out_device);
+                                                   hardware_abstraction_layer_virtio_gpu_device_t *out_device);
 
 /** @brief A programmed split virtqueue (descriptor table + avail + used ring). */
 typedef struct {
@@ -288,8 +288,9 @@ typedef struct {
  * @return true when the queue was allocated, programmed and enabled.
  */
 bool hardware_abstraction_layer_virtio_gpu_setup_queue(const hardware_abstraction_layer_virtio_gpu_device_t *device,
-                                                      const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
-                                uint16_t queue_index, hardware_abstraction_layer_virtio_virtqueue_t *out_queue);
+                                                       const hardware_abstraction_layer_virtio_gpu_mapping_t *mapping,
+                                                       uint16_t queue_index,
+                                                       hardware_abstraction_layer_virtio_virtqueue_t *out_queue);
 
 /**
  * @brief Set DRIVER_OK, completing device initialisation (queues must be set).
@@ -328,16 +329,16 @@ bool hardware_abstraction_layer_virtio_gpu_get_display_info(
  * hardware_abstraction_layer_virtio_gpu_flush() pushes its contents to the host and presents them.
  */
 typedef struct {
-    uint8_t ready;                    /* non-zero when the scanout is bound + presentable */
-    uint32_t resource_id;             /* host resource id                                 */
-    uint32_t scanout_id;              /* display index this resource is bound to          */
-    uint32_t width;                   /* surface width in pixels                          */
-    uint32_t height;                  /* surface height in pixels                         */
-    uint32_t *framebuffer;            /* guest BGRX surface (width*height pixels)          */
-    uint32_t framebuffer_size;        /* surface size in bytes                            */
-    hardware_abstraction_layer_virtio_virtqueue_t *queue;    /* controlq used for present commands          */
-    void *command_buffer;             /* internal scratch (request/response)              */
-    uint32_t command_buffer_physical; /* cached physical base of command_buffer    */
+    uint8_t ready;                                        /* non-zero when the scanout is bound + presentable */
+    uint32_t resource_id;                                 /* host resource id                                 */
+    uint32_t scanout_id;                                  /* display index this resource is bound to          */
+    uint32_t width;                                       /* surface width in pixels                          */
+    uint32_t height;                                      /* surface height in pixels                         */
+    uint32_t *framebuffer;                                /* guest BGRX surface (width*height pixels)          */
+    uint32_t framebuffer_size;                            /* surface size in bytes                            */
+    hardware_abstraction_layer_virtio_virtqueue_t *queue; /* controlq used for present commands          */
+    void *command_buffer;                                 /* internal scratch (request/response)              */
+    uint32_t command_buffer_physical;                     /* cached physical base of command_buffer    */
 } hardware_abstraction_layer_virtio_gpu_scanout_t;
 
 /**
@@ -356,8 +357,8 @@ typedef struct {
  * @return true when the resource was created, backed and bound.
  */
 bool hardware_abstraction_layer_virtio_gpu_create_scanout(hardware_abstraction_layer_virtio_virtqueue_t *queue,
-                                                         uint32_t width, uint32_t height,
-                                   hardware_abstraction_layer_virtio_gpu_scanout_t *out_scanout);
+                                                          uint32_t width, uint32_t height,
+                                                          hardware_abstraction_layer_virtio_gpu_scanout_t *out_scanout);
 
 /**
  * @brief Present the current framebuffer contents (TRANSFER_TO_HOST_2D +
