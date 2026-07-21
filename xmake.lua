@@ -149,7 +149,13 @@ target_end()
 -- No -nostdinc here (unlike libk): the freestanding libstdc++ headers
 -- (<cstddef>, <new>, <type_traits> ...) live in the toolchain include dir, and
 -- kstd is defined as exactly the subset libstdc++ does NOT provide freestanding.
+--
+-- Gated on LPLPLUGIN_AVAILABLE like libengine: without the engine the kernel is
+-- pure C and this runtime has no consumer. Building it anyway would demand a C++
+-- cross toolchain WITH freestanding libstdc++ on the fallback path, which
+-- build_lplkernel.yml (gcc 10, all-gcc + all-target-libgcc only) does not have.
 -- ===========================================================================
+if LPLPLUGIN_AVAILABLE then
 target("libkxx")
     set_kind("static")
     set_basename("kxx")
@@ -161,6 +167,7 @@ target("libkxx")
     add_sysincludedirs("libc/include")
     add_files("libkxx/src/*.cpp")
 target_end()
+end -- if LPLPLUGIN_AVAILABLE
 
 -- ===========================================================================
 -- libengine — the LplPlugin engine compiled -ffreestanding into a static lib.
