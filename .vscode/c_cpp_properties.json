@@ -5,7 +5,11 @@
             "includePath": [
                 "${workspaceFolder}/kernel/include",
                 "${workspaceFolder}/libc/include",
-                "${workspaceFolder}/sysroot/usr/include"
+                "${workspaceFolder}/libkxx/include",
+                "${workspaceFolder}/sysroot/usr/include",
+                "${workspaceFolder}/libengine/include",
+                "~/.xmake/packages/**",
+                "${workspaceFolder}/LplPlugin/*/include/"
             ],
             "defines": [
                 "__is_kernel",

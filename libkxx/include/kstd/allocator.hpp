@@ -1,22 +1,22 @@
 /*
 ** LplKernel
-** kernel/include/kernel_std/allocator.hpp
+** libkxx/include/kstd/allocator.hpp
 **
-** Default allocator for kernel_std containers. Routes through the global
-** operator new/delete, which the kernel C++ runtime (kernel/cxx/cxx_runtime.cpp)
+** Default allocator for kstd containers. Routes through the global
+** operator new/delete, which the kernel C++ runtime (libkxx/src/cxx_runtime.cpp)
 ** maps onto kmalloc/kfree. Containers are still parameterised on the allocator
 ** type, so the engine's lpl/std umbrella can substitute an adapter over
-** lpl::memory::IAllocator (arena / pool / pinned) without kernel_std knowing
+** lpl::memory::IAllocator (arena / pool / pinned) without kstd knowing
 ** anything about engine types.
 */
 
-#ifndef KERNEL_STD_ALLOCATOR_HPP_
-#define KERNEL_STD_ALLOCATOR_HPP_
+#ifndef KSTD_ALLOCATOR_HPP_
+#define KSTD_ALLOCATOR_HPP_
 
 #include <cstddef>
 #include <new>
 
-#include <kernel_std/support.hpp>
+#include <kstd/support.hpp>
 
 namespace kstd {
 
@@ -75,4 +75,4 @@ constexpr bool operator!=(const KernelAllocator<T> &, const KernelAllocator<U> &
 
 } // namespace kstd
 
-#endif // KERNEL_STD_ALLOCATOR_HPP_
+#endif // KSTD_ALLOCATOR_HPP_

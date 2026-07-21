@@ -1,6 +1,6 @@
 /*
 ** LplKernel
-** kernel/include/kernel_std/mutex.hpp
+** libkxx/include/kstd/mutex.hpp
 **
 ** Single-threaded kernel mutex facade. The kernel is single-threaded first (per
 ** the convergence plan: a job_system interface with an inline executor), so a
@@ -9,8 +9,8 @@
 ** these route to a kernel spinlock behind the same interface.
 */
 
-#ifndef KERNEL_STD_MUTEX_HPP_
-#define KERNEL_STD_MUTEX_HPP_
+#ifndef KSTD_MUTEX_HPP_
+#define KSTD_MUTEX_HPP_
 
 namespace kstd {
 
@@ -100,4 +100,4 @@ private:
 
 } // namespace kstd
 
-#endif // KERNEL_STD_MUTEX_HPP_
+#endif // KSTD_MUTEX_HPP_

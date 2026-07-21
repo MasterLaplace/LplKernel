@@ -1,6 +1,6 @@
 /*
 ** LplKernel
-** kernel/include/kernel_std/vector.hpp
+** libkxx/include/kstd/vector.hpp
 **
 ** Freestanding, exception-free std::vector work-alike for the engine module.
 ** Contiguous storage, geometric growth, allocator-parameterised. Out-of-memory
@@ -11,8 +11,8 @@
 ** (push/emplace/reserve/index/iterate/clear) with deterministic behaviour.
 */
 
-#ifndef KERNEL_STD_VECTOR_HPP_
-#define KERNEL_STD_VECTOR_HPP_
+#ifndef KSTD_VECTOR_HPP_
+#define KSTD_VECTOR_HPP_
 
 #include <cstddef>
 #include <initializer_list>
@@ -20,8 +20,8 @@
 #include <type_traits>
 #include <utility>
 
-#include <kernel_std/allocator.hpp>
-#include <kernel_std/support.hpp>
+#include <kstd/allocator.hpp>
+#include <kstd/support.hpp>
 
 namespace kstd {
 
@@ -257,4 +257,4 @@ private:
 
 } // namespace kstd
 
-#endif // KERNEL_STD_VECTOR_HPP_
+#endif // KSTD_VECTOR_HPP_

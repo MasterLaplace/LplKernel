@@ -1,6 +1,6 @@
 /*
 ** LplKernel
-** kernel/include/kernel_std/string.hpp
+** libkxx/include/kstd/string.hpp
 **
 ** Freestanding, exception-free std::string work-alike (char only). Heap-backed
 ** contiguous storage with a small-buffer optimisation, NUL-terminated, geometric
@@ -11,16 +11,16 @@
 ** allocator template (always KernelAllocator) — bounded scope on purpose.
 */
 
-#ifndef KERNEL_STD_STRING_HPP_
-#define KERNEL_STD_STRING_HPP_
+#ifndef KSTD_STRING_HPP_
+#define KSTD_STRING_HPP_
 
 #include <cstddef>
 #include <new>
 #include <string_view>
 #include <utility>
 
-#include <kernel_std/allocator.hpp>
-#include <kernel_std/support.hpp>
+#include <kstd/allocator.hpp>
+#include <kstd/support.hpp>
 
 namespace kstd {
 
@@ -217,4 +217,4 @@ private:
 
 } // namespace kstd
 
-#endif // KERNEL_STD_STRING_HPP_
+#endif // KSTD_STRING_HPP_

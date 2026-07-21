@@ -1,5 +1,5 @@
-SYSTEM_HEADER_PROJECTS="libc libengine kernel"
-PROJECTS="libc libengine kernel"
+SYSTEM_HEADER_PROJECTS="libc libkxx libengine kernel"
+PROJECTS="libc libkxx libengine kernel"
 
 export MAKE=${MAKE:-make}
 export HOST=${HOST:-$(./default-host.sh)}
@@ -27,8 +27,8 @@ if [ -n "${LPLPLUGIN_ROOT:-}" ] && [ -d "${LPLPLUGIN_ROOT}/core/include" ]; then
     export ENABLE_LIBENGINE=1
 else
     export ENABLE_LIBENGINE=0
-    SYSTEM_HEADER_PROJECTS="libc kernel"
-    PROJECTS="libc kernel"
+    SYSTEM_HEADER_PROJECTS="libc libkxx kernel"
+    PROJECTS="libc libkxx kernel"
     echo "[config] LplPlugin not found -> building a plain kernel (ENABLE_LIBENGINE=0)"
 fi
 

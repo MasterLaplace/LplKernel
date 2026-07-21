@@ -1,6 +1,6 @@
 /*
 ** LplKernel
-** kernel/include/kernel_std/inplace_function.hpp
+** libkxx/include/kstd/inplace_function.hpp
 **
 ** Fixed-capacity, heap-free std::function replacement. Stores any callable that
 ** fits in an inline byte buffer (default 32 bytes) and erases its type behind a
@@ -12,15 +12,15 @@
 ** the target must be copy-constructible (matches engine command/callback use).
 */
 
-#ifndef KERNEL_STD_INPLACE_FUNCTION_HPP_
-#define KERNEL_STD_INPLACE_FUNCTION_HPP_
+#ifndef KSTD_INPLACE_FUNCTION_HPP_
+#define KSTD_INPLACE_FUNCTION_HPP_
 
 #include <cstddef>
 #include <new>
 #include <type_traits>
 #include <utility>
 
-#include <kernel_std/support.hpp>
+#include <kstd/support.hpp>
 
 namespace kstd {
 
@@ -165,4 +165,4 @@ private:
 
 } // namespace kstd
 
-#endif // KERNEL_STD_INPLACE_FUNCTION_HPP_
+#endif // KSTD_INPLACE_FUNCTION_HPP_

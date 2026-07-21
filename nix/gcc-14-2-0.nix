@@ -34,7 +34,7 @@ stdenv.mkDerivation (finalAttrs: {
     # Build the freestanding-mode libstdc++ (P1642 subset): provides
     # <type_traits>/<concepts>/<bit>/<span>/<array>/<optional>/<expected>/<atomic>/
     # <string_view>/<functional>/<memory>... but NOT the hosted containers
-    # <vector>/<string>/<unordered_map> (those are hand-rolled allocator-backed in kernel_std).
+    # <vector>/<string>/<unordered_map> (those are hand-rolled allocator-backed in kstd (libkxx)).
     "--disable-hosted-libstdcxx"
     "--disable-libssp"
     "--disable-libquadmath"

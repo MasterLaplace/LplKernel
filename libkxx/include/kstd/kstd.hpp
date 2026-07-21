@@ -1,8 +1,8 @@
 /*
 ** LplKernel
-** kernel/include/kernel_std/kernel_std.hpp
+** libkxx/include/kstd/kstd.hpp
 **
-** kernel_std (kstd) umbrella — the freestanding C++ standard-library subset the
+** kstd umbrella — the freestanding C++ standard-library subset the
 ** engine module (libengine) links against in the kernel target.
 **
 ** The split, established empirically against the i686-elf gcc 14.2 freestanding
@@ -15,7 +15,7 @@
 **     <ratio> <compare> <coroutine> <functional> <memory> <algorithm>
 **     <numbers> <numeric>
 **
-**   Provided here by kernel_std (NOT in the freestanding subset):
+**   Provided here by kstd (NOT in the freestanding subset):
 **     <vector>        -> kstd::vector
 **     <string>        -> kstd::string
 **     <unordered_map> -> kstd::unordered_map
@@ -33,15 +33,15 @@
 ** (in LplPlugin, kernel target) maps the engine's std:: call sites onto these.
 */
 
-#ifndef KERNEL_STD_KERNEL_STD_HPP_
-#define KERNEL_STD_KERNEL_STD_HPP_
+#ifndef KSTD_KSTD_HPP_
+#define KSTD_KSTD_HPP_
 
-#include <kernel_std/allocator.hpp>
-#include <kernel_std/inplace_function.hpp>
-#include <kernel_std/mutex.hpp>
-#include <kernel_std/string.hpp>
-#include <kernel_std/support.hpp>
-#include <kernel_std/unordered_map.hpp>
-#include <kernel_std/vector.hpp>
+#include <kstd/allocator.hpp>
+#include <kstd/inplace_function.hpp>
+#include <kstd/mutex.hpp>
+#include <kstd/string.hpp>
+#include <kstd/support.hpp>
+#include <kstd/unordered_map.hpp>
+#include <kstd/vector.hpp>
 
-#endif // KERNEL_STD_KERNEL_STD_HPP_
+#endif // KSTD_KSTD_HPP_

@@ -18,13 +18,15 @@ CPPFLAGS:=$(CPPFLAGS) -D__is_kernel -Iinclude
 
 LDFLAGS:=$(LDFLAGS)
 # Engine is optional (ENABLE_LIBENGINE, exported by config.sh). When present,
-# -lengine goes BEFORE -lk: the engine's operator new/kstd code calls kmalloc/
-# kfree (resolved from libk) and its archive members are pulled on demand by the
-# kernel's references (e.g. libengine_p0_smoke). When absent, the kernel links
-# without it, the smoke battery is forced off, and LPL_PLUGIN_UNAVAILABLE is set.
+# the link order is -lengine -lkxx -lk: the engine calls the freestanding C++
+# runtime (operator new / kstd::fatal) from libkxx, which in turn calls kmalloc/
+# kfree and the halt primitives from libk. Archive members are pulled on demand
+# by the kernel's references (e.g. libengine_p0_smoke). When absent, the kernel
+# is pure C — no C++ runtime is needed, so libkxx is left out entirely — the
+# smoke battery is forced off and LPL_PLUGIN_UNAVAILABLE is set.
 ENABLE_LIBENGINE?=1
 ifeq ($(ENABLE_LIBENGINE),1)
-LIBS:=$(LIBS) -nostdlib -lengine -lk -lgcc
+LIBS:=$(LIBS) -nostdlib -lengine -lkxx -lk -lgcc
 # Relink the kernel whenever the engine archive changes. -lengine is resolved
 # from the sysroot, so a rebuilt libengine.a (e.g. after an LplPlugin header
 # edit) would otherwise leave a stale engine baked into lpl.kernel. wildcard
@@ -44,17 +46,6 @@ SMOKE_TESTS?=1
 ifeq ($(SMOKE_TESTS),1)
 CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS
 endif
-
-# Freestanding C++ runtime support (operator new/delete + Itanium ABI stubs +
-# kernel_std support). No exceptions/RTTI/threadsafe-statics: the kernel ships
-# no unwinder/typeinfo/guard runtime. Compiled with the C++ driver ($(CXX)).
-# Drop -nostdinc for C++: the freestanding libstdc++ headers (<cstddef>, etc.)
-# live in the toolchain include dir, which -nostdinc would hide. libk headers
-# remain reachable via the sysroot -isystem path.
-# gnu++17 (not gnu++23): the kernel's own runtime uses no C++20/23 features, so
-# it builds on older cross toolchains (e.g. the CI's gcc 10). C++23 stays a
-# libengine-only requirement — libengine has its own gcc14/gnu++23 build.
-CXXFLAGS:=$(filter-out -nostdinc,$(CFLAGS)) -std=gnu++17 -fno-exceptions -fno-rtti -fno-threadsafe-statics
 
 # Graphics mode support (passed from build script)
 GRAPHICS_MODE?=0
@@ -87,8 +78,6 @@ kernel/core/kernel_smoke_batch.o \
 kernel/core/libengine_smoke.o \
 kernel/diag/sysmon.o \
 kernel/core/kernel.o \
-cxx/cxx_runtime.o \
-cxx/kstd_support.o \
 kernel/memory/helpers/pmm_helper.o \
 kernel/memory/helpers/heap_helper.o \
 kernel/memory/helpers/core_allocators_helper.o \
@@ -111,7 +100,7 @@ $(ARCHDIR)/crtend.o \
 $(ARCHDIR)/boot/crtn.o \
 
 .PHONY: all clean install install-headers install-kernel
-.SUFFIXES: .o .c .s .S .cpp
+.SUFFIXES: .o .c .s .S
 
 all: lpl.kernel
 
@@ -130,9 +119,6 @@ $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o:
 
 .S.o:
 	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS) $(ASFLAGS)
-
-.cpp.o:
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 clean:
 	rm -f lpl.kernel

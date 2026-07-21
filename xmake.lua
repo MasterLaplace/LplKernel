@@ -4,10 +4,11 @@
 -- ///
 -- /// A faithful port of the config.sh / headers.sh / build.sh Makefile build,
 -- /// offered ALONGSIDE the shell scripts (which stay the zero-dependency path).
--- /// Three tiers, mirroring the libk recipe:
+-- /// Four tiers, mirroring the libk recipe:
 -- ///   libk       (libc/)      -> freestanding C support library
+-- ///   libkxx     (libkxx/)    -> freestanding C++ runtime (operator new, kstd)
 -- ///   libengine  (LplPlugin)  -> the engine compiled -ffreestanding (Model B)
--- ///   lpl.kernel (kernel/)    -> the kernel image, linked -lengine -lk -lgcc
+-- ///   lpl.kernel (kernel/)    -> the kernel image, -lengine -lkxx -lk -lgcc
 -- ///
 -- /// Usage:
 -- ///   xmake f --graphics=y --keyboard=fr   # configure (modes below)
@@ -139,10 +140,33 @@ target("libk")
 target_end()
 
 -- ===========================================================================
+-- libkxx — freestanding C++ runtime support (operator new/delete + Itanium ABI
+-- stubs + the kstd fatal sink). The C++ counterpart of libk: it is what makes
+-- C++ code linkable into the kernel image at all. Consumers are libengine (and
+-- any future kernel C++ TU); it resolves kmalloc/kfree and the halt primitives
+-- from libk, so the link order is always -lengine -lkxx -lk.
+--
+-- No -nostdinc here (unlike libk): the freestanding libstdc++ headers
+-- (<cstddef>, <new>, <type_traits> ...) live in the toolchain include dir, and
+-- kstd is defined as exactly the subset libstdc++ does NOT provide freestanding.
+-- ===========================================================================
+target("libkxx")
+    set_kind("static")
+    set_basename("kxx")
+    add_cxxflags("-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
+                 "-Wall", "-Wextra", {force = true})
+    set_languages("gnuxx17")
+    add_defines("__is_libkxx")
+    add_includedirs("libkxx/include")
+    add_sysincludedirs("libc/include")
+    add_files("libkxx/src/*.cpp")
+target_end()
+
+-- ===========================================================================
 -- libengine — the LplPlugin engine compiled -ffreestanding into a static lib.
 -- HARD determinism: SSE math, contraction off, bit-identical to the xmake
 -- (Linux) oracle. -mstackrealign because the i386 kernel stack is not yet
--- 16-byte aligned on entry. LPL_TARGET_KERNEL=1 routes lpl/std/* to kernel_std.
+-- 16-byte aligned on entry. LPL_TARGET_KERNEL=1 routes lpl/std/* to kstd (libkxx).
 -- ===========================================================================
 if LPLPLUGIN_AVAILABLE then
 target("libengine")
@@ -157,6 +181,7 @@ target("libengine")
     add_defines("LPL_TARGET_KERNEL=1")
     add_sysincludedirs(
         "kernel/include",          -- <kernel/hal/hal.h>
+        "libkxx/include",          -- <kstd/vector.hpp> etc. (via lpl/std/*)
         "libc/include"             -- freestanding <stdint.h> etc.
     )
     add_includedirs(
@@ -227,7 +252,7 @@ target("lpl-kernel")
     set_filename("lpl.kernel")
     add_deps("libk")
     if LPLPLUGIN_AVAILABLE then
-        add_deps("libengine")
+        add_deps("libengine", "libkxx")
     else
         -- No engine: stub the smoke facade + skip the smoke battery entirely.
         add_defines("LPL_PLUGIN_UNAVAILABLE=1")
@@ -235,12 +260,6 @@ target("lpl-kernel")
 
     -- C: freestanding, no standard includes (headers come from -I dirs below).
     add_cflags("-nostdinc", "-ffreestanding", "-Wall", "-Wextra", {force = true})
-    -- C++ (cxx_runtime / kstd_support): keep stdinc so the freestanding
-    -- libstdc++ headers (<cstddef> ...) resolve; no exceptions/RTTI/guards.
-    add_cxxflags(
-        "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
-        "-Wall", "-Wextra", {force = true}
-    )
     add_defines("__is_kernel", "MULTIBOOT_VERSION=1")
     -- Assembler `.include "arch/i386/..."` paths are written relative to the
     -- kernel/ subdir (the Makefile assembled from there); point GNU as there.
@@ -269,7 +288,6 @@ target("lpl-kernel")
     add_files("kernel/arch/i386/**.c")
     add_files("kernel/arch/i386/**.s", "kernel/arch/i386/**.S")
     add_files("kernel/kernel/**.c")
-    add_files("kernel/cxx/**.cpp")
 
     on_link(function (target)
         import("core.base.option")
@@ -292,16 +310,20 @@ target("lpl-kernel")
         local crtend = os.iorunv(cc, {"-print-file-name=crtend.o"}):trim()
 
         local libengine = target:dep("libengine") and target:dep("libengine"):targetfile() or nil
+        local libkxx = target:dep("libkxx") and target:dep("libkxx"):targetfile() or nil
         local libk = target:dep("libk"):targetfile()
         local out = target:targetfile()
 
         -- $(CC) -T linker.ld -o lpl.kernel <free flags> crti crtbegin OBJS \
-        --       -nostdlib [-lengine] -lk -lgcc crtend crtn
-        -- libengine is linked before libk (its operator new / kstd calls resolve
-        -- from libk); it is omitted entirely when LplPlugin is unavailable.
+        --       -nostdlib [-lengine -lkxx] -lk -lgcc crtend crtn
+        -- Link order is libengine -> libkxx -> libk: the engine calls the C++
+        -- runtime (operator new / kstd::fatal) in libkxx, which calls kmalloc/
+        -- kfree and the halt primitives in libk. Both are omitted entirely when
+        -- LplPlugin is unavailable (the kernel is then pure C).
         local argv = {"-T", linker, "-o", out, "-ffreestanding", "-O2", "-g", "-nostdlib", crti, crtbegin}
         table.join2(argv, rest)
         if libengine then table.insert(argv, libengine) end
+        if libkxx then table.insert(argv, libkxx) end
         table.join2(argv, {libk, "-lgcc", crtend, crtn})
 
         os.mkdir(path.directory(out))

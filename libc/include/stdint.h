@@ -5,7 +5,7 @@
  * them (the __*_TYPE__ builtins) instead of hardcoding. On i686-elf gcc, e.g.
  * int32_t is `long int` and uint32_t is `long unsigned int` — NOT `int` /
  * `unsigned int`. Hardcoding the latter clashed with libstdc++'s <cstdint> the
- * moment any C++ TU (the engine module / kernel_std) pulled in both headers.
+ * moment any C++ TU (the engine module / kstd) pulled in both headers.
  * Using the builtins guarantees the typedefs are identical to the toolchain's. */
 typedef __INT8_TYPE__ int8_t;
 typedef __UINT8_TYPE__ uint8_t;

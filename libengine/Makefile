@@ -18,7 +18,7 @@ LPLPLUGIN_ROOT?=$(abspath ../../LplPlugin)
 
 # Freestanding C++23, no exceptions/RTTI/threadsafe-statics (the kernel provides
 # no unwinder, no typeinfo, no guard-variable runtime). LPL_TARGET_KERNEL=1
-# routes every lpl/std/* umbrella to kernel_std instead of hosted libstdc++.
+# routes every lpl/std/* umbrella to kstd instead of hosted libstdc++.
 CXXFLAGS:=$(CXXFLAGS) -std=gnu++23 -ffreestanding -fno-exceptions -fno-rtti \
           -fno-threadsafe-statics -Wall -Wextra
 CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \

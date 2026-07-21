@@ -1,6 +1,6 @@
 /*
 ** LplKernel
-** kernel/include/kernel_std/unordered_map.hpp
+** libkxx/include/kstd/unordered_map.hpp
 **
 ** Freestanding, exception-free std::unordered_map work-alike. Separate chaining
 ** with a power-of-two bucket array and a load-factor-driven rehash. Node storage
@@ -9,19 +9,19 @@
 **
 ** Scope: insert/emplace/operator[]/find/erase/contains/at/size/iterate. No node
 ** handles, no bucket-interface, no custom max_load_factor tuning — bounded on
-** purpose, like the rest of kernel_std.
+** purpose, like the rest of kstd.
 */
 
-#ifndef KERNEL_STD_UNORDERED_MAP_HPP_
-#define KERNEL_STD_UNORDERED_MAP_HPP_
+#ifndef KSTD_UNORDERED_MAP_HPP_
+#define KSTD_UNORDERED_MAP_HPP_
 
 #include <cstddef>
 #include <functional>
 #include <new>
 #include <utility>
 
-#include <kernel_std/allocator.hpp>
-#include <kernel_std/support.hpp>
+#include <kstd/allocator.hpp>
+#include <kstd/support.hpp>
 
 namespace kstd {
 
@@ -317,4 +317,4 @@ private:
 
 } // namespace kstd
 
-#endif // KERNEL_STD_UNORDERED_MAP_HPP_
+#endif // KSTD_UNORDERED_MAP_HPP_
