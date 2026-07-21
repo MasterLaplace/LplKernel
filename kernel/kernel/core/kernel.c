@@ -48,11 +48,11 @@
 #include <kernel/testing/smoke_test.h>
 
 #include <kernel/core/console.h>
-#include <kernel/testing/smoke_batch.h>
 #include <kernel/core/smp.h>
 #include <kernel/core/splash.h>
-#include <kernel/testing/smoke_libengine.h>
 #include <kernel/diag/sysmon.h>
+#include <kernel/testing/smoke_batch.h>
+#include <kernel/testing/smoke_libengine.h>
 
 /* The engine module is optional: when LplPlugin is absent, config.sh drops
    libengine from SYSTEM_HEADER_PROJECTS (so this header is never installed into

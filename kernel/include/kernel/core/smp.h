@@ -4,7 +4,8 @@
 #include <kernel/drivers/serial.h>
 
 /**
- * @brief Coordinates the SMP (Symmetric Multiprocessing) startup sequence for all discovered application processors (APs).
+ * @brief Coordinates the SMP (Symmetric Multiprocessing) startup sequence for all discovered application processors
+ * (APs).
  *
  * This function handles bootstrapping, INIT/SIPI sequence dispatch, trampoline installation,
  * and telemetry/diagnostics for bringing secondary cores online safely.
