@@ -5,26 +5,28 @@
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 
-<section id="demo" class="scroll-mt-20">
+<section id="demo" class="scroll-mt-20" aria-labelledby="demo-heading">
   <div class="lpl-panel lpl-glow rounded-none p-4 sm:p-6" data-emulator data-base={base}>
     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
       <div>
-        <h2 class="text-xl font-semibold">Boot it in your browser</h2>
+        <h2 id="demo-heading" class="text-xl font-semibold">Boot it in your browser</h2>
         <p class="text-sm text-lpl-muted">
           LplKernel runs locally in your tab via <span class="font-mono">v86</span> — no install, no
           backend. Each ISO is ~3&nbsp;MB and downloads on demand.
         </p>
       </div>
-      <div class="flex items-center gap-2 text-sm">
+      <div class="flex items-center gap-2 text-sm" role="group" aria-label="Boot profile">
         <button
           type="button"
           data-profile="server"
+          aria-pressed="true"
           class="px-3 py-1.5 rounded-none border border-lpl-border bg-lpl-accent/10 text-lpl-accent font-mono"
           >Text console</button
         >
         <button
           type="button"
           data-profile="client"
+          aria-pressed="false"
           class="px-3 py-1.5 rounded-none border border-lpl-border text-lpl-muted font-mono hover:text-lpl-text"
           >Graphics</button
         >
@@ -41,23 +43,35 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
             type="button"
             data-boot
             class="px-5 py-2.5 rounded-none bg-lpl-accent text-[#04121a] font-semibold font-mono hover:brightness-110"
-            >▶ Boot LplKernel (text)</button
+            ><span aria-hidden="true">▶</span> <span data-boot-label>Boot LplKernel (text)</span
+            ></button
           >
-          <p class="mt-3 text-xs text-lpl-muted" data-status>
+          <p class="mt-3 text-xs text-lpl-muted" data-status role="status" aria-live="polite">
             Click to download the ISO and start the emulator.
           </p>
         </div>
-        <!-- v86 render targets (populated on boot) -->
+        <!-- v86 render targets (populated on boot).
+             Accessibility: the emulator is a raw framebuffer driven by a guest
+             OS — neither the VGA canvas nor the character grid is meaningful to
+             a screen reader, and the text grid repaints too often to be a live
+             region without flooding it. Both are therefore labelled and marked
+             aria-hidden, and the prose below carries the real alternative. -->
         <div data-v86-container class="hidden">
           <div
             data-v86-text
+            aria-hidden="true"
             style="white-space: pre; font: 14px/14px var(--font-mono); color: #d6deeb; padding: 12px;"
           >
           </div>
-          <canvas data-v86-canvas style="display:none"></canvas>
+          <canvas data-v86-canvas aria-hidden="true" style="display:none"></canvas>
         </div>
       </div>
     </div>
+
+    <!-- Always-present announcer: the visible [data-status] lives inside the
+         splash, which is hidden once the emulator boots, so it can't carry
+         announcements past that point. -->
+    <p class="sr-only" data-live role="status" aria-live="polite"></p>
 
     <p class="mt-3 text-xs text-lpl-muted">
       In the <strong>text</strong> profile you can type commands: <span class="font-mono"
@@ -65,6 +79,44 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
       >. Click the screen to capture your keyboard. Runs single-threaded (GitHub Pages can't set
       cross-origin isolation headers), so boot takes a few seconds.
     </p>
+
+    <!-- Text alternative. The emulated screen is a pixel framebuffer, so it can
+         never be navigated by assistive tech; this describes what it shows. -->
+    <details class="mt-4 border-t border-lpl-border pt-4">
+      <summary class="text-sm text-lpl-accent cursor-pointer">
+        What the emulator shows (text description)
+      </summary>
+      <div class="mt-3 text-sm text-lpl-muted space-y-3 max-w-3xl">
+        <p>
+          This panel is a full x86 PC emulated in your browser. It is a pixel framebuffer painted by
+          a guest operating system, so a screen reader cannot read its contents — what follows
+          describes what a sighted visitor sees.
+        </p>
+        <p>
+          In the <strong>text console</strong> profile, GRUB hands control to LplKernel, which prints
+          its boot sequence line by line as each subsystem comes up — memory management, the
+          interrupt tables, CPU topology, the PS/2 keyboard, then the PCI bus enumeration listing the
+          emulated machine's devices (host bridge, IDE controller, VGA adapter, network card). It
+          then drops to an interactive prompt accepting <span class="font-mono">help</span>,
+          <span class="font-mono">stats</span>, <span class="font-mono">kbd</span>,
+          <span class="font-mono">layout fr</span> and <span class="font-mono">pci</span>.
+        </p>
+        <p>
+          In the <strong>graphics</strong> profile, the kernel switches to a VBE framebuffer and runs
+          the engine's sample simulation: a pile of 1024 cubes falling onto a ground plane under
+          gravity, colliding with each other, drawn over a perspective grid by the software
+          rasterizer, with a heads-up display in the corner reporting the frame rate and the entity
+          count.
+        </p>
+        <p>
+          The same simulation is verified bit-for-bit against a Linux reference run — that
+          determinism result is written up in the <a
+            href={`${base}/blog`}
+            class="text-lpl-accent underline">papers</a
+          >, in text.
+        </p>
+      </div>
+    </details>
   </div>
 </section>
 
@@ -96,13 +148,19 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     const textEl = root.querySelector<HTMLElement>("[data-v86-text]");
     const canvasEl = root.querySelector<HTMLCanvasElement>("[data-v86-canvas]");
     const bootBtn = root.querySelector<HTMLButtonElement>("[data-boot]");
+    const bootLabel = root.querySelector<HTMLElement>("[data-boot-label]");
     const profileBtns = root.querySelectorAll<HTMLButtonElement>("[data-profile]");
 
     let current: { destroy?: () => void } | null = null;
     let selected: ProfileKey = "server";
 
-    const setStatus = (msg: string) => {
+    const live = root.querySelector<HTMLElement>("[data-live]");
+
+    // `announce` is the screen-reader-only message; it may differ from the
+    // visible one (and must not be cleared, or nothing gets read out).
+    const setStatus = (msg: string, announce = msg) => {
       if (status) status.textContent = msg;
+      if (live && announce) live.textContent = announce;
     };
 
     if (typeof WebAssembly === "undefined") {
@@ -118,9 +176,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
         b.classList.toggle("bg-lpl-accent/10", active);
         b.classList.toggle("text-lpl-accent", active);
         b.classList.toggle("text-lpl-muted", !active);
+        b.setAttribute("aria-pressed", String(active));
       });
-      if (bootBtn && current === null) {
-        bootBtn.textContent = `▶ Boot LplKernel (${PROFILES[key].label})`;
+      if (bootLabel && current === null) {
+        bootLabel.textContent = `Boot LplKernel (${PROFILES[key].label})`;
       }
       // Switching profile after boot restarts with the new ISO.
       if (current !== null) boot();
@@ -152,7 +211,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           screen_container: container as HTMLElement,
           disable_keyboard: false,
         });
-        setStatus("");
+        setStatus(
+          "",
+          `LplKernel is booting in the ${profile.label} profile. The emulated screen cannot be read by a screen reader — see "What the emulator shows" below for a description.`,
+        );
       } catch (err) {
         if (splash) splash.style.display = "block";
         if (container) container.classList.add("hidden");

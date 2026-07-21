@@ -69,6 +69,16 @@ for (let i = 0; i < lines.length; i++) {
       continue;
     }
 
+    // "# ANNEXES" is a section separator like "# PARTIE N", not content. Without
+    // this it fell through to the catch-all below and got appended to the last
+    // chapter's body, leaving a stray second <h1> on that page. The annexes are
+    // already grouped by `kind` in the sidebar, so the separator is just dropped.
+    if (/^ANNEXES?$/i.test(text)) {
+      flush();
+      currentPart = null;
+      continue;
+    }
+
     const meta = classify(text);
     if (meta) {
       flush();

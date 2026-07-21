@@ -4,7 +4,10 @@ import Base from "../layouts/Base.astro";
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 ---
 
-<Base title="Projects — The Laplace Project">
+<Base
+  title="Projects & lineage — The Laplace Project"
+  description="LplKernel, LplPlugin, Engine-3D and Flakkari: six years of low-level systems engineering, from a software rasterizer in C to a game engine running in ring 0."
+>
   <section class="py-16 max-w-3xl">
     <h1 class="text-3xl font-bold mb-2">Projects &amp; lineage</h1>
     <p class="text-lpl-muted mb-12">
@@ -25,7 +28,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           PS/2 input with switchable layouts, and — the point of the whole exercise — LplPlugin
           compiled natively into kernel space.
         </p>
-        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/LplKernel" target="_blank" rel="noopener">github.com/MasterLaplace/LplKernel ↗</a>
+        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/LplKernel" target="_blank" rel="noopener noreferrer">github.com/MasterLaplace/LplKernel <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>
       </article>
 
       <article class="lpl-panel rounded-none p-6">
@@ -39,7 +42,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           and Flakkari, and grew into a complete engine that supersedes both — now embeddable
           directly into the kernel for a zero-copy data path.
         </p>
-        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/LplPlugin" target="_blank" rel="noopener">github.com/MasterLaplace/LplPlugin ↗</a>
+        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/LplPlugin" target="_blank" rel="noopener noreferrer">github.com/MasterLaplace/LplPlugin <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>
       </article>
     </div>
 
@@ -62,7 +65,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           for every feature that looked interesting at the time, and the place where the appetite
           for doing the low-level work yourself began.
         </p>
-        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/Engine-3D" target="_blank" rel="noopener">github.com/MasterLaplace/Engine-3D ↗</a>
+        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/Engine-3D" target="_blank" rel="noopener noreferrer">github.com/MasterLaplace/Engine-3D <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>
       </article>
 
       <article class="lpl-panel rounded-none p-6">
@@ -77,7 +80,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           components, and supported entity templating — the direct ancestor of LplPlugin's server
           build.
         </p>
-        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/Flakkari" target="_blank" rel="noopener">github.com/MasterLaplace/Flakkari ↗</a>
+        <a class="text-sm text-lpl-accent" href="https://github.com/MasterLaplace/Flakkari" target="_blank" rel="noopener noreferrer">github.com/MasterLaplace/Flakkari <span aria-hidden="true">↗</span><span class="sr-only"> (opens in a new tab)</span></a>
       </article>
     </div>
 

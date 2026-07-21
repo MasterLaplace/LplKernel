@@ -6,30 +6,52 @@ import Footer from "../components/Footer.astro";
 interface Props {
   title?: string;
   description?: string;
+  /** Language of this page's *content*. Drives screen-reader voice selection and
+      browser translation offers. Pages written in French must pass "fr". */
+  lang?: string;
+  /** Extra JSON-LD to inject (structured data for search engines). */
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
 
 const {
   title = "The Laplace Project",
   description = "LplKernel + LplPlugin — a native, zero-copy kernel-space game/graphics engine. Boot it in your browser.",
+  lang = "en",
+  jsonLd,
 } = Astro.props;
+
+const canonical = new URL(Astro.url.pathname.replace(/\/$/, "") || "/", Astro.site);
+const ogLocale = lang === "fr" ? "fr_FR" : "en_US";
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}/favicon.svg`} />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonical.href} />
+    <meta name="author" content="Master Laplace" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical.href} />
+    <meta property="og:site_name" content="The Laplace Project" />
+    <meta property="og:locale" content={ogLocale} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <link rel="alternate" type="application/rss+xml" title="Laplace — Blog &amp; Papers" href={`${import.meta.env.BASE_URL}/rss.xml`} />
     <meta name="generator" content={Astro.generator} />
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
   </head>
   <body class="font-sans text-lpl-text antialiased">
+    <a href="#main" class="lpl-skip-link">Skip to main content</a>
     <Nav />
-    <main class="mx-auto max-w-6xl px-4">
+    <main id="main" class="mx-auto max-w-6xl px-4">
       <slot />
     </main>
     <Footer />

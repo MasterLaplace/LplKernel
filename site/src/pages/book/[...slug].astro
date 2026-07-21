@@ -20,7 +20,11 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const shortTitle = (t: string) => t.replace(/\s+—.*/, "").replace(/\s*:\s*/, " · ");
 ---
 
-<BookLayout title={shortTitle(entry.data.title)} activeSlug={entry.data.slug}>
+<BookLayout
+  title={shortTitle(entry.data.title)}
+  activeSlug={entry.data.slug}
+  description={`${entry.data.title}${entry.data.part ? ` — ${entry.data.part}` : ""}. Chapitre du livre technique du projet Laplace : noyau, moteur, déterminisme et interfaces cerveau-ordinateur.`}
+>
   {
     entry.data.part && (
       <p class="font-mono text-xs uppercase tracking-wider text-lpl-muted mb-2">{entry.data.part}</p>
@@ -32,7 +36,10 @@ const shortTitle = (t: string) => t.replace(/\s+—.*/, "").replace(/\s*:\s*/, "
     <Content />
   </article>
 
-  <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm">
+  <nav
+    class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm"
+    aria-label="Chapitre précédent et suivant"
+  >
     {
       prev ? (
         <a href={`${base}/book/${prev.data.slug}`} class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">

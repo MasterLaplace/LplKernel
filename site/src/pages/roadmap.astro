@@ -41,9 +41,13 @@ const projects = PROJECT_ORDER.map((p) => ({
       {
         statusOrder.map((s) => (
           <span class="inline-flex items-center gap-1.5">
-            <span style={`color:${STATUS_META[s].color}`}>{STATUS_META[s].glyph}</span>
+            <span style={`color:${STATUS_META[s].color}`} aria-hidden="true">
+              {STATUS_META[s].glyph}
+            </span>
             {STATUS_META[s].label}
-            <span class="text-lpl-border">·</span>
+            <span class="text-lpl-border" aria-hidden="true">
+              ·
+            </span>
             <span class="tabular-nums">{totals[s]}</span>
           </span>
         ))
@@ -53,12 +57,17 @@ const projects = PROJECT_ORDER.map((p) => ({
     </div>
 
     <!-- Filter bar -->
-    <div class="flex flex-wrap items-center gap-2 mb-10 text-sm" id="filters">
-      <span class="text-lpl-muted mr-1">Project:</span>
-      <button data-project-filter="all" class="proj-btn is-active">All</button>
+    <div
+      class="flex flex-wrap items-center gap-2 mb-10 text-sm"
+      id="filters"
+      role="group"
+      aria-label="Filter roadmap items"
+    >
+      <span class="text-lpl-muted mr-1" id="filter-project-label">Project:</span>
+      <button data-project-filter="all" class="proj-btn is-active" aria-pressed="true">All</button>
       {
         projects.map((p) => (
-          <button data-project-filter={p.key} class="proj-btn">
+          <button data-project-filter={p.key} class="proj-btn" aria-pressed="false">
             {p.meta.label}
           </button>
         ))
@@ -66,12 +75,19 @@ const projects = PROJECT_ORDER.map((p) => ({
       <span class="text-lpl-muted ml-4 mr-1">Status:</span>
       {
         statusOrder.map((s) => (
-          <button data-status-filter={s} class="stat-btn is-active" style={`--c:${STATUS_META[s].color}`}>
-            {STATUS_META[s].glyph} {STATUS_META[s].label}
+          <button
+            data-status-filter={s}
+            class="stat-btn is-active"
+            aria-pressed="true"
+            style={`--c:${STATUS_META[s].color}`}
+          >
+            <span aria-hidden="true">{STATUS_META[s].glyph}</span> {STATUS_META[s].label}
           </button>
         ))
       }
     </div>
+
+    <p class="sr-only" id="filter-announcer" role="status" aria-live="polite"></p>
 
     <!-- Projects -->
     <div class="space-y-16">
@@ -112,12 +128,9 @@ const projects = PROJECT_ORDER.map((p) => ({
                         data-status={it.status}
                       >
                         <div class="flex items-start gap-2 mb-1">
-                          <span
-                            class="mt-0.5 shrink-0"
-                            style={`color:${STATUS_META[it.status].color}`}
-                            title={STATUS_META[it.status].label}
-                          >
-                            {STATUS_META[it.status].glyph}
+                          <span class="mt-0.5 shrink-0" style={`color:${STATUS_META[it.status].color}`}>
+                            <span aria-hidden="true">{STATUS_META[it.status].glyph}</span>
+                            <span class="sr-only">Status: {STATUS_META[it.status].label}.</span>
                           </span>
                           <h4 class="font-semibold leading-snug flex-1">{it.title}</h4>
                           {it.phase && (
@@ -128,7 +141,14 @@ const projects = PROJECT_ORDER.map((p) => ({
                         </div>
 
                         {typeof it.progress === "number" && (
-                          <div class="flex items-center gap-2 mb-2 ml-6">
+                          <div
+                            class="flex items-center gap-2 mb-2 ml-6"
+                            role="progressbar"
+                            aria-valuenow={it.progress}
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-label={`${it.title} progress`}
+                          >
                             <div class="flex-1 h-1 bg-lpl-border/40">
                               <div
                                 class="h-full"
@@ -236,6 +256,7 @@ const projects = PROJECT_ORDER.map((p) => ({
   const tracks = Array.from(document.querySelectorAll<HTMLElement>(".track-block"));
   const blocks = Array.from(document.querySelectorAll<HTMLElement>(".project-block"));
   const emptyNote = document.getElementById("empty-note");
+  const announcer = document.getElementById("filter-announcer");
 
   function apply() {
     let visible = 0;
@@ -256,6 +277,12 @@ const projects = PROJECT_ORDER.map((p) => ({
       b.style.display = any ? "" : "none";
     }
     if (emptyNote) emptyNote.classList.toggle("hidden", visible !== 0);
+    // Filtering rewrites the page silently; announce the new count so screen
+    // reader users know the list changed and by how much.
+    if (announcer) {
+      announcer.textContent =
+        visible === 0 ? "No roadmap items match the current filters." : `${visible} roadmap items shown.`;
+    }
   }
 
   document.querySelectorAll<HTMLElement>("[data-project-filter]").forEach((btn) => {
@@ -263,7 +290,10 @@ const projects = PROJECT_ORDER.map((p) => ({
       state.project = btn.dataset.projectFilter!;
       document
         .querySelectorAll("[data-project-filter]")
-        .forEach((b) => b.classList.toggle("is-active", b === btn));
+        .forEach((b) => {
+          b.classList.toggle("is-active", b === btn);
+          b.setAttribute("aria-pressed", String(b === btn));
+        });
       apply();
     });
   });
@@ -274,6 +304,7 @@ const projects = PROJECT_ORDER.map((p) => ({
       if (state.statuses.has(s)) state.statuses.delete(s);
       else state.statuses.add(s);
       btn.classList.toggle("is-active", state.statuses.has(s));
+      btn.setAttribute("aria-pressed", String(state.statuses.has(s)));
       apply();
     });
   });

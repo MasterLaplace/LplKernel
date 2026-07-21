@@ -30,9 +30,39 @@ const benchmarks = [
   { value: "ring-0", label: "engine ↔ hardware, no syscall boundary" },
   { value: "2 profiles", label: "deterministic client · throughput server" },
 ];
+
+// Structured data: tells search engines who the author is and what the site is,
+// and links the profile to the source repositories.
+const jsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "The Laplace Project",
+    url: "https://masterlaplace.github.io/LplKernel/",
+    description:
+      "LplKernel + LplPlugin — a native, zero-copy kernel-space game and graphics engine, bootable in the browser.",
+    inLanguage: ["en", "fr"],
+    author: {
+      "@type": "Person",
+      name: "Master Laplace",
+      url: "https://github.com/MasterLaplace",
+    },
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    name: "LplKernel",
+    description:
+      "A from-scratch i686 operating-system kernel with a game and graphics engine compiled natively into ring 0.",
+    codeRepository: "https://github.com/MasterLaplace/LplKernel",
+    programmingLanguage: ["C", "C++", "Assembly"],
+    license: "https://www.gnu.org/licenses/gpl-3.0.html",
+    author: { "@type": "Person", name: "Master Laplace" },
+  },
+];
 ---
 
-<Base>
+<Base jsonLd={jsonLd}>
   <!-- Hero -->
   <section class="py-16 sm:py-24">
     <p class="font-mono text-lpl-accent text-sm mb-4">// systems engineering · from rasterizer to kernel</p>
@@ -48,7 +78,7 @@ const benchmarks = [
       <a
         href="#demo"
         class="px-5 py-2.5 rounded-none bg-lpl-accent text-[#04121a] font-semibold hover:brightness-110"
-        >Boot the kernel ↓</a
+        >Boot the kernel <span aria-hidden="true">↓</span></a
       >
       <a
         href={`${base}/projects`}
@@ -81,7 +111,8 @@ const benchmarks = [
   </section>
 
   <!-- Benchmarks -->
-  <section class="py-8">
+  <section class="py-8" aria-labelledby="benchmarks-heading">
+    <h2 id="benchmarks-heading" class="sr-only">Key benchmark figures</h2>
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {
         benchmarks.map((b) => (

@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import remarkMermaid from "./src/plugins/remark-mermaid.mjs";
+import rehypeNoTranslate from "./src/plugins/rehype-no-translate.mjs";
 
 // GitHub Pages project site served from the `gh-pages` branch of LplKernel.
 // If you later attach a custom domain, drop `base` and update `site`.
@@ -13,7 +14,8 @@ export default defineConfig({
   trailingSlash: "ignore",
   markdown: {
     remarkPlugins: [remarkMath, remarkMermaid],
-    rehypePlugins: [rehypeKatex],
+    // rehypeNoTranslate must come after rehypeKatex: it tags the .katex output.
+    rehypePlugins: [rehypeKatex, rehypeNoTranslate],
     shikiConfig: { theme: "github-dark" },
   },
   vite: {

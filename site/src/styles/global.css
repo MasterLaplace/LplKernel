@@ -27,6 +27,61 @@ body {
   color: #04121a;
 }
 
+/* --- Accessibility --------------------------------------------------------
+   Keyboard/screen-reader affordances. Purely additive: no existing colour,
+   spacing or radius token is changed here. */
+
+/* Skip link: off-screen until focused, then pinned top-left. */
+.lpl-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  background: var(--color-lpl-accent);
+  color: #04121a;
+}
+.lpl-skip-link:focus {
+  left: 0;
+}
+
+/* A visible focus ring is the prerequisite for keyboard-only navigation.
+   Uses the existing accent token, so it stays on-brand. */
+:where(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-lpl-accent);
+  outline-offset: 2px;
+}
+
+/* Users who ask the OS for reduced motion get no smooth scroll / transitions. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Figures: a Mermaid diagram plus its caption form one labelled unit. */
+.book-prose figure.lpl-figure {
+  margin: 1.5rem 0;
+}
+.book-prose figure.lpl-figure > figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-lpl-muted);
+  line-height: 1.6;
+}
+.book-prose figure.lpl-figure > figcaption > p {
+  margin: 0;
+}
+
 .lpl-panel {
   background-color: var(--color-lpl-panel);
   border: 1px solid var(--color-lpl-border);

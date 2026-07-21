@@ -669,6 +669,8 @@ graph TD
     A --> B --> C --> D --> E
 ```
 
+**Figure 2.1 — La pyramide mémoire de LplKernel.** Cinq étages empilés, chacun servant celui du dessus : les allocateurs du moteur (arène, pool, pile, en $O(1)$) s'appuient sur un allocateur dynamique déterministe (TLSF / O1Heap), lui-même bâti sur l'allocateur slab du noyau (SLUB et ses *sheaves*), qui découpe les pages fournies par le buddy system, lequel gère la mémoire physique réelle sous ses contraintes matérielles (NUMA, cache, TLB, PCIe).
+
 Le principe directeur est simple : aucune allocation dynamique non déterministe entre le premier et le dernier tick de simulation d'une frame. Toute la mémoire nécessaire est soit pré-allouée (Pool, Arena), soit obtenue avec des garanties $O(1)$ (TLSF). Les allocations « lentes » (chargement d'assets, création de monde) restent confinées aux phases de chargement, à l'écart de la boucle de simulation.
 
 ### Notes de bas de page du chapitre 2
@@ -1248,6 +1250,8 @@ graph LR
     A["Command Buffer Recording<br/>(CPU)"] --> B["Queue Submission<br/>(CPU → GPU)"] --> C["GPU Execution<br/>(GPU)"] --> D["Presentation<br/>(GPU → Display)"]
 ```
 
+**Figure 5.1 — Le pipeline de rendu Vulkan, de bout en bout.** Une chaîne linéaire en quatre temps, qui traverse deux fois la frontière CPU/GPU : le CPU enregistre les *command buffers*, les soumet à une queue (CPU → GPU), le GPU les exécute, puis présente l'image au système d'affichage (GPU → écran).
+
 - **Command Buffers** : Enregistrés à l'avance (potentiellement dans un thread secondaire), puis soumis en batch au GPU. L'enregistrement multi-threadé est un avantage majeur de Vulkan sur OpenGL.
 - **Render Pass** : Définit les attachements (color, depth, stencil) et les sous-passes. Le driver peut optimiser les transitions de layout mémoire.
 - **Pipeline State Objects** : Toute la configuration du pipeline (shaders, rasterizer, blending) est pré-compilée en un objet immuable, éliminant les changements d'état coûteux.
@@ -1593,6 +1597,8 @@ graph LR
     Sim -->|"SPSC Queue: produced state"| Net
 ```
 
+**Figure 6.1 — Les deux queues SPSC entre réseau et simulation.** Deux threads, deux queues à sens unique, aucun verrou. Le thread réseau reçoit les paquets UDP et pousse les inputs décodés dans la première queue, que le thread de simulation draine ; celui-ci produit l'état et le pousse dans la seconde queue, que le thread réseau draine à son tour pour l'émission. Chaque queue n'a qu'un producteur et qu'un consommateur, d'où le sigle SPSC : c'est cette contrainte qui permet de se passer de mutex.
+
 Chaque queue est un Ring Buffer avec des atomiques `acquire`/`release`. Le thread réseau ne bloque jamais le thread de simulation, et vice versa : une propriété décisive pour tenir le pas de temps fixe sous les 16.67 ms.
 
 Un dernier choix d'architecture mérite mention : client et serveur partagent une seule et même classe réseau. La duplication (un chemin client, un chemin serveur) finit toujours en dérive de protocole, chaque copie évoluant de son côté ; une implémentation unique, et header-only, élimine la dérive et les problèmes d'ordre de link du même coup.
@@ -1822,6 +1828,8 @@ graph TD
     F --> G["Ring Buffer SPSC Lock-Free"]
     G --> H["LplKernel Engine → VR Adaptation"]
 ```
+
+**Figure 7.1 — La chaîne complète, de l'électrode à l'adaptation VR.** Le signal part du casque OpenBCI (Cyton ou Galea, 250 Hz), transite par BrainFlow puis LSL jusqu'au plugin C++ ; là il est filtré (0,5-45 Hz), débarrassé des artefacts oculaires par ICA, projeté par CSP, et sa densité spectrale extraite par FFT. De ces spectres on tire trois métriques (le $R(t)$ de Schumacher pour la relaxation, la distance de Mahalanobis de Sollfrank pour la stabilité, la distance riemannienne $\delta_R$ pour la classification), qui traversent un ring buffer SPSC sans verrou avant d'atteindre le moteur, lequel adapte l'expérience VR en conséquence.
 
 ### Notes de bas de page du chapitre 7
 
@@ -2609,6 +2617,10 @@ flowchart TD
     RAM =====|"⚡ Direct access via PKeys (SASOS)"| Userspace
 ```
 
+**Figure 10.1 — L'architecture fusionnée de LplKernel, en quatre strates.** De haut en bas : l'espace utilisateur, où trois applications (moteur VR, serveur Flakkari, modèle d'IA distribué) cohabitent dans un espace d'adressage unique, isolées non par des tables de pages distinctes mais par des clés de protection (PKeys `0x1`, `0x2`, `0x3`) ; la frontière noyau-utilisateur, réduite à deux ring buffers de soumission et de complétion (réseau et système), c'est-à-dire sans changement de contexte ; l'espace noyau lui-même, réparti en quatre sous-systèmes (boot et initialisation CPU, ordonnancement et topologie, mémoire, pilotes et E/S) ; et le matériel enfin (CPU, RAM NUMA, contrôleurs, stockage, carte réseau, accélérateurs).
+
+Trois flèches épaisses court-circuitent toute cette pile : la carte réseau parle directement au serveur Flakkari en DMA zéro-copie, les accélérateurs sont mappés directement dans les applications qui les utilisent, et la RAM est accessible depuis l'espace utilisateur via les PKeys. Ce sont ces contournements qui font l'intérêt de l'architecture — le noyau configure le chemin, puis s'efface.
+
 ## 10.11 Synthèse
 
 L'architecture visionnaire de LplKernel redéfinit la relation entre matériel et application. Le noyau n'est plus un intermédiaire lourd mais un orchestrateur d'accès direct :
@@ -3077,6 +3089,12 @@ sequenceDiagram
     end
     end
 ```
+
+**Figure D.1 — Le déroulé chronologique complet, du POST à la boucle FullDive.** Douze acteurs répartis en quatre groupes (matériel et boot, cœur du noyau en ring 0, sous-systèmes noyau, espace utilisateur en ring 3), et le temps qui descend. Le diagramme s'ouvre sur les phases 1 à 3 déjà implémentées : le BIOS passe la main à GRUB, GRUB charge l'ELF du noyau et saute à `_start` avec le magic `0x2BADB002`, `boot.S` monte le page directory initial, active la pagination et bascule en *higher half* avant d'appeler `kernel_initialize()`.
+
+Il se referme sur la boucle d'exécution cible, où trois activités se déroulent **en parallèle** : la frame de simulation VR, qui poste ses requêtes dans une queue SPSC et continue de calculer sans jamais faire de `INT 0x80` pendant qu'un CPU applicatif dédié dépile et complète ; le contournement réseau, où la carte écrit les paquets UDP directement en RAM par DMA sans lever la moindre interruption ; et l'ordonnanceur EDF, qui recalcule ses échéances à chaque tick d'APIC et préempte sans ménagement dès que le budget de latence de 20 ms est menacé.
+
+> Le tracé mêle délibérément deux registres : les appels de fonctions réels du code actuel et une projection des implémentations à venir (EDF, SASOS, zéro-appel-système). Les phases sont annotées en conséquence.
 
 ### Dictionnaire des fonctionnalités anticipées
 

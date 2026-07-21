@@ -1,5 +1,7 @@
 ---
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+// Normalised current path, used to flag the active link for assistive tech.
+const here = Astro.url.pathname.replace(/\/$/, "") || base;
 const links = [
   { href: `${base}/`, label: "Home" },
   { href: `${base}/#demo`, label: "Live demo" },
@@ -7,14 +9,21 @@ const links = [
   { href: `${base}/roadmap`, label: "Roadmap" },
   { href: `${base}/book`, label: "Book" },
   { href: `${base}/blog`, label: "Blog / Papers" },
-  { href: "https://github.com/MasterLaplace", label: "GitHub ↗", external: true },
+  { href: "https://github.com/MasterLaplace", label: "GitHub", external: true },
 ];
+
+// A link is "current" only for real page routes (the /#demo anchor is not a page).
+const isCurrent = (href: string) =>
+  !href.includes("#") && !href.startsWith("http") && href.replace(/\/$/, "") === here;
 ---
 
 <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70">
-  <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3">
+  <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3" aria-label="Main">
     <a href={`${base}/`} class="font-mono font-bold tracking-tight text-lpl-text">
-      <span class="text-lpl-accent">λ</span> Laplace<span class="text-lpl-muted">.project</span>
+      <span class="text-lpl-accent" aria-hidden="true">λ</span> Laplace<span class="text-lpl-muted"
+        >.project</span
+      >
+      <span class="sr-only">— home</span>
     </a>
 
     <!-- Desktop links -->
@@ -25,9 +34,16 @@ const links = [
             <a
               class="text-lpl-muted hover:text-lpl-accent transition-colors"
               href={l.href}
-              {...l.external ? { target: "_blank", rel: "noopener" } : {}}
+              aria-current={isCurrent(l.href) ? "page" : undefined}
+              {...l.external ? { target: "_blank", rel: "noopener noreferrer" } : {}}
             >
               {l.label}
+              {l.external && (
+                <>
+                  <span aria-hidden="true">↗</span>
+                  <span class="sr-only">(opens in a new tab)</span>
+                </>
+              )}
             </a>
           </li>
         ))
@@ -42,12 +58,12 @@ const links = [
       aria-expanded="false"
       aria-controls="nav-mobile"
     >
-      <svg id="nav-icon-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg id="nav-icon-open" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="3" y1="6" x2="21" y2="6"></line>
         <line x1="3" y1="12" x2="21" y2="12"></line>
         <line x1="3" y1="18" x2="21" y2="18"></line>
       </svg>
-      <svg id="nav-icon-close" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <svg id="nav-icon-close" aria-hidden="true" focusable="false" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <line x1="6" y1="6" x2="18" y2="18"></line>
         <line x1="18" y1="6" x2="6" y2="18"></line>
       </svg>
@@ -55,21 +71,30 @@ const links = [
   </nav>
 
   <!-- Mobile menu -->
-  <ul id="nav-mobile" class="hidden md:hidden border-t border-lpl-border bg-lpl-bg/95">
-    {
-      links.map((l) => (
-        <li class="border-b border-lpl-border/60 last:border-b-0">
-          <a
-            class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors"
-            href={l.href}
-            {...l.external ? { target: "_blank", rel: "noopener" } : {}}
-          >
-            {l.label}
-          </a>
-        </li>
-      ))
-    }
-  </ul>
+  <nav id="nav-mobile" class="hidden md:hidden border-t border-lpl-border bg-lpl-bg/95" aria-label="Mobile">
+    <ul>
+      {
+        links.map((l) => (
+          <li class="border-b border-lpl-border/60 last:border-b-0">
+            <a
+              class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors"
+              href={l.href}
+              aria-current={isCurrent(l.href) ? "page" : undefined}
+              {...l.external ? { target: "_blank", rel: "noopener noreferrer" } : {}}
+            >
+              {l.label}
+              {l.external && (
+                <>
+                  <span aria-hidden="true">↗</span>
+                  <span class="sr-only">(opens in a new tab)</span>
+                </>
+              )}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
 </header>
 
 <script>

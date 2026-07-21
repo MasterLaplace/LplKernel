@@ -17,7 +17,7 @@ const Wrapper = href ? "a" : "div";
 
 <Wrapper
   href={href}
-  {...href ? { target: "_blank", rel: "noopener" } : {}}
+  {...href ? { target: "_blank", rel: "noopener noreferrer" } : {}}
   class="lpl-panel rounded-none p-5 block hover:border-lpl-accent/50 transition-colors group"
 >
   <div class="flex items-center justify-between gap-3 mb-2">
@@ -29,7 +29,8 @@ const Wrapper = href ? "a" : "div";
   <p class="text-sm text-lpl-muted mb-3"><slot /></p>
   <div class="flex items-center gap-2 text-xs text-lpl-muted font-mono">
     <span>{lang}</span>
-    <span>·</span>
+    <span aria-hidden="true">·</span>
     <span>{tag}</span>
   </div>
+  {href && <span class="sr-only">(opens github.com in a new tab)</span>}
 </Wrapper>

@@ -13,9 +13,24 @@ export async function getStaticPaths() {
 const { post } = Astro.props;
 const { Content } = await render(post);
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: post.data.title,
+  description: post.data.description,
+  datePublished: post.data.date.toISOString(),
+  inLanguage: "en",
+  author: { "@type": "Person", name: "Master Laplace", url: "https://github.com/MasterLaplace" },
+  publisher: { "@type": "Person", name: "Master Laplace" },
+};
 ---
 
-<Base title={`${post.data.title} — The Laplace Project`} description={post.data.description}>
+<Base
+  title={`${post.data.title} — The Laplace Project`}
+  description={post.data.description}
+  jsonLd={jsonLd}
+>
   <article class="py-16 max-w-3xl mx-auto">
     <a href={`${base}/blog`} class="text-sm text-lpl-accent">← Blog &amp; Papers</a>
     <header class="mt-6 mb-8">
