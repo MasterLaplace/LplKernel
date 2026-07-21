@@ -23,12 +23,18 @@ fi
 # The engine module is optional: when the LplPlugin source tree is absent, build
 # a plain kernel (no libengine, smoke battery compiled out) instead of failing.
 # This is the "no xmake / no LplPlugin -> fallback kernel" path.
+#
+# libkxx is dropped along with libengine, not just unlinked: without the engine
+# the kernel is pure C, so the freestanding C++ runtime has no consumer. This
+# keeps the fallback buildable on a C-only cross toolchain -- build_lplkernel.yml
+# builds gcc 10 with `all-gcc all-target-libgcc` and NO libstdc++, so <cstddef>
+# and friends do not exist there. Requiring C++ on that path would break it.
 if [ -n "${LPLPLUGIN_ROOT:-}" ] && [ -d "${LPLPLUGIN_ROOT}/core/include" ]; then
     export ENABLE_LIBENGINE=1
 else
     export ENABLE_LIBENGINE=0
-    SYSTEM_HEADER_PROJECTS="libc libkxx kernel"
-    PROJECTS="libc libkxx kernel"
+    SYSTEM_HEADER_PROJECTS="libc kernel"
+    PROJECTS="libc kernel"
     echo "[config] LplPlugin not found -> building a plain kernel (ENABLE_LIBENGINE=0)"
 fi
 

@@ -2,12 +2,12 @@
 ** EPITECH PROJECT, 2026
 ** LplKernel
 ** File description:
-** Kernel client entry point — the freestanding mirror of
-** LplPlugin/apps/client/main.cpp.
+** Kernel server entry point — the freestanding mirror of
+** LplPlugin/apps/server/main.cpp.
 **
 ** This is the whole kernel<->engine seam: build a Config, construct an Engine
-** with a KernelPlatform and an application payload, init/run/shutdown. The only
-** difference from the hosted client is the injected platform (KernelPlatform
+** with a KernelPlatform and the game World, init/run/shutdown. The only
+** difference from the hosted server is the injected platform (KernelPlatform
 ** over the HAL, instead of LinuxPlatform over GLFW/chrono) and the profile
 ** flags. The kernel holds no renderer, scene, ECS or game logic whatsoever.
 **
@@ -24,20 +24,18 @@
 
 #include "libengine/libengine.h"
 
-extern "C" void libengine_client_app_run(void)
+extern "C" void libengine_server_app_run(void)
 {
     static lpl::platform::kernel::KernelLogger logger;
     lpl::core::Log::setLogger(&logger);
 
-    lpl::core::Log::info("=== LplKernel Client ===");
+    lpl::core::Log::info("=== LplKernel Server ===");
 
-    // Budgets are sized for the kernel's 4 MiB heap, not a desktop's. The hosted
-    // client's defaults (a 64 MiB arena, 65536 world cells) would exhaust it
-    // during Engine::init and starve the simulation of its entity chunks.
     auto config = lpl::engine::Config::Builder{}
-                      .tickRate(60)
-                      .serverMode(false)
-                      .headless(false)
+                      .tickRate(144)
+                      .maxEntities(10000)
+                      .serverMode(true)
+                      .headless(true)
                       .arenaSize(256u * 1024u)
                       .worldCellCapacity(1024u)
                       .enableGpu(false)
@@ -49,12 +47,12 @@ extern "C" void libengine_client_app_run(void)
 
     if (auto result = engine.init(); !result)
     {
-        lpl::core::Log::error("Kernel client init failed");
+        lpl::core::Log::error("Kernel server init failed");
         return;
     }
 
     engine.run();
     engine.shutdown();
 
-    lpl::core::Log::info("Kernel client exited cleanly");
+    lpl::core::Log::info("Kernel server exited cleanly");
 }

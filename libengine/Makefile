@@ -68,6 +68,7 @@ obj/local/smoke/p5_render_present_smoke.o \
 obj/local/smoke/p6_smoke.o \
 obj/local/smoke/sim_fold_smoke.o \
 obj/local/client_app.o \
+obj/local/server_app.o
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)
 

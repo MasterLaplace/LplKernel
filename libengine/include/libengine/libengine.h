@@ -335,6 +335,15 @@ extern void libengine_sim_fold(libengine_sim_fold_result_t *out);
 */
 extern void libengine_client_app_run(void);
 
+/*
+** Kernel server entry point — the freestanding mirror of apps/server/main.cpp.
+** Builds an engine Config, constructs lpl::engine::Engine with a KernelPlatform
+** and an application payload, then init/run/shutdown. Blocks until the payload
+** requests shutdown. The kernel passes no game state: which simulation runs is
+** decided entirely engine-side, by the payload libengine/src/server_app.cpp injects.
+*/
+extern void libengine_server_app_run(void);
+
 #ifdef __cplusplus
 }
 #endif

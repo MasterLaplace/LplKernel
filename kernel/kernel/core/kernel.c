@@ -342,8 +342,6 @@ __attribute__((constructor)) void kernel_initialize(void)
 
 void kernel_main(void)
 {
-    /* Arm the stack-overflow canary before running any engine/smoke code, which
-       is where deep C++ call chains (software rasterizer, physics sort) live. */
     kernel_stack_guard_arm();
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
@@ -362,6 +360,7 @@ void kernel_main(void)
     }
     else
     {
+#if defined(LPL_PLUGIN_UNAVAILABLE)
         kernel_splash_finish();
         terminal_write_string(WELCOME_MESSAGE);
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
@@ -371,6 +370,9 @@ void kernel_main(void)
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 
         kernel_console_run_interactive_loop(&com1);
+#else
+        libengine_server_app_run();
+#endif
     }
 }
 
