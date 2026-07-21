@@ -1,5 +1,5 @@
-#ifndef KERNEL_CORE_LIBENGINE_SMOKE_H
-#define KERNEL_CORE_LIBENGINE_SMOKE_H
+#ifndef KERNEL_TESTING_SMOKE_LIBENGINE_H
+#define KERNEL_TESTING_SMOKE_LIBENGINE_H
 
 #include <kernel/drivers/serial.h>
 
@@ -19,6 +19,6 @@
  *
  * @param com1 Pointer to the primary serial interface.
  */
-extern void libengine_smoke_run_all(Serial_t *com1);
+extern void smoke_libengine_run_all(Serial_t *com1);
 
-#endif /* KERNEL_CORE_LIBENGINE_SMOKE_H */
+#endif /* KERNEL_TESTING_SMOKE_LIBENGINE_H */

@@ -1,5 +1,5 @@
-#ifndef KERNEL_CORE_KERNEL_SMOKE_BATCH_H
-#define KERNEL_CORE_KERNEL_SMOKE_BATCH_H
+#ifndef KERNEL_TESTING_SMOKE_BATCH_H
+#define KERNEL_TESTING_SMOKE_BATCH_H
 
 #include <kernel/drivers/serial.h>
 
@@ -11,7 +11,7 @@
  *
  * @param com1 Pointer to the primary serial interface.
  */
-extern void kernel_smoke_batch_run_initialization_tests(Serial_t *com1);
+extern void smoke_batch_run_initialization_tests(Serial_t *com1);
 
 /**
  * @brief Runs all enabled post-boot and exception smoke tests.
@@ -21,6 +21,6 @@ extern void kernel_smoke_batch_run_initialization_tests(Serial_t *com1);
  *
  * @param com1 Pointer to the primary serial interface.
  */
-extern void kernel_smoke_batch_run_post_boot_tests(Serial_t *com1);
+extern void smoke_batch_run_post_boot_tests(Serial_t *com1);
 
-#endif /* KERNEL_CORE_KERNEL_SMOKE_BATCH_H */
+#endif /* KERNEL_TESTING_SMOKE_BATCH_H */

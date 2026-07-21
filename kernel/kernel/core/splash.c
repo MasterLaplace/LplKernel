@@ -1,5 +1,5 @@
 #include <kernel/config.h>
-#include <kernel/core/kernel_splash.h>
+#include <kernel/core/splash.h>
 #include <kernel/drivers/tty.h>
 #include <kernel/lib/asmutils.h>
 

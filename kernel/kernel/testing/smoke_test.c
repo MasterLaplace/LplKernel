@@ -24,9 +24,9 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
-#include <kernel/smoke_test.h>
+#include <kernel/testing/smoke_test.h>
 
-void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port)
+void smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port)
 {
     uint32_t page_address_1 = physical_memory_manager_page_frame_allocate();
     uint32_t page_address_2 = physical_memory_manager_page_frame_allocate();
@@ -47,7 +47,7 @@ void kernel_smoke_test_run_physical_memory_manager_allocate_free(Serial_t *seria
     serial_write_string(serial_port, "\n");
 }
 
-void kernel_smoke_test_run_physical_memory_manager_buddy_coalesce(Serial_t *serial_port)
+void smoke_test_run_physical_memory_manager_buddy_coalesce(Serial_t *serial_port)
 {
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: PMM buddy coalesce smoke: skipped (client)\n");
@@ -114,7 +114,7 @@ void kernel_smoke_test_run_physical_memory_manager_buddy_coalesce(Serial_t *seri
 #endif
 }
 
-void kernel_smoke_test_run_physical_memory_manager_buddy_stress(Serial_t *serial_port)
+void smoke_test_run_physical_memory_manager_buddy_stress(Serial_t *serial_port)
 {
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: PMM buddy stress: skipped (client)\n");
@@ -178,7 +178,7 @@ void kernel_smoke_test_run_physical_memory_manager_buddy_stress(Serial_t *serial
 #endif
 }
 
-void kernel_smoke_test_run_physical_memory_manager_buddy_order(Serial_t *serial_port)
+void smoke_test_run_physical_memory_manager_buddy_order(Serial_t *serial_port)
 {
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: PMM buddy order smoke: skipped (client)\n");
@@ -221,7 +221,7 @@ void kernel_smoke_test_run_physical_memory_manager_buddy_order(Serial_t *serial_
 #endif
 }
 
-void kernel_smoke_test_run_paging_runtime_page_table_reclaim(Serial_t *serial_port)
+void smoke_test_run_paging_runtime_page_table_reclaim(Serial_t *serial_port)
 {
     uint32_t virt_base = 0u;
     bool candidate_found = false;
@@ -322,7 +322,7 @@ void kernel_smoke_test_run_paging_runtime_page_table_reclaim(Serial_t *serial_po
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_heap_allocate_free(Serial_t *serial_port)
+void smoke_test_run_heap_allocate_free(Serial_t *serial_port)
 {
     uint32_t free_bytes_before = kernel_heap_get_small_free_bytes();
     uint32_t large_before = kernel_heap_get_large_allocation_count();
@@ -431,7 +431,7 @@ void kernel_smoke_test_run_heap_allocate_free(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_cpu_topology_compaction(Serial_t *serial_port)
+void smoke_test_run_cpu_topology_compaction(Serial_t *serial_port)
 {
     uint32_t local_apic_before = cpu_topology_get_local_apic_id();
     uint8_t forced_before = cpu_topology_is_forced();
@@ -476,7 +476,7 @@ void kernel_smoke_test_run_cpu_topology_compaction(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_cpu_topology_madt_sync(Serial_t *serial_port)
+void smoke_test_run_cpu_topology_madt_sync(Serial_t *serial_port)
 {
     uint8_t madt_available = advanced_configuration_and_power_interface_madt_is_available();
     uint32_t discovered_count = cpu_topology_get_discovered_cpu_count();
@@ -510,7 +510,7 @@ void kernel_smoke_test_run_cpu_topology_madt_sync(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_cpu_topology_runtime_slot(Serial_t *serial_port)
+void smoke_test_run_cpu_topology_runtime_slot(Serial_t *serial_port)
 {
     uint32_t local_apic_before = cpu_topology_get_local_apic_id();
     uint32_t slot_before = cpu_topology_get_logical_slot();
@@ -546,7 +546,7 @@ void kernel_smoke_test_run_cpu_topology_runtime_slot(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_cpu_topology_online_bookkeeping(Serial_t *serial_port)
+void smoke_test_run_cpu_topology_online_bookkeeping(Serial_t *serial_port)
 {
     uint32_t local_apic = cpu_topology_get_local_apic_id();
     uint32_t local_slot = cpu_topology_register_discovered_apic_id(local_apic);
@@ -597,7 +597,7 @@ void kernel_smoke_test_run_cpu_topology_online_bookkeeping(Serial_t *serial_port
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_cpu_topology_slot_domain(Serial_t *serial_port)
+void smoke_test_run_cpu_topology_slot_domain(Serial_t *serial_port)
 {
     uint32_t local_slot = cpu_topology_get_logical_slot();
     uint32_t default_domain = cpu_topology_get_slot_domain(local_slot);
@@ -633,7 +633,7 @@ void kernel_smoke_test_run_cpu_topology_slot_domain(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
+void smoke_test_run_slab_alloc_free(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     static const uint32_t slab_sizes[3u] = {KERNEL_SLAB_SIZE_SMALL, KERNEL_SLAB_SIZE_MEDIUM, KERNEL_SLAB_SIZE_LARGE};
@@ -804,7 +804,7 @@ void kernel_smoke_test_run_slab_alloc_free(Serial_t *serial_port)
 #endif
 }
 
-void kernel_smoke_test_run_client_hot_loop_rule(Serial_t *serial_port)
+void smoke_test_run_client_hot_loop_rule(Serial_t *serial_port)
 {
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     uint32_t violation_before = kernel_heap_get_hot_loop_violation_count();
@@ -843,7 +843,7 @@ void kernel_smoke_test_run_client_hot_loop_rule(Serial_t *serial_port)
 #endif
 }
 
-void kernel_smoke_test_run_frame_arena_basic(Serial_t *serial_port)
+void smoke_test_run_frame_arena_basic(Serial_t *serial_port)
 {
     if (!kernel_frame_arena_is_initialized())
     {
@@ -881,7 +881,7 @@ void kernel_smoke_test_run_frame_arena_basic(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_frame_arena_budget(Serial_t *serial_port)
+void smoke_test_run_frame_arena_budget(Serial_t *serial_port)
 {
     if (!kernel_frame_arena_is_initialized())
     {
@@ -935,7 +935,7 @@ void kernel_smoke_test_run_frame_arena_budget(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_frame_poison_check(Serial_t *serial_port)
+void smoke_test_run_frame_poison_check(Serial_t *serial_port)
 {
     if (!kernel_frame_arena_is_initialized())
         return;
@@ -971,7 +971,7 @@ void kernel_smoke_test_run_frame_poison_check(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_pool_allocator_basic(Serial_t *serial_port)
+void smoke_test_run_pool_allocator_basic(Serial_t *serial_port)
 {
     if (!kernel_pool_allocator_is_initialized())
     {
@@ -1037,7 +1037,7 @@ void kernel_smoke_test_run_pool_allocator_basic(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_pool_double_free(Serial_t *serial_port)
+void smoke_test_run_pool_double_free(Serial_t *serial_port)
 {
     if (!kernel_pool_allocator_is_initialized())
         return;
@@ -1059,7 +1059,7 @@ void kernel_smoke_test_run_pool_double_free(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_ring_buffer_basic(Serial_t *serial_port)
+void smoke_test_run_ring_buffer_basic(Serial_t *serial_port)
 {
     if (!kernel_ring_buffer_is_initialized())
     {
@@ -1159,7 +1159,7 @@ void kernel_smoke_test_run_ring_buffer_basic(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_stack_allocator_basic(Serial_t *serial_port)
+void smoke_test_run_stack_allocator_basic(Serial_t *serial_port)
 {
     if (!kernel_stack_allocator_is_initialized())
     {
@@ -1210,7 +1210,7 @@ static inline uint32_t allocator_wcet_rdtsc_low(void)
 #endif
 }
 
-void kernel_smoke_test_run_allocator_wcet_bound_check(Serial_t *serial_port)
+void smoke_test_run_allocator_wcet_bound_check(Serial_t *serial_port)
 {
     uint32_t arena_alloc = kernel_frame_arena_get_wcet_alloc_cycles();
     uint32_t arena_reset = kernel_frame_arena_get_wcet_reset_cycles();
@@ -1236,7 +1236,7 @@ void kernel_smoke_test_run_allocator_wcet_bound_check(Serial_t *serial_port)
         serial_write_string(serial_port, " (warning: cycles exceeded threshold)\n");
 }
 
-void kernel_smoke_test_run_frame_budget_determinism(Serial_t *serial_port)
+void smoke_test_run_frame_budget_determinism(Serial_t *serial_port)
 {
     if (!kernel_frame_arena_is_initialized())
         return;
@@ -1287,7 +1287,7 @@ void kernel_smoke_test_run_frame_budget_determinism(Serial_t *serial_port)
         serial_write_string(serial_port, " (warning: unstable variance under emulation)\n");
 }
 
-void kernel_smoke_test_run_pmm_watermark(Serial_t *serial_port)
+void smoke_test_run_pmm_watermark(Serial_t *serial_port)
 {
     uint32_t free_before = physical_memory_manager_get_free_page_count();
     uint32_t high_before = physical_memory_manager_get_watermark_high();
@@ -1333,7 +1333,7 @@ void kernel_smoke_test_run_pmm_watermark(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_pmm_fragmentation(Serial_t *serial_port)
+void smoke_test_run_pmm_fragmentation(Serial_t *serial_port)
 {
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: PMM fragmentation smoke: skipped (client)\n");
@@ -1389,7 +1389,7 @@ void kernel_smoke_test_run_pmm_fragmentation(Serial_t *serial_port)
 #endif
 }
 
-void kernel_smoke_test_run_tlsf_basic(Serial_t *serial_port)
+void smoke_test_run_tlsf_basic(Serial_t *serial_port)
 {
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: TLSF basic smoke: skipped (server)\n");
@@ -1455,7 +1455,7 @@ void kernel_smoke_test_run_tlsf_basic(Serial_t *serial_port)
 #endif
 }
 
-void kernel_smoke_test_run_tlsf_fragmentation(Serial_t *serial_port)
+void smoke_test_run_tlsf_fragmentation(Serial_t *serial_port)
 {
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: TLSF fragmentation smoke: skipped (server)\n");
@@ -1510,7 +1510,7 @@ void kernel_smoke_test_run_tlsf_fragmentation(Serial_t *serial_port)
 #endif
 }
 
-void kernel_smoke_test_run_division_error(void)
+void smoke_test_run_division_error(void)
 {
     volatile int zero = 0;
     volatile int trap = 1 / zero;
@@ -1518,7 +1518,7 @@ void kernel_smoke_test_run_division_error(void)
     (void) trap;
 }
 
-void kernel_smoke_test_run_debug_exception(void)
+void smoke_test_run_debug_exception(void)
 {
     __asm__ volatile("pushf\n\t"
                      "orl $0x100, (%%esp)\n\t"
@@ -1529,11 +1529,11 @@ void kernel_smoke_test_run_debug_exception(void)
                      : "cc", "memory");
 }
 
-void kernel_smoke_test_run_breakpoint_exception(void) { __asm__ volatile("int3"); }
+void smoke_test_run_breakpoint_exception(void) { __asm__ volatile("int3"); }
 
-void kernel_smoke_test_run_invalid_opcode_exception(void) { __asm__ volatile("ud2"); }
+void smoke_test_run_invalid_opcode_exception(void) { __asm__ volatile("ud2"); }
 
-void kernel_smoke_test_run_general_protection_exception(void)
+void smoke_test_run_general_protection_exception(void)
 {
     __asm__ volatile("xorl %%eax, %%eax\n\t"
                      "movw %%ax, %%ds\n\t"
@@ -1543,7 +1543,7 @@ void kernel_smoke_test_run_general_protection_exception(void)
                      : "eax", "memory");
 }
 
-void kernel_smoke_test_run_page_fault_exception(void)
+void smoke_test_run_page_fault_exception(void)
 {
     volatile uint32_t *const non_present_virtual_address = (volatile uint32_t *) 0xE0001000u;
     volatile uint32_t trap = *non_present_virtual_address;
@@ -1551,9 +1551,9 @@ void kernel_smoke_test_run_page_fault_exception(void)
     (void) trap;
 }
 
-void kernel_smoke_test_run_double_fault_exception(void) { __asm__ volatile("int $0x08"); }
+void smoke_test_run_double_fault_exception(void) { __asm__ volatile("int $0x08"); }
 
-void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
+void smoke_test_run_graphics_demo(Serial_t *serial_port)
 {
     framebuffer_clear(framebuffer_rgb(0, 0, 64));
     framebuffer_fill_rect(50, 50, 200, 100, COLOR_RED);
@@ -1588,7 +1588,7 @@ void kernel_smoke_test_run_graphics_demo(Serial_t *serial_port)
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: graphics demo displayed!\n");
 }
 
-void kernel_smoke_test_run_interrupt_request_runtime_status(Serial_t *serial_port)
+void smoke_test_run_interrupt_request_runtime_status(Serial_t *serial_port)
 {
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: IRQ runtime status: ticks=");
     serial_write_int(serial_port, (int32_t) clock_get_tick_count());
@@ -1605,7 +1605,7 @@ void kernel_smoke_test_run_interrupt_request_runtime_status(Serial_t *serial_por
     serial_write_string(serial_port, "\n");
 }
 
-void kernel_smoke_test_run_realtime_clock_snapshot(Serial_t *serial_port)
+void smoke_test_run_realtime_clock_snapshot(Serial_t *serial_port)
 {
     RealtimeClockTime_t current_time;
 
@@ -1626,7 +1626,7 @@ void kernel_smoke_test_run_realtime_clock_snapshot(Serial_t *serial_port)
     serial_write_string(serial_port, "\n");
 }
 
-void kernel_smoke_test_run_apic_periodic_mode(Serial_t *serial_port)
+void smoke_test_run_apic_periodic_mode(Serial_t *serial_port)
 {
     uint32_t start_tick;
     uint32_t end_tick;
@@ -1661,7 +1661,7 @@ void kernel_smoke_test_run_apic_periodic_mode(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_apic_readiness(Serial_t *serial_port)
+void smoke_test_run_apic_readiness(Serial_t *serial_port)
 {
     uint8_t madt_available = advanced_configuration_and_power_interface_madt_is_available();
     uint32_t lapic_count = advanced_configuration_and_power_interface_madt_get_local_apic_count();
@@ -1689,7 +1689,7 @@ void kernel_smoke_test_run_apic_readiness(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_ioapic_readiness(Serial_t *serial_port)
+void smoke_test_run_ioapic_readiness(Serial_t *serial_port)
 {
     uint8_t madt_available = advanced_configuration_and_power_interface_madt_is_available();
     uint32_t ioapic_count = advanced_configuration_and_power_interface_madt_get_io_apic_count();
@@ -1717,7 +1717,7 @@ void kernel_smoke_test_run_ioapic_readiness(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-void kernel_smoke_test_run_heap_cross_domain_stress(Serial_t *serial_port)
+void smoke_test_run_heap_cross_domain_stress(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: heap cross-domain smoke: skipped (client)\n");
@@ -1789,7 +1789,7 @@ void kernel_smoke_test_run_heap_cross_domain_stress(Serial_t *serial_port)
 #endif
 }
 
-void kernel_smoke_test_run_c7_tlsf_soak(Serial_t *serial_port)
+void smoke_test_run_c7_tlsf_soak(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     if (!kernel_tlsf_is_initialized() || !kernel_heap_get_strategy_name())
@@ -1815,7 +1815,7 @@ void kernel_smoke_test_run_c7_tlsf_soak(Serial_t *serial_port)
     serial_write_string(serial_port, pass ? " (pass)\n" : " (fail)\n");
 }
 
-void kernel_smoke_test_run_c7_frame_simulation(Serial_t *serial_port)
+void smoke_test_run_c7_frame_simulation(Serial_t *serial_port)
 {
     if (!kernel_frame_arena_is_initialized())
         return;
@@ -1841,7 +1841,7 @@ void kernel_smoke_test_run_c7_frame_simulation(Serial_t *serial_port)
     serial_write_string(serial_port, pass ? " (pass)\n" : " (fail)\n");
 }
 
-void kernel_smoke_test_run_c7_ring_stress(Serial_t *serial_port)
+void smoke_test_run_c7_ring_stress(Serial_t *serial_port)
 {
     if (!kernel_ring_buffer_is_initialized())
         return;
@@ -1875,7 +1875,7 @@ void kernel_smoke_test_run_c7_ring_stress(Serial_t *serial_port)
     serial_write_string(serial_port, pass ? " (pass)\n" : " (fail)\n");
 }
 
-void kernel_smoke_test_run_c7_combined_hotloop(Serial_t *serial_port)
+void smoke_test_run_c7_combined_hotloop(Serial_t *serial_port)
 {
     if (!kernel_frame_arena_is_initialized() || !kernel_pool_allocator_is_initialized() ||
         !kernel_ring_buffer_is_initialized())
@@ -1909,7 +1909,7 @@ void kernel_smoke_test_run_c7_combined_hotloop(Serial_t *serial_port)
     serial_write_int(serial_port, (int32_t) pass);
     serial_write_string(serial_port, pass ? " (pass)\n" : " (fail)\n");
 }
-void kernel_smoke_test_run_vmm_alloc_free(Serial_t *serial_port)
+void smoke_test_run_vmm_alloc_free(Serial_t *serial_port)
 {
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: starting VMM smoke test...\n");
 
@@ -1940,7 +1940,7 @@ void kernel_smoke_test_run_vmm_alloc_free(Serial_t *serial_port)
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: VMM smoke test PASSED\n");
 }
 
-void kernel_smoke_test_run_heap_poison_canary(Serial_t *serial_port)
+void smoke_test_run_heap_poison_canary(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     (void) serial_port;
@@ -1998,7 +1998,7 @@ void kernel_smoke_test_run_heap_poison_canary(Serial_t *serial_port)
 #endif
 }
 
-void kernel_smoke_test_run_pmm_uaf_detection(Serial_t *serial_port)
+void smoke_test_run_pmm_uaf_detection(Serial_t *serial_port)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     (void) serial_port;
@@ -2065,7 +2065,7 @@ static void ring3_syscall_handler(const InterruptFrame_t *frame)
 }
 #endif
 
-void kernel_smoke_test_run_ring3_minimal(Serial_t *serial_port)
+void smoke_test_run_ring3_minimal(Serial_t *serial_port)
 {
 #if KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL
     PageDirectoryEntry_t pde = {0};

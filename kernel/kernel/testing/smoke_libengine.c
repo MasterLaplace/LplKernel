@@ -1,7 +1,7 @@
 #define __LPL_KERNEL__
 #include <kernel/config.h>
 
-#include <kernel/core/libengine_smoke.h>
+#include <kernel/testing/smoke_libengine.h>
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
 
@@ -10,7 +10,7 @@
 
 #    include <libengine/libengine.h>
 
-void libengine_smoke_run_all(Serial_t *com1)
+void smoke_libengine_run_all(Serial_t *com1)
 {
     /* Static-initialization smoke test: proves the C++ constructor machinery
        (linker.ld .ctors/.init_array + _init + kernel_run_global_constructors)

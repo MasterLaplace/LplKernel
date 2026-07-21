@@ -1,5 +1,5 @@
 #include <kernel/config.h>
-#include <kernel/core/kernel_console.h>
+#include <kernel/core/console.h>
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/ap_trampoline.h>
 #include <kernel/cpu/apic_ipi.h>

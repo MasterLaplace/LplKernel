@@ -1,5 +1,5 @@
-#ifndef KERNEL_CORE_KERNEL_SPLASH_H
-#define KERNEL_CORE_KERNEL_SPLASH_H
+#ifndef KERNEL_CORE_SPLASH_H
+#define KERNEL_CORE_SPLASH_H
 
 #include <stdint.h>
 
@@ -21,4 +21,4 @@ extern void kernel_splash_update(const char *step_name);
  */
 extern void kernel_splash_finish(void);
 
-#endif /* KERNEL_CORE_KERNEL_SPLASH_H */
+#endif /* KERNEL_CORE_SPLASH_H */

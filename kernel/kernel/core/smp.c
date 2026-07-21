@@ -1,4 +1,4 @@
-#include <kernel/core/kernel_smp.h>
+#include <kernel/core/smp.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/ap_trampoline.h>
@@ -9,7 +9,7 @@
 #define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT 300000u
 #define KERNEL_AP_STARTUP_MAX_ATTEMPTS          3u
 
-void kernel_smp_try_start_discovered_aps(Serial_t *com1)
+void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
 {
     uint8_t ap_bootstrap_ok = application_processor_bootstrap_initialize();
 

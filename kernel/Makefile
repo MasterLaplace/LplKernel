@@ -71,11 +71,11 @@ kernel/memory/frame_arena.o \
 kernel/memory/pool_allocator.o \
 kernel/memory/ring_buffer.o \
 kernel/memory/tlsf.o \
-kernel/core/kernel_console.o \
-kernel/core/kernel_splash.o \
-kernel/core/kernel_smp.o \
-kernel/core/kernel_smoke_batch.o \
-kernel/core/libengine_smoke.o \
+kernel/core/console.o \
+kernel/core/splash.o \
+kernel/core/smp.o \
+kernel/testing/smoke_batch.o \
+kernel/testing/smoke_libengine.o \
 kernel/diag/sysmon.o \
 kernel/core/kernel.o \
 kernel/memory/helpers/pmm_helper.o \

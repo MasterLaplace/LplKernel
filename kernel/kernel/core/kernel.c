@@ -45,13 +45,13 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
-#include <kernel/smoke_test.h>
+#include <kernel/testing/smoke_test.h>
 
-#include <kernel/core/kernel_console.h>
-#include <kernel/core/kernel_smoke_batch.h>
-#include <kernel/core/kernel_smp.h>
-#include <kernel/core/kernel_splash.h>
-#include <kernel/core/libengine_smoke.h>
+#include <kernel/core/console.h>
+#include <kernel/testing/smoke_batch.h>
+#include <kernel/core/smp.h>
+#include <kernel/core/splash.h>
+#include <kernel/testing/smoke_libengine.h>
 #include <kernel/diag/sysmon.h>
 
 /* The engine module is optional: when LplPlugin is absent, config.sh drops
@@ -252,7 +252,7 @@ __attribute__((constructor)) void kernel_initialize(void)
         advanced_pic_ipi_initialize(advanced_pic_timer_backend_get_local_apic_virtual_base());
         write_apic_late_init_state_info(&com1);
 
-        kernel_smp_try_start_discovered_aps(&com1);
+        kernel_symmetric_multiprocessing_try_start_discovered_aps(&com1);
 
         if (kernel_policy_enable_ioapic_keyboard_owner())
         {
@@ -305,7 +305,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     kernel_splash_update("Symmetric Multiprocessing & Timers");
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
-    kernel_smoke_batch_run_initialization_tests(&com1);
+    smoke_batch_run_initialization_tests(&com1);
     kernel_splash_update("System Smoke Target Executions");
 #endif
 
@@ -347,8 +347,8 @@ void kernel_main(void)
     kernel_stack_guard_arm();
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
-    kernel_smoke_batch_run_post_boot_tests(&com1);
-    libengine_smoke_run_all(&com1);
+    smoke_batch_run_post_boot_tests(&com1);
+    smoke_libengine_run_all(&com1);
 #endif
 
     if (hardware_abstraction_layer_display_available())

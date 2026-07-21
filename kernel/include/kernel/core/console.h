@@ -1,5 +1,5 @@
-#ifndef KERNEL_CORE_KERNEL_CONSOLE_H
-#define KERNEL_CORE_KERNEL_CONSOLE_H
+#ifndef KERNEL_CORE_CONSOLE_H
+#define KERNEL_CORE_CONSOLE_H
 
 #include <kernel/drivers/serial.h>
 
@@ -13,4 +13,4 @@
  */
 extern void kernel_console_run_interactive_loop(Serial_t *com1);
 
-#endif /* KERNEL_CORE_KERNEL_CONSOLE_H */
+#endif /* KERNEL_CORE_CONSOLE_H */
