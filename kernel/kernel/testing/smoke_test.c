@@ -814,7 +814,7 @@ void smoke_test_run_client_hot_loop_rule(Serial_t *serial_port)
     bool setup_ok = (guard_ptr != NULL);
 
     kernel_heap_hot_loop_enter();
-    void *bounded_alloc = kmalloc(64u);                  /* slab class — must be served */
+    void *bounded_alloc = kmalloc(64u); /* slab class — must be served */
     void *unbounded_alloc = kmalloc(64u * 1024u * 1024u);
     if (guard_ptr)
         kfree(guard_ptr);
@@ -831,8 +831,7 @@ void smoke_test_run_client_hot_loop_rule(Serial_t *serial_port)
     bool depth_restored = (depth_after == 0u);
     bool violation_count_ok = (violation_after == (violation_before + 1u));
     bool bounded_count_ok = (bounded_after >= (bounded_before + 3u));
-    bool pass = setup_ok && bounded_served && alloc_blocked && depth_restored && violation_count_ok &&
-                bounded_count_ok;
+    bool pass = setup_ok && bounded_served && alloc_blocked && depth_restored && violation_count_ok && bounded_count_ok;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: hot-loop rule smoke: setup=");
     serial_write_int(serial_port, (int32_t) setup_ok);
