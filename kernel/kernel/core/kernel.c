@@ -360,7 +360,6 @@ void kernel_main(void)
     }
     else
     {
-#if defined(LPL_PLUGIN_UNAVAILABLE)
         kernel_splash_finish();
         terminal_write_string(WELCOME_MESSAGE);
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
@@ -368,7 +367,7 @@ void kernel_main(void)
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
         terminal_write_string(KERNEL_CONFIG_STRING);
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
-
+#if defined(LPL_PLUGIN_UNAVAILABLE)
         kernel_console_run_interactive_loop(&com1);
 #else
         libengine_server_app_run();
