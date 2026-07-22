@@ -46,6 +46,7 @@ static bool kernel_heap_initialized = false;
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 static uint32_t kernel_heap_hot_loop_depth = 0u;
 static uint32_t kernel_heap_hot_loop_violation_count = 0u;
+static uint32_t kernel_heap_hot_loop_bounded_count = 0u;
 #endif
 
 #ifndef LPL_KERNEL_REAL_TIME_MODE
@@ -342,6 +343,7 @@ void kernel_heap_initialize(void)
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     kernel_heap_hot_loop_depth = 0u;
     kernel_heap_hot_loop_violation_count = 0u;
+    kernel_heap_hot_loop_bounded_count = 0u;
 #endif
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
@@ -357,11 +359,7 @@ void *kmalloc(size_t size)
         return NULL;
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
-    if (kernel_heap_hot_loop_depth > 0u)
-    {
-        ++kernel_heap_hot_loop_violation_count;
-        return NULL;
-    }
+    const bool in_hot_loop = (kernel_heap_hot_loop_depth > 0u);
 #endif
 
     uint32_t payload_size = kernel_heap_align_up((uint32_t) size, KERNEL_HEAP_ALIGNMENT);
@@ -382,6 +380,8 @@ void *kmalloc(size_t size)
             for (uint32_t z = 0; z < payload_size; ++z)
                 ((uint8_t *) (header + 1))[z] = 0xCC;
 #    endif
+            if (in_hot_loop)
+                ++kernel_heap_hot_loop_bounded_count;
             return (void *) (header + 1);
         }
     }
@@ -398,7 +398,15 @@ void *kmalloc(size_t size)
         for (uint32_t z = 0; z < payload_size; ++z)
             ((uint8_t *) (header + 1))[z] = 0xCC;
 #    endif
+        if (in_hot_loop)
+            ++kernel_heap_hot_loop_bounded_count;
         return (void *) (header + 1);
+    }
+
+    if (in_hot_loop)
+    {
+        ++kernel_heap_hot_loop_violation_count;
+        return NULL;
     }
 #endif
 
@@ -614,11 +622,6 @@ void kfree(void *ptr)
     if (!ptr)
         return;
 
-#ifdef LPL_KERNEL_REAL_TIME_MODE
-    if (kernel_heap_hot_loop_depth > 0u)
-        ++kernel_heap_hot_loop_violation_count;
-#endif
-
     KernelHeapBlock_t *header = ((KernelHeapBlock_t *) ptr) - 1;
 
     if (header->magic != KERNEL_HEAP_HEADER_MAGIC || header->canary != (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF))
@@ -644,6 +647,8 @@ void kfree(void *ptr)
 #    endif
         header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
         kernel_slab_free(header);
+        if (kernel_heap_hot_loop_depth > 0u)
+            ++kernel_heap_hot_loop_bounded_count;
         return;
     }
     if (header->flags & KERNEL_HEAP_BLOCK_FLAG_TLSF)
@@ -655,8 +660,13 @@ void kfree(void *ptr)
 #    endif
         header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
         kernel_tlsf_free(header);
+        if (kernel_heap_hot_loop_depth > 0u)
+            ++kernel_heap_hot_loop_bounded_count;
         return;
     }
+
+    if (kernel_heap_hot_loop_depth > 0u)
+        ++kernel_heap_hot_loop_violation_count;
 #endif
 
     if (header->magic != KERNEL_HEAP_HEADER_MAGIC)
@@ -909,6 +919,15 @@ uint32_t kernel_heap_get_hot_loop_depth(void)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     return kernel_heap_hot_loop_depth;
+#else
+    return 0u;
+#endif
+}
+
+uint32_t kernel_heap_get_hot_loop_bounded_count(void)
+{
+#ifdef LPL_KERNEL_REAL_TIME_MODE
+    return kernel_heap_hot_loop_bounded_count;
 #else
     return 0u;
 #endif

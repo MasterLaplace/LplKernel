@@ -24,6 +24,31 @@ typedef struct KernelHeapBlock {
 
 extern void kernel_heap_initialize(void);
 
+/**
+ * @brief Allocate memory from the kernel heap.
+ *
+ * Real-time rule, stated in terms of LATENCY rather than call sites.
+ *
+ * The client heap is slab (O(1) free-list) in front of TLSF (O(1), WCET
+ * bounded to a few hundred x86 instructions). Both are exactly the
+ * "pre-allocated, deterministic" allocators the real-time contract asks
+ * for, so serving a request from either inside a hot loop breaks no
+ * timing guarantee — refusing it only pushes the caller onto a worse
+ * path. What the hot loop must never do is take an unbounded path: grow
+ * the pool through the VMM/buddy, walk a first-fit list, or fail.
+ *
+ * So the guard no longer refuses everything: it lets the bounded paths
+ * through (counted separately, for budgeting) and counts a violation
+ * exactly when the allocation escapes past them.
+ *
+ * Past tlsf raw, every remaining path is unbounded (page-granular VMM
+ * growth, first-fit walk) or the request simply cannot be served. Neither
+ * belongs in an authoritative tick: refuse, and let the caller's own OOM
+ * contract surface it rather than silently blowing a deadline.
+ *
+ * @param size The size of the memory to allocate.
+ * @return A pointer to the allocated memory, or NULL on failure.
+ */
 extern void *kmalloc(size_t size);
 
 extern void *kmalloc_sensitive(size_t size);
@@ -66,9 +91,26 @@ extern uint32_t kernel_heap_get_hot_loop_depth(void);
 /**
  * @brief Return total hot loop allocation guard violations.
  *
+ * A violation is an allocation or release that had to take an UNBOUNDED path
+ * while inside a hot loop (VMM/buddy growth, first-fit walk), or one that could
+ * not be served at all. Requests satisfied by the slab caches or by TLSF are
+ * O(1) with a bounded worst case, so they are permitted and counted by
+ * @ref kernel_heap_get_hot_loop_bounded_count instead.
+ *
  * @return Violation count on client builds, 0 on server builds.
  */
 extern uint32_t kernel_heap_get_hot_loop_violation_count(void);
+
+/**
+ * @brief Return hot loop allocations/releases served by a bounded path.
+ *
+ * Not errors — a budgeting figure. Growth here means the tick is doing O(1) but
+ * non-zero heap traffic, which is worth removing for throughput even though it
+ * breaks no real-time guarantee.
+ *
+ * @return Bounded hot loop operation count on client builds, 0 on server builds.
+ */
+extern uint32_t kernel_heap_get_hot_loop_bounded_count(void);
 
 /**
  * @brief Return available free blocks in a server size class.

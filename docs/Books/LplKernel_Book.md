@@ -313,11 +313,12 @@ LplKernel s'inspire directement de ce modèle pour sécuriser son tas sans la la
 
 Le noyau LplKernel implémente son propre allocateur `kmalloc`/`kfree` dont la stratégie diverge radicalement selon le profil de compilation :
 
-**Profil Client** (`REALTIME_MODE=1`), stratégie `slab+first-fit-client` :
+**Profil Client** (`REALTIME_MODE=1`), stratégie `slab+tlsf-client` :
 - Pool de boot fixe : 8 pages physiques pré-allouées à l'initialisation du tas. Aucune croissance du pool via PMM en cours d'exécution.
 - Caches Slab déterministes ($O(1)$) : trois classes de taille (16 B, 64 B, 256 B), chacune protégée par un *free-cookie* anti-double-free (`0x534C4131`).
-- First-fit pour les tailles restantes, alimenté exclusivement par les pages de boot.
-- Règle de la hot loop : `kmalloc` est interdit pendant la boucle chaude de simulation. L'API d'enforcement (`kernel_heap_hot_loop_enter()` / `kernel_heap_hot_loop_leave()`) trace la profondeur d'imbrication et incrémente un compteur de violations si une allocation est tentée en zone interdite. Cette règle est validée par un smoke test dédié.
+- TLSF pour tout ce qui déborde des classes slab : un pool dédié de 4 Mio, servi en $O(1)$ à pire cas borné (section 2.4.1). C'est lui, et non un first-fit, qui absorbe le tout-venant du tas client.
+- First-fit sur les seules pages de boot, en dernier recours, pour le reliquat que ni les caches slab ni TLSF n'ont pris.
+- Règle de la hot loop : pendant la boucle chaude, `kmalloc` sert les chemins à latence bornée, à savoir un succès en cache slab ou un bloc TLSF, et refuse les chemins non bornés que sont la croissance de pool et le parcours first-fit. Deux compteurs séparent les allocations bornées, tolérées, des violations, seules fautives. L'API `kernel_heap_hot_loop_enter()` / `kernel_heap_hot_loop_leave()` délimite la zone, et un smoke test dédié valide les deux moitiés de la règle. La section 2.6.2 explique pourquoi elle s'énonce en termes de latence plutôt que de sites d'appel.
 
 **Profil Serveur** (`REALTIME_MODE=0`), stratégie `sizeclass+first-fit-server` :
 - Buckets de taille ($O(1)$) : 7 free-lists par taille (8, 16, 32, 64, 128, 256, 512 B), avec compteurs de hit et de remplissage par classe.
@@ -326,6 +327,18 @@ Le noyau LplKernel implémente son propre allocateur `kmalloc`/`kfree` dont la s
 - Domaines d'allocation : le serveur supporte un *scaffold* multi-domaines où le sélecteur de domaine est piloté par le slot logique CPU (APIC ID compacté en slot stable). Chaque domaine possède ses propres compteurs de refill, fallback, sonde distante et hit distant. Cela prépare le sharding per-CPU puis per-NUMA sans modifier le comportement actuel.
 
 **Gardes partagés** (les deux profils) : validation magic du header sur chaque chemin, compteur de free rejeté, compteur de double-free, canary par objet sensible, patterns de poison (`0xFEEDFACE`) activables en build debug.
+
+### 2.2.7 Les allocateurs généralistes en espace utilisateur
+
+Tout ce qui précède vit en ring 0. L'équivalent en espace utilisateur mérite un détour, parce qu'il prolonge exactement la même idée et qu'il éclaire, par contraste, pourquoi un moteur temps réel finit par écrire les siens.
+
+Une application qui juge le `malloc` de sa bibliothèque C trop lent lie un allocateur dédié. Trois références dominent le domaine : **jemalloc**, né dans FreeBSD puis repris par Facebook, **tcmalloc** chez Google, et **mimalloc** chez Microsoft Research. Leur intuition commune ne porte pas sur l'algorithme de recherche d'un bloc libre, mais sur la concurrence. Un verrou global sur `malloc` et `free` sérialise tous les threads du processus, et c'est là que le débit s'effondre sur une machine à seize cœurs. La parade est celle que le noyau applique déjà avec les freelists per-CPU du SLUB et les *sheaves* (section 2.2.3), transposée de l'autre côté de l'anneau : donner à chaque thread son propre cache.
+
+Chacun décline l'idée à sa manière. **jemalloc** répartit les threads sur plusieurs *arenas*, des tas indépendants qui ne se disputent aucun verrou, et découpe finement les classes de taille pour contenir la fragmentation. Le mot *arena* n'a ici rien à voir avec l'allocateur linéaire de la section 2.3.1 : il désigne un tas généraliste complet, pas un pointeur qui avance. **tcmalloc**, pour *Thread-Caching malloc*, sert les petits objets depuis un cache par thread sans le moindre verrou, cache rechargé par lots depuis un tas central, tandis que les gros objets passent par un allocateur de pages.[^19] **mimalloc** pousse le raisonnement plus loin avec le *free-list sharding* : au lieu d'une liste de blocs libres par classe de taille, il en tient une par page, ce qui resserre la localité. Il isole surtout les libérations venues d'un autre thread dans une liste séparée, vidée par lots, de sorte qu'un `free` distant ne provoque plus une opération atomique contestée à chaque appel.[^20]
+
+Ces trois-là maximisent le débit et la latence moyenne, et ils excellent sur un serveur. Ils sont pourtant l'exact opposé de ce qu'exige une boucle chaude à échéance dure, pour une raison structurelle : leurs bonnes performances sont statistiques. Le cas courant touche le cache local et coûte quelques nanosecondes, mais le cas rare recharge depuis le tas central, fusionne des blocs ou redemande de la mémoire au système, et ce cas rare ne se majore pas. Un allocateur temps réel accepte *a contrario* un débit moyen inférieur pour garantir son pire cas, ce qui est précisément le compromis de TLSF (section 2.4). Un client FullDive ne lie donc aucun de ces allocateurs : il pré-alloue, et quand il doit vraiment allouer, il le fait avec une borne.
+
+Le profil serveur de LplKernel se situe sur l'autre versant du compromis. Son *scaffold* multi-domaines, avec un domaine par slot logique CPU et ses compteurs de refill, de sonde distante et de hit distant, n'est rien d'autre que ce cache par cœur ramené dans le tas noyau. C'est le premier pas vers un sharding à la tcmalloc pour un serveur *headless*, où le débit prime sur l'échéance.
 
 ## 2.3 Niveau moteur : allocateurs personnalisés
 
@@ -609,7 +622,11 @@ Pour le client FullDive, le mode **CDMM** (*Coherent Driver-based Memory Managem
 | **Transfert BCI** | Ring Buffer SPSC lock-free | Zéro mutex entre acquisition et traitement |
 | **GPU** | Mémoire épinglée via CDMM | Latence MTP minimale |
 
-La règle non négociable du client se résume en une phrase : zéro allocation dynamique dans la hot loop. En dehors de la boucle chaude, seuls les caches slab client (16/64/256 B) et le small pool first-fit sur pages de boot fixes sont autorisés ; dans la boucle chaude, uniquement les allocateurs pré-alloués (frame arena, pool, ring buffer), sans aucun site d'appel `kmalloc`/`kfree`. L'enforcement est vérifié à l'exécution : la profondeur hot-loop doit revenir à 0 après chaque étape de frame, le compteur de violations doit rester stable en boucle nominale, et les compteurs de garde du heap ne doivent pas bouger.
+La règle du client a d'abord tenu en une phrase : zéro allocation dynamique dans la hot loop. Elle était juste, et il vaut la peine de dire pourquoi, parce que c'est cette raison même qui l'a ensuite fait évoluer. À l'origine, sous les caches slab, le repli du tas client était un first-fit, c'est-à-dire le parcours d'une liste chaînée dont la durée dépend de l'état du tas. Face à un repli non borné, la seule consigne sûre est l'interdiction totale : puisqu'une allocation peut coûter un temps arbitraire, on n'en tente aucune entre le premier et le dernier tick de la frame.
+
+Le repli a changé depuis. Sous les mêmes caches slab, le tas client s'appuie désormais sur TLSF (section 2.4.1), qui sert en $O(1)$ à pire cas borné. Or dès lors que l'allocation cesse d'être à latence imprévisible, la règle n'a plus à interdire l'allocation : elle doit interdire la latence non bornée. La nuance n'a rien de cosmétique. Ce qui menace une échéance, ce n'est pas de demander de la mémoire, c'est d'emprunter un chemin dont on ne sait pas majorer le coût, à savoir faire croître le pool par le buddy, parcourir un first-fit, ou échouer franchement. Un succès en cache slab ou un bloc rendu par TLSF, eux, tiennent leur temps quoi qu'il arrive.
+
+La règle se réénonce donc ainsi : dans la boucle chaude, les chemins à latence bornée sont admis, les chemins non bornés proscrits. Au-delà de sa justesse, cette formulation a un avantage pratique, elle se vérifie par la machine plutôt que par relecture. Le tas tient deux compteurs distincts, celui des allocations bornées et celui des violations, c'est-à-dire des demandes qui ont dû s'échapper vers un chemin non borné. Une boucle nominale se lit alors d'un coup d'œil : le compteur de violations reste à sa valeur d'avant la frame, la profondeur de hot-loop revient à zéro après chaque étape de frame, et les compteurs de garde du heap ne bougent pas. « Zéro site d'appel » ne se prouvait que par un audit permanent du code, « zéro chemin non borné » se mesure à l'exécution. Quant au compteur borné, il tient lieu de budget plutôt que d'alarme : tant qu'il progresse, le tick touche encore le tas, en temps constant certes, mais un tick qui n'y touche pas du tout reste préférable, ne serait-ce que pour le cache. Hors boucle chaude, la latence n'est plus contrainte : les allocations lentes, chargement d'assets ou création de monde, y restent confinées.
 
 Les allocateurs spécialisés correspondants sont tous validés en QEMU : Frame Arena (bump allocator, 2 KiB bootstrap, reset par frame, 5 smoke tests), Pool Allocator (64 B, 32 slots, free-list $O(1)$, 2 smoke tests), Ring Buffer SPSC (slots de 32 B, 32 entrées, FIFO déterministe, 2 smoke tests), Stack Allocator (push/pop_all LIFO, 1 smoke test) et TLSF (segregated fit $O(1)$, WCET borné ≤ 168 instructions x86, 4 smoke tests). Au total, 47 smoke tests couvrent les deux profils.
 
@@ -710,6 +727,10 @@ Le principe directeur est simple : aucune allocation dynamique non déterminist
 [^17]: NVIDIA Developer Blog, « Understanding Memory Management on Hardware-Coherent Platforms ».
 
 [^18]: NVIDIA Developer Blog, « Understanding Memory Management on Hardware-Coherent Platforms ». Présentation du mode CDMM.
+
+[^19]: J. Evans, « A Scalable Concurrent malloc(3) Implementation for FreeBSD », BSDCan 2006, article fondateur de jemalloc. Pour tcmalloc : Google, TCMalloc, `google.github.io/tcmalloc/`, documentation de conception (caches par thread puis par CPU, listes centrales, allocateur de pages).
+
+[^20]: D. Leijen, B. Zorn, L. de Moura, « Mimalloc: Free List Sharding in Action », Microsoft Research, rapport technique MSR-TR-2019-18.
 
 ---
 

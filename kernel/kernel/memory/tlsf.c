@@ -31,6 +31,19 @@
 /** Minimum block payload size (bytes).  Must be >= 2 * sizeof(void*). */
 #define TLSF_MIN_BLOCK_SIZE 16u
 
+/**
+ * Largest size the two-level mapping can represent.
+ *
+ * The first-level index is the floor-log2 of the size, so TLSF_FLI_COUNT classes
+ * describe sizes strictly below 2^TLSF_FLI_COUNT. Above that, mapping_insert
+ * clamps fl to the top class — correct when FILING a block (an oversized block
+ * belongs in the largest bucket) but a trap when SEARCHING: the clamp makes an
+ * unrepresentable request look like it maps to a real bucket, and the search
+ * happily returns a block far smaller than asked for. Requests are bounded here
+ * instead, so the clamp is only ever reached on the insert path.
+ */
+#define TLSF_MAX_BLOCK_SIZE ((1u << TLSF_FLI_COUNT) - 1u)
+
 /** Alignment of all returned pointers. */
 #define TLSF_ALIGN      8u
 #define TLSF_ALIGN_MASK (TLSF_ALIGN - 1u)
@@ -342,6 +355,11 @@ void *kernel_tlsf_alloc(size_t request_size)
         return NULL;
 
     uint32_t t0 = tlsf_rdtsc_low();
+    if (request_size > (size_t) TLSF_MAX_BLOCK_SIZE)
+    {
+        ++g_tlsf.failed_alloc_count;
+        return NULL;
+    }
 
     uint32_t size = (uint32_t) request_size;
     if (size < TLSF_MIN_BLOCK_SIZE)

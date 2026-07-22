@@ -808,26 +808,36 @@ void smoke_test_run_client_hot_loop_rule(Serial_t *serial_port)
 {
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     uint32_t violation_before = kernel_heap_get_hot_loop_violation_count();
+    uint32_t bounded_before = kernel_heap_get_hot_loop_bounded_count();
 
     void *guard_ptr = kmalloc(100u);
     bool setup_ok = (guard_ptr != NULL);
 
     kernel_heap_hot_loop_enter();
-    void *forbidden_alloc = kmalloc(64u);
+    void *bounded_alloc = kmalloc(64u);                  /* slab class — must be served */
+    void *unbounded_alloc = kmalloc(64u * 1024u * 1024u);
     if (guard_ptr)
         kfree(guard_ptr);
+    if (bounded_alloc)
+        kfree(bounded_alloc);
     kernel_heap_hot_loop_leave();
 
     uint32_t violation_after = kernel_heap_get_hot_loop_violation_count();
+    uint32_t bounded_after = kernel_heap_get_hot_loop_bounded_count();
     uint32_t depth_after = kernel_heap_get_hot_loop_depth();
 
-    bool alloc_blocked = (forbidden_alloc == NULL);
+    bool bounded_served = (bounded_alloc != NULL);
+    bool alloc_blocked = (unbounded_alloc == NULL);
     bool depth_restored = (depth_after == 0u);
-    bool violation_count_ok = (violation_after >= (violation_before + 2u));
-    bool pass = setup_ok && alloc_blocked && depth_restored && violation_count_ok;
+    bool violation_count_ok = (violation_after == (violation_before + 1u));
+    bool bounded_count_ok = (bounded_after >= (bounded_before + 3u));
+    bool pass = setup_ok && bounded_served && alloc_blocked && depth_restored && violation_count_ok &&
+                bounded_count_ok;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: hot-loop rule smoke: setup=");
     serial_write_int(serial_port, (int32_t) setup_ok);
+    serial_write_string(serial_port, ", bounded_served=");
+    serial_write_int(serial_port, (int32_t) bounded_served);
     serial_write_string(serial_port, ", alloc_blocked=");
     serial_write_int(serial_port, (int32_t) alloc_blocked);
     serial_write_string(serial_port, ", depth_restored=");

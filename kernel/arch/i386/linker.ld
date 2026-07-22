@@ -17,9 +17,29 @@ SECTIONS
 
     . += global_kernel_start;
 
+    /*
+    ** Every output section below must also collect its per-symbol variants
+    ** (`.text.*`, `.rodata.*`, `.data.*`, `.bss.*`) and the COMDAT
+    ** `.gnu.linkonce.*` forms. C++ emits one such section per inline function,
+    ** per template instantiation and per function-local static, and libengine
+    ** produces them by the thousand.
+    **
+    ** Leaving them out does NOT drop them: ld turns them into orphan sections
+    ** and appends them wherever it sees fit, in practice past the last output
+    ** section. Anything landing after `_kernel_end` is then reported as free
+    ** RAM to the PMM, which hands it out, so the kernel ends up allocating
+    ** memory it is already using for its own statics. The corruption surfaces
+    ** far from its cause: a page table installed in one of those frames gets
+    ** silently overwritten, a 4 MB window of the direct map disappears, and the
+    ** next walk of an allocator free list faults inside kmalloc.
+    **
+    ** `_kernel_end` must cover the whole image. Keep these wildcards.
+    */
     .text ALIGN(4K) : AT (ADDR (.text) - global_kernel_start)
     {
         *(.text)
+        *(.text.*)
+        *(.gnu.linkonce.t.*)
     }
 
     /*
@@ -56,6 +76,8 @@ SECTIONS
     .rodata ALIGN(4K) : AT (ADDR (.rodata) - global_kernel_start)
     {
         *(.rodata)
+        *(.rodata.*)
+        *(.gnu.linkonce.r.*)
     }
 
     .init_array ALIGN(4K) : AT (ADDR (.init_array) - global_kernel_start)
@@ -96,12 +118,16 @@ SECTIONS
     .data ALIGN(4K) : AT (ADDR (.data) - global_kernel_start)
     {
         *(.data)
+        *(.data.*)
+        *(.gnu.linkonce.d.*)
     }
 
     .bss ALIGN(4K) : AT (ADDR (.bss) - global_kernel_start)
     {
         *(COMMON)
         *(.bss)
+        *(.bss.*)
+        *(.gnu.linkonce.b.*)
         *(.bootstrap_stack)
     }
 

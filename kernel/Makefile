@@ -104,9 +104,34 @@ $(ARCHDIR)/boot/crtn.o \
 
 all: lpl.kernel
 
+NM?=$(subst -gcc,-nm,$(firstword $(CC)))
+OBJDUMP?=$(subst -gcc,-objdump,$(firstword $(CC)))
+
 lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld $(ENGINE_ARCHIVE)
 	$(CC) -T $(ARCHDIR)/linker.ld -o $@ $(CFLAGS) $(LINK_LIST)
 	grub-file --is-x86-multiboot lpl.kernel
+	@$(MAKE) --no-print-directory check-kernel-end
+
+# The PMM treats every byte past _kernel_end as free RAM. An allocatable
+# section placed beyond it (an orphan the linker script forgot to collect,
+# typically a C++ COMDAT `.text.*` / `.bss.*`) is therefore handed out as free
+# memory while the kernel is still using it, and the corruption only shows up
+# much later, somewhere else entirely. Catch it at link time instead.
+.PHONY: check-kernel-end
+check-kernel-end:
+	@end=`$(NM) lpl.kernel | awk '$$3 == "_kernel_end" { print $$1 }'`; \
+	if [ -z "$$end" ]; then echo "[check] _kernel_end introuvable" >&2; exit 1; fi; \
+	over=`$(OBJDUMP) -h lpl.kernel | awk -v e="$$end" ' \
+	    /^[ \t]*[0-9]+ / { name=$$2; size=strtonum("0x" $$3); vma=strtonum("0x" $$4); getline; \
+	        if ($$0 ~ /ALLOC/ && size > 0 && vma + size > strtonum("0x" e)) \
+	            printf "%s (vma=0x%x size=0x%x)\n", name, vma, size }'`; \
+	if [ -n "$$over" ]; then \
+	    echo "[check] ERREUR: section allouable au-dela de _kernel_end (0x$$end):" >&2; \
+	    echo "$$over" >&2; \
+	    echo "[check] ajoutez le motif manquant dans $(ARCHDIR)/linker.ld" >&2; \
+	    exit 1; \
+	fi; \
+	echo "[check] _kernel_end (0x$$end) couvre toutes les sections allouables"
 
 $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o:
 	OBJ=`$(CC) $(CFLAGS) $(LDFLAGS) -print-file-name=$(@F)` && cp "$$OBJ" $@

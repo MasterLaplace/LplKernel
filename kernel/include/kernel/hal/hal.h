@@ -20,6 +20,7 @@
  *   hardware_abstraction_layer_display_*         -> IDisplayBackend
  *   hardware_abstraction_layer_clock_*           -> IClockBackend
  *   hardware_abstraction_layer_input_*           -> IInputBackend
+ *   hardware_abstraction_layer_memory_*          -> IMemoryBackend
  *   hardware_abstraction_layer_graphics_memory_* -> IGpuMemoryBackend
  *   hardware_abstraction_layer_console_*         -> core::ILogger (KernelLogger)
  *   hardware_abstraction_layer_virtio_gpu_*      -> internal to the display group
@@ -29,11 +30,9 @@
  *     The console group writes text; it does not draw glyphs (the font and the
  *     text blitter live in lpl::image, because a Linux host has no HAL at all).
  *   - stdint/stdbool types only, so the engine never includes kernel headers.
- *   - No allocation policy. The engine reaches the kernel heap through
- *     lpl::pmr::malloc -> kmalloc, which currently bypasses this seam; a
- *     hardware_abstraction_layer_memory_* group + IMemoryBackend is the known
- *     gap, deliberately left open (the arena seam that would use it is a
- *     separate piece of work).
+ *   - No allocation POLICY. The memory group hands out raw blocks; how they are
+ *     carved up (bump arena, pool) is decided engine-side, so the allocator
+ *     stays one portable, deterministic implementation on every target.
  *   - Identifiers spell acronyms out in full, per the project convention; the
  *     file names (hal.h, hal_*.c) and the include guards keep the short form.
  */
@@ -75,10 +74,18 @@ bool hardware_abstraction_layer_display_query_surface(hardware_abstraction_layer
  */
 bool hardware_abstraction_layer_display_available(void);
 
-/** @brief Clear the whole surface to an 0x00RRGGBB color. */
+/**
+ * @brief Clear the whole surface to an 0x00RRGGBB color.
+ * @param color_rgb The color to clear with.
+ */
 void hardware_abstraction_layer_display_clear(uint32_t color_rgb);
 
-/** @brief Read back one pixel as 0x00RRGGBB (0 if no surface / out of range). */
+/**
+ * @brief Read back one pixel as 0x00RRGGBB (0 if no surface / out of range).
+ * @param x The x-coordinate of the pixel to read.
+ * @param y The y-coordinate of the pixel to read.
+ * @return The color of the pixel at (x, y).
+ */
 uint32_t hardware_abstraction_layer_display_read_pixel(uint32_t x, uint32_t y);
 
 /**
@@ -94,13 +101,22 @@ void hardware_abstraction_layer_display_present(void);
  * Clock (tick contract + sub-tick timestamp)
  * ------------------------------------------------------------------------- */
 
-/** @brief Monotonic tick count (wraps; consumers use modular deltas). */
+/**
+ * @brief Monotonic tick count (wraps; consumers use modular deltas).
+ * @return The tick count.
+ */
 uint32_t hardware_abstraction_layer_clock_tick_count(void);
 
-/** @brief Tick frequency in Hz. */
+/**
+ * @brief Tick frequency in Hz.
+ * @return The tick frequency.
+ */
 uint32_t hardware_abstraction_layer_clock_tick_hertz(void);
 
-/** @brief 64-bit CPU timestamp counter (rdtsc) for sub-tick timing. */
+/**
+ * @brief 64-bit CPU timestamp counter (rdtsc) for sub-tick timing.
+ * @return The timestamp.
+ */
 uint64_t hardware_abstraction_layer_clock_timestamp_counter(void);
 
 /* ----------------------------------------------------------------------------
@@ -113,7 +129,10 @@ uint64_t hardware_abstraction_layer_clock_timestamp_counter(void);
  */
 bool hardware_abstraction_layer_input_try_pop_character(char *out_character);
 
-/** @brief Number of decoded characters currently waiting in the ring. */
+/**
+ * @brief Number of decoded characters currently waiting in the ring.
+ * @return The count of pending characters.
+ */
 uint32_t hardware_abstraction_layer_input_pending_count(void);
 
 /* ----------------------------------------------------------------------------
@@ -125,17 +144,89 @@ uint32_t hardware_abstraction_layer_input_pending_count(void);
  * overlays stay engine-side.
  * ------------------------------------------------------------------------- */
 
-/** @brief Write a NUL-terminated string to the kernel diagnostic console. */
+/**
+ * @brief Write a NUL-terminated string to the kernel diagnostic console.
+ * @param text The string to write.
+ */
 void hardware_abstraction_layer_console_write_string(const char *text);
+
+/* ----------------------------------------------------------------------------
+ * Memory (large reservations the engine bump-allocates from)
+ *
+ * The engine reserves its arenas ONCE at start-up through this group and then
+ * serves every per-frame allocation from them by pointer arithmetic. That is
+ * what makes the REAL_TIME path safe: kmalloc refuses to allocate inside a hot
+ * loop, so nothing may call it during a tick.
+ *
+ * Ordinary CPU memory — distinct from the graphics group below, which hands out
+ * pinned, GPU-attachable pages.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * @brief Reserve a contiguous block (alignment is a power of two); NULL on failure.
+ *
+ * Room for the worst-case adjustment plus the saved original pointer is added to the request,
+ * so the returned block is always at least @p size_bytes long and aligned to @p alignment.
+ * The original pointer is stashed just below the returned block so release() can recover it.
+ *
+ * @param size_bytes Size of the block to reserve.
+ * @param alignment Alignment of the block (power of two).
+ * @return A pointer to the reserved block, or NULL on failure.
+ */
+void *hardware_abstraction_layer_memory_reserve(uint32_t size_bytes, uint32_t alignment);
+
+/**
+ * @brief Release a block obtained from hardware_abstraction_layer_memory_reserve.
+ * @param block The block to release.
+ * @param size_bytes The size of the block.
+ */
+void hardware_abstraction_layer_memory_release(void *block, uint32_t size_bytes);
+
+/**
+ * @brief Mark the start of a real-time critical section (an authoritative tick).
+ *
+ * Inside it the kernel heap REFUSES to allocate and counts the attempt, so a
+ * section that is meant to be allocation-free proves it instead of claiming it.
+ */
+void hardware_abstraction_layer_memory_begin_real_time_section(void);
+
+/**
+ * @brief Mark the end of a real-time critical section.
+ */
+void hardware_abstraction_layer_memory_end_real_time_section(void);
+
+/**
+ * @brief Allocation attempts refused inside real-time sections since boot.
+ * @return The number of allocation attempts refused.
+ */
+uint32_t hardware_abstraction_layer_memory_real_time_violation_count(void);
+
+/**
+ * @brief Bounded-path (slab / TLSF) allocations served inside real-time sections.
+ *
+ * Not failures: these hold the deadline. The figure is a throughput budget —
+ * a tick that trips it is doing O(1) heap traffic that is still worth removing.
+ *
+ * @return The number of bounded allocations served.
+ */
+uint32_t hardware_abstraction_layer_memory_real_time_bounded_count(void);
 
 /* ----------------------------------------------------------------------------
  * Graphics memory (pinned, never-relocated; GPU-attach ready)
  * ------------------------------------------------------------------------- */
 
-/** @brief Allocate pinned (never-relocated) graphics memory; NULL on failure. */
+/**
+ * @brief Allocate pinned (never-relocated) graphics memory; NULL on failure.
+ * @param size_bytes The size of the memory to allocate.
+ * @return A pointer to the allocated memory, or NULL on failure.
+ */
 void *hardware_abstraction_layer_graphics_memory_allocate(uint32_t size_bytes);
 
-/** @brief Release graphics memory obtained from hardware_abstraction_layer_graphics_memory_allocate. */
+/**
+ * @brief Release graphics memory obtained from hardware_abstraction_layer_graphics_memory_allocate.
+ * @param pointer The pointer to the memory to release.
+ * @param size_bytes The size of the memory to release.
+ */
 void hardware_abstraction_layer_graphics_memory_free(void *pointer, uint32_t size_bytes);
 
 /**
@@ -377,23 +468,43 @@ bool hardware_abstraction_layer_virtio_gpu_flush(hardware_abstraction_layer_virt
  * only the stable hardware_abstraction_layer_display_* contract and never knows which backend won.
  * ------------------------------------------------------------------------- */
 
-/** @brief Bring up a virtio-gpu scanout for hardware_abstraction_layer_display; false if unavailable. */
+/**
+ * @brief Bring up a virtio-gpu scanout for hardware_abstraction_layer_display; false if unavailable.
+ * @return true if a scanout was successfully brought up, false otherwise.
+ */
 bool hardware_abstraction_layer_virtio_gpu_display_init(void);
 
-/** @brief True when a virtio-gpu scanout is live (hardware_abstraction_layer_display should route here). */
+/**
+ * @brief True when a virtio-gpu scanout is live (hardware_abstraction_layer_display should route here).
+ * @return true if a scanout is live, false otherwise.
+ */
 bool hardware_abstraction_layer_virtio_gpu_display_active(void);
 
-/** @brief Fill @p out_descriptor from the active scanout surface. */
+/**
+ * @brief Fill @p out_descriptor from the active scanout surface.
+ * @param out_descriptor The descriptor to fill.
+ * @return true if the descriptor was filled successfully, false otherwise.
+ */
 bool hardware_abstraction_layer_virtio_gpu_display_query(
     hardware_abstraction_layer_surface_descriptor_t *out_descriptor);
 
-/** @brief Clear the scanout surface to a packed 0x00RRGGBB color (no present). */
+/**
+ * @brief Clear the scanout surface to a packed 0x00RRGGBB color (no present).
+ * @param color_rgb The color to clear the surface with.
+ */
 void hardware_abstraction_layer_virtio_gpu_display_clear(uint32_t color_rgb);
 
-/** @brief Read back one scanout pixel as 0x00RRGGBB. */
+/**
+ * @brief Read back one scanout pixel as 0x00RRGGBB.
+ * @param x The x-coordinate of the pixel to read.
+ * @param y The y-coordinate of the pixel to read.
+ * @return The color of the pixel at (x, y).
+ */
 uint32_t hardware_abstraction_layer_virtio_gpu_display_read_pixel(uint32_t x, uint32_t y);
 
-/** @brief Present the scanout (TRANSFER_TO_HOST_2D + RESOURCE_FLUSH). */
+/**
+ * @brief Present the scanout (TRANSFER_TO_HOST_2D + RESOURCE_FLUSH).
+ */
 void hardware_abstraction_layer_virtio_gpu_display_present(void);
 
 #ifdef __cplusplus

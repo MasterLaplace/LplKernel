@@ -39,6 +39,8 @@ void write_heap_extended_info(Serial_t *serial)
     serial_write_int(serial, (int32_t) kernel_heap_get_hot_loop_depth());
     serial_write_string(serial, ", hot_loop_violations=");
     serial_write_int(serial, (int32_t) kernel_heap_get_hot_loop_violation_count());
+    serial_write_string(serial, ", hot_loop_bounded=");
+    serial_write_int(serial, (int32_t) kernel_heap_get_hot_loop_bounded_count());
     serial_write_string(serial, "\n");
 #else
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: server heap domains=");

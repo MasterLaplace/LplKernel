@@ -31,6 +31,9 @@ extern bool kernel_tlsf_initialize(void *buffer, size_t size);
 /**
  * @brief Allocate a block of at least @p size bytes.
  *
+ * Beyond the mapping's reach: refuse rather than let the fl clamp hand back
+ * a block that does not fit (see TLSF_MAX_BLOCK_SIZE).
+ *
  * @param size  Requested allocation size (rounded up internally).
  * @return Pointer to usable memory, or NULL if no suitable block exists.
  */

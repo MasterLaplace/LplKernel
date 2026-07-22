@@ -19,7 +19,7 @@
 #include <lpl/engine/Config.hpp>
 #include <lpl/engine/Engine.hpp>
 #include <lpl/platform/kernel/KernelPlatform.hpp>
-#include <lpl/samples/CubePileApp.hpp>
+#include <lpl/samples/CubePileWorld.hpp>
 #include <lpl/std/memory.hpp>
 
 #include "libengine/libengine.h"
@@ -43,7 +43,7 @@ extern "C" void libengine_server_app_run(void)
                       .build();
 
     lpl::engine::Engine engine{config, lpl::pmr::make_unique<lpl::platform::kernel::KernelPlatform>(),
-                               lpl::pmr::make_unique<lpl::samples::CubePileApp>()};
+                               lpl::pmr::make_unique<lpl::samples::CubePileWorld>()};
 
     if (auto result = engine.init(); !result)
     {

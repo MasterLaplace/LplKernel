@@ -338,6 +338,37 @@ target("lpl-kernel")
         os.execv(cc, argv)
         -- Fail loudly if the image is not a valid multiboot kernel.
         os.execv("grub-file", {"--is-x86-multiboot", out})
+
+        -- The PMM treats every byte past _kernel_end as free RAM, so an
+        -- allocatable section placed beyond it (a C++ COMDAT orphan the linker
+        -- script failed to collect) is handed out while the kernel still uses
+        -- it. Mirrors the check-kernel-end rule of the shell build path.
+        local nm = cc:gsub("%-gcc$", "-nm")
+        local objdump = cc:gsub("%-gcc$", "-objdump")
+        local kernel_end = nil
+        for _, line in ipairs(os.iorunv(nm, {out}):split("\n", {plain = true})) do
+            local addr, name = line:match("^(%x+)%s+%a%s+(.+)$")
+            if name == "_kernel_end" then kernel_end = tonumber(addr, 16) end
+        end
+        assert(kernel_end, "_kernel_end not found in " .. out)
+
+        local overflow = {}
+        local headers = os.iorunv(objdump, {"-h", out})
+        local pending = nil
+        for _, line in ipairs(headers:split("\n", {plain = true})) do
+            local _, name, size, vma = line:match("^%s*(%d+)%s+(%S+)%s+(%x+)%s+(%x+)")
+            if name then
+                pending = {name = name, last = tonumber(vma, 16) + tonumber(size, 16), size = tonumber(size, 16)}
+            elseif pending then
+                if line:find("ALLOC", 1, true) and pending.size > 0 and pending.last > kernel_end then
+                    table.insert(overflow, pending.name)
+                end
+                pending = nil
+            end
+        end
+        assert(#overflow == 0, format("allocatable section(s) past _kernel_end (0x%x): %s\n"
+            .. "add the missing wildcard in kernel/arch/i386/linker.ld", kernel_end, table.concat(overflow, ", ")))
+
         cprint("${green}[lpl.kernel]${clear} linked + multiboot OK -> %s", out)
     end)
 target_end()
