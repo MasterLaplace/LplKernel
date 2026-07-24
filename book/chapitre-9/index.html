@@ -1,0 +1,381 @@
+<!DOCTYPE html><html lang="fr"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"><title>Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale — LplKernel : architecture d&#39;un moteur déterministe FullDive</title><meta name="description" content="Chapitre 9 : Gestion énergétique, du transistor à la sonde spatiale — PARTIE V : Horizons. Chapitre du livre technique du projet Laplace : noyau, moteur, déterminisme et interfaces cerveau-ordinateur."><link rel="canonical" href="https://masterlaplace.github.io/LplKernel/book/chapitre-9"><meta name="author" content="Master Laplace"><meta name="robots" content="index, follow, max-snippet:-1"><meta property="og:title" content="Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale — LplKernel : architecture d'un moteur déterministe FullDive"><meta property="og:description" content="Chapitre 9 : Gestion énergétique, du transistor à la sonde spatiale — PARTIE V : Horizons. Chapitre du livre technique du projet Laplace : noyau, moteur, déterminisme et interfaces cerveau-ordinateur."><meta property="og:type" content="article"><meta property="og:url" content="https://masterlaplace.github.io/LplKernel/book/chapitre-9"><meta property="og:site_name" content="The Laplace Project"><meta property="og:locale" content="fr_FR"><meta name="twitter:card" content="summary"><link rel="stylesheet" href="/LplKernel/_astro/_slug_.5aMDqdYe.css"></head> <body class="font-sans text-lpl-text antialiased"> <a href="#main" class="lpl-skip-link">Aller au contenu principal</a> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3" aria-label="Main"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent" aria-hidden="true">λ</span> Laplace<span class="text-lpl-muted">.project</span> <span class="sr-only">— home</span> </a> <!-- Desktop links --> <ul class="hidden md:flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> <!-- Mobile toggle --> <button id="nav-toggle" class="md:hidden inline-flex items-center justify-center w-9 h-9 border border-lpl-border text-lpl-text hover:text-lpl-accent hover:border-lpl-accent transition-colors" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav-mobile"> <svg id="nav-icon-open" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="3" y1="6" x2="21" y2="6"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="3" y1="18" x2="21" y2="18"></line> </svg> <svg id="nav-icon-close" aria-hidden="true" focusable="false" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="6" y1="6" x2="18" y2="18"></line> <line x1="18" y1="6" x2="6" y2="18"></line> </svg> </button> </nav> <!-- Mobile menu --> <nav id="nav-mobile" class="hidden md:hidden border-t border-lpl-border bg-lpl-bg/95" aria-label="Mobile"> <ul> <li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/"> Home  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/book"> Book  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> </nav> </header> <script type="module">const n=document.getElementById("nav-toggle"),t=document.getElementById("nav-mobile"),s=document.getElementById("nav-icon-open"),i=document.getElementById("nav-icon-close");function c(e){!t||!n||(t.classList.toggle("hidden",!e),n.setAttribute("aria-expanded",String(e)),s?.classList.toggle("hidden",e),i?.classList.toggle("hidden",!e))}n?.addEventListener("click",()=>{c(t?.classList.contains("hidden")??!1)});t?.querySelectorAll("a").forEach(e=>e.addEventListener("click",()=>c(!1)));</script> <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-[18rem_1fr] gap-8"> <!-- Sidebar TOC --> <nav class="hidden lg:block py-10" aria-label="Sommaire du livre"> <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2"> <a href="/LplKernel/book" class="block font-mono text-sm text-lpl-accent mb-4 hover:brightness-110">
+← Sommaire du livre
+</a> <div class="mb-5">  <ul class="space-y-1"> <li> <a href="/LplKernel/book/preambule" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Préambule </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE I : Fondations système </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-1" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 1 · Anatomie d&#39;un noyau, OS ou moteur </a> </li><li> <a href="/LplKernel/book/chapitre-2" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 2 · Gestion mémoire, du noyau au moteur </a> </li><li> <a href="/LplKernel/book/chapitre-3" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 3 · Déterminisme et arithmétique à virgule fixe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE II : Architecture et rendu </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-4" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 4 · Paradigmes architecturaux et design patterns </a> </li><li> <a href="/LplKernel/book/chapitre-5" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 5 · GPU, Vulkan et animation procédurale </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE III : Réseau et synchronisation </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-6" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 6 · Infrastructure réseau déterministe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE IV : Interfaces cerveau-ordinateur </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-7" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 7 · BCI, EEG et neurofeedback pour le FullDive </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE V : Horizons </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-8" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 8 · Des noyaux classiques aux systèmes quantiques </a> </li><li> <a href="/LplKernel/book/chapitre-9" aria-current="page" class="block text-sm rounded px-2 py-1 transition-colors bg-lpl-accent/10 text-lpl-accent"> Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale </a> </li><li> <a href="/LplKernel/book/chapitre-10" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 10 · Vision architecturale, innovations natives </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> Annexes </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/annexe-a" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe A · Code compilable, design patterns du FullDive Engine </a> </li><li> <a href="/LplKernel/book/annexe-b" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe B · Glossaire technique </a> </li><li> <a href="/LplKernel/book/annexe-c" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe C · Index des sources par chapitre </a> </li><li> <a href="/LplKernel/book/annexe-d" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe D · Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow) </a> </li> </ul> </div> </div> </nav> <!-- Content --> <main id="main" class="py-10 min-w-0"> <p class="font-mono text-xs uppercase tracking-wider text-lpl-muted mb-2">PARTIE V : Horizons</p><h1 class="text-3xl sm:text-4xl font-bold mb-8">Chapitre 9 : Gestion énergétique, du transistor à la sonde spatiale</h1> <article class="book-prose"> <h2 id="91-introduction-lénergie-contrainte-architecturale-fondamentale">9.1 Introduction : l’énergie, contrainte architecturale fondamentale</h2>
+<p>Les chapitres précédents ont traité la mémoire, le déterminisme et le rendu comme les piliers d’un moteur FullDive. Mais il existe une contrainte physique qui les transcende toutes : l’énergie. Un casque VR autonome fonctionne sur batterie : chaque microseconde de calcul inutile réduit l’autonomie et augmente la chaleur dissipée contre le visage de l’utilisateur. Un serveur de build consomme des mégawatts : chaque instruction gaspillée se traduit en coût financier et en empreinte carbone.</p>
+<p>La gestion énergétique n’est pas un sujet annexe : elle dicte le dimensionnement du matériel, la conception de la boucle de simulation, et même le choix des instructions assembleur dans l’<em>idle loop</em> du noyau. Ce chapitre explore la science de la consommation électrique depuis les lois physiques des semi-conducteurs jusqu’aux algorithmes d’ordonnancement du noyau, en passant par l’application la plus extrême jamais réalisée : l’hibernation de la sonde spatiale <em>Rosetta</em> pendant 31 mois à 800 millions de kilomètres du Soleil.</p>
+<h2 id="92-physique-de-la-dissipation-de-puissance-cmos">9.2 Physique de la dissipation de puissance CMOS</h2>
+<h3 id="921-puissance-dynamique">9.2.1 Puissance dynamique</h3>
+<p>La quasi-totalité des processeurs modernes repose sur la technologie <strong>CMOS</strong> (<em>Complementary Metal-Oxide-Semiconductor</em>). La consommation totale d’un circuit CMOS est la somme de deux composantes : la puissance dynamique (transitions logiques) et la puissance statique (courants de fuite).<sup><a href="#user-content-fn-1" id="user-content-fnref-1" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup></p>
+<p>La puissance dynamique de commutation est modélisée par l’équation fondamentale :</p>
+<p><span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mi>a</mi><mi>m</mi><mi>i</mi><mi>q</mi><mi>u</mi><mi>e</mi></mrow></msub><mo>=</mo><mi>α</mi><mo>⋅</mo><msub><mi>C</mi><mi>L</mi></msub><mo>⋅</mo><msubsup><mi>V</mi><mrow><mi>D</mi><mi>D</mi></mrow><mn>2</mn></msubsup><mo>⋅</mo><mi>f</mi></mrow><annotation encoding="application/x-tex">P_{dynamique} = \alpha \cdot C_L \cdot V_{DD}^2 \cdot f</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">y</span><span class="mord mathnormal mtight">nami</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">q</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">e</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0894em;vertical-align:-0.2753em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.4247em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">D</span><span class="mord mathnormal mtight" style="margin-right:0.0278em;">D</span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2753em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.1076em;">f</span></span></span></span></p>
+<p>Où :</p>
+<ul>
+<li><span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> : facteur d’activité de commutation (probabilité de transition par cycle)</li>
+<li><span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>L</mi></msub></mrow><annotation encoding="application/x-tex">C_L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> : capacité de charge dynamique totale</li>
+<li><span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>V</mi><mrow><mi>D</mi><mi>D</mi></mrow></msub></mrow><annotation encoding="application/x-tex">V_{DD}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">D</span><span class="mord mathnormal mtight" style="margin-right:0.0278em;">D</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> : tension d’alimentation</li>
+<li><span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.1076em;">f</span></span></span></span> : fréquence d’horloge</li>
+</ul>
+<p>La puissance de court-circuit (<em>short-circuit power</em>), quant à elle, se manifeste de manière extrêmement brève lors de la transition d’un signal : pendant le laps de temps où la tension d’entrée bascule, les transistors PMOS et NMOS se retrouvent simultanément passants et créent un chemin direct temporaire entre l’alimentation et la masse. Bien que cette composante compte généralement pour moins de 10 % de la puissance dynamique totale, elle augmente significativement si les fronts de transition se dégradent.<sup><a href="#user-content-fn-1" id="user-content-fnref-1-2" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup></p>
+<h3 id="922-puissance-statique-et-courants-de-fuite">9.2.2 Puissance statique et courants de fuite</h3>
+<p>La puissance statique correspond à l’énergie dissipée même lorsque le circuit est inactif :</p>
+<p><span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mrow><mi>s</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>q</mi><mi>u</mi><mi>e</mi></mrow></msub><mo>=</mo><msub><mi>V</mi><mrow><mi>C</mi><mi>C</mi></mrow></msub><mo>⋅</mo><msub><mi>I</mi><mrow><mi>C</mi><mi>C</mi></mrow></msub></mrow><annotation encoding="application/x-tex">P_{statique} = V_{CC} \cdot I_{CC}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">i</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">q</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">e</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></p>
+<p>Où <span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>I</mi><mrow><mi>C</mi><mi>C</mi></mrow></msub></mrow><annotation encoding="application/x-tex">I_{CC}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0785em;">I</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> est le courant de fuite total. Avec la miniaturisation (7 nm, 5 nm), la tension de seuil <span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>V</mi><mrow><mi>t</mi><mi>h</mi></mrow></msub></mrow><annotation encoding="application/x-tex">V_{th}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">h</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> des transistors a dû être abaissée, ce qui provoque une augmentation exponentielle des courants de fuite sous-le-seuil (<em>subthreshold leakage</em>). L’amincissement de l’oxyde de grille engendre aussi un courant de fuite par effet tunnel quantique (<em>gate leakage</em>). Enfin, des diodes parasites formées par la diffusion entre la source/drain et le substrat génèrent des courants de fuite par polarisation inverse.<sup><a href="#user-content-fn-2" id="user-content-fnref-2" data-footnote-ref="" aria-describedby="footnote-label">2</a></sup></p>
+<p>Dans les architectures nanométriques modernes, la puissance statique peut peser 30 à 70 % de la consommation totale si aucune mesure de confinement matériel n’est appliquée.<sup><a href="#user-content-fn-2" id="user-content-fnref-2-2" data-footnote-ref="" aria-describedby="footnote-label">2</a></sup></p>
+<h3 id="923-le-produit-énergie-délai-edp">9.2.3 Le produit énergie-délai (EDP)</h3>
+<p>L’optimisation énergétique ne consiste pas à minimiser la puissance brute : ralentir excessivement le calcul peut être contre-productif si les courants de fuite statiques consomment plus pendant le temps additionnel. La bonne métrique, c’est le <strong>Produit Énergie-Délai</strong> (<em>Energy-Delay Product</em>) :</p>
+<p><span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mi>D</mi><mi>P</mi><mo>=</mo><mi>E</mi><mo>⋅</mo><mi>T</mi><mo>=</mo><mi>P</mi><mo>⋅</mo><msup><mi>T</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">EDP = E \cdot T = P \cdot T^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mord mathnormal" style="margin-right:0.0278em;">D</span><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span></span></p>
+<p>Minimiser l’EDP garantit l’équilibre optimal entre efficacité énergétique et réactivité. Le point de tension optimal se situe généralement autour de 1 V pour les dispositifs submicroniques avec des seuils de ~0.5 V.<sup><a href="#user-content-fn-3" id="user-content-fnref-3" data-footnote-ref="" aria-describedby="footnote-label">3</a></sup></p>
+<h3 id="924-impact-des-algorithmes-dordonnancement">9.2.4 Impact des algorithmes d’ordonnancement</h3>
+<p>Le choix de l’algorithme d’ordonnancement (<em>scheduler</em>) dicte le profil énergétique. Un algorithme FCFS (<em>First-Come, First-Served</em>) peut induire un « effet de convoi », où des tâches rapides restent bloquées derrière de longues tâches complexes, ce qui empêche le processeur de retourner en sommeil profond. À l’inverse, une approche SJF (<em>Shortest Job First</em>) permet de purger la file d’attente rapidement pour entrer en hibernation, même si elle peut provoquer la privation (<em>starvation</em>) des tâches lourdes. Les planificateurs modernes privilégient la consolidation de charge pour regrouper l’exécution et prolonger les phases d’inactivité continue.<sup><a href="#user-content-fn-3" id="user-content-fnref-3-2" data-footnote-ref="" aria-describedby="footnote-label">3</a></sup></p>
+<h2 id="93-mécanismes-matériels-de-confinement">9.3 Mécanismes matériels de confinement</h2>
+<h3 id="931-clock-gating">9.3.1 Clock Gating</h3>
+<p>Le <strong>Clock Gating</strong> est la technique la plus répandue pour réduire la puissance dynamique. En bloquant le signal d’horloge d’un composant inactif (cache, bus, périphérique), on annule simultanément le facteur de fréquence <span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>f</mi></mrow><annotation encoding="application/x-tex">f</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.1076em;">f</span></span></span></span> et d’activité <span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>.<sup><a href="#user-content-fn-4" id="user-content-fnref-4" data-footnote-ref="" aria-describedby="footnote-label">4</a></sup></p>
+<p>L’implémentation naïve (porte AND entre horloge et signal Enable) risque de générer des <em>glitches</em> si le signal d’activation bascule pendant que l’horloge est haute. Les bibliothèques CMOS fournissent des cellules <strong>ICG</strong> (<em>Integrated Clock Gating</em>) : un <em>latch</em> y échantillonne le signal Enable uniquement sur le front bas de l’horloge. Pour évaluer la qualité de la mise en œuvre, on mesure l’efficacité de la coupure d’horloge via la métrique de <strong>CGE</strong> (<em>Clock Gate Efficiency</em>).<sup><a href="#user-content-fn-4" id="user-content-fnref-4-2" data-footnote-ref="" aria-describedby="footnote-label">4</a></sup></p>
+<h3 id="932-power-gating">9.3.2 Power Gating</h3>
+<p>Le <strong>Power Gating</strong> cible directement la puissance statique en coupant physiquement l’alimentation d’un bloc matériel entier via des <em>sleep transistors</em>. C’est redoutablement efficace contre les courants de fuite, mais avec un inconvénient majeur : la perte irrévocable de l’état logique du bloc éteint.<sup><a href="#user-content-fn-5" id="user-content-fnref-5" data-footnote-ref="" aria-describedby="footnote-label">5</a></sup></p>
+<p>Le noyau doit orchestrer une séquence stricte avant l’extinction :</p>
+<ol>
+<li>Sauvegarder les données critiques (registres de rétention à tension minimale)</li>
+<li>Activer les cellules d’isolation aux frontières pour empêcher la propagation de signaux flottants</li>
+<li>Couper l’alimentation</li>
+<li>Au réveil : restaurer l’état, désactiver l’isolation, re-valider les données</li>
+</ol>
+<h3 id="933-dvfs-dynamic-voltage-and-frequency-scaling">9.3.3 DVFS : Dynamic Voltage and Frequency Scaling</h3>
+<p>Le <strong>DVFS</strong> ajuste dynamiquement la tension <em>et</em> la fréquence du processeur selon la charge de travail. La réduction de tension donne une baisse quadratique de la consommation, mais allonge le délai de propagation des portes, ce qui force à réduire la fréquence pour éviter les erreurs de calcul.<sup><a href="#user-content-fn-6" id="user-content-fnref-6" data-footnote-ref="" aria-describedby="footnote-label">6</a></sup></p>
+<p>L’implémentation requiert une communication avec le <strong>PMIC</strong> (<em>Power Management IC</em>) via le bus I2C. Ce bus nécessite des résistances de tirage (<em>pull-up</em>) judicieusement dimensionnées, typiquement 2,2 k<span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Ω</mi></mrow><annotation encoding="application/x-tex">\Omega</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Ω</span></span></span></span> pour le mode rapide (1 Mbit/s) ou 0,5 k<span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Ω</mi></mrow><annotation encoding="application/x-tex">\Omega</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Ω</span></span></span></span> pour le mode ultra-rapide (3,4 Mbit/s). Le code du noyau envoie des commandes de type <em>read-modify-write</em> pour ajuster les registres de régulation de tension. Dans les architectures multiprocesseurs modernes, la gestion de domaines de tension distincts s’appuie sur le modèle <strong>GALS</strong> (<em>Globally Asynchronous Locally Synchronous</em>). Par exemple, sur les microcontrôleurs STM32, la fonction <code translate="no">HAL_PWREx_ControlVoltageScaling()</code> encapsule ces appels matériels :</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c" translate="no"><code translate="no"><span class="line"><span style="color:#6A737D">// Séquence DVFS simplifiée (pseudo-code noyau)</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> dvfs_set_frequency</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">uint32_t</span><span style="color:#FFAB70"> target_freq</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    uint32_t</span><span style="color:#E1E4E8"> target_voltage </span><span style="color:#F97583">=</span><span style="color:#FFAB70"> freq_to_voltage_table</span><span style="color:#E1E4E8">[target_freq];</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (target_freq </span><span style="color:#F97583">></span><span style="color:#E1E4E8"> current_freq) {</span></span>
+<span class="line"><span style="color:#6A737D">        // Augmentation : d'abord la tension, PUIS la fréquence</span></span>
+<span class="line"><span style="color:#B392F0">        pmic_i2c_write</span><span style="color:#E1E4E8">(VOLTAGE_REG, target_voltage);</span></span>
+<span class="line"><span style="color:#B392F0">        wait_voltage_stable</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">  // CRITIQUE : attendre stabilisation PLL</span></span>
+<span class="line"><span style="color:#B392F0">        set_cpu_frequency</span><span style="color:#E1E4E8">(target_freq);</span></span>
+<span class="line"><span style="color:#E1E4E8">    } </span><span style="color:#F97583">else</span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#6A737D">        // Diminution : d'abord la fréquence, PUIS la tension</span></span>
+<span class="line"><span style="color:#B392F0">        set_cpu_frequency</span><span style="color:#E1E4E8">(target_freq);</span></span>
+<span class="line"><span style="color:#B392F0">        pmic_i2c_write</span><span style="color:#E1E4E8">(VOLTAGE_REG, target_voltage);</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>L’ordre est critique : augmenter la fréquence avant que la tension ne soit stable provoque un effondrement du système.<sup><a href="#user-content-fn-6" id="user-content-fnref-6-2" data-footnote-ref="" aria-describedby="footnote-label">6</a></sup></p>
+<h2 id="94-linterface-acpi-standardisation-des-états-dénergie">9.4 L’interface ACPI : standardisation des états d’énergie</h2>
+<p>L’<strong>ACPI</strong> (<em>Advanced Configuration and Power Interface</em>), introduit en 1996, transfère la politique de gestion énergétique du BIOS au noyau OS via l’<strong>OSPM</strong> (<em>OS-directed Power Management</em>). Il catégorise la gestion en plusieurs strates :<sup><a href="#user-content-fn-7" id="user-content-fnref-7" data-footnote-ref="" aria-describedby="footnote-label">7</a></sup></p>
+<h3 id="941-s-states-système-global">9.4.1 S-States (système global)</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">État</th><th align="left">Nom</th><th align="left">Description</th><th align="left">Rétention d’État</th></tr></thead><tbody><tr><td align="left"><strong>S0</strong></td><td align="left">Working</td><td align="left">Système pleinement opérationnel</td><td align="left">Totale</td></tr><tr><td align="left"><strong>S1</strong></td><td align="left">Standby</td><td align="left">CPU suspendu, mémoire et caches maintenus</td><td align="left">Totale</td></tr><tr><td align="left"><strong>S3</strong></td><td align="left">Suspend-to-RAM</td><td align="left">CPU éteint, seule la DRAM est rafraîchie</td><td align="left">RAM uniquement</td></tr><tr><td align="left"><strong>S4</strong></td><td align="left">Hibernate</td><td align="left">RAM copiée sur disque, système éteint</td><td align="left">Disque</td></tr><tr><td align="left"><strong>S5/G3</strong></td><td align="left">Off</td><td align="left">Arrêt complet</td><td align="left">Aucune</td></tr></tbody></table>
+<h3 id="942-c-states-processeur">9.4.2 C-States (processeur)</h3>
+<p>Les <strong>C-States</strong> définissent les niveaux d’inactivité du processeur dans l’état S0 :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">C-State</th><th align="left">Mode</th><th align="left">Caractéristiques</th></tr></thead><tbody><tr><td align="left"><strong>C0</strong></td><td align="left">Active</td><td align="left">Exécution d’instructions. Seul état où les P-States s’appliquent</td></tr><tr><td align="left"><strong>C1</strong></td><td align="left">Halt</td><td align="left">Horloge arrêtée, registres maintenus. Réveil quasi instantané</td></tr><tr><td align="left"><strong>C2</strong></td><td align="left">Stop-Clock</td><td align="left">Horloge matérielle arrêtée. Latence de réveil plus longue</td></tr><tr><td align="left"><strong>C3</strong></td><td align="left">Sleep</td><td align="left">Cohérence des caches abandonnée. Purge nécessaire au réveil</td></tr><tr><td align="left"><strong>C4+</strong></td><td align="left">Deep Sleep</td><td align="left">Power Gating complet. Gains massifs sur les courants de fuite</td></tr></tbody></table>
+<h3 id="943-p-states-et-d-states">9.4.3 P-States et D-States</h3>
+<p>Les <strong>P-States</strong> (Performance States) implémentent le DVFS dans C0 : P0 = fréquence/tension max, Pn = couples progressivement réduits. Les <strong>D-States</strong> (D0 à D3) contrôlent individuellement l’alimentation des périphériques.<sup><a href="#user-content-fn-7" id="user-content-fnref-7-2" data-footnote-ref="" aria-describedby="footnote-label">7</a></sup></p>
+<p>La modification du P-State sur les processeurs Intel s’effectue traditionnellement en écrivant dans le registre MSR <code translate="no">IA32_PERF_CTL</code>. Encore faut-il, pour confier la décision au système d’exploitation, connaître la <em>charge réelle</em> du CPU. Les processeurs modernes exposent pour cela deux compteurs MSR : <code translate="no">IA32_APERF</code> (Active Performance), qui ne compte les cycles que pendant que le CPU tourne effectivement, et <code translate="no">IA32_MPERF</code> (Maximum Performance), qui les compte à la fréquence nominale absolue. Le ratio <code translate="no">APERF / MPERF</code> donne au gouverneur de fréquence, qu’il s’agisse du driver <code translate="no">intel_pstate</code> de Linux ou de l’ordonnanceur EDF de LplKernel, une mesure d’activité exacte pour calculer dynamiquement la tension minimale requise sans sacrifier les garanties temporelles.</p>
+<h2 id="95-implémentation-assembleur-les-instructions-darrêt">9.5 Implémentation assembleur : les instructions d’arrêt</h2>
+<h3 id="951-x86-hlt-et-mwait">9.5.1 x86 : HLT et MWAIT</h3>
+<p>L’instruction <strong>HLT</strong> (<em>Halt</em>, opcode <code translate="no">0xF4</code>) suspend l’exécution du processeur jusqu’à une interruption matérielle et place le CPU en C1. Présente depuis le 8086, elle n’a servi à l’économie d’énergie qu’à partir du DX4 (1994).<sup><a href="#user-content-fn-8" id="user-content-fnref-8" data-footnote-ref="" aria-describedby="footnote-label">8</a></sup></p>
+<p>Sa limite : dans un système multiprocesseur, réveiller un cœur en HLT nécessite un routage complexe de l’APIC et une <strong>IPI</strong> (<em>Inter-Processor Interrupt</em>) coûteuse en latence. Pour un moteur temps réel réagissant aux événements BCI et réseau sous la milliseconde, cette latence de réveil est inacceptable.</p>
+<p>C’est exactement ce que fait LplKernel dans sa boucle d’inactivité : plutôt que <code translate="no">HLT</code>, il emploie la paire d’instructions <code translate="no">MONITOR</code> / <code translate="no">MWAIT</code>. Le cœur inactif arme le <code translate="no">MONITOR</code> sur l’adresse du ring buffer de la carte réseau ou du capteur BCI, puis appelle <code translate="no">MWAIT</code> pour descendre dans un C-State profond (C3/C6) et couper son alimentation. Dès que le périphérique écrit le paquet en mémoire physique par DMA, la modification de la ligne de cache surveillée réveille le CPU instantanément, sans passer par le cheminement tortueux d’une interruption IRQ classique.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="asm" translate="no"><code translate="no"><span class="line"><span style="color:#6A737D">; x86 : mise en veille avec surveillance d'adresse mémoire</span></span>
+<span class="line"><span style="color:#6A737D">; Le noyau arme la surveillance sur l'adresse de la runqueue</span></span>
+<span class="line"><span style="color:#F97583">MONITOR</span><span style="color:#E1E4E8">  [runqueue_addr], </span><span style="color:#79B8FF">ecx</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">edx</span><span style="color:#6A737D">   ; Armer la surveillance</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">; Hints dans EAX : bits [3:0] = C-State cible (ex: 0x10 pour C3)</span></span>
+<span class="line"><span style="color:#F97583">mov</span><span style="color:#79B8FF"> eax</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">0x10</span><span style="color:#6A737D">          ; C-State hint</span></span>
+<span class="line"><span style="color:#F97583">mov</span><span style="color:#79B8FF"> ecx</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">0x01</span><span style="color:#6A737D">          ; Activer les extensions (TPAUSE-aware)</span></span>
+<span class="line"><span style="color:#F97583">MWAIT</span><span style="color:#6A737D">                  ; Entrer en sommeil</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">; Le CPU se réveille SANS IPI quand un autre cœur écrit à [runqueue_addr]</span></span></code></pre>
+<p>Le pilote Linux <code translate="no">intel_idle</code> exploite cette mécanique pour purger les caches L1/L2 au moment optimal avant d’exécuter MWAIT, contournant la latence de l’implémentation ACPI générique.<sup><a href="#user-content-fn-8" id="user-content-fnref-8-2" data-footnote-ref="" aria-describedby="footnote-label">8</a></sup></p>
+<h3 id="952-arm-wfi-et-wfe">9.5.2 ARM : WFI et WFE</h3>
+<p>Les architectures ARM (des Cortex-M embarqués aux Cortex-A des smartphones) adoptent une approche RISC et utilisent deux instructions spécialisées :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Instruction</th><th align="left">Mécanisme de Réveil</th><th align="left">Usage Typique</th></tr></thead><tbody><tr><td align="left"><strong>WFI</strong> (<em>Wait For Interrupt</em>)</td><td align="left">Interruption matérielle (NVIC/GIC)</td><td align="left">Boucle d’attente (<em>idle loop</em>) du noyau</td></tr><tr><td align="left"><strong>WFE</strong> (<em>Wait For Event</em>)</td><td align="left">Événement interne, instruction SEV d’un autre cœur, signal EVENTI</td><td align="left">Spinlocks écoénergétiques en SMP</td></tr></tbody></table>
+<p>L’instruction WFE est particulièrement stratégique pour les spinlocks : au lieu de boucler en gaspillant de la puissance dynamique, un cœur en échec d’acquisition de verrou exécute WFE et s’endort. Le cœur libérateur exécute <strong>SEV</strong> (<em>Send Event</em>). L’exécution de SEV génère une impulsion sur le signal EVENTO qui modifie le registre d’événement du cœur en attente et le réveille immédiatement, sans recourir à un contrôleur d’interruptions complexe (GIC).<sup><a href="#user-content-fn-9" id="user-content-fnref-9" data-footnote-ref="" aria-describedby="footnote-label">9</a></sup></p>
+<p>Le pattern de mise en veille sûr pour WFI requiert une attention aux <em>race conditions</em> :</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="c" translate="no"><code translate="no"><span class="line"><span style="color:#6A737D">// Pattern ARM sûr pour WFI (évite le missed-interrupt bug)</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> enter_idle</span><span style="color:#E1E4E8">(</span><span style="color:#F97583">void</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#B392F0">    __disable_irq</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">              // Masquer les interruptions (PRIMASK)</span></span>
+<span class="line"><span style="color:#F97583">    if</span><span style="color:#E1E4E8"> (</span><span style="color:#B392F0">no_work_pending</span><span style="color:#E1E4E8">()) {</span><span style="color:#6A737D">      // Revérifier les flags logiciels</span></span>
+<span class="line"><span style="color:#B392F0">        __WFI</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">                  // Le CPU se réveille même si PRIMASK est set</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#B392F0">    __enable_irq</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">               // Les interruptions en attente sont servies ici</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Le registre <strong>SCB_SCR</strong> du Cortex-M permet d’approfondir le sommeil. Le bit <strong>SLEEPDEEP</strong> désactive les oscillateurs principaux (PLL) et place les régulateurs en mode basse puissance, ce qui fait passer du simple <em>Sleep</em> au Deep Sleep (consommation de quelques µA). Le bit <strong>SLEEPONEXIT</strong> fait se rendormir automatiquement le CPU après chaque ISR, ce qui élimine le coût de restauration de contexte.<sup><a href="#user-content-fn-9" id="user-content-fnref-9-2" data-footnote-ref="" aria-describedby="footnote-label">9</a></sup></p>
+<h2 id="96-le-noyau-sans-tic-tickless-kernel">9.6 Le noyau sans tic (Tickless Kernel)</h2>
+<h3 id="961-le-problème-du-tic-périodique">9.6.1 Le problème du tic périodique</h3>
+<p>Dans l’architecture classique, le noyau maintient un timer périodique (100-1000 Hz) qui génère une interruption à chaque tic pour mettre à jour l’horloge interne et réévaluer l’ordonnancement. Ce mécanisme est un désastre énergétique : même si la file de processus est vide, l’interruption force le CPU à quitter son état C3/Deep Sleep toutes les millisecondes.<sup><a href="#user-content-fn-10" id="user-content-fnref-10" data-footnote-ref="" aria-describedby="footnote-label">10</a></sup></p>
+<h3 id="962-suppression-du-tic">9.6.2 Suppression du tic</h3>
+<p>Le <strong>Tickless Kernel</strong> (Linux <code translate="no">CONFIG_NO_HZ_IDLE</code>, FreeRTOS <code translate="no">configUSE_TICKLESS_IDLE</code>) résout ce problème :</p>
+<ol>
+<li>Quand aucune tâche n’est exécutable, évaluer le délai exact avant le prochain timeout</li>
+<li>Désactiver le timer périodique</li>
+<li>Programmer une alarme asynchrone (HPET, timer basse puissance) à la durée exacte</li>
+<li>Exécuter WFI/MWAIT, le CPU dort ininterrompu</li>
+<li>Au réveil, une fonction du noyau (comme <code translate="no">vTaskStepTick()</code> dans FreeRTOS) interroge l’horloge matérielle absolue pour calculer le temps d’inactivité écoulé et l’ajoute artificiellement au compteur de ticks global.</li>
+</ol>
+<p>Le CPU peut ainsi rester en veille plusieurs secondes, voire des heures, au lieu d’être réveillé 1000 fois par seconde. L’illusion est parfaite pour les couches applicatives : le temps système semble continu.<sup><a href="#user-content-fn-10" id="user-content-fnref-10-2" data-footnote-ref="" aria-describedby="footnote-label">10</a></sup></p>
+<h3 id="963-gouverneurs-cpuidle-sous-linux">9.6.3 Gouverneurs CPUIdle sous Linux</h3>
+<p>La décision d’entrer dans tel ou tel C-State incombe au sous-système <strong>CPUIdle</strong>, via des algorithmes appelés <em>gouverneurs</em> :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Gouverneur</th><th align="left">Stratégie</th><th align="left">Avantage</th><th align="left">Limite</th></tr></thead><tbody><tr><td align="left"><strong>Ladder</strong></td><td align="left">Descente progressive C1→C2→C3 par paliers</td><td align="left">Latence de réveil maîtrisée</td><td align="left">N’exploite pas les longs silences</td></tr><tr><td align="left"><strong>Menu</strong></td><td align="left">Saut direct au C-State le plus profond possible</td><td align="left">Maximise les économies en mode Tickless</td><td align="left">Prédiction heuristique (peut se tromper)</td></tr></tbody></table>
+<p>Le gouverneur <strong>Menu</strong> (défaut en mode NO_HZ) évalue deux critères : le <em>break-even point</em> énergétique (le C-State est-il rentable vu le coût de réveil ?) et la tolérance à la latence (<code translate="no">pm_qos</code>). Il utilise l’historique des interruptions réseau/stockage pour estimer si un réveil prématuré risque de survenir.<sup><a href="#user-content-fn-11" id="user-content-fnref-11" data-footnote-ref="" aria-describedby="footnote-label">11</a></sup></p>
+<h2 id="97-lultime-frontière-lhibernation-de-rosetta">9.7 L’ultime frontière : l’hibernation de Rosetta</h2>
+<h3 id="971-contraintes-aux-confins-du-système-solaire">9.7.1 Contraintes aux confins du système solaire</h3>
+<p>La sonde <strong>Rosetta</strong> de l’ESA, lancée en 2004 vers la comète 67P/Tchourioumov-Guérassimenko, était propulsée exclusivement par panneaux solaires, pas de RTG (générateur radio-isotopique). En 2011, sa trajectoire l’a éloignée à 800 millions de km du Soleil (5.25 UA, au-delà de Jupiter). La loi du carré inverse rendait la puissance solaire insuffisante pour maintenir les systèmes en fonctionnement.<sup><a href="#user-content-fn-12" id="user-content-fnref-12" data-footnote-ref="" aria-describedby="footnote-label">12</a></sup></p>
+<h3 id="972-le-protocole-dhibernation-profonde">9.7.2 Le protocole d’hibernation profonde</h3>
+<p>Le 8 juin 2011, l’ESA a exécuté un Power Gating à l’échelle d’un vaisseau spatial :</p>
+<ol>
+<li>Spin-Up : les propulseurs placent la sonde en rotation à ~1 tour/minute (4 degrés par seconde), les immenses panneaux solaires orientés vers le Soleil. L’effet gyroscopique maintient passivement l’orientation de l’<strong>AOCS</strong> (<em>Attitude and Orbit Control Subsystem</em>) pendant 31 mois.</li>
+<li>Extinction séquentielle : périphériques non-critiques privés d’électricité (capteurs d’attitude, roues de réaction, émetteur radio haute puissance HGA, 21 instruments scientifiques, atterrisseur Philae). Tout est coupé.</li>
+<li>Survie minimale : seuls restent actifs l’ordinateur de bord <strong>CDMS</strong> (<em>Command and Data Management Subsystem</em>), le réseau de radiateurs thermiques (prévention du gel de l’hydrazine) et l’horloge temps réel (RTC).</li>
+</ol>
+<p>La RTC (souvent des familles industrielles comme le composant DP8573A de Texas Instruments), cadencée par un oscillateur à quartz (<strong>XTAL</strong>) de très haute fiabilité compensé thermiquement (USO) à 32,768 kHz, égrène inlassablement les secondes en tirant quelques microampères des réserves du CDMS, l’équivalent cosmique d’une boucle <code translate="no">while(rtc &#x3C; alarm) WFI();</code>. Ce comptage se poursuit jusqu’à l’atteinte d’une condition de correspondance matérielle d’alarme (<em>Alarm Compare Match</em>).<sup><a href="#user-content-fn-13" id="user-content-fnref-13" data-footnote-ref="" aria-describedby="footnote-label">13</a></sup></p>
+<p>À 10:00 GMT, le compteur RTC atteint la condition d’alarme (<em>Alarm Compare Match</em>). L’interruption matérielle la plus importante de l’histoire du vol spatial européen réveille le CDMS :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Étape</th><th align="left">Durée</th><th align="left">Opération</th></tr></thead><tbody><tr><td align="left"><strong>T0 → T0+6h</strong></td><td align="left">6 heures</td><td align="left">Montée en température progressive des capteurs de navigation (Star Trackers)</td></tr><tr><td align="left"><strong>Spin-Down</strong></td><td align="left">~1h</td><td align="left">Neutralisation de la rotation cométaire par poussées d’hydrazine</td></tr><tr><td align="left"><strong>Acquisition attitude</strong></td><td align="left">~30 min</td><td align="left">Reconnaissance du champ stellaire par viseurs d’étoiles (matrices CCD)</td></tr><tr><td align="left"><strong>Earth-Pointing</strong></td><td align="left">~30 min</td><td align="left">Alignement de l’antenne HGA vers le point bleu pâle de la Terre</td></tr><tr><td align="left"><strong>Premier signal</strong></td><td align="left">+45 min</td><td align="left">Télémétrie reçue à l’ESOC (Darmstadt) à la vitesse de la lumière (807 millions km)</td></tr></tbody></table>
+<p>La lenteur méthodique de ce réveil est calculée : allumer une optique spatiale sous la température du vide profond provoquerait des chocs thermiques fatals. La séquence ordonnée par le module de sécurité <strong>FDIR</strong> (<em>Failure Detection Isolation and Recovery</em>) active les sous-systèmes séquentiellement pour éviter un <em>current inrush</em> (appel de courant) qui effondrerait la faible tension d’alimentation.<sup><a href="#user-content-fn-12" id="user-content-fnref-12-2" data-footnote-ref="" aria-describedby="footnote-label">12</a></sup></p>
+<h3 id="973-philae-et-le-micro-budget-cométaire">9.7.3 Philae et le micro-budget cométaire</h3>
+<p>L’atterrisseur <strong>Philae</strong> (100 kg) illustre le dimensionnement extrême : batteries primaires pour les 60 premières heures critiques, puis batteries secondaires rechargées par de minuscules panneaux solaires avec seulement ~1.5 h de Soleil par jour cométaire de 12.4 h. Le <em>duty cycle</em> de chaque instrument scientifique est calibré au millijoule près, une application directe de l’EDP au niveau mission.<sup><a href="#user-content-fn-14" id="user-content-fnref-14" data-footnote-ref="" aria-describedby="footnote-label">14</a></sup></p>
+<h2 id="98-implications-pour-lplkernel">9.8 Implications pour LplKernel</h2>
+<p>La gestion énergétique impacte directement l’architecture du moteur :</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Composant</th><th align="left">Stratégie Énergétique</th><th align="left">Justification</th></tr></thead><tbody><tr><td align="left"><strong>Casque VR (Client)</strong></td><td align="left">Tickless kernel + DVFS agressif</td><td align="left">Autonomie batterie, réduction chaleur faciale</td></tr><tr><td align="left"><strong>Thread BCI</strong></td><td align="left">WFI entre échantillons EEG</td><td align="left">Le Cortex-M du casque dort 95 % du temps entre 250 Hz</td></tr><tr><td align="left"><strong>Serveur Build</strong></td><td align="left">C-States profonds en inter-tick</td><td align="left">Les ticks à 60 Hz laissent 16 ms de sommeil possible</td></tr><tr><td align="left"><strong>Idle Loop moteur</strong></td><td align="left">MWAIT surveillant la runqueue</td><td align="left">Réveil sans IPI quand un paquet réseau arrive</td></tr><tr><td align="left"><strong>Ordonnanceur</strong></td><td align="left">Consolidation de charge → cœurs deep sleep</td><td align="left">Regrouper les tâches pour éteindre des cœurs entiers</td></tr></tbody></table>
+<p>La règle d’or est la même que pour Rosetta : faire le travail le plus vite possible, entrer dans l’état de sommeil le plus profond, et y rester le plus longtemps possible.</p>
+<h3 id="notes-de-bas-de-page-du-chapitre-9">Notes de bas de page du chapitre 9</h3>
+<hr>
+<section data-footnotes="" class="footnotes"><h2 class="sr-only" id="footnote-label">Footnotes</h2>
+<ol>
+<li id="user-content-fn-1">
+<p>Cadence PCB Design, « CMOS Power Consumption », Modélisation <span class="katex" translate="no"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo>=</mo><mi>α</mi><mo>⋅</mo><msub><mi>C</mi><mi>L</mi></msub><mo>⋅</mo><msubsup><mi>V</mi><mrow><mi>D</mi><mi>D</mi></mrow><mn>2</mn></msubsup><mo>⋅</mo><mi>f</mi></mrow><annotation encoding="application/x-tex">P = \alpha \cdot C_L \cdot V_{DD}^2 \cdot f</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0894em;vertical-align:-0.2753em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.4247em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">D</span><span class="mord mathnormal mtight" style="margin-right:0.0278em;">D</span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2753em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.1076em;">f</span></span></span></span>. Texas Instruments, « CMOS Power Consumption and CPD Calculation » (SCAA035). <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-1-2" data-footnote-backref="" aria-label="Back to reference 1-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-2">
+<p>Northwestern University ECE, « Leakage current: Moore’s law meets static power ». Fernuni Hagen, « Trends in Static Power Consumption », 30-70 % de la consommation totale en nœuds nanométriques. <a href="#user-content-fnref-2" data-footnote-backref="" aria-label="Back to reference 2" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-2-2" data-footnote-backref="" aria-label="Back to reference 2-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-3">
+<p>arXiv:2601.08539, « Reducing Compute Waste in LLMs through Kernel-Level DVFS ». Emergent Mind, « Energy-Delay Product Reduction ». <a href="#user-content-fnref-3" data-footnote-backref="" aria-label="Back to reference 3" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-3-2" data-footnote-backref="" aria-label="Back to reference 3-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-4">
+<p>AnySilicon, « The Ultimate Guide to Clock Gating », Architecture des cellules ICG (Integrated Clock Gating). <a href="#user-content-fnref-4" data-footnote-backref="" aria-label="Back to reference 4" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-4-2" data-footnote-backref="" aria-label="Back to reference 4-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-5">
+<p>AnySilicon, « The Ultimate Guide to Power Gating », Sleep transistors, isolation cells, retention registers. <a href="#user-content-fnref-5" data-footnote-backref="" aria-label="Back to reference 5" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-6">
+<p>MSOE Faculty, « Dynamic Voltage and Frequency Scaling », Relation DVFS/délai de propagation. STMicroelectronics, <code translate="no">HAL_PWREx_ControlVoltageScaling()</code>. <a href="#user-content-fnref-6" data-footnote-backref="" aria-label="Back to reference 6" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-6-2" data-footnote-backref="" aria-label="Back to reference 6-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-7">
+<p>ACPI Specification 6.5 (UEFI Forum). Wikipedia, « ACPI ». Metebalci.com, « CPU Power Management, C-states and P-states ». <a href="#user-content-fnref-7" data-footnote-backref="" aria-label="Back to reference 7" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-7-2" data-footnote-backref="" aria-label="Back to reference 7-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-8">
+<p>Wikipedia, « HLT (x86 instruction) ». Stack Overflow, « MWAIT vs HALT ». Felix Cloutier, « MWAIT instruction reference ». Linux kernel <code translate="no">drivers/idle/intel_idle.c</code>. <a href="#user-content-fnref-8" data-footnote-backref="" aria-label="Back to reference 8" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-8-2" data-footnote-backref="" aria-label="Back to reference 8-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-9">
+<p>ARM Developer Documentation, « Wait for Interrupt and Wait for Event » (Cortex-X4). ARM Documentation ka001283, « Purpose of WFI and WFE ». Reddit r/embedded, « ARM Cortex-M: correct usage of WFI/WFE ». <a href="#user-content-fnref-9" data-footnote-backref="" aria-label="Back to reference 9" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-9-2" data-footnote-backref="" aria-label="Back to reference 9-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-10">
+<p>Red Hat, « Tickless Kernel » (Performance Tuning Guide). Medium, « Tickless Mode in FreeRTOS Explained ». Linux kernel documentation, <code translate="no">NO_HZ</code>. <a href="#user-content-fnref-10" data-footnote-backref="" aria-label="Back to reference 10" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-10-2" data-footnote-backref="" aria-label="Back to reference 10-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-11">
+<p>Linux kernel <code translate="no">drivers/cpuidle/governors/menu.c</code>. LWN.net, « Improving idle behavior in tickless systems ». Stack Overflow, « Ladder vs Menu governors ». <a href="#user-content-fnref-11" data-footnote-backref="" aria-label="Back to reference 11" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-12">
+<p>ESA, « Rosetta comet probe enters hibernation in deep space ». ESA, « The most important alarm clock in the Solar System ». Wikipedia, « Rosetta (spacecraft) ». <a href="#user-content-fnref-12" data-footnote-backref="" aria-label="Back to reference 12" class="data-footnote-backref">↩</a> <a href="#user-content-fnref-12-2" data-footnote-backref="" aria-label="Back to reference 12-2" class="data-footnote-backref">↩<sup>2</sup></a></p>
+</li>
+<li id="user-content-fn-13">
+<p>NASA NTRS, « Stability of a Crystal Oscillator, Type Si530 ». TI DP8573A RTC Datasheet. Space Exploration Stack Exchange, « How does Rosetta wake-up? ». <a href="#user-content-fnref-13" data-footnote-backref="" aria-label="Back to reference 13" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-14">
+<p>AIAA SpaceOps 2014, « Rosetta Lander: On-Comet Operations Preparation and Planning ». SGF Budapest, « Rosetta CDMS ». <a href="#user-content-fnref-14" data-footnote-backref="" aria-label="Back to reference 14" class="data-footnote-backref">↩</a></p>
+</li>
+</ol>
+</section> </article> <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm" aria-label="Chapitre précédent et suivant"> <a href="/LplKernel/book/chapitre-8" class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">
+← Chapitre 8 · Des noyaux classiques aux systèmes quantiques </a> <a href="/LplKernel/book/chapitre-10" class="text-lpl-accent hover:brightness-110 text-right max-w-[45%]"> Chapitre 10 · Vision architecturale, innovations natives →
+</a> </nav>  </main> </div> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> <!-- Mermaid: render the diagram blocks emitted by the remark plugin.
+         is:inline keeps Astro/Vite from bundling the remote ESM import. --> <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+    </script> </body> </html>

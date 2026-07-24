@@ -1,0 +1,363 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><title>Benchmarking the Laplace Engine: Methodology and First Real Numbers — The Laplace Project</title><meta name="description" content="A reproducible micro-benchmark harness for LplPlugin (allocators, ECS, fixed-point math, physics), with honest numbers, their variance, and the caveats that come with them."><link rel="canonical" href="https://masterlaplace.github.io/LplKernel/blog/benchmarks-2026"><meta name="author" content="Master Laplace"><meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1"><meta property="og:title" content="Benchmarking the Laplace Engine: Methodology and First Real Numbers — The Laplace Project"><meta property="og:description" content="A reproducible micro-benchmark harness for LplPlugin (allocators, ECS, fixed-point math, physics), with honest numbers, their variance, and the caveats that come with them."><meta property="og:type" content="website"><meta property="og:url" content="https://masterlaplace.github.io/LplKernel/blog/benchmarks-2026"><meta property="og:site_name" content="The Laplace Project"><meta property="og:locale" content="en_US"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Benchmarking the Laplace Engine: Methodology and First Real Numbers — The Laplace Project"><meta name="twitter:description" content="A reproducible micro-benchmark harness for LplPlugin (allocators, ECS, fixed-point math, physics), with honest numbers, their variance, and the caveats that come with them."><link rel="alternate" type="application/rss+xml" title="Laplace — Blog & Papers" href="/LplKernel/rss.xml"><meta name="generator" content="Astro v5.18.2"><script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Benchmarking the Laplace Engine: Methodology and First Real Numbers","description":"A reproducible micro-benchmark harness for LplPlugin (allocators, ECS, fixed-point math, physics), with honest numbers, their variance, and the caveats that come with them.","datePublished":"2026-07-06T00:00:00.000Z","inLanguage":"en","author":{"@type":"Person","name":"Master Laplace","url":"https://github.com/MasterLaplace"},"publisher":{"@type":"Person","name":"Master Laplace"}}</script><link rel="stylesheet" href="/LplKernel/_astro/_slug_.5aMDqdYe.css"></head> <body class="font-sans text-lpl-text antialiased"> <a href="#main" class="lpl-skip-link">Skip to main content</a> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3" aria-label="Main"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent" aria-hidden="true">λ</span> Laplace<span class="text-lpl-muted">.project</span> <span class="sr-only">— home</span> </a> <!-- Desktop links --> <ul class="hidden md:flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> <!-- Mobile toggle --> <button id="nav-toggle" class="md:hidden inline-flex items-center justify-center w-9 h-9 border border-lpl-border text-lpl-text hover:text-lpl-accent hover:border-lpl-accent transition-colors" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav-mobile"> <svg id="nav-icon-open" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="3" y1="6" x2="21" y2="6"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="3" y1="18" x2="21" y2="18"></line> </svg> <svg id="nav-icon-close" aria-hidden="true" focusable="false" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="6" y1="6" x2="18" y2="18"></line> <line x1="18" y1="6" x2="6" y2="18"></line> </svg> </button> </nav> <!-- Mobile menu --> <nav id="nav-mobile" class="hidden md:hidden border-t border-lpl-border bg-lpl-bg/95" aria-label="Mobile"> <ul> <li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/"> Home  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/book"> Book  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> </nav> </header> <script type="module">const n=document.getElementById("nav-toggle"),t=document.getElementById("nav-mobile"),s=document.getElementById("nav-icon-open"),i=document.getElementById("nav-icon-close");function c(e){!t||!n||(t.classList.toggle("hidden",!e),n.setAttribute("aria-expanded",String(e)),s?.classList.toggle("hidden",e),i?.classList.toggle("hidden",!e))}n?.addEventListener("click",()=>{c(t?.classList.contains("hidden")??!1)});t?.querySelectorAll("a").forEach(e=>e.addEventListener("click",()=>c(!1)));</script> <main id="main" class="mx-auto max-w-6xl px-4">  <article class="py-16 max-w-3xl mx-auto"> <a href="/LplKernel/blog" class="text-sm text-lpl-accent">← Blog &amp; Papers</a> <header class="mt-6 mb-8">  <h1 class="text-3xl sm:text-4xl font-bold">Benchmarking the Laplace Engine: Methodology and First Real Numbers</h1> <p class="text-lpl-muted mt-2">A reproducible micro-benchmark harness for LplPlugin (allocators, ECS, fixed-point math, physics), with honest numbers, their variance, and the caveats that come with them.</p> <time class="text-xs font-mono text-lpl-muted">2026-07-06</time> </header> <div class="prose-lpl max-w-none space-y-4 leading-relaxed
+             [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-8 [&_h2]:text-lpl-text
+             [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-6
+             [&_p]:text-lpl-muted [&_li]:text-lpl-muted [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:space-y-1
+             [&_code]:font-mono [&_code]:text-lpl-accent [&_a]:text-lpl-accent
+             [&_pre]:lpl-panel [&_pre]:rounded-none [&_pre]:p-4 [&_pre]:overflow-x-auto"> <p>Every figure below comes from <code translate="no">lpl-benchmark</code>, an in-tree executable
+(<code translate="no">apps/benchmark</code>) that anyone can build and run. Where a result is unflattering,
+it stays in: a benchmark you only publish when it looks good is marketing, not
+engineering.</p>
+<h2 id="methodology">Methodology</h2>
+<p>A single timed run tells you almost nothing. It conflates the work you actually
+care about with scheduler preemption, cold caches, CPU frequency ramp and, in an
+optimised build, the compiler quietly deleting code whose result is never read.
+The harness answers all four at once.</p>
+<p>Warm-up runs prime the caches and branch predictors before anything is measured.
+Each timed section then repeats until it reaches a wall-time budget, so a cheap
+kernel collects thousands of samples and an expensive one at least a handful.
+The numbers come out as a median (which shrugs off preemption outliers), a
+coefficient of variation (CV, the relative spread), a min (the best case, where
+interference is lowest) and a p99 tail. Finally, a <code translate="no">doNotOptimize()</code> /
+<code translate="no">clobberMemory()</code> pair stands between the compiler and the result: it forces the
+work to be computed and stored. That last point is not academic. It is precisely
+why the earlier single-shot harness reported <code translate="no">0.000 ms</code> on tight numeric loops:
+the optimiser had erased them.</p>
+<h3 id="test-machine">Test machine</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td>CPU</td><td>Intel Core Ultra 7 165H (22 logical cores)</td></tr><tr><td>RAM</td><td>31 GiB</td></tr><tr><td>OS</td><td>Linux 6.6 (WSL2) on Windows</td></tr><tr><td>Compiler</td><td>GCC 15.2.0, C++23</td></tr><tr><td>Build</td><td>Release: <code translate="no">-O2</code>/fastest, <code translate="no">-fno-exceptions</code>, <code translate="no">-fno-rtti</code></td></tr></tbody></table>
+<blockquote>
+<p><strong>Caveat: read the variance, not just the median.</strong> This run was captured
+under WSL2, where the CPU frequency governor is not exposed to the guest, so
+the cores throttle and boost freely mid-run. That inflates the CV on the
+shortest measurements (a few exceed ±20 %). Concretely, these are the numbers
+of a developer laptop, not those of a pinned, isolated, <code translate="no">performance</code>-governor
+CI box: read them as orders of magnitude and as ratios between approaches, not
+as absolute records. The harness prints the governor and flags it whenever it
+is not <code translate="no">performance</code>.</p>
+</blockquote>
+<h2 id="memory-allocators">Memory allocators</h2>
+<p>The same workload, 100 000 fixed 64-byte blocks, run through three strategies.
+This is where the custom allocators have to earn their place against <code translate="no">malloc</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Allocator</th><th>Strategy</th><th>Median</th><th>vs malloc</th></tr></thead><tbody><tr><td>Pool</td><td>intrusive free-list, per-block acquire/release</td><td><strong>441 µs</strong></td><td>3.5× faster</td></tr><tr><td>Arena</td><td>bump-pointer alloc, single O(1) mass reset</td><td>887 µs</td><td>1.7× faster</td></tr><tr><td>malloc/free</td><td>libc baseline</td><td>1.53 ms</td><td>1.0×</td></tr></tbody></table>
+<p>The pool wins because acquire and release are a single linked-list pop and push,
+with no size-class lookup on the way. The arena does more work per call here,
+since it recomputes alignment on each of the 100k allocations. Its real edge does
+not even show up in a per-block micro-benchmark: it is the ability to reclaim the
+whole slab in one pointer reset, which only pays off at end-of-frame.</p>
+<h2 id="fixed-point-math">Fixed-point math</h2>
+<p>The engine keeps anything that must be deterministic across machines (physics,
+spatial hashing) in Q16.16 fixed-point, because IEEE floating-point can differ
+bit-for-bit from one CPU to another.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Kernel</th><th>Median</th><th>Notes</th></tr></thead><tbody><tr><td><code translate="no">Fixed32</code> multiply</td><td>1.38 ms / 1M ops</td><td>≈ 1.4 ns per multiply</td></tr><tr><td>Morton <code translate="no">encode3D</code></td><td>2.62 ms / 1M ops</td><td>3D → Z-order interleave</td></tr></tbody></table>
+<h3 id="cordic-vs-libm-an-honest-trade-off">CORDIC vs libm: an honest trade-off</h3>
+<p><code translate="no">Cordic::sin</code> computes a sine with nothing but shifts and adds, so it needs no
+FPU, which is the whole point on the freestanding i686 kernel target. It is
+benchmarked over its convergent domain <code translate="no">[-π/2, π/2]</code>, since this CORDIC does no
+argument range reduction and expects the caller to fold angles into that range
+first.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>sin(x), 1M evaluations</th><th>Median</th><th>Accuracy vs libm</th></tr></thead><tbody><tr><td>CORDIC (Fixed32)</td><td>10.7 ms</td><td>max abs err 1.8·10⁻⁴, RMS 3.3·10⁻⁵</td></tr><tr><td><code translate="no">std::sin</code> (double, libm)</td><td>4.3 ms</td><td>reference</td></tr></tbody></table>
+<p>The accuracy is excellent for a 16-bit fractional format. The speed is where you
+have to be honest: on x86, CORDIC comes out about 2.5× slower than a modern
+vectorised libm. What it buys is not throughput but determinism and independence
+from the FPU (it runs identically in ring-0 with no floating-point unit enabled).
+On the i686 kernel target with soft-float, the comparison flips the other way.</p>
+<h2 id="ecs-entities-and-lookups">ECS: entities and lookups</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Operation</th><th>Median</th><th>Rate</th></tr></thead><tbody><tr><td>Create + destroy 10k entities</td><td>332 µs</td><td>—</td></tr><tr><td>Create 100k entities (batch)</td><td>1.84 ms</td><td>≈ 54M entities/s</td></tr><tr><td>SparseSet lookup (O(1))</td><td>468 ns / 1k lookups</td><td>~0.47 ns each</td></tr><tr><td>Linear scan (O(n))</td><td>2.18 ms / 1k lookups</td><td>~4600× slower</td></tr></tbody></table>
+<p>That last row is the whole reason the ECS keys entities through a sparse set. At
+10k entities, an O(1) resolution is already about 4600× faster than a naïve scan,
+and since the scan is linear in the entity count, the gap only widens as the
+world grows.</p>
+<h3 id="data-layout-soa-vs-aos">Data layout: SoA vs AoS</h3>
+<p>Summing a single component (<code translate="no">x</code>) across 1M elements, Structure-of-Arrays against
+Array-of-Structs:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Layout</th><th>Median (best-case min)</th></tr></thead><tbody><tr><td>SoA (<code translate="no">float[]</code>)</td><td>453 µs (436 µs)</td></tr><tr><td>AoS (<code translate="no">Vec3[]</code>)</td><td>562 µs (503 µs)</td></tr></tbody></table>
+<p>SoA runs about 1.2 to 1.3× faster here because it touches only the cache lines it
+needs, whereas AoS drags <code translate="no">y</code> and <code translate="no">z</code> through cache for nothing. The margin is
+modest at this stride, and noisy under WSL, but it is the right sign, and it
+grows with wider components or with real per-element work. This is why the ECS
+stores components column-major.</p>
+<h2 id="physics">Physics</h2>
+<p>The CPU physics backend runs the full pipeline on every step: semi-implicit Euler
+integration, then AABB collision detection with impulse resolution, then
+sleeping. The collision pass is O(n²) per chunk, and it dominates everything
+else.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Entities</th><th>Median step</th><th>Throughput</th><th>Verdict @ 60 fps</th></tr></thead><tbody><tr><td>1 000</td><td>3.30 ms</td><td>3.0·10⁵ ent/s</td><td>real-time</td></tr><tr><td>2 000</td><td>6.74 ms</td><td>3.0·10⁵ ent/s</td><td>real-time</td></tr><tr><td>5 000</td><td>16.1 ms</td><td>3.1·10⁵ ent/s</td><td>playable</td></tr><tr><td>10 000</td><td>31.2 ms</td><td>3.2·10⁵ ent/s</td><td>below 30 fps</td></tr><tr><td>20 000</td><td>51.4 ms</td><td>3.9·10⁵ ent/s</td><td>below 30 fps</td></tr></tbody></table>
+<p>Read the two trends together: the throughput stays flat while the step time
+roughly doubles with each doubling of the entity count. That is the quadratic
+wall. Brute-force collision does not scale, and past a few thousand bodies a
+single 16.6 ms frame budget is already gone. This is the measured motivation for
+the broad-phase and GPU paths, rather than a number picked to look impressive.</p>
+<h3 id="broad-phase-pays-for-itself">Broad-phase pays for itself</h3>
+<p>Isolating collision at 2 000 bodies, spatial partitioning against brute force:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Method</th><th>Median</th></tr></thead><tbody><tr><td>Broad-phase <code translate="no">queryRadius</code> (WorldPartition cells)</td><td><strong>588 µs</strong></td></tr><tr><td>N² AABB pair check</td><td>4.58 ms</td></tr></tbody></table>
+<p>A 7.8× win at 2k, and it grows with n. The spatial index that buys it is cheap to
+build: populating a 10k-entity <code translate="no">WorldPartition</code> costs 1.42 ms.</p>
+<blockquote>
+<p><strong>A note on <code translate="no">WorldPartition::step()</code>.</strong> Its CPU path is, by design, only a
+gateway that dispatches to the GPU: it does no integration. Timing it directly
+therefore returns a meaningless ~17 ns, which is the cost of a function call.
+The physics numbers above come from <code translate="no">CpuPhysicsBackend</code>, which does the real
+work. Measuring the gateway instead of the engine is exactly the mistake this
+harness exists to prevent.</p>
+</blockquote>
+<h2 id="concurrency--containers">Concurrency &#x26; containers</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Operation</th><th>Median</th></tr></thead><tbody><tr><td><code translate="no">FlatAtomicHashMap</code> insert 16k</td><td>313 µs</td></tr><tr><td><code translate="no">FlatAtomicHashMap</code> get 16k</td><td>327 µs</td></tr><tr><td><code translate="no">FlatAtomicHashMap</code> forEach 16k</td><td>318 µs</td></tr><tr><td><code translate="no">FlatAtomicHashMap</code> forEach parallel 16k (4 threads)</td><td>739 µs</td></tr><tr><td><code translate="no">FlatAtomicHashMap</code> insert/remove churn 16k</td><td>5.31 ms</td></tr><tr><td><code translate="no">ThreadPool</code> dispatch 10k tasks</td><td>~35 ms (high variance)</td></tr></tbody></table>
+<p>Two results are worth stopping on. The parallel <code translate="no">forEach</code> is slower than the
+serial one at 16k elements, which looks wrong until you count the work: a single
+add per element cannot cover the cost of dispatching threads and bouncing cache
+lines between them, so parallelism only starts to help once the per-element work
+is heavy enough to hide that overhead. The <code translate="no">ThreadPool</code> figure is similar in
+spirit: dispatching 10k trivial tasks is dominated by the per-task <code translate="no">std::future</code>
+allocation, and the wide CV says as much. It stresses the queue, it does not
+model a realistic workload.</p>
+<h2 id="reproducing">Reproducing</h2>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sh" translate="no"><code translate="no"><span class="line"><span style="color:#B392F0">git</span><span style="color:#9ECBFF"> clone</span><span style="color:#79B8FF"> --recursive</span><span style="color:#F97583"> &#x3C;</span><span style="color:#9ECBFF">LplPlugi</span><span style="color:#E1E4E8">n</span><span style="color:#F97583">></span></span>
+<span class="line"><span style="color:#79B8FF">cd</span><span style="color:#9ECBFF"> LplPlugin</span></span>
+<span class="line"><span style="color:#B392F0">xmake</span><span style="color:#9ECBFF"> f</span><span style="color:#79B8FF"> -m</span><span style="color:#9ECBFF"> release</span><span style="color:#79B8FF"> -y</span></span>
+<span class="line"><span style="color:#B392F0">xmake</span><span style="color:#9ECBFF"> build</span><span style="color:#9ECBFF"> lpl-benchmark</span></span>
+<span class="line"><span style="color:#B392F0">xmake</span><span style="color:#9ECBFF"> run</span><span style="color:#9ECBFF"> lpl-benchmark</span><span style="color:#6A737D">      # or: ./build/linux/&#x3C;arch>/release/lpl-benchmark</span></span></code></pre>
+<p>The binary opens with its own system-info block (CPU, cores, RAM, OS, compiler,
+build config, governor), so every set of results carries its own context. For
+low-variance numbers, run it on a machine set to the <code translate="no">performance</code> governor with
+the process pinned to an isolated core. The WSL2 figures here are, on purpose,
+plain developer-laptop conditions.</p>
+<h2 id="whats-next">What’s next</h2>
+<p>The network path (zero-copy from NIC to engine to GPU) is not measured yet: the
+harness above is the template it will use once the in-kernel driver path is wired
+end-to-end. When it lands, it gets the same treatment. Real numbers, their
+variance, and the caveats, or it does not get published.</p> </div> </article>  </main> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> </body></html>

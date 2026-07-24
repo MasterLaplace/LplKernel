@@ -1,0 +1,230 @@
+<!DOCTYPE html><html lang="fr"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"><title>Annexe D · Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow) — LplKernel : architecture d&#39;un moteur déterministe FullDive</title><meta name="description" content="Annexe D : Diagramme d'exécution détaillé (LplKernel Sequence Flow). Chapitre du livre technique du projet Laplace : noyau, moteur, déterminisme et interfaces cerveau-ordinateur."><link rel="canonical" href="https://masterlaplace.github.io/LplKernel/book/annexe-d"><meta name="author" content="Master Laplace"><meta name="robots" content="index, follow, max-snippet:-1"><meta property="og:title" content="Annexe D · Diagramme d'exécution détaillé (LplKernel Sequence Flow) — LplKernel : architecture d'un moteur déterministe FullDive"><meta property="og:description" content="Annexe D : Diagramme d'exécution détaillé (LplKernel Sequence Flow). Chapitre du livre technique du projet Laplace : noyau, moteur, déterminisme et interfaces cerveau-ordinateur."><meta property="og:type" content="article"><meta property="og:url" content="https://masterlaplace.github.io/LplKernel/book/annexe-d"><meta property="og:site_name" content="The Laplace Project"><meta property="og:locale" content="fr_FR"><meta name="twitter:card" content="summary"><link rel="stylesheet" href="/LplKernel/_astro/_slug_.5aMDqdYe.css"></head> <body class="font-sans text-lpl-text antialiased"> <a href="#main" class="lpl-skip-link">Aller au contenu principal</a> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3" aria-label="Main"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent" aria-hidden="true">λ</span> Laplace<span class="text-lpl-muted">.project</span> <span class="sr-only">— home</span> </a> <!-- Desktop links --> <ul class="hidden md:flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> <!-- Mobile toggle --> <button id="nav-toggle" class="md:hidden inline-flex items-center justify-center w-9 h-9 border border-lpl-border text-lpl-text hover:text-lpl-accent hover:border-lpl-accent transition-colors" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav-mobile"> <svg id="nav-icon-open" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="3" y1="6" x2="21" y2="6"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="3" y1="18" x2="21" y2="18"></line> </svg> <svg id="nav-icon-close" aria-hidden="true" focusable="false" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="6" y1="6" x2="18" y2="18"></line> <line x1="18" y1="6" x2="6" y2="18"></line> </svg> </button> </nav> <!-- Mobile menu --> <nav id="nav-mobile" class="hidden md:hidden border-t border-lpl-border bg-lpl-bg/95" aria-label="Mobile"> <ul> <li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/"> Home  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/book"> Book  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> </nav> </header> <script type="module">const n=document.getElementById("nav-toggle"),t=document.getElementById("nav-mobile"),s=document.getElementById("nav-icon-open"),i=document.getElementById("nav-icon-close");function c(e){!t||!n||(t.classList.toggle("hidden",!e),n.setAttribute("aria-expanded",String(e)),s?.classList.toggle("hidden",e),i?.classList.toggle("hidden",!e))}n?.addEventListener("click",()=>{c(t?.classList.contains("hidden")??!1)});t?.querySelectorAll("a").forEach(e=>e.addEventListener("click",()=>c(!1)));</script> <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-[18rem_1fr] gap-8"> <!-- Sidebar TOC --> <nav class="hidden lg:block py-10" aria-label="Sommaire du livre"> <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2"> <a href="/LplKernel/book" class="block font-mono text-sm text-lpl-accent mb-4 hover:brightness-110">
+← Sommaire du livre
+</a> <div class="mb-5">  <ul class="space-y-1"> <li> <a href="/LplKernel/book/preambule" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Préambule </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE I : Fondations système </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-1" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 1 · Anatomie d&#39;un noyau, OS ou moteur </a> </li><li> <a href="/LplKernel/book/chapitre-2" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 2 · Gestion mémoire, du noyau au moteur </a> </li><li> <a href="/LplKernel/book/chapitre-3" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 3 · Déterminisme et arithmétique à virgule fixe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE II : Architecture et rendu </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-4" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 4 · Paradigmes architecturaux et design patterns </a> </li><li> <a href="/LplKernel/book/chapitre-5" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 5 · GPU, Vulkan et animation procédurale </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE III : Réseau et synchronisation </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-6" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 6 · Infrastructure réseau déterministe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE IV : Interfaces cerveau-ordinateur </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-7" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 7 · BCI, EEG et neurofeedback pour le FullDive </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE V : Horizons </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-8" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 8 · Des noyaux classiques aux systèmes quantiques </a> </li><li> <a href="/LplKernel/book/chapitre-9" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale </a> </li><li> <a href="/LplKernel/book/chapitre-10" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 10 · Vision architecturale, innovations natives </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> Annexes </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/annexe-a" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe A · Code compilable, design patterns du FullDive Engine </a> </li><li> <a href="/LplKernel/book/annexe-b" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe B · Glossaire technique </a> </li><li> <a href="/LplKernel/book/annexe-c" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe C · Index des sources par chapitre </a> </li><li> <a href="/LplKernel/book/annexe-d" aria-current="page" class="block text-sm rounded px-2 py-1 transition-colors bg-lpl-accent/10 text-lpl-accent"> Annexe D · Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow) </a> </li> </ul> </div> </div> </nav> <!-- Content --> <main id="main" class="py-10 min-w-0"> <h1 class="text-3xl sm:text-4xl font-bold mb-8">Annexe D : Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow)</h1> <article class="book-prose"> <p>Ce diagramme trace l’exécution de LplKernel à un niveau de détail extrême. Il combine les appels de fonctions réels du code source actuel (C/ASM) avec une projection architecturale des implémentations futures (EDF, SASOS, Zero-Syscall) définies dans la Roadmap et le Chapitre 10.</p>
+<figure class="lpl-figure" role="group" aria-labelledby="figcap-1">
+<pre class="mermaid" role="img" aria-labelledby="figcap-1">sequenceDiagram
+    autonumber
+
+    %% ==========================================
+    %% PARTICIPANTS
+    %% ==========================================
+    box rgb(30, 30, 30) Hardware &#x26; Boot
+        participant HW as 🖥️ HW (CPU/RAM/NIC/APIC)
+        participant GRUB as 💿 GRUB (Multiboot)
+    end
+
+    box rgb(10, 40, 80) Kernel Core (Ring 0)
+        participant Boot as ⚙️ boot.S (ASM)
+        participant BSP as 🧠 CPU 0 (kernel.c)
+        participant AP as 🧠 CPUs 1-N (Trampoline)
+        participant Intr as ⚡ IDT &#x26; APIC
+        participant Sched as ⏱️ Scheduler (EDF)
+    end
+
+    box rgb(60, 20, 80) Kernel Subsystems
+        participant Mem as 💾 PMM &#x26; VMM (SASOS)
+        participant Alloc as 📦 Allocators (Slab/Arena)
+        participant Drv as 🔌 PCI &#x26; Drivers
+        participant Net as ⚡ Data Plane (Bypass)
+    end
+
+    box rgb(10, 60, 40) Userspace (Ring 3 - PKey Isolated)
+        participant LplPlugin as 🎮 LplPlugin (VR Engine)
+        participant Flakkari as 🌐 Flakkari (UDP Server)
+    end
+
+    %% ==========================================
+    %% PHASE 1-3: BOOTLOADER AND HIGHER-HALF
+    %% ==========================================
+    rect rgb(0, 50, 100)
+    Note over HW,Boot: Phases 1-3: Boot &#x26; Higher-Half Paging (Current)
+
+    HW->>GRUB: Power On, POST, BIOS/UEFI Handoff
+    GRUB->>GRUB: Parse grub.cfg, Load Kernel ELF
+    GRUB->>Boot: Jump to _start (EAX=0x2BADB002, EBX=Multiboot_Info)
+    activate Boot
+
+    Boot->>Boot: Set up early Page Directory (Identity + 0xC0000000)
+    Boot->>HW: Enable Paging (CR0, CR3, CR4)
+    Boot->>Boot: Jump to Higher Half (lea ecx, 4f then jmp ecx)
+    Boot->>Boot: Setup early kernel stack (esp = stack_top)
+    Boot->>BSP: call kernel_initialize()
+    deactivate Boot
+    activate BSP
+    end
+
+    %% ==========================================
+    %% PHASE 1-3: BASE ARCHITECTURE
+    %% ==========================================
+    rect rgb(20, 60, 120)
+    Note over BSP,Intr: Phases 1-3: CPU &#x26; Interrupts (Current)
+
+    BSP->>Drv: serial_initialize(COM1, 9600)
+    BSP->>BSP: terminal_initialize() &#x26; kernel_splash_initialize()
+    BSP->>BSP: write_multiboot_info(EBX) -> RAM Map
+
+    BSP->>BSP: global_descriptor_table_initialize()
+    BSP->>HW: lgdt [GDT] (Ring 0, Ring 3, TSS)
+
+    BSP->>Intr: interrupt_descriptor_table_initialize()
+    BSP->>Intr: Register isr_stubs (0-47)
+    BSP->>HW: lidt [IDT]
+
+    BSP->>Intr: clock_initialize() (Base timing contract)
+    BSP->>BSP: cpu_topology_initialize()
+    end
+
+    %% ==========================================
+    %% PHASE 4: VMM, PMM AND ALLOCATORS
+    %% ==========================================
+    rect rgb(50, 0, 100)
+    Note over BSP,Alloc: Phase 4: Full Memory Subsystem (Current)
+
+    BSP->>Mem: paging_initialize_runtime()
+    Mem->>HW: Flush TLB (invlpg)
+    BSP->>Mem: kernel_vmm_initialize()
+
+    BSP->>Mem: physical_memory_manager_initialize()
+    Note right of Mem: Initialize Buddy Allocator (PMM Pass 1)
+
+    BSP->>HW: advanced_configuration_and_power_interface_madt_initialize()
+    HW-->>BSP: Return ACPI Tables (LAPIC, IOAPIC, ISO)
+    BSP->>BSP: numa_policy_initialize()
+
+    BSP->>Mem: physical_memory_manager_extend_mapping()
+    Note right of Mem: Map all RAM discovered by Multiboot (PMM Pass 2)
+
+    BSP->>Alloc: kernel_heap_initialize()
+    Note right of Alloc: Setup Slab Allocator (Size classes)
+
+    par High-Level Allocators
+        BSP->>Alloc: kernel_frame_arena_initialize(16KB)
+        BSP->>Alloc: kernel_stack_allocator_initialize(16KB)
+        BSP->>Alloc: kernel_pool_allocator_initialize(64B, 128 obj)
+        BSP->>Alloc: kernel_pinned_memory_initialize() (DMA-Ready)
+    end
+
+    BSP->>Alloc: kernel_ring_buffer_initialize_ex(SPSC Mode)
+    Note right of Alloc: Preparation for Zero-Syscall IPC
+    end
+
+    %% ==========================================
+    %% PHASE 5: MULTICORE &#x26; HARDWARE
+    %% ==========================================
+    rect rgb(100, 50, 0)
+    Note over HW,AP: Phase 3 &#x26; 5: SMP, APIC &#x26; IO Routing (Current)
+
+    BSP->>Intr: input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold()
+    BSP->>Intr: ioapic_set_isa_route_destination(IRQ1_KBD, Core0)
+
+    BSP->>Intr: advanced_pic_timer_backend_late_initialize()
+    Note right of Intr: Enable x2APIC (MSR 0x830)
+
+    BSP->>AP: kernel_smp_try_start_discovered_aps()
+    loop For each detected CPU (ACPI MADT)
+        BSP->>HW: Send IPI (INIT)
+        BSP->>HW: Send IPI (SIPI) with Trampoline vector
+        activate AP
+        HW->>AP: Boot Secondary CPU in Real Mode
+        AP->>AP: ap_trampoline.S (Paging, GDT, Stack)
+        AP->>AP: ap_startup.c -> ap_spin_wait()
+        AP-->>BSP: ACK "I am alive"
+    end
+
+    BSP->>Intr: advanced_pic_timer_backend_calibrate_with_pit()
+    BSP->>Intr: enable_periodic_mode(frequency_hz)
+
+    BSP->>BSP: kernel_smoke_batch_run_initialization_tests()
+    BSP->>Drv: framebuffer_init() (VBE LFB)
+    end
+
+    %% ==========================================
+    %% VISION PHASE 6-10: FUTURISTIC ARCHITECTURE
+    %% ==========================================
+    rect rgb(100, 0, 50)
+    Note over BSP,LplPlugin: 🚀 FUTURE VISION (Phases 6 to 10 &#x26; U1-U5)
+
+    %% Phase 6: Scheduling
+    Note over Sched,Mem: [Phase 6] EDF Scheduler Initialization
+    BSP->>Sched: scheduler_edf_initialize()
+    BSP->>Sched: create_kernel_worker_threads()
+    Sched->>AP: Assign Workers to dedicated cores (NUMA Affinity)
+
+    %% Phase 10: SASOS
+    Note over Mem,LplPlugin: [Phase 10] SASOS &#x26; Memory Protection Keys (MPK)
+    BSP->>Mem: vmm_sasos_enable_global_address_space()
+    LplPlugin->>Mem: sasos_allocate_pkey_domain()
+    Mem-->>LplPlugin: Return PKey 0x1
+    LplPlugin->>HW: wrpkru (Hardware lock in 2 cycles)
+
+    %% Phase 8: Network
+    Note over Drv,Flakkari: [Phase 8] Data Plane Network Bypass
+    BSP->>Drv: pci_enumerate_and_init_nic()
+    Flakkari->>Net: network_bypass_map_rx_to_userspace(PKey 0x2)
+    Net->>Drv: Configure NIC DMA RX Ring -> Pinned RAM (Flakkari)
+
+    %% Phase 9: Zero-Syscall IPC
+    Note over Alloc,LplPlugin: [Phase 9] Interface Zero-Syscall (Ring Buffers)
+    LplPlugin->>Alloc: ipc_create_zero_syscall_channel(PKey 0x1)
+    Alloc-->>LplPlugin: Return {SubmissionQueue, CompletionQueue}
+    end
+
+    %% ==========================================
+    %% RUNTIME: THE "FULLDIVE" LOOP
+    %% ==========================================
+    rect rgb(0, 100, 50)
+    Note over HW,LplPlugin: ♾️ Runtime Loop: Deterministic VR Engine
+
+    BSP->>BSP: kernel_main()
+
+    par VR Simulation Frame (Zero-Syscall)
+        LplPlugin->>Alloc: SPSC_Submit(OP_READ_SENSORS)
+        Note right of LplPlugin: LplPlugin keeps computing (No INT 0x80)
+
+        Note over AP: AP CPU dedicated as Worker
+        AP->>Alloc: SPSC_Poll() -> Detects OP_READ_SENSORS
+        AP->>Drv: Extract hardware data
+        AP->>Alloc: SPSC_Complete(Data)
+
+        LplPlugin->>Alloc: Read result on next tick
+    and Network Bypass
+        HW->>Net: UDP Packet received on NIC
+        Net->>HW: Automatic DMA (Hardware RSS) to Flakkari RAM
+        Note right of Flakkari: Zero CPU interrupt. RAM updated by hardware magic.
+    and Hard Real-Time (EDF)
+        HW->>Intr: Timer Tick (APIC)
+        Intr->>Sched: timer_tick_interrupt()
+        Sched->>Sched: edf_recalculate_deadlines()
+        opt If VR SLA at risk
+            Sched->>HW: context_switch_fast(LplPlugin)
+            Note right of Sched: Strict preemption to guarantee MTP &#x3C; 20ms
+        end
+    end
+    end</pre>
+<figcaption id="figcap-1">
+<p><strong>Figure D.1 : Le déroulé chronologique complet, du POST à la boucle FullDive.</strong> Douze acteurs répartis en quatre groupes (matériel et boot, cœur du noyau en ring 0, sous-systèmes noyau, espace utilisateur en ring 3), et le temps qui descend. Le diagramme s’ouvre sur les phases 1 à 3, celles qui sont déjà implémentées : le BIOS passe la main à GRUB, GRUB charge l’ELF du noyau et saute à <code translate="no">_start</code> avec le magic <code translate="no">0x2BADB002</code>, puis <code translate="no">boot.S</code> monte le page directory initial, active la pagination et bascule en <em>higher half</em> avant d’appeler <code translate="no">kernel_initialize()</code>.</p>
+</figcaption></figure>
+<p>Il se referme sur la boucle d’exécution cible, où trois activités se déroulent en parallèle. La frame de simulation VR poste ses requêtes dans une queue SPSC et continue de calculer sans jamais faire de <code translate="no">INT 0x80</code>, pendant qu’un CPU applicatif dédié dépile et complète. Le contournement réseau, en revanche, laisse la carte écrire les paquets UDP en RAM par DMA, sans lever la moindre interruption. L’ordonnanceur EDF, lui, recalcule ses échéances à chaque tick d’APIC et préempte dès que le budget de latence de 20 ms est menacé.</p>
+<blockquote>
+<p>Le tracé mêle deux registres : les appels de fonctions réels du code actuel et une projection des implémentations à venir (EDF, SASOS, zéro-appel-système). Les phases portent l’annotation correspondante.</p>
+</blockquote>
+<h3 id="dictionnaire-des-fonctionnalités-anticipées">Dictionnaire des fonctionnalités anticipées</h3>
+<p>Pour rendre ce diagramme « immersif », plusieurs fonctions conceptuelles ont été extrapolées à partir de la Roadmap :</p>
+<ul>
+<li><strong><code translate="no">scheduler_edf_initialize()</code></strong> : Point d’entrée de la Phase 6. Remplace le RR par un calcul de deadline absolu (Liu &#x26; Layland).</li>
+<li><strong><code translate="no">vmm_sasos_enable_global_address_space()</code></strong> : Transition vers la Phase 10 (64-bit). Élimine les changements de CR3 entre processus.</li>
+<li><strong><code translate="no">sasos_allocate_pkey_domain()</code></strong> : Distribue une clé matérielle MPK. Le processus utilise l’instruction assembleur <code translate="no">wrpkru</code> pour s’isoler en 2 cycles CPU.</li>
+<li><strong><code translate="no">network_bypass_map_rx_to_userspace()</code></strong> : Implémentation du Data Plane (Phase 8). Le kernel épingle des frames physiques (<code translate="no">kernel_pinned_memory_initialize</code>) et dit à la carte réseau d’y écrire directement.</li>
+<li><strong><code translate="no">ipc_create_zero_syscall_channel()</code></strong> : Concrétisation de la Phase 9. Alloue un <em>Ring Buffer SPSC</em> partagé entre le Ring 3 et le Ring 0. Le CPU AP (Worker) fait du polling (spin) sur ce buffer, ce qui élimine les coûteux changements de contexte causés par <code translate="no">INT 0x80</code>.</li>
+</ul>
+<hr>
+<p><em>LplKernel : architecture d’un moteur déterministe FullDive</em>
+<em>Version 1.2, juin 2026</em>
+<em>Synthèse de multiples rapports de recherche et diagrammes</em></p> </article> <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm" aria-label="Chapitre précédent et suivant"> <a href="/LplKernel/book/annexe-c" class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">
+← Annexe C · Index des sources par chapitre </a> <a href="/LplKernel/book" class="text-lpl-accent text-right">
+Retour au sommaire →
+</a> </nav>  </main> </div> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> <!-- Mermaid: render the diagram blocks emitted by the remark plugin.
+         is:inline keeps Astro/Vite from bundling the remote ESM import. --> <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+    </script> </body> </html>

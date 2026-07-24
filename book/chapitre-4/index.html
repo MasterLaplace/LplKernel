@@ -1,0 +1,306 @@
+<!DOCTYPE html><html lang="fr"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="icon" type="image/svg+xml" href="/LplKernel/favicon.svg"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"><title>Chapitre 4 · Paradigmes architecturaux et design patterns — LplKernel : architecture d&#39;un moteur déterministe FullDive</title><meta name="description" content="Chapitre 4 : Paradigmes architecturaux et design patterns — PARTIE II : Architecture et rendu. Chapitre du livre technique du projet Laplace : noyau, moteur, déterminisme et interfaces cerveau-ordinateur."><link rel="canonical" href="https://masterlaplace.github.io/LplKernel/book/chapitre-4"><meta name="author" content="Master Laplace"><meta name="robots" content="index, follow, max-snippet:-1"><meta property="og:title" content="Chapitre 4 · Paradigmes architecturaux et design patterns — LplKernel : architecture d'un moteur déterministe FullDive"><meta property="og:description" content="Chapitre 4 : Paradigmes architecturaux et design patterns — PARTIE II : Architecture et rendu. Chapitre du livre technique du projet Laplace : noyau, moteur, déterminisme et interfaces cerveau-ordinateur."><meta property="og:type" content="article"><meta property="og:url" content="https://masterlaplace.github.io/LplKernel/book/chapitre-4"><meta property="og:site_name" content="The Laplace Project"><meta property="og:locale" content="fr_FR"><meta name="twitter:card" content="summary"><link rel="stylesheet" href="/LplKernel/_astro/_slug_.5aMDqdYe.css"></head> <body class="font-sans text-lpl-text antialiased"> <a href="#main" class="lpl-skip-link">Aller au contenu principal</a> <header class="sticky top-0 z-40 backdrop-blur border-b border-lpl-border bg-lpl-bg/70"> <nav class="mx-auto max-w-6xl flex items-center justify-between px-4 py-3" aria-label="Main"> <a href="/LplKernel/" class="font-mono font-bold tracking-tight text-lpl-text"> <span class="text-lpl-accent" aria-hidden="true">λ</span> Laplace<span class="text-lpl-muted">.project</span> <span class="sr-only">— home</span> </a> <!-- Desktop links --> <ul class="hidden md:flex items-center gap-5 text-sm"> <li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/"> Home  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/book"> Book  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li> <a class="text-lpl-muted hover:text-lpl-accent transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> <!-- Mobile toggle --> <button id="nav-toggle" class="md:hidden inline-flex items-center justify-center w-9 h-9 border border-lpl-border text-lpl-text hover:text-lpl-accent hover:border-lpl-accent transition-colors" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav-mobile"> <svg id="nav-icon-open" aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="3" y1="6" x2="21" y2="6"></line> <line x1="3" y1="12" x2="21" y2="12"></line> <line x1="3" y1="18" x2="21" y2="18"></line> </svg> <svg id="nav-icon-close" aria-hidden="true" focusable="false" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"> <line x1="6" y1="6" x2="18" y2="18"></line> <line x1="18" y1="6" x2="6" y2="18"></line> </svg> </button> </nav> <!-- Mobile menu --> <nav id="nav-mobile" class="hidden md:hidden border-t border-lpl-border bg-lpl-bg/95" aria-label="Mobile"> <ul> <li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/"> Home  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/#demo"> Live demo  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/projects"> Projects  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/roadmap"> Roadmap  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/book"> Book  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="/LplKernel/blog"> Blog / Papers  </a> </li><li class="border-b border-lpl-border/60 last:border-b-0"> <a class="block px-4 py-3 text-sm text-lpl-muted hover:text-lpl-accent hover:bg-white/5 transition-colors" href="https://github.com/MasterLaplace" target="_blank" rel="noopener noreferrer"> GitHub  <span aria-hidden="true">↗</span> <span class="sr-only">(opens in a new tab)</span>  </a> </li> </ul> </nav> </header> <script type="module">const n=document.getElementById("nav-toggle"),t=document.getElementById("nav-mobile"),s=document.getElementById("nav-icon-open"),i=document.getElementById("nav-icon-close");function c(e){!t||!n||(t.classList.toggle("hidden",!e),n.setAttribute("aria-expanded",String(e)),s?.classList.toggle("hidden",e),i?.classList.toggle("hidden",!e))}n?.addEventListener("click",()=>{c(t?.classList.contains("hidden")??!1)});t?.querySelectorAll("a").forEach(e=>e.addEventListener("click",()=>c(!1)));</script> <div class="mx-auto max-w-7xl px-4 grid lg:grid-cols-[18rem_1fr] gap-8"> <!-- Sidebar TOC --> <nav class="hidden lg:block py-10" aria-label="Sommaire du livre"> <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2"> <a href="/LplKernel/book" class="block font-mono text-sm text-lpl-accent mb-4 hover:brightness-110">
+← Sommaire du livre
+</a> <div class="mb-5">  <ul class="space-y-1"> <li> <a href="/LplKernel/book/preambule" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Préambule </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE I : Fondations système </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-1" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 1 · Anatomie d&#39;un noyau, OS ou moteur </a> </li><li> <a href="/LplKernel/book/chapitre-2" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 2 · Gestion mémoire, du noyau au moteur </a> </li><li> <a href="/LplKernel/book/chapitre-3" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 3 · Déterminisme et arithmétique à virgule fixe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE II : Architecture et rendu </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-4" aria-current="page" class="block text-sm rounded px-2 py-1 transition-colors bg-lpl-accent/10 text-lpl-accent"> Chapitre 4 · Paradigmes architecturaux et design patterns </a> </li><li> <a href="/LplKernel/book/chapitre-5" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 5 · GPU, Vulkan et animation procédurale </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE III : Réseau et synchronisation </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-6" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 6 · Infrastructure réseau déterministe </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE IV : Interfaces cerveau-ordinateur </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-7" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 7 · BCI, EEG et neurofeedback pour le FullDive </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> PARTIE V : Horizons </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/chapitre-8" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 8 · Des noyaux classiques aux systèmes quantiques </a> </li><li> <a href="/LplKernel/book/chapitre-9" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 9 · Gestion énergétique, du transistor à la sonde spatiale </a> </li><li> <a href="/LplKernel/book/chapitre-10" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Chapitre 10 · Vision architecturale, innovations natives </a> </li> </ul> </div><div class="mb-5"> <p class="text-[11px] uppercase tracking-wider text-lpl-muted font-mono mb-2"> Annexes </p> <ul class="space-y-1"> <li> <a href="/LplKernel/book/annexe-a" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe A · Code compilable, design patterns du FullDive Engine </a> </li><li> <a href="/LplKernel/book/annexe-b" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe B · Glossaire technique </a> </li><li> <a href="/LplKernel/book/annexe-c" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe C · Index des sources par chapitre </a> </li><li> <a href="/LplKernel/book/annexe-d" class="block text-sm rounded px-2 py-1 transition-colors text-lpl-muted hover:text-lpl-text"> Annexe D · Diagramme d&#39;exécution détaillé (LplKernel Sequence Flow) </a> </li> </ul> </div> </div> </nav> <!-- Content --> <main id="main" class="py-10 min-w-0"> <p class="font-mono text-xs uppercase tracking-wider text-lpl-muted mb-2">PARTIE II : Architecture et rendu</p><h1 class="text-3xl sm:text-4xl font-bold mb-8">Chapitre 4 : Paradigmes architecturaux et design patterns</h1> <article class="book-prose"> <h2 id="41-introduction-larchitecture-au-service-de-la-performance">4.1 Introduction : l’architecture au service de la performance</h2>
+<p>Le choix de l’architecture logicielle d’un moteur de jeu n’est pas une question esthétique, c’est une question de performance. L’organisation des données en mémoire, la manière dont les systèmes communiquent entre eux et le degré de couplage entre les composants déterminent directement si le moteur peut soutenir 60 ticks de simulation par seconde avec des milliers d’entités.</p>
+<p>Ce chapitre examine les paradigmes architecturaux retenus pour LplKernel et montre comment chacun répond à une contrainte précise du cahier des charges.</p>
+<h2 id="42-data-oriented-design-dod-et-ecs">4.2 Data-Oriented Design (DOD) et ECS</h2>
+<h3 id="421-le-problème-de-loop-classique">4.2.1 Le problème de l’OOP classique</h3>
+<p>L’approche orientée objet classique (<em>Object-Oriented Programming</em>, OOP) organise le code autour d’entités : une classe <code translate="no">Player</code> hérite de <code translate="no">Character</code>, qui hérite de <code translate="no">Entity</code>, chaque classe portant ses données et ses méthodes. Cette approche est intuitive pour le développeur, mais catastrophique pour le cache CPU.</p>
+<p>Concrètement, lorsque le moteur itère sur 10 000 entités pour mettre à jour leur position, il accède à <code translate="no">entity->position</code>, un champ situé au milieu d’un objet volumineux, entouré de données non pertinentes (nom, inventaire, état IA). Chaque accès charge une ligne de cache complète (64 octets) dont seuls 12 octets (un <code translate="no">Vec3</code>) sont utiles. Le taux d’utilisation du cache (<em>cache utilization rate</em>) peut chuter sous les 20 %.<sup><a href="#user-content-fn-1" id="user-content-fnref-1" data-footnote-ref="" aria-describedby="footnote-label">1</a></sup></p>
+<h3 id="422-larchitecture-ecs-entity-component-system">4.2.2 L’architecture ECS (Entity-Component-System)</h3>
+<p>L’<strong>ECS</strong> (<em>Entity-Component-System</em>) est l’antithèse architecturale de l’OOP pour les moteurs de jeu :</p>
+<ul>
+<li><strong>Entity</strong> : Un simple identifiant numérique (un <code translate="no">uint32_t</code>). Aucune donnée, aucune méthode.</li>
+<li><strong>Component</strong> : Un bloc de données pur, sans logique. Exemple : <code translate="no">struct Position { float x, y, z; }</code>.</li>
+<li><strong>System</strong> : Une fonction qui itère sur tous les composants d’un type donné et applique la logique.</li>
+</ul>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp" translate="no"><code translate="no"><span class="line"><span style="color:#6A737D">// Composants : données pures, contigus en mémoire</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> Position</span><span style="color:#E1E4E8"> { </span><span style="color:#F97583">float</span><span style="color:#E1E4E8"> x, y, z; };</span></span>
+<span class="line"><span style="color:#F97583">struct</span><span style="color:#B392F0"> Velocity</span><span style="color:#E1E4E8"> { </span><span style="color:#F97583">float</span><span style="color:#E1E4E8"> vx, vy, vz; };</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// Système : logique pure, itération linéaire</span></span>
+<span class="line"><span style="color:#F97583">void</span><span style="color:#B392F0"> MovementSystem</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">Position</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> positions</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">const</span><span style="color:#B392F0"> Velocity</span><span style="color:#F97583">*</span><span style="color:#FFAB70"> velocities</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                    size_t</span><span style="color:#FFAB70"> count</span><span style="color:#E1E4E8">, </span><span style="color:#F97583">float</span><span style="color:#FFAB70"> dt</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#F97583">    for</span><span style="color:#E1E4E8"> (</span><span style="color:#F97583">size_t</span><span style="color:#E1E4E8"> i </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> 0</span><span style="color:#E1E4E8">; i </span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8"> count; </span><span style="color:#F97583">++</span><span style="color:#E1E4E8">i) {</span></span>
+<span class="line"><span style="color:#E1E4E8">        positions[i].x </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> velocities[i].vx </span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> dt;</span></span>
+<span class="line"><span style="color:#E1E4E8">        positions[i].y </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> velocities[i].vy </span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> dt;</span></span>
+<span class="line"><span style="color:#E1E4E8">        positions[i].z </span><span style="color:#F97583">+=</span><span style="color:#E1E4E8"> velocities[i].vz </span><span style="color:#F97583">*</span><span style="color:#E1E4E8"> dt;</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>Les composants du même type sont stockés dans des tableaux contigus (Struct of Arrays, SoA) : l’itération sur 10 000 positions accède ainsi à 10 000 × 12 octets = 120 Ko de données parfaitement contiguës. Le cache prefetcher du CPU détecte le pattern d’accès linéaire et pré-charge les lignes suivantes, ce qui porte le taux d’utilisation du cache à près de 100 %.<sup><a href="#user-content-fn-2" id="user-content-fnref-2" data-footnote-ref="" aria-describedby="footnote-label">2</a></sup></p>
+<p>Cette organisation linéaire est aussi naturellement vectorisable par le compilateur : les trois additions par entité deviennent une seule instruction SIMD opérant sur 4 ou 8 entités simultanément.</p>
+<h3 id="423-structure-de-stockage-soa-vs-aos">4.2.3 Structure de stockage : SoA vs AoS</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Layout</th><th align="left">Définition</th><th align="left">Cache-Friendly ?</th><th align="left">Vectorisable ?</th></tr></thead><tbody><tr><td align="left"><strong>AoS</strong> (Array of Structs)</td><td align="left"><code translate="no">struct Entity { Pos p; Vel v; }; Entity entities[N];</code></td><td align="left">Moyen</td><td align="left">Difficile</td></tr><tr><td align="left"><strong>SoA</strong> (Struct of Arrays)</td><td align="left"><code translate="no">Pos positions[N]; Vel velocities[N];</code></td><td align="left">Excellent</td><td align="left">Excellent</td></tr><tr><td align="left"><strong>AoSoA</strong> (Hybride)</td><td align="left">Blocs de 8 entités en SoA</td><td align="left">Excellent + SIMD friendly</td><td align="left">Optimal</td></tr></tbody></table>
+<p>Le layout <strong>SoA</strong> est le défaut recommandé pour tous les composants ECS itérés par les systèmes de simulation.</p>
+<p>Dans le moteur, ce stockage prend corps dans la <strong>Partition</strong> : des chunks SoA à double buffer, un tampon d’écriture et un tampon de lecture basculés par un <code translate="no">swapBuffers()</code> atomique à la fin du tick. Le double buffer coûte 2× la mémoire, mais uniquement sur les données chaudes : compromis accepté, et mesuré. La contention est distribuée de la même façon : un SpinLock par chunk plutôt qu’un verrou global, si bien que deux threads qui travaillent sur des chunks différents ne se croisent jamais. La migration d’une entité entre chunks, elle, s’appuie sur le <em>swap-and-pop</em> avec itération à rebours ; l’itération avant provoquait un bug subtil (l’élément permuté à la place du supprimé échappait au parcours), leçon apprise une fois et pour de bon.</p>
+<h2 id="43-composition-over-inheritance">4.3 Composition over inheritance</h2>
+<p>Le principe de <strong>composition sur l’héritage</strong> (<em>Composition over Inheritance</em>) est le fondement architectural de l’ECS : les capacités d’une entité sont définies par la combinaison de ses composants, et non par sa position dans une hiérarchie de classes.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp" translate="no"><code translate="no"><span class="line"><span style="color:#6A737D">// OOP classique — fragile, rigide</span></span>
+<span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> FlyingEnemy</span><span style="color:#E1E4E8"> : </span><span style="color:#F97583">public</span><span style="color:#B392F0"> Enemy</span><span style="color:#E1E4E8"> {</span><span style="color:#6A737D"> /* ... */</span><span style="color:#E1E4E8"> };</span></span>
+<span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> SwimmingEnemy</span><span style="color:#E1E4E8"> : </span><span style="color:#F97583">public</span><span style="color:#B392F0"> Enemy</span><span style="color:#E1E4E8"> {</span><span style="color:#6A737D"> /* ... */</span><span style="color:#E1E4E8"> };</span></span>
+<span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> FlyingSwimmingEnemy</span><span style="color:#E1E4E8"> : </span><span style="color:#F97583">public</span><span style="color:#E1E4E8"> ??? {</span><span style="color:#6A737D"> /* L'héritage multiple est un cauchemar */</span><span style="color:#E1E4E8"> };</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// ECS — flexible, extensible</span></span>
+<span class="line"><span style="color:#F97583">auto</span><span style="color:#E1E4E8"> flyingEnemy </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> world.</span><span style="color:#B392F0">CreateEntity</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">world.AddComponent</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">Position</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(flyingEnemy, {</span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">100</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">0</span><span style="color:#E1E4E8">});</span></span>
+<span class="line"><span style="color:#E1E4E8">world.AddComponent</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">AI</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(flyingEnemy, {</span><span style="color:#B392F0">AIBehavior</span><span style="color:#E1E4E8">::Aggressive});</span></span>
+<span class="line"><span style="color:#E1E4E8">world.AddComponent</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FlyAbility</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(flyingEnemy, {maxAltitude: </span><span style="color:#79B8FF">500</span><span style="color:#E1E4E8">});</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#F97583">auto</span><span style="color:#E1E4E8"> amphibian </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> world.</span><span style="color:#B392F0">CreateEntity</span><span style="color:#E1E4E8">();</span></span>
+<span class="line"><span style="color:#E1E4E8">world.AddComponent</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">FlyAbility</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(amphibian, {maxAltitude: </span><span style="color:#79B8FF">200</span><span style="color:#E1E4E8">});</span></span>
+<span class="line"><span style="color:#E1E4E8">world.AddComponent</span><span style="color:#F97583">&#x3C;</span><span style="color:#E1E4E8">SwimAbility</span><span style="color:#F97583">></span><span style="color:#E1E4E8">(amphibian, {maxDepth: </span><span style="color:#79B8FF">50</span><span style="color:#E1E4E8">});</span></span>
+<span class="line"><span style="color:#6A737D">// Pas de hiérarchie à modifier !</span></span></code></pre>
+<p>Autrement dit, le problème du « losange de la mort » (diamond inheritance) est structurellement impossible en ECS.</p>
+<h2 id="44-dependency-injection-et-testabilité">4.4 Dependency Injection et testabilité</h2>
+<p>La <strong>Dependency Injection</strong> (DI) consiste à passer les dépendances d’un système via ses arguments plutôt que de les créer en interne. Elle rend chaque système testable indépendamment du reste du moteur :</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp" translate="no"><code translate="no"><span class="line"><span style="color:#6A737D">// MAUVAIS : couplage fort</span></span>
+<span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> PhysicsSystem</span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#F97583">    void</span><span style="color:#B392F0"> Update</span><span style="color:#E1E4E8">() {</span></span>
+<span class="line"><span style="color:#F97583">        auto&#x26;</span><span style="color:#E1E4E8"> world </span><span style="color:#F97583">=</span><span style="color:#B392F0"> World</span><span style="color:#E1E4E8">::</span><span style="color:#B392F0">GetInstance</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D"> // Singleton global !</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D">// BON : injection de dépendance</span></span>
+<span class="line"><span style="color:#F97583">class</span><span style="color:#B392F0"> PhysicsSystem</span><span style="color:#E1E4E8"> {</span></span>
+<span class="line"><span style="color:#F97583">    void</span><span style="color:#B392F0"> Update</span><span style="color:#E1E4E8">(</span><span style="color:#B392F0">ComponentArray</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">Position</span><span style="color:#E1E4E8">></span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> positions</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                const</span><span style="color:#B392F0"> ComponentArray</span><span style="color:#E1E4E8">&#x3C;</span><span style="color:#B392F0">Velocity</span><span style="color:#E1E4E8">></span><span style="color:#F97583">&#x26;</span><span style="color:#FFAB70"> velocities</span><span style="color:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#F97583">                float</span><span style="color:#FFAB70"> dt</span><span style="color:#E1E4E8">) {</span></span>
+<span class="line"><span style="color:#6A737D">        // Testable avec des données synthétiques</span></span>
+<span class="line"><span style="color:#E1E4E8">    }</span></span>
+<span class="line"><span style="color:#E1E4E8">};</span></span></code></pre>
+<p>Avec la DI, le système de physique peut être testé unitairement avec des données synthétiques, sans initialiser le moteur complet, une propriété indispensable pour le débogage des désynchronisations réseau.</p>
+<h2 id="45-programmation-fonctionnelle-et-déterminisme">4.5 Programmation fonctionnelle et déterminisme</h2>
+<p>Les principes de la <strong>programmation fonctionnelle</strong> (fonctions pures, immuabilité, absence d’effets de bord) s’alignent naturellement sur les exigences de déterminisme. Une <strong>fonction pure</strong> ne dépend que de ses arguments, ce qui garantit la reproductibilité. L’<strong>immuabilité</strong> interdit de modifier les données d’entrée : le système en produit toujours de nouvelles. La <strong>composition</strong>, enfin, assemble les systèmes ECS en fonctions pures chaînées dans un pipeline.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="cpp" translate="no"><code translate="no"><span class="line"><span style="color:#6A737D">// Pipeline de simulation fonctionnel (conceptuel)</span></span>
+<span class="line"><span style="color:#F97583">auto</span><span style="color:#E1E4E8"> newState </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> state</span></span>
+<span class="line"><span style="color:#F97583">    |</span><span style="color:#B392F0"> ProcessInputs</span><span style="color:#E1E4E8">(inputBuffer)</span></span>
+<span class="line"><span style="color:#F97583">    |</span><span style="color:#B392F0"> SimulatePhysics</span><span style="color:#E1E4E8">(FIXED_DT)</span></span>
+<span class="line"><span style="color:#F97583">    |</span><span style="color:#B392F0"> ResolveCollisions</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#F97583">    |</span><span style="color:#B392F0"> UpdateAI</span><span style="color:#E1E4E8">()</span></span>
+<span class="line"><span style="color:#F97583">    |</span><span style="color:#B392F0"> HashState</span><span style="color:#E1E4E8">();</span><span style="color:#6A737D">  // Pour la vérification de synchronisation</span></span></code></pre>
+<p>L’absence d’effets de bord garantit que le pipeline est rejouable : même <code translate="no">state</code> + même <code translate="no">inputBuffer</code> = même <code translate="no">newState</code>, tick après tick, machine après machine.</p>
+<p>Ce pipeline conceptuel a une incarnation directe : le <strong>SystemScheduler</strong> du moteur. Chaque système ECS déclare les composants qu’il lit et ceux qu’il écrit, et l’ordonnanceur en déduit automatiquement un graphe de dépendances (DAG) : deux systèmes sans conflit d’accès s’exécutent en parallèle sur le ThreadPool, une <em>latch</em> synchronisant chaque étage du graphe. Côté client, le pipeline résolu enchaîne typiquement la consommation du ring réseau, les entrées/sorties client, la physique puis les métriques neuronales ; côté serveur, la même mécanique produit un ordre différent, déduit des mêmes déclarations. Personne ne maintient d’ordre d’exécution à la main : c’est le graphe qui fait foi, et il reste déterministe puisque la topologie ne dépend que des déclarations, pas du timing.</p>
+<h2 id="46-patterns-de-conception-pour-le-moteur">4.6 Patterns de conception pour le moteur</h2>
+<p>Au-delà de ces paradigmes architecturaux, plusieurs design patterns du GoF (<em>Gang of Four</em>) et des <em>Game Programming Patterns</em> sont fondamentaux pour l’architecture de LplKernel. Le code compilable complet de ces patterns est fourni en Annexe A.</p>
+<h3 id="461-patterns-de-création">4.6.1 Patterns de création</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Pattern</th><th align="left">Problème Résolu</th><th align="left">Usage dans LplKernel</th></tr></thead><tbody><tr><td align="left"><strong>Factory Method</strong></td><td align="left">Créer des objets polymorphes sans coupler le code</td><td align="left">Création de paquets réseau (SyncPacket, InputPacket)</td></tr><tr><td align="left"><strong>Abstract Factory</strong></td><td align="left">Instancier des familles d’objets compatibles</td><td align="left">Sélection du sous-système matériel (PCVR vs FullDive)</td></tr><tr><td align="left"><strong>Builder</strong></td><td align="left">Construire des objets complexes étape par étape</td><td align="left">Configuration d’avatars avec mesh, physique, signature neuronale</td></tr><tr><td align="left"><strong>Prototype</strong></td><td align="left">Cloner des objets lourds sans réinstanciation</td><td align="left">Copie d’état de PNJ pour la prédiction réseau</td></tr><tr><td align="left"><strong>Singleton</strong></td><td align="left">Source unique de vérité</td><td align="left">Horloge déterministe du moteur</td></tr></tbody></table>
+<h3 id="462-patterns-structurels">4.6.2 Patterns structurels</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Pattern</th><th align="left">Problème Résolu</th><th align="left">Usage dans LplKernel</th></tr></thead><tbody><tr><td align="left"><strong>Adapter</strong></td><td align="left">Intégrer une API incompatible</td><td align="left">Wrapping d’une lib physique flottante vers du fixed-point</td></tr><tr><td align="left"><strong>Bridge</strong></td><td align="left">Séparer abstraction et implémentation</td><td align="left">Interface BCI découplée du hardware (OpenBCI, Galea, etc.)</td></tr><tr><td align="left"><strong>Composite</strong></td><td align="left">Traiter un arbre comme un objet unique</td><td align="left">Octree / Scene Graph pour le partitionnement spatial</td></tr><tr><td align="left"><strong>Decorator</strong></td><td align="left">Ajouter des responsabilités dynamiquement</td><td align="left">Compression + chiffrement des flux réseau en couches</td></tr><tr><td align="left"><strong>Facade</strong></td><td align="left">API simplifiée pour un sous-système complexe</td><td align="left"><code translate="no">EngineFacade::BootSequence()</code> initialise physique, rendu, réseau</td></tr><tr><td align="left"><strong>Flyweight</strong></td><td align="left">Partager les données communes</td><td align="left">Voxels / arbres partageant le même mesh géométrique</td></tr><tr><td align="left"><strong>Proxy</strong></td><td align="left">Représentation locale d’un objet distant</td><td align="left">Prédiction de mouvement (<em>Dead Reckoning</em>) pour joueurs distants</td></tr></tbody></table>
+<h3 id="463-patterns-comportementaux">4.6.3 Patterns comportementaux</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Pattern</th><th align="left">Problème Résolu</th><th align="left">Usage dans LplKernel</th></tr></thead><tbody><tr><td align="left"><strong>Chain of Responsibility</strong></td><td align="left">Traiter un signal par priorité</td><td align="left">Signal neuronal : sécurité → UI → logique de jeu</td></tr><tr><td align="left"><strong>Command</strong></td><td align="left">Encapsuler une action réversible</td><td align="left">Inputs réseau pour le Rollback Netcode</td></tr><tr><td align="left"><strong>Memento</strong></td><td align="left">Sauvegarder/restaurer un état</td><td align="left">Snapshots de frame pour le Rollback</td></tr><tr><td align="left"><strong>Observer</strong></td><td align="left">Notification découplée</td><td align="left">Pics de stress cardiaque → mise à jour UI</td></tr><tr><td align="left"><strong>State</strong></td><td align="left">Machine à états propre</td><td align="left">Connexion BCI (calibration → active → pause)</td></tr><tr><td align="left"><strong>Strategy</strong></td><td align="left">Interchanger des algorithmes</td><td align="left">Prédiction : Dead Reckoning vs Hermite Spline</td></tr><tr><td align="left"><strong>Template Method</strong></td><td align="left">Garantir l’ordre des opérations</td><td align="left">Boucle de tick : ReadInputs → Simulate → Validate</td></tr></tbody></table>
+<h3 id="464-patterns-spécifiques-moteur">4.6.4 Patterns spécifiques moteur</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th align="left">Pattern</th><th align="left">Problème Résolu</th><th align="left">Usage dans LplKernel</th></tr></thead><tbody><tr><td align="left"><strong>Object Pool</strong></td><td align="left">Éviter <code translate="no">new</code>/<code translate="no">delete</code> pendant la simulation</td><td align="left">Recyclage de projectiles, particules, effets</td></tr><tr><td align="left"><strong>Double Buffer</strong></td><td align="left">Éviter lectures/écritures concurrentes</td><td align="left">Buffer d’écriture séparé du buffer de lecture</td></tr><tr><td align="left"><strong>Dirty Flag</strong></td><td align="left">Éviter les recalculs inutiles</td><td align="left">Matrice de transformation recalculée si modifiée</td></tr><tr><td align="left"><strong>Spatial Partition</strong></td><td align="left">Requêtes de proximité efficaces</td><td align="left">Grille spatiale, Octree pour collisions</td></tr></tbody></table>
+<p>Le pattern Spatial Partition mérite qu’on s’y attarde, parce que son implémentation dans le moteur condense plusieurs idées de ce chapitre. La structure d’indexation est une <strong>FlatAtomicsHashMap</strong>, table de hachage plate à opérations atomiques, sans nœuds chaînés ni allocation dynamique. Sa clé est un <strong>code de Morton</strong> : les bits des coordonnées spatiales sont entrelacés (<code translate="no">part1by1</code> en 2D, <code translate="no">part1by2</code> en 3D, avec un biais pour ramener les coordonnées négatives dans le domaine non signé), ce qui produit un ordre en Z (<em>Z-order curve</em>) où la proximité spatiale se traduit par la proximité numérique des clés. Le tout est empaqueté sur 64 bits, code de Morton et indice de pool compris : une seule valeur atomique suffit pour localiser une entité et sa cellule.</p>
+<h2 id="47-synthèse-architecturale">4.7 Synthèse architecturale</h2>
+<p>L’architecture de LplKernel repose sur un empilement cohérent :</p>
+<ol>
+<li><strong>ECS + SoA</strong> pour la localité mémoire et la vectorisation automatique.</li>
+<li><strong>Composition</strong> pour la flexibilité sans hiérarchie fragile.</li>
+<li><strong>DI</strong> pour la testabilité et l’isolation des systèmes.</li>
+<li><strong>Fonctionnel</strong> pour le déterminisme et la rejouabilité.</li>
+<li><strong>Patterns GoF</strong> pour la résolution de problèmes récurrents.</li>
+</ol>
+<p>Cet empilement se reflète jusque dans le découpage physique du code : le moteur est une architecture plate de 20 bibliothèques statiques indépendantes (<code translate="no">lpl-core</code>, <code translate="no">lpl-math</code>, <code translate="no">lpl-ecs</code>, <code translate="no">lpl-physics</code>, <code translate="no">lpl-net</code>, <code translate="no">lpl-render</code>, <code translate="no">lpl-bci</code>…), chacune déclarant explicitement ses dépendances dans son propre <code translate="no">xmake.lua</code>. Aucun couplage caché : si un module a besoin d’un autre, ça se lit dans son manifeste de build, et le graphe de dépendances du projet est celui du linker. L’expérience a tranché en faveur de ce modèle plat contre le monolithe <code translate="no">engine/</code> initial : il passe à l’échelle, et il force chaque frontière à être pensée.</p>
+<p>In fine, le code compilable de l’Annexe A illustre chacun de ces patterns dans le contexte spécifique du moteur FullDive.</p>
+<h3 id="notes-de-bas-de-page-du-chapitre-4">Notes de bas de page du chapitre 4</h3>
+<hr>
+<section data-footnotes="" class="footnotes"><h2 class="sr-only" id="footnote-label">Footnotes</h2>
+<ol>
+<li id="user-content-fn-1">
+<p>Mike Acton, « Data-Oriented Design and C++ », CppCon 2014, présentation fondatrice du DOD (Insomniac Games). <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">↩</a></p>
+</li>
+<li id="user-content-fn-2">
+<p>Le prefetcher matériel Intel (L2 Streamer) pré-charge les lignes de cache jusqu’à 512 octets en avance pour les accès séquentiels, réduisant la latence de ~100 cycles (L2 miss) à ~4 cycles (L1 hit). <a href="#user-content-fnref-2" data-footnote-backref="" aria-label="Back to reference 2" class="data-footnote-backref">↩</a></p>
+</li>
+</ol>
+</section> </article> <nav class="mt-16 pt-6 border-t border-lpl-border flex items-center justify-between gap-4 text-sm" aria-label="Chapitre précédent et suivant"> <a href="/LplKernel/book/chapitre-3" class="text-lpl-muted hover:text-lpl-accent max-w-[45%]">
+← Chapitre 3 · Déterminisme et arithmétique à virgule fixe </a> <a href="/LplKernel/book/chapitre-5" class="text-lpl-accent hover:brightness-110 text-right max-w-[45%]"> Chapitre 5 · GPU, Vulkan et animation procédurale →
+</a> </nav>  </main> </div> <footer class="border-t border-lpl-border mt-24"> <div class="mx-auto max-w-6xl px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-lpl-muted"> <p>© 2026 Master Laplace · GPL-3.0</p> <p class="font-mono">Built with Astro · booted in your browser with v86</p> </div> </footer> <!-- Mermaid: render the diagram blocks emitted by the remark plugin.
+         is:inline keeps Astro/Vite from bundling the remote ESM import. --> <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "loose" });
+    </script> </body> </html>

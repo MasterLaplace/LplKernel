@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://masterlaplace.github.io/LplKernel</loc><priority>1.0</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/projects</loc><priority>0.8</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/roadmap</loc><priority>0.8</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book</loc><priority>0.9</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/blog</loc><priority>0.9</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/blog/systems-paper-zero-copy</loc><lastmod>2026-06-30</lastmod><priority>0.7</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/blog/benchmarks-2026</loc><lastmod>2026-07-06</lastmod><priority>0.7</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/blog/postmortem-generational-ids</loc><lastmod>2026-06-15</lastmod><priority>0.7</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/preambule</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-5</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-8</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-7</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-1</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-4</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-6</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-3</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-2</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-9</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/annexe-a</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/chapitre-10</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/annexe-c</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/annexe-b</loc><priority>0.6</priority></url>
+  <url><loc>https://masterlaplace.github.io/LplKernel/book/annexe-d</loc><priority>0.6</priority></url>
+</urlset>
