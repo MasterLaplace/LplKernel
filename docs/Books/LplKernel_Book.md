@@ -1492,6 +1492,122 @@ Ce mécanisme exige :
 
 Le module réseau du moteur réserve d'ailleurs sa place à cette stratégie de rollback aux côtés du transport et du protocole. La gestion des sessions y suit une leçon apprise dans le module noyau : un SpinLock crée de la contention dès que les lectures dominent, et le suivi des sessions est précisément un cas « beaucoup de lectures, peu d'écritures ». La structure visée est donc du **RCU** (*Read-Copy-Update*) : les lecteurs traversent la table des sessions sans jamais prendre de verrou, et les mises à jour publient une nouvelle version atomiquement.
 
+Le Lockstep et le Rollback sont les deux extrémités d'un même axe : l'un ne transmet que les inputs et paie la latence du plus lent, l'autre prédit et resimule et paie le coût de la resimulation. Aucun des deux ne tient à l'échelle d'un MMORPG : des milliers d'entités, des centaines de joueurs, des cartes gigantesques, des pings hétérogènes. Entre ces deux bornes s'étend tout un spectre de techniques que la production AAA a affinées depuis vingt ans, et que ce chapitre recense parce que chacune éclaire un compromis. LplPlugin vise par défaut le MMORPG et le FullDive, mais rien n'oblige un moteur à choisir une seule stratégie : de même qu'il conserve à la fois le broadcast complet et le broadcast par zone d'intérêt et laisse le développeur (ou, à terme, une heuristique adaptative) trancher, il gagne à connaître tout l'éventail.
+
+### 6.2.3 Serveur autoritaire, prédiction et réconciliation
+
+Le modèle qui domine le FPS et le MMO depuis *Quake* est le **serveur autoritaire à prédiction client**. Le serveur exécute la simulation de référence à pas fixe. Le client, lui, pour masquer le délai aller-retour, applique immédiatement ses propres inputs (prédiction), puis corrige son état lorsqu'un instantané autoritaire arrive (réconciliation). L'articulation canonique en est la série de Gabriel Gambetta.[^3]
+
+Un détail d'implémentation de LplPlugin illustre pourquoi ce modèle économise beaucoup de bande passante : la vélocité n'est jamais transmise. L'instantané ne porte que la position, la taille et les points de vie, trente-deux octets par entité, parce que la vélocité est une fonction pure des inputs, recalculée à chaque tick par une formule identique sur le serveur et sur le client (`computeMovementVelocity` : WASD modulé par la concentration neurale, la composante verticale préservée pour la gravité). Ce qui se déduit ne se transmet pas : seul voyage sur le fil ce qui intègre, et donc dérive, à savoir la position. C'est le même principe qui, dans le Lockstep, fait ne transiter que les inputs.
+
+La réconciliation impose une contrainte d'identité souvent sous-estimée : le client doit ranger chaque entité sous l'identifiant que le serveur lui a donné, sinon un instantané ultérieur pour la même entité ne la retrouve pas et en crée un double à chaque tick. LplPlugin fait porter cette identité par le smart-handle générationnel de l'ECS (`EntityId`, un couple génération/slot empaqueté sur 32 bits, décrit au Chapitre 4) : le client adopte l'identifiant du serveur tel quel, ce qui rend la résolution en $O(1)$ et fait que le même instantané met l'entité à jour au lieu de la dupliquer.
+
+### 6.2.4 Interpolation d'instantanés et *dead reckoning*
+
+Le client ne peut prédire que sa propre entité, dont il connaît les inputs. Pour toutes les autres, il ne reçoit que des instantanés périodiques et doit combler l'intervalle. Deux techniques complémentaires, formalisées par Yahn Bernier chez Valve et éprouvées dans le moteur *Source*[^4] [^5] :
+
+- L'**interpolation** fait afficher au client le passé, avec un retard d'interpolation (typiquement 100 ms), et interpole les positions entre les deux derniers instantanés reçus. Le mouvement des autres joueurs reste fluide même quand les instantanés sont espacés ou qu'un paquet manque.
+- Le **dead reckoning** fait extrapoler la trajectoire à partir de la dernière vitesse connue, plutôt que d'attendre le prochain instantané. Transmettre une vitesse quantifiée pour les entités distantes devient alors un choix payant, non pour la simulation autoritaire mais pour lisser le rendu entre deux corrections. Le compromis est classique : l'extrapolation réduit la latence perçue mais produit des embardées à corriger quand la trajectoire réelle diverge de la prédite.
+
+### 6.2.5 Compression delta et *baseline* acquittée
+
+Envoyer l'état complet à chaque tick est un gaspillage : d'un tick à l'autre, la majeure partie de l'état ne bouge pas. Le modèle réseau de *Quake III*, puis de *DOOM III*, encode chaque instantané comme un delta contre une baseline acquittée : le client accuse réception du dernier instantané reçu, et le serveur n'envoie plus que la différence par rapport à *cette* version précise.[^6] Les champs inchangés ne coûtent qu'un bit d'absence. Le `AoiBroadcast` de LplPlugin fait déjà un delta d'entrée/sortie de zone (apparition, disparition, mise à jour). L'étape suivante, proprement AAA, consiste à y ajouter l'acquittement de baseline pour ne jamais renvoyer ce que le client a déjà confirmé.
+
+### 6.2.6 Gestion d'intérêt (*Area of Interest*)
+
+Le broadcast complet est en $O(\text{clients} \times N)$ : chaque client reçoit l'état de toutes les entités. C'est le mur qui interdit les grands mondes. La **gestion d'intérêt** le brise en n'envoyant à chaque client que les entités pertinentes pour lui, d'ordinaire celles proches de son avatar. Concrètement, LplPlugin en implémente une forme par grille spatiale (`AoiBroadcast`) : une requête de rayon sur la partition de Morton renvoie le voisinage, et le flux devient $O(\text{clients} \times \text{voisins})$. Les raffinements connus forment une gradation :
+
+- La **grille** de cellules, la partition uniforme la plus simple, celle du moteur.
+- Les **bulles** ou anneaux concentriques réalisent un *network LOD*, où la cadence et la précision décroissent avec la distance : le proche à pleine fréquence et pleine précision, le lointain rafraîchi rarement et quantifié plus grossièrement.
+- Les **requêtes d'intérêt** (*query-based interest*), popularisées par SpatialOS d'Improbable, où chaque client déclare une requête (un volume, un filtre de composants) et ne reçoit que ce qui y répond.[^7]
+
+### 6.2.7 Pertinence, priorité et budget de bande passante
+
+La gestion d'intérêt dit *qui* est visible. La **réplication par pertinence** d'Unreal Engine dit, en plus, *combien* de bande passante chaque entité mérite.[^8] Chaque acteur accumule une **priorité** (distance, dans le champ de vision ou non, temps écoulé depuis son dernier envoi). À chaque tick, par client, le serveur trie les acteurs pertinents et envoie les plus prioritaires jusqu'à épuisement d'un budget de bande passante mesuré. S'y ajoutent une fréquence de mise à jour propre à chaque entité (`NetUpdateFrequency`) et la **dormance** (*dormancy*) : une entité au repos ne consomme plus aucun trafic tant qu'elle ne bouge pas. C'est le mécanisme le plus directement *adaptatif* du lot, et le candidat naturel pour que LplPlugin ajuste seul son débit à la bande passante réelle de chaque client.
+
+### 6.2.8 Distribution : *sharding* spatial et *server meshing*
+
+Toutes les techniques précédentes optimisent ce qu'un seul serveur envoie. Passé un certain nombre d'entités simulées, c'est la simulation elle-même qu'il faut distribuer. Le **sharding spatial** découpe le monde en zones prises en charge par des processus ou des machines distincts. Le **server meshing** y ajoute le transfert transparent d'une entité d'un serveur à l'autre quand elle franchit une frontière, de sorte que le joueur ne perçoit pas les coutures. SpatialOS l'a industrialisé autour d'une couche de simulation distribuée. *Star Citizen* le porte à grande échelle avec une couche de réplication qui persiste l'état des entités et le diffuse aux serveurs et aux clients concernés.[^9] C'est la seule voie réaliste vers des cartes gigantesques, et elle figure à la feuille de route du moteur.
+
+### 6.2.9 Compensation de latence
+
+Dans un jeu autoritaire, une action de visée arrive au serveur avec le retard du client : au moment où le serveur la traite, les cibles ont bougé. La **compensation de latence** (*lag compensation*), également formalisée par Bernier, fait rembobiner au serveur l'état du monde jusqu'à l'instant que le client voyait réellement, valide le tir dans ce passé, puis reprend le fil du présent.[^4] Elle repose sur le même historique d'instantanés que la détection de désynchronisation (§6.4) et le rollback (§6.2.2) : conserver quelques dizaines de ticks d'état permet aussi bien de rembobiner pour un tir que de comparer un hash divergent.
+
+### 6.2.10 Les murs de charge : un ordre de grandeur
+
+Combien de clients un serveur tient-il vraiment ? Deux plafonds répondent, calculés sur les constantes réelles du moteur : un tick à 144 Hz, un drain de 256 paquets par tick sur un seul thread, une charge utile de 1400 octets, 32 octets par entité sur le fil.
+
+Le premier mur est celui de la réception, et il est artificiel. `pumpNetwork` draine au plus `maxPacketsPerTick` paquets par tick, toutes instances confondues, sur un seul thread :
+
+$$256 \times 144 = 36\,864 \text{ paquets/s}$$
+
+Traduit en clients, selon leur cadence d'envoi :
+
+| Les clients envoient | Plafond avant accumulation |
+|---|---|
+| 1 input/tick (144/s) | ~256 clients |
+| 30 Hz | ~1 230 clients |
+| 10 Hz | ~3 690 clients |
+
+Au-delà, rien ne bloque : la socket est non bloquante et renvoie `EAGAIN`. Le problème est pire qu'un blocage, parce qu'il est muet. Les paquets débordent le tampon de réception du noyau (`net.core.rmem_max`) et le système d'exploitation les jette sans que rien ne le signale. Vous perdez des inputs et vous désynchronisez à l'aveugle. C'est précisément ce que le compteur de contre-pression du serveur rend visible.
+
+Le second mur est celui de l'émission, et c'est le vrai tueur, parce qu'il est algorithmique. Le broadcast complet envoie la même charge à chaque session : il est en $O(\text{clients} \times \text{fragments})$, autrement dit en $O(N^2)$ à l'échelle du serveur. Avec un millier d'entités, un instantané pèse une trentaine de kilooctets, soit environ vingt-quatre fragments par client et par tick :
+
+| Clients | Débit sortant | Verdict |
+|---|---|---|
+| 100 | ~3,6 Gbit/s | tenable |
+| 1 000 | ~36 Gbit/s | sature un lien 10 GbE |
+| 10 000 | ~360 Gbit/s | impossible |
+
+Le tableau de datagrammes lui-même finit par coûter : à un million de clients, ce sont des centaines de mégaoctets de métadonnées reconstruites à chaque tick. Le regroupement d'envois (`sendBatch`, `recvmmsg`) n'y change rien. Il fait passer N appels système à N/64, un facteur constant qui déplace le mur de réception de « centaines » à « milliers », mais ne touche pas au $O(N^2)$ de l'émission. Regrouper des appels système sur un algorithme quadratique, c'est cirer le pont du Titanic.
+
+Le vrai chemin vers l'échelle empile des étages, chacun nommé dans ce livre :
+
+| Étage | Ce qu'il débloque | Facteur | Où |
+|---|---|---|---|
+| `recvmmsg` + cap de réception configurable + compteur de contre-pression | réception mono-thread | ×5 à ×10 | §6.1 |
+| RSS : la carte hache l'UDP sur N files, donc N cœurs | brise le mur de la socket unique | ×cœurs | §6.1 |
+| Gestion d'intérêt et delta | casse le $O(N^2)$ en $O(N \cdot k)$ | ×100 et plus | §6.2.6 |
+| Sharding per-CPU / per-NUMA | localité, sans contention | ×cœurs | Chapitre 2 |
+| Kernel bypass (DPDK, io_uring) ou datagrammes QUIC[^13] | supprime le syscall par paquet | ×constant élevé | §6.1 |
+
+Un seul de ces étages compte vraiment pour viser le million : la gestion d'intérêt. Sans elle, ni le regroupement ni le RSS ne sauvent un broadcast quadratique. Le RSS donne la réception, la gestion d'intérêt donne l'émission, le sharding donne les cœurs.
+
+### Un spectre, pas un dogme
+
+Ces techniques ne s'excluent pas : un MMORPG moderne empile serveur autoritaire, prédiction et réconciliation, interpolation et *dead reckoning*, delta acquitté, gestion d'intérêt, budget de pertinence, *server meshing* et compensation de latence. Chacune répond à un mur précis : latence perçue, bande passante, nombre d'entités, taille de carte. Les moteurs de production les combinent selon leur genre : Overwatch marie un ECS et son netcode[^10], Photon Quantum pousse un ECS déterministe à prédiction et rollback pour de grands nombres d'entités[^11], et Rocket League fait tourner toute sa physique en rollback[^12].
+
+```mermaid
+graph LR
+    subgraph few["Few players, small arena"]
+        LS[Lockstep, inputs only, deterministic]
+        RB[Rollback / GGPO, predict and resimulate]
+    end
+    subgraph many["Many players, large world (MMORPG / FullDive)"]
+        AS[Authoritative + client prediction]
+        AS --> INT[Snapshot interpolation and dead reckoning]
+        AS --> DLT[Delta vs acked baseline]
+        AS --> AOI[Interest management, per zone]
+        AOI --> PRI[Relevancy + priority + bandwidth budget]
+        PRI --> SH[Spatial sharding / server meshing]
+        AS --> LC[Lag compensation]
+    end
+```
+
+| Technique | Mur adressé | Référence type |
+|-----------|-------------|----------------|
+| Lockstep | Bande passante (RTS) | Age of Empires[^6] |
+| Rollback (GGPO) | Latence (petits comptes) | jeux de combat |
+| Prédiction / réconciliation | Latence perçue | Gambetta[^3] |
+| Interpolation / *dead reckoning* | Fluidité entre instantanés | Valve *Source*[^4] [^5] |
+| Delta acquitté | Bande passante | *Quake III* / *DOOM III*[^6] |
+| Gestion d'intérêt | Nombre d'entités | SpatialOS[^7] |
+| Pertinence + budget | Bande passante adaptative | Unreal[^8] |
+| *Server meshing* | Taille de carte | *Star Citizen*[^9] |
+| Compensation de latence | Équité de visée | Valve[^4] |
+
+Le moteur n'en fige aucune : à l'image du couple `Broadcast` / `AoiBroadcast` déjà présent, chaque stratégie est une option activable, et l'ambition à terme est une sélection *adaptative* : le moteur choisit selon la charge, la carte et le profil réseau de chaque client. Le déterminisme absolu de l'état autoritaire (Chapitre 3) reste, *in fine*, le socle : il est ce qui permet à la réconciliation, au rollback et à la détection de désynchronisation de comparer deux machines octet pour octet.
+
 ## 6.3 Sérialisation : le Bitstream
 
 ### 6.3.1 Pourquoi pas `memcpy` ?
@@ -1639,6 +1755,28 @@ Un dernier choix d'architecture mérite mention : client et serveur partagent u
 [^1]: Glenn Fiedler, « Networking for Game Programmers », série d'articles de référence sur les architectures réseau pour les jeux multijoueur.
 
 [^2]: Glenn Fiedler, « Reading and Writing Packets » et « Serialization Strategies », détails sur le bit-packing et la sérialisation optimisée.
+
+[^3]: Gabriel Gambetta, « Fast-Paced Multiplayer » : série d'articles de référence sur la prédiction client et la réconciliation avec un serveur autoritaire.
+
+[^4]: Yahn W. Bernier (Valve), « Latency Compensating Methods in Client/Server In-game Protocol Design and Optimization », GDC 2001 : interpolation d'entités et compensation de latence.
+
+[^5]: Valve Developer Community, « Source Multiplayer Networking » : interpolation, prédiction et compensation de latence dans le moteur Source.
+
+[^6]: Fabien Sanglard, « Quake 3 Source Code Review: Network model », et J.M.P. van Waveren, « The DOOM III Network Architecture » : encodage delta d'instantanés contre une baseline acquittée. Le Lockstep des RTS est décrit par Paul Bettner & Mark Terrano, « 1500 Archers on a 28.8: Network Programming in Age of Empires and Beyond », GDC 2001.
+
+[^7]: Improbable, documentation SpatialOS : gestion d'intérêt par requêtes (*query-based interest*) dans une simulation distribuée.
+
+[^8]: Epic Games, documentation Unreal Engine sur la réplication réseau : pertinence des acteurs (*relevancy*), priorité, `NetUpdateFrequency`, `NetCullDistance` et dormance.
+
+[^9]: Cloud Imperium Games, présentations techniques « Server Meshing » de Star Citizen : couche de réplication persistante et transfert d'entités entre serveurs.
+
+[^10]: Timothy Ford (Blizzard), « Overwatch Gameplay Architecture and Netcode », GDC 2017 : combinaison d'un ECS et du netcode.
+
+[^11]: Photon Quantum (Exit Games), documentation technique : ECS déterministe à prédiction et rollback, dimensionné pour un grand nombre d'entités.
+
+[^12]: Jared Cone (Psyonix), « It IS Rocket Science! The Physics of Rocket League Detailed », GDC 2018 : physique réseau en rollback et interpolation.
+
+[^13]: QUIC, RFC 9000, et « An Unreliable Datagram Extension to QUIC », RFC 9221 : datagrammes non fiables sur QUIC.
 
 ---
 
