@@ -583,6 +583,53 @@ static bool pmm_is_kernel_page(uint32_t phys_addr, uint32_t kernel_start, uint32
 }
 
 /**
+ * @brief Is this page part of a module the bootloader loaded for us?
+ *
+ * GRUB places multiboot modules (the game cartridge, among others) in ordinary
+ * RAM, and the memory map still reports that RAM as available. Handing those
+ * frames out would let the heap, a page table, or anything else scribble over a
+ * module before it is read — the same class of silent corruption as the orphan
+ * linker sections that escaped past _kernel_end. Modules are therefore excluded
+ * from the free lists exactly like the kernel image is.
+ *
+ * @param phys_addr Physical page-aligned address to test.
+ * @return true when the page overlaps any loaded module (or its command line).
+ */
+static bool pmm_is_boot_module_page(uint32_t phys_addr)
+{
+    extern MultibootInfo_t *multiboot_info;
+
+    if (!multiboot_info)
+        return false;
+    if (!(multiboot_info->flags & (1u << 3)))
+        return false;
+    if (!multiboot_info->mods_count || !multiboot_info->mods_addr)
+        return false;
+
+    Module_t *modules = (Module_t *) (uintptr_t) pmm_phys_to_virt((uint32_t) (uintptr_t) multiboot_info->mods_addr);
+
+    /* The module descriptor array itself lives in bootloader-provided memory,
+       so it has to survive too: losing it costs us every module at once. */
+    uint32_t table_start = (uint32_t) (uintptr_t) multiboot_info->mods_addr;
+    uint32_t table_end = table_start + multiboot_info->mods_count * (uint32_t) sizeof(Module_t);
+    if (phys_addr + PAGE_SIZE > table_start && phys_addr < table_end)
+        return true;
+
+    for (uint32_t i = 0u; i < multiboot_info->mods_count; ++i)
+    {
+        uint32_t start = modules[i].mod_start;
+        uint32_t end = modules[i].mod_end;
+        if (end <= start)
+            continue;
+        /* Overlap, not containment: a module rarely starts or ends on a page
+           boundary, and a partially covered page must still be withheld. */
+        if (phys_addr + PAGE_SIZE > start && phys_addr < end)
+            return true;
+    }
+    return false;
+}
+
+/**
  * @brief Advance to the next Multiboot mmap entry.
  * @param mmap_base   Virtual base of the mmap buffer.
  * @param mmap_length Total length of the mmap buffer.
@@ -795,6 +842,8 @@ void physical_memory_manager_initialize(void)
                         continue;
                     if (pmm_is_kernel_page(addr, kernel_phys_start, kernel_phys_end))
                         continue;
+                    if (pmm_is_boot_module_page(addr))
+                        continue;
                     if (addr >= PMM_BOOT_MAP_LIMIT)
                         continue;
                     if (addr >= PMM_MAX_PHYS_ADDR)
@@ -847,6 +896,8 @@ void physical_memory_manager_extend_mapping(void)
                     if (addr < PMM_BOOT_MAP_LIMIT)
                         continue;
                     if (addr >= PMM_MAX_PHYS_ADDR)
+                        continue;
+                    if (pmm_is_boot_module_page(addr))
                         continue;
 
                     uint32_t virt_addr = pmm_phys_to_virt(addr);

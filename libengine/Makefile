@@ -38,6 +38,10 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/scene/include \
           -I$(LPLPLUGIN_ROOT)/render/include \
           -I$(LPLPLUGIN_ROOT)/engine/include \
+          -I$(LPLPLUGIN_ROOT)/procgen/include \
+          -I$(LPLPLUGIN_ROOT)/ai/include \
+          -I$(LPLPLUGIN_ROOT)/ecology/include \
+          -I$(LPLPLUGIN_ROOT)/pack/include \
           -I$(LPLPLUGIN_ROOT)/samples/include
 
 ARCHDIR=arch/$(HOSTARCH)
@@ -66,6 +70,8 @@ obj/local/smoke/p4_scene_smoke.o \
 obj/local/smoke/p5_render_smoke.o \
 obj/local/smoke/p5_render_present_smoke.o \
 obj/local/smoke/p6_smoke.o \
+obj/local/smoke/p7_procgen_smoke.o \
+obj/local/smoke/p8_living_smoke.o \
 obj/local/smoke/sim_fold_smoke.o \
 obj/local/client_app.o \
 obj/local/server_app.o

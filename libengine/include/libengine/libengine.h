@@ -326,6 +326,100 @@ typedef struct {
 extern void libengine_sim_fold(libengine_sim_fold_result_t *out);
 
 /*
+** Procedural world parity fold. Bakes lpl::procgen::parityWorldRecipe() — fBm
+** terrain, thermal and hydraulic erosion, depression filling and drainage, river
+** carving, the rainfall/rain-shadow climate, Whittaker biomes, a blue-noise prop
+** scatter, a cellular cave with its connectivity repair, a Voronoi-districted
+** settlement, then the playability verdict — into a real ECS registry and folds
+** what it produced.
+**
+** Three signatures rather than one. The entity fold only sees where cubes ended
+** up, so every pass that reshapes the terrain without moving one — the climate,
+** most of erosion — would be invisible to it. Folding the height field and the
+** biome map puts the grids under the contract, which is where the arithmetic
+** that could diverge between targets actually lives.
+**
+** A generated world is authoritative state, not authoring tooling, so it falls
+** under the same HARD determinism contract as the simulation fold above: the
+** Linux oracle (tests/parity/test_world_recipe.cpp) bakes the SAME recipe from
+** the SAME constexpr definition and must produce identical signatures. The
+** recipe lives in one place (lpl/procgen/WorldRecipe.hpp) precisely so the two
+** sides cannot drift by editing separate copies of the parameters.
+**
+** The recipe is decoded from a baked .lplpak image through lpl::pack, the same
+** freestanding reader a cartridge or a network transfer will feed. The editor
+** authors a .lplscene document, a host tool bakes it, and the kernel rebuilds
+** the world from the bytes — no JSON parser in ring 0.
+*/
+typedef struct {
+    uint32_t pack_ok;         /* the baked .lplpak image opened and decoded        */
+    uint32_t from_cartridge;  /* 1 = bytes came from a boot module, 0 = built-in   */
+    uint32_t entity_count;    /* entities materialised by every pass               */
+    uint32_t state_sig;       /* FNV-1a fold of authoritative Fixed32 entity state */
+    uint32_t height_sig;      /* FNV-1a fold of the final height field             */
+    uint32_t biome_sig;       /* FNV-1a fold of the biome map                      */
+    uint32_t river_cells;     /* cells carved as river                             */
+    uint32_t road_cells;      /* cells the road network occupies                   */
+    uint32_t lake_cells;      /* cells holding standing water                      */
+    uint32_t cave_floor;      /* open cells in the underground layer               */
+    uint32_t plots;           /* building footprints the settlement laid out       */
+    uint32_t gate_reachable;  /* 1 if the playability gate found the goal reachable */
+    uint32_t gate_visited;    /* cells the gate's flood actually reached           */
+    uint32_t gate_path_length;/* steps from entrance to exit                       */
+    uint32_t world_ok;        /* world is non-empty AND passes its gate            */
+} libengine_procgen_fold_result_t;
+
+/*
+** Bakes a world from a .lplpak image. Pass the bytes of a boot module (the
+** cartridge) to load a real game; pass NULL to fall back to the reference pack
+** compiled into the image, which is what the parity gate folds when no
+** cartridge is present. Either way the SAME freestanding reader runs.
+*/
+extern void libengine_procgen_fold_from(const void *pack_bytes, uint32_t pack_size,
+                                        libengine_procgen_fold_result_t *out);
+
+/* Convenience: libengine_procgen_fold_from(NULL, 0, out). */
+extern void libengine_procgen_fold(libengine_procgen_fold_result_t *out);
+
+/*
+** Living simulation parity fold. Runs lpl::ecology::parityLivingRecipe() — a
+** four-level trophic web, a breeding population under mutation, a pheromone
+** field with agents walking it, a flock, an abstract world migrating creatures
+** between rooms under a realisation budget, and the pack life cycle — for a
+** fixed number of ticks, then folds every subsystem.
+**
+** This is the fold the world gate CANNOT make. libengine_procgen_fold above
+** folds a world that was generated: it proves the shape of the world crosses
+** targets intact, and then stops, because a recipe's last pass is the last thing
+** it can see. Everything ai/ and ecology/ do happens afterwards, so those two
+** modules were linked into ring 0 with their determinism checked on the host and
+** merely assumed on the target — the one assumption this project refuses to make
+** anywhere else. This closes that.
+**
+** Four signatures, for the same reason the world gate has three: populations,
+** genomes, the field and the social layer diverge for entirely unrelated
+** reasons, and a single number would say only that something moved.
+**
+** The Linux oracle is tests/parity/test_living_parity.cpp, running the SAME
+** recipe from the SAME constexpr definition in lpl/ecology/LivingRecipe.hpp.
+*/
+typedef struct {
+    uint32_t population_sig; /* FNV-1a fold of every species' head count          */
+    uint32_t genome_sig;     /* FNV-1a fold of every gene of every genome         */
+    uint32_t stigmergy_sig;  /* FNV-1a fold of every channel of the field         */
+    uint32_t social_sig;     /* FNV-1a fold of the abstract world and the packs   */
+    uint32_t extinctions;    /* species that fell to their refuge floor           */
+    uint32_t anomalies;      /* genomes k sigma above the population mean         */
+    uint32_t realised_rooms; /* rooms holding bodies when the run ended           */
+    uint32_t migrations;     /* abstract room transitions over the whole run      */
+    uint32_t alpha_changes;  /* times a pack changed leader                       */
+    uint32_t trail_cells;    /* field cells still above the evaporation floor     */
+    uint32_t living_ok;      /* the run is well formed (see LivingRecipe.hpp)     */
+} libengine_living_fold_result_t;
+
+extern void libengine_living_fold(libengine_living_fold_result_t *out);
+
+/*
 ** Kernel client entry point — the freestanding mirror of apps/client/main.cpp.
 ** Builds an engine Config, constructs lpl::engine::Engine with a KernelPlatform
 ** and an application payload, then init/run/shutdown. Blocks until the payload

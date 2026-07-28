@@ -210,12 +210,17 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "scene/include"),
         path.join(LPLPLUGIN_ROOT, "render/include"),
         path.join(LPLPLUGIN_ROOT, "engine/include"),
+        path.join(LPLPLUGIN_ROOT, "procgen/include"),
+        path.join(LPLPLUGIN_ROOT, "ai/include"),
+        path.join(LPLPLUGIN_ROOT, "ecology/include"),
+        path.join(LPLPLUGIN_ROOT, "pack/include"),
         path.join(LPLPLUGIN_ROOT, "samples/include")
     )
     -- Engine sources (single source of truth), mirroring ARCH_ENGINE_SRCS.
     add_files(
         path.join(LPLPLUGIN_ROOT, "core/src/Log.cpp"),
         path.join(LPLPLUGIN_ROOT, "math/src/Cordic.cpp"),
+        path.join(LPLPLUGIN_ROOT, "math/src/StateHash.cpp"),
         path.join(LPLPLUGIN_ROOT, "math/src/Statistics.cpp"),
         path.join(LPLPLUGIN_ROOT, "math/src/Simd.cpp"),
         path.join(LPLPLUGIN_ROOT, "memory/src/ArenaAllocator.cpp"),
@@ -229,6 +234,47 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "physics/src/AntiTunneling.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/Octree.cpp"),
         path.join(LPLPLUGIN_ROOT, "physics/src/CpuPhysicsBackend.cpp"),
+        -- procgen/: authoritative Fixed32 world generation (see the rationale in
+        -- libengine/arch/i386/make.config). Kept in lock-step with that list.
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Heightfield.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Erosion.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Hydrology.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Biome.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/WaveFunctionCollapse.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Dungeon.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/WorldBuilder.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Voronoi.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Aggregation.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/LSystem.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Settlement.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Extrusion.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Chunking.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/QualityGate.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Routing.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/WorldRecipe.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Climate.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/ShapeGrammar.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Liminal.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/CaveSystem.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/HiGen.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Streaming.cpp"),
+
+        -- ai/: authoritative agent behaviour. A creature deciding where to go
+        -- moves an entity, so it is simulation state like any other.
+        path.join(LPLPLUGIN_ROOT, "ai/src/StigmergyField.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ai/src/AiMap.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ai/src/AbstractWorld.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ai/src/Swarm.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ai/src/Social.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ai/src/SpringBody.cpp"),
+
+        -- ecology/: populations over time. Slower tick, same contract.
+        path.join(LPLPLUGIN_ROOT, "ecology/src/Populations.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ecology/src/Genome.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ecology/src/Society.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ecology/src/LivingRecipe.cpp"),
+        -- pack/: the freestanding reader for baked game packages (.lplpak).
+        path.join(LPLPLUGIN_ROOT, "pack/src/GamePack.cpp"),
         path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp"),
         path.join(LPLPLUGIN_ROOT, "input/src/InputManager.cpp"),
         path.join(LPLPLUGIN_ROOT, "image/src/Image.cpp"),

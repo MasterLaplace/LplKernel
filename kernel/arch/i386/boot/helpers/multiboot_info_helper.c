@@ -29,6 +29,31 @@ static inline void *physical_to_virtual_low(uint32_t phys_addr, uint32_t kernel_
     return (phys_addr < 0x100000) ? (void *) (phys_addr + kernel_start) : NULL;
 }
 
+/**
+ * @brief Physical to virtual for bootloader modules.
+ *
+ * physical_to_virtual_low() caps at 1 MiB, which is right for the structures
+ * GRUB leaves in low memory but wrong for modules: those are loaded above the
+ * kernel, several MiB up. boot.S installs 16 page tables, so the higher-half
+ * direct map covers the first 64 MiB from the very first instruction — that,
+ * not 1 MiB, is the reachable window here. Anything beyond it is refused rather
+ * than faulted on.
+ */
+static inline void *physical_to_virtual_boot_mapped(uint32_t phys_addr, uint32_t kernel_start)
+{
+    return (phys_addr < 0x04000000u) ? (void *) (uintptr_t) (phys_addr + kernel_start) : NULL;
+}
+
+/** @brief print_multiboot_string() for strings that live with a module. */
+static inline void print_multiboot_string_boot_mapped(uint32_t phys_addr, uint32_t kernel_start, const char *label)
+{
+    char *str = (char *) physical_to_virtual_boot_mapped(phys_addr, kernel_start);
+
+    terminal_write_string(label);
+    terminal_write_string(str ? str : "<unreachable>");
+    terminal_write_string("\n");
+}
+
 static inline void print_multiboot_string(uint32_t phys_addr, uint32_t kernel_start, const char *label)
 {
     char *str = (char *) physical_to_virtual_low(phys_addr, kernel_start);
@@ -111,7 +136,7 @@ void print_multiboot_info_module(uint32_t kernel_start, Module_t *module)
     terminal_write_string("\nModule string address: 0x");
     terminal_write_number(module->string, 16);
     terminal_write_string("\n");
-    print_multiboot_string(module->string, kernel_start, "Module string: ");
+    print_multiboot_string_boot_mapped(module->string, kernel_start, "Module string: ");
 }
 
 void print_multiboot_info_aout_symbol_table(AOutSymbolTable_t *aout_sym)
@@ -391,9 +416,20 @@ void print_multiboot_info(uint32_t kernel_start, MultibootInfo_t *mbi)
         terminal_write_number(mbi->mods_count, 10);
         terminal_write_string("\n");
 
-        for (uint32_t i = 0; i < mbi->mods_count; i++)
+        /* mods_addr is a PHYSICAL address despite its pointer type. Nothing
+           dereferenced it until a module was actually present (the cartridge),
+           at which point reading it as a virtual pointer faulted. */
+        Module_t *modules =
+            (Module_t *) physical_to_virtual_boot_mapped((uint32_t) (uintptr_t) mbi->mods_addr, kernel_start);
+
+        if (modules)
         {
-            print_multiboot_info_module(kernel_start, &mbi->mods_addr[i]);
+            for (uint32_t i = 0; i < mbi->mods_count; i++)
+                print_multiboot_info_module(kernel_start, &modules[i]);
+        }
+        else
+        {
+            terminal_write_string("Modules unreachable (outside the boot map)\n");
         }
     }
 
@@ -505,7 +541,7 @@ void write_multiboot_info_module(Serial_t *serial, uint32_t kernel_start, Module
     serial_write_string(serial, "\nModule string address: ");
     serial_write_hex32(serial, module->string);
     serial_write_string(serial, "\n");
-    char *s = (char *) physical_to_virtual_low(module->string, kernel_start);
+    char *s = (char *) physical_to_virtual_boot_mapped(module->string, kernel_start);
 
     if (s)
     {
@@ -778,8 +814,19 @@ void write_multiboot_info(Serial_t *serial, uint32_t kernel_start, MultibootInfo
         serial_write_string(serial, "Modules count: ");
         serial_write_int(serial, mbi->mods_count);
         serial_write_string(serial, "\n");
-        for (uint32_t i = 0; i < mbi->mods_count; i++)
-            write_multiboot_info_module(serial, kernel_start, &mbi->mods_addr[i]);
+        /* Physical address, see the note in print_multiboot_info(). */
+        Module_t *modules =
+            (Module_t *) physical_to_virtual_boot_mapped((uint32_t) (uintptr_t) mbi->mods_addr, kernel_start);
+
+        if (modules)
+        {
+            for (uint32_t i = 0; i < mbi->mods_count; i++)
+                write_multiboot_info_module(serial, kernel_start, &modules[i]);
+        }
+        else
+        {
+            serial_write_string(serial, "Modules unreachable (outside the boot map)\n");
+        }
     }
 
     if (mbi->flags & ((1 << 4) | (1 << 5)))

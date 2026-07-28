@@ -5,6 +5,7 @@
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
 
+#    include <kernel/boot/boot_module.h>
 #    include <kernel/boot/init_array.h>
 #    include <kernel/hal/hal.h>
 
@@ -418,6 +419,87 @@ void smoke_libengine_run_all(Serial_t *com1)
         {
             serial_write_string(com1, sim_rows[i].label);
             serial_write_hex32(com1, sim_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* Procedural world (P7): bake a seed into a real ECS world — terrain,
+       erosion, drainage and rivers, climate and biomes, blue-noise scatter, a
+       cellular cave and a settlement — and fold the grids AND the authoritative
+       Fixed32 state. Must match tests/parity/test_world_recipe.cpp bit-for-bit;
+       this is what lets the kernel replay a world by seed rather than by parsing
+       a .lplscene in ring 0. */
+    {
+        libengine_procgen_fold_result_t world;
+        /* Prefer a cartridge: if GRUB loaded a .lplpak module alongside the
+           kernel, that is the game to build. With no cartridge the built-in
+           reference pack keeps the parity gate meaningful. */
+        const uint8_t *cartridge = NULL;
+        uint32_t cartridge_size = 0u;
+        if (boot_module_find(".lplpak", &cartridge, &cartridge_size))
+            libengine_procgen_fold_from(cartridge, cartridge_size, &world);
+        else
+            libengine_procgen_fold(&world);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } world_rows[] = {
+            {"pack_ok=",      world.pack_ok         },
+            {", cartridge=",  world.from_cartridge  },
+            {", entities=",   world.entity_count    },
+            {", state_sig=",  world.state_sig       },
+            {", height_sig=", world.height_sig      },
+            {", biome_sig=",  world.biome_sig       },
+            {", rivers=",     world.river_cells     },
+            {", roads=",      world.road_cells      },
+            {", lakes=",      world.lake_cells      },
+            {", cave_floor=", world.cave_floor      },
+            {", plots=",      world.plots           },
+            {", reachable=",  world.gate_reachable  },
+            {", visited=",    world.gate_visited    },
+            {", path_len=",   world.gate_path_length},
+            {", world_ok=",   world.world_ok        },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P7 procgen world: ");
+        for (size_t i = 0u; i < sizeof(world_rows) / sizeof(world_rows[0]); ++i)
+        {
+            serial_write_string(com1, world_rows[i].label);
+            serial_write_hex32(com1, world_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* Living simulation (P8): the fold P7 cannot make. P7 proves the world's
+       SHAPE crosses targets intact and then stops, because a recipe's last pass
+       is the last thing it can see — everything ai/ and ecology/ do happens
+       afterwards. This runs a trophic web, a breeding population, a pheromone
+       field with agents on it, a flock, an abstract world under a realisation
+       budget and the pack life cycle for a fixed number of ticks, and folds all
+       four. Must match tests/parity/test_living_parity.cpp bit-for-bit. */
+    {
+        libengine_living_fold_result_t living;
+        libengine_living_fold(&living);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } living_rows[] = {
+            {"population_sig=",  living.population_sig},
+            {", genome_sig=",    living.genome_sig    },
+            {", stigmergy_sig=", living.stigmergy_sig },
+            {", social_sig=",    living.social_sig    },
+            {", extinctions=",   living.extinctions   },
+            {", anomalies=",     living.anomalies     },
+            {", realised=",      living.realised_rooms},
+            {", migrations=",    living.migrations    },
+            {", alphas=",        living.alpha_changes },
+            {", trail_cells=",   living.trail_cells   },
+            {", living_ok=",     living.living_ok     },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P8 living sim: ");
+        for (size_t i = 0u; i < sizeof(living_rows) / sizeof(living_rows[0]); ++i)
+        {
+            serial_write_string(com1, living_rows[i].label);
+            serial_write_hex32(com1, living_rows[i].value);
         }
         serial_write_string(com1, "\n");
     }
