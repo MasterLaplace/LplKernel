@@ -28,7 +28,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           data-profile="client"
           aria-pressed="false"
           class="px-3 py-1.5 rounded-none border border-lpl-border text-lpl-muted font-mono hover:text-lpl-text"
-          >Graphics</button
+          >World viewer</button
         >
       </div>
     </div>
@@ -76,7 +76,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     <p class="mt-3 text-xs text-lpl-muted">
       In the <strong>text</strong> profile you can type commands: <span class="font-mono"
         >help, stats, kbd, layout fr, pci</span
-      >. Click the screen to capture your keyboard. Runs single-threaded (GitHub Pages can't set
+      >. In the <strong>world</strong> profile: <span class="font-mono">WASD</span> orbits the
+      camera, <span class="font-mono">Q/E</span> zooms, <span class="font-mono">B</span> cycles the
+      shading (biome, elevation, moisture) and <span class="font-mono">N</span> generates a new
+      world. Click the screen to capture your keyboard. Runs single-threaded (GitHub Pages can't set
       cross-origin isolation headers), so boot takes a few seconds.
     </p>
 
@@ -102,15 +105,23 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           <span class="font-mono">layout fr</span> and <span class="font-mono">pci</span>.
         </p>
         <p>
-          In the <strong>graphics</strong> profile, the kernel switches to a VBE framebuffer and runs
-          the engine's sample simulation: a pile of 1024 cubes falling onto a ground plane under
-          gravity, colliding with each other, drawn over a perspective grid by the software
-          rasterizer, with a heads-up display in the corner reporting the frame rate and the entity
-          count.
+          In the <strong>world</strong> profile, the kernel switches to a VBE framebuffer and
+          <em>generates a landscape</em> — value noise, thermal and hydraulic erosion, depression
+          filling, drainage and rivers, then a climate and a biome classification. The result is
+          drawn in perspective by the engine's software rasterizer: snow on the peaks, grassland and
+          desert in the interior, rivers cut into the relief, a sea plane at the shoreline, conifers
+          on the wooded cells, and a herd of grazers and hunters walking over it. A heads-up display
+          reports the seed, how many biomes came out, how much vegetation is standing and what the
+          herd has eaten. Pressing <span class="font-mono">N</span> generates an entirely new world.
         </p>
         <p>
-          The same simulation is verified bit-for-bit against a Linux reference run — that
-          determinism result is written up in the <a
+          Nothing there is a recording or a baked asset. There is no userspace and no filesystem in
+          this profile: a freestanding i686 kernel is running the procedural generation, the ecology
+          and the rasterizer itself, between an interrupt handler and a page fault.
+        </p>
+        <p>
+          Both the generated world and the simulation running on it are verified bit-for-bit against
+          a Linux reference run — that determinism result is written up in the <a
             href={`${base}/blog`}
             class="text-lpl-accent underline">papers</a
           >, in text.
@@ -125,7 +136,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 
   const PROFILES = {
     server: { iso: "lpl-server.iso", graphics: false, label: "text" },
-    client: { iso: "lpl-client.iso", graphics: true, label: "graphics" },
+    client: { iso: "lpl-client.iso", graphics: true, label: "world" },
   } as const;
   type ProfileKey = keyof typeof PROFILES;
 

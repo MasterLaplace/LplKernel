@@ -20,6 +20,7 @@
 #include <lpl/engine/Engine.hpp>
 #include <lpl/platform/kernel/KernelPlatform.hpp>
 #include <lpl/samples/CubePileWorld.hpp>
+#include <lpl/samples/TerrainWorld.hpp>
 #include <lpl/std/memory.hpp>
 
 #include "libengine/libengine.h"
@@ -67,8 +68,20 @@ extern "C" void libengine_client_app_run(void)
                       .enableRealTimeGuard(true)
                       .build();
 
+    // Which World the client profile runs.
+    //
+    // TerrainWorld is the showcase: it generates a landscape in ring 0 from a
+    // seed — the same lpl::procgen passes the host folds — and runs the ai/ and
+    // ecology/ modules on it. CubePileWorld remains the physics demo and, more
+    // importantly, the shape the parity oracle exercises; switching the payload
+    // does not touch that gate, which folds runCubePileAndFold directly and never
+    // goes through a World.
     lpl::engine::Engine engine{config, lpl::pmr::make_unique<lpl::platform::kernel::KernelPlatform>(),
+#if defined(LPL_KERNEL_WORLD_CUBEPILE)
                                lpl::pmr::make_unique<lpl::samples::CubePileWorld>()};
+#else
+                               lpl::pmr::make_unique<lpl::samples::TerrainWorld>()};
+#endif
 
     if (auto result = engine.init(); !result)
     {
