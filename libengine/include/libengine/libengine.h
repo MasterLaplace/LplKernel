@@ -421,13 +421,19 @@ extern void libengine_living_fold(libengine_living_fold_result_t *out);
 
 /*
 ** Kernel client entry point — the freestanding mirror of apps/client/main.cpp.
+**
+** Takes the cartridge the same way the parity fold does: pass the bytes of a
+** .lplpak boot module to run THAT game, or NULL to fall back to the reference
+** pack compiled into the image. The world the viewer draws is then the world the
+** .lplscene document describes, decoded by the same freestanding reader — not a
+** pipeline the cartridge cannot reach.
 ** Builds an engine Config, constructs lpl::engine::Engine with a KernelPlatform
 ** and an application payload, then init/run/shutdown. Blocks until the payload
 ** requests shutdown. The kernel passes no game state: which simulation runs is
 ** decided entirely engine-side, by the payload libengine/src/client_app.cpp
 ** injects.
 */
-extern void libengine_client_app_run(void);
+extern void libengine_client_app_run(const void *pack_bytes, uint32_t pack_size);
 
 /*
 ** Kernel server entry point — the freestanding mirror of apps/server/main.cpp.

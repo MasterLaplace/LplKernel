@@ -1,4 +1,5 @@
 #define __LPL_KERNEL__
+#include <kernel/boot/boot_module.h>
 #include <kernel/config.h>
 #include <kernel/cpu/stack_guard.h>
 
@@ -355,7 +356,12 @@ void kernel_main(void)
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: client app unavailable (no engine module)\n");
         kernel_sysmon_run(&com1);
 #else
-        libengine_client_app_run();
+        const uint8_t *cartridge = NULL;
+        uint32_t cartridge_size = 0u;
+        if (boot_module_find("world.lplpak", &cartridge, &cartridge_size))
+            libengine_client_app_run(cartridge, cartridge_size);
+        else
+            libengine_client_app_run(NULL, 0u);
 #endif
     }
     else

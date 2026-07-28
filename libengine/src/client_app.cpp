@@ -19,18 +19,74 @@
 #include <lpl/engine/Config.hpp>
 #include <lpl/engine/Engine.hpp>
 #include <lpl/platform/kernel/KernelPlatform.hpp>
+#include <lpl/pack/GamePack.hpp>
+#include <lpl/pack/ParityPackBlob.hpp>
+#include <lpl/pack/RecipeCodec.hpp>
+#include <lpl/ecology/LivingRecipe.hpp>
+#include <lpl/procgen/WorldRecipe.hpp>
 #include <lpl/samples/CubePileWorld.hpp>
 #include <lpl/samples/TerrainWorld.hpp>
 #include <lpl/std/memory.hpp>
 
 #include "libengine/libengine.h"
 
-extern "C" void libengine_client_app_run(void)
+extern "C" void libengine_client_app_run(const void *pack_bytes, lpl::core::u32 pack_size)
 {
     static lpl::platform::kernel::KernelLogger logger;
     lpl::core::Log::setLogger(&logger);
 
     lpl::core::Log::info("=== LplKernel Client ===");
+
+    // ── The game arrives as bytes, not as code ───────────────────────────────
+    //
+    // A cartridge (.lplpak GRUB module) when GRUB loaded one, the reference pack
+    // compiled into the image otherwise. Same freestanding reader, same content
+    // hash, same wire layout as the parity gate uses — there is no second path
+    // by which a world can reach ring 0.
+    //
+    // A cartridge that fails to validate is NOT silently replaced by the built-in
+    // one: a corrupt game must be reported, not papered over.
+    lpl::procgen::WorldRecipe recipe = lpl::procgen::parityWorldRecipe();
+    lpl::ecology::LivingRecipe living = lpl::ecology::parityLivingRecipe();
+    {
+        const lpl::core::u8 *bytes = lpl::pack::kParityPackBytes;
+        lpl::core::u32 size = lpl::pack::kParityPackSize;
+        bool fromCartridge = false;
+        if (pack_bytes != nullptr && pack_size != 0u)
+        {
+            bytes = static_cast<const lpl::core::u8 *>(pack_bytes);
+            size = pack_size;
+            fromCartridge = true;
+        }
+
+        lpl::pack::View view;
+        lpl::pack::RecipeV1 wire{};
+        if (view.open(bytes, size) && view.readRecipe(wire))
+        {
+            recipe = lpl::pack::toEngineRecipe(wire);
+            lpl::core::Log::info(fromCartridge ? "Client: world decoded from the cartridge"
+                                               : "Client: world decoded from the built-in pack");
+
+            // The ecosystem is a SEPARATE section, and its absence is legitimate:
+            // a cartridge may describe a world with nothing declared living on
+            // it, and the host then keeps its own defaults. Only a wrong-sized
+            // section is refused, by the reader.
+            lpl::pack::LivingV1 livingWire{};
+            if (view.readLiving(livingWire))
+            {
+                living = lpl::pack::toEngineLiving(livingWire);
+                lpl::core::Log::info("Client: ecosystem decoded from the pack");
+            }
+            else
+            {
+                lpl::core::Log::info("Client: the pack declares no ecosystem, using the built-in one");
+            }
+        }
+        else
+        {
+            lpl::core::Log::error("Client: the pack failed to validate — falling back to the compiled recipe");
+        }
+    }
 
     // Budgets are sized for the kernel's 4 MiB heap, not a desktop's. The hosted
     // client's defaults (a 64 MiB arena, 65536 world cells) would exhaust it
@@ -80,7 +136,7 @@ extern "C" void libengine_client_app_run(void)
 #if defined(LPL_KERNEL_WORLD_CUBEPILE)
                                lpl::pmr::make_unique<lpl::samples::CubePileWorld>()};
 #else
-                               lpl::pmr::make_unique<lpl::samples::TerrainWorld>()};
+                               lpl::pmr::make_unique<lpl::samples::TerrainWorld>(recipe, living)};
 #endif
 
     if (auto result = engine.init(); !result)

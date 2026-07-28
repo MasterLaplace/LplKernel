@@ -5,6 +5,17 @@
 *.iso
 *.kernel
 
+# Baked cartridges. The SOURCE is assets/games/*.lplscene, which is tracked; the
+# .lplpak is what lpl-bake produces from it at every ISO build, exactly like the
+# .iso above. Nothing reads a committed one — the kernel's built-in fallback is
+# the checked-in ParityPackBlob.hpp, a C header, not a pack file.
+#
+# NOTE: should a game ever ship as a cartridge in the repo (the Flakkari pattern
+# the design cites, where a game is distributed by git), this blanket rule would
+# exclude it silently. Add a negation for that one path rather than dropping the
+# rule.
+*.lplpak
+
 # xmake build output + cache
 build/
 .xmake/

@@ -436,7 +436,11 @@ void smoke_libengine_run_all(Serial_t *com1)
            reference pack keeps the parity gate meaningful. */
         const uint8_t *cartridge = NULL;
         uint32_t cartridge_size = 0u;
-        if (boot_module_find(".lplpak", &cartridge, &cartridge_size))
+        /* "game.lplpak" and not ".lplpak": the ISO now carries a second cartridge
+           for the world viewer, and matching on the bare extension would hand the
+           gate whichever module GRUB listed first — folding a world the oracle
+           never baked, intermittently, depending on module order. */
+        if (boot_module_find("game.lplpak", &cartridge, &cartridge_size))
             libengine_procgen_fold_from(cartridge, cartridge_size, &world);
         else
             libengine_procgen_fold(&world);
