@@ -66,7 +66,8 @@ bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *o
     if (count == 0u)
         return false;
 
-    const Module_t *modules = (const Module_t *) boot_module_phys_to_virt((uint32_t) (uintptr_t) multiboot_info->mods_addr);
+    const Module_t *modules =
+        (const Module_t *) boot_module_phys_to_virt((uint32_t) (uintptr_t) multiboot_info->mods_addr);
     const uint32_t suffix_length = boot_module_string_length(suffix, 64u);
 
     for (uint32_t i = 0u; i < count; ++i)

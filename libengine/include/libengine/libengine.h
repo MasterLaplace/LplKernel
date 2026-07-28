@@ -352,21 +352,21 @@ extern void libengine_sim_fold(libengine_sim_fold_result_t *out);
 ** the world from the bytes — no JSON parser in ring 0.
 */
 typedef struct {
-    uint32_t pack_ok;         /* the baked .lplpak image opened and decoded        */
-    uint32_t from_cartridge;  /* 1 = bytes came from a boot module, 0 = built-in   */
-    uint32_t entity_count;    /* entities materialised by every pass               */
-    uint32_t state_sig;       /* FNV-1a fold of authoritative Fixed32 entity state */
-    uint32_t height_sig;      /* FNV-1a fold of the final height field             */
-    uint32_t biome_sig;       /* FNV-1a fold of the biome map                      */
-    uint32_t river_cells;     /* cells carved as river                             */
-    uint32_t road_cells;      /* cells the road network occupies                   */
-    uint32_t lake_cells;      /* cells holding standing water                      */
-    uint32_t cave_floor;      /* open cells in the underground layer               */
-    uint32_t plots;           /* building footprints the settlement laid out       */
-    uint32_t gate_reachable;  /* 1 if the playability gate found the goal reachable */
-    uint32_t gate_visited;    /* cells the gate's flood actually reached           */
-    uint32_t gate_path_length;/* steps from entrance to exit                       */
-    uint32_t world_ok;        /* world is non-empty AND passes its gate            */
+    uint32_t pack_ok;          /* the baked .lplpak image opened and decoded        */
+    uint32_t from_cartridge;   /* 1 = bytes came from a boot module, 0 = built-in   */
+    uint32_t entity_count;     /* entities materialised by every pass               */
+    uint32_t state_sig;        /* FNV-1a fold of authoritative Fixed32 entity state */
+    uint32_t height_sig;       /* FNV-1a fold of the final height field             */
+    uint32_t biome_sig;        /* FNV-1a fold of the biome map                      */
+    uint32_t river_cells;      /* cells carved as river                             */
+    uint32_t road_cells;       /* cells the road network occupies                   */
+    uint32_t lake_cells;       /* cells holding standing water                      */
+    uint32_t cave_floor;       /* open cells in the underground layer               */
+    uint32_t plots;            /* building footprints the settlement laid out       */
+    uint32_t gate_reachable;   /* 1 if the playability gate found the goal reachable */
+    uint32_t gate_visited;     /* cells the gate's flood actually reached           */
+    uint32_t gate_path_length; /* steps from entrance to exit                       */
+    uint32_t world_ok;         /* world is non-empty AND passes its gate            */
 } libengine_procgen_fold_result_t;
 
 /*
