@@ -248,6 +248,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "procgen/src/LSystem.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Settlement.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Extrusion.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Botany.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Chunking.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/QualityGate.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Routing.cpp"),

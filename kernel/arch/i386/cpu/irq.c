@@ -1,5 +1,7 @@
 #include <kernel/cpu/irq.h>
 
+#include <kernel/drivers/ps2_mouse.h>
+
 #define IRQ_LINE_COUNT        16u
 #define IRQ_CASCADE_LINE      2u
 #define IRQ_TIMER_LINE        0u
@@ -75,6 +77,10 @@ void interrupt_request_initialize(void)
     interrupt_service_routine_register_handler(IRQ_SPURIOUS7_VECTOR, interrupt_request_spurious_irq7_handler);
     interrupt_service_routine_register_handler(IRQ_SPURIOUS15_VECTOR, interrupt_request_spurious_irq15_handler);
     keyboard_interrupt_initialize();
+    /* Probing costs a bounded number of controller reads and reports failure
+       rather than hanging, so a machine with no pointing device pays nothing but
+       the probe. */
+    (void) personal_system_2_mouse_initialize();
     realtime_clock_initialize();
 
     if (interrupt_request_rtc_periodic_enabled)

@@ -135,6 +135,27 @@ bool hardware_abstraction_layer_input_try_pop_character(char *out_character);
  */
 uint32_t hardware_abstraction_layer_input_pending_count(void);
 
+/**
+ * @brief Pop one relative pointer motion, with the buttons held at the time.
+ *
+ * Relative, not absolute: the device reports movement and the kernel refuses to
+ * invent a screen it does not own. A camera consumes the deltas directly; a
+ * cursor accumulates them against a resolution only the caller knows.
+ *
+ * @param out_delta_x Rightward movement.
+ * @param out_delta_y Upward movement, as the device reports it (NOT screen-down).
+ * @param out_buttons Bit 0 left, bit 1 right, bit 2 middle.
+ * @return true if a complete report was popped.
+ */
+bool hardware_abstraction_layer_input_try_pop_pointer(int32_t *out_delta_x, int32_t *out_delta_y,
+                                                      uint32_t *out_buttons);
+
+/**
+ * @brief Whether a pointing device answered at boot.
+ * @return true if a pointing device was found at boot.
+ */
+bool hardware_abstraction_layer_input_pointer_available(void);
+
 /* ----------------------------------------------------------------------------
  * Console (diagnostic text sink)
  *

@@ -507,6 +507,59 @@ void smoke_libengine_run_all(Serial_t *com1)
         }
         serial_write_string(com1, "\n");
     }
+
+    /* Endless world (P9): the third gate. P7 folds the world a recipe BUILDS,
+       P8 the simulation that RUNS on it, and this one the world that STREAMS —
+       terrain at absolute coordinates, rivers from a bounded basin and a coarse
+       trunk level. The seam count is folded alongside the signatures because two
+       targets agreeing on a seamed world would pass a signature check every
+       time. Must match tests/parity/test_procgen_chunking.cpp. */
+    {
+        libengine_endless_fold_result_t endless;
+        libengine_endless_fold(&endless);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } endless_rows[] = {
+            {"height_sig=",  endless.height_sig     },
+            {", river_sig=", endless.river_sig      },
+            {", chunks=",    endless.chunks         },
+            {", river=",     endless.river_cells    },
+            {", seams=",     endless.seam_mismatches},
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P9 endless world: ");
+        for (size_t i = 0u; i < sizeof(endless_rows) / sizeof(endless_rows[0]); ++i)
+        {
+            serial_write_string(com1, endless_rows[i].label);
+            serial_write_hex32(com1, endless_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* Botany (P10): the shape a grammar grows. Folded because the 3D turtle is
+       CORDIC end to end — the same rotations the camera basis and the terrain
+       noise are built from. Must match tests/parity/test_botany_parity.cpp. */
+    {
+        libengine_botany_fold_result_t botany;
+        libengine_botany_fold(&botany);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } botany_rows[] = {
+            {"conifer_sig=",    botany.conifer_sig     },
+            {", broadleaf_sig=", botany.broadleaf_sig  },
+            {", shrub_sig=",    botany.shrub_sig       },
+            {", segments=",     botany.conifer_segments},
+            {", leaves=",       botany.conifer_leaves  },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P10 botany: ");
+        for (size_t i = 0u; i < sizeof(botany_rows) / sizeof(botany_rows[0]); ++i)
+        {
+            serial_write_string(com1, botany_rows[i].label);
+            serial_write_hex32(com1, botany_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
 }
 
 #endif /* LPL_KERNEL_ENABLE_SMOKE_TESTS */

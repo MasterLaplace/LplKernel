@@ -78,8 +78,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
         >help, stats, kbd, layout fr, pci</span
       >. In the <strong>world</strong> profile: <span class="font-mono">WASD</span> orbits the
       camera, <span class="font-mono">Q/E</span> zooms, <span class="font-mono">B</span> cycles the
-      shading (biome, elevation, moisture) and <span class="font-mono">N</span> generates a new
-      world. Click the screen to capture your keyboard. Runs single-threaded (GitHub Pages can't set
+      shading (biome, elevation, moisture), <span class="font-mono">N</span> generates a new world
+      and <span class="font-mono">O</span> switches to the endless one (then
+      <span class="font-mono">WASD</span> walks, <span class="font-mono">J/L</span> turns). Click the screen to capture your keyboard. Runs single-threaded (GitHub Pages can't set
       cross-origin isolation headers), so boot takes a few seconds.
     </p>
 
@@ -118,6 +119,21 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
           Nothing there is a recording or a baked asset. There is no userspace and no filesystem in
           this profile: a freestanding i686 kernel is running the procedural generation, the ecology
           and the rasterizer itself, between an interrupt handler and a page fault.
+        </p>
+        <p>
+          Pressing <span class="font-mono">O</span> switches to an <strong>endless world</strong>.
+          The bounded world above is the one the cartridge describes; this one has no edges at all —
+          terrain is sampled at absolute world coordinates, so the shared border of two pieces is the
+          same position and matches exactly, by construction rather than by stitching. Walking with
+          <span class="font-mono">WASD</span> streams new ground in ahead and releases it behind, and
+          the rivers cross those borders because the drainage is decided at two scales: a coarse
+          level routes where a river runs, a fine level draws it.
+        </p>
+        <p>
+          What the endless world does <em>not</em> have is the erosion, the town and the roads. Those
+          are relaxations over a whole grid, and a relaxation has no meaning on a piece of a world
+          that continues past its edge — so the endless mode is the raw substrate, and the cartridge
+          remains the authored world.
         </p>
         <p>
           Both the generated world and the simulation running on it are verified bit-for-bit against

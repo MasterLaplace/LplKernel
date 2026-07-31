@@ -72,6 +72,8 @@ obj/local/smoke/p5_render_present_smoke.o \
 obj/local/smoke/p6_smoke.o \
 obj/local/smoke/p7_procgen_smoke.o \
 obj/local/smoke/p8_living_smoke.o \
+obj/local/smoke/p9_endless_smoke.o \
+obj/local/smoke/p10_botany_smoke.o \
 obj/local/smoke/sim_fold_smoke.o \
 obj/local/client_app.o \
 obj/local/server_app.o

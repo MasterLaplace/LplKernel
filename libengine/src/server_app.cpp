@@ -5,19 +5,15 @@
 ** Kernel server entry point — the freestanding mirror of
 ** LplPlugin/apps/server/main.cpp.
 **
-** This is the whole kernel<->engine seam: build a Config, construct an Engine
-** with a KernelPlatform and the game World, init/run/shutdown. The only
-** difference from the hosted server is the injected platform (KernelPlatform
-** over the HAL, instead of LinuxPlatform over GLFW/chrono) and the profile
-** flags. The kernel holds no renderer, scene, ECS or game logic whatsoever.
+** Same shape as the client entry point, and for the same reason: everything that
+** was host-independent (budgets, engine construction, the loop) is in
+** engine::bootGame and engine::HostProfile. What is left is the platform seam, the
+** tick rate a server wants, and which World it hosts.
 **
-** Exposed to the C kernel through one extern "C" symbol, because kernel.c is C
-** and this translation unit must be built with the engine's C++23 + SSE
-** determinism flags.
+** Exposed to the C kernel through one extern "C" symbol.
 */
 #include <lpl/core/Log.hpp>
-#include <lpl/engine/Config.hpp>
-#include <lpl/engine/Engine.hpp>
+#include <lpl/engine/Boot.hpp>
 #include <lpl/platform/kernel/KernelPlatform.hpp>
 #include <lpl/samples/CubePileWorld.hpp>
 #include <lpl/std/memory.hpp>
@@ -29,30 +25,19 @@ extern "C" void libengine_server_app_run(void)
     static lpl::platform::kernel::KernelLogger logger;
     lpl::core::Log::setLogger(&logger);
 
-    lpl::core::Log::info("=== LplKernel Server ===");
+    lpl::engine::BootRequest request;
+    request.host = lpl::engine::HostProfile::Ring0Server;
+    // 144 Hz, and it is not decoration: the deterministic tick is what the parity
+    // gate folds, and the server profile is the one that runs it flat out.
+    request.tickRate = 144u;
+    request.banner = "=== LplKernel Server ===";
 
-    auto config = lpl::engine::Config::Builder{}
-                      .tickRate(144)
-                      .maxEntities(10000)
-                      .serverMode(true)
-                      .headless(true)
-                      .arenaSize(256u * 1024u)
-                      .worldCellCapacity(1024u)
-                      .enableGpu(false)
-                      .enableBci(false)
-                      .build();
-
-    lpl::engine::Engine engine{config, lpl::pmr::make_unique<lpl::platform::kernel::KernelPlatform>(),
-                               lpl::pmr::make_unique<lpl::samples::CubePileWorld>()};
-
-    if (auto result = engine.init(); !result)
-    {
-        lpl::core::Log::error("Kernel server init failed");
-        return;
-    }
-
-    engine.run();
-    engine.shutdown();
-
-    lpl::core::Log::info("Kernel server exited cleanly");
+    lpl::engine::bootGame(
+        request, lpl::pmr::make_unique<lpl::platform::kernel::KernelPlatform>(),
+        [](const lpl::procgen::WorldRecipe &, const lpl::ecology::LivingRecipe &, const lpl::engine::ViewProfile &) {
+            return lpl::pmr::unique_ptr<lpl::engine::World>{lpl::pmr::make_unique<lpl::samples::CubePileWorld>()};
+        },
+        // The one budget a server states for itself: ten thousand entities, which
+        // the ring-0 profile's memory ceiling does not otherwise imply.
+        [](lpl::engine::Config::Builder &builder) { builder.maxEntities(10000u); });
 }

@@ -420,6 +420,49 @@ typedef struct {
 extern void libengine_living_fold(libengine_living_fold_result_t *out);
 
 /*
+** Endless-world parity fold. Generates a patch of the chunked, edgeless world —
+** terrain sampled at absolute coordinates, rivers decided by a bounded basin
+** plus a coarse trunk level — and folds it.
+**
+** P7 folds the world a recipe BUILDS; P8 folds the simulation that RUNS on it.
+** Neither says anything about the world that streams, which had its determinism
+** checked on the host and assumed on the target. This closes the last of the
+** three.
+**
+** The seam count travels with the signatures deliberately. A fold proves two
+** machines agree; it does not prove they agree on something correct, and a
+** chunked world that seams identically on both targets would pass a signature
+** check every single time.
+**
+** The Linux oracle is tests/parity/test_procgen_chunking.cpp.
+*/
+typedef struct {
+    uint32_t height_sig;      /* FNV-1a over every cell of every chunk folded    */
+    uint32_t river_sig;       /* FNV-1a over the river masks                     */
+    uint32_t chunks;          /* chunks visited                                  */
+    uint32_t river_cells;     /* cells carrying water                            */
+    uint32_t seam_mismatches; /* height disagreements across the patch's seams   */
+} libengine_endless_fold_result_t;
+
+extern void libengine_endless_fold(libengine_endless_fold_result_t *out);
+
+/**
+ * @brief Folds of the shapes the L-system grammars grow (P10).
+ *
+ * A tree is scenery, but every branch endpoint comes out of a CORDIC rotation,
+ * which is the arithmetic the whole determinism contract rests on.
+ */
+typedef struct {
+    uint32_t conifer_sig;      /**< FNV-1a over the conifer skeleton. */
+    uint32_t broadleaf_sig;    /**< FNV-1a over the broadleaf skeleton. */
+    uint32_t shrub_sig;        /**< FNV-1a over the shrub skeleton. */
+    uint32_t conifer_segments; /**< Wood segments the conifer grew. */
+    uint32_t conifer_leaves;   /**< Foliage clusters the conifer grew. */
+} libengine_botany_fold_result_t;
+
+extern void libengine_botany_fold(libengine_botany_fold_result_t *out);
+
+/*
 ** Kernel client entry point — the freestanding mirror of apps/client/main.cpp.
 **
 ** Takes the cartridge the same way the parity fold does: pass the bytes of a
