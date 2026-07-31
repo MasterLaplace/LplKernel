@@ -31,11 +31,11 @@
 
 /** @brief One assembled movement report. */
 typedef struct PersonalSystem2MousePacket_s {
-    int32_t delta_x;         /**< Right is positive. */
-    int32_t delta_y;         /**< UP is positive, as the device reports it. */
-    uint8_t button_left;     /**< 1 while held. */
-    uint8_t button_right;    /**< 1 while held. */
-    uint8_t button_middle;   /**< 1 while held. */
+    int32_t delta_x;       /**< Right is positive. */
+    int32_t delta_y;       /**< UP is positive, as the device reports it. */
+    uint8_t button_left;   /**< 1 while held. */
+    uint8_t button_right;  /**< 1 while held. */
+    uint8_t button_middle; /**< 1 while held. */
 } PersonalSystem2MousePacket_t;
 
 /**

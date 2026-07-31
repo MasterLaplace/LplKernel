@@ -16,10 +16,10 @@
 #define PERSONAL_SYSTEM_2_STATUS_INPUT_FULL  0x02u
 #define PERSONAL_SYSTEM_2_STATUS_FROM_AUX    0x20u
 
-#define PERSONAL_SYSTEM_2_COMMAND_ENABLE_AUXILIARY   0xA8u
-#define PERSONAL_SYSTEM_2_COMMAND_READ_CONFIGURATION 0x20u
+#define PERSONAL_SYSTEM_2_COMMAND_ENABLE_AUXILIARY    0xA8u
+#define PERSONAL_SYSTEM_2_COMMAND_READ_CONFIGURATION  0x20u
 #define PERSONAL_SYSTEM_2_COMMAND_WRITE_CONFIGURATION 0x60u
-#define PERSONAL_SYSTEM_2_COMMAND_WRITE_TO_AUXILIARY 0xD4u
+#define PERSONAL_SYSTEM_2_COMMAND_WRITE_TO_AUXILIARY  0xD4u
 
 #define PERSONAL_SYSTEM_2_MOUSE_SET_DEFAULTS   0xF6u
 #define PERSONAL_SYSTEM_2_MOUSE_ENABLE_REPORTS 0xF4u
@@ -125,8 +125,7 @@ static void personal_system_2_mouse_interrupt_handler(const InterruptFrame_t *fr
     ** auxiliary data would steal a keystroke from the keyboard's ring, which is a
     ** bug you feel as characters that go missing while the mouse is moving.
     */
-    if ((status & PERSONAL_SYSTEM_2_STATUS_FROM_AUX) != 0u &&
-        (status & PERSONAL_SYSTEM_2_STATUS_OUTPUT_FULL) != 0u)
+    if ((status & PERSONAL_SYSTEM_2_STATUS_FROM_AUX) != 0u && (status & PERSONAL_SYSTEM_2_STATUS_OUTPUT_FULL) != 0u)
     {
         const uint8_t byte = asmutils_input_byte(PERSONAL_SYSTEM_2_DATA_PORT);
         const uint32_t head = personal_system_2_mouse_ring_head;

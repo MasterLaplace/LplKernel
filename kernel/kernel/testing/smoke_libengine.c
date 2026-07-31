@@ -546,11 +546,11 @@ void smoke_libengine_run_all(Serial_t *com1)
             const char *label;
             uint32_t value;
         } botany_rows[] = {
-            {"conifer_sig=",    botany.conifer_sig     },
-            {", broadleaf_sig=", botany.broadleaf_sig  },
-            {", shrub_sig=",    botany.shrub_sig       },
-            {", segments=",     botany.conifer_segments},
-            {", leaves=",       botany.conifer_leaves  },
+            {"conifer_sig=",     botany.conifer_sig     },
+            {", broadleaf_sig=", botany.broadleaf_sig   },
+            {", shrub_sig=",     botany.shrub_sig       },
+            {", segments=",      botany.conifer_segments},
+            {", leaves=",        botany.conifer_leaves  },
         };
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P10 botany: ");
         for (size_t i = 0u; i < sizeof(botany_rows) / sizeof(botany_rows[0]); ++i)
