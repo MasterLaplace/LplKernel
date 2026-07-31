@@ -10,6 +10,7 @@
 #include <kernel/hal/hal.h>
 
 #include <kernel/drivers/keyboard.h>
+#include <kernel/drivers/ps2_keyboard.h>
 #include <kernel/drivers/ps2_mouse.h>
 
 #include <stddef.h>
@@ -40,3 +41,8 @@ bool hardware_abstraction_layer_input_try_pop_pointer(int32_t *out_delta_x, int3
 }
 
 bool hardware_abstraction_layer_input_pointer_available(void) { return personal_system_2_mouse_is_present() != 0u; }
+
+bool hardware_abstraction_layer_input_is_key_held(char character)
+{
+    return personal_system_2_keyboard_is_character_held(character) != 0u;
+}

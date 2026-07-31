@@ -182,6 +182,24 @@ static uint8_t personal_system_2_alt_right_state = 0u; /* AltGr */
 static uint8_t personal_system_2_caps_lock_state = 0u;
 static uint8_t personal_system_2_extended_pending = 0u; /* 0xE0 seen, applies to next byte */
 
+/*
+** Which keys are DOWN right now, one bit per Set-1 make code.
+**
+** The driver already saw every release: bit 7 of a scancode is the break flag, and
+** decode_scancode read it, used it for the modifiers, and threw the rest away —
+** which is why the engine could be told "the walker typed W" and never "the walker
+** is HOLDING W". A character stream is the right shape for a console and the wrong
+** shape for a body that walks: holding a direction is a state, not an event, and
+** rebuilding it from key repeat gives the stutter the repeat delay is made of.
+**
+** Updated on the consumer side, in decode_scancode, like the modifier state and for
+** the same reason: assembling state in interrupt context races with whoever reads
+** it. It is therefore only as fresh as the last drain of the ring — a caller that
+** stops draining sees keys stay down, which is correct, because it also stopped
+** seeing them come up.
+*/
+static uint8_t personal_system_2_key_down_bitmap[16] = {0};
+
 static PersonalSystem2KeyboardLayout_t personal_system_2_active_layout =
     PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY;
 
@@ -249,6 +267,20 @@ char personal_system_2_keyboard_decode_scancode(uint8_t scancode)
 
     personal_system_2_extended_pending = 0u;
 
+    /* Track the key's state before anything below returns early: modifiers, dead
+       keys and unmapped codes are all keys someone can hold. Extended codes share
+       the low 7 bits with unextended ones, so they are deliberately NOT recorded
+       here — right ctrl would otherwise clear left ctrl's bit. */
+    if (!extended)
+    {
+        const uint8_t index = (uint8_t) (code >> 3);
+        const uint8_t mask = (uint8_t) (1u << (code & 7u));
+        if (pressed)
+            personal_system_2_key_down_bitmap[index] |= mask;
+        else
+            personal_system_2_key_down_bitmap[index] &= (uint8_t) ~mask;
+    }
+
     if (extended)
     {
         switch (code)
@@ -276,6 +308,36 @@ char personal_system_2_keyboard_decode_scancode(uint8_t scancode)
         return 0x00;
 
     return personal_system_2_keyboard_translate_make_code(code);
+}
+
+uint8_t personal_system_2_keyboard_is_code_held(uint8_t code)
+{
+    if (code >= 128u)
+        return 0u;
+    return (uint8_t) ((personal_system_2_key_down_bitmap[code >> 3] & (1u << (code & 7u))) ? 1u : 0u);
+}
+
+uint8_t personal_system_2_keyboard_is_character_held(char character)
+{
+    /*
+    ** Asked by CHARACTER, not by scancode, and answered through the ACTIVE layout's
+    ** unshifted table. That is what makes a walker's forward key follow the layout:
+    ** on AZERTY the key above S is 'z', on QWERTY it is 'w', and a caller that had
+    ** hard-coded scancode 0x11 would send a French keyboard walking sideways.
+    */
+    const char *base = personal_system_2_layout_us_base;
+
+    if (personal_system_2_active_layout == PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY)
+        base = personal_system_2_layout_fr_base;
+
+    for (uint16_t code = 0u; code < 128u; ++code)
+    {
+        if (base[code] != character)
+            continue;
+        if (personal_system_2_keyboard_is_code_held((uint8_t) code))
+            return 1u;
+    }
+    return 0u;
 }
 
 void personal_system_2_keyboard_set_layout(PersonalSystem2KeyboardLayout_t layout)
@@ -312,4 +374,6 @@ void personal_system_2_keyboard_reset_modifiers(void)
     personal_system_2_alt_right_state = 0u;
     personal_system_2_caps_lock_state = 0u;
     personal_system_2_extended_pending = 0u;
+    for (uint8_t i = 0u; i < 16u; ++i)
+        personal_system_2_key_down_bitmap[i] = 0u;
 }

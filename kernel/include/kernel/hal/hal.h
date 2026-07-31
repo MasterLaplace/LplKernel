@@ -156,6 +156,19 @@ bool hardware_abstraction_layer_input_try_pop_pointer(int32_t *out_delta_x, int3
  */
 bool hardware_abstraction_layer_input_pointer_available(void);
 
+/**
+ * @brief Whether the key that types @p character is held down right now.
+ *
+ * The character ring answers "what was typed"; this answers "what is being held".
+ * A console wants the first, a walking body wants the second, and reconstructing
+ * the second from the first inherits the auto-repeat delay as a stutter at the
+ * start of every step.
+ *
+ * @param character The unshifted character the key produces, e.g. 'w' or ' '.
+ * @return true while that key is down.
+ */
+bool hardware_abstraction_layer_input_is_key_held(char character);
+
 /* ----------------------------------------------------------------------------
  * Console (diagnostic text sink)
  *

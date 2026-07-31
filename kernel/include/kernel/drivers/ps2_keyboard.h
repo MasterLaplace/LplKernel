@@ -46,6 +46,32 @@ typedef enum PersonalSystem2KeyboardLayout {
 extern char personal_system_2_keyboard_decode_scancode(uint8_t scancode);
 
 /**
+ * @brief Whether a Set-1 make code is held down right now.
+ *
+ * The driver always saw releases — bit 7 of a scancode is the break flag — but only
+ * the modifiers kept the information. A body that walks needs the rest of it: holding
+ * a direction is a STATE, and reconstructing it from key repeat inherits the repeat
+ * delay as a stutter at the start of every step.
+ *
+ * @param code Set-1 make code, 0..127.
+ * @return 1 while the key is down.
+ */
+uint8_t personal_system_2_keyboard_is_code_held(uint8_t code);
+
+/**
+ * @brief Whether the key that TYPES a character is held down right now.
+ *
+ * Resolved through the active layout's unshifted table, which is what makes this the
+ * right question to ask: on AZERTY the key above S types 'z' and on QWERTY it types
+ * 'w', so a caller asking for a character follows the layout, while one asking for a
+ * scancode would send a French keyboard walking sideways.
+ *
+ * @param character The unshifted character the key produces.
+ * @return 1 while that key is down.
+ */
+uint8_t personal_system_2_keyboard_is_character_held(char character);
+
+/**
  * @brief Select the active keyboard layout policy.
  * @param layout Layout to activate.
  */

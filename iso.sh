@@ -27,21 +27,39 @@ CARTRIDGE_SCENE="${LPLPLUGIN_ROOT:-LplPlugin}/assets/games/parity.lplscene"
 # script runs with CC/CXX pointing at i686-elf — so building a HOST tool from
 # here otherwise hands it the kernel's own toolchain and fails with "cannot find
 # known tool script for i686-elf-g++".
+#
+# -P, and not `cd` into the submodule. The submodule is a NESTED xmake project
+# inside LplKernel's own, so `cd LplPlugin && xmake build lpl-bake` resolves the
+# PARENT project and writes its output to ./build at the root — while the search
+# below used to look only in LplPlugin/build, and therefore kept finding a binary
+# from a previous life. That is exactly the silent failure the comment above warns
+# about, and it came back: the ISO shipped a lpl-bake four days stale, which wrote
+# a pack missing the section that had just been added, and nothing said a word.
 if command -v xmake >/dev/null 2>&1 && [ -f "${LPLPLUGIN_ROOT:-LplPlugin}/xmake.lua" ]; then
-    if ! (cd "${LPLPLUGIN_ROOT:-LplPlugin}" && env -u CC -u CXX -u AR -u AS -u LD -u RANLIB \
+    BAKER_LOG="$(mktemp)"
+    if ! env -u CC -u CXX -u AR -u AS -u LD -u RANLIB \
               -u CFLAGS -u CXXFLAGS -u LDFLAGS -u ASFLAGS -u SYSROOT -u DESTDIR \
-              xmake build lpl-bake) >/dev/null 2>&1; then
+              xmake build -P "${LPLPLUGIN_ROOT:-LplPlugin}" -y lpl-bake >"$BAKER_LOG" 2>&1; then
         echo "[iso] warning: could not rebuild lpl-bake, using whatever is present"
+        # The failure is PRINTED. Swallowing it is how a stale baker survives.
+        tail -20 "$BAKER_LOG" | sed 's/^/[iso]   /'
     fi
+    rm -f "$BAKER_LOG"
 fi
 
+# Whichever candidate is NEWEST wins, not whichever is listed first. Two build
+# trees can hold a lpl-bake (the root project's and the submodule's own), and
+# "first in the list" silently prefers one of them forever.
 CARTRIDGE_BAKER="$(command -v lpl-bake || true)"
-if [ -z "$CARTRIDGE_BAKER" ]; then
-    for candidate in "${LPLPLUGIN_ROOT:-LplPlugin}"/build/*/*/debug/lpl-bake \
-                     "${LPLPLUGIN_ROOT:-LplPlugin}"/build/*/*/release/lpl-bake; do
-        [ -x "$candidate" ] && CARTRIDGE_BAKER="$candidate" && break
-    done
-fi
+for candidate in build/*/*/debug/lpl-bake build/*/*/release/lpl-bake \
+                 "${LPLPLUGIN_ROOT:-LplPlugin}"/build/*/*/debug/lpl-bake \
+                 "${LPLPLUGIN_ROOT:-LplPlugin}"/build/*/*/release/lpl-bake; do
+    [ -x "$candidate" ] || continue
+    if [ -z "$CARTRIDGE_BAKER" ] || [ "$candidate" -nt "$CARTRIDGE_BAKER" ]; then
+        CARTRIDGE_BAKER="$candidate"
+    fi
+done
+[ -n "$CARTRIDGE_BAKER" ] && echo "[iso] baker: $CARTRIDGE_BAKER"
 
 # The world the graphical profile DRAWS, which is a different question from the
 # world the parity gate FOLDS. Two cartridges rather than one: the gate boots
