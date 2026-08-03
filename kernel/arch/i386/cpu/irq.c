@@ -21,7 +21,24 @@ static volatile uint32_t interrupt_request_spurious_irq15_count = 0u;
 static uint32_t interrupt_request_timer_target_frequency_hz = IRQ_TIMER_DEFAULT_FREQUENCY_HZ;
 static uint8_t interrupt_request_rtc_periodic_enabled = 0u;
 static uint8_t interrupt_request_timer_owner_is_apic = 0u;
-static uint8_t interrupt_request_keyboard_owner_is_apic = 0u;
+/*
+** Which interrupt LINES are delivered through the IOAPIC rather than the 8259.
+**
+** One bit per ISA line, and not a single "the system is on the APIC now" flag,
+** because the handoff is per line: kernel.c routes IRQ1 to the IOAPIC and masks it
+** on the PIC, while every other line keeps arriving through the PIC. An interrupt
+** handler has to acknowledge the controller that DELIVERED it, so the question a
+** handler asks is about its own line.
+**
+** That distinction was learned the hard way. The mouse handler was written by
+** copying the keyboard's, including its `is_keyboard_owner_apic()` test — a name
+** that says "keyboard" and was read as "system". Once IRQ1 moved to the IOAPIC the
+** mouse, still arriving on the PIC, started sending an APIC EOI: the 8259 was never
+** acknowledged, so it blocked IRQ12 after the very first interrupt and the mouse
+** appeared dead. It kept working in the browser emulator, which performs no handoff
+** and left the flag at zero — the same code, right for the wrong reason.
+*/
+static uint16_t interrupt_request_apic_owned_lines = 0u;
 
 static void interrupt_request_timer_handler(const InterruptFrame_t *frame)
 {
@@ -114,9 +131,26 @@ void interrupt_request_set_timer_owner_is_apic(uint8_t enabled)
     interrupt_request_timer_owner_is_apic = (uint8_t) (enabled != 0u);
 }
 
+void interrupt_request_set_line_owner_is_apic(uint8_t irq_line, uint8_t enabled)
+{
+    if (irq_line >= IRQ_LINE_COUNT)
+        return;
+    if (enabled)
+        interrupt_request_apic_owned_lines |= (uint16_t) (1u << irq_line);
+    else
+        interrupt_request_apic_owned_lines &= (uint16_t) ~(1u << irq_line);
+}
+
+uint8_t interrupt_request_is_line_owner_apic(uint8_t irq_line)
+{
+    if (irq_line >= IRQ_LINE_COUNT)
+        return 0u;
+    return (uint8_t) ((interrupt_request_apic_owned_lines & (1u << irq_line)) ? 1u : 0u);
+}
+
 void interrupt_request_set_keyboard_owner_is_apic(uint8_t enabled)
 {
-    interrupt_request_keyboard_owner_is_apic = (uint8_t) (enabled != 0u);
+    interrupt_request_set_line_owner_is_apic(IRQ_KEYBOARD_LINE, enabled);
 }
 
 uint32_t interrupt_request_get_tick_count(void) { return interrupt_request_tick_count; }
@@ -139,4 +173,7 @@ uint8_t interrupt_request_is_realtime_clock_periodic_enabled(void)
 
 uint8_t interrupt_request_is_timer_owner_apic(void) { return interrupt_request_timer_owner_is_apic; }
 
-uint8_t interrupt_request_is_keyboard_owner_apic(void) { return interrupt_request_keyboard_owner_is_apic; }
+uint8_t interrupt_request_is_keyboard_owner_apic(void)
+{
+    return interrupt_request_is_line_owner_apic(IRQ_KEYBOARD_LINE);
+}

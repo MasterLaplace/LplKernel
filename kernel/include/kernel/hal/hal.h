@@ -169,6 +169,22 @@ bool hardware_abstraction_layer_input_pointer_available(void);
  */
 bool hardware_abstraction_layer_input_is_key_held(char character);
 
+/**
+ * @brief Pointer interrupts serviced since boot.
+ *
+ * Diagnostic, and it earns its place: "the mouse does not work" has at least three
+ * causes that look identical from above — no device, a device whose interrupt never
+ * reaches the CPU, and an interrupt that fires while the packets are discarded.
+ * This separates the second from the third.
+ */
+uint32_t hardware_abstraction_layer_input_pointer_interrupt_count(void);
+
+/**
+ * @brief Pointer packets discarded because the stream lost synchronisation.
+ * @return The count of discarded packets.
+ */
+uint32_t hardware_abstraction_layer_input_pointer_resynchronization_count(void);
+
 /* ----------------------------------------------------------------------------
  * Console (diagnostic text sink)
  *

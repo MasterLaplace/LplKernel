@@ -142,7 +142,16 @@ static void personal_system_2_mouse_interrupt_handler(const InterruptFrame_t *fr
         }
     }
 
-    if (interrupt_request_is_keyboard_owner_apic())
+    /*
+    ** Acknowledge the controller that DELIVERED this interrupt, asked about THIS
+    ** line. The first version copied the keyboard handler, including its
+    ** `is_keyboard_owner_apic()` test — a name that says keyboard and reads like
+    ** "the system". Once kernel.c handed IRQ1 to the IOAPIC that test turned true
+    ** while IRQ12 still arrived on the PIC, so the 8259 stopped being acknowledged
+    ** and blocked the line after a single interrupt. The mouse went dead under QEMU
+    ** and kept working in the browser emulator, which performs no handoff.
+    */
+    if (interrupt_request_is_line_owner_apic(IRQ_MOUSE_LINE))
         advanced_pic_timer_backend_signal_end_of_interrupt();
     else
         programmable_interrupt_controller_send_end_of_interrupt(IRQ_MOUSE_LINE);

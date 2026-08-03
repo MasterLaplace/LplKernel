@@ -94,4 +94,25 @@ extern void interrupt_request_set_keyboard_owner_is_apic(uint8_t enabled);
  */
 extern uint8_t interrupt_request_is_keyboard_owner_apic(void);
 
+/**
+ * @brief Records that an ISA line is delivered by the IOAPIC, not the 8259.
+ *
+ * Per LINE, because the handoff is per line. A handler must acknowledge the
+ * controller that delivered its interrupt, and asking "is the keyboard on the
+ * APIC?" from a mouse handler is how one ends up sending an APIC EOI for a PIC
+ * interrupt — which leaves the 8259 unacknowledged and the line dead after one
+ * shot.
+ *
+ * @param irq_line ISA line, 0..15.
+ * @param enabled  Non-zero once the line is routed through the IOAPIC.
+ */
+extern void interrupt_request_set_line_owner_is_apic(uint8_t irq_line, uint8_t enabled);
+
+/**
+ * @brief Whether an ISA line is delivered by the IOAPIC.
+ * @param irq_line ISA line, 0..15.
+ * @return 1 when the IOAPIC owns it, 0 when the 8259 does.
+ */
+extern uint8_t interrupt_request_is_line_owner_apic(uint8_t irq_line);
+
 #endif /* KERNEL_CPU_INTERRUPT_REQUEST_H */

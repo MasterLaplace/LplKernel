@@ -46,3 +46,13 @@ bool hardware_abstraction_layer_input_is_key_held(char character)
 {
     return personal_system_2_keyboard_is_character_held(character) != 0u;
 }
+
+uint32_t hardware_abstraction_layer_input_pointer_interrupt_count(void)
+{
+    return personal_system_2_mouse_get_irq_count();
+}
+
+uint32_t hardware_abstraction_layer_input_pointer_resynchronization_count(void)
+{
+    return personal_system_2_mouse_get_resynchronization_count();
+}
