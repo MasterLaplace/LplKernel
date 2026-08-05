@@ -35,23 +35,22 @@ extern "C" {
  * @struct SatelliteReport_t
  * @brief What a run of the node cost.
  */
-typedef struct
-{
-    uint32_t idle_iterations;    /**< Times the loop went round with nothing to do. */
-    uint32_t sleeps;             /**< Times the processor was actually put to sleep. */
-    uint32_t sleeps_skipped;     /**< Times a sleep was unnecessary — the watch had fired. */
-    uint32_t halts;              /**< Sleeps that fell back to HLT for want of MONITOR. */
-    uint32_t duty_permille;      /**< Share of accounted cycles spent awake. */
-    uint32_t ticks_avoided;      /**< Periodic interrupts the profile did not take. */
-    uint32_t monitor_available;  /**< 1 when the processor implements MONITOR/MWAIT. */
-    uint32_t scaling_available;  /**< 1 when it can actually change its clock. */
-    uint32_t scaling_refused;    /**< Performance-state requests the hardware could not honour. */
-    uint32_t governed_state;     /**< The state the governor asked for. */
-    uint32_t audio_present;      /**< 1 when a codec was found AND can be driven. */
-    uint32_t output_ceiling;     /**< Loudest sample this kernel will ever emit. */
-    uint32_t limiter_clipped;    /**< Samples the ceiling clamped during the self-check. */
-    uint32_t limiter_peak;       /**< Loudest sample that survived it. */
-    uint32_t frames_captured;    /**< Buffers the codec actually delivered. */
+typedef struct {
+    uint32_t idle_iterations;   /**< Times the loop went round with nothing to do. */
+    uint32_t sleeps;            /**< Times the processor was actually put to sleep. */
+    uint32_t sleeps_skipped;    /**< Times a sleep was unnecessary — the watch had fired. */
+    uint32_t halts;             /**< Sleeps that fell back to HLT for want of MONITOR. */
+    uint32_t duty_permille;     /**< Share of accounted cycles spent awake. */
+    uint32_t ticks_avoided;     /**< Periodic interrupts the profile did not take. */
+    uint32_t monitor_available; /**< 1 when the processor implements MONITOR/MWAIT. */
+    uint32_t scaling_available; /**< 1 when it can actually change its clock. */
+    uint32_t scaling_refused;   /**< Performance-state requests the hardware could not honour. */
+    uint32_t governed_state;    /**< The state the governor asked for. */
+    uint32_t audio_present;     /**< 1 when a codec was found AND can be driven. */
+    uint32_t output_ceiling;    /**< Loudest sample this kernel will ever emit. */
+    uint32_t limiter_clipped;   /**< Samples the ceiling clamped during the self-check. */
+    uint32_t limiter_peak;      /**< Loudest sample that survived it. */
+    uint32_t frames_captured;   /**< Buffers the codec actually delivered. */
     /**
      * Loudest sample in the last buffer taken.
      *

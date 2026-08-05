@@ -43,11 +43,10 @@ extern "C" {
  * with no ACPI `_PSS` table has no list of the intermediate ones and inventing them
  * would be inventing frequencies the silicon may not have.
  */
-typedef enum
-{
-    PERFORMANCE_STATE_LOW = 0,  /**< Idle or wake-word only: the slowest state offered. */
-    PERFORMANCE_STATE_MEDIUM,   /**< Streaming or playing: enough to meet the buffer cadence. */
-    PERFORMANCE_STATE_HIGH,     /**< Everything else: no scaling. */
+typedef enum {
+    PERFORMANCE_STATE_LOW = 0, /**< Idle or wake-word only: the slowest state offered. */
+    PERFORMANCE_STATE_MEDIUM,  /**< Streaming or playing: enough to meet the buffer cadence. */
+    PERFORMANCE_STATE_HIGH,    /**< Everything else: no scaling. */
 } PerformanceState_t;
 
 /**

@@ -44,8 +44,7 @@ extern "C" {
  * says the format lost something — and the something would be a different consensus
  * about how a king died, which is the failure the whole module exists to prevent.
  */
-typedef struct
-{
+typedef struct {
     uint32_t image_sig;    /**< Fold of the image, byte for byte. */
     uint32_t fact_sig;     /**< Fold of every claim the image holds. */
     uint32_t vocab_sig;    /**< Fold of the names it carries. */
@@ -57,22 +56,22 @@ typedef struct
     uint32_t chronicle_sig; /**< MUST equal gate P13's chronicle signature. */
     uint32_t minority_sig;  /**< MUST equal gate P13's minority signature. */
 
-    uint32_t image_bytes;  /**< Size of the image read. */
-    uint32_t open_status;  /**< 0 when the image was accepted; otherwise why not. */
-    uint32_t sections;     /**< Sections the table declared. */
-    uint32_t skipped;      /**< Sections whose type this reader does not know. */
-    uint32_t facts;        /**< Claims the image holds. */
-    uint32_t sources;      /**< Source profiles it describes. */
-    uint32_t documents;    /**< Documents it describes. */
-    uint32_t loci;         /**< Loci it describes. */
-    uint32_t names;        /**< Identifiers it names. */
-    uint32_t matched;      /**< Claims the canonical query matched. */
-    uint32_t returned;     /**< Rows it returned under its cap. */
-    uint32_t truncated;    /**< 1 when the cap bit. */
-    uint32_t consensus;    /**< What the decoded corpus believes killed the king. */
-    uint32_t provenance;   /**< 1 when every claim can be weighed. */
-    uint32_t round_trip;   /**< 1 when the decoded corpus equals the authored one. */
-    uint32_t rejected;     /**< Records the decoder refused. MUST be zero. */
+    uint32_t image_bytes; /**< Size of the image read. */
+    uint32_t open_status; /**< 0 when the image was accepted; otherwise why not. */
+    uint32_t sections;    /**< Sections the table declared. */
+    uint32_t skipped;     /**< Sections whose type this reader does not know. */
+    uint32_t facts;       /**< Claims the image holds. */
+    uint32_t sources;     /**< Source profiles it describes. */
+    uint32_t documents;   /**< Documents it describes. */
+    uint32_t loci;        /**< Loci it describes. */
+    uint32_t names;       /**< Identifiers it names. */
+    uint32_t matched;     /**< Claims the canonical query matched. */
+    uint32_t returned;    /**< Rows it returned under its cap. */
+    uint32_t truncated;   /**< 1 when the cap bit. */
+    uint32_t consensus;   /**< What the decoded corpus believes killed the king. */
+    uint32_t provenance;  /**< 1 when every claim can be weighed. */
+    uint32_t round_trip;  /**< 1 when the decoded corpus equals the authored one. */
+    uint32_t rejected;    /**< Records the decoder refused. MUST be zero. */
 } libknowledge_corpus_fold_result_t;
 
 /**

@@ -91,7 +91,8 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
            1280 bytes, and a kernel stack is not the place to put them. */
         {
             static int16_t frame[KERNEL_HAL_AUDIO_FRAME_SAMPLES];
-            const uint32_t samples = hardware_abstraction_layer_audio_capture_take(frame, KERNEL_HAL_AUDIO_FRAME_SAMPLES);
+            const uint32_t samples =
+                hardware_abstraction_layer_audio_capture_take(frame, KERNEL_HAL_AUDIO_FRAME_SAMPLES);
             for (uint32_t s = 0u; s < samples; ++s)
             {
                 const int32_t magnitude = frame[s] < 0 ? -(int32_t) frame[s] : (int32_t) frame[s];

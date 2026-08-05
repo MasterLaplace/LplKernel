@@ -38,11 +38,10 @@ extern "C" {
  * @enum ProcessorSleepMode_t
  * @brief How the processor was actually put to sleep.
  */
-typedef enum
-{
-    PROCESSOR_SLEEP_NONE = 0,   /**< It was not: the condition was already true. */
-    PROCESSOR_SLEEP_HALT,       /**< `HLT`, woken by an interrupt. */
-    PROCESSOR_SLEEP_MONITOR,    /**< `MONITOR`/`MWAIT`, woken by a write or an interrupt. */
+typedef enum {
+    PROCESSOR_SLEEP_NONE = 0, /**< It was not: the condition was already true. */
+    PROCESSOR_SLEEP_HALT,     /**< `HLT`, woken by an interrupt. */
+    PROCESSOR_SLEEP_MONITOR,  /**< `MONITOR`/`MWAIT`, woken by a write or an interrupt. */
 } ProcessorSleepMode_t;
 
 /**

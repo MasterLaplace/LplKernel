@@ -207,14 +207,13 @@ uint8_t peripheral_component_interconnect_read_base_address_register(
 }
 
 const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect_find_by_class(uint8_t class_code,
-                                                                                              uint8_t subclass)
+                                                                                               uint8_t subclass)
 {
     const uint32_t count = peripheral_component_interconnect_get_device_count();
 
     for (uint32_t index = 0u; index < count; ++index)
     {
-        const PeripheralComponentInterconnectDevice_t *candidate =
-            peripheral_component_interconnect_get_device(index);
+        const PeripheralComponentInterconnectDevice_t *candidate = peripheral_component_interconnect_get_device(index);
         if (candidate == NULL)
             continue;
         if (candidate->class_code == class_code && candidate->subclass == subclass)

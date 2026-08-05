@@ -58,19 +58,17 @@ extern "C" {
  * @enum ModelSlotState_t
  * @brief What the slot holds.
  */
-typedef enum
-{
-    MODEL_SLOT_EMPTY = 0,   /**< No module with the suffix was passed. */
-    MODEL_SLOT_MALFORMED,   /**< A module is there and is not a weights image. */
-    MODEL_SLOT_LOADED,      /**< A module is there and its header holds up. */
+typedef enum {
+    MODEL_SLOT_EMPTY = 0, /**< No module with the suffix was passed. */
+    MODEL_SLOT_MALFORMED, /**< A module is there and is not a weights image. */
+    MODEL_SLOT_LOADED,    /**< A module is there and its header holds up. */
 } ModelSlotState_t;
 
 /**
  * @struct ModelSlot_t
  * @brief The result of probing the slot.
  */
-typedef struct
-{
+typedef struct {
     ModelSlotState_t state; /**< Empty, malformed or loaded. */
     const uint8_t *bytes;   /**< Kernel-virtual base, NULL unless loaded. */
     uint32_t size;          /**< Module length in bytes. */

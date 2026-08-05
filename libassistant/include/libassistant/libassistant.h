@@ -30,8 +30,7 @@ extern "C" {
  * Plain words only, no Fixed32 and no bool, so the kernel copies it field by field
  * exactly as it does for every other fold result.
  */
-typedef struct
-{
+typedef struct {
     uint32_t weight_sig;         /**< Fold of every quantised tensor. */
     uint32_t prompt_sig;         /**< Fold of the tokenised prompt. */
     uint32_t logit_sig;          /**< Fold of the scores at the last position. */
@@ -68,8 +67,7 @@ extern void libassistant_mind_fold(libassistant_mind_fold_result_t *out);
  * @struct libassistant_dialogue_result_t
  * @brief What one exchange through the aperture did.
  */
-typedef struct
-{
+typedef struct {
     uint32_t question_bytes; /**< Bytes the sovereign put into the channel. */
     uint32_t consumed;       /**< Bytes the demon took out of it. */
     uint32_t answer_bytes;   /**< Bytes the demon put back. */
@@ -123,25 +121,24 @@ extern void libassistant_shutdown(void);
  * What they must share is every decision about the same audio: when to start sending,
  * when to stop, whether the word was heard, and whether the node is hearing itself.
  */
-typedef struct
-{
-    uint32_t feature_sig;   /**< Fold of every frame's spectral shape. */
-    uint32_t level_sig;     /**< Fold of every frame's root-mean-square level. */
-    uint32_t event_sig;     /**< Fold of the voice-activity decisions. */
-    uint32_t wire_sig;      /**< Fold of every datagram the node emitted. */
-    uint32_t state_sig;     /**< Fold of the power state after each frame. */
-    uint32_t template_sig;  /**< Fold of the armed wake-word template. */
-    uint32_t emitted;       /**< Audio datagrams sent. */
-    uint32_t utterances;    /**< Utterances the detector closed. */
-    uint32_t detections;    /**< Times the wake word matched. */
-    uint32_t wake_frame;    /**< Frame at which it first matched. */
-    uint32_t wake_distance; /**< Distance at that match. */
+typedef struct {
+    uint32_t feature_sig;     /**< Fold of every frame's spectral shape. */
+    uint32_t level_sig;       /**< Fold of every frame's root-mean-square level. */
+    uint32_t event_sig;       /**< Fold of the voice-activity decisions. */
+    uint32_t wire_sig;        /**< Fold of every datagram the node emitted. */
+    uint32_t state_sig;       /**< Fold of the power state after each frame. */
+    uint32_t template_sig;    /**< Fold of the armed wake-word template. */
+    uint32_t emitted;         /**< Audio datagrams sent. */
+    uint32_t utterances;      /**< Utterances the detector closed. */
+    uint32_t detections;      /**< Times the wake word matched. */
+    uint32_t wake_frame;      /**< Frame at which it first matched. */
+    uint32_t wake_distance;   /**< Distance at that match. */
     uint32_t speech_distance; /**< Closest ordinary speech came to the template. */
-    uint32_t echoes;        /**< Captures identified as the node's own voice. */
-    uint32_t transitions;   /**< Power state changes. */
-    uint32_t idle_permille; /**< Share of the timeline spent idle. */
-    uint32_t duty_permille; /**< Share of the timeline the processor was awake. */
-    uint32_t tagged_audio;  /**< 1 when audio beginning "TXT:" still decodes as audio. */
+    uint32_t echoes;          /**< Captures identified as the node's own voice. */
+    uint32_t transitions;     /**< Power state changes. */
+    uint32_t idle_permille;   /**< Share of the timeline spent idle. */
+    uint32_t duty_permille;   /**< Share of the timeline the processor was awake. */
+    uint32_t tagged_audio;    /**< 1 when audio beginning "TXT:" still decodes as audio. */
 } libassistant_satellite_fold_result_t;
 
 /**
@@ -159,8 +156,7 @@ extern void libassistant_satellite_fold(libassistant_satellite_fold_result_t *ou
  * which note survived a full memory, which action was reached for first, whether the
  * turn ended in an answer or a question, and what it cost.
  */
-typedef struct
-{
+typedef struct {
     uint32_t persona_sig;    /**< Fold of who was thinking. */
     uint32_t intent_sig;     /**< Fold of the parsed utterance. */
     uint32_t memory_sig;     /**< Fold of the store after it had to choose. */
@@ -198,8 +194,7 @@ extern void libassistant_agency_fold(libassistant_agency_fold_result_t *out);
  * would accept. Zero in the first alone proves nothing: a demon that never acts also
  * never acts illegally.
  */
-typedef struct
-{
+typedef struct {
     uint32_t transcript_sig; /**< Fold of the model-driven turn. */
     uint32_t action_sig;     /**< Fold of the chosen actions alone. */
     uint32_t utterance_sig;  /**< Fold of what was said at the end. */

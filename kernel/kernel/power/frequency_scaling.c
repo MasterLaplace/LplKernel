@@ -70,8 +70,8 @@ PerformanceState_t kernel_frequency_scaling_govern(uint32_t busy_permille, bool 
        of busy time — and dropping its clock on that evidence is how a buffer arrives
        late. */
     if (deadline_bound)
-        return busy_permille >= FREQUENCY_SCALING_HIGH_THRESHOLD_PERMILLE ? PERFORMANCE_STATE_HIGH
-                                                                          : PERFORMANCE_STATE_MEDIUM;
+        return busy_permille >= FREQUENCY_SCALING_HIGH_THRESHOLD_PERMILLE ? PERFORMANCE_STATE_HIGH :
+                                                                            PERFORMANCE_STATE_MEDIUM;
 
     if (busy_permille <= FREQUENCY_SCALING_LOW_THRESHOLD_PERMILLE)
         return PERFORMANCE_STATE_LOW;

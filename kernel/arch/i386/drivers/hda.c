@@ -53,25 +53,25 @@
 #include <stddef.h>
 
 /* ── Controller registers, at offsets from the mapped window ───────────────── */
-#define HDA_REG_GLOBAL_CAPABILITIES 0x00u /**< 16-bit: stream descriptor counts. */
-#define HDA_REG_MINOR_VERSION 0x02u
-#define HDA_REG_MAJOR_VERSION 0x03u
-#define HDA_REG_GLOBAL_CONTROL 0x08u      /**< 32-bit: bit 0 is controller reset. */
-#define HDA_REG_STATE_CHANGE_STATUS 0x0Eu /**< 16-bit: bit per codec that announced itself. */
-#define HDA_REG_COMMAND_RING_BASE_LOW 0x40u
-#define HDA_REG_COMMAND_RING_BASE_HIGH 0x44u
-#define HDA_REG_COMMAND_RING_WRITE_POINTER 0x48u
-#define HDA_REG_COMMAND_RING_READ_POINTER 0x4Au
-#define HDA_REG_COMMAND_RING_CONTROL 0x4Cu
-#define HDA_REG_COMMAND_RING_STATUS 0x4Du /**< 8-bit: bit 0 is a memory error on fetch. */
-#define HDA_REG_COMMAND_RING_SIZE 0x4Eu
-#define HDA_REG_RESPONSE_RING_BASE_LOW 0x50u
-#define HDA_REG_RESPONSE_RING_BASE_HIGH 0x54u
+#define HDA_REG_GLOBAL_CAPABILITIES         0x00u /**< 16-bit: stream descriptor counts. */
+#define HDA_REG_MINOR_VERSION               0x02u
+#define HDA_REG_MAJOR_VERSION               0x03u
+#define HDA_REG_GLOBAL_CONTROL              0x08u /**< 32-bit: bit 0 is controller reset. */
+#define HDA_REG_STATE_CHANGE_STATUS         0x0Eu /**< 16-bit: bit per codec that announced itself. */
+#define HDA_REG_COMMAND_RING_BASE_LOW       0x40u
+#define HDA_REG_COMMAND_RING_BASE_HIGH      0x44u
+#define HDA_REG_COMMAND_RING_WRITE_POINTER  0x48u
+#define HDA_REG_COMMAND_RING_READ_POINTER   0x4Au
+#define HDA_REG_COMMAND_RING_CONTROL        0x4Cu
+#define HDA_REG_COMMAND_RING_STATUS         0x4Du /**< 8-bit: bit 0 is a memory error on fetch. */
+#define HDA_REG_COMMAND_RING_SIZE           0x4Eu
+#define HDA_REG_RESPONSE_RING_BASE_LOW      0x50u
+#define HDA_REG_RESPONSE_RING_BASE_HIGH     0x54u
 #define HDA_REG_RESPONSE_RING_WRITE_POINTER 0x58u
-#define HDA_REG_RESPONSE_INTERRUPT_COUNT 0x5Au
-#define HDA_REG_RESPONSE_RING_CONTROL 0x5Cu
-#define HDA_REG_RESPONSE_RING_STATUS 0x5Du
-#define HDA_REG_RESPONSE_RING_SIZE 0x5Eu
+#define HDA_REG_RESPONSE_INTERRUPT_COUNT    0x5Au
+#define HDA_REG_RESPONSE_RING_CONTROL       0x5Cu
+#define HDA_REG_RESPONSE_RING_STATUS        0x5Du
+#define HDA_REG_RESPONSE_RING_SIZE          0x5Eu
 
 /** Global control bit 0: low holds the controller in reset, high releases it. */
 #define HDA_GLOBAL_CONTROL_RESET (1u << 0)
@@ -92,7 +92,7 @@
  * worked exactly once", which reads like a codec problem and is not.
  */
 #define HDA_RESPONSE_STATUS_INTERRUPT (1u << 0)
-#define HDA_RESPONSE_STATUS_OVERRUN (1u << 2)
+#define HDA_RESPONSE_STATUS_OVERRUN   (1u << 2)
 
 /** Read-pointer reset bit, acknowledged by readback on the way in and on the way out. */
 #define HDA_RING_POINTER_RESET (1u << 15)
@@ -102,13 +102,13 @@
 
 /** PCI command register bits: memory space decode and bus mastering. */
 #define HDA_PCI_COMMAND_MEMORY_SPACE (1u << 1)
-#define HDA_PCI_COMMAND_BUS_MASTER (1u << 2)
+#define HDA_PCI_COMMAND_BUS_MASTER   (1u << 2)
 
 /** Offset of the command register in PCI configuration space. */
 #define HDA_PCI_COMMAND_OFFSET 0x04u
 
 /** PCI class and subclass of a High Definition Audio controller. */
-#define HDA_PCI_CLASS 0x04u
+#define HDA_PCI_CLASS    0x04u
 #define HDA_PCI_SUBCLASS 0x03u
 
 /**
@@ -223,13 +223,13 @@
 #define HDA_REG_STREAM_DESCRIPTOR_BASE 0x80u
 
 /* Offsets inside one stream descriptor. */
-#define HDA_STREAM_CONTROL 0x00u
-#define HDA_STREAM_STATUS 0x03u
-#define HDA_STREAM_LINK_POSITION 0x04u
+#define HDA_STREAM_CONTROL              0x00u
+#define HDA_STREAM_STATUS               0x03u
+#define HDA_STREAM_LINK_POSITION        0x04u
 #define HDA_STREAM_CYCLIC_BUFFER_LENGTH 0x08u
-#define HDA_STREAM_LAST_VALID_INDEX 0x0Cu
-#define HDA_STREAM_FORMAT 0x12u
-#define HDA_STREAM_DESCRIPTOR_LIST_LOW 0x18u
+#define HDA_STREAM_LAST_VALID_INDEX     0x0Cu
+#define HDA_STREAM_FORMAT               0x12u
+#define HDA_STREAM_DESCRIPTOR_LIST_LOW  0x18u
 #define HDA_STREAM_DESCRIPTOR_LIST_HIGH 0x1Cu
 
 /** Stream control bit 0: reset. */
@@ -252,10 +252,7 @@ static uint32_t hda_capture_half_read = 0u;
  * @param offset Register offset.
  * @return The value.
  */
-static uint8_t hda_read8(uint32_t offset)
-{
-    return *(volatile uint8_t *) (uintptr_t) (hda_state.bar_virtual + offset);
-}
+static uint8_t hda_read8(uint32_t offset) { return *(volatile uint8_t *) (uintptr_t) (hda_state.bar_virtual + offset); }
 
 /**
  * @brief Writes a byte to the register window.
@@ -472,8 +469,7 @@ static bool hda_start_rings(void)
        already been reached. Zero is avoided for the opposite reason — some controllers
        read it as "never write a response at all". */
     hda_write16(HDA_REG_RESPONSE_INTERRUPT_COUNT, 0xFFu);
-    hda_write8(HDA_REG_RESPONSE_RING_STATUS,
-               HDA_RESPONSE_STATUS_INTERRUPT | HDA_RESPONSE_STATUS_OVERRUN);
+    hda_write8(HDA_REG_RESPONSE_RING_STATUS, HDA_RESPONSE_STATUS_INTERRUPT | HDA_RESPONSE_STATUS_OVERRUN);
 
     hda_write8(HDA_REG_COMMAND_RING_CONTROL, HDA_COMMAND_RING_RUN);
     hda_write8(HDA_REG_RESPONSE_RING_CONTROL, HDA_RESPONSE_RING_RUN);
@@ -637,16 +633,16 @@ static void hda_find_capture_path(uint8_t codec)
     for (uint8_t group = 0u; group < group_count; ++group)
     {
         const uint8_t node = (uint8_t) (first_group + group);
-        if (!intel_high_definition_audio_command(codec, node, HDA_VERB_GET_PARAMETER,
-                                                 HDA_PARAMETER_FUNCTION_GROUP_TYPE, &response))
+        if (!intel_high_definition_audio_command(codec, node, HDA_VERB_GET_PARAMETER, HDA_PARAMETER_FUNCTION_GROUP_TYPE,
+                                                 &response))
             continue;
         if ((response & 0x7Fu) != HDA_FUNCTION_GROUP_AUDIO)
             continue;
 
         hda_state.audio_function_group = node;
 
-        if (!intel_high_definition_audio_command(codec, node, HDA_VERB_GET_PARAMETER,
-                                                 HDA_PARAMETER_SUB_NODE_COUNT, &response))
+        if (!intel_high_definition_audio_command(codec, node, HDA_VERB_GET_PARAMETER, HDA_PARAMETER_SUB_NODE_COUNT,
+                                                 &response))
             return;
 
         const uint8_t first_widget = (uint8_t) ((response >> 16) & 0xFFu);
@@ -748,8 +744,8 @@ bool intel_high_definition_audio_start_capture(void)
 
     const uint8_t codec = 0u;
     uint32_t ignored = 0u;
-    (void) intel_high_definition_audio_command_wide(codec, hda_state.capture_converter,
-                                                    HDA_VERB_SET_CONVERTER_FORMAT, HDA_CAPTURE_FORMAT, &ignored);
+    (void) intel_high_definition_audio_command_wide(codec, hda_state.capture_converter, HDA_VERB_SET_CONVERTER_FORMAT,
+                                                    HDA_CAPTURE_FORMAT, &ignored);
     (void) intel_high_definition_audio_command(codec, hda_state.capture_converter, HDA_VERB_SET_STREAM_CHANNEL,
                                                (uint8_t) (HDA_CAPTURE_STREAM_NUMBER << 4), &ignored);
     /* Unmute the input amplifier at its loudest setting the codec offers. Bit 15 sets
@@ -816,15 +812,15 @@ bool intel_high_definition_audio_initialize(IntelHighDefinitionAudioState_t *out
     /* Memory decode and bus mastering, both. Bus mastering is the one that is easy to
        forget and hard to diagnose: without it every register reads correctly and the
        controller silently never touches the rings. */
-    uint16_t command = peripheral_component_interconnect_config_read_word(device->bus, device->device,
-                                                                         device->function, HDA_PCI_COMMAND_OFFSET);
+    uint16_t command = peripheral_component_interconnect_config_read_word(device->bus, device->device, device->function,
+                                                                          HDA_PCI_COMMAND_OFFSET);
     command |= (uint16_t) (HDA_PCI_COMMAND_MEMORY_SPACE | HDA_PCI_COMMAND_BUS_MASTER);
     peripheral_component_interconnect_config_write_word(device->bus, device->device, device->function,
                                                         HDA_PCI_COMMAND_OFFSET, command);
 
     PeripheralComponentInterconnectBaseAddressRegister_t bar;
-    if (!peripheral_component_interconnect_read_base_address_register(device->bus, device->device, device->function,
-                                                                     0u, &bar))
+    if (!peripheral_component_interconnect_read_base_address_register(device->bus, device->device, device->function, 0u,
+                                                                      &bar))
     {
         if (out != NULL)
             *out = hda_state;
@@ -842,8 +838,7 @@ bool intel_high_definition_audio_initialize(IntelHighDefinitionAudioState_t *out
         return false;
     }
 
-    hda_state.bar_virtual =
-        hda_map_window((uint32_t) bar.base, bar.size != 0u ? (uint32_t) bar.size : 0x4000u);
+    hda_state.bar_virtual = hda_map_window((uint32_t) bar.base, bar.size != 0u ? (uint32_t) bar.size : 0x4000u);
     if (hda_state.bar_virtual == 0u)
     {
         if (out != NULL)

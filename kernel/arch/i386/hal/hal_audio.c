@@ -96,10 +96,7 @@ bool hardware_abstraction_layer_audio_present(void) { return hal_audio_codec_pre
 
 const char *hardware_abstraction_layer_audio_device_name(void) { return hal_audio_name; }
 
-uint32_t hardware_abstraction_layer_audio_sample_rate(void)
-{
-    return hal_audio_codec_present ? 16000u : 0u;
-}
+uint32_t hardware_abstraction_layer_audio_sample_rate(void) { return hal_audio_codec_present ? 16000u : 0u; }
 
 const volatile uint32_t *hardware_abstraction_layer_audio_capture_write_index(void)
 {

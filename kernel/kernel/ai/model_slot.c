@@ -41,8 +41,8 @@ bool kernel_model_slot_probe(ModelSlot_t *out)
     /* Byte by byte rather than through a uint32_t pointer: a module lands wherever
        the loader put it, and a four-byte load from an odd address is undefined even
        where the hardware would tolerate it. */
-    out->magic = (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8) | ((uint32_t) bytes[2] << 16) |
-                 ((uint32_t) bytes[3] << 24);
+    out->magic =
+        (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8) | ((uint32_t) bytes[2] << 16) | ((uint32_t) bytes[3] << 24);
 
     if (out->magic != KERNEL_MODEL_SLOT_MAGIC)
     {
@@ -60,9 +60,9 @@ const char *kernel_model_slot_state_text(const ModelSlot_t *slot)
         return "empty";
     switch (slot->state)
     {
-        case MODEL_SLOT_LOADED: return "loaded";
-        case MODEL_SLOT_MALFORMED: return "malformed";
-        case MODEL_SLOT_EMPTY:
-        default: return "empty";
+    case MODEL_SLOT_LOADED: return "loaded";
+    case MODEL_SLOT_MALFORMED: return "malformed";
+    case MODEL_SLOT_EMPTY:
+    default: return "empty";
     }
 }

@@ -44,15 +44,15 @@ extern "C" {
  * because a disagreement between the two is itself one of the three answers.
  */
 typedef struct {
-    uint16_t command_write_pointer_shadow;  /**< What this driver believes it wrote. */
-    uint16_t command_write_pointer;         /**< CORBWP, as the controller reports it. */
-    uint16_t command_read_pointer;          /**< CORBRP: how far the controller has fetched. */
-    uint16_t response_write_pointer;        /**< RIRBWP: how far it has answered. */
-    uint16_t response_read_pointer_shadow;  /**< How far this driver has consumed. */
-    uint8_t command_ring_control;           /**< CORBCTL: is the fetch engine running. */
-    uint8_t command_ring_status;            /**< CORBSTS: bit 0 is a memory error. */
-    uint8_t response_ring_control;          /**< RIRBCTL: is the response engine running. */
-    uint8_t response_ring_status;           /**< RIRBSTS: response flag and overrun. */
+    uint16_t command_write_pointer_shadow; /**< What this driver believes it wrote. */
+    uint16_t command_write_pointer;        /**< CORBWP, as the controller reports it. */
+    uint16_t command_read_pointer;         /**< CORBRP: how far the controller has fetched. */
+    uint16_t response_write_pointer;       /**< RIRBWP: how far it has answered. */
+    uint16_t response_read_pointer_shadow; /**< How far this driver has consumed. */
+    uint8_t command_ring_control;          /**< CORBCTL: is the fetch engine running. */
+    uint8_t command_ring_status;           /**< CORBSTS: bit 0 is a memory error. */
+    uint8_t response_ring_control;         /**< RIRBCTL: is the response engine running. */
+    uint8_t response_ring_status;          /**< RIRBSTS: response flag and overrun. */
 } IntelHighDefinitionAudioRingProbe_t;
 
 /**
@@ -65,25 +65,25 @@ typedef struct {
  * input converter, are different problems with the same one-word answer.
  */
 typedef struct {
-    bool controller_present;  /**< A device of the right class is on the bus. */
-    bool controller_running;  /**< It came out of reset. */
-    bool rings_running;       /**< The command and response rings are live. */
-    uint32_t bar_virtual;     /**< Where the register window was mapped. */
-    uint8_t major_version;    /**< Specification major version it reports. */
-    uint8_t minor_version;    /**< Specification minor version. */
-    uint8_t output_streams;   /**< Output stream descriptors it implements. */
-    uint8_t input_streams;    /**< Input stream descriptors it implements. */
-    uint16_t codec_mask;      /**< Bit per codec slot that answered the reset. */
+    bool controller_present;                                       /**< A device of the right class is on the bus. */
+    bool controller_running;                                       /**< It came out of reset. */
+    bool rings_running;                                            /**< The command and response rings are live. */
+    uint32_t bar_virtual;                                          /**< Where the register window was mapped. */
+    uint8_t major_version;                                         /**< Specification major version it reports. */
+    uint8_t minor_version;                                         /**< Specification minor version. */
+    uint8_t output_streams;                                        /**< Output stream descriptors it implements. */
+    uint8_t input_streams;                                         /**< Input stream descriptors it implements. */
+    uint16_t codec_mask;                                           /**< Bit per codec slot that answered the reset. */
     uint32_t codec_vendor[INTEL_HIGH_DEFINITION_AUDIO_MAX_CODECS]; /**< Vendor identifier per slot. */
-    uint32_t verbs_sent;      /**< Commands written to the ring. */
-    uint32_t responses_read;  /**< Responses read back. */
-    uint32_t verb_timeouts;   /**< Commands that never got an answer. */
-    uint8_t audio_function_group; /**< Node identifier of the audio function group. */
-    uint8_t capture_converter;    /**< Input converter widget, 0 when none was found. */
-    uint8_t capture_pin;          /**< Input-capable pin feeding it, 0 when none was found. */
-    uint8_t playback_converter;   /**< Output converter widget, 0 when none was found. */
-    uint8_t playback_pin;         /**< Output-capable pin, 0 when none was found. */
-    uint8_t widgets_walked;       /**< Widgets examined while looking for them. */
+    uint32_t verbs_sent;                                           /**< Commands written to the ring. */
+    uint32_t responses_read;                                       /**< Responses read back. */
+    uint32_t verb_timeouts;                                        /**< Commands that never got an answer. */
+    uint8_t audio_function_group;                                  /**< Node identifier of the audio function group. */
+    uint8_t capture_converter;  /**< Input converter widget, 0 when none was found. */
+    uint8_t capture_pin;        /**< Input-capable pin feeding it, 0 when none was found. */
+    uint8_t playback_converter; /**< Output converter widget, 0 when none was found. */
+    uint8_t playback_pin;       /**< Output-capable pin, 0 when none was found. */
+    uint8_t widgets_walked;     /**< Widgets examined while looking for them. */
     /**
      * Output amplifiers this driver muted at bring-up, and never unmutes.
      *
@@ -92,11 +92,11 @@ typedef struct {
      * that a development machine cannot be made to emit noise by a kernel under test.
      */
     uint8_t outputs_muted;
-    bool capture_running;         /**< The input stream descriptor is running. */
-    uint32_t capture_position;    /**< Link position, in bytes, at the last poll. */
-    uint32_t capture_wraps;       /**< Times the cyclic buffer came back round. */
-    bool probe_captured;          /**< A command timed out and its registers were kept. */
-    uint32_t probe_command;       /**< The command word that got no answer. */
+    bool capture_running;                             /**< The input stream descriptor is running. */
+    uint32_t capture_position;                        /**< Link position, in bytes, at the last poll. */
+    uint32_t capture_wraps;                           /**< Times the cyclic buffer came back round. */
+    bool probe_captured;                              /**< A command timed out and its registers were kept. */
+    uint32_t probe_command;                           /**< The command word that got no answer. */
     IntelHighDefinitionAudioRingProbe_t probe_before; /**< Rings before it was submitted. */
     IntelHighDefinitionAudioRingProbe_t probe_after;  /**< Rings after the budget ran out. */
 } IntelHighDefinitionAudioState_t;
