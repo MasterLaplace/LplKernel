@@ -25,6 +25,16 @@ for arg in "$@"; do
             export REALTIME_MODE=0
             export GRAPHICS_MODE=0
             ;;
+        # Third profile: a sense organ, not an organ of the demon. It instantiates
+        # no World and links no engine, so it carries neither the determinism
+        # contract nor a parity gate — which is what makes it, and only it, free to
+        # run without a periodic tick and free to be ported to cheap silicon.
+        --satellite)
+            export SATELLITE_MODE=1
+            export REALTIME_MODE=0
+            export GRAPHICS_MODE=0
+            export ENABLE_LIBENGINE=0
+            ;;
         --azerty)
             export KEYBOARD_LAYOUT=fr
             ;;
@@ -56,7 +66,7 @@ LAST_MODE_FILE=".last_build_mode"
 # compile flag, which make cannot see on its own (it tracks source mtimes, not flags).
 # Without this, client_app.o / kernel.o keep a stale "no engine module" stub baked in
 # after the engine appears (or vice-versa). Including it forces an auto-clean on flip.
-CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} APIC_SMOKE=$APIC_SMOKE_TEST_PERIODIC_MODE KEYBOARD=${KEYBOARD_LAYOUT:-us} ENGINE=${ENABLE_LIBENGINE:-0}"
+CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} APIC_SMOKE=$APIC_SMOKE_TEST_PERIODIC_MODE KEYBOARD=${KEYBOARD_LAYOUT:-us} ENGINE=${ENABLE_LIBENGINE:-0} SATELLITE=${SATELLITE_MODE:-0}"
 
 if [ -f "$LAST_MODE_FILE" ]; then
     LAST_MODE=$(cat "$LAST_MODE_FILE")

@@ -24,6 +24,31 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      # LplAssistant and LplKnowledge are SIBLING checkouts, not submodules. The
+      # workspace deliberately keeps ONE working tree per repository — a submodule would
+      # create a second, which is the confusion LplPlugin already causes — and both
+      # config.sh and xmake.lua already look for them at ../LplAssistant and
+      # ../LplKnowledge. So the runner only has to put them where the code already looks.
+      #
+      # Without this step the ISOs this workflow builds carry no mind and no memory:
+      # config.sh sets ENABLE_LIBASSISTANT=0 and ENABLE_LIBKNOWLEDGE=0, gates P14 to P18
+      # are compiled out, and the emulator on the site boots a kernel missing everything
+      # those two repositories add. The fallback is deliberate and silent by design, which
+      # is exactly why its absence has to be arranged for rather than assumed.
+      #
+      # The branch fallback is not defensiveness: LplAssistant's work currently lives on a
+      # feature branch, and the plain clone takes over the day it merges and the branch is
+      # deleted — without this workflow needing an edit at that moment.
+      - name: Fetch the sibling repositories
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE/.."
+          git clone --depth 1 --branch feat/agentic-deep-research \
+            https://github.com/Christian-guajardo/LplAssistant.git LplAssistant \
+            || git clone --depth 1 https://github.com/Christian-guajardo/LplAssistant.git LplAssistant
+          git clone --depth 1 https://github.com/MasterLaplace/LplKnowledge.git LplKnowledge
+          echo "siblings: $(ls -d LplAssistant LplKnowledge)"
+
       # --- Cross-toolchain (GCC 14 — LplPlugin/libengine require -std=gnu++23) ---
       # Distinct cache keys from build_lplkernel.yml's GCC 10 toolchain so the two
       # never clobber each other.

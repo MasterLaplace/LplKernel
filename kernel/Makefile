@@ -24,9 +24,35 @@ LDFLAGS:=$(LDFLAGS)
 # by the kernel's references (e.g. libengine_p0_smoke). When absent, the kernel
 # is pure C — no C++ runtime is needed, so libkxx is left out entirely — the
 # smoke battery is forced off and LPL_PLUGIN_UNAVAILABLE is set.
+#
+# The mind and the memory ride on the same seam one rung higher: -lknowledge and
+# -lassistant come FIRST, because both call into libengine — the mind for the foundation
+# (Fixed32, CORDIC, the arena), the memory for `lpl::history`, the arithmetic of doubt it
+# consumes rather than reimplements — and a static archive only satisfies references that
+# are already outstanding when the linker reaches it.
+#
+# -lknowledge before -lassistant is the order to keep: nothing in the memory calls the mind
+# today, but the reverse is where this is going (a demon that recalls what it knows), and an
+# order chosen once is one fewer thing to rediscover at a link error.
 ENABLE_LIBENGINE?=1
+ENABLE_LIBASSISTANT?=0
+ENABLE_LIBKNOWLEDGE?=0
 ifeq ($(ENABLE_LIBENGINE),1)
-LIBS:=$(LIBS) -nostdlib -lengine -lkxx -lk -lgcc
+KNOWLEDGE_LIB:=
+ASSISTANT_LIB:=
+ifeq ($(ENABLE_LIBKNOWLEDGE),1)
+KNOWLEDGE_LIB:=-lknowledge
+KNOWLEDGE_ARCHIVE:=$(wildcard $(DESTDIR)/usr/lib/libknowledge.a)
+else
+CPPFLAGS:=$(CPPFLAGS) -DLPL_KNOWLEDGE_UNAVAILABLE=1
+endif
+ifeq ($(ENABLE_LIBASSISTANT),1)
+ASSISTANT_LIB:=-lassistant
+ASSISTANT_ARCHIVE:=$(wildcard $(DESTDIR)/usr/lib/libassistant.a)
+else
+CPPFLAGS:=$(CPPFLAGS) -DLPL_ASSISTANT_UNAVAILABLE=1
+endif
+LIBS:=$(LIBS) -nostdlib $(KNOWLEDGE_LIB) $(ASSISTANT_LIB) -lengine -lkxx -lk -lgcc
 # Relink the kernel whenever the engine archive changes. -lengine is resolved
 # from the sysroot, so a rebuilt libengine.a (e.g. after an LplPlugin header
 # edit) would otherwise leave a stale engine baked into lpl.kernel. wildcard
@@ -34,7 +60,7 @@ LIBS:=$(LIBS) -nostdlib -lengine -lkxx -lk -lgcc
 ENGINE_ARCHIVE:=$(wildcard $(DESTDIR)/usr/lib/libengine.a)
 else
 LIBS:=$(LIBS) -nostdlib -lk -lgcc
-CPPFLAGS:=$(CPPFLAGS) -DLPL_PLUGIN_UNAVAILABLE=1
+CPPFLAGS:=$(CPPFLAGS) -DLPL_PLUGIN_UNAVAILABLE=1 -DLPL_ASSISTANT_UNAVAILABLE=1 -DLPL_KNOWLEDGE_UNAVAILABLE=1
 SMOKE_TESTS:=0
 endif
 
@@ -74,6 +100,14 @@ kernel/memory/tlsf.o \
 kernel/core/console.o \
 kernel/core/splash.o \
 kernel/core/smp.o \
+kernel/ai/tensor_arena.o \
+kernel/ai/model_slot.o \
+kernel/ai/inference_budget.o \
+kernel/dialogue/dialogue_channel.o \
+kernel/power/processor_sleep.o \
+kernel/power/tickless.o \
+kernel/power/frequency_scaling.o \
+kernel/satellite/satellite_app.o \
 kernel/testing/smoke_batch.o \
 kernel/testing/smoke_libengine.o \
 kernel/diag/sysmon.o \
@@ -107,7 +141,7 @@ all: lpl.kernel
 NM?=$(subst -gcc,-nm,$(firstword $(CC)))
 OBJDUMP?=$(subst -gcc,-objdump,$(firstword $(CC)))
 
-lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld $(ENGINE_ARCHIVE)
+lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld $(ENGINE_ARCHIVE) $(ASSISTANT_ARCHIVE) $(KNOWLEDGE_ARCHIVE)
 	$(CC) -T $(ARCHDIR)/linker.ld -o $@ $(CFLAGS) $(LINK_LIST)
 	grub-file --is-x86-multiboot lpl.kernel
 	@$(MAKE) --no-print-directory check-kernel-end

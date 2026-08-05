@@ -101,4 +101,27 @@ extern void advanced_pic_timer_backend_signal_end_of_interrupt(void);
  */
 extern uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void);
 
+/**
+ * @brief Arms the local timer to fire once, after a delay.
+ *
+ * The half of the timer a tickless kernel needs: periodic mode wakes on a cadence,
+ * this wakes at a deadline. Programming a deadline instead of a period is what lets
+ * an idle core sleep for seconds rather than a millisecond at a time.
+ *
+ * @param microseconds Delay before the interrupt.
+ * @return 1 when armed, 0 when the local APIC is unavailable or uncalibrated.
+ */
+extern uint8_t advanced_pic_timer_backend_arm_one_shot(uint32_t microseconds);
+
+/**
+ * @brief Stops the local timer and masks its vector.
+ */
+extern void advanced_pic_timer_backend_disable(void);
+
+/**
+ * @brief Ticks remaining before the local timer fires.
+ * @return The current count, or 0 when the timer is unavailable.
+ */
+extern uint32_t advanced_pic_timer_backend_read_current_count(void);
+
 #endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_TIMER_H */

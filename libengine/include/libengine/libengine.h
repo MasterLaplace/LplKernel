@@ -463,6 +463,87 @@ typedef struct {
 extern void libengine_botany_fold(libengine_botany_fold_result_t *out);
 
 /*
+** Codec parity (gate P11) — the first gate whose two sides run DIFFERENT code.
+**
+** Every gate before this compiled one source twice: the same arithmetic, two
+** targets, and the contract was that the compiler did not change it. Here the host
+** XORs 128 bits at a time and ring 0 XORs one word at a time, on purpose, and the
+** claim being tested is that reordering associative, commutative, rounding-free
+** operations changes nothing. A mismatch says that claim is wrong.
+**
+** Must match tests/parity/test_codec_parity.cpp on the host, bit for bit.
+*/
+typedef struct {
+    uint32_t soliton_sig;      /**< FNV-1a over the degree distribution's weights. */
+    uint32_t droplet_sig;      /**< FNV-1a over every emitted droplet. */
+    uint32_t matrix_sig;       /**< FNV-1a over a reduced GF(2) system. */
+    uint32_t payload_sig;      /**< FNV-1a over the recovered payload. */
+    uint32_t emitted;          /**< Droplets the fountain produced. */
+    uint32_t delivered;        /**< Droplets left after the gate's drops. */
+    uint32_t peeled_blocks;    /**< Blocks belief propagation resolved. */
+    uint32_t eliminated_blocks;/**< Blocks the Gaussian tail finished. */
+    uint32_t recovered;        /**< 1 when the payload came back byte for byte. */
+    uint32_t vector_kernel;    /**< 1 when this build took the widened XOR path. */
+} libengine_codec_fold_result_t;
+
+extern void libengine_codec_fold(libengine_codec_fold_result_t *out);
+
+/*
+** Rosetta parity (gate P12) — the artifact that carries its own reader.
+**
+** Ten opcodes, a fixed four-byte instruction, eight registers and a flat memory,
+** chosen for how little a future reader has to be told before an emulator becomes
+** writable. The gate folds the trace of a canonical program, the engraved
+** specification, the plate built around it, and whether a machine REBUILT from that
+** engraving runs the same program to the same trace.
+**
+** Must match tests/parity/test_rosetta_isa.cpp on the host, bit for bit.
+*/
+typedef struct {
+    uint32_t trace_sig;      /**< FNV-1a over every instruction retired and its result. */
+    uint32_t spec_sig;       /**< FNV-1a over the engraved instruction-set description. */
+    uint32_t plate_sig;      /**< FNV-1a over the whole plate image. */
+    uint32_t payload_sig;    /**< FNV-1a over the payload read back off the plate. */
+    uint32_t steps;          /**< Instructions the canonical program retired. */
+    uint32_t halted;         /**< 1 when it reached HALT rather than its budget. */
+    uint32_t plate_bytes;    /**< Size of the plate. */
+    uint32_t rebuilt_opcodes;/**< Opcodes a machine rebuilt from the plate knows. */
+    uint32_t self_hosting;   /**< 1 when the rebuilt reader ran the program identically. */
+} libengine_rosetta_fold_result_t;
+
+extern void libengine_rosetta_fold(libengine_rosetta_fold_result_t *out);
+
+/*
+** History parity (gate P13) — two sources, one past.
+**
+** The sextuplet (subject, predicate, object, window, source, confidence), a trust
+** score per source, Bayesian fusion of independent agreement, and the rule that makes
+** the whole thing honest: where two claims cannot both hold, the less supported one is
+** DEMOTED and never deleted, so the consensus view is the default and the minority
+** version stays reachable.
+**
+** Folded in ring 0 because a confidence decides which of two contradictory pasts a
+** world believes. A rounding that differed between targets would give two histories
+** from one corpus, which is the one thing a reconstruction may not do.
+**
+** Must match tests/parity/test_history_parity.cpp on the host, bit for bit.
+*/
+typedef struct {
+    uint32_t timeline_sig;      /**< FNV-1a over the consensus timeline. */
+    uint32_t chronicle_sig;     /**< FNV-1a over the run's own account. */
+    uint32_t minority_sig;      /**< FNV-1a over the timeline one source alone believes. */
+    uint32_t constraints;       /**< Constraints the consensus world holds. */
+    uint32_t contradictions;    /**< Pairs that could not both hold. */
+    uint32_t demoted;           /**< Claims a contradiction pushed down. */
+    uint32_t consensus_object;  /**< What the consensus believes killed the king. */
+    uint32_t minority_reachable;/**< 1 when the losing claim survives in the timeline. */
+    uint32_t scored;            /**< Claims the run had to earn. */
+    uint32_t earned;            /**< Of those, the ones it did. */
+} libengine_history_fold_result_t;
+
+extern void libengine_history_fold(libengine_history_fold_result_t *out);
+
+/*
 ** Kernel client entry point — the freestanding mirror of apps/client/main.cpp.
 **
 ** Takes the cartridge the same way the parity fold does: pass the bytes of a

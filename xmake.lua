@@ -38,6 +38,34 @@ end
 -- is the "no xmake/LplPlugin → fallback to a plain kernel" path.
 local LPLPLUGIN_AVAILABLE = os.isdir(path.join(LPLPLUGIN_ROOT, "core/include"))
 
+-- Single source of truth for the mind. A sibling checkout, not a submodule —
+-- decision 1 of docs/ARCHITECTURE_cible.md, settled the way libassistant's
+-- make.config already assumed.
+local LPLASSISTANT_ROOT = os.getenv("LPLASSISTANT_ROOT")
+if not LPLASSISTANT_ROOT or LPLASSISTANT_ROOT == "" then
+    LPLASSISTANT_ROOT = path.join(os.scriptdir(), "../LplAssistant")
+end
+
+-- Optional mind module, and optional in a stronger sense than the engine: it is
+-- written against the engine's foundation (Fixed32, CORDIC, the one arena), so it
+-- can never be present when LplPlugin is not.
+local LPLASSISTANT_AVAILABLE =
+    LPLPLUGIN_AVAILABLE and os.isdir(path.join(LPLASSISTANT_ROOT, "infer/include"))
+
+-- Single source of truth for the memory. A sibling checkout, like the mind and for the
+-- same reason: it is a repository in its own right, it builds and is tested on its own,
+-- and a submodule would tie its history to this one's.
+local LPLKNOWLEDGE_ROOT = os.getenv("LPLKNOWLEDGE_ROOT")
+if not LPLKNOWLEDGE_ROOT or LPLKNOWLEDGE_ROOT == "" then
+    LPLKNOWLEDGE_ROOT = path.join(os.scriptdir(), "../LplKnowledge")
+end
+
+-- Optional memory module, optional in the same stronger sense as the mind: it reads a
+-- corpus into `lpl::history`, which lives in libengine, so it can never be present when
+-- LplPlugin is not.
+local LPLKNOWLEDGE_AVAILABLE =
+    LPLPLUGIN_AVAILABLE and os.isdir(path.join(LPLKNOWLEDGE_ROOT, "knowledge/include"))
+
 -- ---------------------------------------------------------------------------
 -- Cross toolchain: i686-elf-gcc/g++/ar. Assembly + link go through the gcc
 -- driver (matching the Makefile's .s.o / link rules using $(CC)).
@@ -211,6 +239,9 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "render/include"),
         path.join(LPLPLUGIN_ROOT, "engine/include"),
         path.join(LPLPLUGIN_ROOT, "procgen/include"),
+        path.join(LPLPLUGIN_ROOT, "codec/include"),
+        path.join(LPLPLUGIN_ROOT, "rosetta/include"),
+        path.join(LPLPLUGIN_ROOT, "history/include"),
         path.join(LPLPLUGIN_ROOT, "ai/include"),
         path.join(LPLPLUGIN_ROOT, "ecology/include"),
         path.join(LPLPLUGIN_ROOT, "pack/include"),
@@ -249,6 +280,30 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "procgen/src/Settlement.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Extrusion.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Botany.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/GaloisField.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/XorKernel.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/BitMatrix.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/GaussJordan.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/FourRussians.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/Prng.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/Fountain.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/Peeling.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/Erasure.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/ReedSolomon.cpp"),
+        path.join(LPLPLUGIN_ROOT, "codec/src/Parity.cpp"),
+        path.join(LPLPLUGIN_ROOT, "rosetta/src/MinimalIsa.cpp"),
+        path.join(LPLPLUGIN_ROOT, "rosetta/src/Interpreter.cpp"),
+        path.join(LPLPLUGIN_ROOT, "rosetta/src/SelfDescribing.cpp"),
+        path.join(LPLPLUGIN_ROOT, "rosetta/src/Bootstrap.cpp"),
+        path.join(LPLPLUGIN_ROOT, "rosetta/src/Engraving.cpp"),
+        path.join(LPLPLUGIN_ROOT, "rosetta/src/Parity.cpp"),
+        path.join(LPLPLUGIN_ROOT, "history/src/Fact.cpp"),
+        path.join(LPLPLUGIN_ROOT, "history/src/Timeline.cpp"),
+        path.join(LPLPLUGIN_ROOT, "history/src/PossibleWorld.cpp"),
+        path.join(LPLPLUGIN_ROOT, "history/src/Chronicle.cpp"),
+        path.join(LPLPLUGIN_ROOT, "history/src/Divergence.cpp"),
+        path.join(LPLPLUGIN_ROOT, "history/src/HistorySystem.cpp"),
+        path.join(LPLPLUGIN_ROOT, "history/src/Parity.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Chunking.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/QualityGate.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Routing.cpp"),
@@ -276,6 +331,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "ecology/src/LivingRecipe.cpp"),
         -- pack/: the freestanding reader for baked game packages (.lplpak).
         path.join(LPLPLUGIN_ROOT, "pack/src/GamePack.cpp"),
+        path.join(LPLPLUGIN_ROOT, "pack/src/EccSection.cpp"),
         path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp"),
         path.join(LPLPLUGIN_ROOT, "input/src/InputManager.cpp"),
         path.join(LPLPLUGIN_ROOT, "image/src/Image.cpp"),
@@ -287,6 +343,8 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "engine/src/Config.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/GameLoop.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/systems/MovementSystem.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/CreatureSystems.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/HeightfieldCollisionSystem.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/systems/PhysicsSystem.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/Engine.cpp")
     )
@@ -296,6 +354,144 @@ target("libengine")
     add_files("libengine/src/*.cpp", "libengine/src/smoke/*.cpp")
 target_end()
 end -- if LPLPLUGIN_AVAILABLE
+
+-- ===========================================================================
+-- libassistant — the LplAssistant forward pass compiled -ffreestanding.
+-- Same determinism flags as libengine, because anything linked into the kernel
+-- obeys one arithmetic contract and not one per library. gnu++20 rather than 23:
+-- LplAssistant sets C++20 as its own standard, and a module compiled to a
+-- different standard here than in its own repository is a module whose two builds
+-- are not the same translation.
+--
+-- The source list is EXPLICIT and must stay in lock-step with
+-- libassistant/arch/i386/make.config. A glob would pull infer/src/Types.cpp in,
+-- which carries a std::string and belongs to the hosted half.
+-- ===========================================================================
+if LPLASSISTANT_AVAILABLE then
+target("libassistant")
+    set_kind("static")
+    set_basename("assistant")
+    set_languages("gnuxx20")
+    add_cxxflags(
+        "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
+        "-Wall", "-Wextra",
+        "-msse2", "-mfpmath=sse", "-ffp-contract=off", "-fno-math-errno", "-mstackrealign",
+        {force = true}
+    )
+    add_defines("LPL_TARGET_KERNEL=1", "LPL_HAS_FOUNDATION")
+    add_sysincludedirs(
+        "kernel/include",          -- <kernel/ai/tensor_arena.h>, <kernel/dialogue/...>
+        "libkxx/include",
+        "libc/include"
+    )
+    add_includedirs(
+        "libassistant/include",
+        path.join(LPLASSISTANT_ROOT, "include"),
+        path.join(LPLASSISTANT_ROOT, "infer/include"),
+        path.join(LPLASSISTANT_ROOT, "satellite/include"),
+        path.join(LPLASSISTANT_ROOT, "mind/include"),
+        -- agent/, headers only: lpl/agent/Decision.hpp declares the ONE decision seam
+        -- the hosted demon and this one share. No library is linked — the header is
+        -- self-contained and every symbol in it is a pure interface or a POD.
+        path.join(LPLPLUGIN_ROOT, "agent/include"),
+        path.join(LPLPLUGIN_ROOT, "core/include"),
+        path.join(LPLPLUGIN_ROOT, "math/include"),
+        path.join(LPLPLUGIN_ROOT, "memory/include")
+    )
+    add_files(
+        path.join(LPLASSISTANT_ROOT, "satellite/src/Protocol.cpp"),
+        path.join(LPLASSISTANT_ROOT, "satellite/src/VoiceActivity.cpp"),
+        path.join(LPLASSISTANT_ROOT, "satellite/src/WakeWord.cpp"),
+        path.join(LPLASSISTANT_ROOT, "satellite/src/Duplex.cpp"),
+        path.join(LPLASSISTANT_ROOT, "satellite/src/PowerState.cpp"),
+        path.join(LPLASSISTANT_ROOT, "satellite/src/Parity.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Quant.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Tensor.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/TensorArena.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Vocab.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Tokenizer.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Model.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/KvCache.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Attention.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/FeedForward.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Transformer.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Sampler.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/GrammarSampler.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Inference.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/Parity.cpp"),
+        -- mind/, the agency floor. The freestanding half only: Conversation.cpp is
+        -- hosted by contract (std::string, a vector store, a real model) and lives in
+        -- the separate lpl-mind-hosted target for exactly that reason.
+        path.join(LPLASSISTANT_ROOT, "mind/src/Persona.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/Intent.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/Budget.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/Memory.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/Recall.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/ReAct.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/Reasoning.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/Dialogue.cpp"),
+        path.join(LPLASSISTANT_ROOT, "mind/src/Parity.cpp")
+    )
+    add_files("libassistant/src/*.cpp", "libassistant/src/smoke/*.cpp")
+target_end()
+end -- if LPLASSISTANT_AVAILABLE
+
+-- ===========================================================================
+-- libknowledge — the LplKnowledge reader compiled -ffreestanding.
+-- Same determinism flags as libengine, because anything linked into the kernel obeys
+-- one arithmetic contract and not one per library. gnu++20 like libassistant: the
+-- reader uses no feature above 20, and a module compiled to a different standard here
+-- than in its own repository is a module whose two builds are not the same translation.
+--
+-- The source list is EXPLICIT and must stay in lock-step with
+-- libknowledge/arch/i386/make.config. A glob would pull harvest/, mirror/ and media/ in —
+-- the hosted half, which allocates, parses text and speaks HTTP.
+-- ===========================================================================
+if LPLKNOWLEDGE_AVAILABLE then
+target("libknowledge")
+    set_kind("static")
+    set_basename("knowledge")
+    set_languages("gnuxx20")
+    add_cxxflags(
+        "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
+        "-Wall", "-Wextra",
+        "-msse2", "-mfpmath=sse", "-ffp-contract=off", "-fno-math-errno", "-mstackrealign",
+        {force = true}
+    )
+    add_defines("LPL_TARGET_KERNEL=1", "LPL_HAS_FOUNDATION")
+    add_sysincludedirs(
+        "libkxx/include",
+        "libc/include"
+    )
+    add_includedirs(
+        "libknowledge/include",
+        path.join(LPLKNOWLEDGE_ROOT, "include"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/include"),
+        path.join(LPLKNOWLEDGE_ROOT, "corpus/include"),
+        path.join(LPLPLUGIN_ROOT, "core/include"),
+        path.join(LPLPLUGIN_ROOT, "math/include"),
+        path.join(LPLPLUGIN_ROOT, "memory/include"),
+        -- history/, headers only: the arithmetic of doubt is compiled into libengine, and
+        -- this module CONSUMES it. `history/Fact.hpp` states the division — it trades in
+        -- identifiers and says the strings live in LplKnowledge.
+        path.join(LPLPLUGIN_ROOT, "history/include")
+    )
+    add_files(
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/Types.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/KnowledgePack.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/Query.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/FactStore.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/Provenance.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/History.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/Parity.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "corpus/src/Urn.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "corpus/src/Locus.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "corpus/src/Language.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "corpus/src/TextView.cpp")
+    )
+    add_files("libknowledge/src/*.cpp", "libknowledge/src/smoke/*.cpp")
+target_end()
+end -- if LPLKNOWLEDGE_AVAILABLE
 
 -- ===========================================================================
 -- lpl.kernel — the kernel image. Custom link to honour the crt ordering
@@ -310,6 +506,18 @@ target("lpl-kernel")
     else
         -- No engine: stub the smoke facade + skip the smoke battery entirely.
         add_defines("LPL_PLUGIN_UNAVAILABLE=1")
+    end
+    if LPLASSISTANT_AVAILABLE then
+        add_deps("libassistant")
+    else
+        -- No mind: the P14 block compiles out, like the world does without LplPlugin.
+        add_defines("LPL_ASSISTANT_UNAVAILABLE=1")
+    end
+    if LPLKNOWLEDGE_AVAILABLE then
+        add_deps("libknowledge")
+    else
+        -- No memory: the P18 block compiles out, like the world does without LplPlugin.
+        add_defines("LPL_KNOWLEDGE_UNAVAILABLE=1")
     end
 
     -- C: freestanding, no standard includes (headers come from -I dirs below).
@@ -334,7 +542,8 @@ target("lpl-kernel")
     end
 
     add_includedirs("kernel/include")
-    add_sysincludedirs("libc/include", "libengine/include")
+    add_sysincludedirs("libc/include", "libengine/include", "libassistant/include",
+                       "libknowledge/include")
 
     -- All i386 + portable kernel sources (crti.s/crtn.s are partitioned out in
     -- the link step below; the ARM crt files are a different arch and excluded
@@ -363,19 +572,26 @@ target("lpl-kernel")
         local crtbegin = os.iorunv(cc, {"-print-file-name=crtbegin.o"}):trim()
         local crtend = os.iorunv(cc, {"-print-file-name=crtend.o"}):trim()
 
+        local libknowledge = target:dep("libknowledge") and target:dep("libknowledge"):targetfile() or nil
+        local libassistant = target:dep("libassistant") and target:dep("libassistant"):targetfile() or nil
         local libengine = target:dep("libengine") and target:dep("libengine"):targetfile() or nil
         local libkxx = target:dep("libkxx") and target:dep("libkxx"):targetfile() or nil
         local libk = target:dep("libk"):targetfile()
         local out = target:targetfile()
 
         -- $(CC) -T linker.ld -o lpl.kernel <free flags> crti crtbegin OBJS \
-        --       -nostdlib [-lengine -lkxx] -lk -lgcc crtend crtn
-        -- Link order is libengine -> libkxx -> libk: the engine calls the C++
-        -- runtime (operator new / kstd::fatal) in libkxx, which calls kmalloc/
-        -- kfree and the halt primitives in libk. Both are omitted entirely when
-        -- LplPlugin is unavailable (the kernel is then pure C).
+        --       -nostdlib [-lknowledge -lassistant -lengine -lkxx] -lk -lgcc crtend crtn
+        -- Link order is libknowledge -> libassistant -> libengine -> libkxx -> libk: the
+        -- memory calls `lpl::history` and the mind calls the foundation (Fixed32, CORDIC,
+        -- the arena), both of which are in libengine, which calls the C++ runtime
+        -- (operator new / kstd::fatal) in libkxx, which calls kmalloc/kfree and the halt
+        -- primitives in libk. A static archive only satisfies references already
+        -- outstanding when the linker reaches it, so this order is not a preference. All
+        -- of them are omitted when LplPlugin is unavailable (the kernel is then pure C).
         local argv = {"-T", linker, "-o", out, "-ffreestanding", "-O2", "-g", "-nostdlib", crti, crtbegin}
         table.join2(argv, rest)
+        if libknowledge then table.insert(argv, libknowledge) end
+        if libassistant then table.insert(argv, libassistant) end
         if libengine then table.insert(argv, libengine) end
         if libkxx then table.insert(argv, libkxx) end
         table.join2(argv, {libk, "-lgcc", crtend, crtn})

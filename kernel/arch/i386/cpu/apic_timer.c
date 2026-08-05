@@ -270,3 +270,75 @@ uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void)
 {
     return advanced_pic_timer_local_apic_is_bootstrap_processor;
 }
+
+/**
+ * @brief Arms the local timer to fire once, @p microseconds from now.
+ *
+ * The other half of a tickless kernel. Periodic mode asks "wake me a thousand times
+ * a second whatever happens"; this asks "wake me at this instant and not before",
+ * which on an idle node is the difference between a thousand wake-ups a second and
+ * none. Same divider and same vector as periodic mode — only bit 17 is dropped, so
+ * the timer counts down once and stops.
+ *
+ * @param microseconds Delay; zero fires as soon as the hardware can.
+ * @return 1 when the timer was armed.
+ */
+uint8_t advanced_pic_timer_backend_arm_one_shot(uint32_t microseconds)
+{
+    uint32_t count;
+
+    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+        return 0u;
+    if (advanced_pic_timer_local_apic_calibrated_frequency_hz == 0u)
+        return 0u;
+
+    /* Microseconds times hertz overflows 32 bits above about four seconds, so the
+       product is formed in 64 bits and only then narrowed. A wrap here would arm the
+       timer for a fraction of the delay asked for, which is the failure that looks
+       like a spurious wake-up rather than like a bug. */
+    {
+        uint64_t ticks = (uint64_t) advanced_pic_timer_local_apic_calibrated_frequency_hz * (uint64_t) microseconds;
+        ticks /= 1000000u;
+        if (ticks == 0u)
+            ticks = 1u;
+        if (ticks > 0xFFFFFFFFu)
+            ticks = 0xFFFFFFFFu;
+        count = (uint32_t) ticks;
+    }
+
+    apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
+    apic_write(LAPIC_REG_LVT_TIMER, 32u + 0u);
+    apic_write(LAPIC_REG_TIMER_INIT, count);
+
+    advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
+    advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-oneshot" : "xapic-oneshot";
+    return 1u;
+}
+
+/**
+ * @brief Stops the local timer entirely.
+ *
+ * Writing zero to the initial count halts the countdown; the vector is left masked
+ * so a stale count cannot deliver an interrupt afterwards.
+ */
+void advanced_pic_timer_backend_disable(void)
+{
+    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+        return;
+
+    apic_write(LAPIC_REG_TIMER_INIT, 0u);
+    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
+    advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
+    advanced_pic_timer_backend_state_name = "apic-timer-stopped";
+}
+
+/**
+ * @brief Reads the local timer's remaining count.
+ * @return Ticks left before it fires, or 0 when the timer is unavailable.
+ */
+uint32_t advanced_pic_timer_backend_read_current_count(void)
+{
+    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+        return 0u;
+    return apic_read(LAPIC_REG_TIMER_CUR);
+}

@@ -11,6 +11,20 @@
 
 #    include <libengine/libengine.h>
 
+#    if !defined(LPL_ASSISTANT_UNAVAILABLE)
+#        include <kernel/ai/inference_budget.h>
+#        include <kernel/ai/model_slot.h>
+#        include <kernel/ai/tensor_arena.h>
+#        include <kernel/dialogue/dialogue_channel.h>
+#        include <kernel/drivers/hda.h>
+#        include <kernel/satellite/satellite_app.h>
+#        include <libassistant/libassistant.h>
+#    endif
+
+#    if !defined(LPL_KNOWLEDGE_UNAVAILABLE)
+#        include <libknowledge/libknowledge.h>
+#    endif
+
 void smoke_libengine_run_all(Serial_t *com1)
 {
     /* Static-initialization smoke test: proves the C++ constructor machinery
@@ -560,6 +574,469 @@ void smoke_libengine_run_all(Serial_t *com1)
         }
         serial_write_string(com1, "\n");
     }
+
+    /* Codec (P11): erasure coding, and the first gate whose two sides run different
+       code. The host XORs 128 bits at a time, this build one word at a time, and the
+       claim is that reordering associative, commutative, rounding-free operations
+       changes nothing. vector_kernel says which path THIS build took, so a run where
+       both sides quietly took the scalar loop is visible rather than silently green.
+       Must match tests/parity/test_codec_parity.cpp. */
+    {
+        libengine_codec_fold_result_t codec;
+        libengine_codec_fold(&codec);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } codec_rows[] = {
+            {"soliton_sig=",  codec.soliton_sig      },
+            {", droplet_sig=", codec.droplet_sig     },
+            {", matrix_sig=",  codec.matrix_sig      },
+            {", payload_sig=", codec.payload_sig     },
+            {", emitted=",     codec.emitted         },
+            {", delivered=",   codec.delivered       },
+            {", peeled=",      codec.peeled_blocks   },
+            {", recovered=",   codec.recovered       },
+            {", vector=",      codec.vector_kernel   },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P11 codec: ");
+        for (size_t i = 0u; i < sizeof(codec_rows) / sizeof(codec_rows[0]); ++i)
+        {
+            serial_write_string(com1, codec_rows[i].label);
+            serial_write_hex32(com1, codec_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* Rosetta (P12): the artifact that carries its own reader. Folds the trace of a
+       canonical program on the ten-opcode ISA, the engraved specification, the plate
+       around it, and self_hosting — whether a machine REBUILT from those engraved
+       bytes runs the program to the same trace. That last one is the whole claim: a
+       plate whose specification is not sufficient is a blob with decoration on it.
+       Must match tests/parity/test_rosetta_isa.cpp. */
+    {
+        libengine_rosetta_fold_result_t rosetta;
+        libengine_rosetta_fold(&rosetta);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } rosetta_rows[] = {
+            {"trace_sig=",     rosetta.trace_sig      },
+            {", spec_sig=",    rosetta.spec_sig       },
+            {", plate_sig=",   rosetta.plate_sig      },
+            {", payload_sig=", rosetta.payload_sig    },
+            {", steps=",       rosetta.steps          },
+            {", halted=",      rosetta.halted         },
+            {", opcodes=",     rosetta.rebuilt_opcodes},
+            {", selfhost=",    rosetta.self_hosting   },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P12 rosetta: ");
+        for (size_t i = 0u; i < sizeof(rosetta_rows) / sizeof(rosetta_rows[0]); ++i)
+        {
+            serial_write_string(com1, rosetta_rows[i].label);
+            serial_write_hex32(com1, rosetta_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* History (P13): two sources, one past. A confidence in Fixed32 decides which of
+       two contradictory claims becomes the consensus view, so it is authoritative
+       state — a rounding that differed between targets would give two histories from
+       one corpus. minority_reachable is the claim that matters most: the losing
+       account must still be THERE, or how a myth was built can never be retraced.
+       Must match tests/parity/test_history_parity.cpp. */
+    {
+        libengine_history_fold_result_t history;
+        libengine_history_fold(&history);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } history_rows[] = {
+            {"timeline_sig=",  history.timeline_sig      },
+            {", chronicle_sig=", history.chronicle_sig   },
+            {", minority_sig=",  history.minority_sig    },
+            {", constraints=",   history.constraints     },
+            {", contradictions=", history.contradictions },
+            {", demoted=",       history.demoted         },
+            {", minority=",      history.minority_reachable},
+            {", scored=",        history.scored          },
+            {", earned=",        history.earned          },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P13 history: ");
+        for (size_t i = 0u; i < sizeof(history_rows) / sizeof(history_rows[0]); ++i)
+        {
+            serial_write_string(com1, history_rows[i].label);
+            serial_write_hex32(com1, history_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+#    if !defined(LPL_ASSISTANT_UNAVAILABLE)
+    /* The mind (P14): the demon thinks in ring 0, and thinks the same thing the host
+       does. Everything is integer — eight-bit weights, Q16.16 activations, an
+       exponential built from a shift and six Taylor terms, rotary angles from CORDIC
+       — because a float forward pass would put the answer one rounding mode away
+       from a different one, and every gate downstream of an answer assumes the answer
+       is reproducible.
+
+       The aperture is exercised first and the gate second, in that order and not the
+       other way round: the gate re-carves the tensor arena from zero, so the live mind
+       does not survive it.
+
+       Must match LplAssistant/tests/test_infer_parity.cpp. */
+    {
+        const bool up = libassistant_boot(libassistant_recommended_arena_bytes());
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libassistant boot: ");
+        serial_write_string(com1, up ? "ready" : "FAILED");
+        serial_write_string(com1, ", model slot=");
+        serial_write_string(com1, libassistant_model_slot_state());
+        serial_write_string(com1, ", arena=");
+        serial_write_hex32(com1, (uint32_t) kernel_tensor_arena_size());
+        serial_write_string(com1, "\n");
+
+        if (up)
+        {
+            libassistant_dialogue_result_t dialogue;
+            const bool answered = libassistant_dialogue_round_trip(&dialogue);
+            const struct {
+                const char *label;
+                uint32_t value;
+            } dialogue_rows[] = {
+                {"question=",   dialogue.question_bytes},
+                {", consumed=", dialogue.consumed      },
+                {", answer=",   dialogue.answer_bytes  },
+                {", delivered=", dialogue.delivered    },
+                {", dropped=",  dialogue.dropped       },
+                {", spent=",    dialogue.budget_spent  },
+                {", denied=",   dialogue.budget_denied },
+                {", answer_sig=", dialogue.answer_sig  },
+                {", valid=",    dialogue.valid_call    },
+            };
+            serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libassistant dialogue: ");
+            for (size_t i = 0u; i < sizeof(dialogue_rows) / sizeof(dialogue_rows[0]); ++i)
+            {
+                serial_write_string(com1, dialogue_rows[i].label);
+                serial_write_hex32(com1, dialogue_rows[i].value);
+            }
+            serial_write_string(com1, answered ? " (ok)\n" : " (no valid call)\n");
+        }
+
+        libassistant_mind_fold_result_t mind;
+        libassistant_mind_fold(&mind);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } mind_rows[] = {
+            {"weight_sig=",      mind.weight_sig       },
+            {", prompt_sig=",    mind.prompt_sig       },
+            {", logit_sig=",     mind.logit_sig        },
+            {", residual_sig=",  mind.residual_sig     },
+            {", token_sig=",     mind.token_sig        },
+            {", constrained_sig=", mind.constrained_sig},
+            {", text_sig=",      mind.text_sig         },
+            {", vocab=",         mind.vocab            },
+            {", prompt_tokens=", mind.prompt_tokens    },
+            {", generated=",     mind.generated        },
+            {", draws=",         mind.draws            },
+            {", constrained=",   mind.constrained_tokens},
+            {", admitted=",      mind.admitted_first   },
+            {", grammar_done=",  mind.grammar_complete },
+            {", forbidden=",     mind.forbidden        },
+            {", blob_bytes=",    mind.blob_bytes       },
+            {", blob_reopened=", mind.blob_reopened    },
+            {", arena_bytes=",   mind.arena_bytes      },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libassistant P14 mind: ");
+        for (size_t i = 0u; i < sizeof(mind_rows) / sizeof(mind_rows[0]); ++i)
+        {
+            serial_write_string(com1, mind_rows[i].label);
+            serial_write_hex32(com1, mind_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* The power floor, measured rather than promised. A profile whose whole purpose
+       is to spend nothing has to report a number, or "it idles cheaply" is
+       indistinguishable from a spin loop. What is printed is what the hardware
+       actually did: whether it has MONITOR/MWAIT at all, how many sleeps it really
+       took, and how much of the accounted time it was awake. */
+    {
+        SatelliteReport_t satellite;
+        if (kernel_satellite_app_run(8u, &satellite))
+        {
+            const struct {
+                const char *label;
+                uint32_t value;
+            } power_rows[] = {
+                {"iterations=",  satellite.idle_iterations  },
+                {", sleeps=",    satellite.sleeps           },
+                {", skipped=",   satellite.sleeps_skipped   },
+                {", halts=",     satellite.halts            },
+                {", duty=",      satellite.duty_permille    },
+                {", avoided=",   satellite.ticks_avoided    },
+                {", monitor=",   satellite.monitor_available},
+                {", scaling=",   satellite.scaling_available},
+                {", refused=",   satellite.scaling_refused  },
+                {", state=",     satellite.governed_state   },
+                {", audio=",     satellite.audio_present    },
+                {", ceiling=",   satellite.output_ceiling   },
+                {", clipped=",   satellite.limiter_clipped  },
+                {", peak=",      satellite.limiter_peak     },
+                {", captured=",  satellite.frames_captured  },
+                {", level=",     satellite.capture_peak     },
+            };
+            serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: power floor: ");
+            for (size_t i = 0u; i < sizeof(power_rows) / sizeof(power_rows[0]); ++i)
+            {
+                serial_write_string(com1, power_rows[i].label);
+                serial_write_hex32(com1, power_rows[i].value);
+            }
+            serial_write_string(com1, ", codec=");
+            serial_write_string(com1, kernel_satellite_app_audio_name());
+            serial_write_string(com1, "\n");
+
+            /* The controller, in its own words. Reported field by field because the
+               interesting failures are partial: a controller that resets but whose
+               codec never announces itself, and one whose codec answers, are
+               different problems that a single boolean cannot tell apart. */
+            const IntelHighDefinitionAudioState_t *const hda = intel_high_definition_audio_state();
+            const struct {
+                const char *label;
+                uint32_t value;
+            } hda_rows[] = {
+                {"present=",   (uint32_t) hda->controller_present},
+                {", running=", (uint32_t) hda->controller_running},
+                {", rings=",   (uint32_t) hda->rings_running     },
+                {", version=", (uint32_t) hda->major_version     },
+                {", in=",      (uint32_t) hda->input_streams     },
+                {", out=",     (uint32_t) hda->output_streams    },
+                {", codecs=",  (uint32_t) hda->codec_mask        },
+                {", vendor0=", hda->codec_vendor[0]              },
+                {", verbs=",     hda->verbs_sent                  },
+                {", answers=",   hda->responses_read              },
+                {", timeouts=",  hda->verb_timeouts               },
+                {", widgets=",   (uint32_t) hda->widgets_walked    },
+                {", converter=", (uint32_t) hda->capture_converter},
+                {", pin=",       (uint32_t) hda->capture_pin      },
+                {", playpin=",   (uint32_t) hda->playback_pin     },
+                {", muted=",     (uint32_t) hda->outputs_muted    },
+                {", capturing=", (uint32_t) hda->capture_running  },
+                {", position=",  hda->capture_position            },
+                {", wraps=",     hda->capture_wraps               },
+            };
+            serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: intel-hda: ");
+            for (size_t i = 0u; i < sizeof(hda_rows) / sizeof(hda_rows[0]); ++i)
+            {
+                serial_write_string(com1, hda_rows[i].label);
+                serial_write_hex32(com1, hda_rows[i].value);
+            }
+            serial_write_string(com1, "\n");
+
+            /* When a command went unanswered, the rings either side of it. This exists
+               because reasoning about this path produced two confident wrong answers:
+               the registers say whether the controller ever fetched the entry, which
+               no amount of reading the driver could settle. */
+            if (hda->probe_captured)
+            {
+                const struct {
+                    const char *label;
+                    uint32_t value;
+                } probe_rows[] = {
+                    {"command=",      hda->probe_command                                },
+                    {", corbwp_pre=", (uint32_t) hda->probe_before.command_write_pointer },
+                    {", corbrp_pre=", (uint32_t) hda->probe_before.command_read_pointer  },
+                    {", rirbwp_pre=", (uint32_t) hda->probe_before.response_write_pointer},
+                    {", rd_pre=",     (uint32_t) hda->probe_before.response_read_pointer_shadow},
+                    {", corbwp=",     (uint32_t) hda->probe_after.command_write_pointer  },
+                    {", shadow=",     (uint32_t) hda->probe_after.command_write_pointer_shadow},
+                    {", corbrp=",     (uint32_t) hda->probe_after.command_read_pointer   },
+                    {", rirbwp=",     (uint32_t) hda->probe_after.response_write_pointer },
+                    {", rd=",         (uint32_t) hda->probe_after.response_read_pointer_shadow},
+                    {", corbctl=",    (uint32_t) hda->probe_after.command_ring_control   },
+                    {", corbsts=",    (uint32_t) hda->probe_after.command_ring_status    },
+                    {", rirbctl=",    (uint32_t) hda->probe_after.response_ring_control  },
+                    {", rirbsts=",    (uint32_t) hda->probe_after.response_ring_status   },
+                };
+                serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: intel-hda probe: ");
+                for (size_t i = 0u; i < sizeof(probe_rows) / sizeof(probe_rows[0]); ++i)
+                {
+                    serial_write_string(com1, probe_rows[i].label);
+                    serial_write_hex32(com1, probe_rows[i].value);
+                }
+                serial_write_string(com1, "\n");
+            }
+        }
+    }
+
+    /* The satellite (P15): one protocol, three machines that share no instruction
+       set, one set of decisions about the same audio. The audio is synthesised from
+       the frame index alone so no recording has to reach both sides — the same reason
+       the world gate derives a world from a seed.
+       Must match LplAssistant/tests/test_satellite_parity.cpp. */
+    {
+        libassistant_satellite_fold_result_t node;
+        libassistant_satellite_fold(&node);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } node_rows[] = {
+            {"feature_sig=",     node.feature_sig    },
+            {", level_sig=",     node.level_sig      },
+            {", event_sig=",     node.event_sig      },
+            {", wire_sig=",      node.wire_sig       },
+            {", state_sig=",     node.state_sig      },
+            {", template_sig=",  node.template_sig   },
+            {", emitted=",       node.emitted        },
+            {", utterances=",    node.utterances     },
+            {", detections=",    node.detections     },
+            {", wake_frame=",    node.wake_frame     },
+            {", wake_dist=",     node.wake_distance  },
+            {", speech_dist=",   node.speech_distance},
+            {", echoes=",        node.echoes         },
+            {", transitions=",   node.transitions    },
+            {", idle=",          node.idle_permille  },
+            {", duty=",          node.duty_permille  },
+            {", tagged_audio=",  node.tagged_audio   },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libassistant P15 satellite: ");
+        for (size_t i = 0u; i < sizeof(node_rows) / sizeof(node_rows[0]); ++i)
+        {
+            serial_write_string(com1, node_rows[i].label);
+            serial_write_hex32(com1, node_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* The agency floor (P16): one turn of thought, decided identically on both
+       targets. P14 proves the demon COMPUTES the same thing; this proves it DECIDES
+       the same thing — which note it kept, which move it reached for, whether it
+       finished or asked for help. Nothing here runs a model, which is what makes it
+       replayable at all.
+       Must match LplAssistant/tests/test_agency_parity.cpp. */
+    {
+        libassistant_agency_fold_result_t agency;
+        libassistant_agency_fold(&agency);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } agency_rows[] = {
+            {"persona_sig=",     agency.persona_sig   },
+            {", intent_sig=",    agency.intent_sig    },
+            {", memory_sig=",    agency.memory_sig    },
+            {", recall_sig=",    agency.recall_sig    },
+            {", transcript_sig=", agency.transcript_sig},
+            {", utterance_sig=", agency.utterance_sig },
+            {", budget_sig=",    agency.budget_sig    },
+            {", intent_kind=",   agency.intent_kind   },
+            {", dropped=",       agency.dropped       },
+            {", notes_held=",    agency.notes_held    },
+            {", evictions=",     agency.evictions     },
+            {", refusals=",      agency.refusals      },
+            {", recall_hits=",   agency.recall_hits   },
+            {", lines=",         agency.lines         },
+            {", steps=",         agency.steps         },
+            {", tokens=",        agency.tokens        },
+            {", utterance_kind=", agency.utterance_kind},
+            {", satisfied=",     agency.satisfied     },
+            {", world_refusals=", agency.world_refusals},
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libassistant P16 agency: ");
+        for (size_t i = 0u; i < sizeof(agency_rows) / sizeof(agency_rows[0]); ++i)
+        {
+            serial_write_string(com1, agency_rows[i].label);
+            serial_write_hex32(com1, agency_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* The demon thinks (P17): the same turn, every move chosen by the transformer
+       running here, under a grammar rebuilt from the world at each step. `illegal`
+       must be zero and `free_legal` is what makes that mean something — the same
+       weights generating unconstrained, and how often they land on a move the world
+       would have accepted.
+       Must match LplAssistant/tests/test_agency_parity.cpp. */
+    {
+        libassistant_reasoning_fold_result_t reasoning;
+        libassistant_reasoning_fold(&reasoning);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } reasoning_rows[] = {
+            {"reason_transcript_sig=", reasoning.transcript_sig},
+            {", reason_action_sig=",   reasoning.action_sig    },
+            {", reason_utterance_sig=", reasoning.utterance_sig},
+            {", reason_generations=",  reasoning.generations   },
+            {", reason_completions=",  reasoning.completions   },
+            {", reason_illegal=",      reasoning.illegal       },
+            {", reason_exhausted=",    reasoning.exhausted     },
+            {", reason_tokens=",       reasoning.tokens        },
+            {", reason_lines=",        reasoning.lines         },
+            {", reason_steps=",        reasoning.steps         },
+            {", reason_satisfied=",    reasoning.satisfied     },
+            {", reason_free_attempts=", reasoning.free_attempts},
+            {", reason_free_legal=",   reasoning.free_legal    },
+            {", reason_arena=",        reasoning.arena_bytes   },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libassistant P17 reasoning: ");
+        for (size_t i = 0u; i < sizeof(reasoning_rows) / sizeof(reasoning_rows[0]); ++i)
+        {
+            serial_write_string(com1, reasoning_rows[i].label);
+            serial_write_hex32(com1, reasoning_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+#    endif /* !LPL_ASSISTANT_UNAVAILABLE */
+
+#    if !defined(LPL_KNOWLEDGE_UNAVAILABLE)
+    /* The demon remembers (P18): the canonical corpus of P13, written to bytes by a host
+       tool and read back HERE. Unlike every gate before it, what is being checked is a
+       TRANSLATION — so `know_timeline_sig`, `know_chronicle_sig` and `know_minority_sig`
+       must equal the P13 line printed above, and `know_round_trip` must be 1. An image
+       that opened cleanly and had rounded one confidence would pass everything else.
+       Must match LplKnowledge/tests/test_knowledge_parity.cpp. */
+    {
+        libknowledge_corpus_fold_result_t corpus;
+        libknowledge_corpus_fold(&corpus);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } corpus_rows[] = {
+            {"know_image_sig=",      corpus.image_sig    },
+            {", know_fact_sig=",     corpus.fact_sig     },
+            {", know_vocab_sig=",    corpus.vocab_sig    },
+            {", know_audit_sig=",    corpus.audit_sig    },
+            {", know_page_sig=",     corpus.page_sig     },
+            {", know_citation_sig=", corpus.citation_sig },
+            {", know_timeline_sig=", corpus.timeline_sig },
+            {", know_chronicle_sig=", corpus.chronicle_sig},
+            {", know_minority_sig=", corpus.minority_sig },
+            {", know_bytes=",        corpus.image_bytes  },
+            {", know_open_status=",  corpus.open_status  },
+            {", know_sections=",     corpus.sections     },
+            {", know_skipped=",      corpus.skipped      },
+            {", know_facts=",        corpus.facts        },
+            {", know_sources=",      corpus.sources      },
+            {", know_documents=",    corpus.documents    },
+            {", know_loci=",         corpus.loci         },
+            {", know_names=",        corpus.names        },
+            {", know_matched=",      corpus.matched      },
+            {", know_returned=",     corpus.returned     },
+            {", know_truncated=",    corpus.truncated    },
+            {", know_consensus=",    corpus.consensus    },
+            {", know_provenance=",   corpus.provenance   },
+            {", know_round_trip=",   corpus.round_trip   },
+            {", know_rejected=",     corpus.rejected     },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libknowledge P18 corpus: ");
+        for (size_t i = 0u; i < sizeof(corpus_rows) / sizeof(corpus_rows[0]); ++i)
+        {
+            serial_write_string(com1, corpus_rows[i].label);
+            serial_write_hex32(com1, corpus_rows[i].value);
+        }
+        serial_write_string(com1, ", know_image=");
+        serial_write_string(com1, libknowledge_image_state());
+        serial_write_string(com1, "\n");
+    }
+#    endif /* !LPL_KNOWLEDGE_UNAVAILABLE */
 }
 
 #endif /* LPL_KERNEL_ENABLE_SMOKE_TESTS */

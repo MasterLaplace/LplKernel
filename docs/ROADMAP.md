@@ -16,7 +16,49 @@ This roadmap follows the recommended OSDev.org learning path for x86 kernel deve
 > engine into the kernel as `libengine.a` (Model B); see the section directly
 > below and `.claude/plans/`. The two numbering schemes are independent.
 
-### 🔀 LplPlugin Convergence Track (Model B) — P0–P6 ✅ COMPLETE
+### 🔀 Convergence Track (Model B) — P0–P18 ✅ COMPLETE
+
+> **Re-audited 2026-08-05.** The track below stopped at P6 in this document; **twelve**
+> more parity gates have shipped since, across **three** repositories rather than one.
+> `./validate.sh` runs **833 checks**: the host battery, three kernel build paths, five
+> booted artifacts and cross-target parity.
+>
+> **Naming convention — a gate is never written bare.** Always "gate P11 `codec`", never
+> "P11": the kernel's OSDev phases use the same numbers for something unrelated (Phase 11
+> is Power Management), and the two schemes have already been confused once. Gates are
+> numbered in **delivery order** and never reserved in advance.
+>
+> From LplPlugin, in `libengine.a`:
+> - ✅ **P7** `procgen`: a whole world (terrain, erosion, hydrology, climate, 13 biomes,
+>   caves, settlements, roads, playability gate) folded bit-identically in ring 0
+> - ✅ **P8** `ai` + `ecology`: a *running* simulation under contract — stigmergy,
+>   utility arbitration, food web, genetics
+> - ✅ **P9** streaming: chunks generated and released around a walker, seamlessly
+> - ✅ **P10** botany: L-system trees, every branch tip from a CORDIC rotation
+> - ✅ **P11** `codec`: fountain codes and Reed-Solomon. The first gate whose two sides run
+>   **different code** — 128-bit XOR on the host, word at a time in ring 0 — on the claim
+>   that reordering XORs is the identity on GF(2)
+> - ✅ **P12** `rosetta`: a ten-opcode ISA whose specification is executable, and a plate
+>   that carries it. `selfhost=1` on both targets
+> - ✅ **P13** `history`: the sextuplet, source trust, Bayesian fusion, and the rule that a
+>   contradicted claim is **demoted and never erased**
+>
+> From LplAssistant, in `libassistant.a`:
+> - ✅ **P14** `mind`: an integer transformer, thinking the same thought in ring 0
+> - ✅ **P15** `satellite`: the first gate whose consumers will not all be x86
+> - ✅ **P16** `agency`: one turn of thought, folded as a sequence of decisions
+> - ✅ **P17** `reasoning`: the same turn, every move chosen by the transformer under a
+>   grammar rebuilt from the world at each step
+>
+> From LplKnowledge, in `libknowledge.a`:
+> - ✅ **P18** `corpus`: the first gate that folds a **translation** rather than a
+>   computation. P13's corpus, baked to bytes by a host tool and read back in ring 0 — so
+>   its timeline, chronicle and minority signatures must equal P13's own
+>
+> Also since P6, and not in the list below: a **character controller** (gravity,
+> slopes, step height, jump with coyote time), **first-person embodiment**, mouse look,
+> a **view-profile section** in the cartridge format, and a phase profiler in the frame
+> loop.
 
 The engine is the single source of truth; its portable modules compile
 `-ffreestanding` into `libengine.a` and link into `lpl.kernel` like `libk`. The
@@ -89,12 +131,17 @@ the freestanding render path is already proven via `libengine`.
   - Server multi-page/order allocations integrated into VMM and Page Table consumers ✅
   - Kernel Virtual Address (VA) range manager implemented and validated in `kernel/memory/vmm.c` ✅
 
-- 🚧 **Phase 5**: Device Drivers - **29% Complete**
-  - VGA text mode ✅, Serial COM1 ✅, keyboard IRQ1 raw handler ✅
-  - PS/2 set-1 decode scaffold + modifier tracking + printable FIFO queue APIs (`keyboard_try_pop_char`) ✅
-  - Keyboard queue overflow telemetry (`keyboard_get_dropped_char_count`) + runtime counters wired ✅
-  - Text-mode interactive kernel console loop (non-blocking input path + `help/stats/ap/kbd` commands) ✅
-  - Next steps: full keyboard layout/mapping policy, core storage driver integration, network, USB, PCI
+- 🚧 **Phase 5**: Device Drivers - **~55% Complete** *(re-audited 2026-08-01 against the tree, not from memory)*
+  - VGA text mode ✅, Serial COM1 ✅, framebuffer ✅, RTC ✅
+  - PS/2 keyboard: full Set-1 decode, US QWERTY + FR AZERTY tables, modifier/caps state,
+    build-time layout (`--azerty`/`--qwerty`) and runtime `layout` command ✅
+  - **Keyboard HELD-key state** (128-bit down bitmap, queried by character through the active
+    layout) ✅ — what a walking body needs; a character stream cannot express it
+  - **PS/2 mouse (IRQ12)** ✅ — bounded controller waits, SPSC byte ring, packet assembly on the
+    consumer side, resynchronisation on bit 3, HAL + `IInputBackend` seam
+  - PCI bus enumeration + BAR probing ✅ (`kernel/arch/i386/cpu/pci.c`, 6 devices seen on i440FX)
+  - Next: storage (ATA PIO), e1000 NIC (BAR0 already located at 0xFEB80000), USB (a real project —
+    it is what an absolute pointing device would need, see the QEMU grab note)
 
 - ❌ **Phase 6**: Multitasking & Scheduling - **0% Complete**
   - No scheduler, processes, threads, or context switching
@@ -136,10 +183,35 @@ the freestanding render path is already proven via `libengine`.
 
 ### What We Need Next:
 ```
-🎯 Expand Phase 5 keyboard layout policy and mappings
-🎯 Begin Phase 5 core storage driver integration (ATA PIO)
-🎯 Transition to PCI enumeration
+🎯 Storage (ATA PIO) and the e1000 NIC — the two Phase 5 drivers still missing
+🎯 Phase 6 (scheduling/threads): the engine still runs on ONE core, single-threaded
 ```
+
+### ⚠️ The performance reality, measured 2026-08-01
+
+The demo runs at ~3.6 frames per second in QEMU and it is easy to blame the software
+rasterizer. The measurement says otherwise, and it is the single most important number
+on this page:
+
+| Workload | Triangles / second |
+|---|---:|
+| The **same** rasterizer, same 480×300 target, native (`-O2 -msse2`) | **4 100 000** |
+| The kernel, inside QEMU **without** `-accel kvm` (TCG interpretation) | **~90 000 – 133 000** |
+
+**A factor of 31 to 46.** QEMU's TCG mode decodes and interprets every x86 instruction;
+a software rasterizer — a tight arithmetic loop over hundreds of thousands of pixels —
+is the worst possible workload for it. At native speed the current 24 818-triangle world
+would run above 100 fps.
+
+Two consequences worth writing down:
+
+- **Do not optimise the renderer against a TCG measurement.** The evidence: triangle
+  count was moved 112 369 → 23 185 → 4 494 across three builds and the frame rate did
+  not shift once. A renderer whose cost does not track what it draws is not what is
+  being measured.
+- `qemu.sh` now probes `/dev/kvm` and passes `-accel kvm -cpu host` when it is usable.
+  Under **WSL2 a `usermod -aG kvm` needs `wsl --shutdown`**, not just a new terminal —
+  the script prints which mode it took, and that line is the thing to check.
 
 ---
 

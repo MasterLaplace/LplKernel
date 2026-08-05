@@ -139,4 +139,39 @@ extern uint64_t asmutils_read_model_specific_register(uint32_t msr_id);
  */
 extern void asmutils_write_model_specific_register(uint32_t msr_id, uint64_t value);
 
+/**
+ * @brief Reads the full 64-bit timestamp counter.
+ *
+ * The whole counter and not its low word: an idle node sleeps for seconds at a
+ * stretch, and at a gigahertz the low 32 bits wrap every four. The two 32-bit
+ * variants that already exist as static inlines in tlsf.c and frame_arena.c measure
+ * short durations and are correct for that; this one is for accounting that spans a
+ * whole boot.
+ *
+ * @return Cycles since reset.
+ */
+extern uint64_t asmutils_read_timestamp_counter(void);
+
+/**
+ * @brief Arms a watch on the cache line containing @p address.
+ *
+ * Pairs with @ref asmutils_monitor_wait. Between the two, the caller must re-check
+ * the condition it is waiting on: if the write happened in that window the monitor
+ * is already discarded, and the MWAIT would sleep for a wake-up that has been and
+ * gone. That check is not optional and is the whole discipline of the pair.
+ *
+ * @param address    Address to watch; only its cache line matters.
+ * @param extensions Currently zero on every processor that implements this.
+ * @param hints      Currently zero.
+ */
+extern void asmutils_monitor(const void *address, uint32_t extensions, uint32_t hints);
+
+/**
+ * @brief Sleeps until the armed cache line is written.
+ *
+ * @param hints      Target C-state, encoded per Intel SDM Vol. 3B.
+ * @param extensions Bit 0 makes an unmasked interrupt a break event as well.
+ */
+extern void asmutils_monitor_wait(uint32_t hints, uint32_t extensions);
+
 #endif /* KERNEL_LIB_ASMUTILS_H */

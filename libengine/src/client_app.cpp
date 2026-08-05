@@ -23,6 +23,7 @@
 #include <lpl/samples/CubePileWorld.hpp>
 #include <lpl/samples/TerrainWorld.hpp>
 #include <lpl/std/memory.hpp>
+#include <lpl/std/vector.hpp>
 
 #include "libengine/libengine.h"
 
@@ -35,8 +36,23 @@ extern "C" void libengine_client_app_run(const void *pack_bytes, lpl::core::u32 
     request.host = lpl::engine::HostProfile::Ring0Client;
     request.tickRate = 60u;
     request.banner = "=== LplKernel Client ===";
-    request.packBytes = pack_bytes;
-    request.packSize = pack_size;
+    // A COPY, not the module itself.
+    //
+    // A cartridge that carries a parity section can repair itself, and repairing needs
+    // somewhere to put the corrected byte — so BootRequest takes a mutable buffer. The
+    // bytes GRUB handed us are the kernel's own memory and could be written in place,
+    // but a boot that mutates the module it was loaded from is a boot that cannot be
+    // retried, and this copy costs one allocation of a kilobyte or two, once.
+    static lpl::pmr::vector<lpl::core::u8> writablePack;
+    if (pack_bytes != nullptr && pack_size != 0u)
+    {
+        const auto *source = static_cast<const lpl::core::u8 *>(pack_bytes);
+        writablePack.resize(pack_size, lpl::core::u8{0});
+        for (lpl::core::u32 i = 0u; i < pack_size; ++i)
+            writablePack[i] = source[i];
+        request.packBytes = writablePack.data();
+        request.packSize = pack_size;
+    }
     // The built-in fallback is the VIEWER's world, not the parity gate's: the gate
     // needs a 24x24 world small enough to fold in a boot battery, the demo needs
     // one worth looking at. Sharing one blob meant the published browser demo — a

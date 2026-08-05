@@ -75,9 +75,16 @@ if [ -n "$CARTRIDGE_BAKER" ] && [ -f "$CARTRIDGE_SCENE" ]; then
 else
     echo "[iso] no cartridge baked (lpl-bake or $CARTRIDGE_SCENE missing) — kernel will use its built-in pack"
 fi
+# --ecc on the viewer cartridge and NOT on the parity one, deliberately.
+#
+# The viewer's world is the one that gets stored, shipped and read off a disc, so it
+# is the one a bad sector can reach: it gets a transversal Reed-Solomon section and
+# the ring-0 reader repairs it instead of falling back. The parity cartridge is the
+# gate's own reference, compared byte for byte against a freshly baked oracle — adding
+# bytes to it would only mean comparing a different image.
 if [ -n "$CARTRIDGE_BAKER" ] && [ -f "$VIEWER_SCENE" ]; then
-    "$CARTRIDGE_BAKER" "$VIEWER_SCENE" iso/boot/world.lplpak
-    echo "[iso] cartridge (world viewer): iso/boot/world.lplpak"
+    "$CARTRIDGE_BAKER" --ecc "$VIEWER_SCENE" iso/boot/world.lplpak
+    echo "[iso] cartridge (world viewer, parity attached): iso/boot/world.lplpak"
 fi
 
 # GRUB needs the module line only when a cartridge exists; an empty variable

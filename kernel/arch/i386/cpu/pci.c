@@ -8,6 +8,8 @@
 #include <kernel/cpu/pci.h>
 #include <kernel/lib/asmutils.h>
 
+#include <stddef.h>
+
 /*
 ** Configuration mechanism #1: write a 32-bit address word to CONFIG_ADDRESS
 ** (0xCF8) then read/write the targeted register through CONFIG_DATA (0xCFC).
@@ -202,4 +204,21 @@ uint8_t peripheral_component_interconnect_read_base_address_register(
     out_bar->size = size_mask ? (uint64_t) (~size_mask + 1u) : 0u;
 
     return (uint8_t) (out_bar->size != 0u);
+}
+
+const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect_find_by_class(uint8_t class_code,
+                                                                                              uint8_t subclass)
+{
+    const uint32_t count = peripheral_component_interconnect_get_device_count();
+
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        const PeripheralComponentInterconnectDevice_t *candidate =
+            peripheral_component_interconnect_get_device(index);
+        if (candidate == NULL)
+            continue;
+        if (candidate->class_code == class_code && candidate->subclass == subclass)
+            return candidate;
+    }
+    return NULL;
 }

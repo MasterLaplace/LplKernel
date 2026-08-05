@@ -39,6 +39,9 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 \
           -I$(LPLPLUGIN_ROOT)/render/include \
           -I$(LPLPLUGIN_ROOT)/engine/include \
           -I$(LPLPLUGIN_ROOT)/procgen/include \
+          -I$(LPLPLUGIN_ROOT)/codec/include \
+          -I$(LPLPLUGIN_ROOT)/rosetta/include \
+          -I$(LPLPLUGIN_ROOT)/history/include \
           -I$(LPLPLUGIN_ROOT)/ai/include \
           -I$(LPLPLUGIN_ROOT)/ecology/include \
           -I$(LPLPLUGIN_ROOT)/pack/include \
@@ -74,6 +77,9 @@ obj/local/smoke/p7_procgen_smoke.o \
 obj/local/smoke/p8_living_smoke.o \
 obj/local/smoke/p9_endless_smoke.o \
 obj/local/smoke/p10_botany_smoke.o \
+obj/local/smoke/p11_codec_smoke.o \
+obj/local/smoke/p12_rosetta_smoke.o \
+obj/local/smoke/p13_history_smoke.o \
 obj/local/smoke/sim_fold_smoke.o \
 obj/local/client_app.o \
 obj/local/server_app.o

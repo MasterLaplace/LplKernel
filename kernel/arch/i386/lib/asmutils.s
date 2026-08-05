@@ -98,6 +98,11 @@ asmutils_cpuid:
     pushl %ebp
     movl %esp, %ebp
     pushl %ebx
+    /* %esi is callee-saved in the System V i386 ABI and this routine uses it as a
+       scratch pointer for the four output stores. It was not being preserved, so a
+       caller with a loop variable in %esi — which the compiler is entitled to do —
+       got it silently overwritten by whatever CPUID leaf was read. */
+    pushl %esi
 
     movl 8(%ebp), %eax
     movl 12(%ebp), %ecx
@@ -123,6 +128,7 @@ asmutils_cpuid_skip_ecx:
     jz asmutils_cpuid_skip_edx
     movl %edx, (%esi)
 asmutils_cpuid_skip_edx:
+    popl %esi
     popl %ebx
     popl %ebp
     ret
@@ -147,5 +153,61 @@ asmutils_write_model_specific_register:
     movl 12(%ebp), %eax
     movl 16(%ebp), %edx
     wrmsr
+    popl %ebp
+    ret
+
+/*
+** Timestamp counter, full 64 bits.
+**
+** Two 32-bit copies of this already exist as static inlines in tlsf.c and
+** frame_arena.c, both of which keep only the low word because a duration is all
+** they measure. The power floor needs the whole counter: an idle node sleeps for
+** seconds at a stretch, and at a gigahertz the low word wraps every four.
+*/
+.globl asmutils_read_timestamp_counter
+.type asmutils_read_timestamp_counter, @function
+asmutils_read_timestamp_counter:
+    rdtsc
+    ret
+
+/*
+** MONITOR — arm a watch on a cache line.
+**
+** The processor remembers the line the address falls in; a subsequent MWAIT sleeps
+** until anything writes it. That is what makes it better than HLT for a node whose
+** wake-up comes from a device's DMA rather than from an interrupt: no IRQ is needed
+** and no interrupt latency is paid.
+**
+** void asmutils_monitor(const void *address, uint32_t extensions, uint32_t hints)
+*/
+.globl asmutils_monitor
+.type asmutils_monitor, @function
+asmutils_monitor:
+    pushl %ebp
+    movl %esp, %ebp
+    movl 8(%ebp), %eax
+    movl 12(%ebp), %ecx
+    movl 16(%ebp), %edx
+    monitor
+    popl %ebp
+    ret
+
+/*
+** MWAIT — sleep until the monitored line is written.
+**
+** EAX carries the target C-state as a hint, ECX the extensions. Bit 0 of the
+** extensions makes an unmasked interrupt a break event too, which is what keeps a
+** sleeping core answerable to a timer it also armed.
+**
+** void asmutils_monitor_wait(uint32_t hints, uint32_t extensions)
+*/
+.globl asmutils_monitor_wait
+.type asmutils_monitor_wait, @function
+asmutils_monitor_wait:
+    pushl %ebp
+    movl %esp, %ebp
+    movl 8(%ebp), %eax
+    movl 12(%ebp), %ecx
+    mwait
     popl %ebp
     ret

@@ -113,6 +113,21 @@ extern uint32_t peripheral_component_interconnect_get_device_count(void);
  */
 extern const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect_get_device(uint32_t index);
 
+/**
+ * @brief Finds the first enumerated device of a given class and subclass.
+ *
+ * A driver looks for a KIND of device, not for a slot, and every one of them would
+ * otherwise open the same loop over @ref peripheral_component_interconnect_get_device
+ * and compare the same two fields. Written once here so the audio codec, the network
+ * card and whatever comes next ask the question the same way.
+ *
+ * @param class_code Class byte, e.g. 0x04 for a multimedia device.
+ * @param subclass   Subclass byte, e.g. 0x03 for High Definition Audio.
+ * @return The device, or NULL when the bus carries none.
+ */
+extern const PeripheralComponentInterconnectDevice_t *
+peripheral_component_interconnect_find_by_class(uint8_t class_code, uint8_t subclass);
+
 /** @brief Number of Base Address Registers in a type 0 configuration header. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_BASE_ADDRESS_REGISTER_COUNT 6u
 
