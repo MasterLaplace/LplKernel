@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>The Laplace Project — Blog &amp; Papers</title>
+    <link>https://masterlaplace.github.io/LplKernel/blog</link>
+    <description>Systems papers, technical postmortems, and benchmarks from building the Laplace stack.</description>
+    <language>en</language>
+    <item>
+      <title>Benchmarking the Laplace Engine: Methodology and First Real Numbers</title>
+      <link>https://masterlaplace.github.io/LplKernel/blog/benchmarks-2026</link>
+      <guid isPermaLink="true">https://masterlaplace.github.io/LplKernel/blog/benchmarks-2026</guid>
+      <description>A reproducible micro-benchmark harness for LplPlugin (allocators, ECS, fixed-point math, physics), with honest numbers, their variance, and the caveats that come with them.</description>
+      <pubDate>Mon, 06 Jul 2026 00:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
