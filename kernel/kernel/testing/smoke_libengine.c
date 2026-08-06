@@ -1059,20 +1059,20 @@ void smoke_libengine_run_all(Serial_t *com1)
             const char *label;
             uint32_t value;
         } caves_rows[] = {
-            {"warren_sig=",  caves.warren_sig},
-            {", walk_sig=",  caves.walk_sig  },
-            {", span_sig=",  caves.span_sig  },
+            {"warren_sig=",   caves.warren_sig},
+            {", walk_sig=",   caves.walk_sig  },
+            {", span_sig=",   caves.span_sig  },
             {", sealed_sig=", caves.sealed_sig},
-            {", covered=",   caves.covered   },
-            {", open=",      caves.open_cells},
-            {", reachable=", caves.reachable },
-            {", aperture=",  caves.aperture  },
-            {", path=",      caves.path      },
-            {", enclosed=",  caves.enclosed  },
-            {", descended=", caves.descended },
-            {", sealed_in=", caves.sealed_in },
-            {", navigable=", caves.navigable },
-            {", kind=",      caves.kind      },
+            {", covered=",    caves.covered   },
+            {", open=",       caves.open_cells},
+            {", reachable=",  caves.reachable },
+            {", aperture=",   caves.aperture  },
+            {", path=",       caves.path      },
+            {", enclosed=",   caves.enclosed  },
+            {", descended=",  caves.descended },
+            {", sealed_in=",  caves.sealed_in },
+            {", navigable=",  caves.navigable },
+            {", kind=",       caves.kind      },
         };
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P19 caves: ");
         for (size_t i = 0u; i < sizeof(caves_rows) / sizeof(caves_rows[0]); ++i)

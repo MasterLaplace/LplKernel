@@ -560,20 +560,20 @@ extern void libengine_history_fold(libengine_history_fold_result_t *out);
  * Must match tests/parity/test_cave_warren.cpp.
  */
 typedef struct {
-    uint32_t warren_sig;  /**< FNV-1a over the cave: cells, cover, volume, doorway. */
-    uint32_t walk_sig;    /**< FNV-1a over the body's authoritative state, every tick. */
-    uint32_t span_sig;    /**< FNV-1a over floor and ceiling along the way in. */
-    uint32_t sealed_sig;  /**< The same walk against a doorway filled with rock. */
-    uint32_t covered;     /**< Columns with rock enough over them to be cave. */
-    uint32_t open_cells;  /**< Hollow cells across every gallery. */
-    uint32_t reachable;   /**< Of those, the ones the flood reaches from the mouth. */
-    uint32_t aperture;    /**< Columns of the doorway. */
-    uint32_t path;        /**< Steps from the mouth to the deepest reachable cell. */
-    uint32_t enclosed;    /**< Ticks the walker spent under rock. Zero means it failed. */
-    uint32_t descended;   /**< Voxel levels between the highest and lowest floor stood on. */
-    uint32_t sealed_in;   /**< Ticks the SEALED walker spent under rock. Must be zero. */
-    uint32_t navigable;   /**< Whether the deepest gallery can be reached from the mouth. */
-    uint32_t kind;        /**< The resolved procgen::CaveKind. */
+    uint32_t warren_sig; /**< FNV-1a over the cave: cells, cover, volume, doorway. */
+    uint32_t walk_sig;   /**< FNV-1a over the body's authoritative state, every tick. */
+    uint32_t span_sig;   /**< FNV-1a over floor and ceiling along the way in. */
+    uint32_t sealed_sig; /**< The same walk against a doorway filled with rock. */
+    uint32_t covered;    /**< Columns with rock enough over them to be cave. */
+    uint32_t open_cells; /**< Hollow cells across every gallery. */
+    uint32_t reachable;  /**< Of those, the ones the flood reaches from the mouth. */
+    uint32_t aperture;   /**< Columns of the doorway. */
+    uint32_t path;       /**< Steps from the mouth to the deepest reachable cell. */
+    uint32_t enclosed;   /**< Ticks the walker spent under rock. Zero means it failed. */
+    uint32_t descended;  /**< Voxel levels between the highest and lowest floor stood on. */
+    uint32_t sealed_in;  /**< Ticks the SEALED walker spent under rock. Must be zero. */
+    uint32_t navigable;  /**< Whether the deepest gallery can be reached from the mouth. */
+    uint32_t kind;       /**< The resolved procgen::CaveKind. */
 } libengine_caves_fold_result_t;
 
 extern void libengine_caves_fold(libengine_caves_fold_result_t *out);
