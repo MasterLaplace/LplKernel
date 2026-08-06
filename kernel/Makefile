@@ -138,8 +138,14 @@ $(ARCHDIR)/boot/crtn.o \
 
 all: lpl.kernel
 
-NM?=$(subst -gcc,-nm,$(firstword $(CC)))
-OBJDUMP?=$(subst -gcc,-objdump,$(firstword $(CC)))
+# The COMPILER's name, not the first word of $(CC): $(CC) may carry a wrapper in front
+# of it — ccache, distcc, sccache — and firstword then hands back the wrapper. Deriving
+# `nm` from that produced `ccache lpl.kernel`, which ccache reports as "could not find
+# compiler lpl.kernel" from inside a post-link check, three steps away from the cause.
+# Filtering for the word that ends in -gcc names the compiler however many words precede it.
+CC_PROGRAM:=$(lastword $(filter %-gcc %gcc,$(CC)))
+NM?=$(subst -gcc,-nm,$(CC_PROGRAM))
+OBJDUMP?=$(subst -gcc,-objdump,$(CC_PROGRAM))
 
 lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld $(ENGINE_ARCHIVE) $(ASSISTANT_ARCHIVE) $(KNOWLEDGE_ARCHIVE)
 	$(CC) -T $(ARCHDIR)/linker.ld -o $@ $(CFLAGS) $(LINK_LIST)

@@ -21,6 +21,22 @@ export AS=${HOST}-as
 export CC=${HOST}-gcc
 export CXX=${HOST}-g++
 
+# ccache in front of the cross compiler when it is there, and silently not when it
+# is not — the CI image has no ccache and must keep building.
+#
+# It earns its place on this project specifically: validate.sh compiles the kernel
+# THREE times per run (the server ISO, the client ISO, and the xmake path), and a
+# re-run after a one-line edit recompiles all of LplPlugin for i686 three times over.
+# Measured before it was wired: 97 s for the client build alone, out of a 411 s run.
+#
+# Prepended rather than exported as CCACHE_* so it survives the flag appends below:
+# config.sh goes on to add --sysroot and -isystem to $CC, and `ccache gcc --sysroot=…`
+# is exactly what ccache expects.
+if [ -z "${LPL_NO_CCACHE:-}" ] && command -v ccache >/dev/null 2>&1; then
+    export CC="ccache $CC"
+    export CXX="ccache $CXX"
+fi
+
 # Root of the LplPlugin source tree (single source of truth). Defaults to a
 # git submodule checkout under the kernel repo; falls back to a sibling
 # working checkout for local development. Overridable from the environment.
