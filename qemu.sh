@@ -43,6 +43,35 @@ else
     echo "[qemu] to enable it:  sudo usermod -aG kvm \$USER   then log out and back in"
 fi
 
+# The pointer, and it needs saying because nothing about it is visible from inside.
+#
+# QEMU's default display is GTK, and GTK forwards RELATIVE pointer motion only while
+# the pointer is GRABBED. The kernel has a PS/2 mouse and nothing else, and PS/2 is a
+# relative device — so with no grab the guest sees no motion at all, however far the
+# trackpad moves, and "the mouse does not work" is indistinguishable from a driver
+# that never fires.
+#
+# Measured from the other end before touching this: motion injected through the QEMU
+# monitor reaches the game and turns the view, and the kernel logs "pointer: motion
+# received — the device and the driver are fine". So the driver, the interrupt and the
+# consumer were never the problem; the window was.
+#
+# grab-on-hover captures as soon as the pointer is over the window, which is what a
+# trackpad wants: no click to focus, no Ctrl+Alt+G to remember. Ctrl+Alt+G still
+# RELEASES it, which is how you get your cursor back.
+#
+# Probed rather than assumed: a QEMU without the suboption launches exactly as before
+# instead of refusing to start.
+QEMU_DISPLAY_OPT=""
+if [ "$GRAPHICS_MODE" = "1" ]; then
+    if "$QEMU_CMD" -help 2>/dev/null | grep -q 'grab-on-hover'; then
+        QEMU_DISPLAY_OPT="-display gtk,grab-on-hover=on"
+        echo "[qemu] pointer grabbed on hover — mouse look is live; Ctrl+Alt+G releases it"
+    else
+        echo "[qemu] this QEMU has no grab-on-hover: click in the window or press Ctrl+Alt+G to look around"
+    fi
+fi
+
 # Clear out any sandbox/snap environment that might pollute the loader search path.
 # this mirrors what `sudo` does and prevents qemu from trying to load
 # libc from /snap/core20/current.
@@ -51,4 +80,4 @@ unset LD_LIBRARY_PATH LD_PRELOAD GTK_PATH XDG_DATA_DIRS
 unset SNAP SNAP_VERSION SNAP_ARCH SNAP_REVISION
 # execute with a minimal PATH as well
 PATH="/usr/bin:/bin" \
-    "$QEMU_CMD" -cdrom lpl.iso -m 256M -serial stdio $QEMU_VGA_OPT $QEMU_ACCEL_OPT
+    "$QEMU_CMD" -cdrom lpl.iso -m 256M -serial stdio $QEMU_VGA_OPT $QEMU_DISPLAY_OPT $QEMU_ACCEL_OPT
