@@ -314,6 +314,8 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "procgen/src/CaveSystem.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/HiGen.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Streaming.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/Landmark.cpp"),
+        path.join(LPLPLUGIN_ROOT, "procgen/src/CaveWarren.cpp"),
 
         -- ai/: authoritative agent behaviour. A creature deciding where to go
         -- moves an entity, so it is simulation state like any other.
@@ -346,6 +348,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "engine/src/systems/CreatureSystems.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/systems/HeightfieldCollisionSystem.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/systems/PhysicsSystem.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/CaveParity.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/Engine.cpp")
     )
     -- libengine-local: the kernel client entry (client_app.cpp, which constructs

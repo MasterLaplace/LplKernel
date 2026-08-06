@@ -1037,6 +1037,51 @@ void smoke_libengine_run_all(Serial_t *com1)
         serial_write_string(com1, "\n");
     }
 #    endif /* !LPL_KNOWLEDGE_UNAVAILABLE */
+
+    /* Caves (P19): the first gate whose subject is a world that was WALKED. Two
+       targets agreeing about a generated cave is the easy half; what a player has is
+       a body that entered it, and that goes through the vertical span query and the
+       character controller as well as the generator — three Fixed32 links, each able
+       to disagree on its own.
+
+       `enclosed` is what makes the signatures mean anything. A run in which the body
+       never got inside folds perfectly stably on both targets and proves nothing, so
+       the number of ticks it spent under rock is folded beside the hashes. `sealed_in`
+       is the control: the same cave with its doorway filled with rock, which must let
+       nobody in — a collider that let everything through would satisfy the first
+       number and fail this one.
+
+       Must match tests/parity/test_cave_warren.cpp. */
+    {
+        libengine_caves_fold_result_t caves;
+        libengine_caves_fold(&caves);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } caves_rows[] = {
+            {"warren_sig=",  caves.warren_sig},
+            {", walk_sig=",  caves.walk_sig  },
+            {", span_sig=",  caves.span_sig  },
+            {", sealed_sig=", caves.sealed_sig},
+            {", covered=",   caves.covered   },
+            {", open=",      caves.open_cells},
+            {", reachable=", caves.reachable },
+            {", aperture=",  caves.aperture  },
+            {", path=",      caves.path      },
+            {", enclosed=",  caves.enclosed  },
+            {", descended=", caves.descended },
+            {", sealed_in=", caves.sealed_in },
+            {", navigable=", caves.navigable },
+            {", kind=",      caves.kind      },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P19 caves: ");
+        for (size_t i = 0u; i < sizeof(caves_rows) / sizeof(caves_rows[0]); ++i)
+        {
+            serial_write_string(com1, caves_rows[i].label);
+            serial_write_hex32(com1, caves_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
 }
 
 #endif /* LPL_KERNEL_ENABLE_SMOKE_TESTS */

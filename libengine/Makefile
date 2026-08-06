@@ -80,6 +80,7 @@ obj/local/smoke/p10_botany_smoke.o \
 obj/local/smoke/p11_codec_smoke.o \
 obj/local/smoke/p12_rosetta_smoke.o \
 obj/local/smoke/p13_history_smoke.o \
+obj/local/smoke/p19_caves_smoke.o \
 obj/local/smoke/sim_fold_smoke.o \
 obj/local/client_app.o \
 obj/local/server_app.o
