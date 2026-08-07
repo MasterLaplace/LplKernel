@@ -35,6 +35,23 @@ SECTIONS
     **
     ** `_kernel_end` must cover the whole image. Keep these wildcards.
     */
+    /*
+    ** Start of the region that must never be written once the kernel is up:
+    ** code (.text, .init, .fini), constants (.rodata, .eh_frame) and the
+    ** constructor pointer tables (.ctors, .dtors), which are walked at boot and
+    ** never again. `.data` opens the writable region, and because every output
+    ** section here is ALIGN(4K) the boundary lands on a page by construction —
+    ** which is what lets kernel_section_protection_apply() clear the R/W bit of
+    ** a whole page range without splitting anything.
+    **
+    ** Keep `_kernel_read_only_end` immediately before `.data`. Placing a
+    ** writable section inside the range would fault the kernel on its first
+    ** store, and placing a read-only one after it would silently leave that
+    ** section writable.
+    */
+    . = ALIGN(4K);
+    _kernel_read_only_start = .;
+
     .text ALIGN(4K) : AT (ADDR (.text) - global_kernel_start)
     {
         *(.text)
@@ -78,6 +95,15 @@ SECTIONS
         *(.rodata)
         *(.rodata.*)
         *(.gnu.linkonce.r.*)
+        /*
+        ** `.eh_frame` is read-only unwind data. The kernel builds
+        ** -fno-exceptions and never walks it, but gcc emits it anyway and ld
+        ** was placing it as an orphan. It happened to land just after .rodata,
+        ** inside `_kernel_end`, so the post-link check stayed green — an orphan
+        ** that is correct by luck rather than by instruction. Collect it where
+        ** it belongs.
+        */
+        *(.eh_frame)
     }
 
     .init_array ALIGN(4K) : AT (ADDR (.init_array) - global_kernel_start)
@@ -114,6 +140,9 @@ SECTIONS
         KEEP(*(SORT(.dtors.*)))
         KEEP(*(.dtors))
     }
+
+    . = ALIGN(4K);
+    _kernel_read_only_end = .;
 
     .data ALIGN(4K) : AT (ADDR (.data) - global_kernel_start)
     {

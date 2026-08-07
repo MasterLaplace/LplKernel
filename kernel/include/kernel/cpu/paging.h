@@ -275,6 +275,30 @@ bool paging_get_physical_address(uint32_t virt_addr, uint32_t *phys_addr);
 bool paging_is_mapped(uint32_t virt_addr);
 
 /**
+ * @brief Clear the R/W bit of the page table entry backing a virtual address.
+ *
+ * @details Touches the page table entry only, never the page directory entry:
+ *          a page's effective permission is the AND of both levels, so clearing
+ *          R/W on the directory entry would turn read-only the whole 4 MiB it
+ *          covers — which on this kernel includes .data, .bss and the boot page
+ *          tables. The translation lookaside buffer entry is invalidated before
+ *          returning.
+ *
+ * @param virt_addr Virtual address inside the page to protect
+ * @return true if the page was mapped and is now read-only, false otherwise
+ */
+bool paging_set_page_read_only(uint32_t virt_addr);
+
+/**
+ * @brief Report whether the page backing a virtual address is read-only.
+ *
+ * @param virt_addr Virtual address inside the page to query
+ * @param is_read_only Output: true when the page table entry has R/W clear
+ * @return true if the address is mapped and the answer is valid, false otherwise
+ */
+bool paging_page_is_read_only(uint32_t virt_addr, bool *is_read_only);
+
+/**
  * @brief Return number of runtime-created page tables currently active.
  *
  * @details Counts only page tables created by paging_map_page() at runtime,

@@ -136,12 +136,27 @@ option("smoke")
     set_description("Compile the libengine P0..P6 + kernel smoke/diagnostic battery into the image")
 option_end()
 
+option("console")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Compile the interactive kernel console (commands over keyboard/serial) into the image")
+option_end()
+
 local GRAPHICS_MODE = has_config("graphics") and 1 or 0
 -- The smoke battery is built when explicitly requested, never in release mode (a
 -- production image), and only when the engine is actually linked in (it calls
 -- libengine_* symbols). `--smoke=n`, `-m release`, or a missing LplPlugin each
 -- compile it out.
 local ENABLE_SMOKE = has_config("smoke") and not is_mode("release") and LPLPLUGIN_AVAILABLE
+
+-- The interactive console is a development surface: it reads the keyboard and
+-- runs commands, which is precisely what an immutable, API-only node is defined
+-- by not having. It follows the same rule as the smoke battery — present while
+-- developing, absent from a production image — with one difference that matters:
+-- it does NOT depend on the engine. When LplPlugin is missing the console is the
+-- only thing the kernel has left to run, so tying it to ENABLE_SMOKE (which the
+-- engine's absence forces off) would leave that build with no payload at all.
+local ENABLE_CONSOLE = has_config("console") and not is_mode("release")
 
 -- ===========================================================================
 -- libk — freestanding C support library (libc/ FREEOBJS, libk variant).
@@ -525,7 +540,11 @@ target("lpl-kernel")
 
     -- C: freestanding, no standard includes (headers come from -I dirs below).
     add_cflags("-nostdinc", "-ffreestanding", "-Wall", "-Wextra", {force = true})
-    add_defines("__is_kernel", "MULTIBOOT_VERSION=1")
+    -- Which (ISA, platform) pair this image is, mirroring what
+    -- arch/i386/make.config declares on the shell path. Selects the target's
+    -- capability header; without it kernel/arch/capabilities.h refuses to
+    -- compile rather than letting every capability read as absent.
+    add_defines("__is_kernel", "MULTIBOOT_VERSION=1", "KERNEL_ARCH_TARGET_I386_PC")
     -- Assembler `.include "arch/i386/..."` paths are written relative to the
     -- kernel/ subdir (the Makefile assembled from there); point GNU as there.
     add_asflags("-DMULTIBOOT_VERSION=1", "-DGRAPHICS_MODE=" .. GRAPHICS_MODE,
@@ -533,6 +552,9 @@ target("lpl-kernel")
 
     if ENABLE_SMOKE then
         add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS")
+    end
+    if ENABLE_CONSOLE then
+        add_defines("LPL_KERNEL_ENABLE_CONSOLE")
     end
     if has_config("realtime") then
         add_defines("LPL_KERNEL_REAL_TIME_MODE")

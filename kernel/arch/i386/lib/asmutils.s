@@ -91,6 +91,12 @@ asmutils_get_page_fault_linear_address:
     movl %cr2, %eax
     ret
 
+.globl asmutils_read_control_register_0
+.type asmutils_read_control_register_0, @function
+asmutils_read_control_register_0:
+    movl %cr0, %eax
+    ret
+
 # CPU Information & Configuration
 .globl asmutils_cpuid
 .type asmutils_cpuid, @function

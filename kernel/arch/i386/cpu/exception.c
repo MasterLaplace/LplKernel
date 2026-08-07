@@ -1,5 +1,6 @@
 #include <kernel/cpu/exception.h>
 #include <kernel/cpu/stack_guard.h>
+#include <kernel/memory/section_protection.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
 #define EXCEPTION_VECTOR_DEBUG_EXCEPTION          1u
@@ -123,6 +124,12 @@ static void exception_handle_page_fault(const InterruptFrame_t *frame)
 {
     const uint32_t error_code = frame->err_code;
     const uint32_t fault_address = asmutils_get_page_fault_linear_address();
+
+    /* An armed section-protection probe expects exactly one write fault, at one
+       address, and asks to resume past it. Everything else falls through to the
+       panic below, so the diagnostic path is unchanged for real faults. */
+    if (kernel_section_protection_handle_page_fault(frame, fault_address))
+        return;
 
     exception_write_string("\r\n\r\n[KERNEL PANIC] #PF Page Fault\r\n");
     exception_write_string("  cr2            = ");

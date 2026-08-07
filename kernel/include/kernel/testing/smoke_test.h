@@ -48,6 +48,8 @@
 #    define KERNEL_SMOKE_TEST_ENABLE_HEAP_CROSS_DOMAIN_STRESS 1u
 #endif
 #define KERNEL_SMOKE_TEST_ENABLE_RING_BUFFER_BASIC  1u
+#define KERNEL_SMOKE_TEST_ENABLE_SECTION_PROTECTION 1u
+#define KERNEL_SMOKE_TEST_ENABLE_RECONCILER         1u
 #define KERNEL_SMOKE_TEST_ENABLE_TLSF_BASIC         1u
 #define KERNEL_SMOKE_TEST_ENABLE_TLSF_FRAGMENTATION 1u
 #define KERNEL_SMOKE_TEST_ENABLE_PMM_WATERMARK      1u
@@ -151,5 +153,9 @@ extern void smoke_test_run_c7_frame_simulation(Serial_t *serial_port);
 extern void smoke_test_run_c7_ring_stress(Serial_t *serial_port);
 extern void smoke_test_run_c7_combined_hotloop(Serial_t *serial_port);
 extern void smoke_test_run_vmm_alloc_free(Serial_t *serial_port);
+
+extern void smoke_test_run_section_protection(Serial_t *serial_port);
+
+extern void smoke_test_run_reconciler(Serial_t *serial_port);
 
 #endif /* !KERNEL_TESTING_SMOKE_TEST_H_ */

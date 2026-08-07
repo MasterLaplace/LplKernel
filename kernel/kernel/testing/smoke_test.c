@@ -19,7 +19,11 @@
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/pool_allocator.h>
+#include <kernel/core/reconciler.h>
+#include <kernel/diag/telemetry.h>
+#include <kernel/memory/backpressure.h>
 #include <kernel/memory/ring_buffer.h>
+#include <kernel/memory/section_protection.h>
 #include <kernel/memory/slab.h>
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
@@ -2130,4 +2134,120 @@ void smoke_test_run_ring3_minimal(Serial_t *serial_port)
 #else
     (void) serial_port;
 #endif
+}
+
+/* Probe targets for the section protection smoke.
+ *
+ * The constant lands in .rodata and the scratch byte in .data, which the linker
+ * script places on either side of `_kernel_read_only_end`. That is the whole
+ * point of having two: a probe that faults on everything — a handler counting
+ * faults it never saw, a range covering the wrong pages — satisfies the first
+ * check and fails the second. */
+/** Passes the reconciler smoke drives by hand, so the count in the record is a
+    fact about the test rather than about how long the kernel happened to run. */
+#define SMOKE_RECONCILER_PASS_COUNT 16u
+
+static const uint8_t smoke_section_protection_constant = 0x5Au;
+static uint8_t smoke_section_protection_scratch = 0xA5u;
+
+void smoke_test_run_section_protection(Serial_t *serial_port)
+{
+    const bool write_protect_enabled = kernel_section_protection_write_protect_is_enabled();
+    const bool protection_active = kernel_section_protection_is_active();
+
+    /* Casting the constant's address to a writable pointer is exactly the abuse
+       the protection exists to stop; the probe performs it on purpose and
+       expects the processor to refuse. */
+    volatile uint8_t *read_only_data = (volatile uint8_t *) (uintptr_t) &smoke_section_protection_constant;
+    volatile uint8_t *executable_code = (volatile uint8_t *) (uintptr_t) &smoke_test_run_section_protection;
+    volatile uint8_t *writable_data = (volatile uint8_t *) &smoke_section_protection_scratch;
+
+    const uint8_t scratch_before = smoke_section_protection_scratch;
+
+    const bool constant_faulted = kernel_section_protection_probe_write(read_only_data);
+    const bool code_faulted = kernel_section_protection_probe_write(executable_code);
+    const bool scratch_faulted = kernel_section_protection_probe_write(writable_data);
+
+    const bool scratch_preserved = (smoke_section_protection_scratch == scratch_before);
+    const bool constant_preserved = (smoke_section_protection_constant == 0x5Au);
+
+    const bool pass = write_protect_enabled && protection_active && constant_faulted && code_faulted &&
+                      !scratch_faulted && scratch_preserved && constant_preserved;
+
+    /* One line carries both the structured fields and the battery's own pass
+       marker: `result` holds the literal "(pass)"/"(fail)" the whole-log scan
+       looks for, so this record needs no second prose line saying the same
+       thing twice. */
+    kernel_telemetry_begin_record(serial_port, "section_protection_smoke");
+    kernel_telemetry_write_boolean("write_protect", write_protect_enabled);
+    kernel_telemetry_write_boolean("active", protection_active);
+    kernel_telemetry_write_boolean("rodata_faulted", constant_faulted);
+    kernel_telemetry_write_boolean("text_faulted", code_faulted);
+    kernel_telemetry_write_boolean("data_faulted", scratch_faulted);
+    kernel_telemetry_write_boolean("data_preserved", scratch_preserved);
+    kernel_telemetry_write_boolean("rodata_preserved", constant_preserved);
+    kernel_telemetry_write_unsigned("recovered_faults", kernel_section_protection_get_recovered_fault_count());
+    kernel_telemetry_write_unsigned("read_only_pages", kernel_section_protection_get_read_only_page_count());
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
+}
+
+void smoke_test_run_reconciler(Serial_t *serial_port)
+{
+    const bool declared = kernel_reconciler_is_declared();
+    const uint32_t passes_before = kernel_reconciler_get_pass_count();
+
+    uint32_t drift_observed = 0u;
+    for (uint32_t pass = 0u; pass < SMOKE_RECONCILER_PASS_COUNT; ++pass)
+        drift_observed += kernel_reconciler_check();
+
+    const bool passes_counted = (kernel_reconciler_get_pass_count() == (passes_before + SMOKE_RECONCILER_PASS_COUNT));
+    const bool holds = (drift_observed == 0u) && (kernel_reconciler_get_drift_count() == 0u) &&
+                       (kernel_reconciler_get_drift_mask() == 0u);
+
+    /* A reconciler that checks nothing reports no drift, exactly like one that
+       checks everything and finds none. So the contract is deliberately made
+       unsatisfiable — one more read-only page than the kernel has — and the pass
+       is required to NOTICE. Without this the whole slice could be a no-op and
+       every number above would still look right. */
+    const KernelReconcilerDeclaration_t impossible = {
+        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
+        .real_time_violation_budget = 0u,
+        .read_only_page_count = kernel_section_protection_get_read_only_page_count() + 1u,
+        .require_section_protection = true,
+        .require_write_protect = true,
+    };
+
+    kernel_reconciler_declare(&impossible);
+    const uint32_t detected = kernel_reconciler_check();
+    const bool detects_drift = (detected == 1u) &&
+                               (kernel_reconciler_get_drift_mask() ==
+                                (1u << (uint32_t) KERNEL_RECONCILER_INVARIANT_READ_ONLY_PAGE_COUNT));
+
+    /* Put the real contract back, and with it a fresh violation baseline: the
+       live per-frame check runs against this one for the rest of the boot. */
+    const KernelReconcilerDeclaration_t truthful = {
+        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
+        .real_time_violation_budget = 0u,
+        .read_only_page_count = kernel_section_protection_get_read_only_page_count(),
+        .require_section_protection = true,
+        .require_write_protect = true,
+    };
+
+    kernel_reconciler_declare(&truthful);
+    const bool restored = (kernel_reconciler_check() == 0u);
+
+    const bool pass = declared && passes_counted && holds && detects_drift && restored;
+
+    kernel_telemetry_begin_record(serial_port, "reconciler_smoke");
+    kernel_telemetry_write_boolean("declared", declared);
+    kernel_telemetry_write_unsigned("passes", SMOKE_RECONCILER_PASS_COUNT);
+    kernel_telemetry_write_boolean("passes_counted", passes_counted);
+    kernel_telemetry_write_boolean("holds", holds);
+    kernel_telemetry_write_boolean("detects_drift", detects_drift);
+    kernel_telemetry_write_boolean("restored", restored);
+    kernel_telemetry_write_unsigned("queues", kernel_backpressure_get_queue_count());
+    kernel_telemetry_write_unsigned("corrupting_drops", kernel_backpressure_get_intolerant_drop_count());
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
 }

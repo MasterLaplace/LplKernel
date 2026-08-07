@@ -134,6 +134,20 @@ static void isr_default_handler(const InterruptFrame_t *frame)
         asmutils_halt();
 }
 
+void interrupt_frame_set_resume_address(const InterruptFrame_t *frame, uint32_t resume_address)
+{
+    if (!frame)
+        return;
+
+    /* The frame is not a copy: it is the live stack image that isr_common_stub
+       hands to `iret`, so `eip` is the address execution resumes at. Writing it
+       is the only way a handler can step over a faulting instruction instead of
+       returning to it and faulting forever. The pointer is const because every
+       other handler only reads it — the cast is confined here, next to the one
+       reason it exists. */
+    ((InterruptFrame_t *) frame)->eip = resume_address;
+}
+
 void interrupt_service_routine_dispatch(InterruptFrame_t *frame)
 {
     isr_handler_t handler = g_isr_table[frame->int_no];

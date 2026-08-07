@@ -7,12 +7,30 @@
 #include <kernel/cpu/helpers/pci_helper.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/diag/telemetry.h>
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/drivers/helpers/keyboard_helper.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/ps2_keyboard.h>
 #include <kernel/drivers/tty.h>
 #include <kernel/memory/heap.h>
+
+#if defined(LPL_KERNEL_ENABLE_CONSOLE)
+
+/**
+ * Every input the console accepts, in one place.
+ *
+ * `help` used to print its own hand-written list, which is a second answer to
+ * "what commands exist" — and it had already drifted: it advertised seven names
+ * and omitted `layout us` and `layout fr`, the two that actually change kernel
+ * state. The list below is what `help` prints AND what the surface count
+ * reports, so the three cannot disagree again.
+ */
+static const char *const KERNEL_CONSOLE_COMMANDS[] = {
+    "help", "stats", "ap", "kbd", "pci", "layout", "layout us", "layout fr", "exit",
+};
+
+#define KERNEL_CONSOLE_COMMAND_COUNT (sizeof(KERNEL_CONSOLE_COMMANDS) / sizeof(KERNEL_CONSOLE_COMMANDS[0]))
 
 static uint8_t kernel_string_equals(const char *lhs, const char *rhs)
 {
@@ -49,7 +67,13 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
 
     if (kernel_string_equals(command, "help"))
     {
-        terminal_write_string("\ncommands: help, stats, ap, kbd, layout, pci, exit\n");
+        terminal_write_string("\ncommands:");
+        for (uint32_t index = 0u; index < KERNEL_CONSOLE_COMMAND_COUNT; ++index)
+        {
+            terminal_write_string(index == 0u ? " " : ", ");
+            terminal_write_string(KERNEL_CONSOLE_COMMANDS[index]);
+        }
+        terminal_write_string("\n");
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: cmd help\n");
         return;
     }
@@ -138,8 +162,26 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
     terminal_write_string("\n");
 }
 
+#else /* !LPL_KERNEL_ENABLE_CONSOLE */
+
+#    define KERNEL_CONSOLE_COMMAND_COUNT 0u
+
+#endif /* LPL_KERNEL_ENABLE_CONSOLE */
+
+void kernel_console_report_surface(Serial_t *com1)
+{
+    kernel_telemetry_begin_record(com1, "console");
+    kernel_telemetry_write_boolean("present", KERNEL_CONSOLE_IS_COMPILED_IN);
+    kernel_telemetry_write_unsigned("commands", (uint32_t) KERNEL_CONSOLE_COMMAND_COUNT);
+    kernel_telemetry_end_record();
+}
+
 void kernel_console_run_interactive_loop(Serial_t *com1)
 {
+#if !defined(LPL_KERNEL_ENABLE_CONSOLE)
+    for (;;)
+        asm volatile("hlt");
+#else
     static const uint8_t KEY_ECHAP = 27u;
     static const uint32_t KERNEL_CONSOLE_COMMAND_MAX = 63u;
     char command_buffer[64] = {0};
@@ -217,4 +259,5 @@ void kernel_console_run_interactive_loop(Serial_t *com1)
 
         asm volatile("hlt");
     }
+#endif
 }

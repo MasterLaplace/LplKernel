@@ -269,6 +269,8 @@ uint32_t personal_system_2_mouse_get_pending_byte_count(void)
 
 uint32_t personal_system_2_mouse_get_irq_count(void) { return personal_system_2_mouse_irq_count; }
 
+uint32_t personal_system_2_mouse_get_ring_capacity(void) { return PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY; }
+
 uint32_t personal_system_2_mouse_get_dropped_byte_count(void) { return personal_system_2_mouse_dropped_byte_count; }
 
 uint32_t personal_system_2_mouse_get_resynchronization_count(void)

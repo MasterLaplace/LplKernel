@@ -121,4 +121,6 @@ uint8_t keyboard_try_pop_char(char *out_char)
     return 0u;
 }
 
+uint32_t keyboard_get_ring_capacity(void) { return KEYBOARD_SCANCODE_RING_CAPACITY; }
+
 uint32_t keyboard_get_dropped_char_count(void) { return keyboard_scancode_drop_count; }

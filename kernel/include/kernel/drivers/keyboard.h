@@ -50,6 +50,16 @@ extern uint8_t keyboard_try_pop_char(char *out_char);
 /**
  * @brief Return number of raw scan codes dropped because the SPSC ring was full.
  */
+/**
+ * @brief Return the number of scan codes the interrupt-side ring holds before it refuses.
+ *
+ * @details Read from the driver rather than restated by the caller: a capacity
+ *          declared twice is a capacity that can disagree with itself.
+ *
+ * @return The ring capacity in scan codes.
+ */
+extern uint32_t keyboard_get_ring_capacity(void);
+
 extern uint32_t keyboard_get_dropped_char_count(void);
 
 #endif /* KERNEL_DRIVERS_KEYBOARD_H */

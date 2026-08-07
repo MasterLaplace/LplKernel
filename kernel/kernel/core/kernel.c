@@ -33,15 +33,19 @@
 #include <kernel/drivers/helpers/keyboard_helper.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/ps2_keyboard.h>
+#include <kernel/drivers/ps2_mouse.h>
 #include <kernel/hal/hal.h>
+#include <kernel/memory/backpressure.h>
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/helpers/core_allocators_helper.h>
 #include <kernel/memory/helpers/heap_helper.h>
 #include <kernel/memory/helpers/pmm_helper.h>
+#include <kernel/memory/helpers/section_protection_helper.h>
 #include <kernel/memory/pinned_memory.h>
 #include <kernel/memory/pool_allocator.h>
 #include <kernel/memory/ring_buffer.h>
+#include <kernel/memory/section_protection.h>
 #include <kernel/memory/slab.h>
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
@@ -49,9 +53,12 @@
 #include <kernel/testing/smoke_test.h>
 
 #include <kernel/core/console.h>
+#include <kernel/core/reconciler.h>
 #include <kernel/core/smp.h>
 #include <kernel/core/splash.h>
 #include <kernel/diag/sysmon.h>
+#include <kernel/diag/telemetry.h>
+#include <kernel/dialogue/dialogue_channel.h>
 #include <kernel/testing/smoke_batch.h>
 #include <kernel/testing/smoke_libengine.h>
 
@@ -107,6 +114,56 @@ static uint8_t kernel_policy_enable_ioapic_keyboard_owner(void)
 #else
     return 0u;
 #endif
+}
+
+/**
+ * @brief Declare every bounded queue in the kernel, and what a loss on it costs.
+ *
+ * Here rather than in each driver, because the value of the registry is that ONE
+ * place answers "what can drop, and does it matter" — a driver registering itself
+ * would put the answer back where nobody looks. Capacities are read from the queues
+ * themselves so no number is written down twice.
+ */
+static void kernel_register_bounded_queues(void)
+{
+    kernel_backpressure_reset();
+
+    /* A missed scan code is a missed keystroke and nothing more. */
+    kernel_backpressure_register("keyboard_scancode", KERNEL_BACKPRESSURE_POLICY_DROP_TOLERATED,
+                                 keyboard_get_ring_capacity(), keyboard_get_dropped_char_count);
+
+    /* A missed mouse byte desynchronises a packet, which the driver already detects
+       and resynchronises on — so the loss is bounded to one movement. */
+    kernel_backpressure_register("mouse_byte", KERNEL_BACKPRESSURE_POLICY_DROP_TOLERATED,
+                                 personal_system_2_mouse_get_ring_capacity(),
+                                 personal_system_2_mouse_get_dropped_byte_count);
+
+    /* A byte lost from the middle of a sentence does not cost a byte, it costs the
+       sentence: the consumer reads what remains and cannot tell it is incomplete. */
+    kernel_backpressure_register("dialogue_byte", KERNEL_BACKPRESSURE_POLICY_DROP_CORRUPTS,
+                                 KERNEL_DIALOGUE_CHANNEL_CAPACITY, kernel_dialogue_channel_dropped);
+
+    /* The general-purpose ring carries whole records, so a refused enqueue loses one
+       record and leaves the others intact. Its counter is also raised on purpose by
+       the ring smoke, which is exactly why it must not be counted as corrupting. */
+    kernel_backpressure_register("kernel_ring", KERNEL_BACKPRESSURE_POLICY_DROP_TOLERATED,
+                                 kernel_ring_buffer_get_capacity(), kernel_ring_buffer_get_failed_enqueue_count);
+}
+
+/**
+ * @brief State what this kernel commits to, so something can keep checking it.
+ */
+static void kernel_declare_reconciler_contract(void)
+{
+    const KernelReconcilerDeclaration_t declaration = {
+        .frame_arena_capacity_bytes = KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES,
+        .real_time_violation_budget = 0u,
+        .read_only_page_count = kernel_section_protection_get_read_only_page_count(),
+        .require_section_protection = true,
+        .require_write_protect = true,
+    };
+
+    kernel_reconciler_declare(&declaration);
 }
 
 /**
@@ -345,10 +402,30 @@ void kernel_main(void)
 {
     kernel_stack_guard_arm();
 
+    /* Here and not in kernel_initialize: the constructor tables sit inside the
+       protected range, and kernel_initialize is itself a global constructor —
+       protecting from there would depend on being the last one to run. By
+       kernel_main every constructor has completed and nothing writes to code,
+       constants or those tables again. */
+    write_section_protection_info(&com1, kernel_section_protection_apply());
+
+    /* Declared after the protection pass, so the page count it commits to is the
+       one that was actually established rather than the one that was intended. */
+    kernel_register_bounded_queues();
+    kernel_declare_reconciler_contract();
+    kernel_backpressure_report(&com1);
+    kernel_console_report_surface(&com1);
+
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
     smoke_batch_run_post_boot_tests(&com1);
     smoke_libengine_run_all(&com1);
 #endif
+
+    /* After the batteries rather than before: by now the periodic tick has driven
+       passes of its own, so `passes` exceeding what the smoke drove by hand is
+       what shows the live check is running and not merely wired. */
+    kernel_reconciler_report(&com1);
+    kernel_telemetry_report(&com1);
 
     if (hardware_abstraction_layer_display_available())
     {

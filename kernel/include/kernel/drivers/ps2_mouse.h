@@ -82,6 +82,16 @@ uint32_t personal_system_2_mouse_get_irq_count(void);
 uint32_t personal_system_2_mouse_get_dropped_byte_count(void);
 
 /**
+ * @brief Return the number of bytes the interrupt-side ring holds before it refuses.
+ *
+ * @details Read from the driver rather than restated by the caller: a capacity
+ *          declared twice is a capacity that can disagree with itself.
+ *
+ * @return The ring capacity in bytes.
+ */
+uint32_t personal_system_2_mouse_get_ring_capacity(void);
+
+/**
  * @brief Packets discarded because the synchronisation bit was clear.
  *
  * A PS/2 stream has no framing beyond bit 3 of the first byte always being set.

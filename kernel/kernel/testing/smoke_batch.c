@@ -125,6 +125,16 @@ void smoke_batch_run_initialization_tests(Serial_t *com1)
 
 void smoke_batch_run_post_boot_tests(Serial_t *com1)
 {
+    /* Post-boot and not with the initialization battery: the pages only become
+       read-only in kernel_main, once every global constructor has run. Placed
+       before the controlled exception regressions below, which are deliberate
+       faults and would muddy a probe that is counting one. */
+    if (KERNEL_SMOKE_TEST_ENABLE_SECTION_PROTECTION)
+        smoke_test_run_section_protection(com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_RECONCILER)
+        smoke_test_run_reconciler(com1);
+
     if (KERNEL_SMOKE_TEST_ENABLE_DIVISION_ERROR)
         smoke_test_run_division_error();
     if (KERNEL_SMOKE_TEST_ENABLE_DEBUG_EXCEPTION)

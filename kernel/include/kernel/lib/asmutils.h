@@ -96,6 +96,20 @@ extern void asmutils_invalidate_translation_lookaside_buffer(void);
 extern uint32_t asmutils_get_page_fault_linear_address(void);
 
 /**
+ * @brief Read the CR0 control register.
+ *
+ * Bit 16 (WP, Write Protect) is the one that decides whether a read-only page
+ * table entry means anything to ring 0 code: with WP clear, a supervisor write
+ * to a read-only page succeeds and the R/W bit only ever constrains ring 3.
+ * boot.S sets it together with PG, and the section protection reports it rather
+ * than assuming it, because a protection that silently does nothing is worse
+ * than no protection at all.
+ *
+ * @return The value of the CR0 register.
+ */
+extern uint32_t asmutils_read_control_register_0(void);
+
+/**
  * @brief Execute the CPUID instruction.
  *
  * @param leaf The CPUID leaf (input EAX).

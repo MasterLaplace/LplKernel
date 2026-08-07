@@ -73,6 +73,20 @@ ifeq ($(SMOKE_TESTS),1)
 CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS
 endif
 
+# Interactive console (commands read from the keyboard or COM1). A development
+# surface, and the one thing an immutable API-only node is defined by not having:
+# no shell means no arbitrary command, and no configuration drift between two
+# boots of the same image. ON for the script/Makefile build, compiled out by
+# `xmake -m release`.
+#
+# Deliberately NOT tied to SMOKE_TESTS, unlike everything else diagnostic here:
+# the engine's absence forces the smoke battery off, and in exactly that build
+# the console is the only payload the kernel has left.
+KERNEL_CONSOLE?=1
+ifeq ($(KERNEL_CONSOLE),1)
+CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_CONSOLE
+endif
+
 # Graphics mode support (passed from build script)
 GRAPHICS_MODE?=0
 ASFLAGS:=-DGRAPHICS_MODE=$(GRAPHICS_MODE)
@@ -95,9 +109,12 @@ kernel/memory/heap.o \
 kernel/memory/slab.o \
 kernel/memory/frame_arena.o \
 kernel/memory/pool_allocator.o \
+kernel/memory/backpressure.o \
 kernel/memory/ring_buffer.o \
+kernel/memory/section_protection.o \
 kernel/memory/tlsf.o \
 kernel/core/console.o \
+kernel/core/reconciler.o \
 kernel/core/splash.o \
 kernel/core/smp.o \
 kernel/ai/tensor_arena.o \
@@ -111,10 +128,12 @@ kernel/satellite/satellite_app.o \
 kernel/testing/smoke_batch.o \
 kernel/testing/smoke_libengine.o \
 kernel/diag/sysmon.o \
+kernel/diag/telemetry.o \
 kernel/core/kernel.o \
 kernel/memory/helpers/pmm_helper.o \
 kernel/memory/helpers/heap_helper.o \
 kernel/memory/helpers/core_allocators_helper.o \
+kernel/memory/helpers/section_protection_helper.o \
 kernel/testing/smoke_test.o \
 
 OBJS=\

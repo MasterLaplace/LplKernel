@@ -118,6 +118,20 @@ extern void isr128(void);
 extern void interrupt_service_routine_register_handler(uint8_t interrupt_vector, isr_handler_t handler);
 
 /**
+ * @brief Set the address execution resumes at when the handler returns.
+ *
+ * The interrupt frame is the live stack image consumed by `iret`, so writing
+ * its saved instruction pointer redirects the return. A handler that wants to
+ * recover from a fault rather than panic must use this: returning normally
+ * re-executes the faulting instruction and faults again, forever.
+ *
+ * @param frame Frame handed to the handler.
+ * @param resume_address Address to resume at, typically a label placed just
+ *                       after the instruction that was expected to fault.
+ */
+extern void interrupt_frame_set_resume_address(const InterruptFrame_t *frame, uint32_t resume_address);
+
+/**
  * @brief Dispatch an interrupt frame to its registered handler.
  *
  * Called from the assembly `isr_common_stub`.  Should not be called directly

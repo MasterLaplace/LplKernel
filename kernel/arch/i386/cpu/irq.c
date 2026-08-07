@@ -1,5 +1,6 @@
 #include <kernel/cpu/irq.h>
 
+#include <kernel/core/reconciler.h>
 #include <kernel/drivers/ps2_mouse.h>
 
 #define IRQ_LINE_COUNT        16u
@@ -44,6 +45,19 @@ static void interrupt_request_timer_handler(const InterruptFrame_t *frame)
 {
     (void) frame;
     interrupt_request_tick_count++;
+
+    /* Drive the reconciler from the kernel's own periodic tick rather than from
+       the engine's frame, for two reasons. It runs on every profile, including
+       the ones that instantiate no World at all; and it does not depend on the
+       engine having switched on an optional guard, which is exactly the kind of
+       dependency that turns a continuous check into one that quietly never runs.
+       Sampled rather than run on every tick because a comparison of a dozen
+       counters at 1 kHz would be paying for a resolution nobody needs.
+       The pass reads counters and raises a sticky mask — no allocation, no lock,
+       no output — which is what makes it acceptable in interrupt context. */
+    if ((interrupt_request_tick_count % KERNEL_RECONCILER_TICK_SAMPLE_PERIOD) == 0u)
+        kernel_reconciler_check_periodic();
+
     if (interrupt_request_timer_owner_is_apic)
         advanced_pic_timer_backend_signal_end_of_interrupt();
     else

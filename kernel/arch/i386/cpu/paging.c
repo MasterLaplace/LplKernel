@@ -328,4 +328,57 @@ bool paging_is_mapped(uint32_t virt_addr)
     return paging_get_physical_address(virt_addr, &unused);
 }
 
+bool paging_set_page_read_only(uint32_t virt_addr)
+{
+    if (!current_page_directory)
+        return false;
+
+    virt_addr = PAGE_ALIGN_DOWN(virt_addr);
+
+    uint32_t pd_index = PAGE_DIRECTORY_INDEX(virt_addr);
+    uint32_t pt_index = PAGE_TABLE_INDEX(virt_addr);
+
+    PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
+    if (!pde->present)
+        return false;
+
+    /* Only the page table entry is cleared, never the directory entry: the
+       effective permission of a page is the AND of the two, so clearing R/W on
+       the PDE would turn the whole 4 MiB it covers read-only — and .data, .bss
+       and the boot page tables themselves live in the same 4 MiB as .text. */
+    PageTable_t *page_table = paging_get_page_table(pde);
+    PageTableEntry_t *pte = &page_table->entries[pt_index];
+
+    if (!pte->present)
+        return false;
+
+    pte->read_write = 0;
+    paging_invlpg(virt_addr);
+    return true;
+}
+
+bool paging_page_is_read_only(uint32_t virt_addr, bool *is_read_only)
+{
+    if (!current_page_directory || !is_read_only)
+        return false;
+
+    virt_addr = PAGE_ALIGN_DOWN(virt_addr);
+
+    uint32_t pd_index = PAGE_DIRECTORY_INDEX(virt_addr);
+    uint32_t pt_index = PAGE_TABLE_INDEX(virt_addr);
+
+    PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
+    if (!pde->present)
+        return false;
+
+    PageTable_t *page_table = paging_get_page_table(pde);
+    PageTableEntry_t *pte = &page_table->entries[pt_index];
+
+    if (!pte->present)
+        return false;
+
+    *is_read_only = (pte->read_write == 0);
+    return true;
+}
+
 uint32_t paging_get_runtime_owned_page_table_count(void) { return page_table_runtime_owned_count; }
