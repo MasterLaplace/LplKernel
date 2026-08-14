@@ -57,8 +57,7 @@ extern "C" {
 #define KERNEL_RECONCILER_PERIODIC_WAIT_LIMIT (4u * KERNEL_RECONCILER_TICK_SAMPLE_PERIOD)
 
 /** Invariants compared on each pass. Each is one bit of the drift mask. */
-typedef enum
-{
+typedef enum {
     /** The code and constant pages are still protected. */
     KERNEL_RECONCILER_INVARIANT_SECTION_PROTECTION = 0,
 
@@ -85,11 +84,11 @@ typedef enum
  * @brief What the kernel says it will do.
  */
 typedef struct {
-    uint32_t frame_arena_capacity_bytes;   /**< Ceiling on frame arena usage. */
-    uint32_t real_time_violation_budget;   /**< Unbounded allocations tolerated in a tick. */
-    uint32_t read_only_page_count;         /**< Pages the section protection must keep. */
-    bool require_section_protection;       /**< Whether the protection must stay active. */
-    bool require_write_protect;            /**< Whether CR0.WP must stay set. */
+    uint32_t frame_arena_capacity_bytes; /**< Ceiling on frame arena usage. */
+    uint32_t real_time_violation_budget; /**< Unbounded allocations tolerated in a tick. */
+    uint32_t read_only_page_count;       /**< Pages the section protection must keep. */
+    bool require_section_protection;     /**< Whether the protection must stay active. */
+    bool require_write_protect;          /**< Whether CR0.WP must stay set. */
 } KernelReconcilerDeclaration_t;
 
 /**

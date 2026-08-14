@@ -83,10 +83,7 @@ uint32_t kernel_section_protection_get_range_start(void) { return section_protec
 
 uint32_t kernel_section_protection_get_range_end(void) { return section_protection_range_end(); }
 
-uint32_t kernel_section_protection_get_recovered_fault_count(void)
-{
-    return section_protection_recovered_fault_count;
-}
+uint32_t kernel_section_protection_get_recovered_fault_count(void) { return section_protection_recovered_fault_count; }
 
 bool kernel_section_protection_probe_write(volatile uint8_t *target)
 {
@@ -136,7 +133,8 @@ bool kernel_section_protection_handle_page_fault(const InterruptFrame_t *frame, 
     if (fault_address != section_protection_probe_target)
         return false;
 
-    const uint32_t expected_bits = SECTION_PROTECTION_FAULT_PROTECTION_VIOLATION | SECTION_PROTECTION_FAULT_WRITE_ACCESS;
+    const uint32_t expected_bits =
+        SECTION_PROTECTION_FAULT_PROTECTION_VIOLATION | SECTION_PROTECTION_FAULT_WRITE_ACCESS;
 
     if ((frame->err_code & expected_bits) != expected_bits)
         return false;

@@ -43,8 +43,7 @@ extern "C" {
 /**
  * @brief What is lost when a full queue refuses an item.
  */
-typedef enum
-{
+typedef enum {
     /** The item, and only the item. A missed keystroke is a missed keystroke. */
     KERNEL_BACKPRESSURE_POLICY_DROP_TOLERATED = 0,
 

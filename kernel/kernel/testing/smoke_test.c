@@ -3,6 +3,7 @@
 #include <kernel/config.h>
 #include <kernel/memory/pool_allocator.h>
 
+#include <kernel/core/reconciler.h>
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
@@ -14,14 +15,13 @@
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/cpu/ring3.h>
+#include <kernel/diag/telemetry.h>
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/backpressure.h>
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/pool_allocator.h>
-#include <kernel/core/reconciler.h>
-#include <kernel/diag/telemetry.h>
-#include <kernel/memory/backpressure.h>
 #include <kernel/memory/ring_buffer.h>
 #include <kernel/memory/section_protection.h>
 #include <kernel/memory/slab.h>
@@ -2220,9 +2220,9 @@ void smoke_test_run_reconciler(Serial_t *serial_port)
 
     kernel_reconciler_declare(&impossible);
     const uint32_t detected = kernel_reconciler_check();
-    const bool detects_drift = (detected == 1u) &&
-                               (kernel_reconciler_get_drift_mask() ==
-                                (1u << (uint32_t) KERNEL_RECONCILER_INVARIANT_READ_ONLY_PAGE_COUNT));
+    const bool detects_drift =
+        (detected == 1u) &&
+        (kernel_reconciler_get_drift_mask() == (1u << (uint32_t) KERNEL_RECONCILER_INVARIANT_READ_ONLY_PAGE_COUNT));
 
     /* Put the real contract back, and with it a fresh violation baseline: the
        live per-frame check runs against this one for the rest of the boot. */

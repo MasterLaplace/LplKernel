@@ -67,8 +67,8 @@ uint32_t kernel_reconciler_check(void)
 
     if (reconciler_declaration.require_section_protection)
     {
-        drifted += reconciler_evaluate(KERNEL_RECONCILER_INVARIANT_SECTION_PROTECTION,
-                                       kernel_section_protection_is_active());
+        drifted +=
+            reconciler_evaluate(KERNEL_RECONCILER_INVARIANT_SECTION_PROTECTION, kernel_section_protection_is_active());
         drifted += reconciler_evaluate(KERNEL_RECONCILER_INVARIANT_READ_ONLY_PAGE_COUNT,
                                        kernel_section_protection_get_read_only_page_count() ==
                                            reconciler_declaration.read_only_page_count);

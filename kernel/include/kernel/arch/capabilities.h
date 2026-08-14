@@ -99,14 +99,15 @@
 ** silently reading as absent — `#if UNDEFINED_MACRO` is 0 in C, which is exactly
 ** how a capability check turns into a lie.
 */
-#if !defined(KERNEL_ARCH_HAS_MEMORY_MANAGEMENT_UNIT) || !defined(KERNEL_ARCH_HAS_PAGING) ||                             \
-    !defined(KERNEL_ARCH_HAS_HIGHER_HALF) || !defined(KERNEL_ARCH_HAS_WRITE_PROTECT_ENFORCEMENT) ||                     \
-    !defined(KERNEL_ARCH_HAS_SYMMETRIC_MULTIPROCESSING) || !defined(KERNEL_ARCH_HAS_FLOATING_POINT_UNIT) ||             \
-    !defined(KERNEL_ARCH_HAS_SINGLE_INSTRUCTION_MULTIPLE_DATA) || !defined(KERNEL_ARCH_HAS_CACHE_COHERENT_DIRECT_MEMORY_ACCESS) || \
-    !defined(KERNEL_ARCH_HAS_PORT_INPUT_OUTPUT) || !defined(KERNEL_ARCH_HAS_PERIPHERAL_COMPONENT_INTERCONNECT) ||       \
-    !defined(KERNEL_ARCH_HAS_FIRMWARE_TABLES) || !defined(KERNEL_ARCH_HAS_DEVICE_TREE) ||                               \
-    !defined(KERNEL_ARCH_POINTER_WIDTH_BITS) || !defined(KERNEL_ARCH_PHYSICAL_ADDRESS_WIDTH_BITS) ||                    \
-    !defined(KERNEL_ARCH_PAGE_SIZE_BYTES) || !defined(KERNEL_ARCH_NAME) || !defined(KERNEL_ARCH_PLATFORM_NAME)
+#if !defined(KERNEL_ARCH_HAS_MEMORY_MANAGEMENT_UNIT) || !defined(KERNEL_ARCH_HAS_PAGING) ||                            \
+    !defined(KERNEL_ARCH_HAS_HIGHER_HALF) || !defined(KERNEL_ARCH_HAS_WRITE_PROTECT_ENFORCEMENT) ||                    \
+    !defined(KERNEL_ARCH_HAS_SYMMETRIC_MULTIPROCESSING) || !defined(KERNEL_ARCH_HAS_FLOATING_POINT_UNIT) ||            \
+    !defined(KERNEL_ARCH_HAS_SINGLE_INSTRUCTION_MULTIPLE_DATA) ||                                                      \
+    !defined(KERNEL_ARCH_HAS_CACHE_COHERENT_DIRECT_MEMORY_ACCESS) || !defined(KERNEL_ARCH_HAS_PORT_INPUT_OUTPUT) ||    \
+    !defined(KERNEL_ARCH_HAS_PERIPHERAL_COMPONENT_INTERCONNECT) || !defined(KERNEL_ARCH_HAS_FIRMWARE_TABLES) ||        \
+    !defined(KERNEL_ARCH_HAS_DEVICE_TREE) || !defined(KERNEL_ARCH_POINTER_WIDTH_BITS) ||                               \
+    !defined(KERNEL_ARCH_PHYSICAL_ADDRESS_WIDTH_BITS) || !defined(KERNEL_ARCH_PAGE_SIZE_BYTES) ||                      \
+    !defined(KERNEL_ARCH_NAME) || !defined(KERNEL_ARCH_PLATFORM_NAME)
 #    error "Incomplete target declaration: see kernel/include/kernel/arch/capabilities.h for the full list."
 #endif
 

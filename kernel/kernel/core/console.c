@@ -30,7 +30,7 @@ static const char *const KERNEL_CONSOLE_COMMANDS[] = {
     "help", "stats", "ap", "kbd", "pci", "layout", "layout us", "layout fr", "exit",
 };
 
-#define KERNEL_CONSOLE_COMMAND_COUNT (sizeof(KERNEL_CONSOLE_COMMANDS) / sizeof(KERNEL_CONSOLE_COMMANDS[0]))
+#    define KERNEL_CONSOLE_COMMAND_COUNT (sizeof(KERNEL_CONSOLE_COMMANDS) / sizeof(KERNEL_CONSOLE_COMMANDS[0]))
 
 static uint8_t kernel_string_equals(const char *lhs, const char *rhs)
 {
