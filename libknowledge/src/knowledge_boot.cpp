@@ -2,7 +2,7 @@
  * @file knowledge_boot.cpp
  * @brief Opening the knowledge image the kernel carries.
  *
- * ⚠ The brief that stood here said the pack arrives as a BOOT MODULE, and that is not what
+ * @warning The brief that stood here said the pack arrives as a BOOT MODULE, and that is not what
  * this file does today — corrected rather than left to mislead. The image is
  * `kParityKnowledgeImage`, a byte array in the tree, for the same reason
  * `ParityPackBlob.hpp` is one: a kernel build must require no host tool, and a gate that

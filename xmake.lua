@@ -270,6 +270,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "math/src/Statistics.cpp"),
         path.join(LPLPLUGIN_ROOT, "math/src/Simd.cpp"),
         path.join(LPLPLUGIN_ROOT, "memory/src/ArenaAllocator.cpp"),
+        path.join(LPLPLUGIN_ROOT, "ecs/src/ComponentReflection.cpp"),
         path.join(LPLPLUGIN_ROOT, "ecs/src/Partition.cpp"),
         path.join(LPLPLUGIN_ROOT, "ecs/src/Registry.cpp"),
         path.join(LPLPLUGIN_ROOT, "ecs/src/SystemScheduler.cpp"),
@@ -282,6 +283,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "physics/src/CpuPhysicsBackend.cpp"),
         -- procgen/: authoritative Fixed32 world generation (see the rationale in
         -- libengine/arch/i386/make.config). Kept in lock-step with that list.
+        path.join(LPLPLUGIN_ROOT, "math/src/Geo.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Heightfield.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Erosion.cpp"),
         path.join(LPLPLUGIN_ROOT, "procgen/src/Hydrology.cpp"),
@@ -313,6 +315,10 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "rosetta/src/Engraving.cpp"),
         path.join(LPLPLUGIN_ROOT, "rosetta/src/Parity.cpp"),
         path.join(LPLPLUGIN_ROOT, "history/src/Fact.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/GroundStep.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/TerrainRoutes.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/Journey.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/systems/JourneyParity.cpp"),
         path.join(LPLPLUGIN_ROOT, "history/src/Timeline.cpp"),
         path.join(LPLPLUGIN_ROOT, "history/src/PossibleWorld.cpp"),
         path.join(LPLPLUGIN_ROOT, "history/src/Chronicle.cpp"),
@@ -364,6 +370,7 @@ target("libengine")
         path.join(LPLPLUGIN_ROOT, "engine/src/systems/HeightfieldCollisionSystem.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/systems/PhysicsSystem.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/CaveParity.cpp"),
+        path.join(LPLPLUGIN_ROOT, "engine/src/ReliefParity.cpp"),
         path.join(LPLPLUGIN_ROOT, "engine/src/Engine.cpp")
     )
     -- libengine-local: the kernel client entry (client_app.cpp, which constructs
@@ -501,6 +508,7 @@ target("libknowledge")
         path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/FactStore.cpp"),
         path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/Provenance.cpp"),
         path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/History.cpp"),
+        path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/ReliefSource.cpp"),
         path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/Parity.cpp"),
         path.join(LPLKNOWLEDGE_ROOT, "corpus/src/Urn.cpp"),
         path.join(LPLKNOWLEDGE_ROOT, "corpus/src/Locus.cpp"),

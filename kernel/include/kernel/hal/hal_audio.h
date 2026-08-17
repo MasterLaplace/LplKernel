@@ -19,7 +19,7 @@
  * stream, or a working one. Collapsing them would let a profile claim to be listening
  * to a quiet room.
  *
- * ⚠ Buffers arriving and buffers containing SIGNAL are different facts. A stream with
+ * @warning Buffers arriving and buffers containing SIGNAL are different facts. A stream with
  * nothing plugged into it delivers silence perfectly on time, so the satellite profile
  * reports a level alongside its buffer count.
  *

@@ -670,6 +670,49 @@ void smoke_libengine_run_all(Serial_t *com1)
         serial_write_string(com1, "\n");
     }
 
+    /* Journey (P20): a named body that walked, and what it earned. The first gate whose
+       subject is somebody who MOVED — every earlier history signature folds a corpus
+       being reasoned about, this one folds where a body ended up. arrivals is what makes
+       the rest mean anything: a run in which nobody went anywhere folds perfectly stably
+       on both targets and proves nothing, and earned against scored is the measurement
+       itself. Must match tests/parity/test_history_parity.cpp. */
+    {
+        libengine_journey_fold_result_t journey;
+        libengine_journey_fold(&journey);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } journey_rows[] = {
+            {"chronicle=",    journey.chronicle_sig},
+            {", position=",   journey.position_sig },
+            {", deed=",       journey.deed_sig     },
+            {", seeded=",     journey.seeded       },
+            {", forced=",     journey.forced       },
+            {", unplaceable=",journey.unplaceable  },
+            {", arrivals=",   journey.arrivals     },
+            {", scored=",     journey.scored       },
+            {", earned=",     journey.earned       },
+            {", score=",      journey.score        },
+            {", first=",      journey.first_arrival},
+            {", routed=",     journey.routed       },
+            {", avoided=",    journey.avoided      },
+            {", road=",       journey.road_sig     },
+            {", waypoints=",  journey.waypoint_sig },
+            {", roadcells=",  journey.road_cells   },
+            {", roadpairs=",  journey.road_pairs   },
+            {", altchron=",   journey.alt_chronicle},
+            {", altarr=",     journey.alt_arrivals },
+            {", altfirst=",   journey.alt_first    },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P20 journey: ");
+        for (size_t i = 0u; i < sizeof(journey_rows) / sizeof(journey_rows[0]); ++i)
+        {
+            serial_write_string(com1, journey_rows[i].label);
+            serial_write_hex32(com1, journey_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
 #    if !defined(LPL_ASSISTANT_UNAVAILABLE)
     /* The mind (P14): the demon thinks in ring 0, and thinks the same thing the host
        does. Everything is integer — eight-bit weights, Q16.16 activations, an
@@ -1079,6 +1122,43 @@ void smoke_libengine_run_all(Serial_t *com1)
         {
             serial_write_string(com1, caves_rows[i].label);
             serial_write_hex32(com1, caves_rows[i].value);
+        }
+        serial_write_string(com1, "\n");
+    }
+
+    /* Gate P21: a world whose lowest frequency is a survey rather than a generator.
+
+       `measured`, `blended` and `sea` are what make the signatures mean something: a run in
+       which the relief was never consulted folds perfectly stably on both targets. And
+       `plain_height` is the control — the same world with no survey behind it, which must
+       come out DIFFERENT, or the whole path did nothing.
+
+       Must match tests/parity/test_relief_parity.cpp. */
+    {
+        libengine_relief_fold_result_t relief;
+        libengine_relief_fold(&relief);
+        const struct {
+            const char *label;
+            uint32_t value;
+        } relief_rows[] = {
+            {"sample_sig=",    relief.sample_sig  },
+            {", height_sig=",  relief.height_sig  },
+            {", walk_sig=",    relief.walk_sig    },
+            {", coast_sig=",   relief.coast_sig   },
+            {", measured=",    relief.measured    },
+            {", invented=",    relief.invented    },
+            {", blended=",     relief.blended     },
+            {", sea=",         relief.sea         },
+            {", steps=",       relief.steps       },
+            {", descended=",   (uint32_t) relief.descended},
+            {", plain_height=", relief.plain_height},
+            {", plain_walk=",  relief.plain_walk  },
+        };
+        serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P21 relief: ");
+        for (size_t i = 0u; i < sizeof(relief_rows) / sizeof(relief_rows[0]); ++i)
+        {
+            serial_write_string(com1, relief_rows[i].label);
+            serial_write_hex32(com1, relief_rows[i].value);
         }
         serial_write_string(com1, "\n");
     }

@@ -544,6 +544,45 @@ typedef struct {
 extern void libengine_history_fold(libengine_history_fold_result_t *out);
 
 /**
+ * @brief Folds of a named body that walked, and what it earned (P20).
+ *
+ * The first gate whose subject is somebody who MOVED. Every earlier history signature
+ * folds a corpus being reasoned about; this one folds where a body ended up.
+ *
+ * `arrivals` is what makes the signatures mean anything: a run in which nobody went
+ * anywhere folds perfectly stably on both targets and proves nothing. And `earned`
+ * against `scored` is the measurement itself — the fixture holds one claim the walk
+ * reaches and one it misses by two years, so a body that never moves and a body
+ * teleported to its destination both fail.
+ *
+ * Must match tests/parity/test_history_parity.cpp.
+ */
+typedef struct {
+    unsigned int chronicle_sig; /**< Every event, caused and earned alike. */
+    unsigned int position_sig;  /**< Where the bodies finished. */
+    unsigned int deed_sig;      /**< The emergent arrivals only. */
+    unsigned int seeded;        /**< Bodies a constraint brought into the world. */
+    unsigned int forced;        /**< Times a constraint held a body where it says it was. */
+    unsigned int unplaceable;   /**< Claims naming a place the gazetteer cannot locate. */
+    unsigned int arrivals;      /**< Deeds the run emitted on its own. */
+    unsigned int scored;        /**< Claims held back to be earned. */
+    unsigned int earned;        /**< Of those, the ones the walk reproduced. */
+    unsigned int score;         /**< Raw Q16.16 of the divergence score. */
+    unsigned int first_arrival; /**< Where the first emergent arrival landed. See below. */
+    unsigned int routed;        /**< Waypoints of planned road the walk actually followed. */
+    unsigned int avoided;       /**< Times a body turned aside from ground it could not cross. */
+    unsigned int road_sig;      /**< The road an attested link produces on a relief. See below. */
+    unsigned int waypoint_sig;  /**< The corners that road is summarised as. */
+    unsigned int road_cells;    /**< Cells the attested network paved. */
+    unsigned int road_pairs;    /**< Attested pairs a road was laid between. */
+    unsigned int alt_chronicle; /**< The same corpus walked with one source excluded. See below. */
+    unsigned int alt_arrivals;  /**< Deeds the alternate world's body emitted on its own. */
+    unsigned int alt_first;     /**< Where its first emergent arrival landed. */
+} libengine_journey_fold_result_t;
+
+extern void libengine_journey_fold(libengine_journey_fold_result_t *out);
+
+/**
  * @brief Folds of the cave a body can walk into (P19).
  *
  * The first gate whose subject is not a world that was generated but a world that was
@@ -577,6 +616,39 @@ typedef struct {
 } libengine_caves_fold_result_t;
 
 extern void libengine_caves_fold(libengine_caves_fold_result_t *out);
+
+/**
+ * Gate P21: a world whose lowest frequency is a survey rather than a generator.
+ *
+ * What crosses here is the arithmetic -- the projection, the cell lookup, the border
+ * blend, the detail layer added back, and a body walking down all of it. The samples
+ * are built from an integer formula on both sides rather than shipped, so the gate
+ * needs no file; the reader that turns real tiles into such numbers is measured
+ * separately against the real Peloponnese, in LplKnowledge's test-relief.
+ *
+ * `measured`, `blended` and `sea` are what make the signatures mean something: a run
+ * in which the relief was never consulted folds perfectly stably on both targets and
+ * proves nothing. `plain_height` is the control -- the same world with no survey behind
+ * it, which must come out DIFFERENT.
+ *
+ * Must match tests/parity/test_relief_parity.cpp.
+ */
+typedef struct {
+    uint32_t sample_sig; /**< FNV-1a over the survey itself, before anything reads it. */
+    uint32_t height_sig; /**< FNV-1a over the ground, across survey, border and beyond. */
+    uint32_t walk_sig;   /**< FNV-1a over where a body went, step by step. */
+    uint32_t coast_sig;  /**< FNV-1a over which cells came out sea and which land. */
+    uint32_t measured;   /**< Cells the survey answered for. Zero means it never applied. */
+    uint32_t invented;   /**< Cells outside it, or inside its hole. */
+    uint32_t blended;    /**< Cells in the border band, part measured and part invented. */
+    uint32_t sea;        /**< Cells at or below the world's sea level. */
+    uint32_t steps;      /**< Steps the body took. Zero means it never moved. */
+    int32_t descended;   /**< Raw Q16.16 height the walk lost. */
+    uint32_t plain_height; /**< Control: the same world ignoring the survey. Must differ. */
+    uint32_t plain_walk;   /**< Control: where the body goes without it. Must differ. */
+} libengine_relief_fold_result_t;
+
+extern void libengine_relief_fold(libengine_relief_fold_result_t *out);
 
 /*
 ** Kernel client entry point — the freestanding mirror of apps/client/main.cpp.
