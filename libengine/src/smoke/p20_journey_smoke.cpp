@@ -55,4 +55,8 @@ extern "C" void libengine_journey_fold(libengine_journey_fold_result_t *out)
     out->wrapped_road = folded.wrappedRoadCells;
     out->polar_road = folded.polarRoadCells;
     out->alt_first = folded.alternateFirst;
+    out->cascade_road_sig = folded.cascadeRoadSignature;
+    out->cascade_road_cells = folded.cascadeRoadCells;
+    out->cascade_coarse = folded.cascadeCoarseExpanded;
+    out->cascade_corridor = folded.cascadeCorridorCells;
 }

@@ -591,6 +591,18 @@ typedef struct {
     unsigned int closed_first;    /**< Where its first emergent arrival landed. */
     unsigned int wrapped_road;    /**< Cells paved when the ROUTING grid closes east-west. */
     unsigned int polar_road;      /**< The same with the poles open; must never be worse. */
+    /**
+     * The SAME attested network, planned on a summary and refined inside its corridor.
+     *
+     * A cascade is a different search -- a coarse plan, a corridor, then a confined A* -- so that
+     * it returns the flat search's road is a claim, and it must equal road_sig. The coarse count
+     * beside it is what says a cascade happened at all: a run that fell back to a flat search
+     * would fold an identical road and look perfect.
+     */
+    unsigned int cascade_road_sig;
+    unsigned int cascade_road_cells; /**< Cells the cascaded network paved; must equal road_cells. */
+    unsigned int cascade_coarse;     /**< Cells the coarse plans settled; zero means no cascade. */
+    unsigned int cascade_corridor;   /**< Fine cells the coarse plans opened. */
 } libengine_journey_fold_result_t;
 
 extern void libengine_journey_fold(libengine_journey_fold_result_t *out);

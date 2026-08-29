@@ -708,6 +708,10 @@ void smoke_libengine_run_all(Serial_t *com1)
             {", wrappedroad=", journey.wrapped_road },
             {", polarroad=",  journey.polar_road   },
             {", altfirst=",   journey.alt_first    },
+            {", cascaderoad=", journey.cascade_road_sig},
+            {", cascadecells=", journey.cascade_road_cells},
+            {", cascadecoarse=", journey.cascade_coarse},
+            {", cascadecorridor=", journey.cascade_corridor},
         };
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P20 journey: ");
         for (size_t i = 0u; i < sizeof(journey_rows) / sizeof(journey_rows[0]); ++i)
