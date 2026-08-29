@@ -49,5 +49,10 @@ extern "C" void libengine_journey_fold(libengine_journey_fold_result_t *out)
     out->road_pairs = folded.roadPairs;
     out->alt_chronicle = folded.alternateChronicle;
     out->alt_arrivals = folded.alternateArrivals;
+    out->closed_chronicle = folded.closedChronicle;
+    out->closed_arrivals = folded.closedArrivals;
+    out->closed_first = folded.closedFirst;
+    out->wrapped_road = folded.wrappedRoadCells;
+    out->polar_road = folded.polarRoadCells;
     out->alt_first = folded.alternateFirst;
 }

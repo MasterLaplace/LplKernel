@@ -578,6 +578,19 @@ typedef struct {
     unsigned int alt_chronicle; /**< The same corpus walked with one source excluded. See below. */
     unsigned int alt_arrivals;  /**< Deeds the alternate world's body emitted on its own. */
     unsigned int alt_first;     /**< Where its first emergent arrival landed. */
+    /**
+     * The same corpus walked on a world CLOSED east-west.
+     *
+     * One number changes -- how wide the world is -- and every distance the walk measures changes
+     * with it, because a place beyond the antimeridian is a neighbour rather than most of a
+     * circumference away. A walk that ignored the wrap folds identically here, and would in truth
+     * be sending a body round the planet the long way, on a road nothing downstream can question.
+     */
+    unsigned int closed_chronicle;
+    unsigned int closed_arrivals; /**< Deeds the closed world's body emitted on its own. */
+    unsigned int closed_first;    /**< Where its first emergent arrival landed. */
+    unsigned int wrapped_road;    /**< Cells paved when the ROUTING grid closes east-west. */
+    unsigned int polar_road;      /**< The same with the poles open; must never be worse. */
 } libengine_journey_fold_result_t;
 
 extern void libengine_journey_fold(libengine_journey_fold_result_t *out);

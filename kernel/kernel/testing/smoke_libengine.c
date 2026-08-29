@@ -702,6 +702,11 @@ void smoke_libengine_run_all(Serial_t *com1)
             {", roadpairs=",  journey.road_pairs   },
             {", altchron=",   journey.alt_chronicle},
             {", altarr=",     journey.alt_arrivals },
+            {", closedchron=", journey.closed_chronicle},
+            {", closedarr=",  journey.closed_arrivals},
+            {", closedfirst=", journey.closed_first },
+            {", wrappedroad=", journey.wrapped_road },
+            {", polarroad=",  journey.polar_road   },
             {", altfirst=",   journey.alt_first    },
         };
         serial_write_string(com1, "[" KERNEL_SYSTEM_STRING "]: libengine P20 journey: ");
