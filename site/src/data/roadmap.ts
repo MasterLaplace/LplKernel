@@ -171,9 +171,22 @@ export const items: RoadmapItem[] = [
     track: "Phase 5 · Device drivers",
     phase: "P5",
     status: "planned",
-    detail: "ATA PIO first (simplest), then AHCI/NVMe. High-frequency USB/serial polling for the OpenBCI headset with native Notch/bandpass filtering.",
+    detail:
+      "High-frequency USB/serial polling for the OpenBCI headset with native Notch/bandpass filtering. On the storage half the recommendation has changed: NVMe before ATA PIO. ATA teaches a dead protocol whose only virtue is being short; NVMe teaches the queue model that RDMA, io_uring, AF_XDP and virtio all reuse. The simplest thing today is the detour tomorrow.",
     dependsOn: ["kernel-p5"],
     tags: ["drivers", "bci"],
+  },
+  {
+    id: "kernel-p5-nvme",
+    title: "NVMe driver",
+    project: "kernel",
+    track: "Phase 5 · Device drivers",
+    phase: "P5",
+    status: "planned",
+    detail:
+      "Where three separate reports converge. NVMe has the SAME architecture as the RDMA verbs — a submission/completion queue pair in shared memory, an MMIO doorbell, descriptors pointing at physical pages, a phase bit — but its spec is free, QEMU emulates it exactly, and a minimal driver is under a thousand lines. Learning that shape here is what makes the shape reusable everywhere else.",
+    dependsOn: ["kernel-p5"],
+    tags: ["drivers", "storage", "data-movement"],
   },
   {
     id: "kernel-p6",
@@ -233,10 +246,92 @@ export const items: RoadmapItem[] = [
     project: "kernel",
     track: "Phase 7–11 · Advanced",
     phase: "P11",
+    status: "in-progress",
+    progress: 40,
+    detail:
+      "kernel/power/ ships three modules: MONITOR/MWAIT with a HLT fallback, a tickless timer that REFUSES to engage while a World is running, and a frequency governor split in two so that the half which cannot be applied is counted as refused rather than silently skipped. Measured duty cycle per profile: 4 ‰ server, 0 ‰ client, 1 ‰ xmake, with 73 to 320 periodic interrupts avoided. What is left is on the track below — and it is mostly instruments, because what is not measured cannot be improved.",
+    dependsOn: ["kernel-p3"],
+    tags: ["realtime", "power"],
+  },
+
+  {
+    id: "kernel-rocev2",
+    title: "A software RoCEv2 endpoint",
+    project: "kernel",
+    track: "Phase 7–11 · Advanced",
     status: "idea",
-    detail: "C-states (HLT/MWAIT), P-states, tickless kernel (NO_HZ), DVFS driven by the EDF scheduler, clock/power gating. Crucial for BCI/VR hardware.",
-    dependsOn: ["kernel-p6"],
-    tags: ["realtime"],
+    detail:
+      "RDMA's engine lives in the NIC's silicon and QEMU removed every RDMA device in 9.1, so the driver route is closed. But RoCEv2 is InfiniBand transport inside ordinary UDP on port 4791 — Linux proves it is implementable in software with rdma_rxe. Writing the endpoint over our own NIC driver yields a parity gate whose OTHER SIDE IS A LINUX KERNEL, which is strictly stronger than a gate we write both halves of.",
+    dependsOn: ["kernel-p5-nic", "kernel-p8"],
+    tags: ["net", "parity", "data-movement"],
+  },
+
+  // ----- Power & data movement ---------------------------------------------
+  {
+    id: "kernel-wakeup-accounting",
+    title: "Wake-up accounting & timer coalescing",
+    project: "kernel",
+    track: "The bottleneck is data movement",
+    status: "planned",
+    detail:
+      "\"Who woke me up?\" — one counter per wake source, powertop's core idea in about thirty lines. Everything else on this track is blind without it: you cannot shorten a wake-up you cannot name. Coalescing rides along, because a tickless kernel that still fires ten timers one millisecond apart wakes ten times where once would do.",
+    dependsOn: ["kernel-p11"],
+    tags: ["power", "measurement"],
+  },
+  {
+    id: "kernel-cstate-hints",
+    title: "Actually sleeping deeply",
+    project: "kernel",
+    track: "The bottleneck is data movement",
+    status: "planned",
+    detail:
+      "processor_sleep.c passes EAX = 0 to MWAIT, which is the shallowest hint: the kernel sleeps in C1 — clock stopped, power maintained — while book §9.5.1 claims C3/C6. That is the difference between attacking dynamic power and attacking leakage, i.e. between 0 % and the 30–70 % the book itself attributes to static power. The hint cannot be computed: it is model-specific, so it comes from ACPI _CST or a per-model table. Same fix guards CPUID.05H:ECX bit 1 before setting the interrupt-break extension.",
+    dependsOn: ["kernel-p11"],
+    tags: ["power", "cpu"],
+  },
+  {
+    id: "kernel-monitor-wake",
+    title: "Waking on a device write",
+    project: "kernel",
+    track: "The bottleneck is data movement",
+    status: "planned",
+    detail:
+      "processor_sleep_until_write arms MONITOR on a device's write index and wakes when the DMA lands — no IPI, no IRQ. It is written, it is correct, and it has ZERO callers: the one mechanism that distinguishes this idle loop from everyone else's is an orphan. hal_audio.h already says the power floor will need it. First site: the HDA capture ring. Second: the NIC receive ring.",
+    dependsOn: ["kernel-p11", "kernel-p5-nic"],
+    tags: ["power", "drivers"],
+  },
+  {
+    id: "kernel-aperf-mperf",
+    title: "The governor's missing feedback loop",
+    project: "kernel",
+    track: "The bottleneck is data movement",
+    status: "planned",
+    detail:
+      "There is not a single rdmsr anywhere in the kernel. The governor is FED its load as a parameter, and — the part that matters — it writes IA32_PERF_CTL and cannot know whether the silicon obeyed: firmware, HWP or a thermal cap may all ignore it. APERF/MPERF is the loop that closes it, and book §9.4.3 already describes it as though it were there.",
+    dependsOn: ["kernel-p11"],
+    tags: ["power", "cpu"],
+  },
+  {
+    id: "kernel-platform-power",
+    title: "Platform power: ASPM, APST, EEE",
+    project: "kernel",
+    track: "The bottleneck is data movement",
+    status: "idea",
+    detail:
+      "Book §9 covers the silicon and stops at the edge of the package. An active PCIe link burns watts with no traffic; L1.2 turns off the PLLs, receivers and transmitters for a 10–100 µs exit. That latency makes it a PROFILE decision, not a global constant: fatal to a 1 kHz loop, free to a satellite sleeping between 40 ms frames. NVMe APST and 802.3az LPI are the same argument on the other two links.",
+    dependsOn: ["kernel-p5-nvme"],
+    tags: ["power", "drivers"],
+  },
+  {
+    id: "kernel-energy-gate",
+    title: "Joules per tick",
+    project: "kernel",
+    track: "The bottleneck is data movement",
+    status: "idea",
+    detail:
+      "Twenty-one parity gates, and not one measures what the machine costs. Duty cycle is a proxy that cannot see the difference between C1 and C6 — the very defect above. RAPL gives real joules (MSR 0x606/0x611), but QEMU only exposes it under KVM on an Intel host and reports the whole host package, so this is a REGRESSION BUDGET on real hardware, not a parity gate: energy is not bit-identical across targets and never will be.",
+    dependsOn: ["kernel-wakeup-accounting", "kernel-cstate-hints"],
+    tags: ["power", "measurement"],
   },
 
   // ===== CONVERGENCE — Model B + U-track ====================================
@@ -555,6 +650,46 @@ export const items: RoadmapItem[] = [
     tags: ["parity", "knowledge", "format"],
   },
 
+  {
+    id: "plugin-gate-p19",
+    title: "gate P19 — the caves",
+    project: "plugin",
+    track: "Determinism gates",
+    phase: "P19",
+    status: "done",
+    progress: 100,
+    detail:
+      "The first gate whose subject is a WALKED world rather than a computed one. Three folds that fail differently — the warren itself, where the rock is, and what a body makes of it — plus the counters that give them meaning: a run where the body never enters folds perfectly on both targets and proves nothing. The control is the same warren with its mouth filled in: sealed_in = 0.",
+    dependsOn: ["plugin-gate-p9"],
+    tags: ["parity", "procgen", "world"],
+  },
+  {
+    id: "plugin-gate-p20",
+    title: "gate P20 — the journey",
+    project: "plugin",
+    track: "Determinism gates",
+    phase: "P20",
+    status: "done",
+    progress: 100,
+    detail:
+      "The bridge between the corpus and the world: a dated constraint seeds someone, he walks of his own accord, and his arrivals return to the chronicle as Cause::Emergent — where a divergence score can judge them. The fixture attests a road to the FAR place while a nearer one stays unlinked, so a walk that ignored the corpus would arrive elsewhere first while every signature stayed perfectly stable.",
+    dependsOn: ["plugin-gate-p13", "knowledge-gate-p18"],
+    tags: ["parity", "history", "world"],
+  },
+  {
+    id: "plugin-gate-p21",
+    title: "gate P21 — the relief",
+    project: "plugin",
+    track: "Determinism gates",
+    phase: "P21",
+    status: "done",
+    progress: 100,
+    detail:
+      "The first gate whose ground is not invented: real elevation tiles projected, resampled, baked into a .lplknow section, reopened and walked. It proves the ARITHMETIC agrees — projection, lookup, edge blend, detail, walk. The counters are what give the signatures meaning, and the control is the same world without a survey, which must come out DIFFERENT.",
+    dependsOn: ["plugin-gate-p9", "knowledge-gate-p18"],
+    tags: ["parity", "world", "format"],
+  },
+
   // ===== ASSISTANT — Caine, then Jarvis =====================================
   {
     id: "assistant-caine",
@@ -587,6 +722,18 @@ export const items: RoadmapItem[] = [
     detail: "llama.cpp and whisper.cpp behind a process boundary, pgvector memory, deep research with GBNF-constrained tool calls. Inference stays in ring 3 and speaks to the kernel through the data plane.",
     dependsOn: ["assistant-caine"],
     tags: ["inference"],
+  },
+
+  {
+    id: "assistant-paged-model",
+    title: "The expert is a page",
+    project: "assistant",
+    track: "Jarvis · the local mind",
+    status: "idea",
+    detail:
+      "Decode is bandwidth-bound — two floating-point operations per weight read — so tokens/s is bandwidth divided by ACTIVE weights. A Mixture of Experts decouples that from capacity: a 236B model reads only 21B per token, ending up 3.4× larger in memory than a dense 70B and 3.3× faster. Which makes paging the right frame: map the whole model, let a page fault pull an expert straight off NVMe by DMA, pin the shared experts and evict the specialists. And the part that exists nowhere else — the MoE router knows one token ahead which experts are needed, so the kernel can prefetch BEFORE the fault. Not statistical speculation: an exact oracle handed down by the application. Needs a .lplmind laid out for paging — experts on page boundaries, table in front — decided before the loader, not after.",
+    dependsOn: ["assistant-gate-p14", "kernel-p5-nvme"],
+    tags: ["inference", "data-movement"],
   },
 
   // ===== KNOWLEDGE — Alexandrie =============================================
