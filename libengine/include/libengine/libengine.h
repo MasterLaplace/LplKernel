@@ -659,16 +659,16 @@ extern void libengine_caves_fold(libengine_caves_fold_result_t *out);
  * Must match tests/parity/test_relief_parity.cpp.
  */
 typedef struct {
-    uint32_t sample_sig; /**< FNV-1a over the survey itself, before anything reads it. */
-    uint32_t height_sig; /**< FNV-1a over the ground, across survey, border and beyond. */
-    uint32_t walk_sig;   /**< FNV-1a over where a body went, step by step. */
-    uint32_t coast_sig;  /**< FNV-1a over which cells came out sea and which land. */
-    uint32_t measured;   /**< Cells the survey answered for. Zero means it never applied. */
-    uint32_t invented;   /**< Cells outside it, or inside its hole. */
-    uint32_t blended;    /**< Cells in the border band, part measured and part invented. */
-    uint32_t sea;        /**< Cells at or below the world's sea level. */
-    uint32_t steps;      /**< Steps the body took. Zero means it never moved. */
-    int32_t descended;   /**< Raw Q16.16 height the walk lost. */
+    uint32_t sample_sig;   /**< FNV-1a over the survey itself, before anything reads it. */
+    uint32_t height_sig;   /**< FNV-1a over the ground, across survey, border and beyond. */
+    uint32_t walk_sig;     /**< FNV-1a over where a body went, step by step. */
+    uint32_t coast_sig;    /**< FNV-1a over which cells came out sea and which land. */
+    uint32_t measured;     /**< Cells the survey answered for. Zero means it never applied. */
+    uint32_t invented;     /**< Cells outside it, or inside its hole. */
+    uint32_t blended;      /**< Cells in the border band, part measured and part invented. */
+    uint32_t sea;          /**< Cells at or below the world's sea level. */
+    uint32_t steps;        /**< Steps the body took. Zero means it never moved. */
+    int32_t descended;     /**< Raw Q16.16 height the walk lost. */
     uint32_t plain_height; /**< Control: the same world ignoring the survey. Must differ. */
     uint32_t plain_walk;   /**< Control: where the body goes without it. Must differ. */
 } libengine_relief_fold_result_t;
