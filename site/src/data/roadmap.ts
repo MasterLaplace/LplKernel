@@ -149,7 +149,7 @@ export const items: RoadmapItem[] = [
     phase: "P5",
     status: "in-progress",
     progress: 35,
-    detail: "PS/2 keyboard (QWERTY/AZERTY layouts) ✓, PCI bus enumeration + BARs ✓. Next: storage (ATA PIO), then USB.",
+    detail: "PS/2 keyboard (QWERTY/AZERTY layouts) ✓, PCI bus enumeration + BARs ✓, HDA audio capture with every output amp muted ✓. Next: storage — NVMe before ATA PIO (see the NVMe item) — then USB.",
     dependsOn: ["kernel-p3"],
     tags: ["drivers"],
   },
@@ -184,7 +184,7 @@ export const items: RoadmapItem[] = [
     phase: "P5",
     status: "planned",
     detail:
-      "Where three separate reports converge. NVMe has the SAME architecture as the RDMA verbs — a submission/completion queue pair in shared memory, an MMIO doorbell, descriptors pointing at physical pages, a phase bit — but its spec is free, QEMU emulates it exactly, and a minimal driver is under a thousand lines. Learning that shape here is what makes the shape reusable everywhere else.",
+      "Where three separate reports converge. NVMe has the SAME architecture as the RDMA verbs — a submission/completion queue pair in shared memory, an MMIO doorbell, descriptors pointing at physical pages, a phase bit — but its spec is free, QEMU emulates it exactly, and a minimal driver is under a thousand lines. Learning that shape here is what makes the shape reusable everywhere else. One design constraint to take from day one: depth. Haas & Leis (PVLDB 2023) need about 1000 requests in flight to get decent throughput from 8 SSDs and 3000 to saturate them, so a driver that waits for one completion before submitting the next caps at a fraction of the hardware. And the same paper measures what a ring-0 poll-mode driver avoids by construction: without SPDK, half of a 64-core machine goes to the OS just submitting and reaping I/O.",
     dependsOn: ["kernel-p5"],
     tags: ["drivers", "storage", "data-movement"],
   },
@@ -272,9 +272,10 @@ export const items: RoadmapItem[] = [
     title: "Wake-up accounting & timer coalescing",
     project: "kernel",
     track: "The bottleneck is data movement",
-    status: "planned",
+    status: "in-progress",
+    progress: 60,
     detail:
-      "\"Who woke me up?\" — one counter per wake source, powertop's core idea in about thirty lines. Everything else on this track is blind without it: you cannot shorten a wake-up you cannot name. Coalescing rides along, because a tickless kernel that still fires ten timers one millisecond apart wakes ten times where once would do.",
+      "\"Who woke me up?\" — one counter per wake source, powertop's core idea. The accounting half ships: the sleep path ARMS, and the first interrupt to reach the dispatcher while armed is the waker. That distinction is the whole thing — counting interrupts instead is the failure that looks most like success, thousands of events and a plausible distribution that mean nothing. It is checkable rather than merely plausible, because arming is one-to-one with entering a sleep: sum(per-vector) + monitor writes + unattributed must equal sleeps entered, and a probe that removes the guard breaks the law on the live boot as well as in the battery. First measurement, and it reorders what follows: the satellite profile is woken by ONE source, the timer, eight times out of eight — so coalescing has nothing to coalesce here and the lever for this profile is a deeper C-state. Coalescing stays on this item and is not yet written.",
     dependsOn: ["kernel-p11"],
     tags: ["power", "measurement"],
   },
@@ -283,9 +284,10 @@ export const items: RoadmapItem[] = [
     title: "Actually sleeping deeply",
     project: "kernel",
     track: "The bottleneck is data movement",
-    status: "planned",
+    status: "in-progress",
+    progress: 70,
     detail:
-      "processor_sleep.c passes EAX = 0 to MWAIT, which is the shallowest hint: the kernel sleeps in C1 — clock stopped, power maintained — while book §9.5.1 claims C3/C6. That is the difference between attacking dynamic power and attacking leakage, i.e. between 0 % and the 30–70 % the book itself attributes to static power. The hint cannot be computed: it is model-specific, so it comes from ACPI _CST or a per-model table. Same fix guards CPUID.05H:ECX bit 1 before setting the interrupt-break extension.",
+      "Two defects fixed. MWAIT's extension bit was set without checking CPUID.05H:ECX bit 1, which raises #GP on a processor that lacks it, and the comment justifying it was wrong: without the bit MWAIT already exits on an unmasked interrupt. And the hint is now requested from what CPUID.05H:EDX enumerates, with the offset that decides everything handled: EDX reports C1* in bits 7:4 while MWAIT's hint 0 targets C1. A mask rather than a count, because real processors leave gaps. What CPUID cannot say is the latency of each state, which lives in ACPI _CST, so choosing a depth stays with the caller that knows its deadline.",
     dependsOn: ["kernel-p11"],
     tags: ["power", "cpu"],
   },
@@ -294,9 +296,10 @@ export const items: RoadmapItem[] = [
     title: "Waking on a device write",
     project: "kernel",
     track: "The bottleneck is data movement",
-    status: "planned",
+    status: "in-progress",
+    progress: 75,
     detail:
-      "processor_sleep_until_write arms MONITOR on a device's write index and wakes when the DMA lands — no IPI, no IRQ. It is written, it is correct, and it has ZERO callers: the one mechanism that distinguishes this idle loop from everyone else's is an orphan. hal_audio.h already says the power floor will need it. First site: the HDA capture ring. Second: the NIC receive ring.",
+      "processor_sleep_until_write had zero callers. Its first real consumer is the console, which used to spin on the keyboard and the serial port and now sleeps on the scan-code ring advanced by IRQ1. The HDA capture ring was the site the plan named first, and it could not be one while the driver was polled: its index was written only by the loop that would sleep on it. Capture is now interrupt-driven — the handler is routed on the line the firmware assigned, refuses a vector another device holds, acknowledges every status bit because the line is level-triggered, and a full ring refuses the newest half instead of overwriting the one being read. Measured at parity with polling, and the wake accounting sees the controller as a second source. What remains is the NIC ring, which needs a NIC driver.",
     dependsOn: ["kernel-p11", "kernel-p5-nic"],
     tags: ["power", "drivers"],
   },
@@ -305,9 +308,10 @@ export const items: RoadmapItem[] = [
     title: "The governor's missing feedback loop",
     project: "kernel",
     track: "The bottleneck is data movement",
-    status: "planned",
+    status: "in-progress",
+    progress: 70,
     detail:
-      "There is not a single rdmsr anywhere in the kernel. The governor is FED its load as a parameter, and — the part that matters — it writes IA32_PERF_CTL and cannot know whether the silicon obeyed: firmware, HWP or a thermal cap may all ignore it. APERF/MPERF is the loop that closes it, and book §9.4.3 already describes it as though it were there.",
+      "The loop is closed in code: CPUID.06H:ECX bit 0 is probed, IA32_APERF and IA32_MPERF (0xE8, 0xE7) are read across the satellite run, and the effective clock is reported as a share of nominal. The sentinel for no answer sits outside the range on purpose, because turbo takes a real reading above 1000 per mille. What remains is on the hardware side: TCG is not expected to expose the pair, so the live value is only measurable on real silicon, and comparing it against the requested state is the step that turns a reading into a verdict on whether the write was obeyed.",
     dependsOn: ["kernel-p11"],
     tags: ["power", "cpu"],
   },
@@ -332,6 +336,17 @@ export const items: RoadmapItem[] = [
       "Twenty-one parity gates, and not one measures what the machine costs. Duty cycle is a proxy that cannot see the difference between C1 and C6 — the very defect above. RAPL gives real joules (MSR 0x606/0x611), but QEMU only exposes it under KVM on an Intel host and reports the whole host package, so this is a REGRESSION BUDGET on real hardware, not a parity gate: energy is not bit-identical across targets and never will be.",
     dependsOn: ["kernel-wakeup-accounting", "kernel-cstate-hints"],
     tags: ["power", "measurement"],
+  },
+  {
+    id: "kernel-large-pages",
+    title: "Fewer translations: large pages",
+    project: "kernel",
+    track: "The bottleneck is data movement",
+    status: "idea",
+    detail:
+      "Every memory access goes through a translation, and a TLB miss is itself a walk through memory. Big-memory workloads lose up to 10 % of their cycles to TLB misses even with large pages; a direct segment (base, limit, offset) brings that under 0.5 % (Basu et al., ISCA 2013). The kernel maps everything in 4 KiB pages today: boot.S sets only OSFXSR and OSXMMEXCPT in CR4, never PSE, although 4 MiB pages exist in 32-bit paging. First step: PSE for the direct map, the arenas and a model's weights. The single address space and contiguous arenas already point towards direct segments.",
+    dependsOn: ["kernel-p4"],
+    tags: ["memory", "data-movement"],
   },
 
   // ===== CONVERGENCE — Model B + U-track ====================================
@@ -474,6 +489,17 @@ export const items: RoadmapItem[] = [
     detail: "Photorealistic rendering (NeRF or PBR), haptic feedback, spatial audio, custom RTOS for strict determinism, GPUDirect RDMA (NIC→VRAM).",
     dependsOn: ["plugin-p5"],
     tags: ["render", "haptic"],
+  },
+  {
+    id: "plugin-npc-system-one",
+    title: "NPCs that decide without speaking",
+    project: "plugin",
+    track: "Phase 6 · Immersion",
+    status: "idea",
+    detail:
+      "An NPC decision has the shape of a System 1 query: a state, an alphabet of allowed actions, a weighted choice. TypeSafe's launch demo plays Doom at ~10 decisions per second from structured JSON state, not pixels (vendor figures). The engine already owns both halves — the action alphabet (agent::IWorldSurface, alphabetOffers) and reactive agents (ai/, ecology/). Two constraints rule out a hosted model: 114 ms per decision is seven frames at 60 Hz, so it suits tactics, not per-frame control; and an NPC's state is AUTHORITATIVE, identical on the server and on every replay, which a remote float model cannot guarantee. So: a local integer head on the gate-P14 transformer, folded like every other gate.",
+    dependsOn: ["assistant-system-one", "plugin-gate-p8"],
+    tags: ["ai", "determinism"],
   },
 
   // ===== PLUGIN — parity gates ==============================================
@@ -719,7 +745,7 @@ export const items: RoadmapItem[] = [
     project: "assistant",
     track: "Jarvis · the local mind",
     status: "planned",
-    detail: "llama.cpp and whisper.cpp behind a process boundary, pgvector memory, deep research with GBNF-constrained tool calls. Inference stays in ring 3 and speaks to the kernel through the data plane.",
+    detail: "llama.cpp and whisper.cpp behind a process boundary, pgvector memory for now (to be replaced by LplKnowledge, see the item below), deep research with GBNF-constrained tool calls. Inference stays in ring 3 and speaks to the kernel through the data plane.",
     dependsOn: ["assistant-caine"],
     tags: ["inference"],
   },
@@ -731,9 +757,53 @@ export const items: RoadmapItem[] = [
     track: "Jarvis · the local mind",
     status: "idea",
     detail:
-      "Decode is bandwidth-bound — two floating-point operations per weight read — so tokens/s is bandwidth divided by ACTIVE weights. A Mixture of Experts decouples that from capacity: a 236B model reads only 21B per token, ending up 3.4× larger in memory than a dense 70B and 3.3× faster. Which makes paging the right frame: map the whole model, let a page fault pull an expert straight off NVMe by DMA, pin the shared experts and evict the specialists. And the part that exists nowhere else — the MoE router knows one token ahead which experts are needed, so the kernel can prefetch BEFORE the fault. Not statistical speculation: an exact oracle handed down by the application. Needs a .lplmind laid out for paging — experts on page boundaries, table in front — decided before the loader, not after.",
+      "Decode is bandwidth-bound — two floating-point operations per weight read — so tokens/s is bandwidth divided by ACTIVE weights. A Mixture of Experts decouples that from capacity: a 236B model reads only 21B per token, ending up 3.4× larger in memory than a dense 70B and 3.3× faster. Which makes paging the right frame: map the whole model, let a page fault pull an expert straight off NVMe by DMA, pin the shared experts and evict the specialists, and prefetch BEFORE the fault. Correction: a standard router's answer is exact but arrives at the last moment — block N's gate picks block N's experts a few tens of thousands of multiply-adds before they are read, while one Mixtral expert at Q4 is ~88 MB, ~12 ms of NVMe. Knowing one block ahead exists and costs something either way: Pre-gated MoE (ISCA 2024, arXiv 2308.12066) retrains the gate so block N picks block N+1's experts, 23 % over all-in-GPU with 4.2× less peak GPU memory; Eliseev & Mazur (arXiv 2312.17238) guess them by applying the next gate to the current hidden state, ~60–70 % recall one block ahead. One token ahead is exact only when routing hashes the token itself (Hash Layers, arXiv 2106.04426), which neither Mixtral nor DeepSeek does. So the design is hybrid: speculate one block ahead to hide the disk, let the router's exact answer cancel wrong prefetches, cache recent experts since they repeat over 2–4 tokens. Both papers prefetch in user space against an OS that ignores them — doing it in the page-fault handler is what is new here. Needs a .lplmind laid out for paging — experts on page boundaries, table in front — decided before the loader, not after.",
     dependsOn: ["assistant-gate-p14", "kernel-p5-nvme"],
     tags: ["inference", "data-movement"],
+  },
+  {
+    id: "assistant-measured-decode",
+    title: "Measuring the bandwidth law",
+    project: "assistant",
+    track: "Jarvis · the local mind",
+    status: "idea",
+    detail:
+      "Every tokens/s figure behind the item above is DERIVED — bandwidth divided by active bytes, times an assumed engine efficiency — and none is measured. Two llama.cpp models on one machine: predict tokens/s from the formula, run, compare. Then joules per token at the wall, with the idle draw subtracted and published separately, per request AND per token. The comparison point exists: Google measured 0.24 Wh for a median Gemini text prompt (arXiv 2508.15734), at a boundary that counts the host, idle machines and the data centre, so a GPU-only number would flatter the local side.",
+    dependsOn: ["assistant-jarvis", "kernel-energy-gate"],
+    tags: ["inference", "measurement", "power"],
+  },
+  {
+    id: "assistant-reproducible-decode",
+    title: "The same answer twice",
+    project: "assistant",
+    track: "Jarvis · the local mind",
+    status: "idea",
+    detail:
+      "In production the main cause of nondeterministic inference is not floating point alone but the missing batch invariance: other users change the batch size, and RMSNorm, matmul and attention change their reduction order with it — 80 distinct answers out of 1000 at temperature 0 on Qwen3-235B, 1000 identical once the kernels are made invariant, at about 2× the cost (Thinking Machines, 2025). LLM-42 (arXiv 2601.17768) pays only for the traffic that needs it, by verifying and rolling back under a fixed-shape reduction. Gate P14 gets determinism by construction, since integer arithmetic has no reduction order to pin. The open question for the hosted path: a single-user server runs at a constant batch of one, so what is left? Measure llama.cpp at temperature 0 across runs and thread counts, count distinct outputs. Reproducible means cacheable, testable and replayable — an optimisation, not a luxury.",
+    dependsOn: ["assistant-jarvis", "assistant-gate-p14"],
+    tags: ["inference", "determinism"],
+  },
+  {
+    id: "assistant-memory-on-knowledge",
+    title: "The assistant remembers without a database",
+    project: "assistant",
+    track: "Jarvis · the local mind",
+    status: "idea",
+    detail:
+      "User memory lives in PostgreSQL + pgvector today (backend/VectorStore, an HNSW index), which a server profile on LplKernel cannot run. Move it onto LplKnowledge: the retrieval of the knowledge item below, plus the half a baked image lacks — writes. An append-only journal, baked periodically into a fresh image, the way the catalogue stream already appends without sorting. mind/MemoryStore stays the bounded working memory in ring 0; the image becomes the long memory. Once done, the server mode needs no database process at all.",
+    dependsOn: ["knowledge-retrieval", "assistant-jarvis"],
+    tags: ["memory", "retrieval"],
+  },
+  {
+    id: "assistant-system-one",
+    title: "A decider that does not speak",
+    project: "assistant",
+    track: "Jarvis · the local mind",
+    status: "idea",
+    detail:
+      "Generating T tokens reads the active weights T times; a head that answers in one pass reads them once, so a decision emitted as ~20 tokens of JSON costs ~20 extra weight reads that a typed head does not. TypeSafe's Jev sells exactly that — typed choices, scores and probabilities with a confidence, non-autoregressive, 70–500 ms hosted (vendor figures, no open weights). The pattern needs no vendor: Adaptive-RAG (arXiv 2403.14403) lets a small classifier pick the retrieval strategy, RouteLLM (arXiv 2406.18665) routes weak/strong models on a probability, P(IK) (arXiv 2207.05221) predicts whether the model already knows. Here: a head on the integer transformer of gate P14 — one pass, Q16.16 scores, deterministic thresholds, nothing to parse, which ring 0 can consume. The percentage is read through two thresholds and hysteresis, as the satellite already reads voice level (0.020 / 0.012, 700 ms hold). Precondition: MEASURE calibration first, since modern networks are poorly calibrated (arXiv 1706.04599) and 0.8 means 80 % only after that. Then distil the System 2's sourced answers into it (arXiv 2407.06023). Report: store/LplAssistant/RAPPORT_system_one.md.",
+    dependsOn: ["assistant-gate-p14", "assistant-grammar"],
+    tags: ["inference", "decision"],
   },
 
   // ===== KNOWLEDGE — Alexandrie =============================================
@@ -748,14 +818,38 @@ export const items: RoadmapItem[] = [
     tags: ["research"],
   },
   {
+    id: "knowledge-catalogue",
+    title: "The catalogue — index everything, fetch nothing",
+    project: "knowledge",
+    track: "Alexandrie · the library",
+    status: "done",
+    progress: 100,
+    detail:
+      "The corpus weighs petabytes; its catalogue does not. 19,605,849 HathiTrust volumes baked in 79 s with 7 MB of resident memory, because a bake that only appends to its text and catalogue sections is a stream. The image is 3.71 GB, 93 % of what 32-bit offsets can address, so a catalogue too big for one image becomes several parts instead of widening every offset. The reader maps rather than slurps: a query over the whole image answers under a 512 MB cgroup that kills a 1 GiB anonymous allocation. Gutenberg (79,179 works), OAI-PMH over libcurl (arXiv, BHL), Pleiades (42,400 ancient places), and hard-key deduplication only — a score proposes, a key merges.",
+    dependsOn: ["knowledge-corpus"],
+    tags: ["pack", "data-movement"],
+  },
+  {
     id: "knowledge-reader",
     title: "A library the engine can read",
     project: "knowledge",
     track: "Alexandrie · the library",
-    status: "planned",
-    detail: "A baked, bounded reader on the ring-0 side of the reader/writer line, so a world can cite what it was built from.",
-    dependsOn: ["knowledge-corpus"],
+    status: "in-progress",
+    progress: 50,
+    detail: "A baked, bounded reader on the ring-0 side of the reader/writer line, so a world can cite what it was built from. The reader half ships: gate P18 reads a .lplknow image back in ring 0 and rebuilds the history from it. What is left is the other half of the sentence — a world that cites its sources.",
+    dependsOn: ["knowledge-corpus", "knowledge-gate-p18"],
     tags: ["pack"],
+  },
+  {
+    id: "knowledge-retrieval",
+    title: "Retrieval without a database",
+    project: "knowledge",
+    track: "Alexandrie · the library",
+    status: "idea",
+    detail:
+      "The knowledge a model reads is bytes too: stuffing the context grows the KV cache, and models use the middle of a long context badly (Lost in the Middle, arXiv 2307.03172). Precise retrieval saves bytes AND improves the answer, and it lets a small model know a lot — RETRO matches GPT-3 with 25× fewer parameters by retrieving from 2 trillion tokens (arXiv 2112.04426). The .lplknow image already does the structured half without a server: sorted sections, identifiers that travel verbatim, mmap reads that answer under 512 MB, the same code in ring 0. Missing: the similarity half. No section holds signatures or vectors, and harvest/Composite.hpp is a stub. The same 'filter first, similarity second' rule is written three times — LplAssistant's pgvector VectorStore, mind/Recall (64-bit signatures, integer Jaccard, ring 0) and that stub — so the work is one versioned signature section plus one implementation, not a fourth. Prior art on compact indexes: DiskANN (a billion points on 64 GB of RAM and an SSD), LEANN (an index at ~5 % of the data). Karpathy's LLM Wiki is the same idea at small scale, and says so: ~100 sources. Between the exact filter and the generative model sits a third rung: a System 1 head that decides, without writing, whether to retrieve, which section to ask and how relevant each candidate is (see assistant-system-one).",
+    dependsOn: ["knowledge-reader", "knowledge-catalogue"],
+    tags: ["retrieval", "data-movement"],
   },
 ];
 
