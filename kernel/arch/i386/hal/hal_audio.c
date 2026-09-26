@@ -1,51 +1,97 @@
-/**
- * @file hal_audio.c
- * @brief Audio capture and playback, behind the HAL.
- *
- * Every entry point below reports honestly that nothing was found rather than
- * returning a plausible silence — a capture that handed back a zeroed buffer would let
- * the satellite profile claim to be listening to a quiet room, and there is no way to
- * tell those two apart from the outside.
- *
- * The ring is the same single-producer structure the keyboard uses, sized for
- * forty-millisecond buffers, and its write index is exposed so the power floor can
- * sleep on it. The producer today is @ref hardware_abstraction_layer_audio_capture_pump
- * rather than an interrupt handler, because `drivers/hda.c` polls the stream's link
- * position; when it grows a handler, the handler fills this ring instead and nothing
- * above changes.
- *
- * @author MasterLaplace
- * @version 0.1.0
- * @copyright MIT License
- */
-
 #include <kernel/hal/hal_audio.h>
 
+#include <kernel/cpu/irq.h>
+#include <kernel/cpu/isr.h>
+#include <kernel/cpu/pic.h>
 #include <kernel/drivers/hda.h>
 
 static int16_t hal_audio_ring[KERNEL_HAL_AUDIO_RING_FRAMES][KERNEL_HAL_AUDIO_FRAME_SAMPLES];
 static volatile uint32_t hal_audio_write_index = 0u;
 static volatile uint32_t hal_audio_read_index = 0u;
 static volatile uint32_t hal_audio_overruns = 0u;
+
+/** Where a half goes when the ring is full: drained from the controller, then refused. */
+static int16_t hal_audio_discard[KERNEL_HAL_AUDIO_FRAME_SAMPLES];
+
+static uint8_t hal_audio_interrupt_line = KERNEL_HDA_NO_INTERRUPT_LINE;
+static bool hal_audio_interrupt_driven = false;
+static volatile uint32_t hal_audio_interrupts = 0u;
+
 static bool hal_audio_codec_present = false;
 static const char *hal_audio_name = "absent";
 static uint32_t hal_audio_gain_permille = 1000u;
 static uint32_t hal_audio_clipped = 0u;
+
+/**
+ * @brief Moves a completed half into the ring, from interrupt context.
+ *
+ * @note A PCI line is level-triggered and may be shared, so the acknowledge decides
+ *       whether this one was ours, and the end-of-interrupt goes out either way.
+ *
+ * @param frame Unused.
+ */
+static void hal_audio_capture_interrupt_handler(const InterruptFrame_t *frame)
+{
+    (void) frame;
+
+    if (intel_high_definition_audio_acknowledge_capture_interrupt())
+    {
+        ++hal_audio_interrupts;
+        (void) hardware_abstraction_layer_audio_capture_pump();
+    }
+
+    programmable_interrupt_controller_send_end_of_interrupt(hal_audio_interrupt_line);
+}
+
+/**
+ * @brief Is @p line one whose end-of-interrupt this handler knows how to send?
+ *
+ * @details Only a PIC line, never the cascade. An IOAPIC-owned line needs its
+ *          end-of-interrupt elsewhere, and sending the wrong one blocks the line after
+ *          its first interrupt: the mouse paid for exactly that.
+ *
+ * @param line Legacy interrupt line the controller reports.
+ * @return true when the line can be routed to the capture handler.
+ */
+static bool hal_audio_line_is_acknowledgeable(uint8_t line)
+{
+    return line < 16u && line != 2u && !interrupt_request_is_line_owner_apic(line);
+}
+
+/**
+ * @brief Routes the controller's interrupt to the handler, or declines and says so.
+ * @return true when capture is now interrupt-driven.
+ */
+static bool hal_audio_route_capture_interrupt(void)
+{
+    const uint8_t line = intel_high_definition_audio_capture_interrupt_line();
+    if (!hal_audio_line_is_acknowledgeable(line))
+        return false;
+
+    const uint8_t vector = (uint8_t) (PIC_VECTOR_OFFSET_MASTER + line);
+    const isr_handler_t present = interrupt_service_routine_get_handler(vector);
+    if (present != NULL && present != hal_audio_capture_interrupt_handler)
+        return false;
+
+    hal_audio_interrupt_line = line;
+    interrupt_service_routine_register_handler(vector, hal_audio_capture_interrupt_handler);
+    if (!intel_high_definition_audio_enable_capture_interrupt())
+        return false;
+
+    programmable_interrupt_controller_clear_mask(line);
+    return true;
+}
 
 bool hardware_abstraction_layer_audio_initialize(void)
 {
     hal_audio_write_index = 0u;
     hal_audio_read_index = 0u;
     hal_audio_overruns = 0u;
+    hal_audio_interrupt_driven = false;
+    hal_audio_interrupts = 0u;
     hal_audio_codec_present = false;
     hal_audio_name = "absent";
 
-    /* `present` means "capture works", and it is taken from the stream descriptor
-       rather than from the codec having answered. The distinction is the whole point of
-       reporting these separately: "there is no sound card", "there is one and no codec
-       answered", and "a codec answered but no input stream is running" are three
-       different facts, and a seam that collapsed them would let the profile claim to be
-       listening to a quiet room. */
     IntelHighDefinitionAudioState_t controller;
     const bool answered = intel_high_definition_audio_initialize(&controller);
 
@@ -53,6 +99,7 @@ bool hardware_abstraction_layer_audio_initialize(void)
     {
         hal_audio_codec_present = true;
         hal_audio_name = "intel-hda";
+        hal_audio_interrupt_driven = hal_audio_route_capture_interrupt();
     }
     else if (answered)
         hal_audio_name = "intel-hda (codec answered, no capture stream)";
@@ -72,20 +119,20 @@ uint32_t hardware_abstraction_layer_audio_capture_pump(void)
     uint32_t moved = 0u;
     for (;;)
     {
-        const uint32_t slot = hal_audio_write_index % KERNEL_HAL_AUDIO_RING_FRAMES;
-        const uint32_t samples =
-            intel_high_definition_audio_poll_capture(hal_audio_ring[slot], KERNEL_HAL_AUDIO_FRAME_SAMPLES);
+        const bool full = (hal_audio_write_index - hal_audio_read_index) >= KERNEL_HAL_AUDIO_RING_FRAMES;
+        int16_t *const destination =
+            full ? hal_audio_discard : hal_audio_ring[hal_audio_write_index % KERNEL_HAL_AUDIO_RING_FRAMES];
+
+        const uint32_t samples = intel_high_definition_audio_poll_capture(destination, KERNEL_HAL_AUDIO_FRAME_SAMPLES);
         if (samples == 0u)
             break;
 
-        /* Overrun is counted, not hidden. A consumer that has fallen a whole ring
-           behind is losing audio, and that only shows up as a number — the samples
-           themselves look exactly like the ones that arrived on time. */
-        if (hal_audio_write_index - hal_audio_read_index >= KERNEL_HAL_AUDIO_RING_FRAMES)
+        if (full)
         {
             ++hal_audio_overruns;
-            ++hal_audio_read_index;
+            continue;
         }
+
         ++hal_audio_write_index;
         ++moved;
     }
@@ -137,10 +184,6 @@ uint32_t hardware_abstraction_layer_audio_limit(const int16_t *samples, uint32_t
     uint32_t clipped = 0u;
     for (uint32_t i = 0u; i < count; ++i)
     {
-        /* Gain first, ceiling second, and the order is the guarantee. Clamping before
-           scaling would let a gain of one thousand multiply an already-clamped sample
-           back past the ceiling; this way the last thing that touches a sample is the
-           limit, so nothing downstream of it can be louder. */
         int32_t scaled = ((int32_t) samples[i] * (int32_t) hal_audio_gain_permille) / 1000;
 
         if (scaled > KERNEL_HAL_AUDIO_OUTPUT_CEILING_AMPLITUDE)
@@ -164,9 +207,6 @@ uint32_t hardware_abstraction_layer_audio_clipped_samples(void) { return hal_aud
 
 bool hardware_abstraction_layer_audio_playback_submit(const int16_t *samples, uint32_t count)
 {
-    /* The limiter runs even though nothing plays yet, and that is deliberate: it means
-       there is no future commit in which the stream path exists and the ceiling has
-       not been wired to it. The submission still fails, because there is no stream. */
     static int16_t limited[KERNEL_HAL_AUDIO_FRAME_SAMPLES];
     const uint32_t take = count < KERNEL_HAL_AUDIO_FRAME_SAMPLES ? count : KERNEL_HAL_AUDIO_FRAME_SAMPLES;
     (void) hardware_abstraction_layer_audio_limit(samples, take, limited);
@@ -178,3 +218,9 @@ bool hardware_abstraction_layer_audio_playback_active(void) { return false; }
 void hardware_abstraction_layer_audio_playback_flush(void) {}
 
 uint32_t hardware_abstraction_layer_audio_capture_overruns(void) { return hal_audio_overruns; }
+
+bool hardware_abstraction_layer_audio_capture_is_interrupt_driven(void) { return hal_audio_interrupt_driven; }
+
+uint32_t hardware_abstraction_layer_audio_capture_interrupt_count(void) { return hal_audio_interrupts; }
+
+uint8_t hardware_abstraction_layer_audio_capture_interrupt_line(void) { return hal_audio_interrupt_line; }

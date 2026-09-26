@@ -1,9 +1,24 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** isr — Interrupt Service Routines
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file isr.h
+ * @brief Interrupt service routines: the handler table and its dispatcher.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-03-05
+ **************************************************************************/
 
 #ifndef KERNEL_CPU_INTERRUPT_SERVICE_ROUTINE_H
 #define KERNEL_CPU_INTERRUPT_SERVICE_ROUTINE_H
@@ -102,10 +117,6 @@ extern void isr47(void);
 extern void isr64(void);
 extern void isr128(void);
 
-////////////////////////////////////////////////////////////
-// Public API functions of the ISR module
-////////////////////////////////////////////////////////////
-
 /**
  * @brief Register a handler for a given interrupt vector.
  *
@@ -118,12 +129,28 @@ extern void isr128(void);
 extern void interrupt_service_routine_register_handler(uint8_t interrupt_vector, isr_handler_t handler);
 
 /**
+ * @brief The handler registered on a vector, if any.
+ *
+ * @details Registering overwrites, so a driver whose line was assigned at runtime asks
+ *          here first: a vector already taken belongs to another device, and replacing
+ *          its handler would silently break it.
+ *
+ * @param interrupt_vector Vector to inspect.
+ * @return The handler, or NULL when the vector is free.
+ */
+extern isr_handler_t interrupt_service_routine_get_handler(uint8_t interrupt_vector);
+
+/**
  * @brief Set the address execution resumes at when the handler returns.
  *
  * The interrupt frame is the live stack image consumed by `iret`, so writing
  * its saved instruction pointer redirects the return. A handler that wants to
  * recover from a fault rather than panic must use this: returning normally
  * re-executes the faulting instruction and faults again, forever.
+ *
+ * @note The frame pointer is const because every other handler only reads it; the cast
+ *       that makes it writable is confined to this function, next to the one reason it
+ *       exists.
  *
  * @param frame Frame handed to the handler.
  * @param resume_address Address to resume at, typically a label placed just

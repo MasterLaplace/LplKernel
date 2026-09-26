@@ -125,15 +125,23 @@ void smoke_batch_run_initialization_tests(Serial_t *com1)
 
 void smoke_batch_run_post_boot_tests(Serial_t *com1)
 {
-    /* Post-boot and not with the initialization battery: the pages only become
-       read-only in kernel_main, once every global constructor has run. Placed
-       before the controlled exception regressions below, which are deliberate
-       faults and would muddy a probe that is counting one. */
     if (KERNEL_SMOKE_TEST_ENABLE_SECTION_PROTECTION)
         smoke_test_run_section_protection(com1);
 
     if (KERNEL_SMOKE_TEST_ENABLE_RECONCILER)
         smoke_test_run_reconciler(com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_WAKEUP_ACCOUNTING)
+        smoke_test_run_wakeup_accounting(com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_SLEEP_DEPTH)
+        smoke_test_run_processor_sleep_depth(com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_SLEEP_UNTIL_WRITE)
+        smoke_test_run_sleep_until_write(com1);
+
+    if (KERNEL_SMOKE_TEST_ENABLE_FREQUENCY_FEEDBACK)
+        smoke_test_run_frequency_feedback(com1);
 
     if (KERNEL_SMOKE_TEST_ENABLE_DIVISION_ERROR)
         smoke_test_run_division_error();
@@ -149,8 +157,4 @@ void smoke_batch_run_post_boot_tests(Serial_t *com1)
         smoke_test_run_page_fault_exception();
     if (KERNEL_SMOKE_TEST_ENABLE_DOUBLE_FAULT)
         smoke_test_run_double_fault_exception();
-
-    /* The old static graphics demo is superseded by the live system monitor
-       (kernel_sysmon_run), invoked from kernel_main over the HAL display so it
-       works on the virtio-gpu scanout, not just the multiboot LFB. */
 }

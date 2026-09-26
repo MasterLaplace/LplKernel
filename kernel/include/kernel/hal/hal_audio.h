@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file hal_audio.h
  * @brief Audio capture and playback, behind the HAL.
  *
@@ -26,15 +39,15 @@
  * The ring is exposed by ADDRESS as well as by value, because that is what the power
  * floor will need: `processor_sleep_until_write` arms a watch on the write index and
  * sleeps until the producer touches it, which is the difference between a node that
- * idles at a few watts and one that idles at twenty. That path waits on an interrupt
- * handler this driver does not have yet — today the producer is
- * @ref hardware_abstraction_layer_audio_capture_pump, called by the profile's loop,
- * which is why the loop sleeps to its frame deadline instead.
+ * idles at a few watts and one that idles at twenty. The producer is
+ * @ref hardware_abstraction_layer_audio_capture_pump: called from the controller's
+ * interrupt, once per completed half, where that interrupt could be routed, and by the
+ * profile's loop as a fallback where it could not.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef KERNEL_HAL_HAL_AUDIO_H
 #define KERNEL_HAL_HAL_AUDIO_H
@@ -117,14 +130,39 @@ uint32_t hardware_abstraction_layer_audio_sample_rate(void);
 const volatile uint32_t *hardware_abstraction_layer_audio_capture_write_index(void);
 
 /**
+ * @brief Whether the controller's interrupt is the ring's producer.
+ *
+ * @details False where the line could not be routed: absent, an IOAPIC-owned line, or a
+ *          vector another device already holds. The caller then pumps.
+ *
+ * @return true when buffers arrive by interrupt.
+ */
+bool hardware_abstraction_layer_audio_capture_is_interrupt_driven(void);
+
+/**
+ * @brief Capture interrupts that carried a completed half.
+ * @return The count.
+ */
+uint32_t hardware_abstraction_layer_audio_capture_interrupt_count(void);
+
+/**
+ * @brief The legacy line the capture interrupt was routed on.
+ * @return The line, or KERNEL_HDA_NO_INTERRUPT_LINE when none was.
+ */
+uint8_t hardware_abstraction_layer_audio_capture_interrupt_line(void);
+
+/**
  * @brief Moves whatever the controller has finished into the ring.
  *
- * The producer side, and it has to be called: the driver underneath is POLLED, not
- * interrupt-driven, so nothing advances the write index on its own. That is why the
- * satellite loop pumps and then sleeps to its frame deadline rather than sleeping on
- * the write index — arming a monitor on an address only this thread ever writes is a
- * wait for something that cannot happen. When an interrupt handler eventually pushes
- * buffers, the monitor path becomes the right one and this becomes a no-op.
+ * The producer side. Called from the capture interrupt handler where one could be
+ * routed, and by the profile's loop otherwise — never both, because two producers on
+ * one ring is a race. A full ring refuses the newest half and counts it as an overrun;
+ * the reader's index belongs to the reader.
+ *
+ * @note The reader's index is never advanced to make room: the producer runs in an
+ *       interrupt handler, so doing so would race a copy
+ *       @ref hardware_abstraction_layer_audio_capture_take may be halfway through — and
+ *       the slot it would write into is the very one being read.
  *
  * @return Buffers moved into the ring.
  */
@@ -164,6 +202,11 @@ uint32_t hardware_abstraction_layer_audio_output_gain_permille(void);
  * codec — which, while there is no stream, is the only way to know the limiter works
  * at all. Every sample that leaves this kernel goes through it.
  *
+ * @note Gain first, ceiling second, and the order is the guarantee. Clamping before
+ *       scaling would let a gain of one thousand multiply an already-clamped sample back
+ *       past the ceiling; this way the last thing that touches a sample is the limit, so
+ *       nothing downstream of it can be louder.
+ *
  * @param samples  Input.
  * @param count    How many.
  * @param out      Receives the limited samples; may alias @p samples.
@@ -183,6 +226,10 @@ uint32_t hardware_abstraction_layer_audio_clipped_samples(void);
 
 /**
  * @brief Queues a buffer for playback.
+ *
+ * @note The limiter runs even though nothing plays yet, and that is deliberate: there is
+ *       no future commit in which the stream path exists and the ceiling has not been
+ *       wired to it. The submission still fails, because there is no stream.
  *
  * @param samples Signed samples.
  * @param count   How many.

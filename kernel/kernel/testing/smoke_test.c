@@ -8,6 +8,7 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/exception_trigger.h>
 #include <kernel/cpu/gdt.h>
 #include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
@@ -28,7 +29,102 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
+#include <kernel/drivers/keyboard.h>
+#include <kernel/power/frequency_scaling.h>
+#include <kernel/power/processor_sleep.h>
+#include <kernel/power/wakeup_accounting.h>
 #include <kernel/testing/smoke_test.h>
+
+#if KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL
+static volatile uint32_t ring3_syscall_count = 0u;
+extern Serial_t com1;
+
+static void ring3_syscall_handler(const InterruptFrame_t *frame)
+{
+    (void) frame;
+    ++ring3_syscall_count;
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ring3 smoke: syscall int 0x80 received (pass)\n");
+    asmutils_disable_interrupts();
+    for (;;)
+        asmutils_halt();
+}
+#endif
+
+/**
+ * Probe targets for the section protection smoke.
+ *
+ * The constant lands in .rodata and the scratch byte in .data, which the linker
+ * script places on either side of `_kernel_read_only_end`. That is the whole
+ * point of having two: a probe that faults on everything — a handler counting
+ * faults it never saw, a range covering the wrong pages — satisfies the first
+ * check and fails the second.
+ */
+static const uint8_t smoke_section_protection_constant = 0x5Au;
+static uint8_t smoke_section_protection_scratch = 0xA5u;
+
+/**
+ * @brief Declares a contract the kernel cannot meet and checks that a pass notices.
+ *
+ * @details A reconciler that checks nothing reports no drift, exactly like one that checks
+ *          everything and finds none. So the contract is deliberately made unsatisfiable —
+ *          one more read-only page than the kernel has — and the pass is required to NOTICE.
+ *          Without this the whole slice could be a no-op and every other number would still
+ *          look right.
+ *
+ * @return true when exactly the read-only page invariant drifted.
+ */
+static bool smoke_reconciler_detects_an_impossible_contract(void)
+{
+    const KernelReconcilerDeclaration_t impossible = {
+        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
+        .real_time_violation_budget = 0u,
+        .read_only_page_count = kernel_section_protection_get_read_only_page_count() + 1u,
+        .require_section_protection = true,
+        .require_write_protect = true,
+    };
+
+    kernel_reconciler_declare(&impossible);
+    const uint32_t detected = kernel_reconciler_check();
+    return (detected == 1u) &&
+           (kernel_reconciler_get_drift_mask() == (1u << (uint32_t) KERNEL_RECONCILER_INVARIANT_READ_ONLY_PAGE_COUNT));
+}
+
+/**
+ * @brief Puts the real contract back and checks that it holds.
+ *
+ * @note Declaring resets the violation baseline too: the live periodic check runs against
+ *       this declaration for the rest of the boot.
+ *
+ * @return true when a pass against the real contract finds no drift.
+ */
+static bool smoke_reconciler_restores_the_truthful_contract(void)
+{
+    const KernelReconcilerDeclaration_t truthful = {
+        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
+        .real_time_violation_budget = 0u,
+        .read_only_page_count = kernel_section_protection_get_read_only_page_count(),
+        .require_section_protection = true,
+        .require_write_protect = true,
+    };
+
+    kernel_reconciler_declare(&truthful);
+    return kernel_reconciler_check() == 0u;
+}
+
+/**
+ * @brief Spins, boundedly, until the periodic tick advances.
+ * @return true when a tick was seen, which means an interrupt can end a sleep.
+ */
+static bool smoke_test_wait_for_a_tick(void)
+{
+    const uint32_t ticks_before = interrupt_request_get_tick_count();
+    for (uint32_t spin = 0u; spin < 1000000u; ++spin)
+    {
+        if (interrupt_request_get_tick_count() != ticks_before)
+            return true;
+    }
+    return false;
+}
 
 void smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port)
 {
@@ -577,9 +673,6 @@ void smoke_test_run_cpu_topology_online_bookkeeping(Serial_t *serial_port)
 
     bool pass = local_count_ok && local_online_ok && next_count_ok && next_online_ok;
 
-    /* Restore global state: this smoke marks a synthetic CPU online; leaving it
-       set would inflate the online count and make later TLB shootdowns spin
-       forever waiting for an ACK from a CPU that does not exist. */
     if (!next_online_before)
         cpu_topology_unmark_apic_id_online(next_apic);
 
@@ -818,7 +911,7 @@ void smoke_test_run_client_hot_loop_rule(Serial_t *serial_port)
     bool setup_ok = (guard_ptr != NULL);
 
     kernel_heap_hot_loop_enter();
-    void *bounded_alloc = kmalloc(64u); /* slab class — must be served */
+    void *bounded_alloc = kmalloc(64u);
     void *unbounded_alloc = kmalloc(64u * 1024u * 1024u);
     if (guard_ptr)
         kfree(guard_ptr);
@@ -1212,17 +1305,6 @@ void smoke_test_run_stack_allocator_basic(Serial_t *serial_port)
         serial_write_string(serial_port, " (fail)\n");
 }
 
-static inline uint32_t allocator_wcet_rdtsc_low(void)
-{
-#if defined(__i386__) || defined(__x86_64__)
-    uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo)::"edx");
-    return lo;
-#else
-    return 0u;
-#endif
-}
-
 void smoke_test_run_allocator_wcet_bound_check(Serial_t *serial_port)
 {
     uint32_t arena_alloc = kernel_frame_arena_get_wcet_alloc_cycles();
@@ -1262,9 +1344,9 @@ void smoke_test_run_frame_budget_determinism(Serial_t *serial_port)
 
     for (uint32_t i = 0u; i < 100u; ++i)
     {
-        uint32_t t0 = allocator_wcet_rdtsc_low();
+        uint32_t t0 = asmutils_read_timestamp_counter_low();
         void *ptr = kernel_frame_arena_alloc(64u, 8u);
-        uint32_t t1 = allocator_wcet_rdtsc_low();
+        uint32_t t1 = asmutils_read_timestamp_counter_low();
 
         if (!ptr)
             break;
@@ -1531,30 +1613,13 @@ void smoke_test_run_division_error(void)
     (void) trap;
 }
 
-void smoke_test_run_debug_exception(void)
-{
-    __asm__ volatile("pushf\n\t"
-                     "orl $0x100, (%%esp)\n\t"
-                     "popf\n\t"
-                     "nop\n\t"
-                     :
-                     :
-                     : "cc", "memory");
-}
+void smoke_test_run_debug_exception(void) { exception_trigger_single_step(); }
 
-void smoke_test_run_breakpoint_exception(void) { __asm__ volatile("int3"); }
+void smoke_test_run_breakpoint_exception(void) { exception_trigger_breakpoint(); }
 
-void smoke_test_run_invalid_opcode_exception(void) { __asm__ volatile("ud2"); }
+void smoke_test_run_invalid_opcode_exception(void) { exception_trigger_invalid_opcode(); }
 
-void smoke_test_run_general_protection_exception(void)
-{
-    __asm__ volatile("xorl %%eax, %%eax\n\t"
-                     "movw %%ax, %%ds\n\t"
-                     "movl (%%eax), %%eax\n\t"
-                     :
-                     :
-                     : "eax", "memory");
-}
+void smoke_test_run_general_protection_exception(void) { exception_trigger_general_protection(); }
 
 void smoke_test_run_page_fault_exception(void)
 {
@@ -1564,7 +1629,7 @@ void smoke_test_run_page_fault_exception(void)
     (void) trap;
 }
 
-void smoke_test_run_double_fault_exception(void) { __asm__ volatile("int $0x08"); }
+void smoke_test_run_double_fault_exception(void) { exception_trigger_double_fault_vector(); }
 
 void smoke_test_run_graphics_demo(Serial_t *serial_port)
 {
@@ -2063,21 +2128,6 @@ void smoke_test_run_pmm_uaf_detection(Serial_t *serial_port)
 #endif
 }
 
-#if KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL
-static volatile uint32_t ring3_syscall_count = 0u;
-extern Serial_t com1;
-
-static void ring3_syscall_handler(const InterruptFrame_t *frame)
-{
-    (void) frame;
-    ++ring3_syscall_count;
-    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ring3 smoke: syscall int 0x80 received (pass)\n");
-    asmutils_disable_interrupts();
-    for (;;)
-        asmutils_halt();
-}
-#endif
-
 void smoke_test_run_ring3_minimal(Serial_t *serial_port)
 {
 #if KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL
@@ -2136,28 +2186,15 @@ void smoke_test_run_ring3_minimal(Serial_t *serial_port)
 #endif
 }
 
-/* Probe targets for the section protection smoke.
- *
- * The constant lands in .rodata and the scratch byte in .data, which the linker
- * script places on either side of `_kernel_read_only_end`. That is the whole
- * point of having two: a probe that faults on everything — a handler counting
- * faults it never saw, a range covering the wrong pages — satisfies the first
- * check and fails the second. */
 /** Passes the reconciler smoke drives by hand, so the count in the record is a
     fact about the test rather than about how long the kernel happened to run. */
 #define SMOKE_RECONCILER_PASS_COUNT 16u
-
-static const uint8_t smoke_section_protection_constant = 0x5Au;
-static uint8_t smoke_section_protection_scratch = 0xA5u;
 
 void smoke_test_run_section_protection(Serial_t *serial_port)
 {
     const bool write_protect_enabled = kernel_section_protection_write_protect_is_enabled();
     const bool protection_active = kernel_section_protection_is_active();
 
-    /* Casting the constant's address to a writable pointer is exactly the abuse
-       the protection exists to stop; the probe performs it on purpose and
-       expects the processor to refuse. */
     volatile uint8_t *read_only_data = (volatile uint8_t *) (uintptr_t) &smoke_section_protection_constant;
     volatile uint8_t *executable_code = (volatile uint8_t *) (uintptr_t) &smoke_test_run_section_protection;
     volatile uint8_t *writable_data = (volatile uint8_t *) &smoke_section_protection_scratch;
@@ -2174,10 +2211,6 @@ void smoke_test_run_section_protection(Serial_t *serial_port)
     const bool pass = write_protect_enabled && protection_active && constant_faulted && code_faulted &&
                       !scratch_faulted && scratch_preserved && constant_preserved;
 
-    /* One line carries both the structured fields and the battery's own pass
-       marker: `result` holds the literal "(pass)"/"(fail)" the whole-log scan
-       looks for, so this record needs no second prose line saying the same
-       thing twice. */
     kernel_telemetry_begin_record(serial_port, "section_protection_smoke");
     kernel_telemetry_write_boolean("write_protect", write_protect_enabled);
     kernel_telemetry_write_boolean("active", protection_active);
@@ -2205,37 +2238,8 @@ void smoke_test_run_reconciler(Serial_t *serial_port)
     const bool holds = (drift_observed == 0u) && (kernel_reconciler_get_drift_count() == 0u) &&
                        (kernel_reconciler_get_drift_mask() == 0u);
 
-    /* A reconciler that checks nothing reports no drift, exactly like one that
-       checks everything and finds none. So the contract is deliberately made
-       unsatisfiable — one more read-only page than the kernel has — and the pass
-       is required to NOTICE. Without this the whole slice could be a no-op and
-       every number above would still look right. */
-    const KernelReconcilerDeclaration_t impossible = {
-        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
-        .real_time_violation_budget = 0u,
-        .read_only_page_count = kernel_section_protection_get_read_only_page_count() + 1u,
-        .require_section_protection = true,
-        .require_write_protect = true,
-    };
-
-    kernel_reconciler_declare(&impossible);
-    const uint32_t detected = kernel_reconciler_check();
-    const bool detects_drift =
-        (detected == 1u) &&
-        (kernel_reconciler_get_drift_mask() == (1u << (uint32_t) KERNEL_RECONCILER_INVARIANT_READ_ONLY_PAGE_COUNT));
-
-    /* Put the real contract back, and with it a fresh violation baseline: the
-       live per-frame check runs against this one for the rest of the boot. */
-    const KernelReconcilerDeclaration_t truthful = {
-        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
-        .real_time_violation_budget = 0u,
-        .read_only_page_count = kernel_section_protection_get_read_only_page_count(),
-        .require_section_protection = true,
-        .require_write_protect = true,
-    };
-
-    kernel_reconciler_declare(&truthful);
-    const bool restored = (kernel_reconciler_check() == 0u);
+    const bool detects_drift = smoke_reconciler_detects_an_impossible_contract();
+    const bool restored = smoke_reconciler_restores_the_truthful_contract();
 
     const bool pass = declared && passes_counted && holds && detects_drift && restored;
 
@@ -2248,6 +2252,188 @@ void smoke_test_run_reconciler(Serial_t *serial_port)
     kernel_telemetry_write_boolean("restored", restored);
     kernel_telemetry_write_unsigned("queues", kernel_backpressure_get_queue_count());
     kernel_telemetry_write_unsigned("corrupting_drops", kernel_backpressure_get_intolerant_drop_count());
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
+}
+
+void smoke_test_run_wakeup_accounting(Serial_t *serial_port)
+{
+    const uint8_t woke_us = 0xFEu;
+    const uint8_t never_did = 0xFDu;
+
+    asmutils_disable_interrupts();
+    kernel_wakeup_accounting_reset();
+
+    kernel_wakeup_accounting_attribute(woke_us);
+    const bool idle_costs_nothing = (kernel_wakeup_accounting_get_sleep_count() == 0u) &&
+                                    (kernel_wakeup_accounting_get_attributed_count() == 0u) &&
+                                    (kernel_wakeup_accounting_get_vector_count(woke_us) == 0u);
+
+    kernel_wakeup_accounting_arm();
+    const bool arming_shows = kernel_wakeup_accounting_is_armed();
+    kernel_wakeup_accounting_attribute(woke_us);
+    const bool credited_to_one_vector = (kernel_wakeup_accounting_get_vector_count(woke_us) == 1u) &&
+                          (kernel_wakeup_accounting_get_vector_count(never_did) == 0u) &&
+                          (kernel_wakeup_accounting_get_attributed_count() == 1u) &&
+                          !kernel_wakeup_accounting_is_armed();
+
+    kernel_wakeup_accounting_attribute(never_did);
+    const bool credited_once = (kernel_wakeup_accounting_get_vector_count(never_did) == 0u) &&
+                               (kernel_wakeup_accounting_get_attributed_count() == 1u);
+
+    kernel_wakeup_accounting_arm();
+    kernel_wakeup_accounting_close_unattributed();
+    const bool unnamed_is_kept = (kernel_wakeup_accounting_get_unattributed_count() == 1u) &&
+                                 (kernel_wakeup_accounting_get_attributed_count() == 1u);
+
+    kernel_wakeup_accounting_arm();
+    kernel_wakeup_accounting_close_monitor_write();
+    const bool write_is_not_an_interrupt = (kernel_wakeup_accounting_get_monitor_wake_count() == 1u) &&
+                                           (kernel_wakeup_accounting_get_attributed_count() == 1u);
+
+    kernel_wakeup_accounting_arm();
+    kernel_wakeup_accounting_attribute(never_did);
+    kernel_wakeup_accounting_arm();
+    kernel_wakeup_accounting_attribute(never_did);
+
+    kernel_wakeup_accounting_arm();
+    kernel_wakeup_accounting_arm();
+    const bool double_arm_refused = (kernel_wakeup_accounting_get_double_arm_count() == 1u);
+    kernel_wakeup_accounting_attribute(never_did);
+
+    const bool busiest_is_right = (kernel_wakeup_accounting_get_busiest_vector() == (uint16_t) never_did);
+
+    const uint32_t sleeps = kernel_wakeup_accounting_get_sleep_count();
+    const bool conserves = kernel_wakeup_accounting_conserves() && (sleeps == 6u);
+
+    const bool pass = idle_costs_nothing && arming_shows && credited_to_one_vector && credited_once && unnamed_is_kept &&
+                      write_is_not_an_interrupt && double_arm_refused && busiest_is_right && conserves;
+
+    kernel_wakeup_accounting_reset();
+    asmutils_enable_interrupts();
+
+    kernel_telemetry_begin_record(serial_port, "wakeup_smoke");
+    kernel_telemetry_write_boolean("idle_costs_nothing", idle_costs_nothing);
+    kernel_telemetry_write_boolean("arming_shows", arming_shows);
+    kernel_telemetry_write_boolean("credited_to_one_vector", credited_to_one_vector);
+    kernel_telemetry_write_boolean("credited_once", credited_once);
+    kernel_telemetry_write_boolean("unnamed_is_kept", unnamed_is_kept);
+    kernel_telemetry_write_boolean("write_is_not_an_interrupt", write_is_not_an_interrupt);
+    kernel_telemetry_write_boolean("double_arm_refused", double_arm_refused);
+    kernel_telemetry_write_boolean("busiest_is_right", busiest_is_right);
+    kernel_telemetry_write_unsigned("sleeps", sleeps);
+    kernel_telemetry_write_boolean("conserves", conserves);
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
+}
+
+void smoke_test_run_processor_sleep_depth(Serial_t *serial_port)
+{
+    const bool nothing_enumerated = (kernel_processor_sleep_enumerated_hints(0x00000000u) == 0u);
+    const bool c1_only = (kernel_processor_sleep_enumerated_hints(0x00000020u) == 0x1u);
+    const bool c1_to_c3 = (kernel_processor_sleep_enumerated_hints(0x00002220u) == 0x7u);
+    const bool c0_ignored = (kernel_processor_sleep_enumerated_hints(0x00000002u) == 0u);
+    const bool gap_is_kept = (kernel_processor_sleep_enumerated_hints(0x00200020u) == 0x11u);
+
+    const uint32_t clamped_before = kernel_processor_sleep_clamped_count();
+    const uint32_t deep = kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_MAX) ? 1u : 0u;
+    const bool clamped_or_granted =
+        (deep == 1u) || (kernel_processor_sleep_clamped_count() == clamped_before + 1u);
+    const bool never_above_available =
+        (kernel_processor_sleep_available_hints() == 0u)
+            ? (kernel_processor_sleep_active_hint() == PROCESSOR_SLEEP_HINT_C1)
+            : ((kernel_processor_sleep_available_hints() >> kernel_processor_sleep_active_hint()) & 1u) == 1u;
+
+    const bool floor_is_granted = kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_C1) &&
+                                  (kernel_processor_sleep_active_hint() == PROCESSOR_SLEEP_HINT_C1);
+
+    const bool pass = nothing_enumerated && c1_only && c1_to_c3 && c0_ignored && gap_is_kept &&
+                      clamped_or_granted && never_above_available && floor_is_granted;
+
+    kernel_telemetry_begin_record(serial_port, "sleep_depth");
+    kernel_telemetry_write_boolean("nothing_enumerated", nothing_enumerated);
+    kernel_telemetry_write_boolean("c1_only", c1_only);
+    kernel_telemetry_write_boolean("c1_to_c3", c1_to_c3);
+    kernel_telemetry_write_boolean("c0_ignored", c0_ignored);
+    kernel_telemetry_write_boolean("gap_is_kept", gap_is_kept);
+    kernel_telemetry_write_boolean("clamped_or_granted", clamped_or_granted);
+    kernel_telemetry_write_boolean("never_above_available", never_above_available);
+    kernel_telemetry_write_boolean("floor_is_granted", floor_is_granted);
+    kernel_telemetry_write_unsigned("available", kernel_processor_sleep_available_hints());
+    kernel_telemetry_write_unsigned("active", kernel_processor_sleep_active_hint());
+    kernel_telemetry_write_boolean("interrupt_break", kernel_processor_sleep_has_interrupt_break());
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
+}
+
+void smoke_test_run_sleep_until_write(Serial_t *serial_port)
+{
+    const volatile uint32_t *const ring_head = keyboard_get_ring_head_address();
+    const bool watch_exists = (ring_head != NULL);
+
+    static volatile uint32_t watched = 0u;
+    const uint32_t sleeps_before = kernel_processor_sleep_count();
+    const uint32_t skipped_before = kernel_processor_sleep_skipped_count();
+
+    watched = 1u;
+    const ProcessorSleepMode_t already_moved = processor_sleep_until_write(&watched, 0u);
+    const bool skips_a_wait_that_is_over = (already_moved == PROCESSOR_SLEEP_NONE) &&
+                                           (kernel_processor_sleep_skipped_count() == skipped_before + 1u) &&
+                                           (kernel_processor_sleep_count() == sleeps_before);
+
+    bool sleeps_when_nothing_moved = false;
+    bool sleep_was_attributed = false;
+    const bool tick_running = smoke_test_wait_for_a_tick();
+
+    if (tick_running)
+    {
+        const uint32_t attributed_before = kernel_wakeup_accounting_get_attributed_count();
+        const uint32_t entered_before = kernel_processor_sleep_count();
+
+        const ProcessorSleepMode_t slept = processor_sleep_until_write(&watched, 1u);
+
+        sleeps_when_nothing_moved = (slept != PROCESSOR_SLEEP_NONE) &&
+                                    (kernel_processor_sleep_count() == entered_before + 1u);
+        sleep_was_attributed = (kernel_wakeup_accounting_get_attributed_count() == attributed_before + 1u);
+    }
+
+    const bool pass = watch_exists && skips_a_wait_that_is_over && (!tick_running || sleeps_when_nothing_moved) &&
+                      (!tick_running || sleep_was_attributed);
+
+    kernel_telemetry_begin_record(serial_port, "sleep_until_write");
+    kernel_telemetry_write_boolean("watch_exists", watch_exists);
+    kernel_telemetry_write_boolean("skips_a_wait_that_is_over", skips_a_wait_that_is_over);
+    kernel_telemetry_write_boolean("tick_running", tick_running);
+    kernel_telemetry_write_boolean("sleeps_when_nothing_moved", sleeps_when_nothing_moved);
+    kernel_telemetry_write_boolean("sleep_was_attributed", sleep_was_attributed);
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
+}
+
+void smoke_test_run_frequency_feedback(Serial_t *serial_port)
+{
+    const bool nominal = (kernel_frequency_scaling_ratio_permille(1000u, 1000u) == 1000u);
+    const bool halved = (kernel_frequency_scaling_ratio_permille(500u, 1000u) == 500u);
+    const bool above_nominal = (kernel_frequency_scaling_ratio_permille(1500u, 1000u) == 1500u);
+    const bool no_reference_is_no_answer =
+        (kernel_frequency_scaling_ratio_permille(1234u, 0u) == KERNEL_FREQUENCY_SCALING_NO_FEEDBACK);
+    const bool no_overflow =
+        (kernel_frequency_scaling_ratio_permille(UINT64_MAX / 2u, UINT64_MAX / 2u) == 1000u);
+    const bool absence_is_reported = kernel_frequency_scaling_feedback_available() ||
+                                     (kernel_frequency_scaling_measured_permille() ==
+                                      KERNEL_FREQUENCY_SCALING_NO_FEEDBACK);
+
+    const bool pass = nominal && halved && above_nominal && no_reference_is_no_answer && no_overflow &&
+                      absence_is_reported;
+
+    kernel_telemetry_begin_record(serial_port, "frequency_feedback");
+    kernel_telemetry_write_boolean("nominal", nominal);
+    kernel_telemetry_write_boolean("halved", halved);
+    kernel_telemetry_write_boolean("above_nominal", above_nominal);
+    kernel_telemetry_write_boolean("no_reference_is_no_answer", no_reference_is_no_answer);
+    kernel_telemetry_write_boolean("no_overflow", no_overflow);
+    kernel_telemetry_write_boolean("absence_is_reported", absence_is_reported);
+    kernel_telemetry_write_boolean("available", kernel_frequency_scaling_feedback_available());
     kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
     kernel_telemetry_end_record();
 }

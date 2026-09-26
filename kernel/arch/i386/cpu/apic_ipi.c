@@ -1,11 +1,6 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** APIC Inter-Processor Interrupt (IPI) framework
-*/
-
 #include <kernel/cpu/apic_ipi.h>
+#include <kernel/lib/asmutils.h>
+#include <stdatomic.h>
 
 #define LAPIC_ICR_LOW_OFFSET  0x300u
 #define LAPIC_ICR_HIGH_OFFSET 0x310u
@@ -32,8 +27,11 @@
 #define LAPIC_ICR_DEST_SHORT_ALL_INCL  (2u << 18)
 #define LAPIC_ICR_DEST_SHORT_ALL_EXCL  (3u << 18)
 
-/* Upper bound on the TLB-shootdown ACK spin so a missing or unresponsive target
-   CPU (a wedged AP, or a stale online count) can never hang the kernel. */
+/**
+ * @brief Upper bound on the TLB-shootdown ACK spin so a missing or unresponsive target
+ *
+ * CPU (a wedged AP, or a stale online count) can never hang the kernel.
+ */
 #define APIC_IPI_TLB_SHOOTDOWN_SPIN_LIMIT 1000000u
 
 static uint32_t apic_ipi_lapic_base = 0u;
@@ -57,7 +55,20 @@ static void apic_ipi_tlb_shootdown_handler(const InterruptFrame_t *frame)
     {
         paging_invlpg(apic_ipi_tlb_shootdown_addr);
     }
-    __sync_fetch_and_sub(&apic_ipi_tlb_shootdown_pending, 1u);
+    atomic_fetch_sub(&apic_ipi_tlb_shootdown_pending, 1u);
+}
+
+static uint8_t advanced_pic_ipi_wait_delivery(void)
+{
+    if (apic_is_x2apic_active())
+        return 1u;
+
+    for (uint32_t i = 0u; i < 100000u; ++i)
+    {
+        if ((apic_read(LAPIC_REG_ICR_LOW) & (1u << 12u)) == 0u)
+            return 1u;
+    }
+    return 0u;
 }
 
 void advanced_pic_ipi_initialize(uint32_t lapic_virtual_base)
@@ -79,19 +90,6 @@ void advanced_pic_ipi_enable_local_apic(void)
 {
     uint32_t svr = apic_read(LAPIC_REG_SPURIOUS);
     apic_write(LAPIC_REG_SPURIOUS, svr | (1u << 8u));
-}
-
-static uint8_t advanced_pic_ipi_wait_delivery(void)
-{
-    if (apic_is_x2apic_active())
-        return 1u;
-
-    for (uint32_t i = 0u; i < 100000u; ++i)
-    {
-        if ((apic_read(LAPIC_REG_ICR_LOW) & (1u << 12u)) == 0u)
-            return 1u;
-    }
-    return 0u;
 }
 
 uint8_t advanced_pic_ipi_send_init(uint8_t apic_id)
@@ -181,15 +179,12 @@ void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
     advanced_pic_ipi_send_fixed(0u, 0x40u, 3u);
 
     uint32_t spin_guard = 0u;
-    while (apic_ipi_tlb_shootdown_pending > 0u)
+    while (atomic_load_acquire(&apic_ipi_tlb_shootdown_pending) > 0u)
     {
-        __asm__ volatile("pause");
+        asmutils_pause();
 
         if (++spin_guard >= APIC_IPI_TLB_SHOOTDOWN_SPIN_LIMIT)
         {
-            /* A target never acknowledged (unresponsive or phantom CPU). Stop
-               waiting so a shootdown can never hang the kernel; the local TLB
-               is still invalidated below. */
             apic_ipi_tlb_shootdown_pending = 0u;
             ++apic_ipi_tlb_shootdown_timeout_count;
             break;

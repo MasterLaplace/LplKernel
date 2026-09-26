@@ -1,24 +1,12 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** isr — Interrupt Service Routine dispatcher
-*/
-
 #include <kernel/cpu/isr.h>
-
-////////////////////////////////////////////////////////////
-// Private helpers for panic serial output
-////////////////////////////////////////////////////////////
+#include <kernel/power/wakeup_accounting.h>
 
 #define COM1_PORT     0x3F8u
 #define COM1_LSR_THRE 0x20u
 
 static void isr_write_char(char c)
 {
-    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
-    {
-    }
+    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE));
     asmutils_output_byte((short) COM1_PORT, (unsigned char) c);
 }
 
@@ -72,11 +60,6 @@ static const char *const ISR_EXCEPTION_NAMES[32] = {
 };
 
 static isr_handler_t g_isr_table[256] = {NULL};
-
-void interrupt_service_routine_register_handler(uint8_t interrupt_vector, isr_handler_t handler)
-{
-    g_isr_table[interrupt_vector] = handler;
-}
 
 static void isr_default_handler(const InterruptFrame_t *frame)
 {
@@ -134,22 +117,25 @@ static void isr_default_handler(const InterruptFrame_t *frame)
         asmutils_halt();
 }
 
+void interrupt_service_routine_register_handler(uint8_t interrupt_vector, isr_handler_t handler)
+{
+    g_isr_table[interrupt_vector] = handler;
+}
+
 void interrupt_frame_set_resume_address(const InterruptFrame_t *frame, uint32_t resume_address)
 {
     if (!frame)
         return;
 
-    /* The frame is not a copy: it is the live stack image that isr_common_stub
-       hands to `iret`, so `eip` is the address execution resumes at. Writing it
-       is the only way a handler can step over a faulting instruction instead of
-       returning to it and faulting forever. The pointer is const because every
-       other handler only reads it — the cast is confined here, next to the one
-       reason it exists. */
     ((InterruptFrame_t *) frame)->eip = resume_address;
 }
 
+isr_handler_t interrupt_service_routine_get_handler(uint8_t interrupt_vector) { return g_isr_table[interrupt_vector]; }
+
 void interrupt_service_routine_dispatch(InterruptFrame_t *frame)
 {
+    kernel_wakeup_accounting_attribute((uint8_t) frame->int_no);
+
     isr_handler_t handler = g_isr_table[frame->int_no];
     if (handler)
         handler(frame);

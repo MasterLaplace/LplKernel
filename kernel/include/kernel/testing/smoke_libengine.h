@@ -1,21 +1,39 @@
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file smoke_libengine.h
+ * @brief Cross-target smoke battery of the engine, assistant and knowledge gates.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-07-01
+ **************************************************************************/
+
 #ifndef KERNEL_TESTING_SMOKE_LIBENGINE_H
 #define KERNEL_TESTING_SMOKE_LIBENGINE_H
 
 #include <kernel/drivers/serial.h>
 
 /**
- * @brief Runs the full libengine cross-target smoke/demo battery (P0..P6).
+ * @brief Runs the cross-target smoke battery: every engine, assistant and knowledge gate.
  *
  * Extracted from kernel_main so the boot path stays readable and so the whole
  * battery can be compiled out of a release/production image (it is only invoked
- * when LPL_KERNEL_ENABLE_SMOKE_TESTS is defined). Each block folds deterministic
- * engine results and prints them over serial for byte-for-byte comparison
- * against the Linux/xmake oracle (the HARD determinism contract).
- *
- * Covers: the C++ constructor self-test, P0 determinism, P1 arena/ECS/scheduler/
- * physics, P2 HAL, P3 render, P4 image/scene, the P4 image present that paints a
- * 2D scene onto the scanout, P5 render + render-present, P6 advanced rendering,
- * and the simulation parity fold (the sample sim's state/image signatures).
+ * when LPL_KERNEL_ENABLE_SMOKE_TESTS is defined). Each gate folds deterministic
+ * results and prints them over serial for byte-for-byte comparison against the
+ * host oracle (the HARD determinism contract); each has its own report function,
+ * named after the gate, in smoke_libengine.c.
  *
  * @param com1 Pointer to the primary serial interface.
  */

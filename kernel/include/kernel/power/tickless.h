@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file tickless.h
  * @brief Stopping the periodic tick when nothing is due.
  *
@@ -22,10 +35,10 @@
  * global tick count can be advanced by the right amount. The illusion is perfect for
  * anything above: time appears continuous.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef KERNEL_POWER_TICKLESS_H
 #define KERNEL_POWER_TICKLESS_H
@@ -82,6 +95,10 @@ bool kernel_tickless_enabled(void);
  * Returns early on any interrupt, which is the point rather than a caveat: a
  * deadline is the LATEST the caller wants to wake, and a device that has something
  * to say should not have to wait for it.
+ *
+ * @note Without permission the tick is still running, so the sleep simply takes the
+ *       interrupts it delivers and reports no time slept. Honest and unremarkable — and
+ *       counted the same way, so a profile cannot claim a saving it did not make.
  *
  * @param microseconds Delay; clamped to @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS.
  * @return Microseconds actually spent, measured from the absolute clock.

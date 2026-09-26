@@ -12,30 +12,34 @@
 #define IRQ_KEYBOARD_LINE   1u
 #define IRQ_KEYBOARD_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_KEYBOARD_LINE)
 
-/* Power-of-two capacity so head/tail wrap with a cheap mask. */
+/**
+ * @name Power-of-two capacity so head/tail wrap with a cheap mask
+ * @{
+ */
 #define KEYBOARD_SCANCODE_RING_CAPACITY 256u
 #define KEYBOARD_SCANCODE_RING_MASK     (KEYBOARD_SCANCODE_RING_CAPACITY - 1u)
+/** @} */
 
 static uint32_t keyboard_irq_count = 0u;
 static uint32_t keyboard_printable_count = 0u;
 static char keyboard_last_printable_char = 0;
 
-/*
-** Lock-free single-producer / single-consumer ring of raw scan codes.
-**
-** Producer: the IRQ1 handler (interrupt context).
-** Consumer: keyboard_try_pop_char, run from the main loop (bottom half).
-**
-** The producer owns `head`, the consumer owns `tail`; neither side touches the
-** other's index, and the indices are free-running uint32_t read through
-** `volatile`, so no shared counter and no locking are needed. Decoding (which
-** carries modifier state) happens entirely on the consumer side, keeping the
-** IRQ handler short and bounded and the modifier state race-free.
-*/
+/**
+ * Lock-free single-producer / single-consumer ring of raw scan codes.
+ *
+ * Producer: the IRQ1 handler (interrupt context).
+ * Consumer: keyboard_try_pop_char, run from the main loop (bottom half).
+ *
+ * The producer owns `head`, the consumer owns `tail`; neither side touches the
+ * other's index, and the indices are free-running uint32_t read through
+ * `volatile`, so no shared counter and no locking are needed. Decoding (which
+ * carries modifier state) happens entirely on the consumer side, keeping the
+ * IRQ handler short and bounded and the modifier state race-free.
+ */
 static volatile uint8_t keyboard_scancode_ring[KEYBOARD_SCANCODE_RING_CAPACITY];
 static volatile uint32_t keyboard_scancode_ring_head = 0u;
 static volatile uint32_t keyboard_scancode_ring_tail = 0u;
-static uint32_t keyboard_scancode_drop_count = 0u; /* producer-only counter */
+static uint32_t keyboard_scancode_drop_count = 0u; /**< producer-only counter */
 
 static void keyboard_interrupt_handler(const InterruptFrame_t *frame)
 {
@@ -78,8 +82,6 @@ void keyboard_interrupt_initialize(void)
 {
     interrupt_service_routine_register_handler(IRQ_KEYBOARD_VECTOR, keyboard_interrupt_handler);
 
-    /* Compile-time default layout (see make.config / build.sh --azerty|--qwerty).
-       Can still be overridden at runtime via personal_system_2_keyboard_set_layout. */
 #if defined(LPL_KERNEL_KEYBOARD_LAYOUT_AZERTY)
     personal_system_2_keyboard_set_layout(PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY);
 #else
@@ -120,6 +122,8 @@ uint8_t keyboard_try_pop_char(char *out_char)
 
     return 0u;
 }
+
+const volatile uint32_t *keyboard_get_ring_head_address(void) { return &keyboard_scancode_ring_head; }
 
 uint32_t keyboard_get_ring_capacity(void) { return KEYBOARD_SCANCODE_RING_CAPACITY; }
 

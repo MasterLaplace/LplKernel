@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file satellite_app.h
  * @brief The satellite profile's whole job.
  *
@@ -15,10 +28,10 @@
  * how many sleeps it actually got. A profile that claimed to idle cheaply without
  * counting would be indistinguishable from one with a spin loop in it.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef KERNEL_SATELLITE_SATELLITE_APP_H
 #define KERNEL_SATELLITE_SATELLITE_APP_H
@@ -46,6 +59,7 @@ typedef struct {
     uint32_t scaling_available; /**< 1 when it can actually change its clock. */
     uint32_t scaling_refused;   /**< Performance-state requests the hardware could not honour. */
     uint32_t governed_state;    /**< The state the governor asked for. */
+    uint32_t effective_permille; /**< Clock actually delivered over the run, or KERNEL_FREQUENCY_SCALING_NO_FEEDBACK. */
     uint32_t audio_present;     /**< 1 when a codec was found AND can be driven. */
     uint32_t output_ceiling;    /**< Loudest sample this kernel will ever emit. */
     uint32_t limiter_clipped;   /**< Samples the ceiling clamped during the self-check. */
@@ -69,6 +83,23 @@ typedef struct {
  * Nothing here allocates and nothing here blocks on a device that may be absent: the
  * profile must be able to boot on a machine with no codec and say so, rather than
  * wait forever for a buffer that will never arrive.
+ *
+ * @details Each frame sleeps to its deadline, which exercises the one-shot timer and so
+ *          proves the periodic tick really is stopped. Where capture is interrupt-driven a
+ *          completed half ends the sleep first, and the wake accounting sees it as a
+ *          second source. Frames are counted as what ARRIVED rather than what the loop
+ *          pumped, which is the same number when the loop is the producer and the only
+ *          honest one when the interrupt is.
+ *
+ * @note The deepest sleep hint is requested: a whole frame separates two buffers, so any
+ *       C-state's exit latency is microseconds against 40 ms, and this caller is the one
+ *       that can afford it.
+ * @note Only this profile may declare the tick stoppable: a satellite instantiates no
+ *       World, so there is no authoritative tick whose cadence a parity gate is folded
+ *       against. The tick goes back on before returning all the same — the profile is
+ *       exercised from inside an image that also runs a World, and leaving its clock
+ *       stopped would take the cadence away from a simulation that needs it, which is
+ *       precisely the failure @ref kernel_tickless_enable exists to refuse.
  *
  * @param iterations Frames to run.
  * @param out        Receives the measurements.

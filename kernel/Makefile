@@ -124,6 +124,7 @@ kernel/dialogue/dialogue_channel.o \
 kernel/power/processor_sleep.o \
 kernel/power/tickless.o \
 kernel/power/frequency_scaling.o \
+kernel/power/wakeup_accounting.o \
 kernel/satellite/satellite_app.o \
 kernel/testing/smoke_batch.o \
 kernel/testing/smoke_libengine.o \

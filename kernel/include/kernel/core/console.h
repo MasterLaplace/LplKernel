@@ -1,3 +1,25 @@
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file console.h
+ * @brief Interactive kernel console, over the keyboard and COM1.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-03-31
+ **************************************************************************/
+
 #ifndef KERNEL_CORE_CONSOLE_H
 #define KERNEL_CORE_CONSOLE_H
 
@@ -20,6 +42,17 @@
 #endif
 
 /**
+ * @brief Report whether this image carries an interactive command surface.
+ *
+ * Emitted at boot rather than from the loop, because the loop only runs on the
+ * profile that has no engine to run instead — so a report from inside it would be
+ * missing from exactly the images anyone would want to check.
+ *
+ * @param com1 Pointer to the primary serial interface.
+ */
+extern void kernel_console_report_surface(Serial_t *com1);
+
+/**
  * @brief Enters the interactive kernel console loop.
  *
  * Starts a non-blocking loop handling keyboard and serial input
@@ -32,17 +65,6 @@
  *
  * @param com1 Pointer to the primary serial interface.
  */
-/**
- * @brief Report whether this image carries an interactive command surface.
- *
- * Emitted at boot rather than from the loop, because the loop only runs on the
- * profile that has no engine to run instead — so a report from inside it would be
- * missing from exactly the images anyone would want to check.
- *
- * @param com1 Pointer to the primary serial interface.
- */
-extern void kernel_console_report_surface(Serial_t *com1);
-
 extern void kernel_console_run_interactive_loop(Serial_t *com1);
 
 #endif /* KERNEL_CORE_CONSOLE_H */

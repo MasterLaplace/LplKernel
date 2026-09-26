@@ -1,12 +1,3 @@
-/**
- * @file tickless.c
- * @brief Stopping the periodic tick when nothing is due.
- *
- * @author MasterLaplace
- * @version 0.1.0
- * @copyright MIT License
- */
-
 #include <kernel/power/tickless.h>
 
 #include <kernel/cpu/apic_timer.h>
@@ -22,12 +13,31 @@ static uint32_t tickless_ticks_avoided = 0u;
 static uint32_t tickless_early_wakes = 0u;
 static uint64_t tickless_slept_microseconds = 0u;
 
+/**
+ * @brief How long a one-shot sleep really lasted, asked of the hardware.
+ *
+ * @details Step five of the sequence: the deadline is not assumed to have been met. The
+ *          count that remains says how much of the delay was left when something else
+ *          woke the core, and such an early wake is counted.
+ *
+ * @param requested Microseconds the timer was armed for.
+ * @param armed     Count read right after arming.
+ * @param remaining Count read on waking.
+ * @param timer_hz  Calibrated timer frequency; never zero here.
+ * @return Microseconds actually spent.
+ */
+static uint32_t tickless_elapsed_microseconds(uint32_t requested, uint32_t armed, uint32_t remaining, uint32_t timer_hz)
+{
+    if (remaining == 0u || remaining > armed || armed == 0u)
+        return requested;
+
+    ++tickless_early_wakes;
+    const uint64_t consumed = (uint64_t) (armed - remaining);
+    return (uint32_t) ((consumed * 1000000u) / (uint64_t) timer_hz);
+}
+
 bool kernel_tickless_enable(bool no_world_instantiated, uint32_t nominal_frequency_hz)
 {
-    /* The one rule this file exists to enforce. A World's tick is the clock every
-       parity gate is folded against; stopping it would make the simulation advance at
-       a rate that depends on how idle the machine happened to be, which is not a
-       performance problem but a determinism one. */
     if (!no_world_instantiated)
         return false;
 
@@ -57,9 +67,6 @@ uint32_t kernel_tickless_sleep(uint32_t microseconds)
 
     if (!tickless_permitted)
     {
-        /* Without permission the tick is still running, so waiting means taking the
-           interrupts it delivers. Honest and unremarkable — and counted the same way,
-           so a profile cannot claim a saving it did not make. */
         processor_sleep_until_interrupt();
         return 0u;
     }
@@ -77,17 +84,7 @@ uint32_t kernel_tickless_sleep(uint32_t microseconds)
 
     advanced_pic_timer_backend_disable();
 
-    /* Step five of the sequence: ask the hardware how long was really spent rather
-       than assuming the deadline was met. The count that remains says how much of the
-       delay was left when something else woke the core. */
-    uint32_t elapsed = microseconds;
-    if (remaining != 0u && remaining <= armed && armed != 0u)
-    {
-        const uint64_t consumed = (uint64_t) (armed - remaining);
-        elapsed = (uint32_t) ((consumed * 1000000u) / (uint64_t) timer_hz);
-        ++tickless_early_wakes;
-    }
-
+    const uint32_t elapsed = tickless_elapsed_microseconds(microseconds, armed, remaining, timer_hz);
     tickless_slept_microseconds += elapsed;
     tickless_ticks_avoided += (uint32_t) (((uint64_t) elapsed * (uint64_t) tickless_nominal_hz) / 1000000u);
     return elapsed;

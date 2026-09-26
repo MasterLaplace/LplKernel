@@ -13,7 +13,10 @@
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/ps2_keyboard.h>
 #include <kernel/drivers/tty.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/heap.h>
+#include <kernel/power/processor_sleep.h>
+#include <kernel/power/wakeup_accounting.h>
 
 #if defined(LPL_KERNEL_ENABLE_CONSOLE)
 
@@ -27,7 +30,7 @@
  * reports, so the three cannot disagree again.
  */
 static const char *const KERNEL_CONSOLE_COMMANDS[] = {
-    "help", "stats", "ap", "kbd", "pci", "layout", "layout us", "layout fr", "exit",
+    "help", "stats", "ap", "kbd", "pci", "wakeup", "layout", "layout us", "layout fr", "exit",
 };
 
 #    define KERNEL_CONSOLE_COMMAND_COUNT (sizeof(KERNEL_CONSOLE_COMMANDS) / sizeof(KERNEL_CONSOLE_COMMANDS[0]))
@@ -132,6 +135,19 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
         return;
     }
 
+    if (kernel_string_equals(command, "wakeup"))
+    {
+        terminal_write_string("\n[wakeup] ");
+        terminal_write_number((long) kernel_wakeup_accounting_get_sleep_count(), 10u);
+        terminal_write_string(" sleep(s), ");
+        terminal_write_number((long) kernel_wakeup_accounting_get_source_count(), 10u);
+        terminal_write_string(" source(s), busiest vector ");
+        terminal_write_number((long) kernel_wakeup_accounting_get_busiest_vector(), 10u);
+        terminal_write_string(kernel_wakeup_accounting_conserves() ? " (balanced)\n" : " (BOOKS DO NOT BALANCE)\n");
+        kernel_wakeup_accounting_report(com1);
+        return;
+    }
+
     if (kernel_string_equals(command, "layout"))
     {
         terminal_write_string("\n[layout] current=");
@@ -162,6 +178,19 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
     terminal_write_string("\n");
 }
 
+/**
+ * @brief Sleeps until a key may have arrived, instead of spinning to find out nothing did.
+ *
+ * @details The watch is armed on the scan-code ring's write index, which IRQ1 advances, so a
+ *          key ends the sleep at once. The serial port is polled and has no such index, but
+ *          the periodic tick is itself a break event, so its latency stays one tick rather
+ *          than becoming unbounded.
+ */
+static void kernel_console_sleep_until_input(void)
+{
+    (void) processor_sleep_until_write(keyboard_get_ring_head_address(), *keyboard_get_ring_head_address());
+}
+
 #else /* !LPL_KERNEL_ENABLE_CONSOLE */
 
 #    define KERNEL_CONSOLE_COMMAND_COUNT 0u
@@ -180,7 +209,7 @@ void kernel_console_run_interactive_loop(Serial_t *com1)
 {
 #if !defined(LPL_KERNEL_ENABLE_CONSOLE)
     for (;;)
-        asm volatile("hlt");
+        asmutils_halt();
 #else
     static const uint8_t KEY_ECHAP = 27u;
     static const uint32_t KERNEL_CONSOLE_COMMAND_MAX = 63u;
@@ -202,62 +231,63 @@ void kernel_console_run_interactive_loop(Serial_t *com1)
         else if (serial_try_read_char(com1, &serial_char))
             incoming = serial_char;
 
-        if (incoming)
+        if (!incoming)
         {
-            if (incoming == KEY_ECHAP)
-            {
-                done = 1u;
-                continue;
-            }
-
-            if (!framebuffer_available())
-            {
-                if (incoming == '\r' || incoming == '\n')
-                {
-                    terminal_putchar('\n');
-                    command_buffer[command_length] = '\0';
-                    if (command_length > 0u)
-                    {
-                        kernel_console_execute_command(com1, command_buffer);
-                        if (kernel_string_equals(command_buffer, "exit"))
-                        {
-                            done = 1u;
-                            continue;
-                        }
-                    }
-
-                    command_length = 0u;
-                    command_buffer[0] = '\0';
-                    kernel_console_print_prompt();
-                    continue;
-                }
-
-                if (incoming == '\b' || incoming == 127u)
-                {
-                    if (command_length > 0u)
-                    {
-                        --command_length;
-                        command_buffer[command_length] = '\0';
-                        terminal_putchar('\b');
-                    }
-                    continue;
-                }
-
-                if (incoming >= 32u && incoming <= 126u)
-                {
-                    if (command_length < KERNEL_CONSOLE_COMMAND_MAX)
-                    {
-                        command_buffer[command_length++] = (char) incoming;
-                        terminal_putchar((char) incoming);
-                    }
-                    continue;
-                }
-            }
-
+            kernel_console_sleep_until_input();
             continue;
         }
 
-        asm volatile("hlt");
+        if (incoming == KEY_ECHAP)
+        {
+            done = 1u;
+            continue;
+        }
+
+        if (!framebuffer_available())
+        {
+            if (incoming == '\r' || incoming == '\n')
+            {
+                terminal_putchar('\n');
+                command_buffer[command_length] = '\0';
+                if (command_length > 0u)
+                {
+                    kernel_console_execute_command(com1, command_buffer);
+                    if (kernel_string_equals(command_buffer, "exit"))
+                    {
+                        done = 1u;
+                        continue;
+                    }
+                }
+
+                command_length = 0u;
+                command_buffer[0] = '\0';
+                kernel_console_print_prompt();
+                continue;
+            }
+
+            if (incoming == '\b' || incoming == 127u)
+            {
+                if (command_length > 0u)
+                {
+                    --command_length;
+                    command_buffer[command_length] = '\0';
+                    terminal_putchar('\b');
+                }
+                continue;
+            }
+
+            if (incoming >= 32u && incoming <= 126u)
+            {
+                if (command_length < KERNEL_CONSOLE_COMMAND_MAX)
+                {
+                    command_buffer[command_length++] = (char) incoming;
+                    terminal_putchar((char) incoming);
+                }
+                continue;
+            }
+        }
+
+        asmutils_halt();
     }
 #endif
 }

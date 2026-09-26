@@ -1,9 +1,24 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** APIC Inter-Processor Interrupt (IPI) framework header
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file apic_ipi.h
+ * @brief Local APIC inter-processor interrupt (IPI) framework.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-03-17
+ **************************************************************************/
 
 #ifndef KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_IPI_H
 #define KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_IPI_H
@@ -96,6 +111,11 @@ extern uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint
  * @brief IPI-based TLB shootdown.
  *
  * Broadcasts an IPI to all other CPUs to invalidate a specific virtual address.
+ *
+ * @note The wait for acknowledgements is bounded: a target that never answers — an
+ *       unresponsive or phantom CPU — is given up on and counted by
+ *       @ref advanced_pic_ipi_get_tlb_shootdown_timeout_count, so a shootdown can never
+ *       hang the kernel. The local TLB is invalidated either way.
  */
 extern void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr);
 

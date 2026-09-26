@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file hda.h
  * @brief Intel High Definition Audio controller — capture and playback.
  *
@@ -10,10 +23,38 @@
  * subclass 0x03), so no new probing mechanism is needed — the same table walk the
  * cartridge and the network card go through.
  *
- * @author MasterLaplace
+ * The interrupt handler does what every other driver here does and nothing more:
+ * move a buffer into a ring and acknowledge. Ring buffer descriptor lists are set
+ * up once at init; a handler that allocated would be a handler that can fail while
+ * the sovereign is mid-sentence.
+ *
+ * WHAT IS VERIFIED. Measured in QEMU with `-device intel-hda -device hda-duplex`, on
+ * all five booted artifacts: the controller is found, comes out of reset, reports
+ * version 1 with four input and four output stream descriptors, a codec announces
+ * itself with vendor identifier 0x1AF40022, all twelve verbs of the walk and the stream
+ * setup are answered, the input converter is found at node 4 behind pin 3, and the
+ * stream runs and delivers buffers. The delivery rate cross-checks the format word
+ * independently: the cyclic buffer is 2560 bytes, which is 80 ms of 16 kHz mono
+ * 16-bit audio, and 320 ms of running produced three wraps plus a part-filled fourth.
+ *
+ * HOW THE COMMAND PATH WAS FIXED, because the shape of the bug is worth keeping. For
+ * a while only the FIRST verb was ever answered and every one after it timed out. Two
+ * hypotheses were reasoned out from the code and both were wrong — acknowledging
+ * RIRBSTS (correct in itself, kept) and a ring-pointer misalignment (imaginary). The
+ * third attempt was an instrument instead of a hypothesis: a probe that reads both
+ * rings either side of a failing command. It answered immediately. CORBWP was 2, our
+ * shadow agreed, the fetch engine was running, CORBSTS showed no error — and CORBRP
+ * was frozen at 1. The controller was not failing to answer, it was refusing to
+ * FETCH, and only one setting does that: RINTCNT, the response count a controller
+ * insists on having acknowledged before it reads more. It was set to one, which for a
+ * driver that polls and takes no interrupts is the worst possible value. The probe is
+ * kept rather than removed — a timeout without register state is a fact with no
+ * diagnosis attached, which is exactly how this managed to be wrong twice.
+ *
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef KERNEL_DRIVERS_HDA_H
 #define KERNEL_DRIVERS_HDA_H
@@ -99,7 +140,15 @@ typedef struct {
     uint32_t probe_command;                           /**< The command word that got no answer. */
     IntelHighDefinitionAudioRingProbe_t probe_before; /**< Rings before it was submitted. */
     IntelHighDefinitionAudioRingProbe_t probe_after;  /**< Rings after the budget ran out. */
+    uint8_t interrupt_line;                           /**< PCI configuration offset 0x3C, or KERNEL_HDA_NO_INTERRUPT_LINE. */
 } IntelHighDefinitionAudioState_t;
+
+/**
+ * No interrupt line known. 0xFF is what the PCI specification writes for "not
+ * connected", and it keeps the sentinel off every real line: zero, the value a cleared
+ * state would otherwise hold, is the timer's.
+ */
+#define KERNEL_HDA_NO_INTERRUPT_LINE 0xFFu
 
 /**
  * @brief Finds the controller, resets it and brings its command rings up.
@@ -139,6 +188,10 @@ bool intel_high_definition_audio_command(uint8_t codec, uint8_t node, uint16_t v
  * wider payload argument: the two forms put the verb in DIFFERENT bit positions, so a
  * single function taking a sixteen-bit payload would silently truncate one of them.
  *
+ * @note The four-bit form puts the verb at bits 19:16 and the payload at 15:0; the
+ *       twelve-bit form of @ref intel_high_definition_audio_command puts the verb at 19:8
+ *       and the payload at 7:0. Same word, two layouts.
+ *
  * @param codec        Slot.
  * @param node         Node identifier.
  * @param verb         Four-bit verb.
@@ -168,11 +221,56 @@ bool intel_high_definition_audio_start_capture(void);
  * What this does is read the link position, notice when a buffer half has been
  * completed, and hand that half over.
  *
+ * @note Only the half the controller is NOT writing is read: that one is complete and
+ *       safe to copy, which is the entire reason the buffer has two.
+ *
  * @param out      Receives samples.
  * @param capacity Room in @p out, in samples.
  * @return Samples written; 0 when the controller has not finished a half yet.
  */
 uint32_t intel_high_definition_audio_poll_capture(int16_t *out, uint32_t capacity);
+
+/**
+ * @brief The legacy interrupt line the firmware assigned to the controller.
+ * @return The line, or @ref KERNEL_HDA_NO_INTERRUPT_LINE.
+ */
+uint8_t intel_high_definition_audio_capture_interrupt_line(void);
+
+/**
+ * @brief Asks the controller to interrupt each time a capture half completes.
+ *
+ * @details Sets interrupt-on-completion on the input stream and enables it, with the
+ *          global bit, in INTCTL. The buffer descriptors already carry the completion
+ *          flag, so this is the last switch. Call only once a handler is in place.
+ *
+ * @note The stream status is cleared first, so a completion that happened while polling
+ *       cannot fire the instant the enable lands and be read as the first real one.
+ *
+ * @return false when no capture stream is running.
+ */
+bool intel_high_definition_audio_enable_capture_interrupt(void);
+
+/**
+ * @brief Clears whatever the capture stream asserted, and says whether a half completed.
+ *
+ * @details Every status bit seen is written back, errors included: the line is
+ *          level-triggered, so a bit left set keeps it asserted and the handler would
+ *          be re-entered for ever.
+ *
+ * @return true when a buffer half completed.
+ */
+bool intel_high_definition_audio_acknowledge_capture_interrupt(void);
+
+/**
+ * @brief Raw capture registers, for telling a controller that stopped raising from a
+ *        line that stopped delivering.
+ *
+ * @param out_stream_status    SDnSTS of the capture stream.
+ * @param out_interrupt_status INTSTS.
+ * @param out_position         Link position in bytes.
+ */
+void intel_high_definition_audio_capture_registers(uint8_t *out_stream_status, uint32_t *out_interrupt_status,
+                                                   uint32_t *out_position);
 
 #ifdef __cplusplus
 }
