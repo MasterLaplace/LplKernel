@@ -1,5 +1,5 @@
 /**************************************************************************
- * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ * LplKernel v0.0.0.5 - A Simple C Kernel for Laplace
  *
  * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
  * provides a basic set of features to run a C program.
@@ -477,7 +477,7 @@
 #ifdef FLAG_VERSION_TWEAK
     #define KERNEL_VERSION_TWEAK FLAG_VERSION_TWEAK
 #else
-    #define KERNEL_VERSION_TWEAK 4
+    #define KERNEL_VERSION_TWEAK 5
 #endif
 /** @} */
 
