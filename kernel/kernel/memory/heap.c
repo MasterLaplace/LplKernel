@@ -5,6 +5,7 @@
 #include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/slab.h>
 #include <kernel/memory/tlsf.h>
@@ -15,7 +16,7 @@
 #define KERNEL_HEAP_ALIGNMENT       8u
 #define KERNEL_HEAP_BLOCK_FLAG_FREE 0x01u
 #define KERNEL_HEAP_BLOCK_FLAG_BIG  0x02u
-#define KERNEL_HEAP_BLOCK_FLAG_SC   0x04u /* server size-class bucket block */
+#define KERNEL_HEAP_BLOCK_FLAG_SC   0x04u /**< server size-class bucket block */
 #define KERNEL_HEAP_BLOCK_FLAG_VMM  0x08u
 #define KERNEL_HEAP_BLOCK_FLAG_SENS 0x10u
 #define KERNEL_HEAP_BLOCK_FLAG_SLAB 0x20u
@@ -451,8 +452,7 @@ void *kmalloc(size_t size)
             KernelHeapBlock_t *block = NULL;
             uint32_t owner_domain_index = local_domain_index;
 
-            uint32_t eflags;
-            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
+            uint32_t eflags = asmutils_save_flags_and_disable_interrupts();
 
             if (local_domain && local_domain->size_class_lists[sc])
             {
@@ -461,14 +461,14 @@ void *kmalloc(size_t size)
                 --local_domain->size_class_free_counts[sc];
             }
 
-            __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
+            asmutils_restore_flags(eflags);
 
             if (!block && local_domain)
             {
                 ++local_domain->remote_probe_count;
-                __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
+                eflags = asmutils_save_flags_and_disable_interrupts();
                 block = kernel_heap_server_try_pop_remote_bucket(local_domain_index, sc, &owner_domain_index);
-                __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
+                asmutils_restore_flags(eflags);
                 if (block)
                     ++local_domain->remote_hit_count;
             }
@@ -560,8 +560,7 @@ void *kmalloc(size_t size)
         uint32_t sc_full_size = kernel_heap_align_up(
             kernel_heap_size_class_sizes[matched_sc] + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
 
-        uint32_t eflags;
-        __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
+        const uint32_t eflags = asmutils_save_flags_and_disable_interrupts();
 
         for (uint32_t i = 1u; i < batch_count; ++i)
         {
@@ -582,7 +581,7 @@ void *kmalloc(size_t size)
                 ++local_domain->size_class_free_counts[matched_sc];
             }
         }
-        __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
+        asmutils_restore_flags(eflags);
 
         current->size = sc_full_size;
         current->flags = KERNEL_HEAP_BLOCK_FLAG_SC;
@@ -733,15 +732,14 @@ void kfree(void *ptr)
         {
             KernelHeapServerDomain_t *domain = &kernel_heap_server_domains[owner_domain];
 
-            uint32_t eflags;
-            __asm__ volatile("pushf\n\tpop %0\n\tcli" : "=r"(eflags)::"memory");
+            const uint32_t eflags = asmutils_save_flags_and_disable_interrupts();
 
             header->flags |= KERNEL_HEAP_BLOCK_FLAG_FREE;
             header->next = domain->size_class_lists[sc];
             domain->size_class_lists[sc] = header;
             ++domain->size_class_free_counts[sc];
 
-            __asm__ volatile("push %0\n\tpopf" ::"r"(eflags) : "memory", "cc");
+            asmutils_restore_flags(eflags);
             return;
         }
     }

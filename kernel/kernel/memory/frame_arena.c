@@ -1,5 +1,6 @@
 #define __LPL_KERNEL__
 #include <kernel/config.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
 
@@ -14,17 +15,6 @@ static uint32_t kernel_frame_arena_budget_exceeded_count = 0u;
 static uint32_t kernel_frame_arena_wcet_alloc = 0u;
 static uint32_t kernel_frame_arena_wcet_reset = 0u;
 static bool kernel_frame_arena_initialized = false;
-
-static inline uint32_t frame_arena_rdtsc_low(void)
-{
-#if defined(__i386__) || defined(__x86_64__)
-    uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo)::"edx");
-    return lo;
-#else
-    return 0u;
-#endif
-}
 
 static uint32_t kernel_frame_arena_align_up(uint32_t value, uint32_t align)
 {
@@ -69,7 +59,7 @@ bool kernel_frame_arena_initialize(uint32_t capacity_bytes)
 
 void *kernel_frame_arena_alloc(uint32_t size, uint32_t align)
 {
-    uint32_t t0 = frame_arena_rdtsc_low();
+    uint32_t t0 = asmutils_read_timestamp_counter_low();
 
     if (!kernel_frame_arena_initialized || size == 0u)
         return NULL;
@@ -105,7 +95,7 @@ void *kernel_frame_arena_alloc(uint32_t size, uint32_t align)
     if (kernel_frame_arena_offset > kernel_frame_arena_peak)
         kernel_frame_arena_peak = kernel_frame_arena_offset;
 
-    uint32_t t1 = frame_arena_rdtsc_low();
+    uint32_t t1 = asmutils_read_timestamp_counter_low();
     uint32_t delta = t1 - t0;
     if (delta > kernel_frame_arena_wcet_alloc)
         kernel_frame_arena_wcet_alloc = delta;
@@ -115,7 +105,7 @@ void *kernel_frame_arena_alloc(uint32_t size, uint32_t align)
 
 void kernel_frame_arena_reset(void)
 {
-    uint32_t t0 = frame_arena_rdtsc_low();
+    uint32_t t0 = asmutils_read_timestamp_counter_low();
 
     if (!kernel_frame_arena_initialized)
         return;
@@ -128,7 +118,7 @@ void kernel_frame_arena_reset(void)
     kernel_frame_arena_offset = 0u;
     ++kernel_frame_arena_reset_count;
 
-    uint32_t t1 = frame_arena_rdtsc_low();
+    uint32_t t1 = asmutils_read_timestamp_counter_low();
     uint32_t delta = t1 - t0;
     if (delta > kernel_frame_arena_wcet_reset)
         kernel_frame_arena_wcet_reset = delta;

@@ -1,5 +1,6 @@
 #define __LPL_KERNEL__
 #include <kernel/config.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/pool_allocator.h>
 #include <stddef.h>
@@ -15,17 +16,6 @@ static uint32_t kernel_pool_failed_alloc_count = 0u;
 static uint32_t kernel_pool_wcet_alloc = 0u;
 static uint32_t kernel_pool_wcet_free = 0u;
 static bool kernel_pool_initialized = false;
-
-static inline uint32_t pool_allocator_rdtsc_low(void)
-{
-#if defined(__i386__) || defined(__x86_64__)
-    uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo)::"edx");
-    return lo;
-#else
-    return 0u;
-#endif
-}
 
 static uint32_t kernel_pool_align_up(uint32_t value, uint32_t align)
 {
@@ -77,7 +67,7 @@ bool kernel_pool_allocator_initialize(uint32_t object_size, uint32_t object_coun
 
 void *kernel_pool_alloc(void)
 {
-    uint32_t t0 = pool_allocator_rdtsc_low();
+    uint32_t t0 = asmutils_read_timestamp_counter_low();
 
     if (!kernel_pool_initialized || !kernel_pool_free_head)
     {
@@ -95,7 +85,7 @@ void *kernel_pool_alloc(void)
     if (used_count > kernel_pool_peak_used)
         kernel_pool_peak_used = used_count;
 
-    uint32_t t1 = pool_allocator_rdtsc_low();
+    uint32_t t1 = asmutils_read_timestamp_counter_low();
     uint32_t delta = t1 - t0;
     if (delta > kernel_pool_wcet_alloc)
         kernel_pool_wcet_alloc = delta;
@@ -105,7 +95,7 @@ void *kernel_pool_alloc(void)
 
 bool kernel_pool_free(void *ptr)
 {
-    uint32_t t0 = pool_allocator_rdtsc_low();
+    uint32_t t0 = asmutils_read_timestamp_counter_low();
 
     if (!kernel_pool_initialized || !ptr)
         return false;
@@ -140,7 +130,7 @@ bool kernel_pool_free(void *ptr)
     if (kernel_pool_free_count < kernel_pool_capacity)
         ++kernel_pool_free_count;
 
-    uint32_t t1 = pool_allocator_rdtsc_low();
+    uint32_t t1 = asmutils_read_timestamp_counter_low();
     uint32_t delta = t1 - t0;
     if (delta > kernel_pool_wcet_free)
         kernel_pool_wcet_free = delta;

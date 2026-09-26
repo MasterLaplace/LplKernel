@@ -1,29 +1,10 @@
-/*
-** LplKernel
-** kernel/kernel/tlsf.c
-**
-** Two-Level Segregated Fit (TLSF) O(1) deterministic allocator.
-**
-** This is a freestanding implementation for the client realtime kernel
-** profile.  It manages a single contiguous memory pool donated at boot
-** time.  Allocation and deallocation are O(1) (bounded by a constant
-** number of bit-scan + pointer dereferences).
-**
-** Design:
-**   - FLI (First-Level Index): log2(block_size), up to TLSF_FLI_COUNT.
-**   - SLI (Second-Level Index): TLSF_SLI_LOG2 bits => 4 sub-divisions.
-**   - Two bitmaps (fl_bitmap, sl_bitmap[]) for O(1) best-fit search.
-**   - Each block has a header: { size | prev_phys_block | free_prev | free_next }.
-**   - Immediate coalescing on free (boundary-tag style).
-*/
-
 #include <kernel/memory/tlsf.h>
 
-/* ── Tuning ────────────────────────────────────────────── */
+#include <kernel/lib/asmutils.h>
 
 /** Number of second-level index bits per first-level class. */
 #define TLSF_SLI_LOG2  2u
-#define TLSF_SLI_COUNT (1u << TLSF_SLI_LOG2) /* 4 */
+#define TLSF_SLI_COUNT (1u << TLSF_SLI_LOG2) /**< 4 */
 
 /** Maximum first-level classes (covers up to 2^(FLI-1) byte blocks). */
 #define TLSF_FLI_COUNT 16u
@@ -53,8 +34,7 @@
 #define TLSF_BLOCK_PREV_FREE_BIT (1u << 1)
 #define TLSF_BLOCK_FLAG_MASK     (TLSF_BLOCK_FREE_BIT | TLSF_BLOCK_PREV_FREE_BIT)
 
-/* ── Block header ──────────────────────────────────────── */
-
+/** Header in front of every TLSF block. */
 typedef struct block_header {
     /**
      * Size of the usable payload in bytes, with the two LSBs used as flags:
@@ -76,15 +56,13 @@ typedef struct block_header {
     struct block_header *free_next;
 } block_header_t;
 
-/* Compile-time check: header must fit in TLSF_MIN_BLOCK_SIZE + overhead. */
 _Static_assert(sizeof(block_header_t) <= TLSF_MIN_BLOCK_SIZE + 2 * sizeof(uint32_t),
                "block_header_t too large for TLSF_MIN_BLOCK_SIZE");
 
-/* Overhead = the non-payload part of the header (size + prev_phys). */
+/** Non-payload part of the header: size + prev_phys. */
 #define TLSF_BLOCK_OVERHEAD (sizeof(uint32_t) + sizeof(block_header_t *))
 
-/* ── TLSF control structure ───────────────────────────── */
-
+/** TLSF control structure. */
 typedef struct {
     /** FL-level bitmap: bit i set => at least one free block in FL class i. */
     uint32_t fl_bitmap;
@@ -113,28 +91,11 @@ typedef struct {
 
 static tlsf_control_t g_tlsf;
 
-/* ── Compiler builtins (freestanding) ─────────────────── */
-
 static inline uint32_t tlsf_clz(uint32_t v) { return v ? (uint32_t) __builtin_clz(v) : 32u; }
 
 static inline uint32_t tlsf_ffs(uint32_t v) { return v ? (uint32_t) __builtin_ctz(v) : 32u; }
 
 static inline uint32_t tlsf_log2_floor(uint32_t v) { return 31u - tlsf_clz(v); }
-
-/* ── rdtsc helper (optional; gracefully degrades) ─────── */
-
-static inline uint32_t tlsf_rdtsc_low(void)
-{
-#if defined(__i386__) || defined(__x86_64__)
-    uint32_t lo;
-    asm volatile("rdtsc" : "=a"(lo)::"edx");
-    return lo;
-#else
-    return 0u;
-#endif
-}
-
-/* ── Block helpers ─────────────────────────────────────── */
 
 static inline uint32_t block_get_size(const block_header_t *b) { return b->size & ~TLSF_BLOCK_FLAG_MASK; }
 
@@ -159,17 +120,29 @@ static inline block_header_t *ptr_to_block(const void *ptr)
     return (block_header_t *) ((uint8_t *) ptr - TLSF_BLOCK_OVERHEAD);
 }
 
-/** The next physically contiguous block. */
+/**
+ * @brief The next physically contiguous block.
+ */
 static inline block_header_t *block_next_phys(const block_header_t *b)
 {
     return (block_header_t *) ((uint8_t *) block_to_ptr(b) + block_get_size(b));
 }
 
-/** Check if a block is the sentinel (last in pool). */
+/**
+ * @brief Check if a block is the sentinel (last in pool).
+ */
 static inline bool block_is_sentinel(const block_header_t *b) { return block_get_size(b) == 0u; }
 
-/* ── Mapping: size → (fl, sl) ─────────────────────────── */
-
+/**
+ * @brief Maps a block size to the (first-level, second-level) indices of its free list.
+ *
+ * @details Rounds down: used to file a free block under the class it belongs to. Sizes past
+ *          the last first-level class are clamped onto the last list.
+ *
+ * @param size Block payload size in bytes.
+ * @param p_fl Receives the first-level index.
+ * @param p_sl Receives the second-level index.
+ */
 static void mapping_insert(uint32_t size, uint32_t *p_fl, uint32_t *p_sl)
 {
     if (size < (1u << (TLSF_SLI_LOG2 + 1u)))
@@ -193,7 +166,9 @@ static void mapping_insert(uint32_t size, uint32_t *p_fl, uint32_t *p_sl)
     }
 }
 
-/** Round-up mapping: find the smallest (fl, sl) that can satisfy size. */
+/**
+ * @brief Round-up mapping: find the smallest (fl, sl) that can satisfy size.
+ */
 static void mapping_search(uint32_t size, uint32_t *p_fl, uint32_t *p_sl)
 {
     if (size >= (1u << (TLSF_SLI_LOG2 + 1u)))
@@ -203,8 +178,6 @@ static void mapping_search(uint32_t size, uint32_t *p_fl, uint32_t *p_sl)
     }
     mapping_insert(size, p_fl, p_sl);
 }
-
-/* ── Free-list manipulation ───────────────────────────── */
 
 static void free_list_remove(block_header_t *block)
 {
@@ -247,8 +220,13 @@ static void free_list_insert(block_header_t *block)
     g_tlsf.sl_bitmap[fl] |= (1u << sl);
 }
 
-/* ── Find a suitable free block ───────────────────────── */
-
+/**
+ * @brief Finds the first non-empty free list at or above (fl, sl), via the two bitmaps.
+ *
+ * @param p_fl In: first-level index to start from. Out: the index found.
+ * @param p_sl In: second-level index to start from. Out: the index found.
+ * @return The head of that free list, or NULL when no list can satisfy the request.
+ */
 static block_header_t *find_suitable_block(uint32_t *p_fl, uint32_t *p_sl)
 {
     uint32_t fl = *p_fl;
@@ -273,8 +251,13 @@ static block_header_t *find_suitable_block(uint32_t *p_fl, uint32_t *p_sl)
     return g_tlsf.free_lists[fl][sl];
 }
 
-/* ── Split / absorb helpers ───────────────────────────── */
-
+/**
+ * @brief Splits @p block at @p size bytes of payload.
+ *
+ * @param block The block to shrink.
+ * @param size  Payload bytes kept in @p block.
+ * @return The remainder, a new block placed right after @p block.
+ */
 static block_header_t *block_split(block_header_t *block, uint32_t size)
 {
     uint32_t remaining = block_get_size(block) - size - TLSF_BLOCK_OVERHEAD;
@@ -293,6 +276,13 @@ static block_header_t *block_split(block_header_t *block, uint32_t size)
     return rest;
 }
 
+/**
+ * @brief Merges the physically next block into @p block.
+ *
+ * @param block The block that grows.
+ * @param next  Its physical successor, absorbed.
+ * @return @p block.
+ */
 static block_header_t *block_absorb_next(block_header_t *block, block_header_t *next)
 {
     uint32_t new_size = block_get_size(block) + TLSF_BLOCK_OVERHEAD + block_get_size(next);
@@ -304,8 +294,6 @@ static block_header_t *block_absorb_next(block_header_t *block, block_header_t *
 
     return block;
 }
-
-/* ── Public API ────────────────────────────────────────── */
 
 bool kernel_tlsf_initialize(void *buffer, size_t size)
 {
@@ -354,7 +342,7 @@ void *kernel_tlsf_alloc(size_t request_size)
     if (!g_tlsf.initialized || request_size == 0u)
         return NULL;
 
-    uint32_t t0 = tlsf_rdtsc_low();
+    uint32_t t0 = asmutils_read_timestamp_counter_low();
     if (request_size > (size_t) TLSF_MAX_BLOCK_SIZE)
     {
         ++g_tlsf.failed_alloc_count;
@@ -400,7 +388,7 @@ void *kernel_tlsf_alloc(size_t request_size)
 
     ++g_tlsf.alloc_count;
 
-    uint32_t t1 = tlsf_rdtsc_low();
+    uint32_t t1 = asmutils_read_timestamp_counter_low();
     uint32_t cycles = t1 - t0;
     if (cycles > g_tlsf.wcet_alloc_cycles)
         g_tlsf.wcet_alloc_cycles = cycles;
@@ -413,7 +401,7 @@ void kernel_tlsf_free(void *ptr)
     if (!ptr || !g_tlsf.initialized)
         return;
 
-    uint32_t t0 = tlsf_rdtsc_low();
+    uint32_t t0 = asmutils_read_timestamp_counter_low();
 
     block_header_t *block = ptr_to_block(ptr);
     uint32_t added_free_bytes = block_get_size(block);
@@ -449,7 +437,7 @@ void kernel_tlsf_free(void *ptr)
 
     ++g_tlsf.free_op_count;
 
-    uint32_t t1 = tlsf_rdtsc_low();
+    uint32_t t1 = asmutils_read_timestamp_counter_low();
     uint32_t cycles = t1 - t0;
     if (cycles > g_tlsf.wcet_free_cycles)
         g_tlsf.wcet_free_cycles = cycles;
