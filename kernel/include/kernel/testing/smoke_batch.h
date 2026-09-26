@@ -4,13 +4,15 @@
  * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
  * provides a basic set of features to run a C program.
  *
- * This file is part of the LplKernel project that is under Anti-NN License.
- * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * This file is part of the LplKernel project that is under the GNU General
+ * Public License v3.0.
+ * https://www.gnu.org/licenses/gpl-3.0.html
  * Copyright © 2026 by @MasterLaplace, All rights reserved.
  *
  * LplKernel is a free software: you can redistribute it and/or modify
- * it under the terms of the Anti-NN License as published by MasterLaplace.
- * See the Anti-NN License for more details.
+ * it under the terms of the GNU General Public License version 3 as
+ * published by the Free Software Foundation.
+ * See the GNU General Public License for more details.
  *
  * @file smoke_batch.h
  * @brief Sequencing of the kernel smoke test batteries.
