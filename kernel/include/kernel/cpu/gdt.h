@@ -58,8 +58,8 @@ typedef struct __attribute__((packed)) {
     uint16_t base_low;                             /**< bits 0..15 of base */
     uint8_t base_middle;                           /**< bits 16..23 of base */
     GlobalDescriptorTableAccessByte_t access_byte; /**< access byte */
-    GlobalDescriptorTableFlags_t flags;            /**< flags (G, D/B, L, AVL) in high nibble and limit_high in low nibble */
-    uint8_t base_high;                             /**< bits 24..31 of base */
+    GlobalDescriptorTableFlags_t flags; /**< flags (G, D/B, L, AVL) in high nibble and limit_high in low nibble */
+    uint8_t base_high;                  /**< bits 24..31 of base */
 } GlobalDescriptorTableEntry_t;
 
 /** 64-bit GDT entry structure (for IA-32e mode) */

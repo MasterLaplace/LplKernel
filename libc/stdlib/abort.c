@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 #if defined(__is_libk)
-#include <kernel/lib/asmutils.h>
+#    include <kernel/lib/asmutils.h>
 #endif
 
 __attribute__((__noreturn__)) void abort(void)

@@ -6,7 +6,8 @@
 
 static void isr_write_char(char c)
 {
-    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE));
+    while (!(asmutils_input_byte((short) (COM1_PORT + 5u)) & COM1_LSR_THRE))
+        ;
     asmutils_output_byte((short) COM1_PORT, (unsigned char) c);
 }
 

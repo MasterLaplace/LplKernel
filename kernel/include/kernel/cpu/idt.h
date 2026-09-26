@@ -39,7 +39,7 @@
 
 typedef struct __attribute__((packed)) {
     uint8_t gate_type : 4; /**< 0x5 task, 0x6/0x7 16-bit interrupt/trap, 0xE/0xF 32-bit interrupt/trap gate. */
-    uint8_t reserved                   : 1; /**< Reserved, set to 0 */
+    uint8_t reserved  : 1; /**< Reserved, set to 0 */
     uint8_t descriptor_privilege_level : 2; /**< Descriptor privilege level (0 = highest, 3 = lowest) */
     uint8_t present                    : 1; /**< Segment present in memory */
 } InterruptDescriptorTableTypeAttributes_t;

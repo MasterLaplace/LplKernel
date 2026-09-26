@@ -142,7 +142,7 @@ typedef struct {
     uint32_t probe_command;                           /**< The command word that got no answer. */
     IntelHighDefinitionAudioRingProbe_t probe_before; /**< Rings before it was submitted. */
     IntelHighDefinitionAudioRingProbe_t probe_after;  /**< Rings after the budget ran out. */
-    uint8_t interrupt_line;                           /**< PCI configuration offset 0x3C, or KERNEL_HDA_NO_INTERRUPT_LINE. */
+    uint8_t interrupt_line; /**< PCI configuration offset 0x3C, or KERNEL_HDA_NO_INTERRUPT_LINE. */
 } IntelHighDefinitionAudioState_t;
 
 /**

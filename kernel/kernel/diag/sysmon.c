@@ -331,7 +331,6 @@ static void sysmon_flow_advance_and_draw(uint32_t lane, uint32_t x, uint32_t y, 
     }
 }
 
-
 /** Where each panel of a frame sits, derived once per frame from the surface size. */
 typedef struct {
     uint32_t margin;

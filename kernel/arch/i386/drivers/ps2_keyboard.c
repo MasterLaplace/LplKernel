@@ -184,7 +184,7 @@ static uint8_t personal_system_2_extended_pending = 0u; /**< 0xE0 seen, applies 
  * The driver already saw every release: bit 7 of a scancode is the break flag, and
  * decode_scancode read it, used it for the modifiers, and threw the rest away —
  * which is why the engine could be told "the walker typed W" and never "the walker
-* is HOLDING W". A character stream is the right shape for a console and the wrong
+ * is HOLDING W". A character stream is the right shape for a console and the wrong
  * shape for a body that walks: holding a direction is a state, not an event, and
  * rebuilding it from key repeat gives the stutter the repeat delay is made of.
  *

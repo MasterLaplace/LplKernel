@@ -247,9 +247,9 @@
 #define HDA_STREAM_STATUS_ANY 0x1Cu
 
 /** INTCTL: bit 31 enables interrupts globally, bit 0 enables the first input stream's. */
-#define HDA_REG_INTERRUPT_CONTROL              0x20u
-#define HDA_INTERRUPT_CONTROL_GLOBAL_ENABLE    (1u << 31)
-#define HDA_INTERRUPT_CONTROL_CAPTURE_STREAM   (1u << 0)
+#define HDA_REG_INTERRUPT_CONTROL            0x20u
+#define HDA_INTERRUPT_CONTROL_GLOBAL_ENABLE  (1u << 31)
+#define HDA_INTERRUPT_CONTROL_CAPTURE_STREAM (1u << 0)
 
 /** Standard PCI configuration offset of the legacy interrupt line. */
 #define HDA_PCI_INTERRUPT_LINE_OFFSET 0x3Cu
@@ -1072,8 +1072,7 @@ bool intel_high_definition_audio_enable_capture_interrupt(void)
     hda_write8(stream + HDA_STREAM_STATUS, HDA_STREAM_STATUS_ANY);
     hda_write8(stream + HDA_STREAM_CONTROL,
                (uint8_t) (hda_read8(stream + HDA_STREAM_CONTROL) | HDA_STREAM_CONTROL_INTERRUPT_ON_COMPLETION));
-    hda_write32(HDA_REG_INTERRUPT_CONTROL, hda_read32(HDA_REG_INTERRUPT_CONTROL) |
-                                               HDA_INTERRUPT_CONTROL_GLOBAL_ENABLE |
+    hda_write32(HDA_REG_INTERRUPT_CONTROL, hda_read32(HDA_REG_INTERRUPT_CONTROL) | HDA_INTERRUPT_CONTROL_GLOBAL_ENABLE |
                                                HDA_INTERRUPT_CONTROL_CAPTURE_STREAM);
     return true;
 }

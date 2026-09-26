@@ -18,6 +18,7 @@
 #include <kernel/cpu/ring3.h>
 #include <kernel/diag/telemetry.h>
 #include <kernel/drivers/framebuffer.h>
+#include <kernel/drivers/keyboard.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/backpressure.h>
 #include <kernel/memory/frame_arena.h>
@@ -29,7 +30,6 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
-#include <kernel/drivers/keyboard.h>
 #include <kernel/power/frequency_scaling.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/wakeup_accounting.h>
@@ -2273,9 +2273,9 @@ void smoke_test_run_wakeup_accounting(Serial_t *serial_port)
     const bool arming_shows = kernel_wakeup_accounting_is_armed();
     kernel_wakeup_accounting_attribute(woke_us);
     const bool credited_to_one_vector = (kernel_wakeup_accounting_get_vector_count(woke_us) == 1u) &&
-                          (kernel_wakeup_accounting_get_vector_count(never_did) == 0u) &&
-                          (kernel_wakeup_accounting_get_attributed_count() == 1u) &&
-                          !kernel_wakeup_accounting_is_armed();
+                                        (kernel_wakeup_accounting_get_vector_count(never_did) == 0u) &&
+                                        (kernel_wakeup_accounting_get_attributed_count() == 1u) &&
+                                        !kernel_wakeup_accounting_is_armed();
 
     kernel_wakeup_accounting_attribute(never_did);
     const bool credited_once = (kernel_wakeup_accounting_get_vector_count(never_did) == 0u) &&
@@ -2306,8 +2306,9 @@ void smoke_test_run_wakeup_accounting(Serial_t *serial_port)
     const uint32_t sleeps = kernel_wakeup_accounting_get_sleep_count();
     const bool conserves = kernel_wakeup_accounting_conserves() && (sleeps == 6u);
 
-    const bool pass = idle_costs_nothing && arming_shows && credited_to_one_vector && credited_once && unnamed_is_kept &&
-                      write_is_not_an_interrupt && double_arm_refused && busiest_is_right && conserves;
+    const bool pass = idle_costs_nothing && arming_shows && credited_to_one_vector && credited_once &&
+                      unnamed_is_kept && write_is_not_an_interrupt && double_arm_refused && busiest_is_right &&
+                      conserves;
 
     kernel_wakeup_accounting_reset();
     asmutils_enable_interrupts();
@@ -2337,18 +2338,17 @@ void smoke_test_run_processor_sleep_depth(Serial_t *serial_port)
 
     const uint32_t clamped_before = kernel_processor_sleep_clamped_count();
     const uint32_t deep = kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_MAX) ? 1u : 0u;
-    const bool clamped_or_granted =
-        (deep == 1u) || (kernel_processor_sleep_clamped_count() == clamped_before + 1u);
+    const bool clamped_or_granted = (deep == 1u) || (kernel_processor_sleep_clamped_count() == clamped_before + 1u);
     const bool never_above_available =
-        (kernel_processor_sleep_available_hints() == 0u)
-            ? (kernel_processor_sleep_active_hint() == PROCESSOR_SLEEP_HINT_C1)
-            : ((kernel_processor_sleep_available_hints() >> kernel_processor_sleep_active_hint()) & 1u) == 1u;
+        (kernel_processor_sleep_available_hints() == 0u) ?
+            (kernel_processor_sleep_active_hint() == PROCESSOR_SLEEP_HINT_C1) :
+            ((kernel_processor_sleep_available_hints() >> kernel_processor_sleep_active_hint()) & 1u) == 1u;
 
     const bool floor_is_granted = kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_C1) &&
                                   (kernel_processor_sleep_active_hint() == PROCESSOR_SLEEP_HINT_C1);
 
-    const bool pass = nothing_enumerated && c1_only && c1_to_c3 && c0_ignored && gap_is_kept &&
-                      clamped_or_granted && never_above_available && floor_is_granted;
+    const bool pass = nothing_enumerated && c1_only && c1_to_c3 && c0_ignored && gap_is_kept && clamped_or_granted &&
+                      never_above_available && floor_is_granted;
 
     kernel_telemetry_begin_record(serial_port, "sleep_depth");
     kernel_telemetry_write_boolean("nothing_enumerated", nothing_enumerated);
@@ -2392,8 +2392,8 @@ void smoke_test_run_sleep_until_write(Serial_t *serial_port)
 
         const ProcessorSleepMode_t slept = processor_sleep_until_write(&watched, 1u);
 
-        sleeps_when_nothing_moved = (slept != PROCESSOR_SLEEP_NONE) &&
-                                    (kernel_processor_sleep_count() == entered_before + 1u);
+        sleeps_when_nothing_moved =
+            (slept != PROCESSOR_SLEEP_NONE) && (kernel_processor_sleep_count() == entered_before + 1u);
         sleep_was_attributed = (kernel_wakeup_accounting_get_attributed_count() == attributed_before + 1u);
     }
 
@@ -2417,14 +2417,13 @@ void smoke_test_run_frequency_feedback(Serial_t *serial_port)
     const bool above_nominal = (kernel_frequency_scaling_ratio_permille(1500u, 1000u) == 1500u);
     const bool no_reference_is_no_answer =
         (kernel_frequency_scaling_ratio_permille(1234u, 0u) == KERNEL_FREQUENCY_SCALING_NO_FEEDBACK);
-    const bool no_overflow =
-        (kernel_frequency_scaling_ratio_permille(UINT64_MAX / 2u, UINT64_MAX / 2u) == 1000u);
-    const bool absence_is_reported = kernel_frequency_scaling_feedback_available() ||
-                                     (kernel_frequency_scaling_measured_permille() ==
-                                      KERNEL_FREQUENCY_SCALING_NO_FEEDBACK);
+    const bool no_overflow = (kernel_frequency_scaling_ratio_permille(UINT64_MAX / 2u, UINT64_MAX / 2u) == 1000u);
+    const bool absence_is_reported =
+        kernel_frequency_scaling_feedback_available() ||
+        (kernel_frequency_scaling_measured_permille() == KERNEL_FREQUENCY_SCALING_NO_FEEDBACK);
 
-    const bool pass = nominal && halved && above_nominal && no_reference_is_no_answer && no_overflow &&
-                      absence_is_reported;
+    const bool pass =
+        nominal && halved && above_nominal && no_reference_is_no_answer && no_overflow && absence_is_reported;
 
     kernel_telemetry_begin_record(serial_port, "frequency_feedback");
     kernel_telemetry_write_boolean("nominal", nominal);

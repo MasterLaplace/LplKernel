@@ -194,8 +194,8 @@ uint32_t kernel_frequency_scaling_ratio_permille(uint64_t delta_actual, uint64_t
         return KERNEL_FREQUENCY_SCALING_NO_FEEDBACK;
 
     const uint64_t permille = (delta_actual * 1000u) / delta_reference;
-    return permille >= KERNEL_FREQUENCY_SCALING_NO_FEEDBACK ? KERNEL_FREQUENCY_SCALING_NO_FEEDBACK - 1u
-                                                            : (uint32_t) permille;
+    return permille >= KERNEL_FREQUENCY_SCALING_NO_FEEDBACK ? KERNEL_FREQUENCY_SCALING_NO_FEEDBACK - 1u :
+                                                              (uint32_t) permille;
 }
 
 void kernel_frequency_scaling_begin_measurement(void)

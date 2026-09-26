@@ -25,8 +25,8 @@
 #ifndef _STDATOMIC_H
 #define _STDATOMIC_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #define __ATOMIC_RELAXED 0
 #define __ATOMIC_ACQUIRE 2
@@ -40,10 +40,7 @@
  * @param p Pointer to the atomic variable.
  * @return The value loaded from the atomic variable.
  */
-static inline uint32_t atomic_load_acquire(volatile uint32_t *p)
-{
-    return __atomic_load_n(p, __ATOMIC_ACQUIRE);
-}
+static inline uint32_t atomic_load_acquire(volatile uint32_t *p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
 
 /**
  * @brief Stores a value to an atomic variable with release semantics.
@@ -51,10 +48,7 @@ static inline uint32_t atomic_load_acquire(volatile uint32_t *p)
  * @param p Pointer to the atomic variable.
  * @param v The value to store.
  */
-static inline void atomic_store_release(volatile uint32_t *p, uint32_t v)
-{
-    __atomic_store_n(p, v, __ATOMIC_RELEASE);
-}
+static inline void atomic_store_release(volatile uint32_t *p, uint32_t v) { __atomic_store_n(p, v, __ATOMIC_RELEASE); }
 
 /**
  * @brief Atomically adds a value to an atomic variable and returns the previous value.
@@ -93,10 +87,12 @@ static inline uint32_t atomic_exchange(volatile uint32_t *p, uint32_t v)
 }
 
 /**
- * @brief Atomically compares the value of an atomic variable with an expected value and, if they are equal, replaces it with a desired value.
+ * @brief Atomically compares the value of an atomic variable with an expected value and, if they are equal, replaces it
+ * with a desired value.
  *
  * @param p Pointer to the atomic variable.
- * @param expected Pointer to the expected value. If the comparison fails, this will be updated with the actual value of the atomic variable.
+ * @param expected Pointer to the expected value. If the comparison fails, this will be updated with the actual value of
+ * the atomic variable.
  * @param desired The value to store if the comparison succeeds.
  * @return true if the exchange was successful (the values were equal), false otherwise.
  */

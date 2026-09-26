@@ -7,11 +7,11 @@
 
 #    include <kernel/boot/boot_module.h>
 #    include <kernel/boot/init_array.h>
+#    include <kernel/cpu/pic.h>
 #    include <kernel/diag/telemetry.h>
+#    include <kernel/drivers/hda.h>
 #    include <kernel/hal/hal.h>
 #    include <kernel/hal/hal_audio.h>
-#    include <kernel/cpu/pic.h>
-#    include <kernel/drivers/hda.h>
 #    include <kernel/power/frequency_scaling.h>
 #    include <kernel/power/processor_sleep.h>
 #    include <kernel/power/wakeup_accounting.h>
