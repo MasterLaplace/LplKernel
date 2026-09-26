@@ -1,16 +1,33 @@
-/*
-** LplKernel
-** libkxx/include/kstd/inplace_function.hpp
-**
-** Fixed-capacity, heap-free std::function replacement. Stores any callable that
-** fits in an inline byte buffer (default 32 bytes) and erases its type behind a
-** vtable of function pointers. Because it never allocates, it is safe in the
-** kernel and deterministic — the engine's undo/redo and event callbacks bind to
-** it instead of std::function. A callable that does not fit is a compile error.
-**
-** Modelled on the proposed std::inplace_function (P0792). Move-only is avoided:
-** the target must be copy-constructible (matches engine command/callback use).
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file inplace_function.hpp
+ * @brief Fixed-capacity, heap-free std::function replacement.
+ *
+ * Stores any callable that fits in an inline byte buffer (default 64 bytes) and
+ * erases its type behind a vtable of function pointers. Because it never allocates,
+ * it is safe in the kernel and deterministic — the engine's undo/redo and event
+ * callbacks bind to it instead of std::function. A callable that does not fit is a
+ * compile error.
+ *
+ * Modelled on the proposed std::inplace_function (P0792). Move-only is avoided: the
+ * target must be copy-constructible (matches engine command/callback use).
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-06-25
+ **************************************************************************/
 
 #ifndef KSTD_INPLACE_FUNCTION_HPP_
 #define KSTD_INPLACE_FUNCTION_HPP_
@@ -24,13 +41,17 @@
 
 namespace kstd {
 
-// NOTE on Capacity and nesting: the inline buffer holds the target callable; the
-// vtable pointer is stored separately, so sizeof(inplace_function) == Capacity +
-// sizeof(void*). Consequently a callable that *captures* an inplace_function of the
-// same Capacity does NOT fit (it is larger by the vtable pointer). Patterns that
-// re-wrap a function inside a lambda stored in another function (e.g. EventBus)
-// must give the OUTER function an explicitly larger Capacity. The default (64)
-// covers typical engine command/callback closures.
+/**
+ * @brief Type-erased callable stored inline, without heap allocation.
+ *
+ * @note The inline buffer holds the target callable and the vtable pointer is stored
+ *       separately, so sizeof(inplace_function) == Capacity + sizeof(void*). A callable
+ *       that *captures* an inplace_function of the same Capacity therefore does NOT fit:
+ *       it is larger by the vtable pointer. Patterns that re-wrap a function inside a
+ *       lambda stored in another function (e.g. EventBus) must give the OUTER function an
+ *       explicitly larger Capacity. The default (64) covers typical engine
+ *       command/callback closures.
+ */
 template <typename Signature, std::size_t Capacity = 64u, std::size_t Alignment = alignof(void *)>
 class inplace_function;
 

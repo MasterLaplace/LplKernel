@@ -6,10 +6,6 @@
 
 #include <kernel/drivers/tty.h>
 
-////////////////////////////////////////////////////////////
-// Private members of the terminal module
-////////////////////////////////////////////////////////////
-
 static const uint16_t VGA_WIDTH = 80u;
 static const uint16_t VGA_HEIGHT = 25u;
 
@@ -17,10 +13,6 @@ static uint16_t terminal_row = 0u;
 static uint16_t terminal_column = 0u;
 static uint8_t terminal_color = 0x0Fu;
 static volatile uint16_t *const terminal_buffer = (uint16_t *) 0xC00B8000;
-
-////////////////////////////////////////////////////////////
-// Private functions of the terminal module
-////////////////////////////////////////////////////////////
 
 static inline void terminal_putentryat(uint8_t c, uint8_t color, uint16_t row, uint16_t col)
 {
@@ -49,10 +41,6 @@ static inline void terminal_delete_last_line(void)
         terminal_buffer[index] = vga_entry(' ', terminal_color);
     }
 }
-
-////////////////////////////////////////////////////////////
-// Public API functions of the terminal module
-////////////////////////////////////////////////////////////
 
 void terminal_initialize(void)
 {
@@ -96,8 +84,7 @@ void terminal_putchar(char c)
     switch (c)
     {
     case '\r':
-    case '\n': terminal_column = 0u;
-    /* fallthrough */
+    case '\n': terminal_column = 0u; __attribute__((fallthrough));
     case '\v': ++terminal_row; break;
     case '\t': terminal_column = (terminal_column + 4u) & ~3u; break;
     case 127:

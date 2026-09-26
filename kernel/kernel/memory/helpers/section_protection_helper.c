@@ -4,11 +4,6 @@
 
 void write_section_protection_info(Serial_t *serial, bool applied)
 {
-    /* `write_protect` is reported next to `applied` and not folded into it,
-       because they fail differently and only one of them is about this kernel:
-       `applied` says the page table entries were cleared, `write_protect` says
-       the processor will act on them. A pass with WP clear looks exactly like a
-       pass that works, and enforces nothing. */
     kernel_telemetry_begin_record(serial, "section_protection");
     kernel_telemetry_write_boolean("applied", applied);
     kernel_telemetry_write_boolean("write_protect", kernel_section_protection_write_protect_is_enabled());

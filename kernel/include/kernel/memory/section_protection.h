@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file section_protection.h
  * @brief The one hardware barrier a kernel with no ring 3 can still afford.
  *
@@ -20,10 +33,10 @@
  * What it does NOT cover: .data and .bss stay writable, because they are meant to be
  * written. This is a barrier around what is constant, not around what is mutable.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-08
+ **************************************************************************/
 
 #ifndef KERNEL_MEMORY_SECTION_PROTECTION_H
 #define KERNEL_MEMORY_SECTION_PROTECTION_H
@@ -47,6 +60,12 @@ extern "C" {
  * the linker script — and clears the R/W bit of every page table entry in between.
  * Call it once every global constructor has run, since the constructor tables are
  * inside the range.
+ *
+ * @note This barrier is page table entries plus a processor that honours them against
+ *       supervisor code. A target that declares neither does not get a weaker version of
+ *       it — it gets an honest no, and the reconciler is told not to require what cannot
+ *       exist there. Compiled out rather than failing at runtime: on such a target there is
+ *       nothing to call.
  *
  * @return true when the whole range was protected, false if any page was unmapped
  *         or the range is empty.
@@ -107,8 +126,9 @@ uint32_t kernel_section_protection_get_recovered_fault_count(void);
  *
  * The store is bracketed by a resume address published to the page fault handler, so
  * a fault steps over the instruction instead of returning to it. Nothing is written
- * when the page is protected; when it is not, the target byte is overwritten with the
- * value it already held, so a probe of a writable page leaves memory unchanged too.
+ * when the page is protected; when it is not, the byte the store zeroed is put back,
+ * so a probe of a writable page leaves memory unchanged too: a probe is a question,
+ * not an edit.
  *
  * @param target Address to store to.
  * @return true if the store faulted and was recovered, false if it went through.

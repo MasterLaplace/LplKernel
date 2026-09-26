@@ -31,14 +31,29 @@
 #define IRQ_MOUSE_LINE   12u
 #define IRQ_MOUSE_VECTOR (PIC_VECTOR_OFFSET_SLAVE + (IRQ_MOUSE_LINE - 8u))
 
-/*
-** Every wait on the controller is bounded. A machine with no auxiliary port
-** never clears the status bit being waited on, and an unbounded loop there is a
-** boot that hangs on hardware the kernel was not asked to require.
-*/
+/** Master line the slave 8259 cascades into. */
+#define IRQ_CASCADE_LINE 2u
+
+/** Packet header bits. Bit 3 is always set, which is how a header is told from a data byte. */
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_BUTTON_LEFT   0x01u
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_BUTTON_RIGHT  0x02u
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_BUTTON_MIDDLE 0x04u
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_ALWAYS_SET    0x08u
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_X_NEGATIVE    0x10u
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_Y_NEGATIVE    0x20u
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_X_OVERFLOW    0x40u
+#define PERSONAL_SYSTEM_2_MOUSE_HEADER_Y_OVERFLOW    0x80u
+
+/**
+ * @brief Bounded wait for the controller.
+ * @details
+ * Every wait on the controller is bounded. A machine with no auxiliary port
+ * never clears the status bit being waited on, and an unbounded loop there is a
+ * boot that hangs on hardware the kernel was not asked to require.
+ */
 #define PERSONAL_SYSTEM_2_SPIN_BUDGET 100000u
 
-/* Power-of-two capacity so head/tail wrap with a mask, as in the keyboard ring. */
+/** Power-of-two capacity so head/tail wrap with a mask, as in the keyboard ring. */
 #define PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY 256u
 #define PERSONAL_SYSTEM_2_MOUSE_RING_MASK     (PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY - 1u)
 
@@ -99,7 +114,11 @@ static uint8_t personal_system_2_read_data(uint8_t *out_value)
     return 1u;
 }
 
-/* Sends one byte to the auxiliary device and consumes its acknowledgement. */
+/**
+ * @brief Sends one byte to the auxiliary device and consumes its acknowledgement.
+ * @param value The byte.
+ * @return 1 when the device acknowledged it.
+ */
 static uint8_t personal_system_2_mouse_send(uint8_t value)
 {
     uint8_t response = 0u;
@@ -113,6 +132,62 @@ static uint8_t personal_system_2_mouse_send(uint8_t value)
     return response == PERSONAL_SYSTEM_2_MOUSE_ACKNOWLEDGE ? 1u : 0u;
 }
 
+/**
+ * @brief Does the controller hold a byte, and did it come from the auxiliary device?
+ *
+ * @note Both devices share port 0x60. Reading it on an interrupt that did not carry
+ *       auxiliary data would steal a keystroke from the keyboard's ring, which is a bug you
+ *       feel as characters that go missing while the mouse is moving.
+ *
+ * @param status The controller's status register.
+ * @return 1 when the data port holds a mouse byte.
+ */
+static uint8_t personal_system_2_mouse_status_carries_auxiliary_byte(uint8_t status)
+{
+    return (status & PERSONAL_SYSTEM_2_STATUS_FROM_AUX) != 0u && (status & PERSONAL_SYSTEM_2_STATUS_OUTPUT_FULL) != 0u;
+}
+
+/**
+ * @brief Pushes one byte into the ring, or counts it as dropped when the ring is full.
+ * @param byte The byte read from the data port.
+ */
+static void personal_system_2_mouse_ring_push(uint8_t byte)
+{
+    const uint32_t head = personal_system_2_mouse_ring_head;
+    const uint32_t tail = personal_system_2_mouse_ring_tail;
+
+    if ((uint32_t) (head - tail) >= PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY)
+    {
+        ++personal_system_2_mouse_dropped_byte_count;
+        return;
+    }
+
+    personal_system_2_mouse_ring[head & PERSONAL_SYSTEM_2_MOUSE_RING_MASK] = byte;
+    personal_system_2_mouse_ring_head = head + 1u;
+}
+
+/**
+ * @brief Acknowledges the controller that DELIVERED this interrupt, asked about THIS line.
+ *
+ * @note The first version copied the keyboard handler, including its
+ *       `is_keyboard_owner_apic()` test — a name that says keyboard and reads like "the
+ *       system". Once kernel.c handed IRQ1 to the IOAPIC that test turned true while IRQ12
+ *       still arrived on the PIC, so the 8259 stopped being acknowledged and blocked the line
+ *       after a single interrupt. The mouse went dead under QEMU and kept working in the
+ *       browser emulator, which performs no handoff.
+ */
+static void personal_system_2_mouse_acknowledge_interrupt(void)
+{
+    if (interrupt_request_is_line_owner_apic(IRQ_MOUSE_LINE))
+        advanced_pic_timer_backend_signal_end_of_interrupt();
+    else
+        programmable_interrupt_controller_send_end_of_interrupt(IRQ_MOUSE_LINE);
+}
+
+/**
+ * @brief Moves a mouse byte into the ring, from interrupt context.
+ * @param frame Unused.
+ */
 static void personal_system_2_mouse_interrupt_handler(const InterruptFrame_t *frame)
 {
     const uint8_t status = asmutils_input_byte(PERSONAL_SYSTEM_2_STATUS_PORT);
@@ -120,41 +195,10 @@ static void personal_system_2_mouse_interrupt_handler(const InterruptFrame_t *fr
     (void) frame;
     ++personal_system_2_mouse_irq_count;
 
-    /*
-    ** Both devices share port 0x60. Reading it on an interrupt that did not carry
-    ** auxiliary data would steal a keystroke from the keyboard's ring, which is a
-    ** bug you feel as characters that go missing while the mouse is moving.
-    */
-    if ((status & PERSONAL_SYSTEM_2_STATUS_FROM_AUX) != 0u && (status & PERSONAL_SYSTEM_2_STATUS_OUTPUT_FULL) != 0u)
-    {
-        const uint8_t byte = asmutils_input_byte(PERSONAL_SYSTEM_2_DATA_PORT);
-        const uint32_t head = personal_system_2_mouse_ring_head;
-        const uint32_t tail = personal_system_2_mouse_ring_tail;
+    if (personal_system_2_mouse_status_carries_auxiliary_byte(status))
+        personal_system_2_mouse_ring_push(asmutils_input_byte(PERSONAL_SYSTEM_2_DATA_PORT));
 
-        if ((uint32_t) (head - tail) >= PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY)
-        {
-            ++personal_system_2_mouse_dropped_byte_count;
-        }
-        else
-        {
-            personal_system_2_mouse_ring[head & PERSONAL_SYSTEM_2_MOUSE_RING_MASK] = byte;
-            personal_system_2_mouse_ring_head = head + 1u;
-        }
-    }
-
-    /*
-    ** Acknowledge the controller that DELIVERED this interrupt, asked about THIS
-    ** line. The first version copied the keyboard handler, including its
-    ** `is_keyboard_owner_apic()` test — a name that says keyboard and reads like
-    ** "the system". Once kernel.c handed IRQ1 to the IOAPIC that test turned true
-    ** while IRQ12 still arrived on the PIC, so the 8259 stopped being acknowledged
-    ** and blocked the line after a single interrupt. The mouse went dead under QEMU
-    ** and kept working in the browser emulator, which performs no handoff.
-    */
-    if (interrupt_request_is_line_owner_apic(IRQ_MOUSE_LINE))
-        advanced_pic_timer_backend_signal_end_of_interrupt();
-    else
-        programmable_interrupt_controller_send_end_of_interrupt(IRQ_MOUSE_LINE);
+    personal_system_2_mouse_acknowledge_interrupt();
 }
 
 static uint8_t personal_system_2_mouse_ring_peek(uint32_t offset, uint8_t *out_byte)
@@ -165,6 +209,39 @@ static uint8_t personal_system_2_mouse_ring_peek(uint32_t offset, uint8_t *out_b
         return 0u;
     *out_byte = personal_system_2_mouse_ring[(tail + offset) & PERSONAL_SYSTEM_2_MOUSE_RING_MASK];
     return 1u;
+}
+
+/**
+ * @brief Unmasks the mouse line, and the cascade line it arrives through.
+ *
+ * @note IRQ12 arrives on the slave controller, which reaches the CPU through the master's
+ *       cascade line. Unmasking 12 alone gets nothing if 2 is still masked — a symptom that
+ *       reads exactly like "the mouse does not work".
+ */
+static void personal_system_2_mouse_unmask_line(void)
+{
+    programmable_interrupt_controller_clear_mask(IRQ_CASCADE_LINE);
+    programmable_interrupt_controller_clear_mask(IRQ_MOUSE_LINE);
+}
+
+/**
+ * @brief One axis of a packet, as a signed delta.
+ *
+ * @details The sign is the header's negative bit, applied as nine-bit two's complement.
+ *
+ * @note An overflowed axis carries no usable magnitude; reporting the truncated byte would
+ *       send the view lurching. Zero is the honest reading.
+ *
+ * @param raw      The axis byte.
+ * @param overflow Non-zero when the header flags the axis as overflowed.
+ * @param negative Non-zero when the header flags the axis as negative.
+ * @return The delta.
+ */
+static int32_t personal_system_2_mouse_axis_delta(uint8_t raw, uint8_t overflow, uint8_t negative)
+{
+    if (overflow != 0u)
+        return 0;
+    return negative != 0u ? (int32_t) raw - 256 : (int32_t) raw;
 }
 
 uint8_t personal_system_2_mouse_initialize(void)
@@ -196,13 +273,7 @@ uint8_t personal_system_2_mouse_initialize(void)
 
     interrupt_service_routine_register_handler(IRQ_MOUSE_VECTOR, personal_system_2_mouse_interrupt_handler);
 
-    /*
-    ** IRQ12 arrives on the slave controller, which reaches the CPU through the
-    ** master's cascade line. Unmasking 12 alone gets nothing if 2 is still masked
-    ** — a symptom that reads exactly like "the mouse does not work".
-    */
-    programmable_interrupt_controller_clear_mask(2u);
-    programmable_interrupt_controller_clear_mask(IRQ_MOUSE_LINE);
+    personal_system_2_mouse_unmask_line();
 
     personal_system_2_mouse_present = 1u;
     return 1u;
@@ -215,8 +286,6 @@ uint8_t personal_system_2_mouse_try_pop_packet(PersonalSystem2MousePacket_t *out
     uint8_t flags = 0u;
     uint8_t raw_x = 0u;
     uint8_t raw_y = 0u;
-    int32_t delta_x = 0;
-    int32_t delta_y = 0;
 
     if (out_packet == NULL)
         return 0u;
@@ -226,9 +295,7 @@ uint8_t personal_system_2_mouse_try_pop_packet(PersonalSystem2MousePacket_t *out
         if (!personal_system_2_mouse_ring_peek(0u, &flags))
             return 0u;
 
-        /* Bit 3 of the first byte is always set. If it is not, the stream lost a
-           byte and this one is not a header: drop it and try the next. */
-        if ((flags & 0x08u) == 0u)
+        if ((flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_ALWAYS_SET) == 0u)
         {
             personal_system_2_mouse_ring_tail = personal_system_2_mouse_ring_tail + 1u;
             ++personal_system_2_mouse_resynchronization_count;
@@ -236,29 +303,19 @@ uint8_t personal_system_2_mouse_try_pop_packet(PersonalSystem2MousePacket_t *out
         }
 
         if (!personal_system_2_mouse_ring_peek(1u, &raw_x) || !personal_system_2_mouse_ring_peek(2u, &raw_y))
-            return 0u; /* incomplete packet: leave it, the rest is still coming */
+            return 0u;
         break;
     }
 
     personal_system_2_mouse_ring_tail = personal_system_2_mouse_ring_tail + 3u;
 
-    /* An overflowed axis carries no usable magnitude; reporting the truncated
-       byte would send the view lurching. Zero is the honest reading. */
-    if ((flags & 0x40u) != 0u)
-        delta_x = 0;
-    else
-        delta_x = (flags & 0x10u) != 0u ? (int32_t) raw_x - 256 : (int32_t) raw_x;
-
-    if ((flags & 0x80u) != 0u)
-        delta_y = 0;
-    else
-        delta_y = (flags & 0x20u) != 0u ? (int32_t) raw_y - 256 : (int32_t) raw_y;
-
-    out_packet->delta_x = delta_x;
-    out_packet->delta_y = delta_y;
-    out_packet->button_left = (flags & 0x01u) != 0u ? 1u : 0u;
-    out_packet->button_right = (flags & 0x02u) != 0u ? 1u : 0u;
-    out_packet->button_middle = (flags & 0x04u) != 0u ? 1u : 0u;
+    out_packet->delta_x = personal_system_2_mouse_axis_delta(raw_x, flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_X_OVERFLOW,
+                                                             flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_X_NEGATIVE);
+    out_packet->delta_y = personal_system_2_mouse_axis_delta(raw_y, flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_Y_OVERFLOW,
+                                                             flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_Y_NEGATIVE);
+    out_packet->button_left = (flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_BUTTON_LEFT) != 0u ? 1u : 0u;
+    out_packet->button_right = (flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_BUTTON_RIGHT) != 0u ? 1u : 0u;
+    out_packet->button_middle = (flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_BUTTON_MIDDLE) != 0u ? 1u : 0u;
     return 1u;
 }
 

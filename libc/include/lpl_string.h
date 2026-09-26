@@ -45,7 +45,9 @@ typedef struct string_s {
     unsigned len;
 } string_t;
 
-//* It creates a string from a char *.
+/**
+ * @brief Creates a string from a char *.
+ */
 extern string_t *lp_string_create(char *str)
 {
     string_t *string = malloc(sizeof(string_t));
@@ -65,7 +67,9 @@ extern string_t *lp_string_create(char *str)
     return string;
 }
 
-//* It adds a char to the string.
+/**
+ * @brief Adds a char to the string.
+ */
 extern void lp_string_char_append(string_t *string, char c)
 {
     if (string == NULL)
@@ -84,7 +88,9 @@ extern void lp_string_char_append(string_t *string, char c)
     string->len++;
 }
 
-//* It adds a char to the beginning of the string.
+/**
+ * @brief Adds a char to the beginning of the string.
+ */
 extern void lp_string_char_appstart(string_t *string, char c)
 {
     if (string == NULL)
@@ -105,7 +111,9 @@ extern void lp_string_char_appstart(string_t *string, char c)
     string->len++;
 }
 
-//* It adds a string to the string.
+/**
+ * @brief Adds a string to the string.
+ */
 extern void lp_string_concat(string_t *string1, const string_t *string2)
 {
     if (string1 == NULL || string2 == NULL)
@@ -123,7 +131,9 @@ extern void lp_string_concat(string_t *string1, const string_t *string2)
     string1->len += string2->len;
 }
 
-//* It erases a part of the string.
+/**
+ * @brief Erases a part of the string.
+ */
 extern void lp_string_erase(string_t *string, const unsigned start, const unsigned end)
 {
     if (string == NULL)
@@ -149,15 +159,19 @@ extern void lp_string_erase(string_t *string, const unsigned start, const unsign
     {
         printf("[Laplace@String]: Error while erasing string.\n");
         return;
-    } //
+    }
     string->str[string->len - len] = '\0';
     string->len -= len;
 }
 
-//* It checks if the string is null.
+/**
+ * @brief Checks if the string is null.
+ */
 extern bool lp_string_is_null(string_t *string) { return (string == NULL); }
 
-//* It returns the size of the string.
+/**
+ * @brief Returns the size of the string.
+ */
 extern unsigned lp_string_len(string_t *string)
 {
     if (string == NULL)
@@ -168,7 +182,9 @@ extern unsigned lp_string_len(string_t *string)
     return (string->len);
 }
 
-//* It prints the string.
+/**
+ * @brief Prints the string.
+ */
 extern void lp_string_print(string_t *list)
 {
     if (list == NULL)

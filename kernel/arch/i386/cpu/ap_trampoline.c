@@ -1,10 +1,3 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** AP trampoline in low memory (real-mode SIPI target)
-*/
-
 #include <kernel/cpu/ap_trampoline.h>
 
 #define KERNEL_VIRTUAL_BASE                 0xC0000000u

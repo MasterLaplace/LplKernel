@@ -1,9 +1,5 @@
 #include <kernel/cpu/gdt.h>
 
-////////////////////////////////////////////////////////////
-// External assembly functions (gdt_load.s)
-////////////////////////////////////////////////////////////
-
 /**
  * @brief Load a GDT using the LGDT instruction.
  * @param gdtr Pointer to a GDTR structure (limit + base).
@@ -15,10 +11,6 @@ extern void gdt_load(const GlobalDescriptorTablePointer_t *gdtr);
  * @details Performs a far jump to reload CS, then reloads DS/ES/FS/GS/SS.
  */
 extern void gdt_flush(void);
-
-////////////////////////////////////////////////////////////
-// Private helpers functions of the GDT module
-////////////////////////////////////////////////////////////
 
 /**
  * @brief Encode a single GDT entry from its constituent parts.
@@ -52,10 +44,6 @@ static inline void global_descriptor_table_encode_entry(GlobalDescriptorTableEnt
     uint8_t granularity_byte = ((clamped_limit >> 16) & 0x0F) | (flags & 0xF0);
     memcpy(&entry->flags, &granularity_byte, sizeof(uint8_t));
 }
-
-////////////////////////////////////////////////////////////
-// Public API functions of the GDT module
-////////////////////////////////////////////////////////////
 
 void global_descriptor_table_initialize(GlobalDescriptorTable_t *gdt, TaskStateSegment_t *tss)
 {

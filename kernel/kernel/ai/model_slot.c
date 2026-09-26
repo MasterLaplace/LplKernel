@@ -1,12 +1,3 @@
-/**
- * @file model_slot.c
- * @brief The weights blob, delivered like a cartridge.
- *
- * @author MasterLaplace
- * @version 0.1.0
- * @copyright MIT License
- */
-
 #include <kernel/ai/model_slot.h>
 
 #include <kernel/boot/boot_module.h>
@@ -38,9 +29,6 @@ bool kernel_model_slot_probe(ModelSlot_t *out)
         return false;
     }
 
-    /* Byte by byte rather than through a uint32_t pointer: a module lands wherever
-       the loader put it, and a four-byte load from an odd address is undefined even
-       where the hardware would tolerate it. */
     out->magic =
         (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8) | ((uint32_t) bytes[2] << 16) | ((uint32_t) bytes[3] << 24);
 

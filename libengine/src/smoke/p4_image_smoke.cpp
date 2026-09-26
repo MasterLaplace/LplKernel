@@ -1,13 +1,3 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** P4 image smoke — exercises the portable lpl::image module (integer-only
-** color conversions + Image container) inside the freestanding kernel build.
-** The reported signature must match the Linux oracle (tests/test-image-parity)
-** bit-for-bit: the conversions are pure integer arithmetic so any divergence
-** would signal a cross-target codegen/ABI problem, not rounding.
-*/
 #include "libengine/libengine.h"
 
 #include <lpl/image/Codec.hpp>
@@ -49,8 +39,6 @@ extern "C" void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out)
     image::paintParityScene(scene);
     out->painter_signature = image::foldSignature(scene);
 
-    // PPM round-trip: encode the scene, decode it back, fold the result. RGB is
-    // preserved exactly (alpha is reset opaque by PPM), so this is deterministic.
     pmr::vector<core::u8> encoded;
     image::Image decoded;
     if (image::writePpm(scene, encoded) && image::readPpm(encoded.data(), encoded.size(), decoded))

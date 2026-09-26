@@ -53,6 +53,28 @@ static uint8_t advanced_pic_timer_backend_map_local_apic_mmio(void)
     return 1u;
 }
 
+/**
+ * @brief The timer count that lasts @p microseconds at the calibrated frequency.
+ *
+ * @note Microseconds times hertz overflows 32 bits above about four seconds, so the product
+ *       is formed in 64 bits and only then narrowed. A wrap would arm the timer for a
+ *       fraction of the delay asked for, which is the failure that looks like a spurious
+ *       wake-up rather than like a bug.
+ *
+ * @param microseconds Delay.
+ * @return The count, at least 1 and at most the 32-bit maximum.
+ */
+static uint32_t advanced_pic_timer_count_for_microseconds(uint32_t microseconds)
+{
+    uint64_t ticks = (uint64_t) advanced_pic_timer_local_apic_calibrated_frequency_hz * (uint64_t) microseconds;
+    ticks /= 1000000u;
+    if (ticks == 0u)
+        ticks = 1u;
+    if (ticks > 0xFFFFFFFFu)
+        ticks = 0xFFFFFFFFu;
+    return (uint32_t) ticks;
+}
+
 uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
 {
     uint32_t eax;
@@ -292,19 +314,7 @@ uint8_t advanced_pic_timer_backend_arm_one_shot(uint32_t microseconds)
     if (advanced_pic_timer_local_apic_calibrated_frequency_hz == 0u)
         return 0u;
 
-    /* Microseconds times hertz overflows 32 bits above about four seconds, so the
-       product is formed in 64 bits and only then narrowed. A wrap here would arm the
-       timer for a fraction of the delay asked for, which is the failure that looks
-       like a spurious wake-up rather than like a bug. */
-    {
-        uint64_t ticks = (uint64_t) advanced_pic_timer_local_apic_calibrated_frequency_hz * (uint64_t) microseconds;
-        ticks /= 1000000u;
-        if (ticks == 0u)
-            ticks = 1u;
-        if (ticks > 0xFFFFFFFFu)
-            ticks = 0xFFFFFFFFu;
-        count = (uint32_t) ticks;
-    }
+    count = advanced_pic_timer_count_for_microseconds(microseconds);
 
     apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
     apic_write(LAPIC_REG_LVT_TIMER, 32u + 0u);

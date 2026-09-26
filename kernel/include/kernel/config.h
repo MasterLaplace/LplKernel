@@ -39,28 +39,26 @@
 #ifndef LAPLACE_CONFIG_UTILS
     #define LAPLACE_CONFIG_UTILS
 
-////////////////////////////////////////////////////////////
-// Define shared portable macros for various compilers
-////////////////////////////////////////////////////////////
+/**
+ * @name Shared portable macros for various compilers
+ * @{
+ */
 #define LPL_NEED_COMMA struct _
 #define LPL_ATTRIBUTE(key) __attribute__((key))
 #define LPL_UNUSED_ATTRIBUTE LPL_ATTRIBUTE(unused)
 #define LPL_UNUSED(x) (void)(x)
 #define LPL_LIKELY(x)   __builtin_expect(!!(x), 1)
 #define LPL_UNLIKELY(x) __builtin_expect(!!(x), 0)
+/** @} */
 
-////////////////////////////////////////////////////////////
-// Define a portable TODO macro to emit TODO messages during compilation
-////////////////////////////////////////////////////////////
+/** Emits a TODO message during compilation, portably. */
 #if defined(__clang__) || defined(__GNUC__) || defined(__GNUG__)
     #define LPL_TODO(msg) _Pragma(LPL_STRINGIFY(message ("TODO: " msg)))
 #else
     #define LPL_TODO(msg) __attribute__((warning("TODO: " msg)))
 #endif
 
-////////////////////////////////////////////////////////////
-// Define portable NULL pointer using C++11 nullptr keyword
-////////////////////////////////////////////////////////////
+/** Portable null pointer: the C++11 nullptr keyword where it exists. */
 #if defined(__cplusplus) && __cplusplus >= 201103L
     #define lpl_nullptr nullptr
 #elif !defined(NULL)
@@ -69,9 +67,7 @@
     #define lpl_nullptr NULL
 #endif
 
-////////////////////////////////////////////////////////////
-// Define boolean type and values
-////////////////////////////////////////////////////////////
+/** Boolean type and values, for C translation units that did not include <stdbool.h>. */
 #if !defined(__bool_true_false_are_defined) && !defined(__cplusplus)
     #define bool _Bool
     #define true 1
@@ -86,18 +82,18 @@
 # define __GNUC_PREREQ(maj, min) 0
 #endif
 
-////////////////////////////////////////////////////////////
-// Define a portable way for packing structures
-////////////////////////////////////////////////////////////
-/** Usage:
- * @example
+/**
+ * @name Portable structure packing
+ *
+ * @code
  * LPL_PACKED(struct MyStruct
  * {
  *     int a;
  *     char b;
- *     ...
  * });
-\**********************************************************/
+ * @endcode
+ * @{
+ */
 #if defined(_MSC_VER) || defined(_MSVC_LANG)
     #define LPL_PACKED( __Declaration__ ) __pragma(pack(push, 1)) __Declaration__ __pragma(pack(pop))
     #define LPL_PACKED_START __pragma(pack(push, 1))
@@ -111,12 +107,15 @@
     #define LPL_PACKED_START
     #define LPL_PACKED_END
 #endif
+/** @} */
 
-////////////////////////////////////////////////////////////
-// Helper macro to convert a macro to a string
-////////////////////////////////////////////////////////////
+/**
+ * @name Converting a macro to a string
+ * @{
+ */
 #define LPL_STRINGIFY(x) #x
 #define LPL_TOSTRING(x) LPL_STRINGIFY(x)
+/** @} */
 
 #endif /* !LAPLACE_CONFIG_UTILS */
 
@@ -124,9 +123,7 @@
 #ifndef KERNEL_DISTRIBUTION_H_
     #define KERNEL_DISTRIBUTION_H_
 
-////////////////////////////////////////////////////////////
-// Identify the Compiler
-////////////////////////////////////////////////////////////
+/** Identifies the compiler as KERNEL_COMPILER_<name> and KERNEL_COMPILER_STRING. */
 #if defined(_MSC_VER) || defined(_MSVC_LANG)
     #define KERNEL_COMPILER_MSVC
     #define KERNEL_COMPILER_STRING "MSVC"
@@ -147,16 +144,17 @@
 #endif
 
 
-////////////////////////////////////////////////////////////
-// Identify the Operating System
-////////////////////////////////////////////////////////////
-
+/**
+ * @brief Identifies the target system as KERNEL_SYSTEM_<name> and KERNEL_SYSTEM_STRING.
+ *
+ * @details Android is tested before Linux because it is based on the Linux kernel. The
+ *          kernel target also defines KERNEL_MODE_STRING, the real-time or standard suffix.
+ */
 #if defined(_WIN32) || defined(__WIN32__) || defined(KERNEL_COMPILER_MINGW) || defined(KERNEL_COMPILER_CYGWIN)
 
     #define KERNEL_SYSTEM_WINDOWS
     #define KERNEL_SYSTEM_STRING "Windows"
 
-// Android is based on the Linux kernel, so it has to appear before Linux
 #elif defined(__ANDROID__)
 
     #define KERNEL_SYSTEM_ANDROID
@@ -187,7 +185,6 @@
     #define KERNEL_SYSTEM_KERNEL
     #define KERNEL_SYSTEM_STRING "Laplace Kernel"
 
-    // Identify the Kernel Mode
     #if defined(LPL_KERNEL_REAL_TIME_MODE)
         #define KERNEL_MODE_STRING " (Real-Time)"
     #else
@@ -256,16 +253,14 @@
         #define KERNEL_CPP99(_)
     #endif
 
-    ////////////////////////////////////////////////////////////
-    // Define a macro to handle cpp features compatibility
-    ////////////////////////////////////////////////////////////
-    /** Usage:
-     * @example
-     * void func() KERNEL_CPP14([[deprecated]]);
+    /**
+     * @brief Keeps its argument only when the C++ standard in use is at least @p version.
      *
-     * @example
+     * @code
+     * void func() KERNEL_CPP14([[deprecated]]);
      * void func() KERNEL_CPP([[deprecated]], 14);
-    \**********************************************************/
+     * @endcode
+     */
     #define KERNEL_CPP(_, version) KERNEL_CPP##version(_)
 
 #else
@@ -280,16 +275,20 @@
     #define KERNEL_CPP(_, version)
 #endif
 
-////////////////////////////////////////////////////////////
-// Define helpers to create portable import / export macros for each module
-////////////////////////////////////////////////////////////
+/**
+ * @name Portable import / export macros for each module
+ *
+ * Windows compilers need specific (and different) keywords for export and import, and
+ * Visual C++ also needs warning C4251 turned off. GCC 4 and later mark symbols visible
+ * with one keyword used for both directions; older GCC cannot hide symbols at all, so
+ * everything is exported.
+ * @{
+ */
 #if defined(KERNEL_SYSTEM_WINDOWS)
 
-    // Windows compilers need specific (and different) keywords for export and import
     #define KERNEL_API_EXPORT extern "C" __declspec(dllexport)
     #define KERNEL_API_IMPORT KERNEL_EXTERN_C __declspec(dllimport)
 
-    // For Visual C++ compilers, we also need to turn off this annoying C4251 warning
     #ifdef _MSC_VER
 
         #pragma warning(disable : 4251)
@@ -300,48 +299,49 @@
 
     #if __GNUC__ >= 4
 
-        // GCC 4 has special keywords for showing/hidding symbols,
-        // the same keyword is used for both importing and exporting
         #define KERNEL_API_EXPORT extern "C" __attribute__ ((__visibility__ ("default")))
         #define KERNEL_API_IMPORT KERNEL_EXTERN_C __attribute__ ((__visibility__ ("default")))
 
     #else
 
-        // GCC < 4 has no mechanism to explicitely hide symbols, everything's exported
         #define KERNEL_API_EXPORT extern "C"
         #define KERNEL_API_IMPORT KERNEL_EXTERN_C
 
     #endif
 
 #endif
+/** @} */
 
 
+/**
+ * @name Portable entry point
+ *
+ * Windows GUI programs enter through WinMain, Android through android_main with no
+ * main function at all, and MacOS X through a Unix main that also receives the Apple
+ * strings. Every other platform uses the standard main.
+ * @{
+ */
 #ifdef KERNEL_SYSTEM_WINDOWS
 
-    // Windows compilers use a different name for the main function
     #define KERNEL_GUI_MAIN(hInstance, hPrevInstance, lpCmdLine, nCmdShow) WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
     #define KERNEL_MAIN(ac, av, env) main(int ac, char *av[], char *env[])
 
 #elif defined(KERNEL_SYSTEM_ANDROID)
 
-    // Android doesn't need a main function
     #define KERNEL_GUI_MAIN(app) android_main(struct android_app* app)
     #define KERNEL_MAIN
 
 #elif defined(KERNEL_SYSTEM_MACOS)
 
-    // On MacOS X, we use a Unix main function
     #define KERNEL_MAIN(ac, av, env, apple) main(int ac, char *av[], char *env[], char *apple[])
 
 #else
 
-    // Other platforms should use the standard main function
     #define KERNEL_MAIN(ac, av, env) main(int ac, char *av[], char *env[])
 #endif
+/** @} */
 
-////////////////////////////////////////////////////////////
-// Define a portable debug macro
-////////////////////////////////////////////////////////////
+/** KERNEL_DEBUG and KERNEL_DEBUG_STRING, from the usual debug and release flags. */
 #if (defined(_DEBUG) || defined(DEBUG)) && !defined(NDEBUG)
 
     #define KERNEL_DEBUG
@@ -351,24 +351,22 @@
     #define KERNEL_DEBUG_STRING "Release"
 #endif
 
-////////////////////////////////////////////////////////////
-// Define a portable way to declare a function as deprecated
-////////////////////////////////////////////////////////////
-/** Usage:
- * @example "for functions"
- *   KERNEL_DEPRECATED void func();
- * @example "for structs"
- *   struct KERNEL_DEPRECATED MyStruct { ... };
- * @example "for enums"
- *   enum KERNEL_DEPRECATED MyEnum { ... };
- *   enum MyEnum {
- *        MyEnum1 = 0,
- *        MyEnum2 KERNEL_DEPRECATED,
- *        MyEnum3
- *   };
- * @example "for classes"
- *   class KERNEL_DEPRECATED MyClass { ... };
-\**********************************************************/
+/**
+ * @name Portable deprecation markers
+ *
+ * @code
+ * KERNEL_DEPRECATED void func();
+ * struct KERNEL_DEPRECATED MyStruct { ... };
+ * enum KERNEL_DEPRECATED MyEnum { ... };
+ * enum MyEnum {
+ *     MyEnum1 = 0,
+ *     MyEnum2 KERNEL_DEPRECATED,
+ *     MyEnum3
+ * };
+ * class KERNEL_DEPRECATED MyClass { ... };
+ * @endcode
+ * @{
+ */
 #ifdef KERNEL_DISABLE_DEPRECATION
 
     #define KERNEL_DEPRECATED
@@ -442,6 +440,7 @@
     #define KERNEL_DEPRECATED_MSG(message)
     #define KERNEL_DEPRECATED_VMSG(version, message)
 #endif
+/** @} */
 
 #endif /* !KERNEL_DISTRIBUTION_H_ */
 
@@ -449,9 +448,12 @@
 #ifndef KERNEL_VERSION_H_
     #define KERNEL_VERSION_H_
 
-////////////////////////////////////////////////////////////
-// Define the KERNEL version
-////////////////////////////////////////////////////////////
+/**
+ * @name Kernel version
+ *
+ * Each component comes from the FLAG_VERSION_<component> build flag when it is set.
+ * @{
+ */
 #ifdef FLAG_VERSION_MAJOR
     #define KERNEL_VERSION_MAJOR FLAG_VERSION_MAJOR
 #else
@@ -475,10 +477,9 @@
 #else
     #define KERNEL_VERSION_TWEAK 4
 #endif
+/** @} */
 
-////////////////////////////////////////////////////////////
-// Define the KERNEL version number
-////////////////////////////////////////////////////////////
+/** The version as one comparable integer, MMmmppTT. */
 #define KERNEL_VERSION_NUM \
         (KERNEL_VERSION_MAJOR * 1000000 + \
         KERNEL_VERSION_MINOR * 10000 + \
@@ -487,15 +488,11 @@
 
 #define KERNEL_PREREQ_VERSION(maj, min, pat) (KERNEL_VERSION_NUM >= (maj * 1000000 + min * 10000 + pat * 100))
 
-////////////////////////////////////////////////////////////
-// Define the KERNEL version concatenated
-////////////////////////////////////////////////////////////
+/** The version components joined by underscores, for token pasting. */
 #define KERNEL_VERSION_CCT KERNEL_VERSION_MAJOR##_##KERNEL_VERSION_MINOR##_##KERNEL_VERSION_PATCH##_##KERNEL_VERSION_TWEAK
 
 
-////////////////////////////////////////////////////////////
-// Define the KERNEL version string
-////////////////////////////////////////////////////////////
+/** The version as a dotted string. */
 #define KERNEL_VERSION_STRING \
         LPL_TOSTRING(KERNEL_VERSION_MAJOR) "." \
         LPL_TOSTRING(KERNEL_VERSION_MINOR) "." \
@@ -505,9 +502,7 @@
 #endif /* !KERNEL_VERSION_H_ */
 
 
-////////////////////////////////////////////////////////////
-// Compile-Time Configuration Parameters
-////////////////////////////////////////////////////////////
+/** Compile-time configuration parameters, one KEY=value per line. */
 #define KERNEL_CONFIG_STRING \
         "KERNEL_VERSION=" KERNEL_VERSION_STRING "\n" \
         "KERNEL_SYSTEM=" KERNEL_SYSTEM_STRING KERNEL_MODE_STRING "\n" \

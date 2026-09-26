@@ -120,14 +120,20 @@ static void exception_handle_general_protection_fault(const InterruptFrame_t *fr
     exception_halt_forever();
 }
 
+/**
+ * @brief Handles a page fault: resumes an armed section-protection probe, panics otherwise.
+ *
+ * @details An armed probe expects exactly one write fault, at one address, and asks to resume
+ *          past it. Everything else falls through to the panic, so the diagnostic path is
+ *          unchanged for real faults.
+ *
+ * @param frame The faulting context.
+ */
 static void exception_handle_page_fault(const InterruptFrame_t *frame)
 {
     const uint32_t error_code = frame->err_code;
     const uint32_t fault_address = asmutils_get_page_fault_linear_address();
 
-    /* An armed section-protection probe expects exactly one write fault, at one
-       address, and asks to resume past it. Everything else falls through to the
-       panic below, so the diagnostic path is unchanged for real faults. */
     if (kernel_section_protection_handle_page_fault(frame, fault_address))
         return;
 

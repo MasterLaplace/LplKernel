@@ -82,10 +82,6 @@ void kernel_backpressure_report(Serial_t *serial)
     {
         const KernelBackpressureQueue_t *queue = &backpressure_queues[index];
 
-        /* One record per queue rather than one record with a field per queue:
-           the set of queues is a runtime fact, and a record whose field names
-           change with the configuration is a record no reader can be written
-           against. The queue name is a field VALUE here, never a field name. */
         kernel_telemetry_begin_record(serial, "backpressure");
         kernel_telemetry_write_text("queue", queue->name);
         kernel_telemetry_write_text("policy", backpressure_policy_name(queue->policy));

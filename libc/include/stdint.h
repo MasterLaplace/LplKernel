@@ -1,12 +1,35 @@
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2025 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file stdint.h
+ * @brief Exact-width integer types of the kernel C library.
+ *
+ * The exact-width and derived integer types are deferred to the compiler's notion of
+ * them (the __*_TYPE__ builtins) instead of hardcoded. On i686-elf gcc, e.g. int32_t
+ * is `long int` and uint32_t is `long unsigned int` — NOT `int` / `unsigned int`.
+ * Hardcoding the latter clashed with libstdc++'s <cstdint> the moment any C++ TU
+ * (the engine module / kstd) pulled in both headers. Using the builtins guarantees
+ * the typedefs are identical to the toolchain's.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2025-05-17
+ **************************************************************************/
+
 #ifndef _STDINT_H
 #define _STDINT_H
 
-/* Defer the exact-width and derived integer types to the compiler's notion of
- * them (the __*_TYPE__ builtins) instead of hardcoding. On i686-elf gcc, e.g.
- * int32_t is `long int` and uint32_t is `long unsigned int` — NOT `int` /
- * `unsigned int`. Hardcoding the latter clashed with libstdc++'s <cstdint> the
- * moment any C++ TU (the engine module / kstd) pulled in both headers.
- * Using the builtins guarantees the typedefs are identical to the toolchain's. */
 typedef __INT8_TYPE__ int8_t;
 typedef __UINT8_TYPE__ uint8_t;
 
@@ -106,8 +129,6 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 
 #define WINT_MIN 0
 #define WINT_MAX 0xFFFF
-
-// Bit manipulation helpers for uint8_t
 
 /**
  * @brief Sets the n-th bit of the given word.

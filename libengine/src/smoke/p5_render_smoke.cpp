@@ -1,19 +1,47 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** P5 render smoke — projects a Fixed32-authored unit cube (CORDIC model
-** rotation) through a perspective camera and folds the resulting screen
-** coordinates + depths inside the kernel. The reported signatures must match
-** the Linux oracle (tests/test-render-parity) bit-for-bit: the geometry and
-** rotation are authoritative Fixed32/CORDIC, the projection/divide is float
-** (SSE, -ffp-contract=off) which P1 proved bit-identical across targets.
-*/
 #include "libengine/libengine.h"
 
 #include <lpl/render/Lighting.hpp>
 #include <lpl/render/RenderParity.hpp>
 #include <lpl/render/Texture.hpp>
+
+namespace {
+
+/**
+ * @brief Texture sampling determinism: folds a diagonal of bilinear samples of a checker.
+ * @return The FNV-1a fold of 64 samples along the diagonal.
+ */
+lpl::core::u32 foldBilinearDiagonal()
+{
+    const auto tex = lpl::render::Texture::makeChecker(64u, 64u, 0x00FF0000u, 0x000000FFu, 8u);
+    lpl::core::u32 texSig = 0x811C9DC5u;
+    for (lpl::core::u32 i = 0; i < 64u; ++i)
+    {
+        const lpl::core::u32 uq = (i * 65536u) / 64u;
+        texSig = lpl::render::detail::fnv1aStep(texSig, tex.sampleBilinear(uq, uq));
+    }
+    return texSig;
+}
+
+/**
+ * @brief Classical lighting of a reference fragment under one directional light.
+ * @param out Receives the Lambert and Blinn-Phong colours.
+ */
+void shadeReferenceFragment(libengine_p5_render_smoke_result_t *out)
+{
+    lpl::render::Material mat;
+    mat.albedo = lpl::render::Vec3f(0.8f, 0.7f, 0.6f);
+    mat.shininess = 32u;
+    lpl::render::Light dir;
+    dir.type = lpl::render::LightType::Directional;
+    dir.direction = lpl::render::Vec3f(-0.4f, -0.7f, -0.6f);
+    const lpl::render::Vec3f N(0.0f, 0.0f, 1.0f);
+    const lpl::render::Vec3f frag(0.0f, 0.0f, 1.0f);
+    const lpl::render::Vec3f eye(0.0f, 0.0f, 5.0f);
+    out->lambert_rgb = lpl::render::shadeToRgb(lpl::render::ShadingModel::Lambert, mat, &dir, 1u, N, frag, eye);
+    out->blinn_rgb = lpl::render::shadeToRgb(lpl::render::ShadingModel::BlinnPhong, mat, &dir, 1u, N, frag, eye);
+}
+
+} // namespace
 
 extern "C" void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *out)
 {
@@ -38,28 +66,8 @@ extern "C" void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *ou
     out->cull_visible = cull.visible;
     out->cull_visible_sig = cull.visible_signature;
 
-    // Texture sampling determinism: fold a diagonal of bilinear samples.
-    const auto tex = render::Texture::makeChecker(64u, 64u, 0x00FF0000u, 0x000000FFu, 8u);
-    core::u32 texSig = 0x811C9DC5u;
-    for (core::u32 i = 0; i < 64u; ++i)
-    {
-        const core::u32 uq = (i * 65536u) / 64u;
-        texSig = render::detail::fnv1aStep(texSig, tex.sampleBilinear(uq, uq));
-    }
-    out->tex_sample_sig = texSig;
-
-    // Classical lighting of a reference fragment (directional light).
-    render::Material mat;
-    mat.albedo = render::Vec3f(0.8f, 0.7f, 0.6f);
-    mat.shininess = 32u;
-    render::Light dir;
-    dir.type = render::LightType::Directional;
-    dir.direction = render::Vec3f(-0.4f, -0.7f, -0.6f);
-    const render::Vec3f N(0.0f, 0.0f, 1.0f);
-    const render::Vec3f frag(0.0f, 0.0f, 1.0f);
-    const render::Vec3f eye(0.0f, 0.0f, 5.0f);
-    out->lambert_rgb = render::shadeToRgb(render::ShadingModel::Lambert, mat, &dir, 1u, N, frag, eye);
-    out->blinn_rgb = render::shadeToRgb(render::ShadingModel::BlinnPhong, mat, &dir, 1u, N, frag, eye);
+    out->tex_sample_sig = foldBilinearDiagonal();
+    shadeReferenceFragment(out);
 
     out->render_ok = (r0.in_front_count == 8u && rq.in_front_count == 8u &&
                       rq.screen_signature != r0.screen_signature && r0.vertex0_x > 0 && r0.vertex0_x < 1280 &&

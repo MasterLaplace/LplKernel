@@ -1,19 +1,5 @@
-/**
- * @file paging.c
- * @brief Runtime paging management for the higher-half kernel.
- *
- * @details Assumes boot.S has already enabled paging, mapped the kernel
- *          at 0xC0000000 (PD entries 768–771), and removed the identity
- *          mapping.  This module provides runtime map / unmap / query
- *          operations on the active page directory.
- */
-
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/paging.h>
-
-////////////////////////////////////////////////////////////
-// Private State
-////////////////////////////////////////////////////////////
 
 extern PageDirectory_t boot_page_directory;
 
@@ -22,16 +8,12 @@ static bool page_table_runtime_owned[1024] = {0};
 static uint32_t page_table_runtime_owned_count = 0u;
 
 #if !defined(LPL_KERNEL_REAL_TIME_MODE)
-/*
- * Server optimization: keep one spare contiguous 4 KB frame from a 2-page
- * buddy allocation for the next page-table creation.
+/**
+ * @brief Server optimization: keep one spare contiguous 4 KB frame from a 2-page buddy allocation
+ * for the next page-table creation.
  */
 static uint32_t paging_cached_page_table_phys = 0u;
 #endif
-
-////////////////////////////////////////////////////////////
-// Address Translation
-////////////////////////////////////////////////////////////
 
 /**
  * @brief Convert a higher-half virtual address to its physical counterpart.
@@ -51,10 +33,6 @@ static inline uint32_t virt_to_phys(uint32_t virt_addr)
  * @return Corresponding virtual address.
  */
 static inline uint32_t phys_to_virt(uint32_t phys_addr) { return phys_addr + KERNEL_VIRTUAL_BASE; }
-
-////////////////////////////////////////////////////////////
-// Page Table Helpers
-////////////////////////////////////////////////////////////
 
 /**
  * @brief Allocate one physical frame for a new Page Table.
@@ -206,10 +184,6 @@ static bool paging_is_page_table_empty(const PageTable_t *page_table)
     return true;
 }
 
-////////////////////////////////////////////////////////////
-// Public API functions of the Paging module
-////////////////////////////////////////////////////////////
-
 void paging_initialize_runtime(void)
 {
     current_page_directory = &boot_page_directory;
@@ -342,10 +316,6 @@ bool paging_set_page_read_only(uint32_t virt_addr)
     if (!pde->present)
         return false;
 
-    /* Only the page table entry is cleared, never the directory entry: the
-       effective permission of a page is the AND of the two, so clearing R/W on
-       the PDE would turn the whole 4 MiB it covers read-only — and .data, .bss
-       and the boot page tables themselves live in the same 4 MiB as .text. */
     PageTable_t *page_table = paging_get_page_table(pde);
     PageTableEntry_t *pte = &page_table->entries[pt_index];
 

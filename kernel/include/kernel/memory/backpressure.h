@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file backpressure.h
  * @brief One place that names every bounded queue in the kernel, and what a loss costs.
  *
@@ -20,10 +33,10 @@
  * a fact something can check. The reconciler notes a loss on a tolerant queue and
  * treats a loss on an intolerant one as drift.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-08
+ **************************************************************************/
 
 #ifndef KERNEL_MEMORY_BACKPRESSURE_H
 #define KERNEL_MEMORY_BACKPRESSURE_H
@@ -117,6 +130,11 @@ uint32_t kernel_backpressure_get_intolerant_drop_count(void);
 
 /**
  * @brief Emit one telemetry record per registered queue.
+ *
+ * @note One record per queue rather than one record with a field per queue: the set of
+ *       queues is a runtime fact, and a record whose field names change with the
+ *       configuration is a record no reader can be written against. The queue name is a
+ *       field VALUE, never a field name.
  *
  * @param serial Output port.
  */

@@ -1,12 +1,3 @@
-/**
- * @file hal_input.c
- * @brief Input backend for the engine HAL.
- *
- * Implements the hardware_abstraction_layer_input_* contract over the PS/2 keyboard's lock-free SPSC
- * ring (ISR producer -> engine consumer). The engine drains decoded characters;
- * the kernel keeps owning scancode decoding and layout state. This generalizes
- * to additional input devices behind the same drain contract.
- */
 #include <kernel/hal/hal.h>
 
 #include <kernel/drivers/keyboard.h>

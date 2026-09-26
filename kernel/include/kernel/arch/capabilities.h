@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file capabilities.h
  * @brief What a target HAS, declared once, so portable code stops assuming.
  *
@@ -6,12 +19,10 @@
  *
  *   1. ISA / MODE      — how the processor is programmed: instruction encoding,
  *                        page table format, interrupt entry, register width.
- *                        `arch/i386`, `arch/x86_64`, `arch/arm64`, `arch/riscv64`,
- *                        `arch/xtensa`.
+ *                        i386, x86_64, arm64, riscv64, xtensa.
  *   2. PLATFORM        — what hardware is on the board: interrupt controller,
  *                        timers, buses, devices, firmware tables.
- *                        `arch/x86` (the PC), `arch/raspberry_pi`, `arch/esp32`,
- *                        `arch/apple_silicon`, `arch/virt`.
+ *                        The PC, Raspberry Pi, ESP32, Apple Silicon, a virt board.
  *   3. ACCELERATOR     — what the kernel can HAND WORK TO and does not run on:
  *                        a GPU, an NPU, and one day a quantum processing unit.
  *                        Optional, enumerable, never the thing that boots.
@@ -57,25 +68,45 @@
  *
  * ── The honest part ────────────────────────────────────────────────────────
  *
- * Declaring a capability does not implement it. `tools/arch_conformance.sh`
- * reports, per target, how much of the arch contract is actually provided — so a
- * directory that declares a lot and defines nothing reads as 0 %, and can never be
- * mistaken for a working port.
+ * Declaring a capability does not implement it. Of the six targets declared under
+ * `targets/`, only i386_pc has code behind it (`kernel/arch/i386`); the other five are
+ * the declarations a port starts from, not ports.
  *
- * @author MasterLaplace
+ * ── What this file checks ─────────────────────────────────────────────────
+ *
+ * The target's own declaration is included through `KERNEL_ARCH_TARGET_<name>`,
+ * defined by the selected arch's make.config — the single entry point the build
+ * already uses (`arch/$(HOSTARCH)/make.config`). One include here, one file per
+ * target, and no include-path juggling.
+ *
+ * Every capability must be defined to 0 or 1 by the target header. They are listed
+ * here rather than left to each target so that adding a capability is a change to ONE
+ * list, and so a target that forgets one fails to compile instead of silently reading
+ * as absent — `#if UNDEFINED_MACRO` is 0 in C, which is exactly how a capability check
+ * turns into a lie.
+ *
+ * Capabilities that cannot be declared independently are checked here, so a
+ * contradiction is caught at compile time rather than discovered at boot:
+ *
+ *   - Paging without an MMU is not a configuration, it is a mistake.
+ *   - Read-only section protection is enforced BY the page tables, so promising
+ *     enforcement without paging would promise a barrier that does not exist.
+ *   - A higher-half kernel is linked above a virtual base that only exists because
+ *     something maps it there.
+ *   - Firmware tables (ACPI) and a device tree are two answers to the same question —
+ *     "what hardware is present" — and a platform answers it one way or the other.
+ *     Declaring both would leave the enumeration path ambiguous; declaring neither is
+ *     legitimate and means the platform is fixed and known at compile time, which is
+ *     the normal case for a microcontroller.
+ *
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-08
+ **************************************************************************/
 
 #ifndef KERNEL_ARCH_CAPABILITIES_H
 #define KERNEL_ARCH_CAPABILITIES_H
 
-/*
-** The target's own declaration. `KERNEL_ARCH_TARGET_<name>` is defined by the
-** selected arch's make.config, which is the single entry point the build already
-** uses (`arch/$(HOSTARCH)/make.config`). One include here, one file per target,
-** and no include-path juggling.
-*/
 #if defined(KERNEL_ARCH_TARGET_I386_PC)
 #    include <kernel/arch/targets/i386_pc.h>
 #elif defined(KERNEL_ARCH_TARGET_X86_64_PC)
@@ -92,13 +123,6 @@
 #    error "No KERNEL_ARCH_TARGET_* defined: arch/<isa>/make.config must declare one."
 #endif
 
-/*
-** Every capability below must be defined to 0 or 1 by the target header. They are
-** listed here rather than left to each target so that adding a capability is a
-** change to ONE list, and so a target that forgets one fails to compile instead of
-** silently reading as absent — `#if UNDEFINED_MACRO` is 0 in C, which is exactly
-** how a capability check turns into a lie.
-*/
 #if !defined(KERNEL_ARCH_HAS_MEMORY_MANAGEMENT_UNIT) || !defined(KERNEL_ARCH_HAS_PAGING) ||                            \
     !defined(KERNEL_ARCH_HAS_HIGHER_HALF) || !defined(KERNEL_ARCH_HAS_WRITE_PROTECT_ENFORCEMENT) ||                    \
     !defined(KERNEL_ARCH_HAS_SYMMETRIC_MULTIPROCESSING) || !defined(KERNEL_ARCH_HAS_FLOATING_POINT_UNIT) ||            \
@@ -111,14 +135,6 @@
 #    error "Incomplete target declaration: see kernel/include/kernel/arch/capabilities.h for the full list."
 #endif
 
-/*
-** Two capabilities that cannot be declared independently, checked here so a
-** contradiction is caught at compile time rather than discovered at boot.
-**
-** Paging without an MMU is not a configuration, it is a mistake; and this kernel's
-** read-only section protection is enforced BY the page tables, so promising
-** enforcement without paging would promise a barrier that does not exist.
-*/
 #if KERNEL_ARCH_HAS_PAGING && !KERNEL_ARCH_HAS_MEMORY_MANAGEMENT_UNIT
 #    error "A target cannot declare paging without a memory management unit."
 #endif
@@ -127,21 +143,10 @@
 #    error "Write-protect enforcement is implemented through page table entries: it needs paging."
 #endif
 
-/*
-** A higher-half kernel means the image is linked above a virtual base that only
-** exists because something maps it there.
-*/
 #if KERNEL_ARCH_HAS_HIGHER_HALF && !KERNEL_ARCH_HAS_PAGING
 #    error "A higher-half image needs paging to be mapped where it was linked."
 #endif
 
-/*
-** Firmware tables (ACPI) and a device tree are two answers to the same question —
-** "what hardware is present" — and a platform answers it one way or the other.
-** Declaring both would leave the enumeration path ambiguous; declaring neither is
-** legitimate and means the platform is fixed and known at compile time, which is
-** the normal case for a microcontroller.
-*/
 #if KERNEL_ARCH_HAS_FIRMWARE_TABLES && KERNEL_ARCH_HAS_DEVICE_TREE
 #    error "A platform enumerates through firmware tables or a device tree, not both."
 #endif

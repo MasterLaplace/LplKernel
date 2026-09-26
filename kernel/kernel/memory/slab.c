@@ -3,43 +3,26 @@
 #include <kernel/memory/slab.h>
 #include <stddef.h>
 
-/*
- * Implementation layout
- * ─────────────────────
- * Each cache owns a singly-linked free-list of same-sized objects.
- * The free-list node is stored *inside* the object slot (the first
- * sizeof(void*) bytes of a free slot hold the next pointer).  This
- * means no extra header memory per object.
- *
- * SERVER profile: every exported function is a one-liner stub.  The
- * linker discards the slab data entirely on server builds.
- */
-
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 
-/* ------------------------------------------------------------------ */
-/* CLIENT implementation                                              */
-/* ------------------------------------------------------------------ */
-
-/*
- * Anti-double-free guard.
- * When a slot is placed on the free-list we write SLAB_FREE_COOKIE
- * into the word immediately after the next pointer.
- * kernel_slab_free() checks this: if the cookie is already present
- * the object is already free (double-free) -> reject, return false.
- * kernel_slab_alloc() clears the cookie on allocation.
+/**
+ * @brief Anti-double-free guard, 'SLA1'.
+ *
+ * @details Written into the word right after the next pointer when a slot joins the
+ *          free-list. kernel_slab_free() rejects an object that already carries it (a double
+ *          free) and kernel_slab_alloc() clears it on allocation.
  */
-#    define SLAB_FREE_COOKIE 0x534C4131u /* 'SLA1' */
+#    define SLAB_FREE_COOKIE 0x534C4131u
 
 #    define SLAB_NUM_CACHES 3u
 
 typedef struct {
-    uint32_t object_size; /* bytes per object                        */
-    void *free_head;      /* head of the free-list (NULL == full)    */
-    uint32_t free_count;  /* objects currently on the free-list      */
-    uint32_t used_count;  /* objects currently live                  */
-    uintptr_t base;       /* virtual address of the first owned page */
-    uintptr_t end;        /* first byte past the owned pages         */
+    uint32_t object_size; /**< bytes per object */
+    void *free_head;      /**< head of the free-list (NULL == full) */
+    uint32_t free_count;  /**< objects currently on the free-list */
+    uint32_t used_count;  /**< objects currently live */
+    uintptr_t base;       /**< virtual address of the first owned page */
+    uintptr_t end;        /**< first byte past the owned pages */
 } KernelSlabCache_t;
 
 static KernelSlabCache_t slab_caches[SLAB_NUM_CACHES] = {
@@ -48,9 +31,11 @@ static KernelSlabCache_t slab_caches[SLAB_NUM_CACHES] = {
     {KERNEL_SLAB_SIZE_LARGE,  NULL, 0u, 0u, 0u, 0u},
 };
 
-/*
- * Carve all objects from a donated page into a cache's free-list.
- * page_virt must be a valid, mapped virtual address.
+/**
+ * @brief Carves all objects from a donated page into a cache's free-list.
+ * @param cache     The cache.
+ * @param page_virt A valid, mapped virtual address.
+ * @param page_size Bytes in the page.
  */
 static void slab_cache_populate(KernelSlabCache_t *cache, void *page_virt, uint32_t page_size)
 {
@@ -183,10 +168,6 @@ uint32_t kernel_slab_get_used_count(uint32_t object_size)
 }
 
 #else /* SERVER profile stubs */
-
-/* ------------------------------------------------------------------ */
-/* SERVER stubs — the slab is not used on server builds.              */
-/* ------------------------------------------------------------------ */
 
 void kernel_slab_initialize(void **backing_pages, uint32_t page_count)
 {

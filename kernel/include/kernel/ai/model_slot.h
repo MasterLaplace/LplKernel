@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file model_slot.h
  * @brief The weights blob, delivered like a cartridge.
  *
@@ -32,10 +45,10 @@
  * start-up on every single run. The gate derives its weights from a seed and stays
  * a gate about arithmetic; the slot is how a real mind arrives when one is wanted.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef KERNEL_AI_MODEL_SLOT_H
 #define KERNEL_AI_MODEL_SLOT_H
@@ -80,6 +93,10 @@ typedef struct {
  *
  * Only the header: the extent of every tensor is checked by the reader that knows
  * the shape, and duplicating that arithmetic here would put the layout in two places.
+ *
+ * @note The magic is assembled byte by byte rather than read through a uint32_t pointer:
+ *       a module lands wherever the loader put it, and a four-byte load from an odd address
+ *       is undefined even where the hardware would tolerate it.
  *
  * @param out Receives the finding.
  * @return true when the slot is loaded.

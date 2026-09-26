@@ -1,7 +1,7 @@
 /**************************************************************************
- * LplKernel v0.0.0
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
  *
- * LplKernel is a C kernel iso for Laplace-Project. It is a simple kernel that
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
  * provides a basic set of features to run a C program.
  *
  * This file is part of the LplKernel project that is under Anti-NN License.
@@ -9,11 +9,11 @@
  * Copyright © 2024 by @MasterLaplace, All rights reserved.
  *
  * LplKernel is a free software: you can redistribute it and/or modify
- * it under the terms of the Anti-NN License as published by the
- * Open Source Initiative. See the Anti-NN License for more details.
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
  *
  * @file string.h
- * @brief Compile-Time Configuration Parameters for LplKernel.
+ * @brief String and memory functions of the kernel C library.
  *
  * @author @MasterLaplace
  * @version 0.0.0

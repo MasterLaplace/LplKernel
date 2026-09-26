@@ -4,19 +4,11 @@
 #define IDT_IRQ_VECTOR_COUNT       16u
 #define IDT_TOTAL_VECTOR_COUNT     256u
 
-////////////////////////////////////////////////////////////
-// External assembly functions (idt_load.s)
-////////////////////////////////////////////////////////////
-
 /**
  * @brief Load an IDT using the LIDT instruction.
  * @param idtr Pointer to an IDTR structure (size + offset).
  */
 extern void idt_load(const InterruptDescriptorTableRegister_t *idtr);
-
-////////////////////////////////////////////////////////////
-// Private helpers functions of the IDT module
-////////////////////////////////////////////////////////////
 
 /**
  * @brief Encode a single flat 32-bit IDT entry.
@@ -82,10 +74,6 @@ static void interrupt_descriptor_table_install_vector_range(InterruptDescriptorT
                                                      GDT_KERNEL_CODE_SELECTOR, IDT_KERNEL_INTERRUPT_GATE);
     }
 }
-
-////////////////////////////////////////////////////////////
-// Public API functions of the IDT module
-////////////////////////////////////////////////////////////
 
 void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *idt)
 {

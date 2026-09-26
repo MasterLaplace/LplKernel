@@ -1,11 +1,3 @@
-/**
- * @file framebuffer.c
- * @brief Linear framebuffer driver implementation
- *
- * This driver provides basic graphics primitives for drawing to a linear
- * framebuffer. It supports 32-bit color depth with Direct Color mode.
- */
-
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/drivers/framebuffer.h>
@@ -13,17 +5,20 @@
 #include <kernel/memory/vmm.h>
 #include <string.h>
 
-/* Global framebuffer state */
+/** Global framebuffer state. */
 static framebuffer_info_t fb_info = {0};
 
-/* Static page table for framebuffer mapping (768 pages = 3MB, enough for 1024x768x32bpp) */
-/* Must be 4KB aligned */
+/**
+ * @brief Static page table for the framebuffer mapping.
+ *
+ * 768 pages = 3 MB, enough for 1024x768x32bpp. Page tables must be 4 KB aligned.
+ */
 static PageTable_t __attribute__((aligned(4096))) framebuffer_page_table;
 
-/* External multiboot info - note the type is MultibootInfo_t */
+/** Multiboot info handed over by the bootloader. */
 extern MultibootInfo_t *multiboot_info;
 
-/* External page directory from paging.c */
+/** Page directory owned by paging.c. */
 extern PageDirectory_t *current_page_directory;
 
 /**
@@ -34,6 +29,9 @@ extern PageDirectory_t *current_page_directory;
  *
  * Since we don't have a page frame allocator yet, we use a static page table
  * allocated in .bss that we manually insert into the page directory.
+ *
+ * @note The virtual range is registered with the VMM, so pinned memory and the other
+ *       VMM-aware allocators cannot hand out the same pages.
  *
  * @param phys_addr Physical address of the framebuffer
  * @param size Size of the framebuffer in bytes
@@ -81,8 +79,6 @@ static uint32_t *map_framebuffer(uint32_t phys_addr, uint32_t size)
 
     asmutils_invalidate_translation_lookaside_buffer();
 
-    /* Register the virtual range with the VMM so pinned-memory and other
-       VMM-aware allocators cannot hand out the same pages. */
     kernel_vmm_reserve_at((void *) virt_addr, num_pages);
 
     return (uint32_t *) virt_addr;

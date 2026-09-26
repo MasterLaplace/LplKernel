@@ -1,10 +1,3 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** vmm — Virtual Memory Manager implementation
-*/
-
 #include <kernel/config.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>

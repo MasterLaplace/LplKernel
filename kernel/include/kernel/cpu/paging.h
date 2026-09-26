@@ -1,9 +1,28 @@
-/*
-** EPITECH PROJECT, 2025
-** LplKernel [WSL : Ubuntu]
-** File description:
-** paging - Runtime paging management API for higher-half kernel
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2025 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file paging.h
+ * @brief Runtime paging management API for the higher-half kernel.
+ *
+ * Assumes boot.S has already enabled paging, mapped the kernel at 0xC0000000
+ * (PD entries 768-771), and removed the identity mapping. This module provides
+ * runtime map / unmap / query operations on the active page directory.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2025-10-24
+ **************************************************************************/
 
 #ifndef KERNEL_CPU_PAGING_H
 #define KERNEL_CPU_PAGING_H
@@ -16,20 +35,23 @@
 #include <stdint.h>
 #include <string.h>
 
-/// Page Directory Entry (32-bit format) - Based on OSDev wiki Paging article
-/// Structure for PDE when PS=0 (points to a 4KB page table)
+/**
+ * @brief Page Directory Entry (32-bit format) - Based on OSDev wiki Paging article
+ *
+ * Structure for PDE when PS=0 (points to a 4KB page table)
+ */
 typedef struct __attribute__((packed)) {
-    uint8_t present          : 1;  // P: Page is present in memory
-    uint8_t read_write       : 1;  // R/W: 0 = read-only, 1 = read/write
-    uint8_t user_supervisor  : 1;  // U/S: 0 = supervisor only, 1 = user accessible
-    uint8_t write_through    : 1;  // PWT: Write-through caching
-    uint8_t cache_disable    : 1;  // PCD: Cache disabled
-    uint8_t accessed         : 1;  // A: Set by CPU when accessed
-    uint8_t reserved_zero    : 1;  // Reserved (must be 0)
-    uint8_t page_size        : 1;  // PS: 0 = 4KB page table, 1 = 4MB page (requires PSE)
-    uint8_t ignored          : 1;  // Available for OS use
-    uint8_t available        : 3;  // Available for OS use (bits 9-11)
-    uint32_t page_table_base : 20; // Physical address of page table (bits 12-31, 4KB aligned)
+    uint8_t present          : 1;  /**< P: Page is present in memory */
+    uint8_t read_write       : 1;  /**< R/W: 0 = read-only, 1 = read/write */
+    uint8_t user_supervisor  : 1;  /**< U/S: 0 = supervisor only, 1 = user accessible */
+    uint8_t write_through    : 1;  /**< PWT: Write-through caching */
+    uint8_t cache_disable    : 1;  /**< PCD: Cache disabled */
+    uint8_t accessed         : 1;  /**< A: Set by CPU when accessed */
+    uint8_t reserved_zero    : 1;  /**< Reserved (must be 0) */
+    uint8_t page_size        : 1;  /**< PS: 0 = 4KB page table, 1 = 4MB page (requires PSE) */
+    uint8_t ignored          : 1;  /**< Available for OS use */
+    uint8_t available        : 3;  /**< Available for OS use (bits 9-11) */
+    uint32_t page_table_base : 20; /**< Physical address of page table (bits 12-31, 4KB aligned) */
 } PageDirectoryEntry_t;
 
 typedef struct __attribute__((packed)) {
@@ -122,19 +144,19 @@ typedef struct __attribute__((packed)) {
     uint8_t execute_disable : 1;
 } PageDirectoryEntryLongMode_2MB_t;
 
-/// Page Table Entry (32-bit format) - Based on OSDev wiki Paging article
+/** Page Table Entry (32-bit format) - Based on OSDev wiki Paging article */
 typedef struct __attribute__((packed)) {
-    uint8_t present              : 1;  // P: Page is present in memory
-    uint8_t read_write           : 1;  // R/W: 0 = read-only, 1 = read/write
-    uint8_t user_supervisor      : 1;  // U/S: 0 = supervisor only, 1 = user accessible
-    uint8_t write_through        : 1;  // PWT: Write-through caching
-    uint8_t cache_disable        : 1;  // PCD: Cache disabled
-    uint8_t accessed             : 1;  // A: Set by CPU when accessed
-    uint8_t dirty                : 1;  // D: Set by CPU when written to
-    uint8_t page_attribute_table : 1;  // PAT: Page Attribute Table (if supported)
-    uint8_t global               : 1;  // G: Global page (not flushed on CR3 reload, requires PGE in CR4)
-    uint8_t available            : 3;  // Available for OS use (bits 9-11)
-    uint32_t page_frame_base     : 20; // Physical address of 4KB page frame (bits 12-31, 4KB aligned)
+    uint8_t present              : 1;  /**< P: Page is present in memory */
+    uint8_t read_write           : 1;  /**< R/W: 0 = read-only, 1 = read/write */
+    uint8_t user_supervisor      : 1;  /**< U/S: 0 = supervisor only, 1 = user accessible */
+    uint8_t write_through        : 1;  /**< PWT: Write-through caching */
+    uint8_t cache_disable        : 1;  /**< PCD: Cache disabled */
+    uint8_t accessed             : 1;  /**< A: Set by CPU when accessed */
+    uint8_t dirty                : 1;  /**< D: Set by CPU when written to */
+    uint8_t page_attribute_table : 1;  /**< PAT: Page Attribute Table (if supported) */
+    uint8_t global               : 1;  /**< G: Global page (not flushed on CR3 reload, requires PGE in CR4) */
+    uint8_t available            : 3;  /**< Available for OS use (bits 9-11) */
+    uint32_t page_frame_base     : 20; /**< Physical address of 4KB page frame (bits 12-31, 4KB aligned) */
 } PageTableEntry_t;
 
 typedef struct __attribute__((packed)) {
@@ -306,15 +328,17 @@ bool paging_page_is_read_only(uint32_t virt_addr, bool *is_read_only);
  */
 uint32_t paging_get_runtime_owned_page_table_count(void);
 
-/* global_kernel_start is provided by the linker script via PROVIDE().
- * Declare it as a const uint32_t so the compiler treats it as an address-sized
- * symbol whose value can be read at runtime. Use a pointer cast to obtain
- * the integer value. */
+/**
+ * @brief global_kernel_start is provided by the linker script via PROVIDE().
+ *
+ * Declare it as a const uint32_t so the compiler treats it as an address-sized symbol whose value
+ * can be read at runtime. Use a pointer cast to obtain the integer value.
+ */
 extern const uint32_t global_kernel_start;
 extern const uint32_t global_kernel_end;
-#define KERNEL_VIRTUAL_BASE ((uint32_t) (uintptr_t) & global_kernel_start) // Higher-half kernel base
-#define KERNEL_VIRTUAL_END  ((uint32_t) (uintptr_t) & global_kernel_end)   // End of kernel virtual address space
-#define PAGE_SIZE           4096                                           // 4KB pages
-#define ENTRIES_PER_TABLE   1024                                           // 1024 entries per page table/directory
+#define KERNEL_VIRTUAL_BASE ((uint32_t) (uintptr_t) & global_kernel_start) /**< Higher-half kernel base */
+#define KERNEL_VIRTUAL_END  ((uint32_t) (uintptr_t) & global_kernel_end)   /**< End of kernel virtual address space */
+#define PAGE_SIZE           4096                                           /**< 4KB pages */
+#define ENTRIES_PER_TABLE   1024                                           /**< 1024 entries per page table/directory */
 
 #endif /* KERNEL_CPU_PAGING_H */

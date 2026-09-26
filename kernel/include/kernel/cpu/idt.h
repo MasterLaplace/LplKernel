@@ -1,9 +1,24 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** idt
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file idt.h
+ * @brief Interrupt Descriptor Table layouts and loading.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-03-05
+ **************************************************************************/
 
 #ifndef KERNEL_CPU_INTERRUPT_DESCRIPTOR_TABLE_H
 #define KERNEL_CPU_INTERRUPT_DESCRIPTOR_TABLE_H
@@ -15,47 +30,46 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/// Flags byte for a present, DPL=0, 32-bit interrupt gate (P=1, DPL=0, Type=0xE)
+/** Flags byte for a present, DPL=0, 32-bit interrupt gate (P=1, DPL=0, Type=0xE). */
 #define IDT_KERNEL_INTERRUPT_GATE 0x8E
-/// Flags byte for a present, DPL=3, 32-bit interrupt gate (used for syscall via int 0x80)
+/** Flags byte for a present, DPL=3, 32-bit interrupt gate (used for syscall via int 0x80). */
 #define IDT_USER_INTERRUPT_GATE 0xEE
 
 typedef struct __attribute__((packed)) {
-    uint8_t gate_type : 4; // Gate type (0x5 = 32-bit Task Gate, 0x6 = 16-bit Interrupt Gate, 0x7 = 16-bit Trap Gate,
-                           // 0xE = 32-bit Interrupt Gate, 0xF = 32-bit Trap Gate)
-    uint8_t reserved                   : 1; // Reserved, set to 0
-    uint8_t descriptor_privilege_level : 2; // Descriptor privilege level (0 = highest, 3 = lowest)
-    uint8_t present                    : 1; // Segment present in memory
+    uint8_t gate_type : 4; /**< 0x5 task, 0x6/0x7 16-bit interrupt/trap, 0xE/0xF 32-bit interrupt/trap gate. */
+    uint8_t reserved                   : 1; /**< Reserved, set to 0 */
+    uint8_t descriptor_privilege_level : 2; /**< Descriptor privilege level (0 = highest, 3 = lowest) */
+    uint8_t present                    : 1; /**< Segment present in memory */
 } InterruptDescriptorTableTypeAttributes_t;
 
-/// IDTR (IDT Register) structure for LIDT instruction in 32-bit mode
+/** IDTR (IDT Register) structure for LIDT instruction in 32-bit mode. */
 typedef struct __attribute__((packed)) {
-    uint16_t size;   // Size of IDT - 1 (max 65535 bytes)
-    uint32_t offset; // Linear address of the first IDT entry
+    uint16_t size;   /**< Size of IDT - 1 (max 65535 bytes) */
+    uint32_t offset; /**< Linear address of the first IDT entry */
 } InterruptDescriptorTableRegisterFlat_t;
 
-/// IDTR (IDT Register) structure for LIDT instruction in 64-bit mode
+/** IDTR (IDT Register) structure for LIDT instruction in 64-bit mode. */
 typedef struct __attribute__((packed)) {
-    uint16_t size;   // Size of IDT - 1 (max 65535 bytes)
-    uint64_t offset; // Linear address of the first IDT entry
+    uint16_t size;   /**< Size of IDT - 1 (max 65535 bytes) */
+    uint64_t offset; /**< Linear address of the first IDT entry */
 } InterruptDescriptorTableRegisterLongMode_t;
 
 typedef struct __attribute__((packed)) {
-    uint16_t isr_low;                                         // offset bits 0..15
-    uint16_t selector;                                        // a code segment selector in GDT or LDT
-    uint8_t reserved;                                         // unused, set to 0
-    InterruptDescriptorTableTypeAttributes_t type_attributes; // gate type, dpl, and p fields
-    uint16_t isr_high;                                        // offset bits 16..31
+    uint16_t isr_low;                                         /**< offset bits 0..15 */
+    uint16_t selector;                                        /**< a code segment selector in GDT or LDT */
+    uint8_t reserved;                                         /**< unused, set to 0 */
+    InterruptDescriptorTableTypeAttributes_t type_attributes; /**< gate type, dpl, and p fields */
+    uint16_t isr_high;                                        /**< offset bits 16..31 */
 } InterruptDescriptorTableFlatEntry_t;
 
 typedef struct __attribute__((packed)) {
-    uint16_t isr_low;              // offset bits 0..15
-    uint16_t selector;             // a code segment selector in GDT or LDT
-    uint8_t interrupt_stack_table; // bits 0..2 holds Interrupt Stack Table offset, rest of bits zero.
-    InterruptDescriptorTableTypeAttributes_t type_attributes; // gate type, dpl, and p fields
-    uint16_t isr_mid;                                         /// offset bits 16..31
-    uint16_t isr_high;                                        // offset bits 32..63
-    uint32_t reserved;                                        // unused, set to 0
+    uint16_t isr_low;              /**< offset bits 0..15 */
+    uint16_t selector;             /**< a code segment selector in GDT or LDT */
+    uint8_t interrupt_stack_table; /**< bits 0..2 holds Interrupt Stack Table offset, rest of bits zero. */
+    InterruptDescriptorTableTypeAttributes_t type_attributes; /**< gate type, dpl, and p fields */
+    uint16_t isr_mid;                                         /**< offset bits 16..31 */
+    uint16_t isr_high;                                        /**< offset bits 32..63 */
+    uint32_t reserved;                                        /**< unused, set to 0 */
 } InterruptDescriptorTableLongModeEntry_t;
 
 typedef struct __attribute__((aligned(0x10))) {
@@ -66,14 +80,10 @@ typedef struct __attribute__((aligned(0x10))) {
     InterruptDescriptorTableLongModeEntry_t entries[256];
 } InterruptDescriptorTableLongMode_t;
 
-/// Alias for the most commonly used layout (Flat 32-bit protected mode)
+/** Alias for the most commonly used layout (Flat 32-bit protected mode). */
 typedef InterruptDescriptorTableRegisterFlat_t InterruptDescriptorTableRegister_t;
 typedef InterruptDescriptorTableFlatEntry_t InterruptDescriptorTableEntry_t;
 typedef InterruptDescriptorTableFlat_t InterruptDescriptorTable_t;
-
-////////////////////////////////////////////////////////////
-// Public API functions of the IDT module
-////////////////////////////////////////////////////////////
 
 /**
  * @brief Initialize a flat 32-bit IDT with exception and PIC IRQ handlers.

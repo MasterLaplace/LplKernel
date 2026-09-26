@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file tensor_arena.h
  * @brief One large, bounded region for weights and activations.
  *
@@ -13,10 +26,10 @@
  * by the parity gate — two implementations would be two answers to how many bytes a
  * given sequence of claims costs.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef KERNEL_AI_TENSOR_ARENA_H
 #define KERNEL_AI_TENSOR_ARENA_H
@@ -36,6 +49,11 @@ extern "C" {
  * asking for MORE fails rather than reallocating. Growing would mean freeing a block
  * the demon may already hold pointers into, and "never grown" is the property the
  * whole arrangement rests on.
+ *
+ * @note Meant to be called once, at boot, while the heap is still uncontended. Claiming
+ *       lazily on the first inference would put the largest allocation the kernel ever
+ *       makes in the middle of a running world, which is exactly when it is least likely to
+ *       be servable.
  *
  * @param bytes Region size.
  * @return true when the region exists and is at least @p bytes long.

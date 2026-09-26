@@ -1,15 +1,31 @@
-/*
-** LplKernel
-** libkxx/include/kstd/string.hpp
-**
-** Freestanding, exception-free std::string work-alike (char only). Heap-backed
-** contiguous storage with a small-buffer optimisation, NUL-terminated, geometric
-** growth via the kernel allocator. Out-of-range routes to kstd::fatal().
-**
-** Covers the engine's text use (construct/append/compare/c_str/index/substr) but
-** is deliberately not a full std::basic_string: no traits template, no locale, no
-** allocator template (always KernelAllocator) — bounded scope on purpose.
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file string.hpp
+ * @brief Freestanding, exception-free std::string work-alike (char only).
+ *
+ * Heap-backed contiguous storage with a small-buffer optimisation, NUL-terminated,
+ * geometric growth via the kernel allocator. Out-of-range routes to kstd::fatal().
+ *
+ * Covers the engine's text use (construct/append/compare/c_str/index/substr) but is
+ * deliberately not a full std::basic_string: no traits template, no locale, no
+ * allocator template (always KernelAllocator) — bounded scope on purpose.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-06-25
+ **************************************************************************/
 
 #ifndef KSTD_STRING_HPP_
 #define KSTD_STRING_HPP_
@@ -136,7 +152,7 @@ public:
     [[nodiscard]] bool operator==(const string &other) const noexcept { return view() == other.view(); }
 
 private:
-    static constexpr size_type INLINE_CAPACITY = 23u; // 24-byte buffer incl. NUL
+    static constexpr size_type INLINE_CAPACITY = 23u; /**< 24-byte buffer incl. NUL */
 
     [[nodiscard]] bool is_inline() const noexcept { return _capacity == INLINE_CAPACITY; }
 
@@ -159,7 +175,10 @@ private:
         dst[_size] = '\0';
     }
 
-    // Grow heap storage to hold at least `minimum` chars (+1 for NUL), geometric.
+    /**
+     * @brief Grows heap storage geometrically until it holds @p minimum chars plus the NUL.
+     * @param minimum Characters the storage must hold, excluding the terminator.
+     */
     void grow_to(size_type minimum)
     {
         size_type new_capacity = _capacity == 0u ? INLINE_CAPACITY : _capacity;

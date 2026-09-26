@@ -1,12 +1,3 @@
-/**
- * @file dialogue_channel.c
- * @brief The aperture between the sovereign and the demon.
- *
- * @author MasterLaplace
- * @version 0.1.0
- * @copyright MIT License
- */
-
 #include <kernel/dialogue/dialogue_channel.h>
 
 #define KERNEL_DIALOGUE_CHANNEL_MASK (KERNEL_DIALOGUE_CHANNEL_CAPACITY - 1u)

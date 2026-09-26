@@ -1,26 +1,14 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** PS/2 keyboard scan code decoder (Set 1)
-*/
-
 #include <kernel/drivers/ps2_keyboard.h>
 #include <stdint.h>
 
-/*
-** Scan code Set 1 layout tables.
-**
-** Indexed by the 7-bit make code (scancode & 0x7F). An entry of 0x00 means the
-** key produces nothing in that modifier level. Three levels are provided per
-** layout: base (no modifier), shift, and AltGr (right alt).
-**
-** Non-ASCII French characters are encoded as CP437 bytes, which is the code
-** page rendered by the VGA text-mode font used by this kernel.
-*/
-
-/* ---- United States QWERTY -------------------------------------------- */
-
+/**
+ * @name United States QWERTY
+ *
+ * Scan code Set 1 layout tables, indexed by the 7-bit make code (scancode & 0x7F). An
+ * entry of 0x00 means the key produces nothing in that modifier level. Three levels are
+ * provided per layout: base (no modifier), shift, and AltGr (right alt).
+ * @{
+ */
 static const char personal_system_2_layout_us_base[128] = {
     0x00, '\033', '1',  '2',  '3',  '4',  '5',  '6', '7',  '8',  /* 0x00-0x09 */
     '9',  '0',    '-',  '=',  '\b', '\t', 'q',  'w', 'e',  'r',  /* 0x0A-0x13 */
@@ -39,18 +27,23 @@ static const char personal_system_2_layout_us_shift[128] = {
     'M',  '<',    '>',  '?', 0x00, '*',  0x00, ' ', 0x00, 0x00, /* 0x32-0x3B */
 };
 
-/* Standard US QWERTY has no AltGr level. */
+/** Standard US QWERTY has no AltGr level. */
 static const char personal_system_2_layout_us_altgr[128] = {0};
+/** @} */
 
-/* ---- French AZERTY --------------------------------------------------- */
-/*
-** Letters follow the AZERTY positions, the number row produces its symbols at
-** the base level and digits under shift, and AltGr exposes the programmer
-** symbols (@ # { [ ] } | \ ` ^ ~). Dead keys (circumflex/diaeresis) are
-** simplified: the circumflex key yields a literal '^' and the diaeresis level
-** is left unmapped. Validate against `qemu -k fr` before relying on it.
-*/
-
+/**
+ * @name French AZERTY
+ *
+ * Letters follow the AZERTY positions, the number row produces its symbols at the base
+ * level and digits under shift, and AltGr exposes the programmer symbols
+ * (@ # { [ ] } | \ ` ^ ~). Dead keys (circumflex/diaeresis) are simplified: the
+ * circumflex key yields a literal '^' and the diaeresis level is left unmapped. Validate
+ * against `qemu -k fr` before relying on it.
+ *
+ * Non-ASCII characters are encoded as CP437 bytes, which is the code page rendered by
+ * the VGA text-mode font used by this kernel.
+ * @{
+ */
 static const char personal_system_2_layout_fr_base[128] = {
     [0x01] = '\033',
     [0x02] = '&',
@@ -167,41 +160,117 @@ static const char personal_system_2_layout_fr_altgr[128] = {
     [0x09] = '\\', [0x0A] = '^', [0x0B] = '@', [0x0C] = ']', [0x0D] = '}',
 };
 
-/* ---- Modifier and layout state --------------------------------------- */
-/*
-** These are only mutated from personal_system_2_keyboard_decode_scancode, which the driver
-** drives exclusively from the bottom-half drain (never from the IRQ handler),
-** so no synchronisation is required.
-*/
+/** @} */
+
+/**
+ * @brief Modifier and layout state.
+ * @details
+ * These are only mutated from personal_system_2_keyboard_decode_scancode, which the driver
+ * drives exclusively from the bottom-half drain (never from the IRQ handler),
+ * so no synchronisation is required.
+ */
 static uint8_t personal_system_2_shift_left_state = 0u;
 static uint8_t personal_system_2_shift_right_state = 0u;
 static uint8_t personal_system_2_ctrl_left_state = 0u;
 static uint8_t personal_system_2_ctrl_right_state = 0u;
 static uint8_t personal_system_2_alt_left_state = 0u;
-static uint8_t personal_system_2_alt_right_state = 0u; /* AltGr */
+static uint8_t personal_system_2_alt_right_state = 0u; /**< AltGr */
 static uint8_t personal_system_2_caps_lock_state = 0u;
-static uint8_t personal_system_2_extended_pending = 0u; /* 0xE0 seen, applies to next byte */
+static uint8_t personal_system_2_extended_pending = 0u; /**< 0xE0 seen, applies to next byte */
 
-/*
-** Which keys are DOWN right now, one bit per Set-1 make code.
-**
-** The driver already saw every release: bit 7 of a scancode is the break flag, and
-** decode_scancode read it, used it for the modifiers, and threw the rest away —
-** which is why the engine could be told "the walker typed W" and never "the walker
-** is HOLDING W". A character stream is the right shape for a console and the wrong
-** shape for a body that walks: holding a direction is a state, not an event, and
-** rebuilding it from key repeat gives the stutter the repeat delay is made of.
-**
-** Updated on the consumer side, in decode_scancode, like the modifier state and for
-** the same reason: assembling state in interrupt context races with whoever reads
-** it. It is therefore only as fresh as the last drain of the ring — a caller that
-** stops draining sees keys stay down, which is correct, because it also stopped
-** seeing them come up.
-*/
+/**
+ * @brief Which keys are DOWN right now, one bit per Set-1 make code.
+ * @details
+ * The driver already saw every release: bit 7 of a scancode is the break flag, and
+ * decode_scancode read it, used it for the modifiers, and threw the rest away —
+ * which is why the engine could be told "the walker typed W" and never "the walker
+* is HOLDING W". A character stream is the right shape for a console and the wrong
+ * shape for a body that walks: holding a direction is a state, not an event, and
+ * rebuilding it from key repeat gives the stutter the repeat delay is made of.
+ *
+ * Updated on the consumer side, in decode_scancode, like the modifier state and for
+ * the same reason: assembling state in interrupt context races with whoever reads
+ * it. It is therefore only as fresh as the last drain of the ring — a caller that
+ * stops draining sees keys stay down, which is correct, because it also stopped
+ * seeing them come up.
+ */
 static uint8_t personal_system_2_key_down_bitmap[16] = {0};
 
 static PersonalSystem2KeyboardLayout_t personal_system_2_active_layout =
     PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_UNITED_STATES_QWERTY;
+
+/** Set-1 prefix byte announcing that the next scancode is an extended key. */
+#define PERSONAL_SYSTEM_2_EXTENDED_PREFIX 0xE0u
+
+/** Set-1 make codes of the modifier keys. Ctrl and Alt are the right-hand keys when extended. */
+#define PERSONAL_SYSTEM_2_MAKE_CODE_LEFT_SHIFT  0x2Au
+#define PERSONAL_SYSTEM_2_MAKE_CODE_RIGHT_SHIFT 0x36u
+#define PERSONAL_SYSTEM_2_MAKE_CODE_CTRL        0x1Du
+#define PERSONAL_SYSTEM_2_MAKE_CODE_ALT         0x38u
+#define PERSONAL_SYSTEM_2_MAKE_CODE_CAPS_LOCK   0x3Au
+
+/**
+ * @brief Records whether an unextended key is down, in the key-down bitmap.
+ *
+ * @details Called before any modifier or mapping decision, so modifiers, dead keys and
+ *          unmapped codes are recorded too: they are all keys someone can hold.
+ *
+ * @note Extended codes are deliberately NOT recorded: they share the low 7 bits with
+ *       unextended ones, so right ctrl would otherwise clear left ctrl's bit.
+ *
+ * @param code    Set-1 make code, 0..127.
+ * @param pressed 1 on make, 0 on break.
+ */
+static void personal_system_2_keyboard_record_key_state(uint8_t code, uint8_t pressed)
+{
+    const uint8_t index = (uint8_t) (code >> 3);
+    const uint8_t mask = (uint8_t) (1u << (code & 7u));
+    if (pressed)
+        personal_system_2_key_down_bitmap[index] |= mask;
+    else
+        personal_system_2_key_down_bitmap[index] &= (uint8_t) ~mask;
+}
+
+/**
+ * @brief Tracks the right-hand ctrl and alt (AltGr), the only extended keys that matter here.
+ *
+ * @note Every other extended key — arrows, keypad enter and the like — produces nothing.
+ *
+ * @param code    Set-1 make code, without its extended prefix.
+ * @param pressed 1 on make, 0 on break.
+ */
+static void personal_system_2_keyboard_track_extended_modifier(uint8_t code, uint8_t pressed)
+{
+    if (code == PERSONAL_SYSTEM_2_MAKE_CODE_CTRL)
+        personal_system_2_ctrl_right_state = pressed;
+    else if (code == PERSONAL_SYSTEM_2_MAKE_CODE_ALT)
+        personal_system_2_alt_right_state = pressed;
+}
+
+/**
+ * @brief Tracks the unextended modifiers: both shifts, left ctrl, left alt and caps lock.
+ *
+ * @note Caps lock toggles on press only.
+ *
+ * @param code    Set-1 make code.
+ * @param pressed 1 on make, 0 on break.
+ * @return 1 when @p code was a modifier, which produces no character.
+ */
+static uint8_t personal_system_2_keyboard_track_modifier(uint8_t code, uint8_t pressed)
+{
+    switch (code)
+    {
+    case PERSONAL_SYSTEM_2_MAKE_CODE_LEFT_SHIFT: personal_system_2_shift_left_state = pressed; return 1u;
+    case PERSONAL_SYSTEM_2_MAKE_CODE_RIGHT_SHIFT: personal_system_2_shift_right_state = pressed; return 1u;
+    case PERSONAL_SYSTEM_2_MAKE_CODE_CTRL: personal_system_2_ctrl_left_state = pressed; return 1u;
+    case PERSONAL_SYSTEM_2_MAKE_CODE_ALT: personal_system_2_alt_left_state = pressed; return 1u;
+    case PERSONAL_SYSTEM_2_MAKE_CODE_CAPS_LOCK:
+        if (pressed)
+            personal_system_2_caps_lock_state ^= 1u;
+        return 1u;
+    default: return 0u;
+    }
+}
 
 static void personal_system_2_keyboard_select_tables(const char **out_base, const char **out_shift,
                                                      const char **out_altgr)
@@ -254,7 +323,7 @@ static char personal_system_2_keyboard_translate_make_code(uint8_t code)
 
 char personal_system_2_keyboard_decode_scancode(uint8_t scancode)
 {
-    if (scancode == 0xE0u)
+    if (scancode == PERSONAL_SYSTEM_2_EXTENDED_PREFIX)
     {
         personal_system_2_extended_pending = 1u;
         return 0x00;
@@ -267,42 +336,15 @@ char personal_system_2_keyboard_decode_scancode(uint8_t scancode)
 
     personal_system_2_extended_pending = 0u;
 
-    /* Track the key's state before anything below returns early: modifiers, dead
-       keys and unmapped codes are all keys someone can hold. Extended codes share
-       the low 7 bits with unextended ones, so they are deliberately NOT recorded
-       here — right ctrl would otherwise clear left ctrl's bit. */
-    if (!extended)
-    {
-        const uint8_t index = (uint8_t) (code >> 3);
-        const uint8_t mask = (uint8_t) (1u << (code & 7u));
-        if (pressed)
-            personal_system_2_key_down_bitmap[index] |= mask;
-        else
-            personal_system_2_key_down_bitmap[index] &= (uint8_t) ~mask;
-    }
-
     if (extended)
     {
-        switch (code)
-        {
-        case 0x1Du: /* right ctrl */ personal_system_2_ctrl_right_state = pressed; return 0x00;
-        case 0x38u: /* right alt (AltGr) */ personal_system_2_alt_right_state = pressed; return 0x00;
-        default: /* arrows, keypad enter, etc.: not produced here */ return 0x00;
-        }
+        personal_system_2_keyboard_track_extended_modifier(code, pressed);
+        return 0x00;
     }
 
-    switch (code)
-    {
-    case 0x2Au: /* left shift */ personal_system_2_shift_left_state = pressed; return 0x00;
-    case 0x36u: /* right shift */ personal_system_2_shift_right_state = pressed; return 0x00;
-    case 0x1Du: /* left ctrl */ personal_system_2_ctrl_left_state = pressed; return 0x00;
-    case 0x38u: /* left alt */ personal_system_2_alt_left_state = pressed; return 0x00;
-    case 0x3Au: /* caps lock toggles on press only */
-        if (pressed)
-            personal_system_2_caps_lock_state ^= 1u;
+    personal_system_2_keyboard_record_key_state(code, pressed);
+    if (personal_system_2_keyboard_track_modifier(code, pressed))
         return 0x00;
-    default: break;
-    }
 
     if (is_break)
         return 0x00;
@@ -319,12 +361,6 @@ uint8_t personal_system_2_keyboard_is_code_held(uint8_t code)
 
 uint8_t personal_system_2_keyboard_is_character_held(char character)
 {
-    /*
-    ** Asked by CHARACTER, not by scancode, and answered through the ACTIVE layout's
-    ** unshifted table. That is what makes a walker's forward key follow the layout:
-    ** on AZERTY the key above S is 'z', on QWERTY it is 'w', and a caller that had
-    ** hard-coded scancode 0x11 would send a French keyboard walking sideways.
-    */
     const char *base = personal_system_2_layout_us_base;
 
     if (personal_system_2_active_layout == PERSONAL_SYSTEM_2_KEYBOARD_LAYOUT_FRENCH_AZERTY)

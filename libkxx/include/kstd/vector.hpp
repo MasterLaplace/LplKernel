@@ -1,15 +1,31 @@
-/*
-** LplKernel
-** libkxx/include/kstd/vector.hpp
-**
-** Freestanding, exception-free std::vector work-alike for the engine module.
-** Contiguous storage, geometric growth, allocator-parameterised. Out-of-memory
-** and out-of-range route to kstd::fatal() (there is no throwing in the kernel).
-**
-** Intentionally NOT a drop-in for every std::vector corner (no allocator
-** propagation traits, no incomplete-type support): it covers the engine's use
-** (push/emplace/reserve/index/iterate/clear) with deterministic behaviour.
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file vector.hpp
+ * @brief Freestanding, exception-free std::vector work-alike for the engine module.
+ *
+ * Contiguous storage, geometric growth, allocator-parameterised. Out-of-memory and
+ * out-of-range route to kstd::fatal() (there is no throwing in the kernel).
+ *
+ * Intentionally NOT a drop-in for every std::vector corner (no allocator
+ * propagation traits, no incomplete-type support): it covers the engine's use
+ * (push/emplace/reserve/index/iterate/clear) with deterministic behaviour.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-06-25
+ **************************************************************************/
 
 #ifndef KSTD_VECTOR_HPP_
 #define KSTD_VECTOR_HPP_
@@ -57,8 +73,12 @@ public:
             emplace_back(value);
     }
 
-    // Iterator-range constructor. The enable_if disambiguates from the
-    // (count, value) constructor when called with two integral arguments.
+    /**
+     * @brief Iterator-range constructor.
+     *
+     * The enable_if disambiguates from the (count, value) constructor when called with two integral
+     * arguments.
+     */
     template <typename InputIt, typename = std::enable_if_t<!std::is_integral_v<InputIt>>>
     vector(InputIt first, InputIt last, const Allocator &allocator = Allocator()) : _allocator(allocator)
     {
@@ -171,8 +191,11 @@ public:
         _data[_size].~T();
     }
 
-    // Erase one element, shifting the tail down. Returns an iterator to the
-    // element that followed the erased one (end() if the last was erased).
+    /**
+     * @brief Erases one element, shifting the tail down.
+     * @param position The element to erase.
+     * @return An iterator to the element that followed it, end() if it was the last.
+     */
     iterator erase(iterator position)
     {
         for (iterator current = position; current + 1 != end(); ++current)
@@ -217,15 +240,21 @@ public:
     }
 
 private:
+    /**
+     * @brief Moves the elements into fresh storage of @p new_capacity.
+     *
+     * @note Out of memory halts, honouring the contract stated at the top of this file.
+     *       Without that the failure is silent and far worse than a halt: _data would be set
+     *       to nullptr while _capacity claimed the requested size, so the next emplace_back
+     *       placement-news through a null pointer, and resize()'s
+     *       `while (_size < new_size) emplace_back(...)` never terminates because the growth
+     *       never takes.
+     *
+     * @param new_capacity Elements the new storage holds.
+     */
     void reallocate(size_type new_capacity)
     {
         T *const fresh = _allocator.allocate(new_capacity);
-        /* Honour the out-of-memory contract stated at the top of this file.
-           Without this the failure is silent and far worse than a halt: _data
-           would be set to nullptr while _capacity claimed the requested size,
-           so the next emplace_back placement-news through a null pointer, and
-           resize()'s `while (_size < new_size) emplace_back(...)` never
-           terminates because the growth never takes. */
         if (fresh == nullptr)
             fatal("kstd::vector: out of memory growing storage");
 

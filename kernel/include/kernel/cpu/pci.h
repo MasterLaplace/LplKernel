@@ -1,20 +1,42 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** PCI (Peripheral Component Interconnect) configuration space access
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file pci.h
+ * @brief PCI (Peripheral Component Interconnect) configuration space access.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-06-23
+ **************************************************************************/
 
 #ifndef KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_H
 #define KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_H
 
 #include <stdint.h>
 
-/* Configuration mechanism #1 I/O ports. */
+/**
+ * @name Configuration mechanism #1 I/O ports
+ * @{
+ */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_CONFIG_ADDRESS_PORT 0xCF8u
 #define PERIPHERAL_COMPONENT_INTERCONNECT_CONFIG_DATA_PORT    0xCFCu
+/** @} */
 
-/* Common configuration-space register offsets (type 0/1 headers). */
+/**
+ * @name Common configuration-space register offsets (type 0/1 headers)
+ * @{
+ */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_VENDOR_ID      0x00u
 #define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_DEVICE_ID      0x02u
 #define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_COMMAND        0x04u
@@ -26,11 +48,12 @@
 #define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_HEADER_TYPE    0x0Eu
 #define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_BASE_ADDRESS_0 0x10u
 #define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_SECONDARY_BUS  0x19u
+/** @} */
 
-/* A missing device or function reads back this vendor id. */
+/** A missing device or function reads back this vendor id. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_INVALID_VENDOR_ID 0xFFFFu
 
-/* Header type: bit 7 marks a multi-function device, low 7 bits select layout. */
+/** Header type: bit 7 marks a multi-function device, low 7 bits select layout. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_TYPE_MULTIFUNCTION_MASK 0x80u
 #define PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_TYPE_LAYOUT_MASK        0x7Fu
 

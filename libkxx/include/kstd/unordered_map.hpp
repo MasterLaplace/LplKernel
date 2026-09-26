@@ -1,16 +1,33 @@
-/*
-** LplKernel
-** libkxx/include/kstd/unordered_map.hpp
-**
-** Freestanding, exception-free std::unordered_map work-alike. Separate chaining
-** with a power-of-two bucket array and a load-factor-driven rehash. Node storage
-** comes from the kernel allocator; iteration order is bucket-then-insertion and
-** is therefore stable for a given insertion sequence (matters for determinism).
-**
-** Scope: insert/emplace/operator[]/find/erase/contains/at/size/iterate. No node
-** handles, no bucket-interface, no custom max_load_factor tuning — bounded on
-** purpose, like the rest of kstd.
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file unordered_map.hpp
+ * @brief Freestanding, exception-free std::unordered_map work-alike.
+ *
+ * Separate chaining with a power-of-two bucket array and a load-factor-driven
+ * rehash. Node storage comes from the kernel allocator; iteration order is
+ * bucket-then-insertion and is therefore stable for a given insertion sequence
+ * (matters for determinism).
+ *
+ * Scope: insert/emplace/operator[]/find/erase/contains/at/size/iterate. No node
+ * handles, no bucket-interface, no custom max_load_factor tuning — bounded on
+ * purpose, like the rest of kstd.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-06-25
+ **************************************************************************/
 
 #ifndef KSTD_UNORDERED_MAP_HPP_
 #define KSTD_UNORDERED_MAP_HPP_
@@ -186,10 +203,15 @@ public:
 
     std::pair<iterator, bool> insert(const value_type &entry) { return emplace(entry.first, entry.second); }
 
-    // Erase the element at `position`, returning an iterator to the next element
-    // (the std::unordered_map node-based contract). Advance first, then unlink:
-    // erasing one node leaves every other node's storage valid, so the advanced
-    // iterator stays good.
+    /**
+     * @brief Erases the element at @p position (the std::unordered_map node-based contract).
+     *
+     * @details Advances first, then unlinks: erasing one node leaves every other node's
+     *          storage valid, so the advanced iterator stays good.
+     *
+     * @param position The element to erase.
+     * @return An iterator to the element that followed it.
+     */
     iterator erase(iterator position)
     {
         iterator next = position;
@@ -239,19 +261,35 @@ public:
 private:
     static constexpr size_type INITIAL_BUCKETS = 8u;
 
-    [[nodiscard]] size_type bucket_index(const Key &key) const noexcept
-    {
-        return Hash{}(key) & (_bucket_count - 1u); // _bucket_count is a power of two
-    }
+    /**
+     * @brief The bucket a key hashes to.
+     *
+     * @note The bucket count is always a power of two, so masking is the modulo.
+     *
+     * @param key The key.
+     * @return Its bucket index.
+     */
+    [[nodiscard]] size_type bucket_index(const Key &key) const noexcept { return Hash{}(key) & (_bucket_count - 1u); }
 
+    /**
+     * @brief Makes room for one more entry, doubling the buckets before the load factor passes 1.
+     */
     void ensure_capacity()
     {
         if (_bucket_count == 0u)
             reserve_buckets(INITIAL_BUCKETS);
-        else if (_size + 1u > _bucket_count) // load factor > 1.0
+        else if (_size + 1u > _bucket_count)
             reserve_buckets(_bucket_count * 2u);
     }
 
+    /**
+     * @brief Grows the bucket array to at least @p new_bucket_count and rehashes into it.
+     *
+     * @details Existing nodes are relinked into the new array; the nodes move, their entries
+     *          do not.
+     *
+     * @param new_bucket_count Buckets wanted; a power of two, at least INITIAL_BUCKETS.
+     */
     void reserve_buckets(size_type new_bucket_count)
     {
         if (new_bucket_count < INITIAL_BUCKETS)
@@ -263,7 +301,6 @@ private:
         for (size_type i = 0u; i < new_bucket_count; ++i)
             fresh[i] = nullptr;
 
-        // Rehash existing nodes into the new bucket array (move nodes, not entries).
         for (size_type i = 0u; i < _bucket_count; ++i)
         {
             Node *node = _buckets[i];

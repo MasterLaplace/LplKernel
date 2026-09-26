@@ -1,10 +1,3 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** apic — Universal Local APIC Management
-*/
-
 #include <kernel/cpu/apic.h>
 
 extern Serial_t com1;

@@ -18,6 +18,14 @@ static const char *peripheral_component_interconnect_class_name(uint8_t class_co
     }
 }
 
+/**
+ * @brief Writes every implemented base address register of a device to serial.
+ *
+ * @note A 64-bit register's high half occupies the next slot, which is skipped.
+ *
+ * @param serial Serial port the lines are written to.
+ * @param device The device.
+ */
 static void
 peripheral_component_interconnect_write_base_address_registers(Serial_t *serial,
                                                                const PeripheralComponentInterconnectDevice_t *device)
@@ -43,7 +51,7 @@ peripheral_component_interconnect_write_base_address_registers(Serial_t *serial,
         serial_write_string(serial, "\n");
 
         if (bar.is_64bit)
-            ++index; /* the high half occupies the next slot */
+            ++index;
     }
 }
 

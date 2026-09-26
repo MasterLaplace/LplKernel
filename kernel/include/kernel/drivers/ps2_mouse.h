@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file ps2_mouse.h
  * @brief PS/2 auxiliary pointing device: packet decoding and a motion ring.
  *
@@ -18,11 +31,10 @@
  * no screen; a camera wants the deltas raw, and a pointer wants them accumulated.
  * The caller chooses.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
  * @date 2026-07-31
- * @copyright MIT License
- */
+ **************************************************************************/
 
 #ifndef KERNEL_DRIVERS_PS2_MOUSE_H
 #define KERNEL_DRIVERS_PS2_MOUSE_H
@@ -59,6 +71,11 @@ uint8_t personal_system_2_mouse_is_present(void);
 
 /**
  * @brief Pops one assembled movement report.
+ *
+ * @details A byte whose always-set header bit is clear means the stream lost a byte: it is
+ *          not a header, so it is dropped, counted as a resynchronisation, and the next one is
+ *          tried. An incomplete packet is left in the ring, since the rest is still coming.
+ *
  * @return 1 if a packet was produced, 0 if the ring holds no complete packet.
  */
 uint8_t personal_system_2_mouse_try_pop_packet(PersonalSystem2MousePacket_t *out_packet);

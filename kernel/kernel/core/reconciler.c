@@ -9,12 +9,15 @@
 static KernelReconcilerDeclaration_t reconciler_declaration = {0};
 static bool reconciler_is_declared = false;
 
-/* The hot-loop violation counter is global and lives for the whole boot, and the
-   smoke battery raises it on purpose — proving the guard fires is what that smoke
-   is for. Comparing its absolute value against a budget would therefore report a
-   kernel in drift because a test did its job. The baseline is taken when the
-   declaration is adopted, and only the delta since is judged. This has been paid
-   for once already, in the session that first wired the real-time guard. */
+/**
+ * @brief The hot-loop violation counter is global and lives for the whole boot, and the smoke
+ * battery raises it on purpose — proving the guard fires is what that smoke is for.
+ *
+ * Comparing its absolute value against a budget would therefore report a kernel in drift because a
+ * test did its job. The baseline is taken when the declaration is adopted, and only the delta since
+ * is judged. This has been paid for once already, in the session that first wired the real-time
+ * guard.
+ */
 static uint32_t reconciler_real_time_violation_baseline = 0u;
 
 static uint32_t reconciler_pass_count = 0u;
@@ -22,8 +25,16 @@ static uint32_t reconciler_drift_count = 0u;
 static uint32_t reconciler_drift_mask = 0u;
 static volatile uint32_t reconciler_periodic_pass_count = 0u;
 
-/* Raises the invariant's bit and reports whether it was in drift, so a caller can
-   count the failures of one pass without repeating the mask arithmetic. */
+/**
+ * @brief Raises the invariant's bit when it does not hold, and says whether it drifted.
+ *
+ * @details Returns a count so a caller can add up the failures of one pass without
+ *          repeating the mask arithmetic.
+ *
+ * @param invariant The invariant judged.
+ * @param holds     Whether reality still matches the declaration for it.
+ * @return 1 when it drifted, 0 otherwise.
+ */
 static uint32_t reconciler_evaluate(KernelReconcilerInvariant_t invariant, bool holds)
 {
     if (holds)
@@ -31,6 +42,16 @@ static uint32_t reconciler_evaluate(KernelReconcilerInvariant_t invariant, bool 
 
     reconciler_drift_mask |= (1u << (uint32_t) invariant);
     return 1u;
+}
+
+static uint32_t reconciler_real_time_violations_since_declaration(void)
+{
+    const uint32_t current = kernel_heap_get_hot_loop_violation_count();
+
+    if (current <= reconciler_real_time_violation_baseline)
+        return 0u;
+
+    return current - reconciler_real_time_violation_baseline;
 }
 
 void kernel_reconciler_declare(const KernelReconcilerDeclaration_t *declaration)
@@ -44,16 +65,6 @@ void kernel_reconciler_declare(const KernelReconcilerDeclaration_t *declaration)
     reconciler_drift_count = 0u;
     reconciler_drift_mask = 0u;
     reconciler_real_time_violation_baseline = kernel_heap_get_hot_loop_violation_count();
-}
-
-static uint32_t reconciler_real_time_violations_since_declaration(void)
-{
-    const uint32_t current = kernel_heap_get_hot_loop_violation_count();
-
-    if (current <= reconciler_real_time_violation_baseline)
-        return 0u;
-
-    return current - reconciler_real_time_violation_baseline;
 }
 
 bool kernel_reconciler_is_declared(void) { return reconciler_is_declared; }
@@ -80,9 +91,6 @@ uint32_t kernel_reconciler_check(void)
                                        kernel_section_protection_write_protect_is_enabled());
     }
 
-    /* Peak rather than current usage: the arena is reset every frame, so reading
-       what it holds right now answers a question about this instant instead of
-       about the run. */
     drifted += reconciler_evaluate(KERNEL_RECONCILER_INVARIANT_FRAME_ARENA,
                                    kernel_frame_arena_get_peak_used_bytes() <=
                                        reconciler_declaration.frame_arena_capacity_bytes);
@@ -149,11 +157,6 @@ void kernel_reconciler_report(Serial_t *serial)
     if (!serial)
         return;
 
-    /* A drift count of zero proves nothing on its own: a reconciler that never ran
-       reports exactly the same thing as one that ran ten thousand times and never
-       saw a discrepancy. So the report waits, with a bound, for the periodic driver
-       to prove itself — otherwise the liveness printed here would be a race with
-       how fast the machine happened to boot. */
     const bool periodic_ran = kernel_reconciler_wait_for_periodic_pass();
 
     kernel_telemetry_begin_record(serial, "reconciler");

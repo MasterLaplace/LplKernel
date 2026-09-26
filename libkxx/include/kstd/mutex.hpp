@@ -1,13 +1,29 @@
-/*
-** LplKernel
-** libkxx/include/kstd/mutex.hpp
-**
-** Single-threaded kernel mutex facade. The kernel is single-threaded first (per
-** the convergence plan: a job_system interface with an inline executor), so a
-** lock is a no-op that preserves the std::mutex / std::lock_guard call sites in
-** the engine without pulling in <thread>. When a real kernel scheduler lands,
-** these route to a kernel spinlock behind the same interface.
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file mutex.hpp
+ * @brief Single-threaded kernel mutex facade.
+ *
+ * The kernel is single-threaded first (a job_system interface with an inline
+ * executor), so a lock is a no-op that preserves the std::mutex / std::lock_guard
+ * call sites in the engine without pulling in <thread>. When a real kernel scheduler
+ * lands, these route to a kernel spinlock behind the same interface.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-06-25
+ **************************************************************************/
 
 #ifndef KSTD_MUTEX_HPP_
 #define KSTD_MUTEX_HPP_
@@ -25,7 +41,7 @@ public:
     void unlock() noexcept {}
 };
 
-// Recursive variant: identical no-op semantics under single-threaded execution.
+/** Recursive variant: identical no-op semantics under single-threaded execution. */
 class recursive_mutex {
 public:
     constexpr recursive_mutex() noexcept = default;

@@ -1,21 +1,67 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** P3 render smoke — exercises the KernelDisplayRenderer (software rasterizer)
-** over the kernel IDisplayBackend. Runs a fixed-timestep loop of N_FRAMES
-** frames using IClockBackend for pacing: each tick advances the Fixed32
-** rotation angle (deterministic authority) and each render call draws the
-** interpolated triangle into the LFB. Proves the P3 exit gate:
-**   - FPU/SSE state is preserved across the IRQs that fire during the loop
-**     (validated by the non-#GP execution itself)
-**   - The triangle rasteriser writes non-background pixels to the surface
-**   - The Fixed32 angle arithmetic is CORDIC-based (no libm)
-*/
 #include "libengine/libengine.h"
 
 #include <lpl/platform/kernel/KernelPlatform.hpp>
 #include <lpl/render/kernel/KernelDisplayRenderer.hpp>
+
+namespace {
+
+/** Clear colour of the renderer's background. */
+constexpr lpl::core::u32 kBackground = 0x00001040u;
+
+/** A colour the renderer never paints, written straight into the surface to test read-back. */
+constexpr lpl::core::u32 kDirectProbe = 0x00ABCDEFu;
+
+/**
+ * @brief Runs the fixed-timestep loop: each frame is one tick, a clear, then a rasterise.
+ *
+ * @details The tick advances the Fixed32 rotation angle, which is the deterministic authority;
+ *          the clear paints the background and the end of the frame rasterises the triangle and
+ *          presents it.
+ *
+ * @param renderer The renderer under test.
+ * @param frames   Frames to render.
+ * @return Frames rendered.
+ */
+lpl::core::u32 renderFrames(lpl::render::kernel::KernelDisplayRenderer &renderer, lpl::core::u32 frames)
+{
+    lpl::core::u32 rendered = 0u;
+    for (lpl::core::u32 frame = 0u; frame < frames; ++frame)
+    {
+        renderer.tick();
+        renderer.beginFrame();
+        renderer.endFrame();
+        ++rendered;
+    }
+    return rendered;
+}
+
+/**
+ * @brief Writes a known pixel straight into the surface and reads it back through the HAL.
+ *
+ * @details The second stage of the pixel check. When the probe does not come back the HAL
+ *          read-back itself is broken, and the recorded centre pixel is replaced by
+ *          `0xDEAD0000 | what came back` so the serial line says so; when it does, a centre
+ *          left at the background colour means the renderer simply did not paint it.
+ *
+ * @param platform The kernel platform whose display is probed.
+ * @param cx       Column of the probed pixel.
+ * @param cy       Row of the probed pixel.
+ * @param out      Its centre pixel is overwritten when the read-back fails.
+ */
+void probeDisplayReadBack(lpl::platform::kernel::KernelPlatform &platform, lpl::core::u32 cx, lpl::core::u32 cy,
+                          libengine_p3_render_smoke_result_t *out)
+{
+    lpl::platform::SurfaceDescriptor probe;
+    if (!platform.display().querySurface(probe) || !probe.buffer)
+        return;
+
+    probe.buffer[cy * (probe.pitch / 4u) + cx] = kDirectProbe;
+    const lpl::core::u32 direct_back = platform.display().readPixel(cx, cy);
+    if (direct_back != kDirectProbe)
+        out->centre_pixel_raw = 0xDEAD0000u | direct_back;
+}
+
+} // namespace
 
 extern "C" void libengine_p3_render_smoke(libengine_p3_render_smoke_result_t *out)
 {
@@ -27,15 +73,12 @@ extern "C" void libengine_p3_render_smoke(libengine_p3_render_smoke_result_t *ou
 
     *out = libengine_p3_render_smoke_result_t{};
 
-    // -----------------------------------------------------------------------
-    // Platform + renderer
-    // -----------------------------------------------------------------------
     platform::kernel::KernelPlatform platform;
     render::kernel::KernelDisplayRenderer renderer{platform.display()};
 
     platform::SurfaceDescriptor surface;
     if (!platform.display().querySurface(surface))
-        return; // no framebuffer → smoke skipped (text-mode boot)
+        return;
 
     out->display_available = 1u;
 
@@ -43,59 +86,22 @@ extern "C" void libengine_p3_render_smoke(libengine_p3_render_smoke_result_t *ou
     (void) result;
     out->renderer_init_ok = 1u;
 
-    // -----------------------------------------------------------------------
-    // Fixed-timestep loop: N_FRAMES render frames, each preceded by one tick.
-    // IClockBackend is used for wall-clock observability (not determinism).
-    // -----------------------------------------------------------------------
     constexpr u32 kFrames = 5u;
     platform::IClockBackend &clock = platform.clock();
 
     const u32 t0 = clock.tickCount();
-
-    for (u32 frame = 0u; frame < kFrames; ++frame)
-    {
-        renderer.tick();       // advance Fixed32 angle (deterministic)
-        renderer.beginFrame(); // clear to background
-        renderer.endFrame();   // rasterise triangle + present
-        ++out->frames_rendered;
-    }
-
+    out->frames_rendered = renderFrames(renderer, kFrames);
     const u32 t1 = clock.tickCount();
-    out->ticks_elapsed = t1 - t0; // modular delta
+    out->ticks_elapsed = t1 - t0;
 
-    // -----------------------------------------------------------------------
-    // Two-stage pixel check:
-    //   1. Read centre after renderer — if non-background, triangle rendered.
-    //   2. Direct buffer write + readPixel — confirms HAL round-trip works.
-    //      If direct probe passes but triangle_visible=0, issue is in renderer.
-    // -----------------------------------------------------------------------
-    constexpr u32 kBackground  = 0x00001040u;
-    constexpr u32 kDirectProbe = 0x00ABCDEFu;
-    const u32 cx = surface.width  / 2u;
+    const u32 cx = surface.width / 2u;
     const u32 cy = surface.height / 2u;
 
-    // Stage 1: read centroid pixel — the triangle centroid is at screen centre
-    // for any rotation angle, so it must always be inside the triangle.
     const u32 centre_after_render = platform.display().readPixel(cx, cy);
     out->centre_pixel_raw = centre_after_render;
     out->triangle_visible = (centre_after_render != kBackground) ? 1u : 0u;
 
-    // Stage 2: direct write + read to verify HAL coherency.
-    {
-        platform::SurfaceDescriptor probe;
-        if (platform.display().querySurface(probe) && probe.buffer)
-        {
-            probe.buffer[cy * (probe.pitch / 4u) + cx] = kDirectProbe;
-            const u32 direct_back = platform.display().readPixel(cx, cy);
-            // Overwrite centre_pixel_raw with direct probe result so we can
-            // see in serial whether the HAL read-back works at all.
-            // If direct_back != kDirectProbe the HAL is broken; otherwise the
-            // renderer simply didn't paint the centre pixel.
-            if (direct_back != kDirectProbe)
-                out->centre_pixel_raw = 0xDEAD0000u | direct_back;
-        }
-    }
+    probeDisplayReadBack(platform, cx, cy, out);
 
-    out->smoke_ok = (out->renderer_init_ok && (out->frames_rendered == kFrames)
-                     && out->triangle_visible) ? 1u : 0u;
+    out->smoke_ok = (out->renderer_init_ok && (out->frames_rendered == kFrames) && out->triangle_visible) ? 1u : 0u;
 }

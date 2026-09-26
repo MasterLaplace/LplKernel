@@ -1,12 +1,3 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** P4 scene smoke — exercises the lpl::scene graph (Fixed32 affine transforms,
-** parent/child world composition, undo/redo, multi-select) inside the kernel.
-** The reported raw Fixed32 values must match the Linux oracle
-** (tests/test-scene-parity) bit-for-bit — they are Fixed32/CORDIC authority.
-*/
 #include "libengine/libengine.h"
 
 #include <lpl/scene/Scene.hpp>
@@ -31,7 +22,6 @@ extern "C" void libengine_p4_scene_smoke(libengine_p4_scene_smoke_result_t *out)
     out->world_tx_raw = static_cast<core::u32>(world.tx.raw());
     out->world_ty_raw = static_cast<core::u32>(world.ty.raw());
 
-    // Edit -> undo -> redo on the child's translation.
     s.setLocalTransform(child, scene::Transform2D::translation(Fixed32::fromInt(7), Fixed32::fromInt(7)));
     s.undo();
     out->undo_tx_raw = static_cast<core::u32>(s.localTransform(child).tx.raw());
@@ -40,7 +30,7 @@ extern "C" void libengine_p4_scene_smoke(libengine_p4_scene_smoke_result_t *out)
 
     s.select(root);
     s.select(child);
-    s.select(root); // duplicate ignored
+    s.select(root);
     out->selection = s.selectionCount();
 
     const Fixed32 halfPi = Fixed32::fromFloat(1.57079632679f);

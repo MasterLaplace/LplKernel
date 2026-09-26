@@ -1,21 +1,3 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** Journey parity fold — a named body that walks, and what it earns.
-**
-** The first gate whose subject is somebody who MOVED. Every earlier history
-** signature folds a corpus being reasoned about; this one folds where a body
-** ended up, and how much of what a corpus claims the run reproduced without
-** being told.
-**
-** That distinction is the whole measurement. `Divergence` credits a run only for
-** events it emitted as `Cause::Emergent` — an event the timeline caused cannot
-** count as agreement with that timeline — so a run that forced everything would
-** score perfectly and prove nothing.
-**
-** Must match tests/parity/test_history_parity.cpp on the host, bit for bit.
-*/
 #include "libengine/libengine.h"
 
 #include <lpl/engine/systems/Journey.hpp>

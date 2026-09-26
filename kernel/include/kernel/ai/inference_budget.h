@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file inference_budget.h
  * @brief Where a headless profile's spare capacity goes.
  *
@@ -13,10 +26,10 @@
  * would make the reply depend on how fast the machine was that day. A budget spent
  * in tokens is a budget two targets agree about.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef KERNEL_AI_INFERENCE_BUDGET_H
 #define KERNEL_AI_INFERENCE_BUDGET_H
@@ -31,6 +44,9 @@ extern "C" {
 
 /**
  * @brief Opens a budget of @p tokens.
+ *
+ * @note The refusal count deliberately survives an open: it answers "is this budget the
+ *       right size", which is a question about the run and not about one reply.
  *
  * @param tokens Tokens the demon may produce before it must conclude.
  */
@@ -70,6 +86,9 @@ uint32_t kernel_inference_budget_denied(void);
  * The signal to wrap up rather than to stop. A reply cut off mid-sentence at
  * exhaustion is worse than a shorter one that concludes, and the caller can only
  * make that choice if it is told before the money runs out.
+ *
+ * @note Computed by multiplying rather than dividing, so a budget of nine tokens still has
+ *       a final tenth: nine divided by ten is zero, and the signal would never fire.
  *
  * @return true when a tenth or less remains.
  */

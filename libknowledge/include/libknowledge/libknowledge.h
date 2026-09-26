@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file libknowledge.h
  * @brief C facade over the demon's memory, linked into the kernel.
  *
@@ -14,10 +27,21 @@
  * turns a canonical name into one of those identifiers. `history/Fact.hpp` wrote
  * that division down itself.
  *
- * @author MasterLaplace
+ * The image the kernel carries is `kParityKnowledgeImage`, a byte array in the tree,
+ * for the same reason `ParityPackBlob.hpp` is one: a kernel build must require no host
+ * tool, and a gate that needed a file present would be a gate that skips itself when
+ * it is not. Loading a harvested image as a boot module is the right destination and
+ * is deliberately not written yet: nothing produces one, so a loader would be a
+ * reader with no writer.
+ *
+ * Validation is unconditional either way: magic, version, declared extent, content
+ * hash. An invalid image is reported, never silently replaced by a built-in fallback;
+ * a corrupt memory has to be visible as a corrupt memory.
+ *
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef LIBKNOWLEDGE_H
 #define LIBKNOWLEDGE_H
@@ -77,6 +101,13 @@ typedef struct {
 /**
  * @brief Opens the canonical image, queries it, and folds every stage.
  *
+ * @details What it folds is a TRANSLATION and not a computation, which makes it unlike
+ *          every gate before it: the canonical corpus of gate P13 is written to bytes by a
+ *          host tool, read back here in ring 0, and the history rebuilt from what came
+ *          back. The equality of three signatures with P13's own IS the gate; everything
+ *          else it reports is context for reading a failure. Must match
+ *          LplKnowledge/tests/test_knowledge_parity.cpp.
+ *
  * @param out Receives the signatures.
  */
 extern void libknowledge_corpus_fold(libknowledge_corpus_fold_result_t *out);
@@ -84,13 +115,20 @@ extern void libknowledge_corpus_fold(libknowledge_corpus_fold_result_t *out);
 /**
  * @brief A word for where the image this library reads came from.
  *
- * Only one answer today — "embedded" — and it is reported rather than assumed
- * because the second answer is coming: an image harvested on a host will arrive as a
- * boot module, and the day it does, "the gate read the built-in corpus" and "the gate
- * read what was booted" must be distinguishable in a log. `kernel_model_slot_state_text`
+ * One provenance today — "embedded" — and it is reported rather than assumed
+ * because the second is coming: an image harvested on a host will arrive as a boot
+ * module, and the day it does, "the gate read the built-in corpus" and "the gate read
+ * what was booted" must be distinguishable in a log. `kernel_model_slot_state_text`
  * exists for the same reason on the weights side.
  *
- * @return "embedded", or "module" once one can be booted.
+ * @note The image is validated before it is called embedded, not merely found present. An
+ *       image the kernel carries can still be wrong — a hand-edited blob, a half-applied
+ *       patch — and reporting "embedded" for one that does not open would be a silent
+ *       fallback. The answers stay apart on purpose, exactly as the weights slot keeps
+ *       absent, malformed and loaded apart.
+ *
+ * @return "embedded" when the image opens, "malformed" when it does not; "module" once one
+ *         can be booted.
  */
 extern const char *libknowledge_image_state(void);
 

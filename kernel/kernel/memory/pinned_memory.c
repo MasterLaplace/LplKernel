@@ -29,8 +29,6 @@ void *kernel_pinned_alloc(uint32_t size)
 
     uint32_t pages_needed = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 
-    /* Let the VMM find the first free virtual range so pinned allocations
-       are never handed a range already claimed by the framebuffer or others. */
     void *reserved = kernel_vmm_reserve_pages(pages_needed);
     if (!reserved)
         return NULL;

@@ -2,9 +2,12 @@
 
 #include <kernel/diag/telemetry.h>
 
-/* Longest key the duplicate check stores. A key longer than this is compared on
-   its first characters only, which can only ever report a duplicate that is not
-   one — the safe direction for a counter that is expected to read zero. */
+/**
+ * @brief Longest key the duplicate check stores.
+ *
+ * A key longer than this is compared on its first characters only, which can only ever report a
+ * duplicate that is not one — the safe direction for a counter that is expected to read zero.
+ */
 #define TELEMETRY_MAX_KEY_LENGTH 31u
 
 static Serial_t *telemetry_serial = NULL;
@@ -59,10 +62,16 @@ static bool telemetry_key_was_already_written(const char *key)
     return false;
 }
 
-/* Opens a field and reports whether the caller may write its value. Everything a
-   field needs before its value — the guards, the duplicate check, the separator
-   and the "key=" — happens here, so the four write_* entry points differ only in
-   how they render the value. */
+/**
+ * @brief Opens a field and reports whether the caller may write its value.
+ *
+ * @details Everything a field needs before its value — the guards, the duplicate check, the
+ *          separator and the "key=" — happens here, so the four write_* entry points differ
+ *          only in how they render the value.
+ *
+ * @param key The field's key.
+ * @return true when the value may be written.
+ */
 static bool telemetry_open_field(const char *key)
 {
     if (!telemetry_record_is_open || !telemetry_serial || !key)
@@ -86,8 +95,14 @@ static bool telemetry_open_field(const char *key)
     return true;
 }
 
-/* A space or an '=' inside a value splits the field in two for any reader, so it
-   is replaced rather than emitted, and counted so a check can notice. */
+/**
+ * @brief Writes a text value with every space and '=' replaced by '_'.
+ *
+ * @details A space or an '=' inside a value splits the field in two for any reader, so it is
+ *          replaced rather than emitted, and counted so a check can notice.
+ *
+ * @param text The value.
+ */
 static void telemetry_write_sanitised_text(const char *text)
 {
     for (const char *cursor = text; *cursor != '\0'; ++cursor)
@@ -121,7 +136,7 @@ void kernel_telemetry_write_unsigned(const char *key, uint32_t value)
     if (!telemetry_open_field(key))
         return;
 
-    serial_write_int(telemetry_serial, (int32_t) value);
+    serial_write_unsigned(telemetry_serial, value);
 }
 
 void kernel_telemetry_write_hexadecimal(const char *key, uint32_t value)

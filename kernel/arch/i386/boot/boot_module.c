@@ -1,9 +1,3 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** Boot module lookup — resolving a multiboot module to bytes we can read.
-*/
 #include <kernel/boot/boot_module.h>
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
@@ -13,13 +7,17 @@
 
 extern MultibootInfo_t *multiboot_info;
 
-/** @brief Physical to kernel-virtual, through the direct map. */
+/**
+ * @brief Physical to kernel-virtual, through the direct map.
+ */
 static inline const void *boot_module_phys_to_virt(uint32_t phys_addr)
 {
     return (const void *) (uintptr_t) (phys_addr + KERNEL_VIRTUAL_BASE);
 }
 
-/** @brief Length of a NUL-terminated string, bounded so a corrupt one cannot hang us. */
+/**
+ * @brief Length of a NUL-terminated string, bounded so a corrupt one cannot hang us.
+ */
 static uint32_t boot_module_string_length(const char *text, uint32_t limit)
 {
     uint32_t length = 0u;
@@ -88,8 +86,6 @@ bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *o
         }
         else if (count > 1u)
         {
-            /* Unnamed, and not the only candidate: refuse to guess which one
-               the caller meant rather than hand back the wrong cartridge. */
             continue;
         }
 

@@ -22,41 +22,50 @@ static volatile uint32_t interrupt_request_spurious_irq15_count = 0u;
 static uint32_t interrupt_request_timer_target_frequency_hz = IRQ_TIMER_DEFAULT_FREQUENCY_HZ;
 static uint8_t interrupt_request_rtc_periodic_enabled = 0u;
 static uint8_t interrupt_request_timer_owner_is_apic = 0u;
-/*
-** Which interrupt LINES are delivered through the IOAPIC rather than the 8259.
-**
-** One bit per ISA line, and not a single "the system is on the APIC now" flag,
-** because the handoff is per line: kernel.c routes IRQ1 to the IOAPIC and masks it
-** on the PIC, while every other line keeps arriving through the PIC. An interrupt
-** handler has to acknowledge the controller that DELIVERED it, so the question a
-** handler asks is about its own line.
-**
-** That distinction was learned the hard way. The mouse handler was written by
-** copying the keyboard's, including its `is_keyboard_owner_apic()` test — a name
-** that says "keyboard" and was read as "system". Once IRQ1 moved to the IOAPIC the
-** mouse, still arriving on the PIC, started sending an APIC EOI: the 8259 was never
-** acknowledged, so it blocked IRQ12 after the very first interrupt and the mouse
-** appeared dead. It kept working in the browser emulator, which performs no handoff
-** and left the flag at zero — the same code, right for the wrong reason.
-*/
+/**
+ * Which interrupt LINES are delivered through the IOAPIC rather than the 8259.
+ *
+ * One bit per ISA line, and not a single "the system is on the APIC now" flag,
+ * because the handoff is per line: kernel.c routes IRQ1 to the IOAPIC and masks it
+ * on the PIC, while every other line keeps arriving through the PIC. An interrupt
+ * handler has to acknowledge the controller that DELIVERED it, so the question a
+ * handler asks is about its own line.
+ *
+ * That distinction was learned the hard way. The mouse handler was written by
+ * copying the keyboard's, including its `is_keyboard_owner_apic()` test — a name
+ * that says "keyboard" and was read as "system". Once IRQ1 moved to the IOAPIC the
+ * mouse, still arriving on the PIC, started sending an APIC EOI: the 8259 was never
+ * acknowledged, so it blocked IRQ12 after the very first interrupt and the mouse
+ * appeared dead. It kept working in the browser emulator, which performs no handoff
+ * and left the flag at zero — the same code, right for the wrong reason.
+ */
 static uint16_t interrupt_request_apic_owned_lines = 0u;
+
+/**
+ * @brief Runs a reconciler pass on every sampled tick.
+ *
+ * @details Driven from the kernel's own periodic tick rather than from the engine's frame,
+ *          for two reasons. It runs on every profile, including the ones that instantiate no
+ *          World at all; and it does not depend on the engine having switched on an optional
+ *          guard, which is exactly the kind of dependency that turns a continuous check into
+ *          one that quietly never runs. Sampled rather than run on every tick because a
+ *          comparison of a dozen counters at 1 kHz would be paying for a resolution nobody
+ *          needs.
+ *
+ * @note Runs in interrupt context, which is acceptable because the pass reads counters and
+ *       raises a sticky mask — no allocation, no lock, no output.
+ */
+static void interrupt_request_sample_reconciler(void)
+{
+    if ((interrupt_request_tick_count % KERNEL_RECONCILER_TICK_SAMPLE_PERIOD) == 0u)
+        kernel_reconciler_check_periodic();
+}
 
 static void interrupt_request_timer_handler(const InterruptFrame_t *frame)
 {
     (void) frame;
     interrupt_request_tick_count++;
-
-    /* Drive the reconciler from the kernel's own periodic tick rather than from
-       the engine's frame, for two reasons. It runs on every profile, including
-       the ones that instantiate no World at all; and it does not depend on the
-       engine having switched on an optional guard, which is exactly the kind of
-       dependency that turns a continuous check into one that quietly never runs.
-       Sampled rather than run on every tick because a comparison of a dozen
-       counters at 1 kHz would be paying for a resolution nobody needs.
-       The pass reads counters and raises a sticky mask — no allocation, no lock,
-       no output — which is what makes it acceptable in interrupt context. */
-    if ((interrupt_request_tick_count % KERNEL_RECONCILER_TICK_SAMPLE_PERIOD) == 0u)
-        kernel_reconciler_check_periodic();
+    interrupt_request_sample_reconciler();
 
     if (interrupt_request_timer_owner_is_apic)
         advanced_pic_timer_backend_signal_end_of_interrupt();
@@ -108,9 +117,6 @@ void interrupt_request_initialize(void)
     interrupt_service_routine_register_handler(IRQ_SPURIOUS7_VECTOR, interrupt_request_spurious_irq7_handler);
     interrupt_service_routine_register_handler(IRQ_SPURIOUS15_VECTOR, interrupt_request_spurious_irq15_handler);
     keyboard_interrupt_initialize();
-    /* Probing costs a bounded number of controller reads and reports failure
-       rather than hanging, so a machine with no pointing device pays nothing but
-       the probe. */
     (void) personal_system_2_mouse_initialize();
     realtime_clock_initialize();
 

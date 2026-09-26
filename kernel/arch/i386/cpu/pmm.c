@@ -1,19 +1,3 @@
-
-
-/**
- * @file pmm.c
- * @brief Physical Memory Manager — algorithm-agnostic implementation.
- *
- * @details The public API
- *          (physical_memory_manager_initialize,
- *           physical_memory_manager_page_frame_allocate,
- *           physical_memory_manager_page_frame_free, ...)
- *          is identical for both kernel modes.  The compile-time flag
- *          LPL_KERNEL_REAL_TIME_MODE selects the backing data structure:
- *            - Realtime / client:  intrusive Free-List LIFO stack, O(1).
- *            - Server:             Buddy Allocator with split/merge support.
- */
-
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/config.h>
 #include <kernel/cpu/numa_policy.h>
@@ -21,10 +5,6 @@
 #include <kernel/cpu/pmm.h>
 #include <stdbool.h>
 #include <stddef.h>
-
-////////////////////////////////////////////////////////////
-// Constants
-////////////////////////////////////////////////////////////
 
 /** @brief Boot-time mapping ceiling (16 page tables x 4 MB = 64 MB). */
 #define PMM_BOOT_MAP_LIMIT 0x04000000UL
@@ -50,10 +30,6 @@
 /** @brief Minimum e820 entry payload size (bytes). */
 #define MMAP_MIN_ENTRY_SIZE 20
 
-////////////////////////////////////////////////////////////
-// Address Translation
-////////////////////////////////////////////////////////////
-
 /**
  * @brief Translate a physical address to its higher-half virtual alias.
  */
@@ -63,10 +39,6 @@ static inline uint32_t pmm_phys_to_virt(uint32_t phys_addr) { return phys_addr +
  * @brief Translate a higher-half virtual address to its physical counterpart.
  */
 static inline uint32_t pmm_virt_to_phys(uint32_t virt_addr) { return virt_addr - KERNEL_VIRTUAL_BASE; }
-
-////////////////////////////////////////////////////////////
-// Shared Accounting
-////////////////////////////////////////////////////////////
 
 /** @brief Number of free pages currently in the pool. */
 static uint32_t free_page_count = 0;
@@ -108,10 +80,6 @@ static inline void pmm_update_watermarks(void)
     if (free_page_count < free_page_count_watermark_low)
         free_page_count_watermark_low = free_page_count;
 }
-
-////////////////////////////////////////////////////////////
-// Algorithm-Specific Helpers
-////////////////////////////////////////////////////////////
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
 
@@ -526,10 +494,6 @@ static void buddy_reset_state(void)
 
 #endif /* LPL_KERNEL_REAL_TIME_MODE */
 
-////////////////////////////////////////////////////////////
-// Multiboot Memory Map Helpers
-////////////////////////////////////////////////////////////
-
 /**
  * @brief Validate that Multiboot provides a usable memory map.
  * @param[out] out_base   Virtual pointer to the mmap buffer.
@@ -583,6 +547,22 @@ static bool pmm_is_kernel_page(uint32_t phys_addr, uint32_t kernel_start, uint32
 }
 
 /**
+ * @brief Does the page at @p phys_addr overlap the byte range [@p start, @p end)?
+ *
+ * @note Overlap, not containment: a module rarely starts or ends on a page boundary, and a
+ *       partially covered page must still be withheld.
+ *
+ * @param phys_addr Physical page-aligned address.
+ * @param start     First byte of the range.
+ * @param end       One past its last byte.
+ * @return true when any byte of the page lies in the range.
+ */
+static bool pmm_page_overlaps(uint32_t phys_addr, uint32_t start, uint32_t end)
+{
+    return phys_addr + PAGE_SIZE > start && phys_addr < end;
+}
+
+/**
  * @brief Is this page part of a module the bootloader loaded for us?
  *
  * GRUB places multiboot modules (the game cartridge, among others) in ordinary
@@ -591,6 +571,9 @@ static bool pmm_is_kernel_page(uint32_t phys_addr, uint32_t kernel_start, uint32
  * module before it is read — the same class of silent corruption as the orphan
  * linker sections that escaped past _kernel_end. Modules are therefore excluded
  * from the free lists exactly like the kernel image is.
+ *
+ * @note The module descriptor array itself lives in bootloader-provided memory, so it is
+ *       withheld too: losing it costs every module at once.
  *
  * @param phys_addr Physical page-aligned address to test.
  * @return true when the page overlaps any loaded module (or its command line).
@@ -608,11 +591,9 @@ static bool pmm_is_boot_module_page(uint32_t phys_addr)
 
     Module_t *modules = (Module_t *) (uintptr_t) pmm_phys_to_virt((uint32_t) (uintptr_t) multiboot_info->mods_addr);
 
-    /* The module descriptor array itself lives in bootloader-provided memory,
-       so it has to survive too: losing it costs us every module at once. */
     uint32_t table_start = (uint32_t) (uintptr_t) multiboot_info->mods_addr;
     uint32_t table_end = table_start + multiboot_info->mods_count * (uint32_t) sizeof(Module_t);
-    if (phys_addr + PAGE_SIZE > table_start && phys_addr < table_end)
+    if (pmm_page_overlaps(phys_addr, table_start, table_end))
         return true;
 
     for (uint32_t i = 0u; i < multiboot_info->mods_count; ++i)
@@ -621,9 +602,7 @@ static bool pmm_is_boot_module_page(uint32_t phys_addr)
         uint32_t end = modules[i].mod_end;
         if (end <= start)
             continue;
-        /* Overlap, not containment: a module rarely starts or ends on a page
-           boundary, and a partially covered page must still be withheld. */
-        if (phys_addr + PAGE_SIZE > start && phys_addr < end)
+        if (pmm_page_overlaps(phys_addr, start, end))
             return true;
     }
     return false;
@@ -653,10 +632,6 @@ static bool pmm_next_mmap_entry(const uint8_t *mmap_base, uint32_t mmap_length, 
     *out_entry = entry;
     return true;
 }
-
-////////////////////////////////////////////////////////////
-// Public API functions of the PMM module
-////////////////////////////////////////////////////////////
 
 void physical_memory_manager_page_frame_free(uint32_t phys_addr)
 {

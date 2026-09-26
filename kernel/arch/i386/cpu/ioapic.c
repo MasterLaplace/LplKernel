@@ -15,6 +15,9 @@
 #define IOAPIC_REDIR_LOW_TRIGGER_LEVEL       (1u << 15u)
 #define IOAPIC_REDIR_LOW_MASKED              (1u << 16u)
 
+/** Destination APIC id field of a redirection entry: bits 24..31 of its high register. */
+#define IOAPIC_REDIR_HIGH_DESTINATION_MASK 0xFF000000u
+
 #define ACPI_ISO_POLARITY_MASK        0x0003u
 #define ACPI_ISO_POLARITY_ACTIVE_HIGH 0x0001u
 #define ACPI_ISO_POLARITY_ACTIVE_LOW  0x0003u
@@ -417,7 +420,7 @@ uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_de
 
     redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
     redir_high = io_apic_register_read(unit->virtual_base, redir_reg_index + 1u);
-    redir_high &= ~(0xFF000000u); // Clear bits 24-31
+    redir_high &= ~IOAPIC_REDIR_HIGH_DESTINATION_MASK;
     redir_high |= ((uint32_t) apic_id << 24u);
     io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
 

@@ -1,76 +1,100 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** P2 HAL smoke — exercises the engine platform backends (lpl::platform)
-** through their kernel HAL implementations: display surface query + clear +
-** pixel read-back, the clock tick/timestamp contract, the input ring drain,
-** and a pinned graphics-memory allocate / physical-translate / free. Proves
-** the kernel platform seam is wired end to end (the P2 HAL bring-up gate).
-** These values are observability, not part of the bit-identical determinism
-** contract (surface geometry is QEMU-config dependent; clock/timestamp are
-** wall-clock).
-*/
 #include "libengine/libengine.h"
 
 #include <lpl/platform/kernel/KernelPlatform.hpp>
 
-extern "C" void libengine_p2_hal_smoke(libengine_p2_hal_smoke_result_t *out)
-{
-    using namespace lpl::platform;
-    using lpl::core::u32;
+namespace {
 
-    if (out == nullptr)
+/**
+ * @brief Queries the display surface, clears it to a known colour and reads pixel (0, 0) back.
+ * @param platform The kernel platform.
+ * @param out      Receives the surface geometry and whether the colour came back.
+ */
+void probeDisplay(lpl::platform::kernel::KernelPlatform &platform, libengine_p2_hal_smoke_result_t *out)
+{
+    lpl::platform::IDisplayBackend &display = platform.display();
+    lpl::platform::SurfaceDescriptor surface;
+    if (!display.querySurface(surface))
         return;
 
-    *out = libengine_p2_hal_smoke_result_t{};
+    out->display_available = 1u;
+    out->surface_width = surface.width;
+    out->surface_height = surface.height;
+    out->surface_bpp = surface.bitsPerPixel;
 
-    kernel::KernelPlatform platform;
+    constexpr lpl::core::u32 kClearColor = 0x00112233u;
+    display.clear(kClearColor);
+    display.present();
 
-    // --- Display: query, clear to a known color, read pixel (0,0) back. ---
-    IDisplayBackend &display = platform.display();
-    SurfaceDescriptor surface;
-    if (display.querySurface(surface))
-    {
-        out->display_available = 1u;
-        out->surface_width = surface.width;
-        out->surface_height = surface.height;
-        out->surface_bpp = surface.bitsPerPixel;
+    const lpl::core::u32 readback = display.readPixel(0u, 0u);
+    out->clear_readback_raw = readback;
+    out->clear_readback_ok = (readback == kClearColor) ? 1u : 0u;
+}
 
-        constexpr u32 kClearColor = 0x00112233u;
-        display.clear(kClearColor);
-        display.present();
-
-        const u32 readback = display.readPixel(0u, 0u);
-        out->clear_readback_raw = readback;
-        out->clear_readback_ok = (readback == kClearColor) ? 1u : 0u;
-    }
-
-    // --- Clock: tick contract + monotonic timestamp counter. ---
-    IClockBackend &clock = platform.clock();
+/**
+ * @brief Reads the clock's tick contract and checks the timestamp counter is monotonic.
+ * @param platform The kernel platform.
+ * @param out      Receives the tick frequency, a tick snapshot and whether the counter advanced.
+ */
+void probeClock(lpl::platform::kernel::KernelPlatform &platform, libengine_p2_hal_smoke_result_t *out)
+{
+    lpl::platform::IClockBackend &clock = platform.clock();
     out->clock_tick_hertz = clock.tickHertz();
     out->clock_tick_observed = clock.tickCount();
     const lpl::core::u64 tsc0 = clock.timestampCounter();
     const lpl::core::u64 tsc1 = clock.timestampCounter();
     out->clock_tsc_advanced = (tsc1 >= tsc0 && tsc1 != 0u) ? 1u : 0u;
+}
 
-    // --- Input: drain the decoded-character ring (empty when headless). ---
-    IInputBackend &input = platform.input();
+/**
+ * @brief Drains the decoded-character ring, which is empty when headless.
+ *
+ * @note The pending count taken before draining is the observable; the drain itself only
+ *       proves the ring can be emptied without fault.
+ *
+ * @param platform The kernel platform.
+ * @param out      Receives the pending count.
+ */
+void drainInput(lpl::platform::kernel::KernelPlatform &platform, libengine_p2_hal_smoke_result_t *out)
+{
+    lpl::platform::IInputBackend &input = platform.input();
     out->input_pending_count = input.pendingCount();
     char character = '\0';
     while (input.tryPopCharacter(character))
     {
-        // Drain fully; the count above is the observable.
     }
     out->input_query_ok = 1u;
+}
 
-    // --- Graphics memory: pinned allocate, translate, free. ---
-    IGpuMemoryBackend &gpuMemory = platform.gpuMemory();
-    auto allocation = gpuMemory.allocate(4096u, GpuMemoryFlags::kPersistentlyMapped | GpuMemoryFlags::kHostCoherent);
-    if (allocation.has_value())
-    {
-        out->gpu_alloc_ok = 1u;
-        out->gpu_physical_nonzero = (allocation->physicalAddress != 0u) ? 1u : 0u;
-        gpuMemory.free(*allocation);
-    }
+/**
+ * @brief Allocates pinned graphics memory, translates it to a physical address, and frees it.
+ * @param platform The kernel platform.
+ * @param out      Receives whether the allocation and the translation succeeded.
+ */
+void probeGpuMemory(lpl::platform::kernel::KernelPlatform &platform, libengine_p2_hal_smoke_result_t *out)
+{
+    lpl::platform::IGpuMemoryBackend &gpuMemory = platform.gpuMemory();
+    auto allocation = gpuMemory.allocate(4096u, lpl::platform::GpuMemoryFlags::kPersistentlyMapped |
+                                                    lpl::platform::GpuMemoryFlags::kHostCoherent);
+    if (!allocation.has_value())
+        return;
+
+    out->gpu_alloc_ok = 1u;
+    out->gpu_physical_nonzero = (allocation->physicalAddress != 0u) ? 1u : 0u;
+    gpuMemory.free(*allocation);
+}
+
+} // namespace
+
+extern "C" void libengine_p2_hal_smoke(libengine_p2_hal_smoke_result_t *out)
+{
+    if (out == nullptr)
+        return;
+
+    *out = libengine_p2_hal_smoke_result_t{};
+
+    lpl::platform::kernel::KernelPlatform platform;
+    probeDisplay(platform, out);
+    probeClock(platform, out);
+    drainInput(platform, out);
+    probeGpuMemory(platform, out);
 }

@@ -1,9 +1,5 @@
 #include <kernel/cpu/helpers/gdt_helper.h>
 
-////////////////////////////////////////////////////////////
-// Private functions of the GDT helper module
-////////////////////////////////////////////////////////////
-
 static inline void print_section_header(const char *title, uint8_t color)
 {
     terminal_setcolor(vga_entry_color(color, VGA_COLOR_BLACK));
@@ -148,10 +144,6 @@ static inline void write_gdt_entry(Serial_t *serial, const char *name, const Glo
     write_flags_decoded(serial, flags_byte);
     serial_write_string(serial, ")\n");
 }
-
-////////////////////////////////////////////////////////////
-// Public API functions of the GDT helper module
-////////////////////////////////////////////////////////////
 
 void print_global_descriptor_table(GlobalDescriptorTable_t *gdt)
 {

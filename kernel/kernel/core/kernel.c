@@ -62,11 +62,6 @@
 #include <kernel/testing/smoke_batch.h>
 #include <kernel/testing/smoke_libengine.h>
 
-/* The engine module is optional: when LplPlugin is absent, config.sh drops
-   libengine from SYSTEM_HEADER_PROJECTS (so this header is never installed into
-   the sysroot) and the Makefile sets LPL_PLUGIN_UNAVAILABLE. The include must
-   sit under the same guard as the call, or the plain-kernel fallback stops
-   compiling. */
 #if !defined(LPL_PLUGIN_UNAVAILABLE)
 #    include <libengine/libengine.h>
 #endif
@@ -123,35 +118,39 @@ static uint8_t kernel_policy_enable_ioapic_keyboard_owner(void)
  * place answers "what can drop, and does it matter" — a driver registering itself
  * would put the answer back where nobody looks. Capacities are read from the queues
  * themselves so no number is written down twice.
+ *
+ * @details What a loss costs, queue by queue:
+ *          - `keyboard_scancode`: a missed scan code is a missed keystroke and nothing more;
+ *          - `mouse_byte`: a missed byte desynchronises a packet, which the driver already
+ *            detects and resynchronises on — so the loss is bounded to one movement;
+ *          - `dialogue_byte`: a byte lost from the middle of a sentence does not cost a byte,
+ *            it costs the sentence, since the consumer reads what remains and cannot tell it
+ *            is incomplete. The only queue where a drop corrupts;
+ *          - `kernel_ring`: the general-purpose ring carries whole records, so a refused
+ *            enqueue loses one record and leaves the others intact. Its counter is also raised
+ *            on purpose by the ring smoke, which is exactly why it must not be counted as
+ *            corrupting.
  */
 static void kernel_register_bounded_queues(void)
 {
     kernel_backpressure_reset();
 
-    /* A missed scan code is a missed keystroke and nothing more. */
     kernel_backpressure_register("keyboard_scancode", KERNEL_BACKPRESSURE_POLICY_DROP_TOLERATED,
                                  keyboard_get_ring_capacity(), keyboard_get_dropped_char_count);
-
-    /* A missed mouse byte desynchronises a packet, which the driver already detects
-       and resynchronises on — so the loss is bounded to one movement. */
     kernel_backpressure_register("mouse_byte", KERNEL_BACKPRESSURE_POLICY_DROP_TOLERATED,
                                  personal_system_2_mouse_get_ring_capacity(),
                                  personal_system_2_mouse_get_dropped_byte_count);
-
-    /* A byte lost from the middle of a sentence does not cost a byte, it costs the
-       sentence: the consumer reads what remains and cannot tell it is incomplete. */
     kernel_backpressure_register("dialogue_byte", KERNEL_BACKPRESSURE_POLICY_DROP_CORRUPTS,
                                  KERNEL_DIALOGUE_CHANNEL_CAPACITY, kernel_dialogue_channel_dropped);
-
-    /* The general-purpose ring carries whole records, so a refused enqueue loses one
-       record and leaves the others intact. Its counter is also raised on purpose by
-       the ring smoke, which is exactly why it must not be counted as corrupting. */
     kernel_backpressure_register("kernel_ring", KERNEL_BACKPRESSURE_POLICY_DROP_TOLERATED,
                                  kernel_ring_buffer_get_capacity(), kernel_ring_buffer_get_failed_enqueue_count);
 }
 
 /**
  * @brief State what this kernel commits to, so something can keep checking it.
+ *
+ * @note Declared after the section protection pass, so the page count it commits to is the
+ *       one that was actually established rather than the one that was intended.
  */
 static void kernel_declare_reconciler_contract(void)
 {
@@ -164,6 +163,59 @@ static void kernel_declare_reconciler_contract(void)
     };
 
     kernel_reconciler_declare(&declaration);
+}
+
+/**
+ * @brief Makes code, constants and the constructor tables read-only, and reports the result.
+ *
+ * @note Called from kernel_main and not from kernel_initialize: the constructor tables sit
+ *       inside the protected range, and kernel_initialize is itself a global constructor —
+ *       protecting from there would depend on being the last one to run. By kernel_main
+ *       every constructor has completed and nothing writes to code, constants or those tables
+ *       again.
+ */
+static void kernel_protect_read_only_sections(void)
+{
+    write_section_protection_info(&com1, kernel_section_protection_apply());
+}
+
+/**
+ * @brief Reports what the live checks saw over the boot.
+ *
+ * @note Called after the smoke batteries rather than before: by then the periodic tick has
+ *       driven reconciler passes of its own, so `passes` exceeding what the smoke drove by
+ *       hand is what shows the live check is running and not merely wired.
+ */
+static void kernel_report_live_checks(void)
+{
+    kernel_reconciler_report(&com1);
+    kernel_telemetry_report(&com1);
+}
+
+/**
+ * @brief Brings the virtio-gpu scanout up when there is one, and proves it is alive.
+ *
+ * @details A live display is cleared to a recognisable colour and presented through the GPU,
+ *          so a working scanout is visible as well as reported.
+ */
+static void kernel_bring_up_virtio_display(void)
+{
+    if (!hardware_abstraction_layer_virtio_gpu_display_init())
+    {
+        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display: unavailable (software-LFB only)\n");
+        return;
+    }
+
+    hardware_abstraction_layer_surface_descriptor_t surface;
+    (void) hardware_abstraction_layer_virtio_gpu_display_query(&surface);
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display active: ");
+    serial_write_hex32(&com1, surface.width);
+    serial_write_string(&com1, "x");
+    serial_write_hex32(&com1, surface.height);
+    serial_write_string(&com1, "\n");
+
+    hardware_abstraction_layer_display_clear(0x00102040u);
+    hardware_abstraction_layer_display_present();
 }
 
 /**
@@ -371,24 +423,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_peripheral_component_interconnect_info(&com1);
     kernel_splash_update("PCI Bus Enumeration");
 
-    if (hardware_abstraction_layer_virtio_gpu_display_init())
-    {
-        hardware_abstraction_layer_surface_descriptor_t surface;
-        (void) hardware_abstraction_layer_virtio_gpu_display_query(&surface);
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display active: ");
-        serial_write_hex32(&com1, surface.width);
-        serial_write_string(&com1, "x");
-        serial_write_hex32(&com1, surface.height);
-        serial_write_string(&com1, "\n");
-
-        /* Liveness: clear to a recognisable color and present through the GPU. */
-        hardware_abstraction_layer_display_clear(0x00102040u);
-        hardware_abstraction_layer_display_present();
-    }
-    else
-    {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display: unavailable (software-LFB only)\n");
-    }
+    kernel_bring_up_virtio_display();
 
     write_keyboard_runtime_info(&com1);
 
@@ -398,19 +433,19 @@ __attribute__((constructor)) void kernel_initialize(void)
         serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: no linear framebuffer available (text mode)\n");
 }
 
+/**
+ * @brief Kernel entry point, called by boot.S between the global constructors and destructors.
+ *
+ * @note The engine module is optional: when LplPlugin is absent, config.sh drops libengine from
+ *       SYSTEM_HEADER_PROJECTS (so libengine.h is never installed into the sysroot) and the
+ *       Makefile sets LPL_PLUGIN_UNAVAILABLE. The libengine.h include sits under the same guard
+ *       as the calls here, or the plain-kernel fallback stops compiling.
+ */
 void kernel_main(void)
 {
     kernel_stack_guard_arm();
 
-    /* Here and not in kernel_initialize: the constructor tables sit inside the
-       protected range, and kernel_initialize is itself a global constructor —
-       protecting from there would depend on being the last one to run. By
-       kernel_main every constructor has completed and nothing writes to code,
-       constants or those tables again. */
-    write_section_protection_info(&com1, kernel_section_protection_apply());
-
-    /* Declared after the protection pass, so the page count it commits to is the
-       one that was actually established rather than the one that was intended. */
+    kernel_protect_read_only_sections();
     kernel_register_bounded_queues();
     kernel_declare_reconciler_contract();
     kernel_backpressure_report(&com1);
@@ -421,11 +456,7 @@ void kernel_main(void)
     smoke_libengine_run_all(&com1);
 #endif
 
-    /* After the batteries rather than before: by now the periodic tick has driven
-       passes of its own, so `passes` exceeding what the smoke drove by hand is
-       what shows the live check is running and not merely wired. */
-    kernel_reconciler_report(&com1);
-    kernel_telemetry_report(&com1);
+    kernel_report_live_checks();
 
     if (hardware_abstraction_layer_display_available())
     {

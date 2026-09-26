@@ -1,16 +1,3 @@
-/**
- * @file hal_memory.c
- * @brief Memory backend for the engine HAL.
- *
- * Implements the hardware_abstraction_layer_memory_* contract over the kernel
- * heap. These are start-up reservations, not per-frame allocations: the engine
- * asks once for a block and then bump-allocates from it, so kmalloc is never on
- * a tick's path (it refuses to serve a hot loop in REAL_TIME mode anyway).
- *
- * kmalloc guarantees 8-byte alignment; a stricter request is honoured by
- * over-allocating and aligning up, keeping the original pointer just below the
- * returned block so release() can recover it.
- */
 #include <kernel/hal/hal.h>
 
 #include <kernel/memory/heap.h>

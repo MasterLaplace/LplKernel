@@ -1,12 +1,3 @@
-/**
- * @file tensor_arena.c
- * @brief One large, bounded region for weights and activations.
- *
- * @author MasterLaplace
- * @version 0.1.0
- * @copyright MIT License
- */
-
 #include <kernel/ai/tensor_arena.h>
 
 #include <kernel/memory/heap.h>
@@ -23,10 +14,6 @@ bool kernel_tensor_arena_initialize(size_t bytes)
     if (tensor_arena_base != NULL)
         return tensor_arena_size >= bytes;
 
-    /* One allocation, at boot, while the heap is still uncontended. Doing this
-       lazily on the first inference would put the largest allocation the kernel
-       ever makes in the middle of a running world, which is exactly when it is
-       least likely to be servable. */
     void *const block = kmalloc(bytes);
     if (block == NULL)
         return false;

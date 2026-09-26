@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file reconciler.h
  * @brief Compares what the kernel declared to what it is doing, every frame.
  *
@@ -18,10 +31,10 @@
  * already printed somewhere. It turns them into a contract that is re-checked, and
  * counts the passes where reality stopped matching.
  *
- * @author MasterLaplace
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-08
+ **************************************************************************/
 
 #ifndef KERNEL_CORE_RECONCILER_H
 #define KERNEL_CORE_RECONCILER_H
@@ -111,6 +124,10 @@ bool kernel_reconciler_is_declared(void);
  * Cheap enough for the end of every fixed step: a handful of reads of counters
  * that are already maintained, and no allocation.
  *
+ * @note The frame arena is judged on its PEAK, not its current usage: the arena is reset
+ *       every frame, so what it holds right now answers a question about this instant
+ *       instead of about the run.
+ *
  * @return The number of invariants in drift on this pass, zero when reality still
  *         matches the declaration.
  */
@@ -184,6 +201,12 @@ const char *kernel_reconciler_get_invariant_name(KernelReconcilerInvariant_t inv
  * itself: COM1 runs at 9600 baud, so writing a record costs about a millisecond
  * per character. A report from inside the timer interrupt would hold the handler
  * for longer than the period it fires on.
+ *
+ * @note A drift count of zero proves nothing on its own: a reconciler that never ran
+ *       reports exactly the same thing as one that ran ten thousand times and never saw a
+ *       discrepancy. So the report waits, with a bound, for the periodic driver to prove
+ *       itself — otherwise the liveness printed would be a race with how fast the machine
+ *       happened to boot.
  *
  * @param serial Output port.
  */

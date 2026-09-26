@@ -1,32 +1,92 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** PCI (Peripheral Component Interconnect) configuration space access
-*/
-
 #include <kernel/cpu/pci.h>
 #include <kernel/lib/asmutils.h>
 
 #include <stddef.h>
 
-/*
-** Configuration mechanism #1: write a 32-bit address word to CONFIG_ADDRESS
-** (0xCF8) then read/write the targeted register through CONFIG_DATA (0xCFC).
-**
-** Address layout:
-**   bit 31     enable
-**   bits 23-16 bus
-**   bits 15-11 device (0-31)
-**   bits 10-8  function (0-7)
-**   bits 7-2   register offset (dword aligned)
-**   bits 1-0   always zero
-*/
+/** Identity dword: vendor id | device id << 16. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_IDENTITY 0x00u
+
+/** Classification dword: revision | prog-if << 8 | subclass << 16 | class << 24. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_CLASSIFICATION 0x08u
+
+/** Header dword: the header type is byte 2. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_HEADER 0x0Cu
+
+/**
+ * @brief Builds the CONFIG_ADDRESS word of configuration mechanism #1.
+ *
+ * @details The word is written to CONFIG_ADDRESS (0xCF8), then the targeted register is
+ *          read or written through CONFIG_DATA (0xCFC).
+ *
+ * Address layout:
+ *   bit 31     enable
+ *   bits 23-16 bus
+ *   bits 15-11 device (0-31)
+ *   bits 10-8  function (0-7)
+ *   bits 7-2   register offset (dword aligned)
+ *   bits 1-0   always zero
+ */
 static uint32_t peripheral_component_interconnect_build_address(uint8_t bus, uint8_t device, uint8_t function,
                                                                 uint8_t offset)
 {
     return (uint32_t) ((1u << 31u) | ((uint32_t) bus << 16u) | (((uint32_t) device & 0x1Fu) << 11u) |
                        (((uint32_t) function & 0x07u) << 8u) | ((uint32_t) offset & 0xFCu));
+}
+
+/**
+ * @brief Which bits of a base address register are writable, the way its size is read.
+ *
+ * @details Writes all-ones, reads back the bits the device let through, then restores the
+ *          original value.
+ *
+ * @param bus      Bus number.
+ * @param device   Device number.
+ * @param function Function number.
+ * @param offset   Configuration offset of the base address register.
+ * @param original The register's value, written back afterwards.
+ * @return The readback of all-ones.
+ */
+static uint32_t peripheral_component_interconnect_probe_writable_bits(uint8_t bus, uint8_t device, uint8_t function,
+                                                                      uint8_t offset, uint32_t original)
+{
+    peripheral_component_interconnect_config_write_dword(bus, device, function, offset, 0xFFFFFFFFu);
+    const uint32_t probe = peripheral_component_interconnect_config_read_dword(bus, device, function, offset);
+    peripheral_component_interconnect_config_write_dword(bus, device, function, offset, original);
+    return probe;
+}
+
+static PeripheralComponentInterconnectDevice_t
+    peripheral_component_interconnect_devices[PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES];
+
+static uint32_t peripheral_component_interconnect_device_count = 0u;
+
+static void peripheral_component_interconnect_record_function(uint8_t bus, uint8_t device, uint8_t function)
+{
+    if (peripheral_component_interconnect_device_count >= PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES)
+        return;
+
+    uint32_t identity = peripheral_component_interconnect_config_read_dword(
+        bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_IDENTITY);
+    uint32_t classification = peripheral_component_interconnect_config_read_dword(
+        bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_CLASSIFICATION);
+    uint32_t header = peripheral_component_interconnect_config_read_dword(
+        bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_HEADER);
+
+    PeripheralComponentInterconnectDevice_t *entry =
+        &peripheral_component_interconnect_devices[peripheral_component_interconnect_device_count];
+
+    entry->bus = bus;
+    entry->device = device;
+    entry->function = function;
+    entry->vendor_id = (uint16_t) (identity & 0xFFFFu);
+    entry->device_id = (uint16_t) ((identity >> 16u) & 0xFFFFu);
+    entry->revision_id = (uint8_t) (classification & 0xFFu);
+    entry->prog_interface = (uint8_t) ((classification >> 8u) & 0xFFu);
+    entry->subclass = (uint8_t) ((classification >> 16u) & 0xFFu);
+    entry->class_code = (uint8_t) ((classification >> 24u) & 0xFFu);
+    entry->header_type = (uint8_t) ((header >> 16u) & 0xFFu);
+
+    ++peripheral_component_interconnect_device_count;
 }
 
 uint32_t peripheral_component_interconnect_config_read_dword(uint8_t bus, uint8_t device, uint8_t function,
@@ -79,39 +139,6 @@ void peripheral_component_interconnect_config_write_byte(uint8_t bus, uint8_t de
 
     dword = (dword & ~(0xFFu << shift)) | ((uint32_t) value << shift);
     peripheral_component_interconnect_config_write_dword(bus, device, function, offset, dword);
-}
-
-static PeripheralComponentInterconnectDevice_t
-    peripheral_component_interconnect_devices[PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES];
-static uint32_t peripheral_component_interconnect_device_count = 0u;
-
-static void peripheral_component_interconnect_record_function(uint8_t bus, uint8_t device, uint8_t function)
-{
-    if (peripheral_component_interconnect_device_count >= PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES)
-        return;
-
-    /* Identity dword (0x00): vendor id | device id << 16. */
-    uint32_t identity = peripheral_component_interconnect_config_read_dword(bus, device, function, 0x00u);
-    /* Classification dword (0x08): revision | prog-if << 8 | subclass << 16 | class << 24. */
-    uint32_t classification = peripheral_component_interconnect_config_read_dword(bus, device, function, 0x08u);
-    /* Header dword (0x0C): header type is byte 2. */
-    uint32_t header = peripheral_component_interconnect_config_read_dword(bus, device, function, 0x0Cu);
-
-    PeripheralComponentInterconnectDevice_t *entry =
-        &peripheral_component_interconnect_devices[peripheral_component_interconnect_device_count];
-
-    entry->bus = bus;
-    entry->device = device;
-    entry->function = function;
-    entry->vendor_id = (uint16_t) (identity & 0xFFFFu);
-    entry->device_id = (uint16_t) ((identity >> 16u) & 0xFFFFu);
-    entry->revision_id = (uint8_t) (classification & 0xFFu);
-    entry->prog_interface = (uint8_t) ((classification >> 8u) & 0xFFu);
-    entry->subclass = (uint8_t) ((classification >> 16u) & 0xFFu);
-    entry->class_code = (uint8_t) ((classification >> 24u) & 0xFFu);
-    entry->header_type = (uint8_t) ((header >> 16u) & 0xFFu);
-
-    ++peripheral_component_interconnect_device_count;
 }
 
 void peripheral_component_interconnect_scan(void)
@@ -176,10 +203,7 @@ uint8_t peripheral_component_interconnect_read_base_address_register(
     out_bar->base = 0u;
     out_bar->size = 0u;
 
-    /* Probe the size: write all-ones, read back the writable bits, then restore. */
-    peripheral_component_interconnect_config_write_dword(bus, device, function, offset, 0xFFFFFFFFu);
-    uint32_t probe = peripheral_component_interconnect_config_read_dword(bus, device, function, offset);
-    peripheral_component_interconnect_config_write_dword(bus, device, function, offset, original);
+    uint32_t probe = peripheral_component_interconnect_probe_writable_bits(bus, device, function, offset, original);
 
     if (out_bar->is_io)
     {

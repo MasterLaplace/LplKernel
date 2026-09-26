@@ -4,10 +4,6 @@
 #    error "This code assumes little-endian (x86). Update multiboot parsing for big-endian targets."
 #endif
 
-////////////////////////////////////////////////////////////
-// Private functions of the multiboot info helper module
-////////////////////////////////////////////////////////////
-
 static inline uint8_t read_little_endian_u8(const uint8_t *p) { return p[0]; }
 
 static inline uint16_t read_little_endian_u16(const uint8_t *p) { return (uint16_t) p[0] | ((uint16_t) p[1] << 8); }
@@ -44,7 +40,25 @@ static inline void *physical_to_virtual_boot_mapped(uint32_t phys_addr, uint32_t
     return (phys_addr < 0x04000000u) ? (void *) (uintptr_t) (phys_addr + kernel_start) : NULL;
 }
 
-/** @brief print_multiboot_string() for strings that live with a module. */
+/**
+ * @brief The module descriptor array, reached through the boot mapping.
+ *
+ * @note mods_addr is a PHYSICAL address despite its pointer type. Nothing dereferenced it
+ *       until a module was actually present (the cartridge), at which point reading it as a
+ *       virtual pointer faulted.
+ *
+ * @param mbi          The multiboot information block.
+ * @param kernel_start Offset of the boot mapping.
+ * @return The array, or NULL when it lies outside the boot map.
+ */
+static Module_t *multiboot_modules(const MultibootInfo_t *mbi, uint32_t kernel_start)
+{
+    return (Module_t *) physical_to_virtual_boot_mapped((uint32_t) (uintptr_t) mbi->mods_addr, kernel_start);
+}
+
+/**
+ * @brief print_multiboot_string() for strings that live with a module.
+ */
 static inline void print_multiboot_string_boot_mapped(uint32_t phys_addr, uint32_t kernel_start, const char *label)
 {
     char *str = (char *) physical_to_virtual_boot_mapped(phys_addr, kernel_start);
@@ -78,10 +92,6 @@ static inline void print_section_header(const char *title, uint8_t color)
     terminal_write_string(title);
     terminal_write_string(" ---\n");
 }
-
-////////////////////////////////////////////////////////////
-// Public API functions of the multiboot info helper module
-////////////////////////////////////////////////////////////
 
 void print_multiboot_info_boot_device(BootDevice_t *boot_device)
 {
@@ -416,11 +426,7 @@ void print_multiboot_info(uint32_t kernel_start, MultibootInfo_t *mbi)
         terminal_write_number(mbi->mods_count, 10);
         terminal_write_string("\n");
 
-        /* mods_addr is a PHYSICAL address despite its pointer type. Nothing
-           dereferenced it until a module was actually present (the cartridge),
-           at which point reading it as a virtual pointer faulted. */
-        Module_t *modules =
-            (Module_t *) physical_to_virtual_boot_mapped((uint32_t) (uintptr_t) mbi->mods_addr, kernel_start);
+        Module_t *modules = multiboot_modules(mbi, kernel_start);
 
         if (modules)
         {
@@ -494,8 +500,6 @@ void print_multiboot_info(uint32_t kernel_start, MultibootInfo_t *mbi)
 
     terminal_setcolor(original_color);
 }
-
-//********************************************************//
 
 void write_multiboot_info_boot_device(Serial_t *serial, BootDevice_t *boot_device)
 {
@@ -814,9 +818,7 @@ void write_multiboot_info(Serial_t *serial, uint32_t kernel_start, MultibootInfo
         serial_write_string(serial, "Modules count: ");
         serial_write_int(serial, mbi->mods_count);
         serial_write_string(serial, "\n");
-        /* Physical address, see the note in print_multiboot_info(). */
-        Module_t *modules =
-            (Module_t *) physical_to_virtual_boot_mapped((uint32_t) (uintptr_t) mbi->mods_addr, kernel_start);
+        Module_t *modules = multiboot_modules(mbi, kernel_start);
 
         if (modules)
         {

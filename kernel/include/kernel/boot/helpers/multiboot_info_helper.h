@@ -1,13 +1,31 @@
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2025 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file multiboot_info_helper.h
+ * @brief Reports of the multiboot information block, on the terminal and on serial.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2025-10-05
+ **************************************************************************/
+
 #ifndef KERNEL_BOOT_MULTIBOOT_INFO_HELPER_H
 #define KERNEL_BOOT_MULTIBOOT_INFO_HELPER_H
 
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/drivers/serial.h>
 #include <kernel/drivers/tty.h>
-
-////////////////////////////////////////////////////////////
-// Public API functions of the multiboot info helper module
-////////////////////////////////////////////////////////////
 
 /**
  * @brief Print boot device information to terminal output.
@@ -67,8 +85,6 @@ extern void print_multiboot_info_framebuffer(MultibootInfo_t *mbi);
  * @brief Print the complete multiboot information structure to terminal output.
  */
 extern void print_multiboot_info(uint32_t kernel_start, MultibootInfo_t *mbi);
-
-//********************************************************//
 
 /**
  * @brief Write boot device information to serial output.

@@ -1,9 +1,24 @@
-/*
-** EPITECH PROJECT, 2026
-** LplKernel
-** File description:
-** vmm — Virtual Memory Manager for kernel address space
-*/
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
+ * @file vmm.h
+ * @brief Virtual Memory Manager for the kernel address space.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-03-17
+ **************************************************************************/
 
 #ifndef KERNEL_MEMORY_VMM_H_
 #define KERNEL_MEMORY_VMM_H_
@@ -12,10 +27,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* VMM Regions */
+/**
+ * @name VMM Regions
+ * @{
+ */
 #define KERNEL_VMM_DYNAMIC_START 0xD0000000u
 #define KERNEL_VMM_DYNAMIC_END   0xF0000000u
 #define KERNEL_VMM_DYNAMIC_SIZE  (KERNEL_VMM_DYNAMIC_END - KERNEL_VMM_DYNAMIC_START)
+/** @} */
 
 /**
  * @brief Initialize the Virtual Memory Manager.

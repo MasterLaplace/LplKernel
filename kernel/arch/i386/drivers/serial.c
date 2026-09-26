@@ -1,16 +1,8 @@
 #include <kernel/drivers/serial.h>
 
-////////////////////////////////////////////////////////////
-// Private functions of the serial module
-////////////////////////////////////////////////////////////
-
 static inline int serial_can_write(Serial_t *serial) { return asmutils_input_byte(serial->port + 5) & 0x20; }
 
 static inline int serial_can_read(Serial_t *serial) { return asmutils_input_byte(serial->port + 5) & 0x01; }
-
-////////////////////////////////////////////////////////////
-// Public API functions of the terminal module
-////////////////////////////////////////////////////////////
 
 void serial_initialize(Serial_t *serial, COM_PORT port, uint32_t speed)
 {
@@ -42,31 +34,37 @@ void serial_write_char(Serial_t *serial, char c)
     asmutils_output_byte(serial->port, c);
 }
 
-void serial_write_int(Serial_t *serial, int32_t i)
+void serial_write_unsigned(Serial_t *serial, uint32_t value)
 {
-    char buffer[12];
-    int j = 0;
+    char digits[10];
+    int count = 0;
 
-    if (i < 0)
-    {
-        serial_write_char(serial, '-');
-        i = -i;
-    }
-
-    if (i == 0)
+    if (value == 0u)
     {
         serial_write_char(serial, '0');
         return;
     }
 
-    while (i > 0)
+    while (value > 0u)
     {
-        buffer[j++] = '0' + (i % 10);
-        i /= 10;
+        digits[count++] = (char) ('0' + (value % 10u));
+        value /= 10u;
     }
 
-    while (--j >= 0)
-        serial_write_char(serial, buffer[j]);
+    while (--count >= 0)
+        serial_write_char(serial, digits[count]);
+}
+
+void serial_write_int(Serial_t *serial, int32_t i)
+{
+    uint32_t magnitude = (uint32_t) i;
+    if (i < 0)
+    {
+        serial_write_char(serial, '-');
+        magnitude = 0u - magnitude;
+    }
+
+    serial_write_unsigned(serial, magnitude);
 }
 
 void serial_write_hex8(Serial_t *serial, uint8_t i)

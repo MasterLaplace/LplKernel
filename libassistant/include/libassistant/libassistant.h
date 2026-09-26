@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file libassistant.h
  * @brief C facade over the demon's mind, linked into the kernel.
  *
@@ -7,10 +20,16 @@
  * structs, no ownership crossing, no exceptions, and every entry point safe to
  * call from a context that must not block.
  *
- * @author MasterLaplace
+ * Ordering matters and is the usual trap: the tensor arena must exist before any
+ * model is touched, and nothing may run from a global constructor, because those
+ * execute before the kernel has a heap. Every long-lived object of the mind therefore
+ * lives in raw storage and is placement-constructed by libassistant_boot — the same
+ * fix a global `Registry` needed the first time it crashed in init_array.
+ *
+ * @author @MasterLaplace
  * @version 0.1.0
- * @copyright MIT License
- */
+ * @date 2026-08-05
+ **************************************************************************/
 
 #ifndef LIBASSISTANT_H
 #define LIBASSISTANT_H
@@ -54,10 +73,22 @@ typedef struct {
 /**
  * @brief Runs the canonical mind case and folds every stage of it.
  *
+ * @details Same weights, same prompt, same seed as the host oracle, and the emitted
+ *          tokens folded — until this matches, "the assistant runs on the kernel" is an
+ *          intention rather than a fact. The weights are DERIVED, not loaded, which makes
+ *          this a gate about arithmetic rather than about file I/O. Every stage is folded
+ *          separately — the quantised tensors, the tokenised prompt, the scores, the
+ *          residual stream, the freely sampled tokens and the grammar-constrained ones —
+ *          so a mismatch names the layer that moved instead of only saying the answer
+ *          changed. Must match LplAssistant/tests/test_infer_parity.cpp.
+ *
  * Runs inside the kernel's tensor arena when one has been claimed, and claims a
  * block from the allocator otherwise. Which of the two it used changes nothing it
- * reports: the arena is the same bump allocator either way, and only the block's
- * provenance differs.
+ * reports: TensorArena adopts a block it does not own with the same bump logic it uses
+ * for one it does, and only the block's provenance differs — which is exactly why the
+ * arena byte count is worth folding at all.
+ *
+ * @note The live mind is dropped first, since the run re-carves the arena from its base.
  *
  * @param out Receives the signatures.
  */
@@ -97,6 +128,11 @@ extern bool libassistant_dialogue_round_trip(libassistant_dialogue_result_t *out
  *
  * Nothing here may run from a global constructor — those execute before the kernel
  * has a heap, and the arena is the largest allocation the kernel ever makes.
+ *
+ * @note A missing model module is a legitimate absence, not a failure: this image derives
+ *       its weights from a seed. What would be a failure is quietly deriving them after being
+ *       handed an image that did not parse, so the two are reported apart by
+ *       libassistant_model_slot_state.
  *
  * @param arena_bytes Region to claim for weights, cache and scratch.
  * @return true when the mind is ready to be asked something.
@@ -143,6 +179,14 @@ typedef struct {
 
 /**
  * @brief Runs the canonical satellite exchange and folds every stage of it.
+ *
+ * @details What the gate guards is not an algorithm but an AGREEMENT: three machines,
+ *          two of which will not even be x86, deciding the same thing about the same
+ *          audio. The audio is synthesised from the frame index alone, so no wave file
+ *          has to reach both sides — the same reason the world gate derives a world from
+ *          a seed rather than loading one. Must match
+ *          LplAssistant/tests/test_satellite_parity.cpp.
+ *
  * @param out Receives the signatures.
  */
 extern void libassistant_satellite_fold(libassistant_satellite_fold_result_t *out);
@@ -180,6 +224,18 @@ typedef struct {
 
 /**
  * @brief Runs the canonical turn of thought and folds every stage of it.
+ *
+ * @details The floor above P14. That gate proves the demon COMPUTES the same thing on
+ *          both targets; this one proves it DECIDES the same thing. The two are separable
+ *          and both are needed: identical arithmetic with a different eviction rule gives
+ *          two demons that remember different pasts from one life.
+ *
+ * @note Nothing here runs a model, and that is what makes it a gate at all: a turn
+ *       driven by inference against a live world cannot be replayed. The canonical case
+ *       pairs `DeterministicReasoner` with `ParityWorld` — both real policies, neither a
+ *       stub — and exercises the exact seam a model plugs into on the way past. Must
+ *       match LplAssistant/tests/test_agency_parity.cpp.
+ *
  * @param out Receives the signatures.
  */
 extern void libassistant_agency_fold(libassistant_agency_fold_result_t *out);
@@ -213,6 +269,20 @@ typedef struct {
 
 /**
  * @brief Runs the canonical turn with a real model behind the decisions.
+ *
+ * @details The same turn as the agency gate, but every move chosen by a transformer
+ *          running in ring 0, under a grammar rebuilt from the world at each step. The
+ *          claim is not that the model is good — its weights come from a seed and it has
+ *          learned nothing. It is that a model which has learned nothing STILL cannot
+ *          name an action the world did not offer, because the grammar makes the wrong
+ *          answer unspellable rather than merely unlikely. That is a property of the
+ *          language, so it does not weaken as the model shrinks. Must match
+ *          LplAssistant/tests/test_agency_parity.cpp.
+ *
+ * @note The live mind is dropped first. This gate re-carves the arena from the base, so
+ *       anything still holding weights handed out of it would be reading storage that has
+ *       been given away — not a crash, but a wrong answer several layers later.
+ *
  * @param out Receives the signatures.
  */
 extern void libassistant_reasoning_fold(libassistant_reasoning_fold_result_t *out);

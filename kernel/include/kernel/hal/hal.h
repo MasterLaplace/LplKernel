@@ -1,4 +1,17 @@
-/**
+/**************************************************************************
+ * LplKernel v0.0.0 - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under Anti-NN License.
+ * https://github.com/MasterLaplace/Anti-NN_LICENSE
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is a free software: you can redistribute it and/or modify
+ * it under the terms of the Anti-NN License as published by MasterLaplace.
+ * See the Anti-NN License for more details.
+ *
  * @file hal.h
  * @brief Thin C ABI hardware-abstraction layer for the freestanding engine.
  *
@@ -35,7 +48,12 @@
  *     stays one portable, deterministic implementation on every target.
  *   - Identifiers spell acronyms out in full, per the project convention; the
  *     file names (hal.h, hal_*.c) and the include guards keep the short form.
- */
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-06-26
+ **************************************************************************/
+
 #ifndef KERNEL_HAL_HAL_H
 #define KERNEL_HAL_HAL_H
 
@@ -48,22 +66,32 @@
 extern "C" {
 #endif
 
-/* ----------------------------------------------------------------------------
- * Display (surface / present)
- * ------------------------------------------------------------------------- */
+/**
+ * @name Display (surface / present)
+ *
+ * Implemented in hal_display.c over the Multiboot linear framebuffer driver, or
+ * over a live virtio-gpu scanout when there is one. This is the "DRM/KMS scanout"
+ * seam: the engine renders through it without knowing which backend won. Colors
+ * cross the ABI as packed 0x00RRGGBB and are translated to the driver's color_t
+ * there, so the engine never sees a kernel type.
+ * @{
+ */
 
 /** @brief Linear-framebuffer surface description (KMS-like, no ownership). */
 typedef struct {
-    uint32_t *buffer;          /* virtual address of the framebuffer        */
-    uint32_t physical_address; /* physical address (for GPU attach later)   */
-    uint32_t width;            /* visible width in pixels                   */
-    uint32_t height;           /* visible height in pixels                  */
-    uint32_t pitch;            /* bytes per scanline                        */
-    uint8_t bits_per_pixel;    /* bits per pixel                            */
+    uint32_t *buffer;          /**< virtual address of the framebuffer */
+    uint32_t physical_address; /**< physical address (for GPU attach later) */
+    uint32_t width;            /**< visible width in pixels */
+    uint32_t height;           /**< visible height in pixels */
+    uint32_t pitch;            /**< bytes per scanline */
+    uint8_t bits_per_pixel;    /**< bits per pixel */
 } hardware_abstraction_layer_surface_descriptor_t;
 
 /**
  * @brief Query the active display surface.
+ *
+ * @note A live virtio-gpu scanout takes priority over the software LFB.
+ *
  * @return true if a framebuffer surface is available (descriptor filled).
  */
 bool hardware_abstraction_layer_display_query_surface(hardware_abstraction_layer_surface_descriptor_t *out_descriptor);
@@ -92,14 +120,23 @@ uint32_t hardware_abstraction_layer_display_read_pixel(uint32_t x, uint32_t y);
  * @brief Present the back buffer (atomic flip / scanout).
  *
  * The software-LFB path renders straight into scanout memory, so present is a
- * no-op today; it exists so the VirtIO-GPU backend can slot in behind the same
- * contract without touching the engine.
+ * no-op there; the VirtIO-GPU backend issues TRANSFER_TO_HOST_2D + RESOURCE_FLUSH,
+ * behind the same contract and without touching the engine.
  */
 void hardware_abstraction_layer_display_present(void);
 
-/* ----------------------------------------------------------------------------
- * Clock (tick contract + sub-tick timestamp)
- * ------------------------------------------------------------------------- */
+/** @} */
+
+/**
+ * @name Clock (tick contract + sub-tick timestamp)
+ *
+ * Implemented in hal_clock.c over the kernel clock driver, plus a 64-bit rdtsc
+ * reader for sub-tick timing. Tick deltas are consumed modulo 2^32 (the counter
+ * wraps); the timestamp counter is for fine-grained, non-authoritative timing
+ * only — it is non-deterministic and therefore never feeds the Fixed32
+ * simulation authority.
+ * @{
+ */
 
 /**
  * @brief Monotonic tick count (wraps; consumers use modular deltas).
@@ -119,9 +156,17 @@ uint32_t hardware_abstraction_layer_clock_tick_hertz(void);
  */
 uint64_t hardware_abstraction_layer_clock_timestamp_counter(void);
 
-/* ----------------------------------------------------------------------------
- * Input (decoded-character ring drained by the engine)
- * ------------------------------------------------------------------------- */
+/** @} */
+
+/**
+ * @name Input (decoded-character ring drained by the engine)
+ *
+ * Implemented in hal_input.c over the PS/2 keyboard's lock-free SPSC ring (ISR
+ * producer -> engine consumer). The engine drains decoded characters; the kernel
+ * keeps owning scancode decoding and layout state. This generalizes to
+ * additional input devices behind the same drain contract.
+ * @{
+ */
 
 /**
  * @brief Pop one decoded character from the input ring.
@@ -185,14 +230,19 @@ uint32_t hardware_abstraction_layer_input_pointer_interrupt_count(void);
  */
 uint32_t hardware_abstraction_layer_input_pointer_resynchronization_count(void);
 
-/* ----------------------------------------------------------------------------
- * Console (diagnostic text sink)
+/** @} */
+
+/**
+ * @name Console (diagnostic text sink)
  *
- * The engine's logger (lpl::core::ILogger) is routed here on the kernel target,
- * so engine-side log calls reach the same serial console the kernel writes to.
+ * Implemented in hal_console.c over the COM1 serial port, the same sink the
+ * kernel's own boot diagnostics use. The engine's logger (lpl::core::ILogger) is
+ * routed here on the kernel target, so engine-side log calls appear interleaved
+ * with kernel output on one console.
  * Text only: this is a diagnostic sink, not a rendering path — glyphs and
  * overlays stay engine-side.
- * ------------------------------------------------------------------------- */
+ * @{
+ */
 
 /**
  * @brief Write a NUL-terminated string to the kernel diagnostic console.
@@ -200,8 +250,10 @@ uint32_t hardware_abstraction_layer_input_pointer_resynchronization_count(void);
  */
 void hardware_abstraction_layer_console_write_string(const char *text);
 
-/* ----------------------------------------------------------------------------
- * Memory (large reservations the engine bump-allocates from)
+/** @} */
+
+/**
+ * @name Memory (large reservations the engine bump-allocates from)
  *
  * The engine reserves its arenas ONCE at start-up through this group and then
  * serves every per-frame allocation from them by pointer arithmetic. That is
@@ -209,8 +261,12 @@ void hardware_abstraction_layer_console_write_string(const char *text);
  * loop, so nothing may call it during a tick.
  *
  * Ordinary CPU memory — distinct from the graphics group below, which hands out
- * pinned, GPU-attachable pages.
- * ------------------------------------------------------------------------- */
+ * pinned, GPU-attachable pages. Implemented in hal_memory.c over the kernel
+ * heap: kmalloc guarantees 8-byte alignment, and a stricter request is honoured
+ * by over-allocating and aligning up, keeping the original pointer just below
+ * the returned block so the release can recover it.
+ * @{
+ */
 
 /**
  * @brief Reserve a contiguous block (alignment is a power of two); NULL on failure.
@@ -261,9 +317,19 @@ uint32_t hardware_abstraction_layer_memory_real_time_violation_count(void);
  */
 uint32_t hardware_abstraction_layer_memory_real_time_bounded_count(void);
 
-/* ----------------------------------------------------------------------------
- * Graphics memory (pinned, never-relocated; GPU-attach ready)
- * ------------------------------------------------------------------------- */
+/** @} */
+
+/**
+ * @name Graphics memory (pinned, never-relocated; GPU-attach ready)
+ *
+ * Implemented in hal_graphics_memory.c over the kernel pinned-memory allocator:
+ * pinned pages are never relocated, giving the stable mappings a GPU uploader
+ * needs (WDDM-GPUVA semantics). Pinned memory is "contiguous-ish" and exposes no
+ * single physical base, so callers that hand pages to a GPU must walk the
+ * scatter-gather list; the physical-address query resolves one page through the
+ * paging map for that walk.
+ * @{
+ */
 
 /**
  * @brief Allocate pinned (never-relocated) graphics memory; NULL on failure.
@@ -286,26 +352,33 @@ void hardware_abstraction_layer_graphics_memory_free(void *pointer, uint32_t siz
 bool hardware_abstraction_layer_graphics_memory_physical_address(const void *virtual_address,
                                                                  uint32_t *out_physical_address);
 
-/* ----------------------------------------------------------------------------
- * VirtIO-GPU discovery (P4 display-backend hardening)
+/** @} */
+
+/**
+ * @name VirtIO-GPU (P4 display-backend hardening)
  *
- * Probe-only for now: locate a virtio-gpu PCI function and decode its MMIO BAR
- * so a later display backend can map the device and run the 2D lifecycle. The
- * full driver (virtqueues, RESOURCE_CREATE_2D / ATTACH_BACKING / SET_SCANOUT /
- * TRANSFER_TO_HOST / RESOURCE_FLUSH) lands on top of this discovery seam.
- * ------------------------------------------------------------------------- */
+ * Implemented in hal_virtio_gpu.c: locate a virtio-gpu PCI function (Red Hat /
+ * virtio vendor 0x1AF4, GPU device id 0x1050 modern or 0x1010 transitional),
+ * map its configuration windows, run the device handshake, program the control
+ * queue, and drive the 2D lifecycle (RESOURCE_CREATE_2D / ATTACH_BACKING /
+ * SET_SCANOUT / TRANSFER_TO_HOST_2D / RESOURCE_FLUSH).
+ *
+ * The kernel owns this driver (thin HAL): all renderer/scene logic stays
+ * engine-side; the HAL only finds the device and presents a surface on it.
+ * @{
+ */
 
 /** @brief Result of a virtio-gpu PCI probe. */
 typedef struct {
-    bool present;           /* a virtio-gpu function was found              */
-    uint8_t bus;            /* PCI bus of the found function                */
-    uint8_t device;         /* PCI device (slot)                           */
-    uint8_t function;       /* PCI function                                */
-    uint16_t device_id;     /* PCI device id (0x1050 modern / 0x1010 xitnl) */
-    uint8_t is_modern;      /* device_id >= 0x1040 (modern virtio-pci)     */
-    uint32_t mmio_base;     /* decoded MMIO BAR base (0 when none)         */
-    uint32_t mmio_size;     /* MMIO BAR size in bytes (0 when none)        */
-    uint8_t mmio_bar_index; /* which BAR slot the MMIO region came from    */
+    bool present;           /**< a virtio-gpu function was found */
+    uint8_t bus;            /**< PCI bus of the found function */
+    uint8_t device;         /**< PCI device (slot) */
+    uint8_t function;       /**< PCI function */
+    uint16_t device_id;     /**< PCI device id (0x1050 modern / 0x1010 xitnl) */
+    uint8_t is_modern;      /**< device_id >= 0x1040 (modern virtio-pci) */
+    uint32_t mmio_base;     /**< decoded MMIO BAR base (0 when none) */
+    uint32_t mmio_size;     /**< MMIO BAR size in bytes (0 when none) */
+    uint8_t mmio_bar_index; /**< which BAR slot the MMIO region came from */
 } hardware_abstraction_layer_virtio_gpu_info_t;
 
 /**
@@ -320,19 +393,19 @@ typedef struct {
  */
 bool hardware_abstraction_layer_virtio_gpu_probe(hardware_abstraction_layer_virtio_gpu_info_t *out_info);
 
-/* virtio-pci capability cfg_type values (from the virtio 1.x spec). */
-#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_COMMON_CFG 1u /* common configuration               */
-#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_NOTIFY_CFG 2u /* notification area                  */
-#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_ISR_CFG    3u /* ISR status                         */
-#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_DEVICE_CFG 4u /* device-specific configuration      */
-#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_PCI_CFG    5u /* alternate PCI-config access window  */
+/** virtio-pci capability cfg_type values (from the virtio 1.x spec). */
+#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_COMMON_CFG 1u /**< common configuration */
+#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_NOTIFY_CFG 2u /**< notification area */
+#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_ISR_CFG    3u /**< ISR status */
+#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_DEVICE_CFG 4u /**< device-specific configuration */
+#define HARDWARE_ABSTRACTION_LAYER_VIRTIO_PCI_CAP_PCI_CFG    5u /**< alternate PCI-config access window */
 
 /** @brief One decoded virtio-pci capability structure location (within a BAR). */
 typedef struct {
-    uint8_t present; /* non-zero when this cfg_type capability was found */
-    uint8_t bar;     /* which BAR holds the structure                   */
-    uint32_t offset; /* byte offset of the structure within the BAR     */
-    uint32_t length; /* length of the structure in bytes                */
+    uint8_t present; /**< non-zero when this cfg_type capability was found */
+    uint8_t bar;     /**< which BAR holds the structure */
+    uint32_t offset; /**< byte offset of the structure within the BAR */
+    uint32_t length; /**< length of the structure in bytes */
 } hardware_abstraction_layer_virtio_pci_cap_t;
 
 /**
@@ -344,12 +417,12 @@ typedef struct {
  * @ref mmio_virtual_base + cap.offset (when cap.bar == @ref mmio_bar_index).
  */
 typedef struct {
-    uint8_t mapped;                 /* non-zero when the MMIO window was mapped     */
-    uint8_t mmio_bar_index;         /* BAR slot that was mapped                     */
-    uint32_t mmio_virtual_base;     /* kernel VA of the mapped BAR window           */
-    uint32_t mmio_physical_base;    /* physical base of the mapped BAR window       */
-    uint32_t mmio_size;             /* size of the mapped window in bytes           */
-    uint32_t notify_off_multiplier; /* notify capability multiplier            */
+    uint8_t mapped;                 /**< non-zero when the MMIO window was mapped */
+    uint8_t mmio_bar_index;         /**< BAR slot that was mapped */
+    uint32_t mmio_virtual_base;     /**< kernel VA of the mapped BAR window */
+    uint32_t mmio_physical_base;    /**< physical base of the mapped BAR window */
+    uint32_t mmio_size;             /**< size of the mapped window in bytes */
+    uint32_t notify_off_multiplier; /**< notify capability multiplier */
     hardware_abstraction_layer_virtio_pci_cap_t common;
     hardware_abstraction_layer_virtio_pci_cap_t notify;
     hardware_abstraction_layer_virtio_pci_cap_t isr;
@@ -364,6 +437,9 @@ typedef struct {
  * those structures live in into kernel virtual space. Requires @p info from a
  * successful hardware_abstraction_layer_virtio_gpu_probe().
  *
+ * @note The window mapped is the BAR the common capability names — typically one BAR
+ *       shared by every structure — NOT necessarily the first MMIO BAR the probe found.
+ *
  * @param info Probe result identifying the virtio-gpu function.
  * @param out_mapping Destination for the decoded + mapped configuration.
  * @return true when the common cfg was found and the BAR was mapped.
@@ -371,17 +447,17 @@ typedef struct {
 bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_virtio_gpu_info_t *info,
                                                hardware_abstraction_layer_virtio_gpu_mapping_t *out_mapping);
 
-/* virtio-gpu always exposes exactly two virtqueues: controlq + cursorq. */
+/** virtio-gpu always exposes exactly two virtqueues: controlq + cursorq. */
 #define HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES 2u
 
 /** @brief Result of the virtio device bring-up handshake. */
 typedef struct {
-    uint8_t ready;               /* non-zero when FEATURES_OK stuck (device usable) */
-    uint8_t device_status;       /* final device_status register value             */
-    uint16_t num_queues;         /* number of virtqueues the device exposes        */
-    uint32_t mmio_virtual_base;  /* echoed from the mapping                 */
-    uint32_t common_cfg_address; /* VA of the virtio_pci_common_cfg         */
-    uint16_t queue_size[HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES]; /* size of queues 0..1     */
+    uint8_t ready;               /**< non-zero when FEATURES_OK stuck (device usable) */
+    uint8_t device_status;       /**< final device_status register value */
+    uint16_t num_queues;         /**< number of virtqueues the device exposes */
+    uint32_t mmio_virtual_base;  /**< echoed from the mapping */
+    uint32_t common_cfg_address; /**< VA of the virtio_pci_common_cfg */
+    uint16_t queue_size[HARDWARE_ABSTRACTION_LAYER_VIRTIO_GPU_MAX_QUEUES]; /**< size of queues 0..1 */
 } hardware_abstraction_layer_virtio_gpu_device_t;
 
 /**
@@ -401,17 +477,17 @@ bool hardware_abstraction_layer_virtio_gpu_bringup(const hardware_abstraction_la
 
 /** @brief A programmed split virtqueue (descriptor table + avail + used ring). */
 typedef struct {
-    uint8_t ready;               /* non-zero once enabled on the device         */
-    uint16_t queue_index;        /* which virtqueue this is                     */
-    uint16_t queue_size;         /* number of descriptors                       */
-    uint16_t last_used_index;    /* consumer cursor into the used ring          */
-    uint16_t free_head;          /* next free descriptor index                  */
-    uint32_t desc_address;       /* VA of the descriptor table                  */
-    uint32_t avail_address;      /* VA of the available ring                    */
-    uint32_t used_address;       /* VA of the used ring                         */
-    uint32_t notify_address;     /* VA to write queue_index into to notify      */
-    uint32_t ring_physical_base; /* physical base of the backing page         */
-    void *ring_backing;          /* VA of the backing page (for free)           */
+    uint8_t ready;               /**< non-zero once enabled on the device */
+    uint16_t queue_index;        /**< which virtqueue this is */
+    uint16_t queue_size;         /**< number of descriptors */
+    uint16_t last_used_index;    /**< consumer cursor into the used ring */
+    uint16_t free_head;          /**< next free descriptor index */
+    uint32_t desc_address;       /**< VA of the descriptor table */
+    uint32_t avail_address;      /**< VA of the available ring */
+    uint32_t used_address;       /**< VA of the used ring */
+    uint32_t notify_address;     /**< VA to write queue_index into to notify */
+    uint32_t ring_physical_base; /**< physical base of the backing page */
+    void *ring_backing;          /**< VA of the backing page (for free) */
 } hardware_abstraction_layer_virtio_virtqueue_t;
 
 /**
@@ -421,6 +497,10 @@ typedef struct {
  * (physically contiguous) zeroed page, programs queue_desc/driver/device with
  * their physical addresses, and sets queue_enable. The whole ring set must fit
  * in a single 4 KiB page (true for the virtio-gpu controlq/cursorq sizes).
+ *
+ * @note The page is zeroed because the available and used indices must start at 0. A ring
+ *       set larger than a page is refused rather than spread over pinned pages that are not
+ *       guaranteed to be physically contiguous.
  *
  * @param device A device brought up by hardware_abstraction_layer_virtio_gpu_bringup().
  * @param mapping The mapping the device was brought up from (for the notify BAR).
@@ -441,10 +521,10 @@ uint8_t hardware_abstraction_layer_virtio_gpu_driver_ok(const hardware_abstracti
 
 /** @brief Decoded VIRTIO_GPU_CMD_GET_DISPLAY_INFO response (scanout 0). */
 typedef struct {
-    uint32_t response_type; /* control-header type (0x1101 = OK_DISPLAY_INFO) */
-    uint32_t enabled;       /* non-zero when scanout 0 is enabled             */
-    uint32_t width;         /* scanout 0 preferred width                      */
-    uint32_t height;        /* scanout 0 preferred height                     */
+    uint32_t response_type; /**< control-header type (0x1101 = OK_DISPLAY_INFO) */
+    uint32_t enabled;       /**< non-zero when scanout 0 is enabled */
+    uint32_t width;         /**< scanout 0 preferred width */
+    uint32_t height;        /**< scanout 0 preferred height */
 } hardware_abstraction_layer_virtio_gpu_display_info_t;
 
 /**
@@ -454,6 +534,8 @@ typedef struct {
  * available ring, rings the notify doorbell, polls the used ring for
  * completion, and decodes the first scanout's geometry. This is the first full
  * round-trip over the virtqueue and the template the 2D lifecycle reuses.
+ *
+ * @note One pinned page backs both the request header and the response buffer.
  *
  * @param queue A programmed controlq from hardware_abstraction_layer_virtio_gpu_setup_queue().
  * @param out_info Destination for the decoded display info.
@@ -470,16 +552,16 @@ bool hardware_abstraction_layer_virtio_gpu_get_display_info(
  * hardware_abstraction_layer_virtio_gpu_flush() pushes its contents to the host and presents them.
  */
 typedef struct {
-    uint8_t ready;                                        /* non-zero when the scanout is bound + presentable */
-    uint32_t resource_id;                                 /* host resource id                                 */
-    uint32_t scanout_id;                                  /* display index this resource is bound to          */
-    uint32_t width;                                       /* surface width in pixels                          */
-    uint32_t height;                                      /* surface height in pixels                         */
-    uint32_t *framebuffer;                                /* guest BGRX surface (width*height pixels)          */
-    uint32_t framebuffer_size;                            /* surface size in bytes                            */
-    hardware_abstraction_layer_virtio_virtqueue_t *queue; /* controlq used for present commands          */
-    void *command_buffer;                                 /* internal scratch (request/response)              */
-    uint32_t command_buffer_physical;                     /* cached physical base of command_buffer    */
+    uint8_t ready;                                        /**< non-zero when the scanout is bound + presentable */
+    uint32_t resource_id;                                 /**< host resource id */
+    uint32_t scanout_id;                                  /**< display index this resource is bound to */
+    uint32_t width;                                       /**< surface width in pixels */
+    uint32_t height;                                      /**< surface height in pixels */
+    uint32_t *framebuffer;                                /**< guest BGRX surface (width*height pixels) */
+    uint32_t framebuffer_size;                            /**< surface size in bytes */
+    hardware_abstraction_layer_virtio_virtqueue_t *queue; /**< controlq used for present commands */
+    void *command_buffer;                                 /**< internal scratch (request/response) */
+    uint32_t command_buffer_physical;                     /**< cached physical base of command_buffer */
 } hardware_abstraction_layer_virtio_gpu_scanout_t;
 
 /**
@@ -508,15 +590,18 @@ bool hardware_abstraction_layer_virtio_gpu_create_scanout(hardware_abstraction_l
  */
 bool hardware_abstraction_layer_virtio_gpu_flush(hardware_abstraction_layer_virtio_gpu_scanout_t *scanout);
 
-/* ----------------------------------------------------------------------------
- * Persistent virtio-gpu display routing (kernel-internal)
+/** @} */
+
+/**
+ * @name Persistent virtio-gpu display routing (kernel-internal)
  *
  * hardware_abstraction_layer_virtio_gpu_display_init() runs the whole probe -> bring-up -> virtqueue ->
  * scanout setup once and stashes the live scanout in static state. hardware_abstraction_layer_display
  * routes its surface/clear/read/present through these when a scanout is active,
  * and falls back to the software-LFB framebuffer otherwise. The engine sees
  * only the stable hardware_abstraction_layer_display_* contract and never knows which backend won.
- * ------------------------------------------------------------------------- */
+ * @{
+ */
 
 /**
  * @brief Bring up a virtio-gpu scanout for hardware_abstraction_layer_display; false if unavailable.
@@ -532,6 +617,10 @@ bool hardware_abstraction_layer_virtio_gpu_display_active(void);
 
 /**
  * @brief Fill @p out_descriptor from the active scanout surface.
+ *
+ * @note The physical address is reported as 0: the surface is backed by a scatter-gather
+ *       list, so it has no single physical base.
+ *
  * @param out_descriptor The descriptor to fill.
  * @return true if the descriptor was filled successfully, false otherwise.
  */
@@ -540,6 +629,9 @@ bool hardware_abstraction_layer_virtio_gpu_display_query(
 
 /**
  * @brief Clear the scanout surface to a packed 0x00RRGGBB color (no present).
+ *
+ * @note The surface is BGRX, so a packed 0x00RRGGBB value maps onto it directly.
+ *
  * @param color_rgb The color to clear the surface with.
  */
 void hardware_abstraction_layer_virtio_gpu_display_clear(uint32_t color_rgb);
@@ -556,6 +648,8 @@ uint32_t hardware_abstraction_layer_virtio_gpu_display_read_pixel(uint32_t x, ui
  * @brief Present the scanout (TRANSFER_TO_HOST_2D + RESOURCE_FLUSH).
  */
 void hardware_abstraction_layer_virtio_gpu_display_present(void);
+
+/** @} */
 
 #ifdef __cplusplus
 }
