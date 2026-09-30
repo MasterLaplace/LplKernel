@@ -45,7 +45,7 @@ extern "C" void libengine_p4_image_smoke(libengine_p4_image_smoke_result_t *out)
         out->ppm_signature = image::foldSignature(decoded);
 
     out->smoke_ok = (out->red_hue == 0u && out->green_hue == 120u && out->blue_hue == 240u &&
-                     out->gray_roundtrip == 1u && out->white_luma == 255u && out->hist_red_count == 16u)
-                        ? 1u
-                        : 0u;
+                     out->gray_roundtrip == 1u && out->white_luma == 255u && out->hist_red_count == 16u) ?
+                        1u :
+                        0u;
 }

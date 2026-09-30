@@ -44,8 +44,7 @@ namespace kstd {
  * Stateless: all instances compare equal, so containers may freely move blocks between allocator
  * instances of the same type.
  */
-template <typename T>
-class KernelAllocator {
+template <typename T> class KernelAllocator {
 public:
     using value_type = T;
     using size_type = std::size_t;
@@ -53,10 +52,7 @@ public:
 
     constexpr KernelAllocator() noexcept = default;
 
-    template <typename U>
-    constexpr KernelAllocator(const KernelAllocator<U> &) noexcept
-    {
-    }
+    template <typename U> constexpr KernelAllocator(const KernelAllocator<U> &) noexcept {}
 
     [[nodiscard]] T *allocate(size_type count)
     {
@@ -69,13 +65,9 @@ public:
         return static_cast<T *>(block);
     }
 
-    void deallocate(T *pointer, size_type) noexcept
-    {
-        ::operator delete(pointer, std::align_val_t{alignof(T)});
-    }
+    void deallocate(T *pointer, size_type) noexcept { ::operator delete(pointer, std::align_val_t{alignof(T)}); }
 
-    template <typename U>
-    struct rebind {
+    template <typename U> struct rebind {
         using other = KernelAllocator<U>;
     };
 };

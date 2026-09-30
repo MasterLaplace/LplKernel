@@ -20,7 +20,7 @@ namespace kstd {
  */
 [[noreturn]] void fatal(const char *reason) noexcept
 {
-    (void)reason;
+    (void) reason;
     asmutils_disable_interrupts();
     for (;;)
         asmutils_halt();

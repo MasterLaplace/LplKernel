@@ -43,8 +43,7 @@
 
 namespace kstd {
 
-template <typename T, typename Allocator = KernelAllocator<T>>
-class vector {
+template <typename T, typename Allocator = KernelAllocator<T>> class vector {
 public:
     using value_type = T;
     using allocator_type = Allocator;
@@ -176,8 +175,7 @@ public:
     void push_back(const T &value) { emplace_back(value); }
     void push_back(T &&value) { emplace_back(std::move(value)); }
 
-    template <typename... Args>
-    reference emplace_back(Args &&...args)
+    template <typename... Args> reference emplace_back(Args &&...args)
     {
         if (_size == _capacity)
             reallocate(_capacity == 0u ? 1u : _capacity * 2u);

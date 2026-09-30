@@ -48,11 +48,19 @@ private:
 };
 
 /** Static access tables: the descriptor stores a span over them, so they must outlive it. */
-constexpr ComponentAccess kAccessA[] = {{ComponentId::Position, AccessMode::ReadWrite}};
-constexpr ComponentAccess kAccessB[] = {{ComponentId::Position, AccessMode::ReadOnly},
-                                        {ComponentId::Velocity, AccessMode::ReadWrite}};
-constexpr ComponentAccess kAccessC[] = {{ComponentId::Velocity, AccessMode::ReadOnly}};
-constexpr ComponentAccess kAccessD[] = {{ComponentId::Mass, AccessMode::ReadWrite}};
+constexpr ComponentAccess kAccessA[] = {
+    {ComponentId::Position, AccessMode::ReadWrite}
+};
+constexpr ComponentAccess kAccessB[] = {
+    {ComponentId::Position, AccessMode::ReadOnly },
+    {ComponentId::Velocity, AccessMode::ReadWrite}
+};
+constexpr ComponentAccess kAccessC[] = {
+    {ComponentId::Velocity, AccessMode::ReadOnly}
+};
+constexpr ComponentAccess kAccessD[] = {
+    {ComponentId::Mass, AccessMode::ReadWrite}
+};
 
 } // namespace
 

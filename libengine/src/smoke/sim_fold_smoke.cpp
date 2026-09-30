@@ -39,10 +39,10 @@ extern "C" void libengine_sim_fold(libengine_sim_fold_result_t *out)
     out->image_sig_8 = early.image_signature;
     out->state_sig_64 = late.state_signature;
     out->image_sig_64 = late.image_signature;
-    out->sim_ok = (early.state_signature != late.state_signature &&
-                   late.image_signature != render::detail::kFnv1aOffsetBasis)
-                      ? 1u
-                      : 0u;
+    out->sim_ok =
+        (early.state_signature != late.state_signature && late.image_signature != render::detail::kFnv1aOffsetBasis) ?
+            1u :
+            0u;
 
     static_assert(ActiveSim::count() > 0u, "the sim under parity must have entities");
 }

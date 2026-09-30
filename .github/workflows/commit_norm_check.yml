@@ -3,10 +3,11 @@ name: Commit Norm Checker
 on:
   push:
     branches:
-      - '*'
+      - '**'
   pull_request:
+    types: [opened, edited, reopened, synchronize]
     branches:
-      - '*'
+      - '**'
 
 jobs:
   verify-commit-name:
@@ -19,8 +20,10 @@ jobs:
 
       - name: Commit Norm Checker
         shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          commit_msg=$(git log --format=%B -n 1 ${{ github.sha }})
+          commit_msg=${PR_TITLE:-$(git log --format=%B -n 1 ${{ github.sha }})}
           keyword_regex="^([a-z]+\([0-9A-Za-z_.-]+\)|^[a-z]+): [0-9a-z_.-]+"
 
           if [[ ! $commit_msg =~ $keyword_regex ]]; then

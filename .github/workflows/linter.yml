@@ -6,6 +6,8 @@ on:
     paths:
       - '**.c'
       - '**.h'
+      - '**.cpp'
+      - '**.hpp'
       - '.github/workflows/linter.yml'
 
 permissions:
@@ -50,17 +52,17 @@ jobs:
             sudo apt-get install -y clang-format
           fi
 
-      - name: Format tracked C files (ensure newline at EOF + clang-format)
+      - name: Format tracked C/C++ files (ensure newline at EOF + clang-format)
         id: files
         run: |
-          files_count=$(git ls-files -- '*.c' '*.h' | wc -l)
+          files_count=$(git ls-files -- '*.c' '*.h' '*.cpp' '*.hpp' | wc -l)
           if [ "$files_count" -eq 0 ]; then
-            echo "No tracked C/H files to format."
+            echo "No tracked C/C++ files to format."
             echo "files=" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          git ls-files -z -- '*.c' '*.h' | while IFS= read -r -d '' f; do
+          git ls-files -z -- '*.c' '*.h' '*.cpp' '*.hpp' | while IFS= read -r -d '' f; do
             if [ -s "$f" ]; then
               tail -c1 "$f" | read -r _ || echo >> "$f"
             else
@@ -68,7 +70,7 @@ jobs:
             fi
           done
 
-          git ls-files -z -- '*.c' '*.h' | xargs -0 clang-format -i
+          git ls-files -z -- '*.c' '*.h' '*.cpp' '*.hpp' | xargs -0 clang-format -i
 
           echo "files=1" >> $GITHUB_OUTPUT
 
@@ -80,6 +82,7 @@ jobs:
         if: ${{ steps.files.outputs.files != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -89,8 +92,8 @@ jobs:
             exit 0
           fi
           git commit -m "style: apply clang-format" || true
-          git pull --rebase origin main || true
-          git push origin HEAD:main
+          git pull --rebase origin "$BRANCH" || true
+          git push origin "HEAD:$BRANCH"
 
       - name: Save apt .deb cache
         if: always()

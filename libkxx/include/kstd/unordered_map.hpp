@@ -191,8 +191,7 @@ public:
         return insert_node(index, key, Value())->entry.second;
     }
 
-    template <typename... Args>
-    std::pair<iterator, bool> emplace(const Key &key, Args &&...args)
+    template <typename... Args> std::pair<iterator, bool> emplace(const Key &key, Args &&...args)
     {
         ensure_capacity();
         const size_type index = bucket_index(key);
@@ -322,12 +321,10 @@ private:
         _bucket_count = new_bucket_count;
     }
 
-    template <typename... Args>
-    Node *insert_node(size_type index, const Key &key, Args &&...args)
+    template <typename... Args> Node *insert_node(size_type index, const Key &key, Args &&...args)
     {
         Node *const node = NodeAllocator().allocate(1u);
-        ::new (static_cast<void *>(node)) Node(_buckets[index], std::piecewise_construct,
-                                               std::forward_as_tuple(key),
+        ::new (static_cast<void *>(node)) Node(_buckets[index], std::piecewise_construct, std::forward_as_tuple(key),
                                                std::forward_as_tuple(std::forward<Args>(args)...));
         _buckets[index] = node;
         ++_size;
