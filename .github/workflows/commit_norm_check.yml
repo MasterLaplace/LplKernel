@@ -3,11 +3,11 @@ name: Commit Norm Checker
 on:
   push:
     branches:
-      - '*'
+      - '**'
   pull_request:
     types: [opened, edited, reopened, synchronize]
     branches:
-      - '*'
+      - '**'
 
 jobs:
   verify-commit-name:
