@@ -1,44 +1,37 @@
 name: Commit Norm Checker
 
 on:
+  push:
+    branches:
+      - '*'
   pull_request:
     types: [opened, edited, reopened, synchronize]
-  push:
-    branches: [main]
-
-permissions:
-  contents: read
+    branches:
+      - '*'
 
 jobs:
-  verify-pull-request-title:
+  verify-commit-name:
     name: Verify Commit Name
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    steps:
-      - name: Check the pull request title
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          keyword_regex='^[a-z]+(\([0-9A-Za-z_./-]+\))?!?: [0-9a-z_.-]'
-          if [[ ! "$TITLE" =~ $keyword_regex ]]; then
-            echo "Title: $TITLE"
-            echo "::error::Pull requests land as one squashed commit named after their title. Use: type(scope): subject, for example fix(net): refuse an empty packet"
-            exit 1
-          fi
 
-  verify-pushed-commit:
-    name: Verify Commit Name
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
     steps:
-      - name: Check the message of the pushed commit
+      - name: Set up Git repository
+        uses: actions/checkout@v5
+
+      - name: Commit Norm Checker
+        shell: bash
         env:
-          MESSAGE: ${{ github.event.head_commit.message }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          subject="${MESSAGE%%$'\n'*}"
-          keyword_regex='^[a-z]+(\([0-9A-Za-z_./-]+\))?!?: [0-9a-z_.-]'
-          if [[ ! "$subject" =~ $keyword_regex ]]; then
-            echo "Subject: $subject"
-            echo "::error::Commit message does not follow Conventional Commits. Use: type(scope): subject"
-            exit 1
+          commit_msg=${PR_TITLE:-$(git log --format=%B -n 1 ${{ github.sha }})}
+          keyword_regex="^([a-z]+\([0-9A-Za-z_.-]+\)|^[a-z]+): [0-9a-z_.-]+"
+
+          if [[ ! $commit_msg =~ $keyword_regex ]]; then
+            if [[ $commit_msg =~ ^Merge\ .* ]]; then
+              echo "Skipping merge commit"
+            else
+              echo "$commit_msg"
+              echo "Commit message does not match Angular convention. Use: keyword(scope): token"
+              exit 1
+            fi
           fi
