@@ -1,15 +1,12 @@
 name: Linter GitHub Action
 
 on:
+  pull_request:
   push:
-    branches-ignore: [ga-ignore-**, gh-pages]
-    paths:
-      - '**.c'
-      - '**.h'
-      - '.github/workflows/linter.yml'
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: linter-${{ github.ref }}
@@ -17,13 +14,12 @@ concurrency:
 
 jobs:
   lint_code:
-    name: Lint with clang-format (auto-apply)
+    name: Lint with clang-format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Restore apt .deb cache
         id: cache-clang-restore
@@ -45,52 +41,34 @@ jobs:
             echo "Installing clang-format from cached .deb"
             sudo dpkg -i .apt-cache/*.deb || sudo apt-get install -f -y
           else
-            echo "No cached debs found — installing via apt-get"
+            echo "No cached debs found, installing via apt-get"
             sudo apt-get update
             sudo apt-get install -y clang-format
           fi
 
-      - name: Format tracked C files (ensure newline at EOF + clang-format)
-        id: files
+      - name: Check the formatting of tracked C/H files
         run: |
-          files_count=$(git ls-files -- '*.c' '*.h' | wc -l)
-          if [ "$files_count" -eq 0 ]; then
-            echo "No tracked C/H files to format."
-            echo "files=" >> $GITHUB_OUTPUT
+          if [ -z "$(git ls-files -- '*.c' '*.h')" ]; then
+            echo "No tracked C/H files to check."
             exit 0
           fi
 
-          git ls-files -z -- '*.c' '*.h' | while IFS= read -r -d '' f; do
-            if [ -s "$f" ]; then
-              tail -c1 "$f" | read -r _ || echo >> "$f"
-            else
-              echo >> "$f"
+          failed=0
+          while IFS= read -r -d '' f; do
+            if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then
+              echo "::error file=$f::no newline at the end of the file"
+              failed=1
             fi
-          done
+          done < <(git ls-files -z -- '*.c' '*.h')
 
-          git ls-files -z -- '*.c' '*.h' | xargs -0 clang-format -i
+          git ls-files -z -- '*.c' '*.h' | xargs -0 clang-format --dry-run --Werror || failed=1
 
-          echo "files=1" >> $GITHUB_OUTPUT
-
-      - name: Show git status
-        run: |
-          git status --porcelain
-
-      - name: Commit and push style changes
-        if: ${{ steps.files.outputs.files != '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No formatting changes to commit."
-            exit 0
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Formatting differs from .clang-format. From the repository root, run:"
+            echo "git ls-files -z -- '*.c' '*.h' | xargs -0 clang-format -i"
+            echo "then commit the result on the same branch."
+            exit 1
           fi
-          git commit -m "style: apply clang-format" || true
-          git pull --rebase origin main || true
-          git push origin HEAD:main
 
       - name: Save apt .deb cache
         if: always()
