@@ -60,7 +60,8 @@ void free_aligned(void *pointer) noexcept
 
 /** Minimal std declarations matching the operator new/delete signatures. */
 namespace std {
-enum class align_val_t : __SIZE_TYPE__ {};
+enum class align_val_t : __SIZE_TYPE__ {
+};
 struct nothrow_t {
     explicit nothrow_t() = default;
 };
@@ -84,20 +85,11 @@ void *operator new(kernel_size_t size)
     return pointer;
 }
 
-void *operator new[](kernel_size_t size)
-{
-    return ::operator new(size);
-}
+void *operator new[](kernel_size_t size) { return ::operator new(size); }
 
-void operator delete(void *pointer) noexcept
-{
-    kfree(pointer);
-}
+void operator delete(void *pointer) noexcept { kfree(pointer); }
 
-void operator delete[](void *pointer) noexcept
-{
-    kfree(pointer);
-}
+void operator delete[](void *pointer) noexcept { kfree(pointer); }
 
 /**
  * @brief Sized delete (C++14).
@@ -107,35 +99,17 @@ void operator delete[](void *pointer) noexcept
  *
  * @param pointer Block to free.
  */
-void operator delete(void *pointer, kernel_size_t) noexcept
-{
-    kfree(pointer);
-}
+void operator delete(void *pointer, kernel_size_t) noexcept { kfree(pointer); }
 
-void operator delete[](void *pointer, kernel_size_t) noexcept
-{
-    kfree(pointer);
-}
+void operator delete[](void *pointer, kernel_size_t) noexcept { kfree(pointer); }
 
-void *operator new(kernel_size_t size, const std::nothrow_t &) noexcept
-{
-    return kmalloc(size == 0u ? 1u : size);
-}
+void *operator new(kernel_size_t size, const std::nothrow_t &) noexcept { return kmalloc(size == 0u ? 1u : size); }
 
-void *operator new[](kernel_size_t size, const std::nothrow_t &) noexcept
-{
-    return kmalloc(size == 0u ? 1u : size);
-}
+void *operator new[](kernel_size_t size, const std::nothrow_t &) noexcept { return kmalloc(size == 0u ? 1u : size); }
 
-void operator delete(void *pointer, const std::nothrow_t &) noexcept
-{
-    kfree(pointer);
-}
+void operator delete(void *pointer, const std::nothrow_t &) noexcept { kfree(pointer); }
 
-void operator delete[](void *pointer, const std::nothrow_t &) noexcept
-{
-    kfree(pointer);
-}
+void operator delete[](void *pointer, const std::nothrow_t &) noexcept { kfree(pointer); }
 
 void *operator new(kernel_size_t size, std::align_val_t alignment)
 {
@@ -147,35 +121,20 @@ void *operator new[](kernel_size_t size, std::align_val_t alignment)
     return allocate_aligned(size == 0u ? 1u : size, static_cast<kernel_size_t>(alignment));
 }
 
-void operator delete(void *pointer, std::align_val_t) noexcept
-{
-    free_aligned(pointer);
-}
+void operator delete(void *pointer, std::align_val_t) noexcept { free_aligned(pointer); }
 
-void operator delete[](void *pointer, std::align_val_t) noexcept
-{
-    free_aligned(pointer);
-}
+void operator delete[](void *pointer, std::align_val_t) noexcept { free_aligned(pointer); }
 
-void operator delete(void *pointer, kernel_size_t, std::align_val_t) noexcept
-{
-    free_aligned(pointer);
-}
+void operator delete(void *pointer, kernel_size_t, std::align_val_t) noexcept { free_aligned(pointer); }
 
-void operator delete[](void *pointer, kernel_size_t, std::align_val_t) noexcept
-{
-    free_aligned(pointer);
-}
+void operator delete[](void *pointer, kernel_size_t, std::align_val_t) noexcept { free_aligned(pointer); }
 
 extern "C" {
 
 /**
  * @brief Called if a pure virtual function is ever invoked: a hard logic error.
  */
-[[noreturn]] void __cxa_pure_virtual(void)
-{
-    kernel_cxx_fatal();
-}
+[[noreturn]] void __cxa_pure_virtual(void) { kernel_cxx_fatal(); }
 
 /**
  * @brief Registers a static object's destructor for "program exit".
@@ -188,8 +147,5 @@ extern "C" {
  *
  * @return 0, always.
  */
-int __cxa_atexit(void (*)(void *), void *, void *)
-{
-    return 0;
-}
+int __cxa_atexit(void (*)(void *), void *, void *) { return 0; }
 }

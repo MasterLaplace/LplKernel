@@ -28,10 +28,10 @@ bool foldTopology(libengine_p6_smoke_result_t *out)
 
     const Fixed32 ctrl[5][3] = {
         {Fixed32::fromInt(-2), Fixed32::fromInt(0), Fixed32::fromInt(-2)},
-        {Fixed32::fromInt(2), Fixed32::fromInt(0), Fixed32::fromInt(-2)},
-        {Fixed32::fromInt(2), Fixed32::fromInt(0), Fixed32::fromInt(2)},
-        {Fixed32::fromInt(-2), Fixed32::fromInt(0), Fixed32::fromInt(2)},
-        {Fixed32::fromInt(0), Fixed32::fromInt(3), Fixed32::fromInt(0)},
+        {Fixed32::fromInt(2),  Fixed32::fromInt(0), Fixed32::fromInt(-2)},
+        {Fixed32::fromInt(2),  Fixed32::fromInt(0), Fixed32::fromInt(2) },
+        {Fixed32::fromInt(-2), Fixed32::fromInt(0), Fixed32::fromInt(2) },
+        {Fixed32::fromInt(0),  Fixed32::fromInt(3), Fixed32::fromInt(0) },
     };
     const auto loop = lpl::render::tessellateCatmullLoop(ctrl, 5u, 8u);
     const auto saddle = lpl::render::tessellateSaddle(16u);

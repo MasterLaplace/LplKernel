@@ -35,19 +35,19 @@ extern "C" void libengine_p4_scene_smoke(libengine_p4_scene_smoke_result_t *out)
 
     const Fixed32 halfPi = Fixed32::fromFloat(1.57079632679f);
     const scene::Transform2D rot = scene::Transform2D::fromTRS(Fixed32::fromInt(0), Fixed32::fromInt(0), halfPi,
-                                                              Fixed32::fromInt(1), Fixed32::fromInt(1));
+                                                               Fixed32::fromInt(1), Fixed32::fromInt(1));
     Fixed32 rx{Fixed32::fromInt(0)};
     Fixed32 ry{Fixed32::fromInt(0)};
     rot.apply(Fixed32::fromInt(1), Fixed32::fromInt(0), rx, ry);
     out->rot_x_raw = rx.raw();
     out->rot_y_raw = ry.raw();
 
-    out->scene_ok = (out->world_tx_raw == static_cast<core::u32>(Fixed32::fromInt(15).raw()) &&
-                     out->world_ty_raw == static_cast<core::u32>(Fixed32::fromInt(20).raw()) &&
-                     out->undo_tx_raw == static_cast<core::u32>(Fixed32::fromInt(5).raw()) &&
-                     out->redo_tx_raw == static_cast<core::u32>(Fixed32::fromInt(7).raw()) &&
-                     out->selection == 2u && out->rot_x_raw > -512 && out->rot_x_raw < 512 &&
-                     out->rot_y_raw > 65024 && out->rot_y_raw < 66048)
-                        ? 1u
-                        : 0u;
+    out->scene_ok =
+        (out->world_tx_raw == static_cast<core::u32>(Fixed32::fromInt(15).raw()) &&
+         out->world_ty_raw == static_cast<core::u32>(Fixed32::fromInt(20).raw()) &&
+         out->undo_tx_raw == static_cast<core::u32>(Fixed32::fromInt(5).raw()) &&
+         out->redo_tx_raw == static_cast<core::u32>(Fixed32::fromInt(7).raw()) && out->selection == 2u &&
+         out->rot_x_raw > -512 && out->rot_x_raw < 512 && out->rot_y_raw > 65024 && out->rot_y_raw < 66048) ?
+            1u :
+            0u;
 }

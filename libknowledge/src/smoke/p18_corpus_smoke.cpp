@@ -10,8 +10,8 @@ extern "C" void libknowledge_corpus_fold(libknowledge_corpus_fold_result_t *out)
     *out = libknowledge_corpus_fold_result_t{};
 
     lpl::knowledge::KnowledgeFoldResult fold{};
-    lpl::knowledge::foldKnowledgeState(lpl::knowledge::kParityKnowledgeImage,
-                                       lpl::knowledge::kParityKnowledgeImageSize, fold);
+    lpl::knowledge::foldKnowledgeState(lpl::knowledge::kParityKnowledgeImage, lpl::knowledge::kParityKnowledgeImageSize,
+                                       fold);
 
     out->image_sig = fold.imageSignature;
     out->fact_sig = fold.factSignature;

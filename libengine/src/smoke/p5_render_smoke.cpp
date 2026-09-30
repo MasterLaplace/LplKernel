@@ -69,10 +69,10 @@ extern "C" void libengine_p5_render_smoke(libengine_p5_render_smoke_result_t *ou
     out->tex_sample_sig = foldBilinearDiagonal();
     shadeReferenceFragment(out);
 
-    out->render_ok = (r0.in_front_count == 8u && rq.in_front_count == 8u &&
-                      rq.screen_signature != r0.screen_signature && r0.vertex0_x > 0 && r0.vertex0_x < 1280 &&
-                      r0.vertex0_y > 0 && r0.vertex0_y < 800 && cull.total == 49u && cull.visible > 0u &&
-                      cull.visible < cull.total)
-                         ? 1u
-                         : 0u;
+    out->render_ok =
+        (r0.in_front_count == 8u && rq.in_front_count == 8u && rq.screen_signature != r0.screen_signature &&
+         r0.vertex0_x > 0 && r0.vertex0_x < 1280 && r0.vertex0_y > 0 && r0.vertex0_y < 800 && cull.total == 49u &&
+         cull.visible > 0u && cull.visible < cull.total) ?
+            1u :
+            0u;
 }

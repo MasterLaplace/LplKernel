@@ -144,30 +144,23 @@ private:
         void (*destroy)(void *);
     };
 
-    template <typename Target>
-    static Return invoke_impl(const void *storage, Args &&...args)
+    template <typename Target> static Return invoke_impl(const void *storage, Args &&...args)
     {
         Target &target = *const_cast<Target *>(static_cast<const Target *>(storage));
         return static_cast<Return>(target(std::forward<Args>(args)...));
     }
 
-    template <typename Target>
-    static void copy_impl(const void *source, void *destination)
+    template <typename Target> static void copy_impl(const void *source, void *destination)
     {
         ::new (destination) Target(*static_cast<const Target *>(source));
     }
 
-    template <typename Target>
-    static void move_impl(void *source, void *destination)
+    template <typename Target> static void move_impl(void *source, void *destination)
     {
         ::new (destination) Target(std::move(*static_cast<Target *>(source)));
     }
 
-    template <typename Target>
-    static void destroy_impl(void *storage)
-    {
-        static_cast<Target *>(storage)->~Target();
-    }
+    template <typename Target> static void destroy_impl(void *storage) { static_cast<Target *>(storage)->~Target(); }
 
     template <typename Target>
     static constexpr VTable vtable_for = {&invoke_impl<Target>, &copy_impl<Target>, &move_impl<Target>,

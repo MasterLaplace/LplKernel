@@ -55,8 +55,7 @@ public:
     void unlock() noexcept {}
 };
 
-template <typename Mutex>
-class lock_guard {
+template <typename Mutex> class lock_guard {
 public:
     explicit lock_guard(Mutex &mutex) noexcept : _mutex(mutex) { _mutex.lock(); }
     ~lock_guard() { _mutex.unlock(); }
@@ -68,8 +67,7 @@ private:
     Mutex &_mutex;
 };
 
-template <typename Mutex>
-class unique_lock {
+template <typename Mutex> class unique_lock {
 public:
     unique_lock() noexcept = default;
     explicit unique_lock(Mutex &mutex) noexcept : _mutex(&mutex), _owns(true) { _mutex->lock(); }

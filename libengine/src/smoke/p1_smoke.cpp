@@ -17,13 +17,12 @@ extern "C" void libengine_p1_arena_smoke(libengine_p1_arena_smoke_result_t *out)
     void *const c = arena.allocate(16u, 8u);
 
     const bool allocations_succeeded = (a != nullptr) && (b != nullptr) && (c != nullptr);
-    const bool aligned =
-        allocations_succeeded && ((reinterpret_cast<lpl::core::usize>(a) & 7u) == 0u) &&
-        ((reinterpret_cast<lpl::core::usize>(b) & 7u) == 0u) && ((reinterpret_cast<lpl::core::usize>(c) & 7u) == 0u);
+    const bool aligned = allocations_succeeded && ((reinterpret_cast<lpl::core::usize>(a) & 7u) == 0u) &&
+                         ((reinterpret_cast<lpl::core::usize>(b) & 7u) == 0u) &&
+                         ((reinterpret_cast<lpl::core::usize>(c) & 7u) == 0u);
 
     int stack_marker = 0;
-    const bool owns =
-        allocations_succeeded && arena.ownsPtr(a) && arena.ownsPtr(c) && !arena.ownsPtr(&stack_marker);
+    const bool owns = allocations_succeeded && arena.ownsPtr(a) && arena.ownsPtr(c) && !arena.ownsPtr(&stack_marker);
 
     const lpl::core::usize used = arena.used();
 
