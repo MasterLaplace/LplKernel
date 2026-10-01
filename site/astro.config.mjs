@@ -1,5 +1,6 @@
 // @ts-check
 import { defineConfig } from "astro/config";
+import { unified } from "@astrojs/markdown-remark";
 import tailwindcss from "@tailwindcss/vite";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -12,10 +13,13 @@ export default defineConfig({
   site: "https://masterlaplace.github.io",
   base: "/LplKernel",
   trailingSlash: "ignore",
+  compressHTML: true,
   markdown: {
-    remarkPlugins: [remarkMath, remarkMermaid],
-    // rehypeNoTranslate must come after rehypeKatex: it tags the .katex output.
-    rehypePlugins: [rehypeKatex, rehypeNoTranslate],
+    processor: unified({
+      remarkPlugins: [remarkMath, remarkMermaid],
+      // rehypeNoTranslate must come after rehypeKatex: it tags the .katex output.
+      rehypePlugins: [rehypeKatex, rehypeNoTranslate],
+    }),
     shikiConfig: { theme: "github-dark" },
   },
   vite: {
