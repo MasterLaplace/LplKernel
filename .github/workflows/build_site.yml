@@ -1,0 +1,39 @@
+name: Build Site
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'docs/Books/**'
+      - '**/build_site.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build_site:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      with:
+        persist-credentials: false
+
+    - name: Setup Node
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+      with:
+        node-version: 22
+
+    - name: Build site
+      working-directory: site
+      run: |
+        set -e
+        npm ci || npm install
+        npm run fetch-v86
+        npm run build
