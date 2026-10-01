@@ -24,7 +24,7 @@ Please note that LplKernel is an open-source project, and we rely on the communi
 
 Thank you for your interest in LplKernel, and we look forward to assisting you!
 
-**Note:** Please adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) during all community interactions related to LplKernel.
+**Note:** Please adhere to our [Code of Conduct](https://github.com/MasterLaplace/.github/blob/main/.github/CODE_OF_CONDUCT.md) during all community interactions related to LplKernel.
 
 ## Question Template
 

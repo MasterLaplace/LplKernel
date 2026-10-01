@@ -34,7 +34,7 @@ For ...
 
 **LplKernel Client requesting: (if applicable)**
 
-- [ ] Contributor has read LplKernel's [GitHub code of conduct](https://github.com/MasterLaplace/LplKernel/blob/main/.github/CODE_OF_CONDUCT.md)
+- [ ] Contributor has read LplKernel's [GitHub code of conduct](https://github.com/MasterLaplace/.github/blob/main/.github/CODE_OF_CONDUCT.md)
 - [ ] Contributor would like to be mentioned in the release notes as: (fill in this blank)
 - [ ] Contributor agrees to the license terms of this repository.
 
