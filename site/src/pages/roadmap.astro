@@ -7,6 +7,7 @@ import {
   tracksByProject,
   statusCounts,
   itemById,
+  source,
   type Status,
 } from "../data/roadmap";
 
@@ -19,22 +20,37 @@ const projects = PROJECT_ORDER.map((p) => ({
   meta: PROJECT_META[p],
   tracks: tracksByProject(p),
   counts: statusCounts(p),
-}));
+})).filter((p) => p.tracks.length > 0);
 ---
 
 <Base
   title="Roadmap — The Laplace Project"
-  description="Cross-project roadmap for LplKernel, the engine convergence, and LplPlugin — status, phases and dependencies in one place."
+  description="Cross-project roadmap for LplKernel, the engine convergence, LplPlugin, LplAssistant, LplKnowledge, the docs, the infrastructure and the forge — status, progress and dependencies in one place."
 >
   <section class="py-14">
     <h1 class="text-3xl font-bold mb-2">Roadmap</h1>
     <p class="text-lpl-muted max-w-3xl mb-6">
-      One view over three moving parts: the <span class="text-lpl-accent">kernel</span> (OSDev
+      One view over the whole project: the <span class="text-lpl-accent">kernel</span> (OSDev
       phases), the <span class="text-lpl-accent">convergence</span> that links the engine into
-      ring-0, and the <span class="text-lpl-accent">engine</span> itself. Dependencies that cross
-      from one project into another are drawn as <span class="text-lpl-accent2">merge</span> links —
-      that's where the two repos meet.
+      ring-0, the <span class="text-lpl-accent">engine</span>, the <span class="text-lpl-accent">mind</span>
+      and the <span class="text-lpl-accent">library</span>, and the <span class="text-lpl-accent">docs</span>,
+      <span class="text-lpl-accent">infrastructure</span> and <span class="text-lpl-accent">forge</span>
+      around them. Dependencies that cross from one project into another are drawn as
+      <span class="text-lpl-accent2">merge</span> links — that's where the repositories meet.
     </p>
+
+    {
+      source.from === "fallback" && (
+        <div class="border border-lpl-accent2/60 bg-lpl-accent2/10 p-4 mb-8 max-w-3xl text-sm" role="note">
+          <p class="font-mono text-lpl-accent2 mb-1">Hand-written fallback</p>
+          <p class="text-lpl-muted">
+            The roadmap could not be built from the GitHub issues ({source.reason}), so this page shows the
+            hand-written copy kept in <code>site/src/data/roadmap.ts</code>. It may be out of date: the issues are
+            the source of truth.
+          </p>
+        </div>
+      )
+    }
 
     <!-- Legend -->
     <div class="flex flex-wrap gap-4 text-xs text-lpl-muted mb-8">
@@ -132,7 +148,9 @@ const projects = PROJECT_ORDER.map((p) => ({
                             <span aria-hidden="true">{STATUS_META[it.status].glyph}</span>
                             <span class="sr-only">Status: {STATUS_META[it.status].label}.</span>
                           </span>
-                          <h4 class="font-semibold leading-snug flex-1">{it.title}</h4>
+                          <h4 class="font-semibold leading-snug flex-1">
+                            {it.url ? <a href={it.url} class="hover:text-lpl-accent">{it.title}</a> : it.title}
+                          </h4>
                           {it.phase && (
                             <span class="text-[10px] font-mono px-1.5 py-0.5 border border-lpl-border text-lpl-muted shrink-0">
                               {it.phase}
@@ -204,11 +222,21 @@ const projects = PROJECT_ORDER.map((p) => ({
     </p>
 
     <div class="mt-16 rounded-none border border-lpl-border p-6">
-      <p class="text-lpl-muted text-sm">
-        This roadmap is a synthesized cross-project view. The exhaustive, item-by-item checklists
-        live in the repos: <code>LplKernel/docs/ROADMAP.md</code> and the LplPlugin wiki
-        (<code>Roadmap</code>, <code>Implementation-Status</code>, <code>Future-Ideas</code>).
-      </p>
+      {
+        source.from === "issues" ? (
+          <p class="text-lpl-muted text-sm">
+            This roadmap was read from the GitHub issues of the Laplace project on {source.readAt.slice(0, 10)}, when
+            the site was last built. Each track is a parent issue and each card one of its sub-issues, linked from its
+            title; the steps below a card count into its progress.
+          </p>
+        ) : (
+          <p class="text-lpl-muted text-sm">
+            This roadmap is a synthesized cross-project view. The exhaustive, item-by-item checklists
+            live in the repos: <code>LplKernel/docs/ROADMAP.md</code> and the LplPlugin wiki
+            (<code>Roadmap</code>, <code>Implementation-Status</code>, <code>Future-Ideas</code>).
+          </p>
+        )
+      }
     </div>
   </section>
 </Base>
