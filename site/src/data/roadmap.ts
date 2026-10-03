@@ -1,21 +1,30 @@
 // =============================================================================
-//  ROADMAP — source of truth for the Laplace project roadmap page (/roadmap).
+//  ROADMAP — data of the Laplace project roadmap page (/roadmap).
 // =============================================================================
 //
-//  This file is HAND-EDITED. It is the single source of truth for the roadmap
-//  shown on the site. It deliberately does NOT sync with the narrative docs
-//  (LplKernel/docs/ROADMAP.md, the wiki Roadmap/Implementation-Status/
-//  Future-Ideas pages, or the book) — those stay as human reference. When
-//  something changes, edit the matching item HERE.
+//  The GitHub issues are the source of truth. At build time,
+//  scripts/fetch-roadmap.mjs reads them (GITHUB_TOKEN or GH_TOKEN) and writes
+//  src/generated/roadmap-from-issues.json: each issue labelled `track` is a
+//  track, its direct sub-issues are the items, the deeper ones count into an
+//  item's progress, and "blocked by" becomes `dependsOn`. Each rule of
+//  scripts/roadmap-from-issues.mjs has its test in roadmap-from-issues.test.mjs.
+//  Tracks follow TRACK_READING_ORDER in that script; a track it does not list
+//  yet comes last.
+//
+//  The `handWrittenItems` array below is the LOUD fallback: the page shows it,
+//  with a notice, only when the roadmap could not be built from the issues.
+//  It is not synced with the issues. The display metadata (PROJECT_META,
+//  STATUS_META) serve both.
 //
 //  --- HOW TO EDIT (the "standard") --------------------------------------------
-//  Add / change one entry in the `items` array below. Each entry is one object:
+//  Add / change one entry in the `handWrittenItems` array below. Each entry is
+//  one object:
 //
 //    {
 //      id: "kernel-p5",              // unique, stable slug (kebab-case). Used by
 //                                    //   `dependsOn` links — don't rename lightly.
 //      title: "Device drivers",      // short human label
-//      project: "kernel",            // "kernel" | "plugin" | "convergence"
+//      project: "kernel",            // a key of PROJECT_META
 //      track: "Phase 5 · Device drivers", // grouping label within the project
 //      phase: "P5",                  // short tag shown as a chip (optional)
 //      status: "in-progress",        // "done" | "in-progress" | "planned" | "idea"
@@ -34,7 +43,9 @@
 //  that's the safety net, treat a red build as "fix the typo".
 // =============================================================================
 
-export type Project = "kernel" | "plugin" | "convergence" | "assistant" | "knowledge";
+import generatedRoadmap from "../generated/roadmap-from-issues.json";
+
+export type Project = "kernel" | "plugin" | "convergence" | "assistant" | "knowledge" | "docs" | "infra" | "forge";
 export type Status = "done" | "in-progress" | "planned" | "idea";
 
 export interface RoadmapItem {
@@ -48,7 +59,12 @@ export interface RoadmapItem {
   detail?: string;
   dependsOn?: string[];
   tags?: string[];
+  url?: string;
 }
+
+type RoadmapSource =
+  | { from: "issues"; readAt: string; items: RoadmapItem[] }
+  | { from: "fallback"; reason: string };
 
 // -- Display metadata ---------------------------------------------------------
 
@@ -65,7 +81,7 @@ export const PROJECT_META: Record<Project, { label: string; blurb: string; accen
   },
   assistant: {
     label: "LplAssistant",
-    blurb: "The local mind — inference in ring 3, directing a deterministic engine.",
+    blurb: "The local mind — inference in ring 0, directing a deterministic engine.",
     accent: "#ff9d4d",
   },
   knowledge: {
@@ -78,6 +94,21 @@ export const PROJECT_META: Record<Project, { label: string; blurb: string; accen
     blurb: "The cross-platform engine — simulation, network, BCI, rendering.",
     accent: "#ff6b00",
   },
+  docs: {
+    label: "Docs",
+    blurb: "The book, the READMEs and this site, and the talks and papers about the project.",
+    accent: "#ffa94d",
+  },
+  infra: {
+    label: "Infrastructure",
+    blurb: "The machines behind Laplace — remote access, private names and TLS, a home server, a router, backups.",
+    accent: "#e07b39",
+  },
+  forge: {
+    label: "Forge",
+    blurb: "One day Laplace runs the forge: LplCraftSkills and forgeron on LplKernel servers.",
+    accent: "#b35c1e",
+  },
 };
 
 export const STATUS_META: Record<Status, { label: string; glyph: string; color: string }> = {
@@ -87,11 +118,11 @@ export const STATUS_META: Record<Status, { label: string; glyph: string; color: 
   idea: { label: "Idea", glyph: "◇", color: "#888888" },
 };
 
-export const PROJECT_ORDER: Project[] = ["kernel", "convergence", "plugin", "assistant", "knowledge"];
+export const PROJECT_ORDER: Project[] = ["kernel", "convergence", "plugin", "assistant", "knowledge", "docs", "infra", "forge"];
 
 // -- The roadmap itself -------------------------------------------------------
 
-export const items: RoadmapItem[] = [
+const handWrittenItems: RoadmapItem[] = [
   // ===== KERNEL — OSDev phases ==============================================
   {
     id: "kernel-p0",
@@ -852,6 +883,10 @@ export const items: RoadmapItem[] = [
     tags: ["retrieval", "data-movement"],
   },
 ];
+
+export const source = generatedRoadmap as RoadmapSource;
+
+export const items: RoadmapItem[] = source.from === "issues" ? source.items : handWrittenItems;
 
 // -- Derived helpers (used by the page; no need to edit) ----------------------
 

@@ -238,6 +238,11 @@ cp ../lpl-*.iso public/isos/   # let the local emulator find them
 npm run dev
 ```
 
+The roadmap page is built from the GitHub issues when `GITHUB_TOKEN` or `GH_TOKEN` is set (for
+example `GITHUB_TOKEN=$(gh auth token) npm run dev`). The token is optional: without it, or when the
+roadmap could not be built from the issues, the site still builds and the page shows the hand-written
+fallback in `site/src/data/roadmap.ts` under a notice.
+
 ## Roadmap
 
 The kernel development and its objectives are listed in the project roadmap. Consult the roadmap to see the planned features, progress status, and next steps:

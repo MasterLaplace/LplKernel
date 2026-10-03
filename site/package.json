@@ -5,13 +5,15 @@
   "private": true,
   "description": "Portfolio / showcase site for the Laplace project (LplKernel + LplPlugin)",
   "scripts": {
-    "predev": "node scripts/split-book.mjs",
+    "predev": "node scripts/split-book.mjs && node scripts/fetch-roadmap.mjs",
     "dev": "astro dev",
-    "prebuild": "node scripts/split-book.mjs",
+    "prebuild": "node scripts/split-book.mjs && node scripts/fetch-roadmap.mjs",
     "build": "astro build",
     "preview": "astro preview",
     "fetch-v86": "sh scripts/fetch-v86.sh",
-    "split-book": "node scripts/split-book.mjs"
+    "split-book": "node scripts/split-book.mjs",
+    "fetch-roadmap": "node scripts/fetch-roadmap.mjs",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "^7.3.1",

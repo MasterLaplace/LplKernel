@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write   # push the built site to the gh-pages branch
+  issues: read      # the roadmap page reads the issues at build time
+  pull-requests: read  # and the pull requests linked to them
 
 jobs:
   deploy:
@@ -124,11 +126,16 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci || npm install
+
       - name: Build site
         working-directory: site
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          npm ci || npm install
           npm run fetch-v86
           npm run build
           mkdir -p dist/isos
