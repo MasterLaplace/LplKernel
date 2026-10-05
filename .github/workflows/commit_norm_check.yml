@@ -22,16 +22,35 @@ jobs:
         shell: bash
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          commit_msg=${PR_TITLE:-$(git log --format=%B -n 1 ${{ github.sha }})}
-          keyword_regex="^([a-z]+\([0-9A-Za-z_.-]+\)|^[a-z]+): [0-9a-z_.-]+"
+          if [ -n "$PR_TITLE" ]; then
+            subject=$PR_TITLE
+            body=$PR_BODY
+          else
+            subject=$(git log --format=%s -n 1 "${{ github.sha }}")
+            body=$(git log --format=%b -n 1 "${{ github.sha }}")
+          fi
 
-          if [[ ! $commit_msg =~ $keyword_regex ]]; then
-            if [[ $commit_msg =~ ^Merge\ .* ]]; then
-              echo "Skipping merge commit"
-            else
-              echo "$commit_msg"
-              echo "Commit message does not match Angular convention. Use: keyword(scope): token"
-              exit 1
-            fi
+          if [[ $subject =~ ^Merge\  ]]; then
+            echo "Skipping merge commit"
+            exit 0
+          fi
+
+          types='feat|fix|docs|chore|refactor|style|ci|test|perf|build|revert'
+          title_pattern="^(${types})(\\([A-Za-z0-9_.,/-]+\\))?!?: [^ ]"
+          if [[ ! $subject =~ $title_pattern ]]; then
+            echo "$subject"
+            echo "The title does not follow Conventional Commits: type(scope)!: description,"
+            echo "with type one of: ${types//|/, }."
+            exit 1
+          fi
+
+          tool_credit=$(printf '%s\n' "$body" | grep -Ei '^co-authored-by:.*(claude|copilot|chatgpt|openai|anthropic|gemini|cursor|codex)|generated (with|by) ' || true)
+          bot_credit=$(printf '%s\n' "$body" | grep -Ei '^co-authored-by:.*\[bot\]' | grep -vi 'github-actions\[bot\]' || true)
+          if [ -n "$tool_credit$bot_credit" ]; then
+            printf '%s\n' "$tool_credit" "$bot_credit"
+            echo "A commit names the people who answer for it: no line credits a tool,"
+            echo "the formatting bot (github-actions[bot]) excepted."
+            exit 1
           fi
