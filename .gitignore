@@ -31,7 +31,6 @@ sysroot
 !.vscode/tasks.json
 .Test/
 .claude/
-docs/
 .tmp_refs/
 
 # debug files
