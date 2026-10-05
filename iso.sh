@@ -28,17 +28,18 @@ CARTRIDGE_SCENE="${LPLPLUGIN_ROOT:-../LplPlugin}/assets/games/parity.lplscene"
 # here otherwise hands it the kernel's own toolchain and fails with "cannot find
 # known tool script for i686-elf-g++".
 #
-# -P, and not `cd`: xmake resolves its project from the working directory. When
-# LplPlugin was a submodule nested inside LplKernel, `cd LplPlugin && xmake build
-# lpl-bake` resolved the PARENT project and wrote to ./build at the root, while the
-# search below looked only in LplPlugin/build and kept finding a binary from a
-# previous life: the ISO shipped a lpl-bake four days stale, which wrote a pack
-# missing the section that had just been added, and nothing said a word.
+# `cd`, and not `-P` from here: xmake remembers the project a directory last built
+# (.xmake/<plat>/<arch>/cache/project), so `xmake build -P ../LplPlugin` run from
+# this repository records LplPlugin as THIS directory's project, and the next plain
+# `xmake` here builds LplPlugin while saying "build ok". When LplPlugin was nested
+# inside LplKernel, `cd` had the opposite problem (it resolved the parent project,
+# and the ISO shipped a lpl-bake four days stale); a sibling has neither.
 if command -v xmake >/dev/null 2>&1 && [ -f "${LPLPLUGIN_ROOT:-../LplPlugin}/xmake.lua" ]; then
     BAKER_LOG="$(mktemp)"
-    if ! env -u CC -u CXX -u AR -u AS -u LD -u RANLIB \
-              -u CFLAGS -u CXXFLAGS -u LDFLAGS -u ASFLAGS -u SYSROOT -u DESTDIR \
-              xmake build -P "${LPLPLUGIN_ROOT:-../LplPlugin}" -y lpl-bake >"$BAKER_LOG" 2>&1; then
+    if ! ( cd "${LPLPLUGIN_ROOT:-../LplPlugin}" &&
+           env -u CC -u CXX -u AR -u AS -u LD -u RANLIB \
+               -u CFLAGS -u CXXFLAGS -u LDFLAGS -u ASFLAGS -u SYSROOT -u DESTDIR \
+               xmake build -y lpl-bake ) >"$BAKER_LOG" 2>&1; then
         echo "[iso] warning: could not rebuild lpl-bake, using whatever is present"
         # The failure is PRINTED. Swallowing it is how a stale baker survives.
         tail -20 "$BAKER_LOG" | sed 's/^/[iso]   /'
