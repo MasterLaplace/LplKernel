@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: MasterLaplace/.github/actions/check-config-header@466d7966bdc25daefb62faeda3e37bd954690c91 # ci/55-check-config-header-action
+      - uses: MasterLaplace/.github/actions/check-config-header@556efbe3ed40c4b0e36d87dc42fe8412b93945a1 # main
         with:
           config-header: kernel/include/kernel/config.h
           prefix: KERNEL
