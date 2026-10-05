@@ -5,7 +5,8 @@ abstract: "A from-scratch i686 operating-system kernel that runs the Laplace eng
 version: "0.1.0"
 date-released: "2026-10-05"
 authors:
-  - alias: "MasterLaplace"
+  - family-names: "MasterLaplace"
+    alias: "MasterLaplace"
     orcid: "https://orcid.org/0009-0006-1371-4119"
     website: "https://github.com/MasterLaplace"
 repository-code: "https://github.com/MasterLaplace/LplKernel"
