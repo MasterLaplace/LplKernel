@@ -63,7 +63,8 @@ KNOWLEDGE_OBJS=$(addprefix obj/,$(ARCH_KNOWLEDGE_SRCS:.cpp=.o))
 # libknowledge-local sources (the C-callable facade / smoke entry points).
 LOCAL_OBJS=\
 obj/local/smoke/p18_corpus_smoke.o \
-obj/local/knowledge_boot.o
+obj/local/knowledge_boot.o \
+obj/local/identity.o
 
 OBJS=$(KNOWLEDGE_OBJS) $(LOCAL_OBJS)
 
@@ -82,6 +83,14 @@ obj/%.o: $(LPLKNOWLEDGE_ROOT)/%.cpp
 	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 # libknowledge-local sources.
+# The LplKnowledge commit compiled in, stamped into identity.o alone. The stamp file changes
+# only when the commit does, and identity.o depends on it: make cannot see a -D change.
+LPLKNOWLEDGE_COMMIT:=$(shell git -C $(LPLKNOWLEDGE_ROOT) rev-parse --short=7 HEAD 2>/dev/null || echo unknown)$(shell git -C $(LPLKNOWLEDGE_ROOT) diff --quiet HEAD -- 2>/dev/null || echo -dirty)
+IDENTITY_STAMP:=obj/local/identity.stamp
+$(shell mkdir -p obj/local; echo '$(LPLKNOWLEDGE_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(LPLKNOWLEDGE_COMMIT)' > $(IDENTITY_STAMP))
+obj/local/identity.o: $(IDENTITY_STAMP)
+obj/local/identity.o: CPPFLAGS+=-DLPLKNOWLEDGE_COMMIT='"$(LPLKNOWLEDGE_COMMIT)"'
+
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)

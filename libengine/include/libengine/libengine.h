@@ -1,5 +1,5 @@
 /**************************************************************************
- * LplKernel v0.0.0.5 - A Simple C Kernel for Laplace
+ * LplKernel - A Simple C Kernel for Laplace
  *
  * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
  * provides a basic set of features to run a C program.
@@ -26,6 +26,7 @@
  *     holds no game logic.
  *   - the smoke/parity gates: C-callable only because the kernel's smoke battery
  *     is C. They are diagnostics, not an API.
+ *   - libengine_identity_telemetry: which LplPlugin was compiled in, printed at boot.
  *
  * There is deliberately no C simulation facade (init/step/render/entity_count):
  * driving a sim from the kernel in C was scaffolding, and the World seam replaced
@@ -44,6 +45,15 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Which LplPlugin this libengine was compiled from, as one telemetry record, for
+ *        instance `[LPLTLM] engine version=0.2.0 commit=ac00daf`.
+ *
+ * @return A string with static storage, ending in a newline. The version comes from
+ *         LplPlugin's lplplugin/config.h, the commit is stamped by the build.
+ */
+const char *libengine_identity_telemetry(void);
 
 /**
  * @brief P0 determinism smoke.

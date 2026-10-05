@@ -73,6 +73,27 @@ ifeq ($(SMOKE_TESTS),1)
 CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS
 endif
 
+# What the image says about itself at boot: the profile and the mode it was built for, and
+# the commit, stamped into identity.o alone. The stamp file changes only when they do, and
+# identity.o depends on it: make cannot see a -D change.
+ifeq ($(SATELLITE_MODE),1)
+KERNEL_PROFILE:=satellite
+else ifeq ($(GRAPHICS_MODE),1)
+KERNEL_PROFILE:=client
+else
+KERNEL_PROFILE:=server
+endif
+ifeq ($(SMOKE_TESTS),1)
+KERNEL_BUILD:=$(KERNEL_PROFILE).debug
+else
+KERNEL_BUILD:=$(KERNEL_PROFILE).release
+endif
+KERNEL_COMMIT:=$(shell git rev-parse --short=7 HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD -- 2>/dev/null || echo -dirty)
+IDENTITY_STAMP:=kernel/core/identity.stamp
+$(shell echo '$(KERNEL_BUILD) $(KERNEL_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(KERNEL_BUILD) $(KERNEL_COMMIT)' > $(IDENTITY_STAMP))
+kernel/core/identity.o: $(IDENTITY_STAMP)
+kernel/core/identity.o: CPPFLAGS+=-DKERNEL_BUILD='"$(KERNEL_BUILD)"' -DKERNEL_COMMIT='"$(KERNEL_COMMIT)"'
+
 # Interactive console (commands read from the keyboard or COM1). A development
 # surface, and the one thing an immutable API-only node is defined by not having:
 # no shell means no arbitrary command, and no configuration drift between two
@@ -117,6 +138,7 @@ kernel/core/console.o \
 kernel/core/reconciler.o \
 kernel/core/splash.o \
 kernel/core/smp.o \
+kernel/core/identity.o \
 kernel/ai/tensor_arena.o \
 kernel/ai/model_slot.o \
 kernel/ai/inference_budget.o \
@@ -209,6 +231,7 @@ clean:
 	rm -f lpl.kernel
 	rm -f $(OBJS) *.o */*.o */*/*.o
 	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d
+	rm -f $(IDENTITY_STAMP)
 
 debug: CFLAGS+=-DDEBUG -g3 -O0
 debug: all

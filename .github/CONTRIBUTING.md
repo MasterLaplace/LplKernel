@@ -87,8 +87,9 @@ are written `Phase 11`, never `P11`, so a phase and a gate never share a label.
 
 On top of the shared C and C++ rules:
 
-- The version in the header titles is the version of `kernel/include/kernel/config.h`, and bumping it
-  updates every title. `libc/include/lpl_string.h` keeps its own block.
+- The version is written once, in `kernel/include/kernel/config.h`, a copy of the shared template:
+  the header titles carry none. That file's requirement block names the oldest LplPlugin the kernel
+  builds with, and the compiler refuses an older one. `libc/include/lpl_string.h` keeps its own block.
 - An instruction worth reusing becomes a routine of `kernel/arch/i386/lib/asmutils.s`, declared and
   documented in `kernel/include/kernel/lib/asmutils.h`. Any other assembly is a `.s` or `.S` of its own
   under `kernel/arch/i386/`, listed in `kernel/arch/i386/make.config`.

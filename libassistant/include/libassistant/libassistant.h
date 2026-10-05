@@ -1,5 +1,5 @@
 /**************************************************************************
- * LplKernel v0.0.0.5 - A Simple C Kernel for Laplace
+ * LplKernel - A Simple C Kernel for Laplace
  *
  * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
  * provides a basic set of features to run a C program.
@@ -41,6 +41,15 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Which LplAssistant this libassistant was compiled from, as one telemetry record, for instance
+ *        `[LPLTLM] mind version=0.1.0 commit=be3d999`.
+ *
+ * @return A string with static storage, ending in a newline. The version comes from
+ *         LplAssistant's lplassistant/config.h, the commit is stamped by the build.
+ */
+const char *libassistant_identity_telemetry(void);
 
 /**
  * @struct libassistant_mind_fold_result_t
