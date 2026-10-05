@@ -64,7 +64,8 @@ obj/local/smoke/p14_mind_smoke.o \
 obj/local/smoke/p15_satellite_smoke.o \
 obj/local/smoke/p16_agency_smoke.o \
 obj/local/smoke/p17_reasoning_smoke.o \
-obj/local/assistant_boot.o
+obj/local/assistant_boot.o \
+obj/local/identity.o
 
 OBJS=$(MIND_OBJS) $(LOCAL_OBJS)
 
@@ -83,6 +84,14 @@ obj/%.o: $(LPLASSISTANT_ROOT)/%.cpp
 	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 # libassistant-local sources.
+# The LplAssistant commit compiled in, stamped into identity.o alone. The stamp file changes
+# only when the commit does, and identity.o depends on it: make cannot see a -D change.
+LPLASSISTANT_COMMIT:=$(shell git -C $(LPLASSISTANT_ROOT) rev-parse --short=7 HEAD 2>/dev/null || echo unknown)$(shell git -C $(LPLASSISTANT_ROOT) diff --quiet HEAD -- 2>/dev/null || echo -dirty)
+IDENTITY_STAMP:=obj/local/identity.stamp
+$(shell mkdir -p obj/local; echo '$(LPLASSISTANT_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(LPLASSISTANT_COMMIT)' > $(IDENTITY_STAMP))
+obj/local/identity.o: $(IDENTITY_STAMP)
+obj/local/identity.o: CPPFLAGS+=-DLPLASSISTANT_COMMIT='"$(LPLASSISTANT_COMMIT)"'
+
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)

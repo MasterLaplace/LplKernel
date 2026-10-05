@@ -85,7 +85,8 @@ obj/local/smoke/p19_caves_smoke.o \
 obj/local/smoke/p21_relief_smoke.o \
 obj/local/smoke/sim_fold_smoke.o \
 obj/local/client_app.o \
-obj/local/server_app.o
+obj/local/server_app.o \
+obj/local/identity.o
 
 OBJS=$(ENGINE_OBJS) $(LOCAL_OBJS)
 
@@ -102,6 +103,14 @@ libengine.a: $(OBJS)
 obj/%.o: $(LPLPLUGIN_ROOT)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+
+# The LplPlugin commit compiled in, stamped into identity.o alone. The stamp file changes
+# only when the commit does, and identity.o depends on it: make cannot see a -D change.
+LPLPLUGIN_COMMIT:=$(shell git -C $(LPLPLUGIN_ROOT) rev-parse --short=7 HEAD 2>/dev/null || echo unknown)$(shell git -C $(LPLPLUGIN_ROOT) diff --quiet HEAD -- 2>/dev/null || echo -dirty)
+IDENTITY_STAMP:=obj/local/identity.stamp
+$(shell mkdir -p obj/local; echo '$(LPLPLUGIN_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(LPLPLUGIN_COMMIT)' > $(IDENTITY_STAMP))
+obj/local/identity.o: $(IDENTITY_STAMP)
+obj/local/identity.o: CPPFLAGS+=-DLPLPLUGIN_COMMIT='"$(LPLPLUGIN_COMMIT)"'
 
 # libengine-local sources.
 obj/local/%.o: src/%.cpp

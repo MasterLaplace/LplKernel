@@ -1,6 +1,7 @@
 #define __LPL_KERNEL__
 #include <kernel/boot/boot_module.h>
 #include <kernel/config.h>
+#include <kernel/core/identity.h>
 #include <kernel/cpu/stack_guard.h>
 
 #include <kernel/boot/helpers/multiboot_info_helper.h>
@@ -64,6 +65,12 @@
 
 #if !defined(LPL_PLUGIN_UNAVAILABLE)
 #    include <libengine/libengine.h>
+#endif
+#if !defined(LPL_ASSISTANT_UNAVAILABLE)
+#    include <libassistant/libassistant.h>
+#endif
+#if !defined(LPL_KNOWLEDGE_UNAVAILABLE)
+#    include <libknowledge/libknowledge.h>
 #endif
 
 #define KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES     16384u
@@ -244,6 +251,16 @@ __attribute__((constructor)) void kernel_initialize(void)
 {
     serial_initialize(&com1, COM1, 9600);
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: serial port initialisation successful.\n");
+    serial_write_string(&com1, kernel_identity_telemetry());
+#if !defined(LPL_PLUGIN_UNAVAILABLE)
+    serial_write_string(&com1, libengine_identity_telemetry());
+#endif
+#if !defined(LPL_ASSISTANT_UNAVAILABLE)
+    serial_write_string(&com1, libassistant_identity_telemetry());
+#endif
+#if !defined(LPL_KNOWLEDGE_UNAVAILABLE)
+    serial_write_string(&com1, libknowledge_identity_telemetry());
+#endif
 
     terminal_initialize();
 
@@ -479,7 +496,7 @@ void kernel_main(void)
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
         terminal_write_string("[" KERNEL_SYSTEM_STRING "]: loading ...\n\n");
         terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-        terminal_write_string(KERNEL_CONFIG_STRING);
+        terminal_write_string(kernel_identity_configuration());
         terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 #if defined(LPL_PLUGIN_UNAVAILABLE)
         kernel_console_run_interactive_loop(&com1);

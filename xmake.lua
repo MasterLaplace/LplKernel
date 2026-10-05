@@ -214,8 +214,43 @@ end -- if LPLPLUGIN_AVAILABLE
 -- 16-byte aligned on entry. LPL_TARGET_KERNEL=1 routes lpl/std/* to kstd (libkxx).
 -- ===========================================================================
 if LPLPLUGIN_AVAILABLE then
+-- What the image says about itself at boot: the profile and the mode, and the commits of
+-- this repository and of LplPlugin, stamped into one file of each target (identity.c,
+-- identity.cpp), so a new commit recompiles those two files and nothing else. The Makefile
+-- path stamps the same values.
+local kKernelRoot = os.scriptdir()
+local kKernelBuild = (has_config("graphics") and "client" or "server") .. "." ..
+                     (is_mode("release") and "release" or "debug")
+
+rule("laplace.identity")
+    on_load(function (target)
+        local function git(directory, arguments)
+            local output = try { function () return os.iorunv("git", table.join({"-C", directory}, arguments)) end }
+            return output and output:trim() or ""
+        end
+        local function commit(directory)
+            local sha = git(directory, {"rev-parse", "--short=7", "HEAD"})
+            if sha == "" then
+                return "unknown"
+            end
+            local dirty = git(directory, {"status", "--porcelain", "--untracked-files=no"})
+            return dirty ~= "" and (sha .. "-dirty") or sha
+        end
+        local stamps = {
+            ["lpl-kernel"] = {"kernel/kernel/core/identity.c", {
+                'KERNEL_BUILD="' .. kKernelBuild .. '"', 'KERNEL_COMMIT="' .. commit(kKernelRoot) .. '"'}},
+            ["libengine"] = {"libengine/src/identity.cpp", {'LPLPLUGIN_COMMIT="' .. commit(LPLPLUGIN_ROOT) .. '"'}},
+            ["libassistant"] = {"libassistant/src/identity.cpp", {'LPLASSISTANT_COMMIT="' .. commit(LPLASSISTANT_ROOT) .. '"'}},
+            ["libknowledge"] = {"libknowledge/src/identity.cpp", {'LPLKNOWLEDGE_COMMIT="' .. commit(LPLKNOWLEDGE_ROOT) .. '"'}},
+        }
+        local stamp = stamps[target:name()]
+        target:fileconfig_add(stamp[1], {defines = stamp[2]})
+    end)
+rule_end()
+
 target("libengine")
     set_kind("static")
+    add_rules("laplace.identity")
     set_basename("engine")
     add_cxxflags(
         "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
@@ -390,6 +425,7 @@ end -- if LPLPLUGIN_AVAILABLE
 if LPLASSISTANT_AVAILABLE then
 target("libassistant")
     set_kind("static")
+    add_rules("laplace.identity")
     set_basename("assistant")
     set_languages("gnuxx20")
     add_cxxflags(
@@ -470,6 +506,7 @@ end -- if LPLASSISTANT_AVAILABLE
 if LPLKNOWLEDGE_AVAILABLE then
 target("libknowledge")
     set_kind("static")
+    add_rules("laplace.identity")
     set_basename("knowledge")
     set_languages("gnuxx20")
     add_cxxflags(
@@ -520,6 +557,7 @@ end -- if LPLKNOWLEDGE_AVAILABLE
 -- ===========================================================================
 target("lpl-kernel")
     set_kind("binary")
+    add_rules("laplace.identity")
     set_filename("lpl.kernel")
     add_deps("libk")
     if LPLPLUGIN_AVAILABLE then

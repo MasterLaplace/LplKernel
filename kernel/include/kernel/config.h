@@ -1,5 +1,5 @@
 /**************************************************************************
- * LplKernel v0.0.0.5 - A Simple C Kernel for Laplace
+ * LplKernel - A Simple C Kernel for Laplace
  *
  * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
  * provides a basic set of features to run a C program.
@@ -13,21 +13,40 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file config.h
- * @brief Compile-Time Configuration Parameters for LplKernel.
+ * @brief Who LplKernel is, how it was built, what it needs, and where it runs.
+ *
+ * A copy of the Laplace config.h template (MasterLaplace/.github, templates/config.h)
+ * under the KERNEL_ prefix. The version below is the only place it is written. The
+ * requirement on LplPlugin applies to the libengine translation units, the only ones
+ * that see LplPlugin's headers: kernel/kernel/core/identity.c prints the version, and
+ * libengine/src/identity.cpp prints the LplPlugin it was built with.
  *
  * @author @MasterLaplace
  * @version 0.0.0
  * @date 2024-03-28
  **************************************************************************/
 
-// clang-format off
+/* clang-format off */
 #ifndef KERNEL_CONFIG_H_
     #define KERNEL_CONFIG_H_
 
-#ifdef __cplusplus
-    #include <utility>
-    #include <type_traits>
+/**
+ * @name Identity
+ *
+ * The version is written here and nowhere else: the build, the release workflow
+ * and CITATION.cff read it from these three lines.
+ * @{
+ */
+#define KERNEL_NAME "LplKernel"
+#define KERNEL_VERSION_MAJOR 0
+#define KERNEL_VERSION_MINOR 0
+#define KERNEL_VERSION_PATCH 5
+/** @} */
 
+/** The shared part, down to the Requirements group: laplace-config v1, from MasterLaplace/.github templates/config.h. */
+#define KERNEL_CONFIG_TEMPLATE 1
+
+#ifdef __cplusplus
     #include <cstddef>
     #include <cstdint>
 #else
@@ -35,27 +54,42 @@
     #include <stdint.h>
 #endif
 
-
 #ifndef LAPLACE_CONFIG_UTILS
     #define LAPLACE_CONFIG_UTILS
 
 /**
- * @name Shared portable macros for various compilers
+ * @name Portable macros, defined once per translation unit whichever copies it includes
  * @{
  */
 #define LPL_NEED_COMMA struct _
-#define LPL_ATTRIBUTE(key) __attribute__((key))
-#define LPL_UNUSED_ATTRIBUTE LPL_ATTRIBUTE(unused)
 #define LPL_UNUSED(x) (void)(x)
-#define LPL_LIKELY(x)   __builtin_expect(!!(x), 1)
-#define LPL_UNLIKELY(x) __builtin_expect(!!(x), 0)
+
+#if defined(__GNUC__) || defined(__clang__)
+    #define LPL_ATTRIBUTE(key) __attribute__((key))
+    #define LPL_UNUSED_ATTRIBUTE LPL_ATTRIBUTE(unused)
+    #define LPL_LIKELY(x)   __builtin_expect(!!(x), 1)
+    #define LPL_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+    #define LPL_ATTRIBUTE(key)
+    #define LPL_UNUSED_ATTRIBUTE
+    #define LPL_LIKELY(x)   (x)
+    #define LPL_UNLIKELY(x) (x)
+#endif
+/** @} */
+
+/**
+ * @name Converting a macro to a string
+ * @{
+ */
+#define LPL_STRINGIFY(x) #x
+#define LPL_TOSTRING(x) LPL_STRINGIFY(x)
 /** @} */
 
 /** Emits a TODO message during compilation, portably. */
-#if defined(__clang__) || defined(__GNUC__) || defined(__GNUG__)
-    #define LPL_TODO(msg) _Pragma(LPL_STRINGIFY(message ("TODO: " msg)))
+#if defined(_MSC_VER)
+    #define LPL_TODO(msg) __pragma(message("TODO: " msg))
 #else
-    #define LPL_TODO(msg) __attribute__((warning("TODO: " msg)))
+    #define LPL_TODO(msg) _Pragma(LPL_STRINGIFY(message ("TODO: " msg)))
 #endif
 
 /** Portable null pointer: the C++11 nullptr keyword where it exists. */
@@ -109,28 +143,18 @@
 #endif
 /** @} */
 
-/**
- * @name Converting a macro to a string
- * @{
- */
-#define LPL_STRINGIFY(x) #x
-#define LPL_TOSTRING(x) LPL_STRINGIFY(x)
-/** @} */
-
 #endif /* !LAPLACE_CONFIG_UTILS */
 
 
-#ifndef KERNEL_DISTRIBUTION_H_
-    #define KERNEL_DISTRIBUTION_H_
-
-/** Identifies the compiler as KERNEL_COMPILER_<name> and KERNEL_COMPILER_STRING. */
-#if defined(_MSC_VER) || defined(_MSVC_LANG)
+/**
+ * @brief Identifies the compiler as KERNEL_COMPILER_<name> and KERNEL_COMPILER_STRING.
+ *
+ * @details Clang and MinGW both define __GNUC__, so they are tested before GCC.
+ */
+#if defined(_MSC_VER) && !defined(__clang__)
     #define KERNEL_COMPILER_MSVC
     #define KERNEL_COMPILER_STRING "MSVC"
-#elif defined(__GNUC__) || defined(__GNUG__)
-    #define KERNEL_COMPILER_GCC
-    #define KERNEL_COMPILER_STRING "GCC"
-#elif defined(__clang__) || defined(__llvm__)
+#elif defined(__clang__)
     #define KERNEL_COMPILER_CLANG
     #define KERNEL_COMPILER_STRING "Clang"
 #elif defined(__MINGW32__) || defined(__MINGW64__)
@@ -139,18 +163,34 @@
 #elif defined(__CYGWIN__)
     #define KERNEL_COMPILER_CYGWIN
     #define KERNEL_COMPILER_STRING "Cygwin"
+#elif defined(__GNUC__) || defined(__GNUG__)
+    #define KERNEL_COMPILER_GCC
+    #define KERNEL_COMPILER_STRING "GCC"
 #else
-    #error [Config@Distribution]: This compiler is not supported by LplKernel.
+    #error [Config@Distribution]: This compiler is not known to the Laplace config.h template.
 #endif
 
 
 /**
  * @brief Identifies the target system as KERNEL_SYSTEM_<name> and KERNEL_SYSTEM_STRING.
  *
- * @details Android is tested before Linux because it is based on the Linux kernel. The
- *          kernel target also defines KERNEL_MODE_STRING, the real-time or standard suffix.
+ * @details The Laplace Kernel is tested first: code compiled for it is compiled for it,
+ *          whatever the compiler would otherwise suggest. Android is tested before Linux
+ *          because it defines __linux__. The kernel target also defines
+ *          KERNEL_MODE_STRING, the real-time or standard suffix.
  */
-#if defined(_WIN32) || defined(__WIN32__) || defined(KERNEL_COMPILER_MINGW) || defined(KERNEL_COMPILER_CYGWIN)
+#if defined(__LPL_KERNEL__) || defined(__is_kernel) || (defined(LPL_TARGET_KERNEL) && LPL_TARGET_KERNEL)
+
+    #define KERNEL_SYSTEM_LAPLACE_KERNEL
+    #define KERNEL_SYSTEM_STRING "Laplace Kernel"
+
+    #if defined(LPL_KERNEL_REAL_TIME_MODE)
+        #define KERNEL_MODE_STRING " (Real-Time)"
+    #else
+        #define KERNEL_MODE_STRING " (Standard)"
+    #endif
+
+#elif defined(_WIN32) || defined(__WIN32__) || defined(__MINGW32__) || defined(__CYGWIN__)
 
     #define KERNEL_SYSTEM_WINDOWS
     #define KERNEL_SYSTEM_STRING "Windows"
@@ -160,49 +200,58 @@
     #define KERNEL_SYSTEM_ANDROID
     #define KERNEL_SYSTEM_STRING "Android"
 
-#elif defined(linux) || defined(__linux)
+#elif defined(__linux__) || defined(__linux) || defined(linux)
 
     #define KERNEL_SYSTEM_LINUX
     #define KERNEL_SYSTEM_STRING "Linux"
 
-#elif defined(__unix) || defined(__unix__)
-
-    #define KERNEL_SYSTEM_UNIX
-    #define KERNEL_SYSTEM_STRING "Unix"
-
-#elif defined(__APPLE__) || defined(MACOSX) || defined(macintosh) || defined(Macintosh)
+#elif defined(__APPLE__)
 
     #define KERNEL_SYSTEM_MACOS
-    #define KERNEL_SYSTEM_STRING "MacOS"
+    #define KERNEL_SYSTEM_STRING "macOS"
 
 #elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
 
     #define KERNEL_SYSTEM_FREEBSD
     #define KERNEL_SYSTEM_STRING "FreeBSD"
 
-#elif defined(__LPL_KERNEL__) || defined(__is_kernel)
+#elif defined(__unix) || defined(__unix__)
 
-    #define KERNEL_SYSTEM_KERNEL
-    #define KERNEL_SYSTEM_STRING "Laplace Kernel"
-
-    #if defined(LPL_KERNEL_REAL_TIME_MODE)
-        #define KERNEL_MODE_STRING " (Real-Time)"
-    #else
-        #define KERNEL_MODE_STRING " (Standard)"
-    #endif
+    #define KERNEL_SYSTEM_UNIX
+    #define KERNEL_SYSTEM_STRING "Unix"
 
 #else
-    #error [Config@Distribution]: This operating system is not supported by LplKernel.
+    #error [Config@Distribution]: This operating system is not known to the Laplace config.h template.
 #endif
 
 #ifndef KERNEL_MODE_STRING
-#define KERNEL_MODE_STRING
+    #define KERNEL_MODE_STRING
 #endif
+
+
+/** Identifies the processor as KERNEL_ARCH_<name> and KERNEL_ARCH_STRING. */
+#if defined(__x86_64__) || defined(_M_X64)
+    #define KERNEL_ARCH_X64
+    #define KERNEL_ARCH_STRING "x86_64"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    #define KERNEL_ARCH_ARM64
+    #define KERNEL_ARCH_STRING "arm64"
+#elif defined(__i386__) || defined(_M_IX86)
+    #define KERNEL_ARCH_X86
+    #define KERNEL_ARCH_STRING "i686"
+#elif defined(__riscv) && (__riscv_xlen == 64)
+    #define KERNEL_ARCH_RISCV64
+    #define KERNEL_ARCH_STRING "riscv64"
+#else
+    #define KERNEL_ARCH_UNKNOWN
+    #define KERNEL_ARCH_STRING "unknown"
+#endif
+
 
 #ifdef __cplusplus
     #define KERNEL_EXTERN_C extern "C"
 
-    #if __cplusplus >= 202203L
+    #if __cplusplus >= 202302L
         #define KERNEL_CPP23(_) _
         #define KERNEL_CPP20(_) _
         #define KERNEL_CPP17(_) _
@@ -286,7 +335,7 @@
  */
 #if defined(KERNEL_SYSTEM_WINDOWS)
 
-    #define KERNEL_API_EXPORT extern "C" __declspec(dllexport)
+    #define KERNEL_API_EXPORT KERNEL_EXTERN_C __declspec(dllexport)
     #define KERNEL_API_IMPORT KERNEL_EXTERN_C __declspec(dllimport)
 
     #ifdef _MSC_VER
@@ -295,19 +344,15 @@
 
     #endif
 
-#else // Linux, FreeBSD, Mac OS X
+#elif defined(__GNUC__) && __GNUC__ >= 4
 
-    #if __GNUC__ >= 4
+    #define KERNEL_API_EXPORT KERNEL_EXTERN_C __attribute__ ((__visibility__ ("default")))
+    #define KERNEL_API_IMPORT KERNEL_EXTERN_C __attribute__ ((__visibility__ ("default")))
 
-        #define KERNEL_API_EXPORT extern "C" __attribute__ ((__visibility__ ("default")))
-        #define KERNEL_API_IMPORT KERNEL_EXTERN_C __attribute__ ((__visibility__ ("default")))
+#else
 
-    #else
-
-        #define KERNEL_API_EXPORT extern "C"
-        #define KERNEL_API_IMPORT KERNEL_EXTERN_C
-
-    #endif
+    #define KERNEL_API_EXPORT KERNEL_EXTERN_C
+    #define KERNEL_API_IMPORT KERNEL_EXTERN_C
 
 #endif
 /** @} */
@@ -317,7 +362,7 @@
  * @name Portable entry point
  *
  * Windows GUI programs enter through WinMain, Android through android_main with no
- * main function at all, and MacOS X through a Unix main that also receives the Apple
+ * main function at all, and macOS through a Unix main that also receives the Apple
  * strings. Every other platform uses the standard main.
  * @{
  */
@@ -341,8 +386,8 @@
 #endif
 /** @} */
 
-/** KERNEL_DEBUG and KERNEL_DEBUG_STRING, from the usual debug and release flags. */
-#if (defined(_DEBUG) || defined(DEBUG)) && !defined(NDEBUG)
+/** KERNEL_DEBUG and KERNEL_DEBUG_STRING, from the usual debug flags (LPL_DEBUG included) and NDEBUG. */
+#if (defined(_DEBUG) || defined(DEBUG) || defined(LPL_DEBUG)) && !defined(NDEBUG)
 
     #define KERNEL_DEBUG
     #define KERNEL_DEBUG_STRING "Debug"
@@ -376,138 +421,104 @@
 #elif defined(__cplusplus) && (__cplusplus >= 201402)
 
     #define KERNEL_DEPRECATED [[deprecated]]
+    #define KERNEL_DEPRECATED_MSG(message) [[deprecated(message)]]
+    #define KERNEL_DEPRECATED_VMSG(version, message) [[deprecated("since " # version ". " message)]]
 
-    #if (__cplusplus >= 201402) && (__cplusplus < 201703)
-
-        #define KERNEL_DEPRECATED_MSG(message) [[deprecated(message)]]
-        #define KERNEL_DEPRECATED_VMSG(version, message) \
-            [[deprecated("since " # version ". " message)]]
-
-    #else
-        #define KERNEL_DEPRECATED_MSG(message) [[deprecated]]
-        #define KERNEL_DEPRECATED_VMSG(version, message) [[deprecated]]
-    #endif
-
-#elif defined(KERNEL_COMPILER_MSVC) && (_MSC_VER >= 1400)
+#elif defined(KERNEL_COMPILER_MSVC) && (_MSC_VER >= 1900)
 
     #define KERNEL_DEPRECATED __declspec(deprecated)
+    #define KERNEL_DEPRECATED_MSG(message) __declspec(deprecated(message))
+    #define KERNEL_DEPRECATED_VMSG(version, message) __declspec(deprecated("since " # version ". " message))
 
-    #if (_MSC_VER >= 1900)
-
-        #define KERNEL_DEPRECATED_MSG(message) __declspec(deprecated(message))
-        #define KERNEL_DEPRECATED_VMSG(version, message) \
-            __declspec(deprecated("since " # version ". " message))
-
-    #else
-        #define KERNEL_DEPRECATED_MSG(message) __declspec(deprecated)
-        #define KERNEL_DEPRECATED_VMSG(version, message) __declspec(deprecated)
-    #endif
-
-#elif defined(KERNEL_COMPILER_CLANG) && defined(__has_feature)
+#elif defined(__GNUC__) && __GNUC_PREREQ(4, 9)
 
     #define KERNEL_DEPRECATED __attribute__((deprecated))
-
-    #if __has_feature(attribute_deprecated_with_message)
-
-        #define KERNEL_DEPRECATED_MSG(message) __attribute__((deprecated(message)))
-        #define KERNEL_DEPRECATED_VMSG(version, message) \
-            __attribute__((deprecated("since " # version ". " message)))
-
-    #else
-        #define KERNEL_DEPRECATED_MSG(message) __attribute__((deprecated))
-        #define KERNEL_DEPRECATED_VMSG(version, message) __attribute__((deprecated))
-    #endif
-
-#elif defined(KERNEL_COMPILER_GCC) && defined(__GNUC__) && __GNUC_PREREQ(4, 5)
-
-    #define KERNEL_DEPRECATED __attribute__((deprecated))
-
-    #if defined(KERNEL_COMPILER_GCC) && defined(__GNUC__) && __GNUC_PREREQ(4, 9)
-
-        #define KERNEL_DEPRECATED_MSG(message) __attribute__((deprecated(message)))
-        #define KERNEL_DEPRECATED_VMSG(version, message) \
-            __attribute__((deprecated("since " # version ". " message)))
-
-    #else
-        #define KERNEL_DEPRECATED_MSG(message) __attribute__((deprecated))
-        #define KERNEL_DEPRECATED_VMSG(version, message) __attribute__((deprecated))
-    #endif
+    #define KERNEL_DEPRECATED_MSG(message) __attribute__((deprecated(message)))
+    #define KERNEL_DEPRECATED_VMSG(version, message) __attribute__((deprecated("since " # version ". " message)))
 
 #else
 
-    #pragma message("WARNING: KERNEL_DEPRECATED not supported on this compiler")
     #define KERNEL_DEPRECATED
     #define KERNEL_DEPRECATED_MSG(message)
     #define KERNEL_DEPRECATED_VMSG(version, message)
 #endif
 /** @} */
 
-#endif /* !KERNEL_DISTRIBUTION_H_ */
-
-
-#ifndef KERNEL_VERSION_H_
-    #define KERNEL_VERSION_H_
-
 /**
- * @name Kernel version
+ * @name Version
  *
- * Each component comes from the FLAG_VERSION_<component> build flag when it is set.
+ * The version packs into one integer the way Vulkan's VK_MAKE_API_VERSION does: 7 bits
+ * of major, 10 of minor and 12 of patch. Unlike Vulkan's, the macro has no cast, so it
+ * also works inside #if, which is where a repository checks the version of another.
+ *
+ * @code
+ * #if !OTHER_COMPATIBLE_WITH(0, 3, 0)
+ *     #error "This needs the other repository at 0.3.0 or a later 0.x"
+ * #endif
+ * @endcode
  * @{
  */
-#ifdef FLAG_VERSION_MAJOR
-    #define KERNEL_VERSION_MAJOR FLAG_VERSION_MAJOR
-#else
-    #define KERNEL_VERSION_MAJOR 0
-#endif
+#define KERNEL_MAKE_VERSION(major, minor, patch) (((major) << 22) | ((minor) << 12) | (patch))
 
-#ifdef FLAG_VERSION_MINOR
-    #define KERNEL_VERSION_MINOR FLAG_VERSION_MINOR
-#else
-    #define KERNEL_VERSION_MINOR 0
-#endif
+#define KERNEL_VERSION \
+        KERNEL_MAKE_VERSION(KERNEL_VERSION_MAJOR, KERNEL_VERSION_MINOR, \
+                                      KERNEL_VERSION_PATCH)
 
-#ifdef FLAG_VERSION_PATCH
-    #define KERNEL_VERSION_PATCH FLAG_VERSION_PATCH
-#else
-    #define KERNEL_VERSION_PATCH 0
-#endif
+/** At least this version. */
+#define KERNEL_PREREQ_VERSION(major, minor, patch) \
+        (KERNEL_VERSION >= KERNEL_MAKE_VERSION(major, minor, patch))
 
-#ifdef FLAG_VERSION_TWEAK
-    #define KERNEL_VERSION_TWEAK FLAG_VERSION_TWEAK
-#else
-    #define KERNEL_VERSION_TWEAK 5
-#endif
-/** @} */
+/** At least this version, and the same major: a new major is a break, never accepted in silence. */
+#define KERNEL_COMPATIBLE_WITH(major, minor, patch) \
+        (KERNEL_VERSION_MAJOR == (major) && KERNEL_PREREQ_VERSION(major, minor, patch))
 
-/** The version as one comparable integer, MMmmppTT. */
-#define KERNEL_VERSION_NUM \
-        (KERNEL_VERSION_MAJOR * 1000000 + \
-        KERNEL_VERSION_MINOR * 10000 + \
-        KERNEL_VERSION_PATCH * 100 + \
-        KERNEL_VERSION_TWEAK)
-
-#define KERNEL_PREREQ_VERSION(maj, min, pat) (KERNEL_VERSION_NUM >= (maj * 1000000 + min * 10000 + pat * 100))
-
-/** The version components joined by underscores, for token pasting. */
-#define KERNEL_VERSION_CCT KERNEL_VERSION_MAJOR##_##KERNEL_VERSION_MINOR##_##KERNEL_VERSION_PATCH##_##KERNEL_VERSION_TWEAK
-
-
-/** The version as a dotted string. */
 #define KERNEL_VERSION_STRING \
         LPL_TOSTRING(KERNEL_VERSION_MAJOR) "." \
         LPL_TOSTRING(KERNEL_VERSION_MINOR) "." \
-        LPL_TOSTRING(KERNEL_VERSION_PATCH) "." \
-        LPL_TOSTRING(KERNEL_VERSION_TWEAK)
+        LPL_TOSTRING(KERNEL_VERSION_PATCH)
+/** @} */
 
-#endif /* !KERNEL_VERSION_H_ */
+/**
+ * @name Build stamp
+ *
+ * What the source cannot know: the commit it was built from and the build it went into
+ * (a profile and a mode, such as "server.debug"). A build passes them with -D to the one
+ * translation unit that prints them, so a new commit does not recompile every file.
+ * @{
+ */
+#ifndef KERNEL_COMMIT
+    #define KERNEL_COMMIT "unknown"
+#endif
 
+#ifndef KERNEL_BUILD
+    #define KERNEL_BUILD "unknown"
+#endif
+/** @} */
 
-/** Compile-time configuration parameters, one KEY=value per line. */
+/** Compile-time configuration, one KEY=value per line. */
 #define KERNEL_CONFIG_STRING \
-        "KERNEL_VERSION=" KERNEL_VERSION_STRING "\n" \
+        "KERNEL_VERSION=" KERNEL_VERSION_STRING "+" KERNEL_BUILD " " KERNEL_COMMIT "\n" \
         "KERNEL_SYSTEM=" KERNEL_SYSTEM_STRING KERNEL_MODE_STRING "\n" \
+        "KERNEL_ARCH=" KERNEL_ARCH_STRING "\n" \
         "KERNEL_COMPILER=" KERNEL_COMPILER_STRING "\n" \
         "KERNEL_DEBUG=" KERNEL_DEBUG_STRING "\n"
 
+/** @name Requirements: what this repository needs, checked by the compiler whatever the build system @{ */
+#if defined(LPL_TARGET_KERNEL) && LPL_TARGET_KERNEL && defined(__cplusplus)
+    #if !__has_include(<lpl/config.h>)
+        #error "LplKernel needs LplPlugin 0.2.0 or later, and the LplPlugin found has no lpl/config.h: update ../LplPlugin"
+    #endif
+    #include <lpl/config.h>
+    #if !LPLPLUGIN_COMPATIBLE_WITH(0, 2, 0)
+        #pragma message("found LplPlugin " LPLPLUGIN_VERSION_STRING)
+        #if LPLPLUGIN_VERSION_MAJOR != 0
+            #error "LplKernel was written for LplPlugin 0.x: read what broke in its CHANGELOG, then adapt"
+        #else
+            #error "LplKernel needs LplPlugin 0.2.0 or later: update ../LplPlugin"
+        #endif
+    #endif
+#endif
+/** @} */
+
 #endif /* !KERNEL_CONFIG_H_ */
-// clang-format on
+/* clang-format on */
