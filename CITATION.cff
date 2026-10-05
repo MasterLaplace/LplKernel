@@ -2,6 +2,8 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "LplKernel"
 abstract: "A from-scratch i686 operating-system kernel that runs the Laplace engine natively in ring 0, bit-identical to its Linux oracle."
+version: "0.1.0"
+date-released: "2026-10-05"
 authors:
   - alias: "MasterLaplace"
     orcid: "https://orcid.org/0009-0006-1371-4119"

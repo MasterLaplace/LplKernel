@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: MasterLaplace/.github/actions/release@b1191adee330a6e0d81854774dc776c0a2a0ea93 # feat/51-release-on-version-change
+        with:
+          config-header: kernel/include/kernel/config.h
+          prefix: KERNEL
+
+  release:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: MasterLaplace/.github/actions/release@b1191adee330a6e0d81854774dc776c0a2a0ea93 # feat/51-release-on-version-change
+        with:
+          config-header: kernel/include/kernel/config.h
+          prefix: KERNEL
