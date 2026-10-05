@@ -16,12 +16,14 @@ The kernel image links five libraries, each from its own place:
 |---|---|---|
 | `libk` | the freestanding C library | `libc/` |
 | `libkxx` | the C++ runtime: `operator new`, the ABI, `kstd` | `libkxx/` |
-| `libengine` | the engine: maths, ECS, physics, rendering, worlds | [LplPlugin](https://github.com/MasterLaplace/LplPlugin), the `LplPlugin/` submodule |
+| `libengine` | the engine: maths, ECS, physics, rendering, worlds | [LplPlugin](https://github.com/MasterLaplace/LplPlugin), a sibling checkout (`LPLPLUGIN_ROOT`) |
 | `libassistant` | inference and the agent, in ring 0 | [LplAssistant](https://github.com/Christian-guajardo/LplAssistant), a sibling checkout (`LPLASSISTANT_ROOT`) |
 | `libknowledge` | the reader of knowledge images | [LplKnowledge](https://github.com/MasterLaplace/LplKnowledge), a sibling checkout (`LPLKNOWLEDGE_ROOT`) |
 
 Without LplPlugin the kernel is plain C and still builds and boots; without LplAssistant or
-LplKnowledge it boots without those layers.
+LplKnowledge it boots without those layers. `DEPENDENCIES.lock` names the commit of each sibling
+the kernel was tested with: `tools/deps.sh status` compares it with the checkouts next to this one,
+and `tools/deps.sh fetch` clones exactly those commits.
 
 ## Dependencies
 

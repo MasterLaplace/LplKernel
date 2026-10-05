@@ -37,15 +37,12 @@ if [ -z "${LPL_NO_CCACHE:-}" ] && command -v ccache >/dev/null 2>&1; then
     export CXX="ccache $CXX"
 fi
 
-# Root of the LplPlugin source tree (single source of truth). Defaults to a
-# git submodule checkout under the kernel repo; falls back to a sibling
-# working checkout for local development. Overridable from the environment.
+# Root of the LplPlugin source tree: a sibling checkout, like LplAssistant and LplKnowledge,
+# so each repository has one working tree. DEPENDENCIES.lock names the commit each sibling
+# was tested at, and `tools/deps.sh status` says how far the siblings are from it.
+# Overridable from the environment; LPLPLUGIN_ROOT=none builds without the engine.
 if [ -z "${LPLPLUGIN_ROOT:-}" ]; then
-    if [ -d "$(pwd)/LplPlugin/core/include" ]; then
-        export LPLPLUGIN_ROOT="$(pwd)/LplPlugin"
-    else
-        export LPLPLUGIN_ROOT="$(cd "$(pwd)/../LplPlugin" 2>/dev/null && pwd)"
-    fi
+    export LPLPLUGIN_ROOT="$(cd "$(pwd)/../LplPlugin" 2>/dev/null && pwd)"
 fi
 
 # The engine module is optional: when the LplPlugin source tree is absent, build
@@ -66,9 +63,8 @@ else
     echo "[config] LplPlugin not found -> building a plain kernel (ENABLE_LIBENGINE=0)"
 fi
 
-# Root of the LplAssistant source tree (the forward pass). A sibling checkout, not a
-# submodule — decision 1 of docs/ARCHITECTURE_cible.md, settled the way the make.config
-# already assumed. Overridable from the environment.
+# Root of the LplAssistant source tree (the forward pass). A sibling checkout, like the
+# engine. Overridable from the environment; LPLASSISTANT_ROOT=none builds without it.
 if [ -z "${LPLASSISTANT_ROOT:-}" ]; then
     export LPLASSISTANT_ROOT="$(cd "$(pwd)/../LplAssistant" 2>/dev/null && pwd)"
 fi
@@ -91,9 +87,8 @@ else
     echo "[config] LplAssistant not found -> building without a mind (ENABLE_LIBASSISTANT=0)"
 fi
 
-# Root of the LplKnowledge source tree (the memory). A sibling checkout, like LplAssistant
-# and for the same reason: it is a repository in its own right, it builds and is tested on
-# its own, and a submodule would tie its history to this one's.
+# Root of the LplKnowledge source tree (the memory). A sibling checkout, like the engine
+# and the mind. Overridable from the environment; LPLKNOWLEDGE_ROOT=none builds without it.
 if [ -z "${LPLKNOWLEDGE_ROOT:-}" ]; then
     export LPLKNOWLEDGE_ROOT="$(cd "$(pwd)/../LplKnowledge" 2>/dev/null && pwd)"
 fi

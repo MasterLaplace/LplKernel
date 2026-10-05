@@ -23,14 +23,13 @@
 set_project("LplKernel")
 set_xmakever("2.7.0")
 
--- Single source of truth for the engine (git submodule, sibling fallback).
+-- The engine, the mind and the memory are sibling checkouts, one working tree per
+-- repository. DEPENDENCIES.lock names the commit each was tested at, and
+-- `tools/deps.sh status` says how far the siblings are from it. Each root can be
+-- overridden from the environment; <NAME>_ROOT=none builds without that layer.
 local LPLPLUGIN_ROOT = os.getenv("LPLPLUGIN_ROOT")
 if not LPLPLUGIN_ROOT or LPLPLUGIN_ROOT == "" then
-    if os.isdir(path.join(os.scriptdir(), "LplPlugin/core/include")) then
-        LPLPLUGIN_ROOT = path.join(os.scriptdir(), "LplPlugin")
-    else
-        LPLPLUGIN_ROOT = path.join(os.scriptdir(), "../LplPlugin")
-    end
+    LPLPLUGIN_ROOT = path.join(os.scriptdir(), "../LplPlugin")
 end
 
 -- Optional engine module: if the LplPlugin source tree is not present, the
@@ -38,9 +37,7 @@ end
 -- is the "no xmake/LplPlugin → fallback to a plain kernel" path.
 local LPLPLUGIN_AVAILABLE = os.isdir(path.join(LPLPLUGIN_ROOT, "core/include"))
 
--- Single source of truth for the mind. A sibling checkout, not a submodule —
--- decision 1 of docs/ARCHITECTURE_cible.md, settled the way libassistant's
--- make.config already assumed.
+-- The mind.
 local LPLASSISTANT_ROOT = os.getenv("LPLASSISTANT_ROOT")
 if not LPLASSISTANT_ROOT or LPLASSISTANT_ROOT == "" then
     LPLASSISTANT_ROOT = path.join(os.scriptdir(), "../LplAssistant")
@@ -52,9 +49,7 @@ end
 local LPLASSISTANT_AVAILABLE =
     LPLPLUGIN_AVAILABLE and os.isdir(path.join(LPLASSISTANT_ROOT, "infer/include"))
 
--- Single source of truth for the memory. A sibling checkout, like the mind and for the
--- same reason: it is a repository in its own right, it builds and is tested on its own,
--- and a submodule would tie its history to this one's.
+-- The memory.
 local LPLKNOWLEDGE_ROOT = os.getenv("LPLKNOWLEDGE_ROOT")
 if not LPLKNOWLEDGE_ROOT or LPLKNOWLEDGE_ROOT == "" then
     LPLKNOWLEDGE_ROOT = path.join(os.scriptdir(), "../LplKnowledge")

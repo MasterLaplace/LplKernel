@@ -144,7 +144,14 @@ jobs:
         make --version || true
         grep --version || true
 
+    # The plain kernel, on purpose: this toolchain is gcc 10 without libstdc++, and the
+    # engine, the mind and the memory need gcc 14 (deploy_portfolio.yml builds them).
+    # Saying `none` keeps it the plain kernel even on a runner that has a sibling next to it.
     - name: Build ISO
+      env:
+        LPLPLUGIN_ROOT: none
+        LPLASSISTANT_ROOT: none
+        LPLKNOWLEDGE_ROOT: none
       run: |
         set -e
         ./clean.sh
