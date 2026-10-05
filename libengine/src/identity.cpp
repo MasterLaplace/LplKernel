@@ -1,5 +1,5 @@
 #include <kernel/config.h>
-#include <lpl/config.h>
+#include <lplplugin/config.h>
 
 #include "libengine/libengine.h"
 

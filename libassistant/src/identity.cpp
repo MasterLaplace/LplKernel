@@ -1,6 +1,4 @@
-#if !__has_include(<lplassistant/config.h>)
-#    error "This kernel needs lplassistant/config.h: update ../LplAssistant, or set LPLASSISTANT_ROOT=none"
-#endif
+#include <kernel/config.h>
 #include <lplassistant/config.h>
 
 #include "libassistant/libassistant.h"

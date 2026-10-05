@@ -517,6 +517,7 @@ target("libknowledge")
     )
     add_defines("LPL_TARGET_KERNEL=1", "LPL_HAS_FOUNDATION")
     add_sysincludedirs(
+        "kernel/include",
         "libkxx/include",
         "libc/include"
     )

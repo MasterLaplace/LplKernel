@@ -16,10 +16,13 @@
  * @brief Who LplKernel is, how it was built, what it needs, and where it runs.
  *
  * A copy of the Laplace config.h template (MasterLaplace/.github, templates/config.h)
- * under the KERNEL_ prefix. The version below is the only place it is written. The
- * requirement on LplPlugin applies to the libengine translation units, the only ones
- * that see LplPlugin's headers: kernel/kernel/core/identity.c prints the version, and
- * libengine/src/identity.cpp prints the LplPlugin it was built with.
+ * under the KERNEL_ prefix. The version below is the only place it is written.
+ *
+ * The requirements on LplPlugin, LplAssistant and LplKnowledge apply in a translation
+ * unit that sees that repository's headers, the only place the compiler can read its
+ * version. The kernel is C and sees none of them: each library checks its own, in its
+ * identity unit (src/identity.cpp of libengine, libassistant and libknowledge), which
+ * includes this file for that reason and then prints the version it found at boot.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -504,17 +507,49 @@
         "KERNEL_DEBUG=" KERNEL_DEBUG_STRING "\n"
 
 /** @name Requirements: what this repository needs, checked by the compiler whatever the build system @{ */
-#if defined(LPL_TARGET_KERNEL) && LPL_TARGET_KERNEL && defined(__cplusplus)
-    #if !__has_include(<lpl/config.h>)
-        #error "LplKernel needs LplPlugin 0.2.0 or later, and the LplPlugin found has no lpl/config.h: update ../LplPlugin"
+#if defined(__cplusplus) && defined(__has_include)
+    #if __has_include(<lpl/core/Platform.hpp>)
+        #if !__has_include(<lplplugin/config.h>)
+            #error "LplKernel needs LplPlugin 0.2.0 or later, and the LplPlugin found has no lplplugin/config.h: update ../LplPlugin"
+        #endif
+        #include <lplplugin/config.h>
+        #if !LPLPLUGIN_COMPATIBLE_WITH(0, 2, 0)
+            #pragma message("found LplPlugin " LPLPLUGIN_VERSION_STRING)
+            #if LPLPLUGIN_VERSION_MAJOR != 0
+                #error "LplKernel was written for LplPlugin 0.x: read what broke in its CHANGELOG, then adapt"
+            #else
+                #error "LplKernel needs LplPlugin 0.2.0 or later: update ../LplPlugin"
+            #endif
+        #endif
     #endif
-    #include <lpl/config.h>
-    #if !LPLPLUGIN_COMPATIBLE_WITH(0, 2, 0)
-        #pragma message("found LplPlugin " LPLPLUGIN_VERSION_STRING)
-        #if LPLPLUGIN_VERSION_MAJOR != 0
-            #error "LplKernel was written for LplPlugin 0.x: read what broke in its CHANGELOG, then adapt"
-        #else
-            #error "LplKernel needs LplPlugin 0.2.0 or later: update ../LplPlugin"
+
+    #if __has_include(<lpl/infer/Inference.hpp>)
+        #if !__has_include(<lplassistant/config.h>)
+            #error "LplKernel needs LplAssistant 0.1.0 or later, and the LplAssistant found has no lplassistant/config.h: update ../LplAssistant"
+        #endif
+        #include <lplassistant/config.h>
+        #if !LPLASSISTANT_COMPATIBLE_WITH(0, 1, 0)
+            #pragma message("found LplAssistant " LPLASSISTANT_VERSION_STRING)
+            #if LPLASSISTANT_VERSION_MAJOR != 0
+                #error "LplKernel was written for LplAssistant 0.x: read what broke in its CHANGELOG, then adapt"
+            #else
+                #error "LplKernel needs LplAssistant 0.1.0 or later: update ../LplAssistant"
+            #endif
+        #endif
+    #endif
+
+    #if __has_include(<lpl/knowledge/KnowledgePack.hpp>)
+        #if !__has_include(<lplknowledge/config.h>)
+            #error "LplKernel needs LplKnowledge 0.1.0 or later, and the LplKnowledge found has no lplknowledge/config.h: update ../LplKnowledge"
+        #endif
+        #include <lplknowledge/config.h>
+        #if !LPLKNOWLEDGE_COMPATIBLE_WITH(0, 1, 0)
+            #pragma message("found LplKnowledge " LPLKNOWLEDGE_VERSION_STRING)
+            #if LPLKNOWLEDGE_VERSION_MAJOR != 0
+                #error "LplKernel was written for LplKnowledge 0.x: read what broke in its CHANGELOG, then adapt"
+            #else
+                #error "LplKernel needs LplKnowledge 0.1.0 or later: update ../LplKnowledge"
+            #endif
         #endif
     #endif
 #endif

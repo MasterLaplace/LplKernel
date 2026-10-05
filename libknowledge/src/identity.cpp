@@ -1,6 +1,4 @@
-#if !__has_include(<lplknowledge/config.h>)
-#    error "This kernel needs lplknowledge/config.h: update ../LplKnowledge, or set LPLKNOWLEDGE_ROOT=none"
-#endif
+#include <kernel/config.h>
 #include <lplknowledge/config.h>
 
 #include "libknowledge/libknowledge.h"

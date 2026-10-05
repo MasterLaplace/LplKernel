@@ -51,7 +51,7 @@ extern "C" {
  *        instance `[LPLTLM] engine version=0.2.0 commit=ac00daf`.
  *
  * @return A string with static storage, ending in a newline. The version comes from
- *         LplPlugin's lpl/config.h, the commit is stamped by the build.
+ *         LplPlugin's lplplugin/config.h, the commit is stamped by the build.
  */
 const char *libengine_identity_telemetry(void);
 
