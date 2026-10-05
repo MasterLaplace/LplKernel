@@ -42,8 +42,8 @@
  */
 #define KERNEL_NAME "LplKernel"
 #define KERNEL_VERSION_MAJOR 0
-#define KERNEL_VERSION_MINOR 0
-#define KERNEL_VERSION_PATCH 5
+#define KERNEL_VERSION_MINOR 1
+#define KERNEL_VERSION_PATCH 0
 /** @} */
 
 /** The shared part, down to the Requirements group: laplace-config v1, from MasterLaplace/.github templates/config.h. */
