@@ -55,7 +55,7 @@ CXXFLAGS:=$(CXXFLAGS) $(ARCH_CXXFLAGS)
 CPPFLAGS:=$(CPPFLAGS) $(ARCH_CPPFLAGS)
 
 # Engine objects mirror the LplPlugin source tree under obj/ so no .o ever lands
-# in the (submodule / sibling) LplPlugin checkout.
+# in the sibling LplPlugin checkout.
 ENGINE_OBJS=$(addprefix obj/,$(ARCH_ENGINE_SRCS:.cpp=.o))
 
 # libengine-local sources (the C-callable facade / smoke entry points).

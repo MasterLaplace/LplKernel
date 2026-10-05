@@ -11,7 +11,7 @@ cp sysroot/boot/lpl.kernel iso/boot/lpl.kernel
 # game as bytes without needing a filesystem — a console loads a cartridge, it
 # does not mount a disk. Baked from the authored .lplscene when the host tool is
 # available; an ISO without one still boots on the built-in reference pack.
-CARTRIDGE_SCENE="${LPLPLUGIN_ROOT:-LplPlugin}/assets/games/parity.lplscene"
+CARTRIDGE_SCENE="${LPLPLUGIN_ROOT:-../LplPlugin}/assets/games/parity.lplscene"
 # Build the baker from THIS tree before using it.
 #
 # Without this the ISO takes whichever lpl-bake happens to be lying in the build
@@ -28,18 +28,17 @@ CARTRIDGE_SCENE="${LPLPLUGIN_ROOT:-LplPlugin}/assets/games/parity.lplscene"
 # here otherwise hands it the kernel's own toolchain and fails with "cannot find
 # known tool script for i686-elf-g++".
 #
-# -P, and not `cd` into the submodule. The submodule is a NESTED xmake project
-# inside LplKernel's own, so `cd LplPlugin && xmake build lpl-bake` resolves the
-# PARENT project and writes its output to ./build at the root — while the search
-# below used to look only in LplPlugin/build, and therefore kept finding a binary
-# from a previous life. That is exactly the silent failure the comment above warns
-# about, and it came back: the ISO shipped a lpl-bake four days stale, which wrote
-# a pack missing the section that had just been added, and nothing said a word.
-if command -v xmake >/dev/null 2>&1 && [ -f "${LPLPLUGIN_ROOT:-LplPlugin}/xmake.lua" ]; then
+# -P, and not `cd`: xmake resolves its project from the working directory. When
+# LplPlugin was a submodule nested inside LplKernel, `cd LplPlugin && xmake build
+# lpl-bake` resolved the PARENT project and wrote to ./build at the root, while the
+# search below looked only in LplPlugin/build and kept finding a binary from a
+# previous life: the ISO shipped a lpl-bake four days stale, which wrote a pack
+# missing the section that had just been added, and nothing said a word.
+if command -v xmake >/dev/null 2>&1 && [ -f "${LPLPLUGIN_ROOT:-../LplPlugin}/xmake.lua" ]; then
     BAKER_LOG="$(mktemp)"
     if ! env -u CC -u CXX -u AR -u AS -u LD -u RANLIB \
               -u CFLAGS -u CXXFLAGS -u LDFLAGS -u ASFLAGS -u SYSROOT -u DESTDIR \
-              xmake build -P "${LPLPLUGIN_ROOT:-LplPlugin}" -y lpl-bake >"$BAKER_LOG" 2>&1; then
+              xmake build -P "${LPLPLUGIN_ROOT:-../LplPlugin}" -y lpl-bake >"$BAKER_LOG" 2>&1; then
         echo "[iso] warning: could not rebuild lpl-bake, using whatever is present"
         # The failure is PRINTED. Swallowing it is how a stale baker survives.
         tail -20 "$BAKER_LOG" | sed 's/^/[iso]   /'
@@ -48,12 +47,13 @@ if command -v xmake >/dev/null 2>&1 && [ -f "${LPLPLUGIN_ROOT:-LplPlugin}/xmake.
 fi
 
 # Whichever candidate is NEWEST wins, not whichever is listed first. Two build
-# trees can hold a lpl-bake (the root project's and the submodule's own), and
-# "first in the list" silently prefers one of them forever.
+# trees can hold a lpl-bake (LplPlugin's, and a leftover in this repository's own
+# from the time LplPlugin was nested here), and "first in the list" silently
+# prefers one of them forever.
 CARTRIDGE_BAKER="$(command -v lpl-bake || true)"
 for candidate in build/*/*/debug/lpl-bake build/*/*/release/lpl-bake \
-                 "${LPLPLUGIN_ROOT:-LplPlugin}"/build/*/*/debug/lpl-bake \
-                 "${LPLPLUGIN_ROOT:-LplPlugin}"/build/*/*/release/lpl-bake; do
+                 "${LPLPLUGIN_ROOT:-../LplPlugin}"/build/*/*/debug/lpl-bake \
+                 "${LPLPLUGIN_ROOT:-../LplPlugin}"/build/*/*/release/lpl-bake; do
     [ -x "$candidate" ] || continue
     if [ -z "$CARTRIDGE_BAKER" ] || [ "$candidate" -nt "$CARTRIDGE_BAKER" ]; then
         CARTRIDGE_BAKER="$candidate"
@@ -66,7 +66,7 @@ done
 # game.lplpak and compares the fold against an oracle that baked that same scene,
 # so handing it a richer world instead would compare the kernel against something
 # nobody baked. The viewer takes world.lplpak and ignores the other.
-VIEWER_SCENE="${LPLPLUGIN_ROOT:-LplPlugin}/assets/games/worldview.lplscene"
+VIEWER_SCENE="${LPLPLUGIN_ROOT:-../LplPlugin}/assets/games/worldview.lplscene"
 
 rm -f iso/boot/game.lplpak iso/boot/world.lplpak
 if [ -n "$CARTRIDGE_BAKER" ] && [ -f "$CARTRIDGE_SCENE" ]; then

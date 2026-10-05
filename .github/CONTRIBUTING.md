@@ -12,13 +12,16 @@ LplKernel holds no engine logic. Rendering, scenes, the ECS, physics and the mat
 [LplPlugin](https://github.com/MasterLaplace/LplPlugin), which the kernel links as `libengine.a`
 behind the thin C layer of `kernel/include/kernel/hal/hal.h`.
 
-- An engine change is made in LplPlugin. When it is meant for the kernel, make it through the
-  `LplPlugin/` submodule: another checkout of LplPlugin is another working tree, and the kernel does
-  not build from it.
-- [LplAssistant](https://github.com/Christian-guajardo/LplAssistant) and
-  [LplKnowledge](https://github.com/MasterLaplace/LplKnowledge) are sibling checkouts, found through
-  `LPLASSISTANT_ROOT` and `LPLKNOWLEDGE_ROOT`. Without them the kernel builds and boots without those
-  layers.
+- An engine change is made in LplPlugin, in its checkout next to this one (`../LplPlugin`).
+  [LplAssistant](https://github.com/Christian-guajardo/LplAssistant) and
+  [LplKnowledge](https://github.com/MasterLaplace/LplKnowledge) are siblings too, one working tree
+  per repository. `LPLPLUGIN_ROOT`, `LPLASSISTANT_ROOT` and `LPLKNOWLEDGE_ROOT` point at another
+  checkout, and `none` builds without that layer: without LplPlugin the kernel is plain C, without
+  the other two it boots without a mind or a memory.
+- `DEPENDENCIES.lock` names the commit of each sibling this kernel was tested with, and CI fetches
+  those commits and no others (`tools/deps.sh fetch`). `tools/deps.sh status` says how far your
+  checkouts are from it. When a kernel change needs a change in a sibling, the sibling's pull request
+  is merged first; then `tools/deps.sh lock` records the merged commit, in the kernel's pull request.
 - The link order is `-lknowledge -lassistant -lengine -lkxx -lk`. Each archive calls into the ones
   after it, and a static archive only resolves what is already pending when the linker reaches it:
   never reorder it.
