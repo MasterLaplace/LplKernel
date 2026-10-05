@@ -8,6 +8,21 @@ This is the kernel of the Laplace project.
 
 ![image](docs/image.gif)
 
+## How it is put together
+
+The kernel image links five libraries, each from its own place:
+
+| Library | What it is | Where it comes from |
+|---|---|---|
+| `libk` | the freestanding C library | `libc/` |
+| `libkxx` | the C++ runtime: `operator new`, the ABI, `kstd` | `libkxx/` |
+| `libengine` | the engine: maths, ECS, physics, rendering, worlds | [LplPlugin](https://github.com/MasterLaplace/LplPlugin), the `LplPlugin/` submodule |
+| `libassistant` | inference and the agent, in ring 0 | [LplAssistant](https://github.com/Christian-guajardo/LplAssistant), a sibling checkout (`LPLASSISTANT_ROOT`) |
+| `libknowledge` | the reader of knowledge images | [LplKnowledge](https://github.com/MasterLaplace/LplKnowledge), a sibling checkout (`LPLKNOWLEDGE_ROOT`) |
+
+Without LplPlugin the kernel is plain C and still builds and boots; without LplAssistant or
+LplKnowledge it boots without those layers.
+
 ## Dependencies
 
 to build the kernel, you need to install the following dependencies:
@@ -245,9 +260,15 @@ fallback in `site/src/data/roadmap.ts` under a notice.
 
 ## Roadmap
 
-The kernel development and its objectives are listed in the project roadmap. Consult the roadmap to see the planned features, progress status, and next steps:
+The roadmap is the issues: the [Laplace project](https://github.com/users/MasterLaplace/projects/7)
+orders them, and the [roadmap page](https://masterlaplace.github.io/LplKernel/roadmap/) of the site
+is built from them.
 
-[ROADMAP](docs/ROADMAP.md)
+## Contributing
+
+Read [CONTRIBUTING](.github/CONTRIBUTING.md): where a change goes, the determinism contract, the
+slice workflow, and the rules of the kernel code. The flow every Laplace repository shares is linked
+from there.
 
 ## References
 
