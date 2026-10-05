@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: MasterLaplace/.github/actions/release@b1191adee330a6e0d81854774dc776c0a2a0ea93 # feat/51-release-on-version-change
+      - uses: MasterLaplace/.github/actions/release@675e192de0a4169e38f9d6b9c6e99653c7c58c2f # main
         with:
           config-header: kernel/include/kernel/config.h
           prefix: KERNEL
@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: MasterLaplace/.github/actions/release@b1191adee330a6e0d81854774dc776c0a2a0ea93 # feat/51-release-on-version-change
+      - uses: MasterLaplace/.github/actions/release@675e192de0a4169e38f9d6b9c6e99653c7c58c2f # main
         with:
           config-header: kernel/include/kernel/config.h
           prefix: KERNEL
