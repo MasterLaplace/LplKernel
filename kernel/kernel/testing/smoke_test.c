@@ -466,6 +466,7 @@ void smoke_test_run_heap_allocate_free(Serial_t *serial_port)
     bool expect_large = true;
 #endif
 
+    const uint32_t large_held = kernel_heap_get_large_allocation_count();
     bool pass = (small_a != NULL) && (small_b != NULL);
 
     if (expect_large)
@@ -499,33 +500,13 @@ void smoke_test_run_heap_allocate_free(Serial_t *serial_port)
     bool has_free_capacity = (free_blocks_after > 0u) || (sizeclass_free_total > 0u);
     bool free_pool_restored = has_free_capacity;
 #endif
-    bool large_counter_ok;
-    if (expect_large)
-        large_counter_ok = (large_after >= (large_before + 1u));
-    else
-        large_counter_ok = (large_after == large_before);
+    const uint32_t large_expected = expect_large ? 1u : 0u;
+    const bool large_counter_ok = ((large_held - large_before) == large_expected) && (large_after == large_before);
 
-    bool guard_triggered;
-#ifdef LPL_KERNEL_DEBUG_POISON
-    guard_triggered = (rejected_after > rejected_before);
-    if (!guard_triggered)
-    {
-        void *guard_fallback = kmalloc(100u);
-        if (guard_fallback)
-        {
-            uint8_t *guard_bytes = (uint8_t *) guard_fallback;
-            guard_bytes[-1] ^= 0x1u;
-            kfree(guard_fallback);
-            rejected_after = kernel_heap_debug_get_rejected_free_count();
-            double_after = kernel_heap_debug_get_double_free_count();
-            guard_triggered = (rejected_after > rejected_before);
-        }
-    }
-#else
-    guard_triggered = (rejected_after > rejected_before) || (double_after > double_before);
-#endif
+    const bool only_double_free_rejected =
+        ((rejected_after - rejected_before) == 1u) && ((double_after - double_before) == 1u);
 
-    pass = pass && free_pool_restored && large_counter_ok && guard_triggered;
+    pass = pass && free_pool_restored && large_counter_ok && only_double_free_rejected;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: heap guard counters: rej=");
     serial_write_int(serial_port, (int32_t) rejected_after);
@@ -550,7 +531,7 @@ void smoke_test_run_heap_allocate_free(Serial_t *serial_port)
     serial_write_string(serial_port, ", large_ok=");
     serial_write_int(serial_port, (int32_t) large_counter_ok);
     serial_write_string(serial_port, ", guard=");
-    serial_write_int(serial_port, (int32_t) guard_triggered);
+    serial_write_int(serial_port, (int32_t) only_double_free_rejected);
     if (pass)
         serial_write_string(serial_port, " (pass)\n");
     else
