@@ -79,9 +79,6 @@
 #define KERNEL_POOL_ALLOCATOR_DEFAULT_OBJECT_COUNT    128u
 #define KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE          32u
 #define KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT         256u
-#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT           200000u
-#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT       300000u
-#define KERNEL_AP_STARTUP_MAX_ATTEMPTS                3u
 
 static const char WELCOME_MESSAGE[] = ""
                                       "/==+--  _                                         ---+\n"

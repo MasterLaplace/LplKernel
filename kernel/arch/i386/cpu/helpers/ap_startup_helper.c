@@ -64,7 +64,8 @@ void write_ap_startup_dispatch_info(Serial_t *serial, ApplicationProcessorBootst
 }
 
 void write_ap_startup_summary(Serial_t *serial, uint32_t attempted, uint32_t delivered, uint32_t retries_consumed,
-                              uint32_t sequence_failures, uint32_t acknowledgement_timeouts, uint32_t c_entry_timeouts)
+                              uint32_t sequence_failures, uint32_t acknowledgement_timeouts, uint32_t c_entry_timeouts,
+                              uint32_t parked)
 {
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: AP startup summary attempted=");
     serial_write_int(serial, (int32_t) attempted);
@@ -90,6 +91,8 @@ void write_ap_startup_summary(Serial_t *serial, uint32_t attempted, uint32_t del
     serial_write_int(serial, (int32_t) acknowledgement_timeouts);
     serial_write_string(serial, ", c_entry_to=");
     serial_write_int(serial, (int32_t) c_entry_timeouts);
+    serial_write_string(serial, ", parked=");
+    serial_write_int(serial, (int32_t) parked);
     serial_write_string(serial, ", tramp_installs=");
     serial_write_int(serial, (int32_t) application_processor_trampoline_get_install_count());
     serial_write_string(serial, ", tramp_waits=");
