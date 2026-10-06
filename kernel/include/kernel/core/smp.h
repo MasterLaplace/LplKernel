@@ -36,4 +36,17 @@
  */
 extern void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1);
 
+/**
+ * @brief Emits what the multiprocessor bring-up achieved, as one telemetry record.
+ *
+ * @details `cpus` is what the MADT enables, `online` what the topology counts once the boot is
+ *          done, and the shootdown counts say whether an AP ever had to answer. It passes when
+ *          every enabled CPU is online, every AP attempted was delivered and no shootdown timed
+ *          out. A boot asked for two CPUs that reports one is caught by whoever asked, by
+ *          comparing `cpus` with the count it requested.
+ *
+ * @param serial Serial port the record is written to.
+ */
+extern void kernel_symmetric_multiprocessing_report(Serial_t *serial);
+
 #endif /* KERNEL_CORE_SMP_H */

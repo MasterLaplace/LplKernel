@@ -194,6 +194,7 @@ static void kernel_protect_read_only_sections(void)
  */
 static void kernel_report_live_checks(void)
 {
+    kernel_symmetric_multiprocessing_report(&com1);
     kernel_reconciler_report(&com1);
     kernel_telemetry_report(&com1);
 }

@@ -1,10 +1,12 @@
 #include <kernel/core/smp.h>
+#include <kernel/cpu/acpi.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/ap_trampoline.h>
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/helpers/ap_startup_helper.h>
+#include <kernel/diag/telemetry.h>
 
 /** Polls of the acknowledgement word before an attempt is given up. The AP writes it in real
     mode, first thing: measured at zero polls under QEMU, it is already there when the IPIs return. */
@@ -41,6 +43,10 @@ static uint8_t kernel_symmetric_multiprocessing_park(uint8_t apic_id)
     cpu_topology_unmark_apic_id_online(apic_id);
     return parked;
 }
+
+static uint32_t smp_ap_attempted = 0u;
+static uint32_t smp_ap_delivered = 0u;
+static uint32_t smp_ap_parked = 0u;
 
 void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
 {
@@ -148,4 +154,31 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
 
     write_ap_startup_summary(com1, attempted, delivered, retries_consumed, sequence_failures, acknowledgement_timeouts,
                              c_entry_timeouts, parked);
+
+    smp_ap_attempted = attempted;
+    smp_ap_delivered = delivered;
+    smp_ap_parked = parked;
+}
+
+void kernel_symmetric_multiprocessing_report(Serial_t *serial)
+{
+    const bool madt = advanced_configuration_and_power_interface_madt_is_available() != 0u;
+    const uint32_t madt_cpus =
+        madt ? advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count() : 1u;
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+    const uint32_t timeouts = advanced_pic_ipi_get_tlb_shootdown_timeout_count();
+    const bool pass = (online == madt_cpus) && (smp_ap_delivered == smp_ap_attempted) && (timeouts == 0u);
+
+    kernel_telemetry_begin_record(serial, "smp");
+    kernel_telemetry_write_boolean("madt", madt);
+    kernel_telemetry_write_unsigned("cpus", madt_cpus);
+    kernel_telemetry_write_unsigned("discovered", cpu_topology_get_discovered_cpu_count());
+    kernel_telemetry_write_unsigned("online", online);
+    kernel_telemetry_write_unsigned("ap_attempted", smp_ap_attempted);
+    kernel_telemetry_write_unsigned("ap_delivered", smp_ap_delivered);
+    kernel_telemetry_write_unsigned("ap_parked", smp_ap_parked);
+    kernel_telemetry_write_unsigned("shootdowns", advanced_pic_ipi_get_tlb_shootdown_broadcast_count());
+    kernel_telemetry_write_unsigned("shootdown_timeouts", timeouts);
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
 }

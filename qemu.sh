@@ -80,4 +80,4 @@ unset LD_LIBRARY_PATH LD_PRELOAD GTK_PATH XDG_DATA_DIRS
 unset SNAP SNAP_VERSION SNAP_ARCH SNAP_REVISION
 # execute with a minimal PATH as well
 PATH="/usr/bin:/bin" \
-    "$QEMU_CMD" -cdrom lpl.iso -m 256M -serial stdio $QEMU_VGA_OPT $QEMU_DISPLAY_OPT $QEMU_ACCEL_OPT
+    "$QEMU_CMD" -cdrom lpl.iso -m 256M -smp "${QEMU_CPUS:-2}" -serial stdio $QEMU_VGA_OPT $QEMU_DISPLAY_OPT $QEMU_ACCEL_OPT
