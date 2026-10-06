@@ -3,11 +3,44 @@
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/ap_trampoline.h>
 #include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/helpers/ap_startup_helper.h>
 
-#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT     200000u
-#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT 300000u
-#define KERNEL_AP_STARTUP_MAX_ATTEMPTS          3u
+/** Polls of the acknowledgement word before an attempt is given up. The AP writes it in real
+    mode, first thing: measured at zero polls under QEMU, it is already there when the IPIs return. */
+#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT 200000u
+
+/**
+ * Polls of the C-entry word before an attempt is given up.
+ *
+ * The AP reaches C after protected mode, paging and its stack, and under QEMU's TCG the first AP
+ * to do it was measured at 722,496 polls, a warm one at 6,750: the former limit of 300,000 failed
+ * the first AP of every multi-CPU boot, which then came up on a retry, or after the BSP had moved
+ * on. A poll count is not a time bound, so the margin is wide: two orders of magnitude over the
+ * slowest measured, and only spent in full by an AP that never arrives.
+ */
+#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT 100000000u
+
+/** Start-up sequences sent to one AP before it is given up and parked. */
+#define KERNEL_AP_STARTUP_MAX_ATTEMPTS 3u
+
+/**
+ * @brief Puts an AP that never confirmed its start-up back into wait-for-SIPI.
+ *
+ * @details An AP that misses the deadline is not necessarily dead: it may still be on its way,
+ *          and the trampoline's mailbox is about to be rewritten for the next AP. Left running,
+ *          it would read that AP's stack and slot. An INIT stops it where it is, and its online
+ *          mark, if it set one late, is withdrawn so the topology does not count a stopped CPU.
+ *
+ * @param apic_id The AP to park.
+ * @return 1 when the INIT was delivered.
+ */
+static uint8_t kernel_symmetric_multiprocessing_park(uint8_t apic_id)
+{
+    const uint8_t parked = advanced_pic_ipi_send_init(apic_id);
+    cpu_topology_unmark_apic_id_online(apic_id);
+    return parked;
+}
 
 void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
 {
@@ -48,6 +81,7 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
     uint32_t sequence_failures = 0u;
     uint32_t acknowledgement_timeouts = 0u;
     uint32_t c_entry_timeouts = 0u;
+    uint32_t parked = 0u;
     ApplicationProcessorBootstrapEntry_t *entry = NULL;
 
     while ((entry = application_processor_bootstrap_next_unbooted_ap()) != NULL)
@@ -105,13 +139,13 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
             retries_consumed += (uint32_t) (attempts_used - 1u);
 
         if (sequence_ok && ack_ok && c_entry_ok)
-        {
             ++delivered;
-        }
+        else
+            parked += kernel_symmetric_multiprocessing_park(entry->apic_id);
 
         write_ap_startup_dispatch_info(com1, entry, sequence_ok, ack_ok, c_entry_ok, attempts_used);
     }
 
     write_ap_startup_summary(com1, attempted, delivered, retries_consumed, sequence_failures, acknowledgement_timeouts,
-                             c_entry_timeouts);
+                             c_entry_timeouts, parked);
 }

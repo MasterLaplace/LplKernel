@@ -36,6 +36,6 @@ extern void write_ap_startup_dispatch_info(Serial_t *serial, ApplicationProcesso
                                            uint8_t attempts_used);
 extern void write_ap_startup_summary(Serial_t *serial, uint32_t attempted, uint32_t delivered,
                                      uint32_t retries_consumed, uint32_t sequence_failures,
-                                     uint32_t acknowledgement_timeouts, uint32_t c_entry_timeouts);
+                                     uint32_t acknowledgement_timeouts, uint32_t c_entry_timeouts, uint32_t parked);
 
 #endif /* KERNEL_CPU_AP_STARTUP_HELPER_H */
