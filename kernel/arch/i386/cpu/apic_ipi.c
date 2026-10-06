@@ -57,6 +57,7 @@ static void apic_ipi_tlb_shootdown_handler(const InterruptFrame_t *frame)
         paging_invlpg(apic_ipi_tlb_shootdown_addr);
     }
     atomic_fetch_sub(&apic_ipi_tlb_shootdown_pending, 1u);
+    apic_send_eoi();
 }
 
 static uint8_t advanced_pic_ipi_wait_delivery(void)

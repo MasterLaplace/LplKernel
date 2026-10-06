@@ -27,6 +27,7 @@
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/pic.h>
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -106,5 +107,17 @@ extern void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *id
  * @param idt Pointer to the initialized IDT structure.
  */
 extern void interrupt_descriptor_table_load(InterruptDescriptorTable_t *idt);
+
+/**
+ * @brief Loads, on the processor that calls it, the table the bootstrap processor loaded.
+ *
+ * @details IDTR is per processor. An application processor leaves its trampoline with no table
+ *          of its own, so the first interrupt it takes, a TLB shootdown IPI for instance, raises
+ *          a fault it cannot dispatch either, then a double fault, then a triple fault that resets
+ *          the machine. It must call this before it enables interrupts.
+ *
+ * @return false when no table has been loaded yet, true once this processor uses it.
+ */
+extern bool interrupt_descriptor_table_load_on_this_processor(void);
 
 #endif /* KERNEL_CPU_INTERRUPT_DESCRIPTOR_TABLE_H */
