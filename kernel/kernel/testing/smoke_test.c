@@ -466,6 +466,7 @@ void smoke_test_run_heap_allocate_free(Serial_t *serial_port)
     bool expect_large = true;
 #endif
 
+    const uint32_t large_held = kernel_heap_get_large_allocation_count();
     bool pass = (small_a != NULL) && (small_b != NULL);
 
     if (expect_large)
@@ -499,11 +500,8 @@ void smoke_test_run_heap_allocate_free(Serial_t *serial_port)
     bool has_free_capacity = (free_blocks_after > 0u) || (sizeclass_free_total > 0u);
     bool free_pool_restored = has_free_capacity;
 #endif
-    bool large_counter_ok;
-    if (expect_large)
-        large_counter_ok = (large_after >= (large_before + 1u));
-    else
-        large_counter_ok = (large_after == large_before);
+    const uint32_t large_expected = expect_large ? 1u : 0u;
+    const bool large_counter_ok = ((large_held - large_before) == large_expected) && (large_after == large_before);
 
     const bool only_double_free_rejected =
         ((rejected_after - rejected_before) == 1u) && ((double_after - double_before) == 1u);
