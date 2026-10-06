@@ -24,8 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Restore apt .deb cache
         id: cache-clang-restore
@@ -78,22 +77,37 @@ jobs:
         run: |
           git status --porcelain
 
-      - name: Commit and push style changes
+      - name: Commit the formatting, signed by GitHub
         if: ${{ steps.files.outputs.files != '' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add -u
           if git diff --cached --quiet; then
             echo "No formatting changes to commit."
             exit 0
           fi
-          git commit -m "style: apply clang-format" || true
-          git pull --rebase origin "$BRANCH" || true
-          git push origin "HEAD:$BRANCH"
+          if [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+            echo "::error::$BRANCH accepts no direct commit: these files need formatting in a pull request."
+            git diff --cached --stat
+            exit 1
+          fi
+          git diff --cached --name-only -z | while IFS= read -r -d '' file; do
+            jq -n --arg path "$file" --rawfile contents <(base64 -w0 -- "$file") '{path: $path, contents: $contents}'
+          done | jq -s . > "$RUNNER_TEMP/additions.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg branch "$BRANCH" \
+            --arg head "$(git rev-parse HEAD)" \
+            --slurpfile additions "$RUNNER_TEMP/additions.json" \
+            '{query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {branch: {repositoryNameWithOwner: $repository, branchName: $branch},
+                                  expectedHeadOid: $head,
+                                  message: {headline: "style: apply clang-format"},
+                                  fileChanges: {additions: $additions[0]}}}}' > "$RUNNER_TEMP/commit.json"
+          gh api graphql --input "$RUNNER_TEMP/commit.json" --jq '.data.createCommitOnBranch.commit.oid'
 
       - name: Save apt .deb cache
         if: always()
