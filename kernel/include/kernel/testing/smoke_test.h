@@ -149,6 +149,15 @@ extern void smoke_test_run_frame_budget_determinism(Serial_t *serial_port);
 
 extern void smoke_test_run_pool_double_free(Serial_t *serial_port);
 
+/**
+ * @brief Check that resetting the frame arena writes the poison pattern over what the frame used.
+ *
+ * Fills 64 bytes of a fresh frame with 0xBB, resets the arena, and counts the bytes that do not
+ * read 0xAA. Emits a `frame_poison_smoke` record. Without LPL_KERNEL_DEBUG_POISON there is no
+ * poisoning to check, and the record says `built=0 result=not_built` rather than a pass.
+ *
+ * @param serial_port Port the record is written to.
+ */
 extern void smoke_test_run_frame_poison_check(Serial_t *serial_port);
 
 extern void smoke_test_run_ring_buffer_basic(Serial_t *serial_port);

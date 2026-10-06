@@ -1069,38 +1069,47 @@ void smoke_test_run_frame_arena_budget(Serial_t *serial_port)
 
 void smoke_test_run_frame_poison_check(Serial_t *serial_port)
 {
-    if (!kernel_frame_arena_is_initialized())
-        return;
-
-    kernel_frame_arena_reset();
-    uint8_t *ptr = (uint8_t *) kernel_frame_arena_alloc(64u, 8u);
-
-    if (!ptr)
-        return;
-
-    for (uint32_t i = 0u; i < 64u; ++i)
-        ptr[i] = 0xBB;
-
-    kernel_frame_arena_reset();
-
-    bool poison_ok = true;
 #ifdef LPL_KERNEL_DEBUG_POISON
-    for (uint32_t i = 0u; i < 64u; ++i)
+    const uint32_t checked = 64u;
+    uint8_t *bytes = NULL;
+    uint32_t mismatches = checked;
+
+    if (kernel_frame_arena_is_initialized())
     {
-        if (ptr[i] != 0xAA)
+        kernel_frame_arena_reset();
+        bytes = (uint8_t *) kernel_frame_arena_alloc(checked, 8u);
+    }
+
+    if (bytes)
+    {
+        for (uint32_t i = 0u; i < checked; ++i)
+            bytes[i] = 0xBB;
+
+        kernel_frame_arena_reset();
+
+        mismatches = 0u;
+        for (uint32_t i = 0u; i < checked; ++i)
         {
-            poison_ok = false;
-            break;
+            if (bytes[i] != 0xAA)
+                ++mismatches;
         }
     }
-#endif
 
-    serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: frame poison smoke: ok=");
-    serial_write_int(serial_port, (int32_t) poison_ok);
-    if (poison_ok)
-        serial_write_string(serial_port, " (pass)\n");
-    else
-        serial_write_string(serial_port, " (fail)\n");
+    const bool pass = (bytes != NULL) && (mismatches == 0u);
+
+    kernel_telemetry_begin_record(serial_port, "frame_poison_smoke");
+    kernel_telemetry_write_boolean("built", true);
+    kernel_telemetry_write_boolean("allocated", bytes != NULL);
+    kernel_telemetry_write_unsigned("checked", checked);
+    kernel_telemetry_write_unsigned("mismatches", mismatches);
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
+#else
+    kernel_telemetry_begin_record(serial_port, "frame_poison_smoke");
+    kernel_telemetry_write_boolean("built", false);
+    kernel_telemetry_write_text("result", "not_built");
+    kernel_telemetry_end_record();
+#endif
 }
 
 void smoke_test_run_pool_allocator_basic(Serial_t *serial_port)
