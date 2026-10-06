@@ -175,6 +175,19 @@ $(LIBS) \
 $(ARCHDIR)/crtend.o \
 $(ARCHDIR)/boot/crtn.o \
 
+# make sees the sources an object is built from, not the flags it is built with: a new -D
+# left every object it did not touch as it was, and the image mixed the two. Each object
+# depends on a stamp of the flags, rewritten only when they change. A rule writes it, not
+# the parse: headers.sh installs the headers without the profile's variables, and a stamp
+# written on every parse would flip between the two and rebuild everything every time.
+FLAGS_STAMP:=kernel/core/flags.stamp
+$(FLAGS_STAMP): FORCE
+	@echo '$(CFLAGS) $(CPPFLAGS) $(ASFLAGS)' | cmp -s - $@ || echo '$(CFLAGS) $(CPPFLAGS) $(ASFLAGS)' > $@
+$(KERNEL_OBJS) $(ARCHDIR)/boot/crti.o $(ARCHDIR)/boot/crtn.o: $(FLAGS_STAMP)
+
+.PHONY: FORCE
+FORCE:
+
 .PHONY: all clean install install-headers install-kernel
 .SUFFIXES: .o .c .s .S
 
@@ -231,7 +244,7 @@ clean:
 	rm -f lpl.kernel
 	rm -f $(OBJS) *.o */*.o */*/*.o
 	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d
-	rm -f $(IDENTITY_STAMP)
+	rm -f $(IDENTITY_STAMP) $(FLAGS_STAMP)
 
 debug: CFLAGS+=-DDEBUG -g3 -O0
 debug: all
