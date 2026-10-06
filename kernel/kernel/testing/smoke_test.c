@@ -559,6 +559,9 @@ void smoke_test_run_heap_allocate_free(Serial_t *serial_port)
 
 void smoke_test_run_cpu_topology_compaction(Serial_t *serial_port)
 {
+    CpuTopologySnapshot_t found;
+    cpu_topology_debug_save(&found);
+
     uint32_t local_apic_before = cpu_topology_get_local_apic_id();
     uint8_t forced_before = cpu_topology_is_forced();
 
@@ -587,10 +590,11 @@ void smoke_test_run_cpu_topology_compaction(Serial_t *serial_port)
     serial_write_string(serial_port, ", discovered=");
     serial_write_int(serial_port, (int32_t) discovered);
 
-    cpu_topology_initialize();
+    cpu_topology_debug_restore(&found);
 
-    bool restored_forced_ok = (cpu_topology_is_forced() == 0u);
-    bool restored_count_ok = (cpu_topology_get_discovered_cpu_count() >= 1u);
+    bool restored_forced_ok = (cpu_topology_is_forced() == forced_before);
+    bool restored_count_ok = (cpu_topology_get_discovered_cpu_count() == found.discovered_cpu_count) &&
+                             (cpu_topology_get_online_cpu_count() == found.online_cpu_count);
     bool restored_apic_ok = (cpu_topology_get_local_apic_id() == local_apic_before);
     bool pass = compact_ok && count_ok && restored_forced_ok && restored_count_ok && restored_apic_ok;
 
@@ -638,6 +642,9 @@ void smoke_test_run_cpu_topology_madt_sync(Serial_t *serial_port)
 
 void smoke_test_run_cpu_topology_runtime_slot(Serial_t *serial_port)
 {
+    CpuTopologySnapshot_t found;
+    cpu_topology_debug_save(&found);
+
     uint32_t local_apic_before = cpu_topology_get_local_apic_id();
     uint32_t slot_before = cpu_topology_get_logical_slot();
     uint8_t forced_before = cpu_topology_is_forced();
@@ -654,8 +661,11 @@ void smoke_test_run_cpu_topology_runtime_slot(Serial_t *serial_port)
     cpu_topology_set_runtime_local_apic_id(local_apic_before);
     uint32_t slot_restored = cpu_topology_get_logical_slot();
 
+    cpu_topology_debug_restore(&found);
+
     bool slot_switch_ok = (slot_runtime == slot_next);
-    bool restore_ok = (slot_restored == slot_current) && (cpu_topology_get_local_apic_id() == local_apic_before);
+    bool restore_ok = (slot_restored == slot_current) && (cpu_topology_get_local_apic_id() == local_apic_before) &&
+                      (cpu_topology_get_discovered_cpu_count() == found.discovered_cpu_count);
     bool pass = slot_switch_ok && restore_ok;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: topology runtime slot smoke: before=");
@@ -674,6 +684,9 @@ void smoke_test_run_cpu_topology_runtime_slot(Serial_t *serial_port)
 
 void smoke_test_run_cpu_topology_online_bookkeeping(Serial_t *serial_port)
 {
+    CpuTopologySnapshot_t found;
+    cpu_topology_debug_save(&found);
+
     uint32_t local_apic = cpu_topology_get_local_apic_id();
     uint32_t local_slot = cpu_topology_register_discovered_apic_id(local_apic);
     uint32_t online_before = cpu_topology_get_online_cpu_count();
@@ -699,8 +712,7 @@ void smoke_test_run_cpu_topology_online_bookkeeping(Serial_t *serial_port)
 
     bool pass = local_count_ok && local_online_ok && next_count_ok && next_online_ok;
 
-    if (!next_online_before)
-        cpu_topology_unmark_apic_id_online(next_apic);
+    cpu_topology_debug_restore(&found);
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: topology online bookkeeping smoke: local_slot=");
     serial_write_int(serial_port, (int32_t) local_slot);

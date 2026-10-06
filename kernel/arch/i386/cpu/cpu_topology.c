@@ -218,6 +218,44 @@ void cpu_topology_debug_reset_discovery(void)
     cpu_topology_source_name = "topology-debug-reset";
 }
 
+void cpu_topology_debug_save(CpuTopologySnapshot_t *snapshot)
+{
+    snapshot->initialized = cpu_topology_initialized;
+    snapshot->forced_slot_enabled = cpu_topology_forced_slot_enabled;
+    snapshot->forced_slot = cpu_topology_forced_slot;
+    snapshot->apic_id_valid = cpu_topology_apic_id_valid;
+    snapshot->local_apic_id = cpu_topology_local_apic_id;
+    snapshot->discovered_cpu_count = cpu_topology_discovered_cpu_count;
+    snapshot->online_cpu_count = cpu_topology_online_cpu_count;
+    snapshot->source_name = cpu_topology_source_name;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS; ++slot)
+    {
+        snapshot->apic_id_to_slot[slot] = cpu_topology_apic_id_to_slot[slot];
+        snapshot->online_by_slot[slot] = cpu_topology_online_by_slot[slot];
+        snapshot->slot_domain[slot] = cpu_topology_slot_domain[slot];
+    }
+}
+
+void cpu_topology_debug_restore(const CpuTopologySnapshot_t *snapshot)
+{
+    cpu_topology_initialized = snapshot->initialized;
+    cpu_topology_forced_slot_enabled = snapshot->forced_slot_enabled;
+    cpu_topology_forced_slot = snapshot->forced_slot;
+    cpu_topology_apic_id_valid = snapshot->apic_id_valid;
+    cpu_topology_local_apic_id = snapshot->local_apic_id;
+    cpu_topology_discovered_cpu_count = snapshot->discovered_cpu_count;
+    cpu_topology_online_cpu_count = snapshot->online_cpu_count;
+    cpu_topology_source_name = snapshot->source_name;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS; ++slot)
+    {
+        cpu_topology_apic_id_to_slot[slot] = snapshot->apic_id_to_slot[slot];
+        cpu_topology_online_by_slot[slot] = snapshot->online_by_slot[slot];
+        cpu_topology_slot_domain[slot] = snapshot->slot_domain[slot];
+    }
+}
+
 void cpu_topology_debug_clear_forced_logical_slot(void)
 {
     cpu_topology_forced_slot_enabled = 0u;
