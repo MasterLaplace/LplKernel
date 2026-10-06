@@ -63,6 +63,7 @@
 #    define KERNEL_SMOKE_TEST_ENABLE_HEAP_CROSS_DOMAIN_STRESS 1u
 #endif
 #define KERNEL_SMOKE_TEST_ENABLE_RING_BUFFER_BASIC  1u
+#define KERNEL_SMOKE_TEST_ENABLE_SERIAL_DIVISOR     1u
 #define KERNEL_SMOKE_TEST_ENABLE_SECTION_PROTECTION 1u
 #define KERNEL_SMOKE_TEST_ENABLE_RECONCILER         1u
 #define KERNEL_SMOKE_TEST_ENABLE_WAKEUP_ACCOUNTING  1u
@@ -209,6 +210,17 @@ extern void smoke_test_run_vmm_alloc_free(Serial_t *serial_port);
  * @param serial_port Serial port the record is written to.
  */
 extern void smoke_test_run_section_protection(Serial_t *serial_port);
+
+/**
+ * @brief Reads the serial divisor back and compares it with the speed that was asked.
+ *
+ * @details QEMU's 16550 ignores the divisor for its own timing but returns it on read, so this
+ *          is the one way a boot under emulation can see the speed a real UART would run at.
+ *          A divisor whose high byte repeats the low one turns 9600 baud into about 37.
+ *
+ * @param serial_port Serial port that is read and that the record is written to.
+ */
+extern void smoke_test_run_serial_divisor(Serial_t *serial_port);
 
 /**
  * @brief Drives reconciler passes by hand, then proves a pass can notice drift at all.

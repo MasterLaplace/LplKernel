@@ -2216,6 +2216,22 @@ void smoke_test_run_ring3_minimal(Serial_t *serial_port)
     fact about the test rather than about how long the kernel happened to run. */
 #define SMOKE_RECONCILER_PASS_COUNT 16u
 
+void smoke_test_run_serial_divisor(Serial_t *serial_port)
+{
+    const uint32_t expected = (serial_port->speed != 0u) ? (BASE_SERIAL_SPEED / serial_port->speed) : 0u;
+    const uint16_t divisor = serial_read_divisor(serial_port);
+    const bool pass = (serial_port->initialized != 0u) && (expected != 0u) && (divisor == expected);
+
+    kernel_telemetry_begin_record(serial_port, "serial_smoke");
+    kernel_telemetry_write_unsigned("baud", serial_port->speed);
+    kernel_telemetry_write_unsigned("expected", expected);
+    kernel_telemetry_write_unsigned("divisor", divisor);
+    kernel_telemetry_write_unsigned("divisor_low", divisor & 0xFFu);
+    kernel_telemetry_write_unsigned("divisor_high", (uint32_t) divisor >> 8);
+    kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
+    kernel_telemetry_end_record();
+}
+
 void smoke_test_run_section_protection(Serial_t *serial_port)
 {
     const bool write_protect_enabled = kernel_section_protection_write_protect_is_enabled();
