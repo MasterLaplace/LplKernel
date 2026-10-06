@@ -17,7 +17,7 @@
  *
  * The kernel already counts everything worth counting: real-time violations, dropped
  * bytes, duty cycle, page counts, timeouts. It printed them as prose on COM1 and
- * validate.sh read them back with grep, and that arrangement has produced a false
+ * the full validation read them back with grep, and that arrangement has produced a false
  * verdict twice. Once because `refusals=` also matches `world_refusals=` on the same
  * line, so the extracted value held two numbers and the comparison became a NaN. Once
  * because two gates named a field `steps=` and the second definition silently
@@ -37,7 +37,7 @@
  * an '=' — either would make the line ambiguous to its own reader.
  *
  * Scope, stated so it is not mistaken for an omission: this does NOT retrofit the
- * existing prose. Rewriting every log line would churn dozens of greps in validate.sh
+ * existing prose. Rewriting every log line would churn dozens of greps in the full validation
  * for no measurement gained. New records go through here; the old lines stay as they
  * are until something needs them.
  *
