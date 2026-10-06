@@ -66,7 +66,6 @@ void *kernel_frame_arena_alloc(uint32_t size, uint32_t align)
 
     uint32_t effective_align = (align == 0u) ? 8u : align;
     uint32_t aligned_offset = kernel_frame_arena_align_up(kernel_frame_arena_offset, effective_align);
-
     uint32_t real_size = size;
 #ifdef LPL_KERNEL_DEBUG_POISON
     real_size += sizeof(uint32_t);
