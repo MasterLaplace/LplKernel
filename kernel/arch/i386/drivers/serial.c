@@ -1,19 +1,24 @@
 #include <kernel/drivers/serial.h>
 
+/** Line control bit 7, DLAB: while it is set, ports 0 and 1 address the divisor latch. */
+#define SERIAL_DIVISOR_LATCH_ACCESS 0x80u
+
 static inline int serial_can_write(Serial_t *serial) { return asmutils_input_byte(serial->port + 5) & 0x20; }
 
 static inline int serial_can_read(Serial_t *serial) { return asmutils_input_byte(serial->port + 5) & 0x01; }
 
 void serial_initialize(Serial_t *serial, COM_PORT port, uint32_t speed)
 {
+    const uint32_t divisor = BASE_SERIAL_SPEED / speed;
+
     serial->port = port;
     serial->speed = speed;
     serial->initialized = 0;
 
     asmutils_output_byte(port + 1, 0x00);
-    asmutils_output_byte(port + 3, 0x80);
-    asmutils_output_byte(port, (BASE_SERIAL_SPEED / speed) % 256);
-    asmutils_output_byte(port + 1, (BASE_SERIAL_SPEED / speed) % 256);
+    asmutils_output_byte(port + 3, SERIAL_DIVISOR_LATCH_ACCESS);
+    asmutils_output_byte(port, (uint8_t) (divisor & 0xFFu));
+    asmutils_output_byte(port + 1, (uint8_t) ((divisor >> 8) & 0xFFu));
     asmutils_output_byte(port + 3, 0x03);
     asmutils_output_byte(port + 2, 0xC7);
     asmutils_output_byte(port + 4, 0x0B);
@@ -25,6 +30,16 @@ void serial_initialize(Serial_t *serial, COM_PORT port, uint32_t speed)
 
     asmutils_output_byte(port + 4, 0x0F);
     serial->initialized = 1;
+}
+
+uint16_t serial_read_divisor(Serial_t *serial)
+{
+    const uint8_t line_control = asmutils_input_byte(serial->port + 3);
+    asmutils_output_byte(serial->port + 3, line_control | SERIAL_DIVISOR_LATCH_ACCESS);
+    const uint8_t low = asmutils_input_byte(serial->port);
+    const uint8_t high = asmutils_input_byte(serial->port + 1);
+    asmutils_output_byte(serial->port + 3, line_control);
+    return (uint16_t) (((uint16_t) high << 8) | low);
 }
 
 void serial_write_char(Serial_t *serial, char c)

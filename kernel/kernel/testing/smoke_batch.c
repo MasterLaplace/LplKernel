@@ -125,6 +125,9 @@ void smoke_batch_run_initialization_tests(Serial_t *com1)
 
 void smoke_batch_run_post_boot_tests(Serial_t *com1)
 {
+    if (KERNEL_SMOKE_TEST_ENABLE_SERIAL_DIVISOR)
+        smoke_test_run_serial_divisor(com1);
+
     if (KERNEL_SMOKE_TEST_ENABLE_SECTION_PROTECTION)
         smoke_test_run_section_protection(com1);
 

@@ -58,6 +58,19 @@ extern Serial_t com1;
 extern void serial_initialize(Serial_t *serial, const COM_PORT port, const uint32_t speed);
 
 /**
+ * @brief Reads back the divisor the UART was programmed with.
+ *
+ * @details The divisor latch shares ports 0 and 1 with the data and interrupt registers, so
+ *          the read sets DLAB, reads both bytes, and puts the line control register back as
+ *          it found it. The baud rate is BASE_SERIAL_SPEED over this value: it is the one
+ *          number that says what speed the port really runs at, whatever was asked.
+ *
+ * @param serial Port to read.
+ * @return The 16-bit divisor, high byte from port 1 and low byte from port 0.
+ */
+extern uint16_t serial_read_divisor(Serial_t *serial);
+
+/**
  * @brief Writes a single character to the serial port.
  * @param serial Output port.
  * @param c Character to write.
