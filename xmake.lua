@@ -141,7 +141,8 @@ local GRAPHICS_MODE = has_config("graphics") and 1 or 0
 -- The smoke battery is built when explicitly requested, never in release mode (a
 -- production image), and only when the engine is actually linked in (it calls
 -- libengine_* symbols). `--smoke=n`, `-m release`, or a missing LplPlugin each
--- compile it out.
+-- compile it out. The memory poisoning comes with it: the battery checks it, and
+-- only a build that poisons can fail those checks.
 local ENABLE_SMOKE = has_config("smoke") and not is_mode("release") and LPLPLUGIN_AVAILABLE
 
 -- The interactive console is a development surface: it reads the keyboard and
@@ -593,7 +594,7 @@ target("lpl-kernel")
                 "-Ikernel", "-Wa,-Ikernel", {force = true})
 
     if ENABLE_SMOKE then
-        add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS")
+        add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS", "LPL_KERNEL_DEBUG_POISON")
     end
     if ENABLE_CONSOLE then
         add_defines("LPL_KERNEL_ENABLE_CONSOLE")

@@ -67,10 +67,11 @@ endif
 # Smoke/diagnostic battery (libengine P0..P6 + kernel smoke batch). ON by default
 # for the script/Makefile build (debug); it calls libengine_* so it is forced off
 # when the engine is absent. Pass SMOKE_TESTS=0 (or xmake "release") to compile
-# the whole battery out of a production image.
+# the whole battery out of a production image. The memory poisoning comes with it:
+# the battery checks it, and only a build that poisons can fail those checks.
 SMOKE_TESTS?=1
 ifeq ($(SMOKE_TESTS),1)
-CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS
+CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS -DLPL_KERNEL_DEBUG_POISON
 endif
 
 # What the image says about itself at boot: the profile and the mode it was built for, and
