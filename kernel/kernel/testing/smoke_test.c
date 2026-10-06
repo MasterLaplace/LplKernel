@@ -997,7 +997,13 @@ void smoke_test_run_frame_arena_basic(Serial_t *serial_port)
     bool reset_count_ok = (kernel_frame_arena_get_reset_count() == (resets_before + 1u));
     bool failed_stable = (kernel_frame_arena_get_failed_alloc_count() == failed_before);
 
-    bool pass = alloc_ok && reset_rewinds && reset_count_ok && failed_stable;
+    kernel_frame_arena_reset();
+    const uint32_t capacity = kernel_frame_arena_get_capacity_bytes();
+    (void) kernel_frame_arena_alloc(capacity, 8u);
+    const bool within_capacity = (kernel_frame_arena_get_used_bytes() <= capacity);
+    kernel_frame_arena_reset();
+
+    bool pass = alloc_ok && reset_rewinds && reset_count_ok && failed_stable && within_capacity;
 
     serial_write_string(serial_port, "[" KERNEL_SYSTEM_STRING "]: frame arena smoke: alloc_ok=");
     serial_write_int(serial_port, (int32_t) alloc_ok);
@@ -1007,6 +1013,8 @@ void smoke_test_run_frame_arena_basic(Serial_t *serial_port)
     serial_write_int(serial_port, (int32_t) reset_count_ok);
     serial_write_string(serial_port, ", failed_stable=");
     serial_write_int(serial_port, (int32_t) failed_stable);
+    serial_write_string(serial_port, ", within_capacity=");
+    serial_write_int(serial_port, (int32_t) within_capacity);
     if (pass)
         serial_write_string(serial_port, " (pass)\n");
     else
