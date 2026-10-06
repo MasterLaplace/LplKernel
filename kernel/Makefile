@@ -67,10 +67,11 @@ endif
 # Smoke/diagnostic battery (libengine P0..P6 + kernel smoke batch). ON by default
 # for the script/Makefile build (debug); it calls libengine_* so it is forced off
 # when the engine is absent. Pass SMOKE_TESTS=0 (or xmake "release") to compile
-# the whole battery out of a production image.
+# the whole battery out of a production image. The memory poisoning comes with it:
+# the battery checks it, and only a build that poisons can fail those checks.
 SMOKE_TESTS?=1
 ifeq ($(SMOKE_TESTS),1)
-CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS
+CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS -DLPL_KERNEL_DEBUG_POISON
 endif
 
 # What the image says about itself at boot: the profile and the mode it was built for, and
@@ -175,6 +176,19 @@ $(LIBS) \
 $(ARCHDIR)/crtend.o \
 $(ARCHDIR)/boot/crtn.o \
 
+# make sees the sources an object is built from, not the flags it is built with: a new -D
+# left every object it did not touch as it was, and the image mixed the two. Each object
+# depends on a stamp of the flags, rewritten only when they change. A rule writes it, not
+# the parse: headers.sh installs the headers without the profile's variables, and a stamp
+# written on every parse would flip between the two and rebuild everything every time.
+FLAGS_STAMP:=kernel/core/flags.stamp
+$(FLAGS_STAMP): FORCE
+	@echo '$(CFLAGS) $(CPPFLAGS) $(ASFLAGS)' | cmp -s - $@ || echo '$(CFLAGS) $(CPPFLAGS) $(ASFLAGS)' > $@
+$(KERNEL_OBJS) $(ARCHDIR)/boot/crti.o $(ARCHDIR)/boot/crtn.o: $(FLAGS_STAMP)
+
+.PHONY: FORCE
+FORCE:
+
 .PHONY: all clean install install-headers install-kernel
 .SUFFIXES: .o .c .s .S
 
@@ -231,7 +245,7 @@ clean:
 	rm -f lpl.kernel
 	rm -f $(OBJS) *.o */*.o */*/*.o
 	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d
-	rm -f $(IDENTITY_STAMP)
+	rm -f $(IDENTITY_STAMP) $(FLAGS_STAMP)
 
 debug: CFLAGS+=-DDEBUG -g3 -O0
 debug: all
