@@ -67,16 +67,17 @@ void *kernel_frame_arena_alloc(uint32_t size, uint32_t align)
     uint32_t effective_align = (align == 0u) ? 8u : align;
     uint32_t aligned_offset = kernel_frame_arena_align_up(kernel_frame_arena_offset, effective_align);
 
-    if (aligned_offset > kernel_frame_arena_capacity || size > (kernel_frame_arena_capacity - aligned_offset))
-    {
-        ++kernel_frame_arena_failed_alloc_count;
-        return NULL;
-    }
-
     uint32_t real_size = size;
 #ifdef LPL_KERNEL_DEBUG_POISON
     real_size += sizeof(uint32_t);
 #endif
+
+    if (real_size < size || aligned_offset > kernel_frame_arena_capacity ||
+        real_size > (kernel_frame_arena_capacity - aligned_offset))
+    {
+        ++kernel_frame_arena_failed_alloc_count;
+        return NULL;
+    }
 
     if (kernel_frame_arena_budget > 0u && (aligned_offset + real_size) > kernel_frame_arena_budget)
     {
