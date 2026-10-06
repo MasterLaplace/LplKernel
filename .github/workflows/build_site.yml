@@ -4,12 +4,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Runs on every pull request, and builds only when the site is touched. A paths filter
+# would skip the whole workflow instead, and a required check that never reports leaves
+# the pull request waiting for it forever.
 on:
   pull_request:
-    paths:
-      - 'site/**'
-      - 'docs/Books/**'
-      - '**/build_site.yml'
 
 permissions:
   contents: read
@@ -22,21 +21,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Decide whether the site is touched
+      id: scope
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPOSITORY: ${{ github.repository }}
+        NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        gh api "repos/$REPOSITORY/pulls/$NUMBER/files" --paginate --jq '.[].filename' > "$RUNNER_TEMP/files"
+        if grep -qE '^(site/|docs/Books/)|(^|/)build_site\.yml$' "$RUNNER_TEMP/files"; then
+          echo "touched=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "touched=false" >> "$GITHUB_OUTPUT"
+          echo "No file of the site changes: nothing to build."
+        fi
+
     - name: Checkout
+      if: steps.scope.outputs.touched == 'true'
       uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       with:
         persist-credentials: false
 
     - name: Setup Node
+      if: steps.scope.outputs.touched == 'true'
       uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
       with:
         node-version: 22
 
     - name: Install site dependencies
+      if: steps.scope.outputs.touched == 'true'
       working-directory: site
       run: npm ci || npm install
 
     - name: Build site
+      if: steps.scope.outputs.touched == 'true'
       working-directory: site
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

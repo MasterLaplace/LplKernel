@@ -1,0 +1,31 @@
+name: Dependabot
+
+# Turns on auto-merge for Dependabot's patch and minor updates. GitHub then merges, squashed,
+# once every required check is green, the site build included; nobody inspects the site in
+# such a pull request, so that build is the check that means something. A major update can
+# build and still change what the site does, so it stays for the maintainer.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Read what the update changes
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Merge once the checks pass
+        if: contains(fromJSON('["version-update:semver-patch", "version-update:semver-minor"]'), steps.metadata.outputs.update-type)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PULL_REQUEST"
