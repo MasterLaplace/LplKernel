@@ -424,10 +424,10 @@ void *kmalloc(size_t size)
             vmm_header->order = 0u;
             vmm_header->reserved = (uint16_t) page_count;
             vmm_header->next = NULL;
+            vmm_header->canary = (uint16_t) ((0xCAFE ^ vmm_header->size) & 0xFFFF);
 
             ++kernel_heap_large_allocation_count;
 #ifdef LPL_KERNEL_DEBUG_POISON
-            vmm_header->canary = (uint16_t) ((0xCAFE ^ vmm_header->size) & 0xFFFF);
             for (uint32_t z = 0; z < (vmm_header->size - sizeof(KernelHeapBlock_t)); ++z)
                 ((uint8_t *) (vmm_header + 1))[z] = 0xCC;
 #endif
@@ -483,8 +483,8 @@ void *kmalloc(size_t size)
                 block->size = kernel_heap_size_class_sizes[sc] + (uint32_t) sizeof(KernelHeapBlock_t);
                 block->reserved = (uint16_t) owner_domain_index;
                 block->next = NULL;
-#    ifdef LPL_KERNEL_DEBUG_POISON
                 block->canary = (uint16_t) ((0xCAFE ^ block->size) & 0xFFFF);
+#    ifdef LPL_KERNEL_DEBUG_POISON
                 for (uint32_t z = 0; z < kernel_heap_size_class_sizes[sc]; ++z)
                     ((uint8_t *) (block + 1))[z] = 0xCC;
 #    endif
@@ -603,8 +603,9 @@ void *kmalloc(size_t size)
     }
 #endif
 
-#ifdef LPL_KERNEL_DEBUG_POISON
     current->canary = (uint16_t) ((0xCAFE ^ current->size) & 0xFFFF);
+
+#ifdef LPL_KERNEL_DEBUG_POISON
     uint32_t poison_size = current->size - sizeof(KernelHeapBlock_t);
 #    ifndef LPL_KERNEL_REAL_TIME_MODE
     if (current->flags & KERNEL_HEAP_BLOCK_FLAG_SC)
@@ -961,9 +962,9 @@ void *kmalloc_sensitive(size_t size)
     header->order = 0u;
     header->reserved = (uint16_t) page_count;
     header->next = NULL;
+    header->canary = (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF);
 
 #ifdef LPL_KERNEL_DEBUG_POISON
-    header->canary = (uint16_t) ((0xCAFE ^ header->size) & 0xFFFF);
     for (uint32_t z = 0; z < (header->size - sizeof(KernelHeapBlock_t)); ++z)
         ((uint8_t *) (header + 1))[z] = 0xCC;
 #endif
