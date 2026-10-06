@@ -24,7 +24,7 @@ export CXX=${HOST}-g++
 # ccache in front of the cross compiler when it is there, and silently not when it
 # is not — the CI image has no ccache and must keep building.
 #
-# It earns its place on this project specifically: validate.sh compiles the kernel
+# It earns its place on this project specifically: the full validation compiles the kernel
 # THREE times per run (the server ISO, the client ISO, and the xmake path), and a
 # re-run after a one-line edit recompiles all of LplPlugin for i686 three times over.
 # Measured before it was wired: 97 s for the client build alone, out of a 411 s run.
