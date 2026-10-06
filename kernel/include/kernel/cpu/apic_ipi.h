@@ -155,4 +155,13 @@ extern uint32_t advanced_pic_ipi_get_startup_sequence_success_count(void);
  */
 extern uint32_t advanced_pic_ipi_get_tlb_shootdown_timeout_count(void);
 
+/**
+ * @brief Count of TLB shootdowns actually sent to other CPUs.
+ *
+ * A shootdown on a single online CPU invalidates locally and sends nothing, so this stays at
+ * zero on a one-CPU boot: next to the timeout count, it says whether the acknowledgement path
+ * was exercised at all.
+ */
+extern uint32_t advanced_pic_ipi_get_tlb_shootdown_broadcast_count(void);
+
 #endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_IPI_H */

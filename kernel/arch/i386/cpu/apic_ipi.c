@@ -43,6 +43,7 @@ static uint32_t apic_ipi_startup_sequence_success_count = 0u;
 static volatile uint32_t apic_ipi_tlb_shootdown_addr = 0u;
 static volatile uint32_t apic_ipi_tlb_shootdown_pending = 0u;
 static uint32_t apic_ipi_tlb_shootdown_timeout_count = 0u;
+static uint32_t apic_ipi_tlb_shootdown_broadcast_count = 0u;
 
 static void apic_ipi_tlb_shootdown_handler(const InterruptFrame_t *frame)
 {
@@ -175,6 +176,7 @@ void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
 
     apic_ipi_tlb_shootdown_addr = virt_addr;
     apic_ipi_tlb_shootdown_pending = cpu_count - 1u;
+    ++apic_ipi_tlb_shootdown_broadcast_count;
 
     advanced_pic_ipi_send_fixed(0u, 0x40u, 3u);
 
@@ -195,5 +197,7 @@ void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
 }
 
 uint32_t advanced_pic_ipi_get_tlb_shootdown_timeout_count(void) { return apic_ipi_tlb_shootdown_timeout_count; }
+
+uint32_t advanced_pic_ipi_get_tlb_shootdown_broadcast_count(void) { return apic_ipi_tlb_shootdown_broadcast_count; }
 
 void advanced_pic_ipi_broadcast_tlb_flush(void) { advanced_pic_ipi_broadcast_tlb_shootdown(0xFFFFFFFFu); }
