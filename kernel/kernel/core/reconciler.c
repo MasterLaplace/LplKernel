@@ -5,6 +5,7 @@
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
 #include <kernel/memory/section_protection.h>
+#include <kernel/power/processor_sleep.h>
 
 static KernelReconcilerDeclaration_t reconciler_declaration = {0};
 static bool reconciler_is_declared = false;
@@ -67,6 +68,8 @@ void kernel_reconciler_declare(const KernelReconcilerDeclaration_t *declaration)
     reconciler_real_time_violation_baseline = kernel_heap_get_hot_loop_violation_count();
 }
 
+const KernelReconcilerDeclaration_t *kernel_reconciler_get_declaration(void) { return &reconciler_declaration; }
+
 bool kernel_reconciler_is_declared(void) { return reconciler_is_declared; }
 
 uint32_t kernel_reconciler_check(void)
@@ -101,6 +104,13 @@ uint32_t kernel_reconciler_check(void)
 
     drifted += reconciler_evaluate(KERNEL_RECONCILER_INVARIANT_QUEUE_INTEGRITY,
                                    kernel_backpressure_get_intolerant_drop_count() == 0u);
+
+    const uint32_t duty = kernel_processor_sleep_published_duty_cycle_permille();
+    if (reconciler_declaration.bound_duty_cycle && duty != KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED)
+    {
+        drifted += reconciler_evaluate(KERNEL_RECONCILER_INVARIANT_DUTY_CYCLE,
+                                       duty <= reconciler_declaration.duty_cycle_ceiling_permille);
+    }
 
     ++reconciler_pass_count;
 
@@ -147,6 +157,7 @@ const char *kernel_reconciler_get_invariant_name(KernelReconcilerInvariant_t inv
     case KERNEL_RECONCILER_INVARIANT_FRAME_ARENA: return "frame_arena";
     case KERNEL_RECONCILER_INVARIANT_REAL_TIME: return "real_time";
     case KERNEL_RECONCILER_INVARIANT_QUEUE_INTEGRITY: return "queue_integrity";
+    case KERNEL_RECONCILER_INVARIANT_DUTY_CYCLE: return "duty_cycle";
     case KERNEL_RECONCILER_INVARIANT_COUNT:
     default: return "unknown";
     }
@@ -158,6 +169,7 @@ void kernel_reconciler_report(Serial_t *serial)
         return;
 
     const bool periodic_ran = kernel_reconciler_wait_for_periodic_pass();
+    const uint32_t duty = kernel_processor_sleep_published_duty_cycle_permille();
 
     kernel_telemetry_begin_record(serial, "reconciler");
     kernel_telemetry_write_boolean("declared", reconciler_is_declared);
@@ -173,5 +185,9 @@ void kernel_reconciler_report(Serial_t *serial)
     kernel_telemetry_write_unsigned("queues", kernel_backpressure_get_queue_count());
     kernel_telemetry_write_unsigned("queue_drops", kernel_backpressure_get_total_drop_count());
     kernel_telemetry_write_unsigned("queue_corrupting_drops", kernel_backpressure_get_intolerant_drop_count());
+    kernel_telemetry_write_boolean("duty_measured", duty != KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED);
+    if (duty != KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED)
+        kernel_telemetry_write_unsigned("duty", duty);
+    kernel_telemetry_write_unsigned("duty_ceiling", reconciler_declaration.duty_cycle_ceiling_permille);
     kernel_telemetry_end_record();
 }

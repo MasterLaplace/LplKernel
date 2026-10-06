@@ -33,6 +33,7 @@ static uint32_t processor_sleep_available_hints = 0u;
 static uint32_t processor_sleep_hint = PROCESSOR_SLEEP_HINT_C1;
 static uint32_t processor_sleep_clamped = 0u;
 static bool processor_sleep_interrupt_break = false;
+static volatile uint32_t processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
 
 /**
  * @brief Charges the time since the last wake-up to the awake total.
@@ -100,6 +101,7 @@ void kernel_processor_sleep_initialize(void)
     processor_sleep_hint = PROCESSOR_SLEEP_HINT_C1;
     processor_sleep_clamped = 0u;
     processor_sleep_interrupt_break = false;
+    processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
     kernel_wakeup_accounting_reset();
 
     asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
@@ -202,6 +204,15 @@ uint32_t kernel_processor_sleep_duty_cycle_permille(void)
         return 1000u;
     return (uint32_t) ((processor_sleep_awake * 1000u) / accounted);
 }
+
+void kernel_processor_sleep_close_session(void)
+{
+    const uint64_t accounted = processor_sleep_awake + processor_sleep_asleep;
+    processor_sleep_published_duty =
+        (accounted == 0u) ? KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED : kernel_processor_sleep_duty_cycle_permille();
+}
+
+uint32_t kernel_processor_sleep_published_duty_cycle_permille(void) { return processor_sleep_published_duty; }
 
 uint32_t kernel_processor_sleep_enumerated_hints(uint32_t leaf5_edx)
 {
