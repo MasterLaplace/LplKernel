@@ -31,6 +31,27 @@
 #define CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC 32u
 
 /**
+ * @brief Everything the topology holds, so a check that rewrites it can put it back.
+ *
+ * @details The topology is boot state other subsystems rely on: which APs exist, which are online,
+ *          which domain a slot belongs to. A smoke that registers made-up APIC IDs or rebuilds the
+ *          table from CPUID alone leaves a kernel that has forgotten its own APs.
+ */
+typedef struct {
+    uint8_t initialized;                                            /**< Initialization flag. */
+    uint8_t forced_slot_enabled;                                    /**< Whether a slot is forced. */
+    uint32_t forced_slot;                                           /**< The forced slot. */
+    uint8_t apic_id_valid;                                          /**< Whether CPUID gave an APIC ID. */
+    uint32_t local_apic_id;                                         /**< The running CPU's APIC ID. */
+    uint32_t apic_id_to_slot[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC]; /**< APIC ID held by each slot. */
+    uint32_t discovered_cpu_count;                                  /**< Slots in use. */
+    uint8_t online_by_slot[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC];   /**< Online mark of each slot. */
+    uint32_t online_cpu_count;                                      /**< Slots marked online. */
+    uint32_t slot_domain[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC];     /**< Domain of each slot. */
+    const char *source_name;                                        /**< Where the topology came from. */
+} CpuTopologySnapshot_t;
+
+/**
  * @brief Initialize CPU topology subsystem and discover APIC IDs.
  *
  */
@@ -179,6 +200,20 @@ extern bool cpu_topology_debug_force_logical_slot(uint32_t slot);
  * @brief Debug function to reset topology discovery.
  */
 extern void cpu_topology_debug_reset_discovery(void);
+
+/**
+ * @brief Copies everything the topology holds.
+ *
+ * @param snapshot Receives the copy.
+ */
+extern void cpu_topology_debug_save(CpuTopologySnapshot_t *snapshot);
+
+/**
+ * @brief Puts the topology back exactly as a cpu_topology_debug_save() found it.
+ *
+ * @param snapshot The copy to restore.
+ */
+extern void cpu_topology_debug_restore(const CpuTopologySnapshot_t *snapshot);
 
 /**
  * @brief Debug function to clear the forced logical slot.
