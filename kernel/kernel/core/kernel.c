@@ -165,8 +165,10 @@ static void kernel_declare_reconciler_contract(void)
         .frame_arena_capacity_bytes = KERNEL_FRAME_ARENA_DEFAULT_CAPACITY_BYTES,
         .real_time_violation_budget = 0u,
         .read_only_page_count = kernel_section_protection_get_read_only_page_count(),
+        .duty_cycle_ceiling_permille = KERNEL_RECONCILER_DUTY_CYCLE_CEILING_PERMILLE,
         .require_section_protection = true,
         .require_write_protect = true,
+        .bound_duty_cycle = true,
     };
 
     kernel_reconciler_declare(&declaration);

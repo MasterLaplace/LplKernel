@@ -71,17 +71,13 @@ static uint8_t smoke_section_protection_scratch = 0xA5u;
  *          Without this the whole slice could be a no-op and every other number would still
  *          look right.
  *
+ * @param truthful The contract in force, which this one exceeds by a single page.
  * @return true when exactly the read-only page invariant drifted.
  */
-static bool smoke_reconciler_detects_an_impossible_contract(void)
+static bool smoke_reconciler_detects_an_impossible_contract(const KernelReconcilerDeclaration_t *truthful)
 {
-    const KernelReconcilerDeclaration_t impossible = {
-        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
-        .real_time_violation_budget = 0u,
-        .read_only_page_count = kernel_section_protection_get_read_only_page_count() + 1u,
-        .require_section_protection = true,
-        .require_write_protect = true,
-    };
+    KernelReconcilerDeclaration_t impossible = *truthful;
+    impossible.read_only_page_count += 1u;
 
     kernel_reconciler_declare(&impossible);
     const uint32_t detected = kernel_reconciler_check();
@@ -95,19 +91,12 @@ static bool smoke_reconciler_detects_an_impossible_contract(void)
  * @note Declaring resets the violation baseline too: the live periodic check runs against
  *       this declaration for the rest of the boot.
  *
+ * @param truthful The contract the kernel declared, saved before the smoke broke it.
  * @return true when a pass against the real contract finds no drift.
  */
-static bool smoke_reconciler_restores_the_truthful_contract(void)
+static bool smoke_reconciler_restores_the_truthful_contract(const KernelReconcilerDeclaration_t *truthful)
 {
-    const KernelReconcilerDeclaration_t truthful = {
-        .frame_arena_capacity_bytes = kernel_frame_arena_get_capacity_bytes(),
-        .real_time_violation_budget = 0u,
-        .read_only_page_count = kernel_section_protection_get_read_only_page_count(),
-        .require_section_protection = true,
-        .require_write_protect = true,
-    };
-
-    kernel_reconciler_declare(&truthful);
+    kernel_reconciler_declare(truthful);
     return kernel_reconciler_check() == 0u;
 }
 
@@ -124,6 +113,43 @@ static bool smoke_test_wait_for_a_tick(void)
             return true;
     }
     return false;
+}
+
+/** Ticks a session forced to spin stays awake, against the one or two it sleeps. */
+#define SMOKE_RECONCILER_SPIN_TICKS 16u
+
+/**
+ * @brief Runs a power-floor session that spins instead of sleeping, and checks a pass notices.
+ *
+ * @details The session sleeps once to open, stays awake for SMOKE_RECONCILER_SPIN_TICKS ticks,
+ *          then sleeps once more, which charges the spin as awake time: a profile whose loop
+ *          stopped sleeping halfway. Each sleep ends at the next interrupt, so the session is
+ *          mostly awake whatever the tick rate. A new session is opened afterwards, which
+ *          clears what this one published, so the rest of the boot is judged on its own.
+ *
+ * @param truthful The contract in force, which bounds the duty cycle.
+ * @param duty     Receives the duty cycle the session reached, in per mille.
+ * @return true when exactly the duty-cycle invariant drifted.
+ */
+static bool smoke_reconciler_detects_a_power_floor_that_spins(const KernelReconcilerDeclaration_t *truthful,
+                                                              uint32_t *duty)
+{
+    kernel_reconciler_declare(truthful);
+    kernel_processor_sleep_initialize();
+    processor_sleep_until_interrupt();
+
+    bool spun = true;
+    for (uint32_t tick = 0u; spun && tick < SMOKE_RECONCILER_SPIN_TICKS; ++tick)
+        spun = smoke_test_wait_for_a_tick();
+
+    processor_sleep_until_interrupt();
+    kernel_processor_sleep_close_session();
+    *duty = kernel_processor_sleep_published_duty_cycle_permille();
+    const uint32_t detected = kernel_reconciler_check();
+    kernel_processor_sleep_initialize();
+
+    return spun && (detected == 1u) &&
+           (kernel_reconciler_get_drift_mask() == (1u << (uint32_t) KERNEL_RECONCILER_INVARIANT_DUTY_CYCLE));
 }
 
 void smoke_test_run_physical_memory_manager_allocate_free(Serial_t *serial_port)
@@ -2227,6 +2253,7 @@ void smoke_test_run_section_protection(Serial_t *serial_port)
 
 void smoke_test_run_reconciler(Serial_t *serial_port)
 {
+    const KernelReconcilerDeclaration_t truthful = *kernel_reconciler_get_declaration();
     const bool declared = kernel_reconciler_is_declared();
     const uint32_t passes_before = kernel_reconciler_get_pass_count();
 
@@ -2238,10 +2265,12 @@ void smoke_test_run_reconciler(Serial_t *serial_port)
     const bool holds = (drift_observed == 0u) && (kernel_reconciler_get_drift_count() == 0u) &&
                        (kernel_reconciler_get_drift_mask() == 0u);
 
-    const bool detects_drift = smoke_reconciler_detects_an_impossible_contract();
-    const bool restored = smoke_reconciler_restores_the_truthful_contract();
+    const bool detects_drift = smoke_reconciler_detects_an_impossible_contract(&truthful);
+    uint32_t spin_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
+    const bool detects_spin = smoke_reconciler_detects_a_power_floor_that_spins(&truthful, &spin_duty);
+    const bool restored = smoke_reconciler_restores_the_truthful_contract(&truthful);
 
-    const bool pass = declared && passes_counted && holds && detects_drift && restored;
+    const bool pass = declared && passes_counted && holds && detects_drift && detects_spin && restored;
 
     kernel_telemetry_begin_record(serial_port, "reconciler_smoke");
     kernel_telemetry_write_boolean("declared", declared);
@@ -2249,6 +2278,8 @@ void smoke_test_run_reconciler(Serial_t *serial_port)
     kernel_telemetry_write_boolean("passes_counted", passes_counted);
     kernel_telemetry_write_boolean("holds", holds);
     kernel_telemetry_write_boolean("detects_drift", detects_drift);
+    kernel_telemetry_write_boolean("detects_spin", detects_spin);
+    kernel_telemetry_write_unsigned("spin_duty", spin_duty);
     kernel_telemetry_write_boolean("restored", restored);
     kernel_telemetry_write_unsigned("queues", kernel_backpressure_get_queue_count());
     kernel_telemetry_write_unsigned("corrupting_drops", kernel_backpressure_get_intolerant_drop_count());

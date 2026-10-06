@@ -63,6 +63,13 @@ extern "C" {
 #define PROCESSOR_SLEEP_HINT_MAX 6u
 
 /**
+ * What kernel_processor_sleep_published_duty_cycle_permille() reads while no session has been
+ * closed since the last one opened. Outside 0 to 1000 on purpose: every value in that range is
+ * a duty cycle somebody could measure, zero included.
+ */
+#define KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED 0xFFFFFFFFu
+
+/**
  * @enum ProcessorSleepMode_t
  * @brief How the processor was actually put to sleep.
  */
@@ -73,7 +80,10 @@ typedef enum {
 } ProcessorSleepMode_t;
 
 /**
- * @brief Probes what the processor offers and zeroes the accounting.
+ * @brief Probes what the processor offers, zeroes the accounting and opens a session.
+ *
+ * @details The session runs until kernel_processor_sleep_close_session(); until then nothing
+ *          is published for a check to judge.
  *
  * MONITOR/MWAIT is advertised by CPUID leaf 1, ECX bit 3. Probed rather than
  * assumed: it is absent on early processors and, more relevantly here, absent from
@@ -235,6 +245,35 @@ uint64_t kernel_processor_sleep_awake_cycles(void);
  * @return Awake over awake plus asleep, 0 to 1000.
  */
 uint32_t kernel_processor_sleep_duty_cycle_permille(void);
+
+/**
+ * @brief Closes the session kernel_processor_sleep_initialize() opened and publishes its duty cycle.
+ *
+ * @details A duty cycle is a ratio over a window, and a window that has not ended is not one:
+ *          two sleeps into a session, a single long wake can put the ratio anywhere. So the
+ *          ratio is published when the owner of the session says it is over, and not after
+ *          each accounting. Sleeps taken outside a session (a smoke that waits for a write, the
+ *          console waiting for a key) still add to the totals, and never reach the published
+ *          value.
+ */
+void kernel_processor_sleep_close_session(void);
+
+/**
+ * @brief The duty cycle of the last closed session, in one word an interrupt can read whole.
+ *
+ * @details The awake and asleep totals are 64-bit, and an i686 writes them in two halves: a
+ *          reader in interrupt context could see one half updated and not the other, and divide
+ *          a torn total. The reconciler reads from the timer interrupt, so it reads this word.
+ *
+ * @note Unlike kernel_processor_sleep_duty_cycle_permille(), a session that accounted nothing
+ *       is not reported as fully awake: a check that holds the duty cycle to a ceiling has to
+ *       tell "never slept" from "never measured".
+ *
+ * @return Per mille awake, or KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED when no session has been
+ *         closed since the last kernel_processor_sleep_initialize(), or the one closed accounted
+ *         no time.
+ */
+uint32_t kernel_processor_sleep_published_duty_cycle_permille(void);
 
 #ifdef __cplusplus
 }

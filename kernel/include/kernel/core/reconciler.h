@@ -69,6 +69,17 @@ extern "C" {
  */
 #define KERNEL_RECONCILER_PERIODIC_WAIT_LIMIT (4u * KERNEL_RECONCILER_TICK_SAMPLE_PERIOD)
 
+/**
+ * @brief Most of a power-floor session the processor may spend awake, in per mille.
+ *
+ * @details One ceiling for every profile. On QEMU every image measures a few per mille, and the
+ *          same image moves more from one run to the next than the profiles differ: a ceiling
+ *          taken that close would hold the kernel to the noise of an emulated machine. Half the
+ *          time is the line between a loop that is mostly asleep and one that is not, and a
+ *          session that spins instead of sleeping lands far above it.
+ */
+#define KERNEL_RECONCILER_DUTY_CYCLE_CEILING_PERMILLE 500u
+
 /** Invariants compared on each pass. Each is one bit of the drift mask. */
 typedef enum {
     /** The code and constant pages are still protected. */
@@ -89,19 +100,28 @@ typedef enum {
     /** No queue whose losses corrupt meaning has lost anything. */
     KERNEL_RECONCILER_INVARIANT_QUEUE_INTEGRITY = 5,
 
+    /**
+     * The power floor's last closed session stayed under its duty-cycle ceiling. A session
+     * still open, or one that accounted no time, is not judged: a ratio over a window that has
+     * not ended is not yet a duty cycle, and nothing measured is not the same as never asleep.
+     */
+    KERNEL_RECONCILER_INVARIANT_DUTY_CYCLE = 6,
+
     /** Count, not an invariant. */
-    KERNEL_RECONCILER_INVARIANT_COUNT = 6,
+    KERNEL_RECONCILER_INVARIANT_COUNT = 7,
 } KernelReconcilerInvariant_t;
 
 /**
  * @brief What the kernel says it will do.
  */
 typedef struct {
-    uint32_t frame_arena_capacity_bytes; /**< Ceiling on frame arena usage. */
-    uint32_t real_time_violation_budget; /**< Unbounded allocations tolerated in a tick. */
-    uint32_t read_only_page_count;       /**< Pages the section protection must keep. */
-    bool require_section_protection;     /**< Whether the protection must stay active. */
-    bool require_write_protect;          /**< Whether CR0.WP must stay set. */
+    uint32_t frame_arena_capacity_bytes;  /**< Ceiling on frame arena usage. */
+    uint32_t real_time_violation_budget;  /**< Unbounded allocations tolerated in a tick. */
+    uint32_t read_only_page_count;        /**< Pages the section protection must keep. */
+    uint32_t duty_cycle_ceiling_permille; /**< Most of a power-floor session spent awake. */
+    bool require_section_protection;      /**< Whether the protection must stay active. */
+    bool require_write_protect;           /**< Whether CR0.WP must stay set. */
+    bool bound_duty_cycle;                /**< Whether a measured session is held to that ceiling. */
 } KernelReconcilerDeclaration_t;
 
 /**
@@ -110,6 +130,16 @@ typedef struct {
  * @param declaration What the kernel commits to; copied, not retained by pointer.
  */
 void kernel_reconciler_declare(const KernelReconcilerDeclaration_t *declaration);
+
+/**
+ * @brief The declaration in force.
+ *
+ * @details Lets a check that breaks the contract on purpose put back exactly the one it
+ *          found, instead of a second copy written from memory that could stop matching.
+ *
+ * @return The adopted declaration; all zero before kernel_reconciler_declare() has run.
+ */
+const KernelReconcilerDeclaration_t *kernel_reconciler_get_declaration(void);
 
 /**
  * @brief Report whether a declaration has been adopted.

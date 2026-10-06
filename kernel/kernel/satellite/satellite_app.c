@@ -137,6 +137,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
         (void) kernel_tickless_sleep(SATELLITE_FRAME_MICROSECONDS);
     }
 
+    kernel_processor_sleep_close_session();
     report.frames_captured = (written != NULL) ? (*written - written_before) : 0u;
     report.sleeps = kernel_processor_sleep_count();
     report.sleeps_skipped = kernel_processor_sleep_skipped_count();
