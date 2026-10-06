@@ -1,5 +1,6 @@
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/idt.h>
 
 static uint32_t kernel_cr3_cached = 0u;
 static ApplicationProcessorLocalContext_t ap_local_context = {0};
@@ -62,6 +63,7 @@ void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logi
     ap_local_context.initialized = 1u;
 
     paging_load_cr3(application_processor_startup_get_kernel_cr3());
+    (void) interrupt_descriptor_table_load_on_this_processor();
     apic_initialize_on_cpu(advanced_pic_timer_backend_get_local_apic_virtual_base());
 
     (void) stack_top;

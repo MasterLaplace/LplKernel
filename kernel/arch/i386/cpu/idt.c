@@ -4,6 +4,9 @@
 #define IDT_IRQ_VECTOR_COUNT       16u
 #define IDT_TOTAL_VECTOR_COUNT     256u
 
+/** The table the bootstrap processor loaded, which every other processor loads too. */
+static InterruptDescriptorTable_t *idt_loaded = NULL;
+
 /**
  * @brief Load an IDT using the LIDT instruction.
  * @param idtr Pointer to an IDTR structure (size + offset).
@@ -101,4 +104,14 @@ void interrupt_descriptor_table_load(InterruptDescriptorTable_t *idt)
     idtr.offset = (uint32_t) idt;
 
     idt_load(&idtr);
+    idt_loaded = idt;
+}
+
+bool interrupt_descriptor_table_load_on_this_processor(void)
+{
+    if (!idt_loaded)
+        return false;
+
+    interrupt_descriptor_table_load(idt_loaded);
+    return true;
 }
