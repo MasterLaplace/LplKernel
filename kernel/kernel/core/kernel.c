@@ -472,7 +472,7 @@ void kernel_main(void)
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
     kernel_test_run_stage(KERNEL_TEST_STAGE_BOOTED, &com1);
-#    if !defined(LPL_PLUGIN_UNAVAILABLE)
+#    if !defined(LPL_ASSISTANT_UNAVAILABLE) || !defined(LPL_KNOWLEDGE_UNAVAILABLE)
     smoke_libengine_run_all(&com1);
 #    endif
 #endif

@@ -56,8 +56,8 @@ typedef struct PersonalSystem2MousePacket_s {
  * Safe to call on a machine with no mouse: every controller exchange is bounded
  * by a spin budget, so a port that never answers costs a fixed number of reads
  * and reports failure instead of hanging the boot. That is not hypothetical
- * caution — the smoke battery boots headless under QEMU with and without `-device
- * ...mouse`, and a blocking wait here would have hung one of the two.
+ * caution — the full validation boots debug images headless under QEMU with and without
+ * `-device ...mouse`, and a blocking wait here would have hung one of the two.
  *
  * @return 1 if a device answered and data reporting was enabled, 0 otherwise.
  */

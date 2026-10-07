@@ -1,6 +1,10 @@
 #include <kernel/boot/boot_module.h>
 #include <kernel/testing/test.h>
 
+#if !defined(LPL_PLUGIN_UNAVAILABLE)
+#    include <libengine/libengine.h>
+#endif
+
 /**
  * @brief Bounds of the `.kernel_tests` section, which holds one pointer per declared test.
  */
@@ -256,10 +260,18 @@ static void kernel_test_write_test_prefix(KernelTest_t *test)
     serial_write_string(test->serial, test->test_case->name);
 }
 
+/**
+ * @brief Writes the KTAP header, whose plan counts the kernel's suites and the engine's.
+ */
 static void kernel_test_write_header(Serial_t *serial)
 {
+    uint32_t suites = kernel_test_count_suites();
+
+#if !defined(LPL_PLUGIN_UNAVAILABLE)
+    suites += libengine_test_suite_count();
+#endif
     serial_write_string(serial, "KTAP version 1\n1..");
-    serial_write_unsigned(serial, kernel_test_count_suites());
+    serial_write_unsigned(serial, suites);
     serial_write_char(serial, '\n');
     kernel_test_header_written = true;
 }
@@ -351,6 +363,31 @@ static const KernelTestCase_t *kernel_test_run_suite(const KernelTestCase_t *fir
     return test_case;
 }
 
+#if !defined(LPL_PLUGIN_UNAVAILABLE)
+static void kernel_test_write_text(void *serial, const char *text, size_t length)
+{
+    for (size_t index = 0u; index < length; ++index)
+        serial_write_char((Serial_t *) serial, text[index]);
+}
+
+/**
+ * @brief Runs the engine's tests after the kernel's, as further suites of the same report, and adds
+ *        what they came to to the kernel's totals.
+ */
+static void kernel_test_run_engine(Serial_t *serial, const char *selection)
+{
+    const libengine_test_totals_t engine =
+        libengine_test_run(kernel_test_write_text, serial, selection, kernel_test_next_suite_number);
+
+    kernel_test_next_suite_number += libengine_test_suite_count();
+    kernel_test_passed_count += engine.passed;
+    kernel_test_failed_count += engine.failed;
+    kernel_test_skipped_count += engine.skipped;
+    kernel_test_check_count += engine.checks;
+    kernel_test_selected_count += engine.selected;
+}
+#endif
+
 static void kernel_test_write_totals(Serial_t *serial, const char *selection)
 {
     if (selection && kernel_test_selected_count == 0u)
@@ -423,6 +460,10 @@ void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial)
     while (test_case && test_case->suite->stage == stage)
         test_case = kernel_test_run_suite(test_case, selection, serial);
 
-    if (stage == KERNEL_TEST_STAGE_BOOTED)
-        kernel_test_write_totals(serial, selection);
+    if (stage != KERNEL_TEST_STAGE_BOOTED)
+        return;
+#if !defined(LPL_PLUGIN_UNAVAILABLE)
+    kernel_test_run_engine(serial, selection);
+#endif
+    kernel_test_write_totals(serial, selection);
 }

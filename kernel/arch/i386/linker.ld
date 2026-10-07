@@ -112,12 +112,19 @@ SECTIONS
      * nothing references an entry by name: without it the linker would be free to drop them all
      * and the runner would report zero tests, which reads like a passing run. Empty in a release
      * image, which compiles no test.
+     *
+     * The engine's tests (LPL_TEST in LplPlugin) sit next to them, between the names a host linker
+     * gives the bounds of a section called `lpl_tests`, so their runner reads them on both targets.
      */
     .kernel_tests ALIGN(4K) : AT (ADDR (.kernel_tests) - global_kernel_start)
     {
         PROVIDE_HIDDEN(_kernel_tests_start = .);
         KEEP(*(.kernel_tests))
         PROVIDE_HIDDEN(_kernel_tests_end = .);
+        . = ALIGN(4);
+        PROVIDE_HIDDEN(__start_lpl_tests = .);
+        KEEP(*(lpl_tests))
+        PROVIDE_HIDDEN(__stop_lpl_tests = .);
     }
 
     .init_array ALIGN(4K) : AT (ADDR (.init_array) - global_kernel_start)
