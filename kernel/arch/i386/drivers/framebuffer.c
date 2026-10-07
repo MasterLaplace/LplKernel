@@ -3,7 +3,11 @@
 #include <kernel/drivers/framebuffer.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
+#include <stddef.h>
 #include <string.h>
+
+_Static_assert(offsetof(MultibootInfo_t, direct_color_t) == 112u,
+               "the colour layout is read at offset 112, where GRUB writes it");
 
 /** Global framebuffer state. */
 static framebuffer_info_t fb_info = {0};
