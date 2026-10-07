@@ -27,7 +27,7 @@
  * day the two disagreed the symptom would be a model that decodes to noise.
  *
  * What IS here is the honest report. An absent module is a legitimate configuration
- * — a smoke image derives its weights from a seed — and an invalid one is a fault.
+ * — a debug image's tests derive their weights from a seed — and an invalid one is a fault.
  * The two are distinguished and neither is silently replaced by the other.
  *
  * Why the slot takes a BAKED image and not a `.gguf` directly, since that was the

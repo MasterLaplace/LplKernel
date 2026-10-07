@@ -63,7 +63,7 @@ bool kernel_tensor_arena_initialize(size_t bytes);
 /**
  * @brief Releases the region.
  *
- * Only meaningful at shutdown or between smoke passes. Anything holding a pointer
+ * Only meaningful at shutdown or between two tests. Anything holding a pointer
  * into the arena is dangling afterwards, which is why nothing calls this mid-run.
  */
 void kernel_tensor_arena_release(void);

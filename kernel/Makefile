@@ -64,7 +64,7 @@ LIBS:=$(LIBS) -nostdlib -lk -lgcc
 CPPFLAGS:=$(CPPFLAGS) -DLPL_PLUGIN_UNAVAILABLE=1 -DLPL_ASSISTANT_UNAVAILABLE=1 -DLPL_KNOWLEDGE_UNAVAILABLE=1
 endif
 
-# The kernel's tests (kernel/testing/test.h) and the engine's. ON by default for the
+# The kernel's tests (kernel/testing/test.h) and its libraries'. ON by default for the
 # script/Makefile build (debug). Pass SMOKE_TESTS=0 (or xmake "release") to compile
 # every test out of a production image. The memory poisoning comes with them: the
 # tests check it, and only a build that poisons can fail those checks.
@@ -73,7 +73,8 @@ endif
 # Sorted, because the order of $(wildcard) depends on the version of make; the
 # runner orders the tests itself, but the link should not change with the host.
 #
-# The engine's tests come in libenginetests.a, linked whole: nothing names a test, and the
+# The tests of the engine, the mind and the memory come in libenginetests.a,
+# libassistanttests.a and libknowledgetests.a, linked whole: nothing names a test, and the
 # linker takes from an archive only what something names.
 SMOKE_TESTS?=1
 KERNEL_TEST_OBJS:=
@@ -82,8 +83,17 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS -DLPL_KERNEL_DEBUG_POISON
 KERNEL_TEST_OBJS:=kernel/testing/test.o \
     $(patsubst %.c,%.o,$(sort $(wildcard tests/*/*.c arch/$(HOSTARCH)/tests/*/*.c)))
 ifeq ($(ENABLE_LIBENGINE),1)
-LIBS:=-Wl,--whole-archive -lenginetests -Wl,--no-whole-archive $(LIBS)
-ENGINE_TESTS_ARCHIVE:=$(wildcard $(DESTDIR)/usr/lib/libenginetests.a)
+TEST_LIBS:=-lenginetests
+TEST_ARCHIVES:=$(wildcard $(DESTDIR)/usr/lib/libenginetests.a)
+ifeq ($(ENABLE_LIBASSISTANT),1)
+TEST_LIBS:=$(TEST_LIBS) -lassistanttests
+TEST_ARCHIVES:=$(TEST_ARCHIVES) $(wildcard $(DESTDIR)/usr/lib/libassistanttests.a)
+endif
+ifeq ($(ENABLE_LIBKNOWLEDGE),1)
+TEST_LIBS:=$(TEST_LIBS) -lknowledgetests
+TEST_ARCHIVES:=$(TEST_ARCHIVES) $(wildcard $(DESTDIR)/usr/lib/libknowledgetests.a)
+endif
+LIBS:=-Wl,--whole-archive $(TEST_LIBS) -Wl,--no-whole-archive $(LIBS)
 endif
 endif
 
@@ -162,7 +172,6 @@ kernel/power/tickless.o \
 kernel/power/frequency_scaling.o \
 kernel/power/wakeup_accounting.o \
 kernel/satellite/satellite_app.o \
-kernel/testing/smoke_libengine.o \
 kernel/diag/sysmon.o \
 kernel/diag/telemetry.o \
 kernel/core/kernel.o \
@@ -215,7 +224,7 @@ CC_PROGRAM:=$(lastword $(filter %-gcc %gcc,$(CC)))
 NM?=$(subst -gcc,-nm,$(CC_PROGRAM))
 OBJDUMP?=$(subst -gcc,-objdump,$(CC_PROGRAM))
 
-lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld $(ENGINE_ARCHIVE) $(ENGINE_TESTS_ARCHIVE) $(ASSISTANT_ARCHIVE) $(KNOWLEDGE_ARCHIVE)
+lpl.kernel: $(OBJS) $(ARCHDIR)/linker.ld $(ENGINE_ARCHIVE) $(TEST_ARCHIVES) $(ASSISTANT_ARCHIVE) $(KNOWLEDGE_ARCHIVE)
 	$(CC) -T $(ARCHDIR)/linker.ld -o $@ $(CFLAGS) $(LINK_LIST)
 	grub-file --is-x86-multiboot lpl.kernel
 	@$(MAKE) --no-print-directory check-kernel-end

@@ -45,7 +45,8 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 -DLPL_HAS_FOUNDATION \
           -I$(LPLPLUGIN_ROOT)/agent/include \
           -I$(LPLPLUGIN_ROOT)/core/include \
           -I$(LPLPLUGIN_ROOT)/math/include \
-          -I$(LPLPLUGIN_ROOT)/memory/include
+          -I$(LPLPLUGIN_ROOT)/memory/include \
+          -I$(LPLPLUGIN_ROOT)/testing/include
 
 ARCHDIR=arch/$(HOSTARCH)
 
@@ -58,12 +59,8 @@ CPPFLAGS:=$(CPPFLAGS) $(ARCH_CPPFLAGS)
 # in the sibling checkout.
 MIND_OBJS=$(addprefix obj/,$(ARCH_ASSISTANT_SRCS:.cpp=.o))
 
-# libassistant-local sources (the C-callable facade / smoke entry points).
+# libassistant-local sources: the C-callable facade the kernel calls.
 LOCAL_OBJS=\
-obj/local/smoke/p14_mind_smoke.o \
-obj/local/smoke/p15_satellite_smoke.o \
-obj/local/smoke/p16_agency_smoke.o \
-obj/local/smoke/p17_reasoning_smoke.o \
 obj/local/assistant_boot.o \
 obj/local/identity.o
 
@@ -71,12 +68,36 @@ OBJS=$(MIND_OBJS) $(LOCAL_OBJS)
 
 BINARIES=libassistant.a
 
+# The mind's tests, for debug images: the LPL_TEST of LplAssistant's tests/<module>/ for every
+# module compiled above, and those of tests/ here for what only this kernel provides. The kernel
+# links the whole archive, because nothing names a test; their runner is in libenginetests.a.
+ASSISTANT_MODULES=infer mind satellite
+SMOKE_TESTS?=1
+ASSISTANT_TEST_SRCS:=$(sort $(patsubst $(LPLASSISTANT_ROOT)/%,%,$(foreach module,$(ASSISTANT_MODULES),\
+    $(wildcard $(LPLASSISTANT_ROOT)/tests/$(module)/*.cpp))))
+ASSISTANT_TEST_OBJS:=$(addprefix obj/,$(ASSISTANT_TEST_SRCS:.cpp=.o)) \
+    $(patsubst %.cpp,obj/local/%.o,$(sort $(wildcard tests/*.cpp)))
+ifeq ($(SMOKE_TESTS),1)
+BINARIES+=libassistanttests.a
+endif
+
 .PHONY: all clean install install-headers install-libs
 
 all: $(BINARIES)
 
+# Each archive is written anew: `ar r` never removes a member, and the kernel links the tests'
+# archive whole, so a test deleted or renamed would still run. The list of tests is stamped,
+# because deleting one changes no prerequisite make can see.
 libassistant.a: $(OBJS)
+	rm -f $@
 	$(AR) rcs $@ $(OBJS)
+
+ASSISTANT_TEST_STAMP:=obj/local/tests.stamp
+$(shell mkdir -p obj/local; echo '$(ASSISTANT_TEST_OBJS)' | cmp -s - $(ASSISTANT_TEST_STAMP) || echo '$(ASSISTANT_TEST_OBJS)' > $(ASSISTANT_TEST_STAMP))
+
+libassistanttests.a: $(ASSISTANT_TEST_OBJS) $(ASSISTANT_TEST_STAMP)
+	rm -f $@
+	$(AR) rcs $@ $(ASSISTANT_TEST_OBJS)
 
 # Mind sources, pulled from LPLASSISTANT_ROOT.
 obj/%.o: $(LPLASSISTANT_ROOT)/%.cpp
@@ -96,6 +117,10 @@ obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
+obj/local/tests/%.o: tests/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+
 clean:
 	rm -f $(BINARIES) *.a
 	rm -rf obj
@@ -112,3 +137,4 @@ install-libs: $(BINARIES)
 
 -include $(MIND_OBJS:.o=.d)
 -include $(LOCAL_OBJS:.o=.d)
+-include $(ASSISTANT_TEST_OBJS:.o=.d)

@@ -122,7 +122,7 @@ option_end()
 option("smoke")
     set_default(true)
     set_showmenu(true)
-    set_description("Compile the kernel's and the engine's tests into the image")
+    set_description("Compile the tests of the kernel and of each linked library into the image")
 option_end()
 
 option("console")
@@ -134,8 +134,8 @@ option_end()
 local GRAPHICS_MODE = has_config("graphics") and 1 or 0
 -- The tests are built when requested and never in release mode (a production image):
 -- `--smoke=n` or `-m release` compiles them out. The kernel's own tests call nothing in
--- the engine and run without it; the engine's tests are added only when the engine is
--- linked in. The memory poisoning comes with the tests: they check it, and only a build
+-- the engine and run without it; the tests of the engine, the mind and the memory are added
+-- only when that library is linked in. The memory poisoning comes with the tests: they check it, and only a build
 -- that poisons can fail those checks.
 local ENABLE_SMOKE = has_config("smoke") and not is_mode("release")
 
@@ -435,10 +435,11 @@ end -- if LPLPLUGIN_AVAILABLE
 -- which carries a std::string and belongs to the hosted half.
 -- ===========================================================================
 if LPLASSISTANT_AVAILABLE then
-target("libassistant")
-    set_kind("static")
-    add_rules("laplace.identity")
-    set_basename("assistant")
+-- The LplAssistant modules this kernel compiles, whose tests it runs, as ASSISTANT_MODULES in
+-- libassistant/Makefile.
+local kAssistantModules = {"infer", "mind", "satellite"}
+
+local function add_assistant_settings()
     set_languages("gnuxx20")
     add_cxxflags(
         "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
@@ -464,8 +465,16 @@ target("libassistant")
         path.join(LPLPLUGIN_ROOT, "agent/include"),
         path.join(LPLPLUGIN_ROOT, "core/include"),
         path.join(LPLPLUGIN_ROOT, "math/include"),
-        path.join(LPLPLUGIN_ROOT, "memory/include")
+        path.join(LPLPLUGIN_ROOT, "memory/include"),
+        path.join(LPLPLUGIN_ROOT, "testing/include")
     )
+end
+
+target("libassistant")
+    set_kind("static")
+    add_rules("laplace.identity")
+    set_basename("assistant")
+    add_assistant_settings()
     add_files(
         path.join(LPLASSISTANT_ROOT, "satellite/src/Protocol.cpp"),
         path.join(LPLASSISTANT_ROOT, "satellite/src/VoiceActivity.cpp"),
@@ -500,8 +509,27 @@ target("libassistant")
         path.join(LPLASSISTANT_ROOT, "mind/src/Dialogue.cpp"),
         path.join(LPLASSISTANT_ROOT, "mind/src/Parity.cpp")
     )
-    add_files("libassistant/src/*.cpp", "libassistant/src/smoke/*.cpp")
+    add_files("libassistant/src/*.cpp")
 target_end()
+
+-- libassistanttests — the mind's tests for debug images: the LPL_TEST of LplAssistant's
+-- tests/<module>/ for every module above, and those of libassistant/tests/ for what only this
+-- kernel provides. Linked whole, because nothing names a test; their runner is in libenginetests.
+if ENABLE_SMOKE then
+target("libassistanttests")
+    set_kind("static")
+    set_basename("assistanttests")
+    add_assistant_settings()
+    for _, module in ipairs(kAssistantModules) do
+        for _, test in ipairs(os.files(path.join(LPLASSISTANT_ROOT, "tests", module, "*.cpp"))) do
+            add_files(test)
+        end
+    end
+    for _, test in ipairs(os.files("libassistant/tests/*.cpp")) do
+        add_files(test)
+    end
+target_end()
+end
 end -- if LPLASSISTANT_AVAILABLE
 
 -- ===========================================================================
@@ -516,10 +544,11 @@ end -- if LPLASSISTANT_AVAILABLE
 -- the hosted half, which allocates, parses text and speaks HTTP.
 -- ===========================================================================
 if LPLKNOWLEDGE_AVAILABLE then
-target("libknowledge")
-    set_kind("static")
-    add_rules("laplace.identity")
-    set_basename("knowledge")
+-- The LplKnowledge modules this kernel compiles, whose tests it runs, as KNOWLEDGE_MODULES in
+-- libknowledge/Makefile.
+local kKnowledgeModules = {"knowledge", "corpus"}
+
+local function add_knowledge_settings()
     set_languages("gnuxx20")
     add_cxxflags(
         "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
@@ -544,8 +573,16 @@ target("libknowledge")
         -- history/, headers only: the arithmetic of doubt is compiled into libengine, and
         -- this module CONSUMES it. `history/Fact.hpp` states the division — it trades in
         -- identifiers and says the strings live in LplKnowledge.
-        path.join(LPLPLUGIN_ROOT, "history/include")
+        path.join(LPLPLUGIN_ROOT, "history/include"),
+        path.join(LPLPLUGIN_ROOT, "testing/include")
     )
+end
+
+target("libknowledge")
+    set_kind("static")
+    add_rules("laplace.identity")
+    set_basename("knowledge")
+    add_knowledge_settings()
     add_files(
         path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/Types.cpp"),
         path.join(LPLKNOWLEDGE_ROOT, "knowledge/src/KnowledgePack.cpp"),
@@ -560,8 +597,24 @@ target("libknowledge")
         path.join(LPLKNOWLEDGE_ROOT, "corpus/src/Language.cpp"),
         path.join(LPLKNOWLEDGE_ROOT, "corpus/src/TextView.cpp")
     )
-    add_files("libknowledge/src/*.cpp", "libknowledge/src/smoke/*.cpp")
+    add_files("libknowledge/src/*.cpp")
 target_end()
+
+-- libknowledgetests — the reader's tests for debug images: the LPL_TEST of LplKnowledge's
+-- tests/<module>/ for every module above. Linked whole, because nothing names a test; their runner
+-- is in libenginetests.
+if ENABLE_SMOKE then
+target("libknowledgetests")
+    set_kind("static")
+    set_basename("knowledgetests")
+    add_knowledge_settings()
+    for _, module in ipairs(kKnowledgeModules) do
+        for _, test in ipairs(os.files(path.join(LPLKNOWLEDGE_ROOT, "tests", module, "*.cpp"))) do
+            add_files(test)
+        end
+    end
+target_end()
+end
 end -- if LPLKNOWLEDGE_AVAILABLE
 
 -- ===========================================================================
@@ -584,14 +637,20 @@ target("lpl-kernel")
     end
     if LPLASSISTANT_AVAILABLE then
         add_deps("libassistant")
+        if ENABLE_SMOKE then
+            add_deps("libassistanttests")
+        end
     else
-        -- No mind: the P14 block compiles out, like the world does without LplPlugin.
+        -- No mind: its tests compile out, like the engine's do without LplPlugin.
         add_defines("LPL_ASSISTANT_UNAVAILABLE=1")
     end
     if LPLKNOWLEDGE_AVAILABLE then
         add_deps("libknowledge")
+        if ENABLE_SMOKE then
+            add_deps("libknowledgetests")
+        end
     else
-        -- No memory: the P18 block compiles out, like the world does without LplPlugin.
+        -- No memory: its tests compile out, like the engine's do without LplPlugin.
         add_defines("LPL_KNOWLEDGE_UNAVAILABLE=1")
     end
 
@@ -656,7 +715,10 @@ target("lpl-kernel")
         local crtbegin = os.iorunv(cc, {"-print-file-name=crtbegin.o"}):trim()
         local crtend = os.iorunv(cc, {"-print-file-name=crtend.o"}):trim()
 
-        local libenginetests = target:dep("libenginetests") and target:dep("libenginetests"):targetfile() or nil
+        local tests = {}
+        for _, name in ipairs({"libenginetests", "libassistanttests", "libknowledgetests"}) do
+            if target:dep(name) then table.insert(tests, target:dep(name):targetfile()) end
+        end
         local libknowledge = target:dep("libknowledge") and target:dep("libknowledge"):targetfile() or nil
         local libassistant = target:dep("libassistant") and target:dep("libassistant"):targetfile() or nil
         local libengine = target:dep("libengine") and target:dep("libengine"):targetfile() or nil
@@ -665,7 +727,8 @@ target("lpl-kernel")
         local out = target:targetfile()
 
         -- $(CC) -T linker.ld -o lpl.kernel <free flags> crti crtbegin OBJS \
-        --       -nostdlib [whole -lenginetests] [-lknowledge -lassistant -lengine -lkxx] -lk -lgcc crtend crtn
+        --       -nostdlib [whole -lenginetests -lassistanttests -lknowledgetests]
+        --       [-lknowledge -lassistant -lengine -lkxx] -lk -lgcc crtend crtn
         -- Link order is libknowledge -> libassistant -> libengine -> libkxx -> libk: the
         -- memory calls `lpl::history` and the mind calls the foundation (Fixed32, CORDIC,
         -- the arena), both of which are in libengine, which calls the C++ runtime
@@ -675,7 +738,7 @@ target("lpl-kernel")
         -- of them are omitted when LplPlugin is unavailable (the kernel is then pure C).
         local argv = {"-T", linker, "-o", out, "-ffreestanding", "-O2", "-g", "-nostdlib", crti, crtbegin}
         table.join2(argv, rest)
-        if libenginetests then table.join2(argv, {"-Wl,--whole-archive", libenginetests, "-Wl,--no-whole-archive"}) end
+        if #tests > 0 then table.join2(argv, {"-Wl,--whole-archive"}, tests, {"-Wl,--no-whole-archive"}) end
         if libknowledge then table.insert(argv, libknowledge) end
         if libassistant then table.insert(argv, libassistant) end
         if libengine then table.insert(argv, libengine) end

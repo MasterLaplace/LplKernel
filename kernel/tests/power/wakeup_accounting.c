@@ -16,8 +16,7 @@ KERNEL_TEST_SUITE(wakeup_accounting, KERNEL_TEST_STAGE_BOOTED);
  *          law, because 0 == 0 holds for a module that does nothing.
  *
  * @note Interrupts are off throughout, so the tick cannot land between an arm and its attribution.
- *       The counters are reset on the way out, so the power floor afterwards reports the boot's own
- *       sleeps.
+ *       The counters are reset on the way out.
  */
 KERNEL_TEST(every_outcome_is_accounted_for)
 {

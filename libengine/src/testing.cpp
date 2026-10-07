@@ -5,7 +5,7 @@
 namespace {
 
 /**
- * @brief The kernel's port, as the engine's runner writes to it.
+ * @brief The kernel's port, as the runner of lpl::testing writes to it.
  */
 class KernelSink final : public lpl::testing::Sink {
 public:

@@ -59,7 +59,6 @@
 #include <kernel/diag/sysmon.h>
 #include <kernel/diag/telemetry.h>
 #include <kernel/dialogue/dialogue_channel.h>
-#include <kernel/testing/smoke_libengine.h>
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
 #    include <kernel/testing/test.h>
 #endif
@@ -472,9 +471,6 @@ void kernel_main(void)
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
     kernel_test_run_stage(KERNEL_TEST_STAGE_BOOTED, &com1);
-#    if !defined(LPL_ASSISTANT_UNAVAILABLE) || !defined(LPL_KNOWLEDGE_UNAVAILABLE)
-    smoke_libengine_run_all(&com1);
-#    endif
 #endif
 
     kernel_report_live_checks();
