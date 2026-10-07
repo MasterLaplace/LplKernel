@@ -96,10 +96,11 @@ typedef struct {
  *       that can afford it.
  * @note Only this profile may declare the tick stoppable: a satellite instantiates no
  *       World, so there is no authoritative tick whose cadence a parity gate is folded
- *       against. The tick goes back on before returning all the same — the profile is
- *       exercised from inside an image that also runs a World, and leaving its clock
- *       stopped would take the cadence away from a simulation that needs it, which is
- *       precisely the failure @ref kernel_tickless_enable exists to refuse.
+ *       against. The tick goes back on before returning all the same, at the rate it ran
+ *       at before — the profile is exercised from inside an image that also runs a World,
+ *       and leaving its clock stopped, or faster than it was, would change the cadence of
+ *       a simulation that needs it, which is precisely the failure
+ *       @ref kernel_tickless_enable exists to refuse.
  *
  * @param iterations Frames to run.
  * @param out        Receives the measurements.

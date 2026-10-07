@@ -1,5 +1,6 @@
 #include <kernel/satellite/satellite_app.h>
 
+#include <kernel/cpu/irq.h>
 #include <kernel/hal/hal_audio.h>
 #include <kernel/power/frequency_scaling.h>
 #include <kernel/power/processor_sleep.h>
@@ -113,6 +114,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
         return false;
 
     SatelliteReport_t report = {0};
+    const uint32_t periodic_frequency_hz = interrupt_request_get_timer_frequency_hz();
 
     kernel_processor_sleep_initialize();
     (void) kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_MAX);
@@ -146,7 +148,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.ticks_avoided = kernel_tickless_ticks_avoided();
 
     satellite_govern_on_measured_duty(&report);
-    kernel_tickless_disable(SATELLITE_NOMINAL_TICK_HZ);
+    kernel_tickless_disable(periodic_frequency_hz);
 
     *out = report;
     return true;
