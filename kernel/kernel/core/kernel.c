@@ -274,6 +274,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     }
 
     write_multiboot_info(&com1, KERNEL_VIRTUAL_BASE, multiboot_info);
+    boot_command_line_capture();
     kernel_splash_update("Parsing Multiboot Structure");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing GDT...\n");

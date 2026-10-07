@@ -37,6 +37,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/** Bytes kept of the kernel's command line, its terminating NUL included. */
+#define BOOT_COMMAND_LINE_CAPACITY 256u
+
 /**
  * @brief Locates a boot module whose command line ends with @p suffix.
  *
@@ -60,5 +63,21 @@ bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *o
  * @return The module count (0 when the bootloader supplied none).
  */
 uint32_t boot_module_count(void);
+
+/**
+ * @brief Copies the kernel's command line out of the memory the bootloader left it in.
+ *
+ * @details The physical memory manager reserves the modules' pages but not the command line's, so
+ *          the text is overwritten once those pages are handed out. Called once, before the physical
+ *          memory manager starts; the copy is cut at BOOT_COMMAND_LINE_CAPACITY - 1 characters.
+ */
+void boot_command_line_capture(void);
+
+/**
+ * @brief The kernel's own command line, as boot_command_line_capture() copied it.
+ *
+ * @return The NUL-terminated text, or NULL when the bootloader passed none.
+ */
+const char *boot_command_line(void);
 
 #endif /* BOOT_MODULE_H_ */

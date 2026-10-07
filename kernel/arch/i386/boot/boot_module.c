@@ -3,9 +3,13 @@
 #include <kernel/cpu/paging.h>
 
 /** @brief Multiboot flag bit indicating the module list is present. */
-#define MULTIBOOT_FLAG_MODULES (1u << 3)
+#define MULTIBOOT_FLAG_COMMAND_LINE (1u << 2)
+#define MULTIBOOT_FLAG_MODULES      (1u << 3)
 
 extern MultibootInfo_t *multiboot_info;
+
+static char boot_command_line_copy[BOOT_COMMAND_LINE_CAPACITY];
+static bool boot_command_line_captured = false;
 
 /**
  * @brief Physical to kernel-virtual, through the direct map.
@@ -95,3 +99,19 @@ bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *o
     }
     return false;
 }
+
+void boot_command_line_capture(void)
+{
+    if (!multiboot_info || !(multiboot_info->flags & MULTIBOOT_FLAG_COMMAND_LINE) || !multiboot_info->cmdline)
+        return;
+
+    const char *const text = (const char *) boot_module_phys_to_virt(multiboot_info->cmdline);
+    const uint32_t length = boot_module_string_length(text, BOOT_COMMAND_LINE_CAPACITY - 1u);
+
+    for (uint32_t index = 0u; index < length; ++index)
+        boot_command_line_copy[index] = text[index];
+    boot_command_line_copy[length] = '\0';
+    boot_command_line_captured = true;
+}
+
+const char *boot_command_line(void) { return boot_command_line_captured ? boot_command_line_copy : NULL; }
