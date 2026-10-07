@@ -57,23 +57,25 @@ Four consequences, each written down after it cost a real defect:
 
 ## A slice: one feature, proven on both targets
 
-1. The engine code, in its LplPlugin module.
-2. An engine test, an `LPL_TEST` in LplPlugin's `tests/<module>/`: it checks the feature's claims and
+1. The code, in its module of LplPlugin, LplAssistant or LplKnowledge.
+2. A test, an `LPL_TEST` in that repository's `tests/<module>/`: it checks the feature's claims and
    measures the values both targets must agree on, folded as FNV-1a (offset `0x811C9DC5`, prime
-   `0x01000193`). A debug kernel runs it after its own tests; a release image compiles it out.
+   `0x01000193`). A debug kernel runs it after its own tests; a release image compiles it out. A
+   test of what only this kernel provides goes in `libengine/tests/` or `libassistant/tests/`.
 3. Every build list that names its neighbours names the new files too: `libengine/arch/i386/make.config`
    and `xmake.lua` list the engine sources by hand, `kernel/Makefile` and `kernel/arch/i386/make.config`
    the kernel's. A file left out fails at the kernel link with `undefined reference`, never at
    compile time (#119 tracks a single list). A module new to the kernel goes in `ENGINE_MODULES` of
-   `libengine/Makefile` and `kEngineModules` of `xmake.lua`, which bring its headers and its tests.
-4. Compare the two runs: `xmake run -P ../LplPlugin test-engine > host.log`, then
-   `./qemu.sh --server | tee serial.log` until it prints `# Totals:`, then
-   `tools/parity.sh host.log serial.log`.
+   `libengine/Makefile` and `kEngineModules` of `xmake.lua`, which bring its headers and its tests;
+   `ASSISTANT_MODULES` and `KNOWLEDGE_MODULES` (`kAssistantModules`, `kKnowledgeModules`) bring
+   the tests of LplAssistant and LplKnowledge.
+4. Compare the runs: `xmake run -P ../LplPlugin test-engine > engine.log`, the same for
+   `test-assistant` and `test-knowledge` in their repositories, then `./qemu.sh --server | tee serial.log`
+   until it prints `# Totals:`, then `tools/parity.sh engine.log assistant.log knowledge.log serial.log`.
 
 A gate checks counters next to its signatures, and a control that must come out different: a run
 that never exercises the feature folds just as well on both targets, and only the counters and the
-control tell the two apart. The gates of LplAssistant and LplKnowledge are still reported from
-`kernel/kernel/testing/smoke_libengine.c` (#479). A new boot measurement is printed as one
+control tell the two apart. A new boot measurement is printed as one
 `[LPLTLM] <domain> key=value ...` line, whose values hold no space and no `=`.
 
 ## Numbering
