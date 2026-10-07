@@ -58,24 +58,23 @@ Four consequences, each written down after it cost a real defect:
 ## A slice: one feature, proven on both targets
 
 1. The engine code, in its LplPlugin module.
-2. A host test in LplPlugin's `tests/` that prints the oracle signatures. It is a `test-*` target of
-   `tests/xmake.lua`, and it ends on `ALL PASS (0 failures, N checks)`.
-3. A smoke, `libengine/src/smoke/pNN_<name>_smoke.cpp`, that runs the same slice in ring 0 and folds
-   the same signatures (FNV-1a, offset `0x811C9DC5`, prime `0x01000193`), reported from
-   `kernel/kernel/testing/smoke_libengine.c`. The battery is behind `LPL_KERNEL_ENABLE_SMOKE_TESTS`
-   and is compiled out of release images.
-4. Every build list that names its neighbours names the new files too. The shell build lists every
-   object: `libengine/arch/i386/make.config` for engine sources, `libengine/Makefile` for smokes,
-   `kernel/Makefile` and `kernel/arch/i386/make.config` for the kernel. `xmake.lua` lists the engine
-   sources by hand. A file left out fails at the kernel link with `undefined reference`, never at
-   compile time (#119 tracks a single list).
-5. Boot the debug kernel with `./qemu.sh --server`. The serial output prints in the terminal: each
-   gate's line must equal the host test's line, bit for bit.
+2. An engine test, an `LPL_TEST` in LplPlugin's `tests/<module>/`: it checks the feature's claims and
+   measures the values both targets must agree on, folded as FNV-1a (offset `0x811C9DC5`, prime
+   `0x01000193`). A debug kernel runs it after its own tests; a release image compiles it out.
+3. Every build list that names its neighbours names the new files too: `libengine/arch/i386/make.config`
+   and `xmake.lua` list the engine sources by hand, `kernel/Makefile` and `kernel/arch/i386/make.config`
+   the kernel's. A file left out fails at the kernel link with `undefined reference`, never at
+   compile time (#119 tracks a single list). A module new to the kernel goes in `ENGINE_MODULES` of
+   `libengine/Makefile` and `kEngineModules` of `xmake.lua`, which bring its headers and its tests.
+4. Compare the two runs: `xmake run -P ../LplPlugin test-engine > host.log`, then
+   `./qemu.sh --server | tee serial.log` until it prints `# Totals:`, then
+   `tools/parity.sh host.log serial.log`.
 
-A gate prints counters next to its signatures, and carries a control that must come out different: a
-run that never exercises the feature folds just as well on both targets, and only the counters and
-the control tell the two apart. A new measurement is printed as one `[LPLTLM] <domain> key=value ...`
-line, whose values hold no space and no `=`.
+A gate checks counters next to its signatures, and a control that must come out different: a run
+that never exercises the feature folds just as well on both targets, and only the counters and the
+control tell the two apart. The gates of LplAssistant and LplKnowledge are still reported from
+`kernel/kernel/testing/smoke_libengine.c` (#479). A new boot measurement is printed as one
+`[LPLTLM] <domain> key=value ...` line, whose values hold no space and no `=`.
 
 ## Numbering
 
