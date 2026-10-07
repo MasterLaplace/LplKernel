@@ -248,8 +248,8 @@ $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o:
 
 clean:
 	rm -f lpl.kernel
-	rm -f $(OBJS) *.o */*.o */*/*.o */*/*/*.o
-	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d */*/*/*.d
+	rm -f $(OBJS) *.o */*.o */*/*.o */*/*/*.o */*/*/*/*.o
+	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d */*/*/*.d */*/*/*/*.d
 	rm -f $(IDENTITY_STAMP) $(FLAGS_STAMP)
 
 debug: CFLAGS+=-DDEBUG -g3 -O0

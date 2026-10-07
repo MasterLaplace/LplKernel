@@ -16,6 +16,13 @@ extern const KernelTestCase_t *const _kernel_tests_end[];
 /** Indentation of a line that belongs to a suite's subtest. */
 #define KERNEL_TEST_SUBTEST_INDENT "    "
 
+/** What became of one test. */
+typedef enum KernelTestOutcome {
+    KERNEL_TEST_OUTCOME_PASSED,
+    KERNEL_TEST_OUTCOME_SKIPPED,
+    KERNEL_TEST_OUTCOME_FAILED,
+} KernelTestOutcome_t;
+
 struct KernelTest {
     const KernelTestCase_t *test_case; /**< The test being run. */
     Serial_t *serial;                  /**< Port its report is written to. */
@@ -30,6 +37,7 @@ static uint32_t kernel_test_passed_count = 0u;
 static uint32_t kernel_test_failed_count = 0u;
 static uint32_t kernel_test_skipped_count = 0u;
 static uint32_t kernel_test_check_count = 0u;
+static uint32_t kernel_test_selected_count = 0u;
 
 static int32_t kernel_test_compare_strings(const char *lhs, const char *rhs)
 {
@@ -185,11 +193,24 @@ static void kernel_test_qualified_name(const KernelTestCase_t *test_case, char *
     buffer[length] = '\0';
 }
 
+static bool kernel_test_pattern_has_a_star(const char *pattern, const char *pattern_end)
+{
+    for (; pattern < pattern_end; ++pattern)
+    {
+        if (*pattern == '*')
+            return true;
+    }
+    return false;
+}
+
 /**
  * @brief Whether the comma-separated patterns of @p selection, which ends at a space or at the
  *        end of the command line, name @p test_case.
+ *
+ * @param named_in_full Whether only a pattern without `*` counts, as for a manual test: a pattern
+ *                      such as `ring*` must not run a test that halts the machine.
  */
-static bool kernel_test_is_selected_by(const char *selection, const KernelTestCase_t *test_case)
+static bool kernel_test_is_selected_by(const char *selection, const KernelTestCase_t *test_case, bool named_in_full)
 {
     char qualified_name[KERNEL_TEST_QUALIFIED_NAME_CAPACITY];
 
@@ -203,7 +224,8 @@ static bool kernel_test_is_selected_by(const char *selection, const KernelTestCa
 
         while (*pattern_end != '\0' && *pattern_end != ',' && *pattern_end != ' ')
             ++pattern_end;
-        if (pattern_end > pattern && kernel_test_pattern_matches(pattern, pattern_end, qualified_name))
+        if (pattern_end > pattern && !(named_in_full && kernel_test_pattern_has_a_star(pattern, pattern_end)) &&
+            kernel_test_pattern_matches(pattern, pattern_end, qualified_name))
             return true;
         if (*pattern_end != ',')
             return false;
@@ -216,9 +238,14 @@ static bool kernel_test_is_selected_by(const char *selection, const KernelTestCa
  */
 static const char *kernel_test_reason_not_to_run(const char *selection, const KernelTestCase_t *test_case)
 {
-    if (selection)
-        return kernel_test_is_selected_by(selection, test_case) ? NULL : "not selected";
-    return test_case->manual_reason;
+    const bool manual = (test_case->manual_reason != NULL);
+
+    if (!selection)
+        return test_case->manual_reason;
+    if (!kernel_test_is_selected_by(selection, test_case, manual))
+        return manual ? test_case->manual_reason : "not selected";
+    ++kernel_test_selected_count;
+    return NULL;
 }
 
 static void kernel_test_write_test_prefix(KernelTest_t *test)
@@ -255,11 +282,9 @@ static void kernel_test_write_result(Serial_t *serial, const char *indent, bool 
 
 /**
  * @brief Runs one test, or reports why it does not run, and writes its result line.
- *
- * @return true when the test passed or was skipped.
  */
-static bool kernel_test_run_one(const KernelTestCase_t *test_case, uint32_t number, const char *selection,
-                                Serial_t *serial)
+static KernelTestOutcome_t kernel_test_run_one(const KernelTestCase_t *test_case, uint32_t number,
+                                               const char *selection, Serial_t *serial)
 {
     KernelTest_t test = {test_case, serial, 0u, 0u, kernel_test_reason_not_to_run(selection, test_case)};
 
@@ -277,16 +302,20 @@ static bool kernel_test_run_one(const KernelTestCase_t *test_case, uint32_t numb
 
     const bool passed = (test.failures == 0u);
 
-    if (test.skip_reason && passed)
-        ++kernel_test_skipped_count;
-    else if (passed)
-        ++kernel_test_passed_count;
-    else
-        ++kernel_test_failed_count;
-
     kernel_test_write_result(serial, KERNEL_TEST_SUBTEST_INDENT, passed, number, test_case->name,
                              passed ? test.skip_reason : NULL);
-    return passed;
+    if (!passed)
+    {
+        ++kernel_test_failed_count;
+        return KERNEL_TEST_OUTCOME_FAILED;
+    }
+    if (test.skip_reason)
+    {
+        ++kernel_test_skipped_count;
+        return KERNEL_TEST_OUTCOME_SKIPPED;
+    }
+    ++kernel_test_passed_count;
+    return KERNEL_TEST_OUTCOME_PASSED;
 }
 
 /**
@@ -298,8 +327,9 @@ static const KernelTestCase_t *kernel_test_run_suite(const KernelTestCase_t *fir
                                                      Serial_t *serial)
 {
     const KernelTestSuite_t *suite = first->suite;
-    bool passed = true;
     uint32_t number = 0u;
+    uint32_t failed = 0u;
+    uint32_t skipped = 0u;
     const KernelTestCase_t *test_case = first;
 
     serial_write_string(serial, KERNEL_TEST_SUBTEST_INDENT "KTAP version 1\n" KERNEL_TEST_SUBTEST_INDENT "# Subtest: ");
@@ -309,14 +339,22 @@ static const KernelTestCase_t *kernel_test_run_suite(const KernelTestCase_t *fir
     serial_write_char(serial, '\n');
 
     for (; test_case && test_case->suite == suite; test_case = kernel_test_after(test_case))
-        passed = kernel_test_run_one(test_case, ++number, selection, serial) && passed;
+    {
+        const KernelTestOutcome_t outcome = kernel_test_run_one(test_case, ++number, selection, serial);
 
-    kernel_test_write_result(serial, "", passed, kernel_test_next_suite_number++, suite->name, NULL);
+        failed += (outcome == KERNEL_TEST_OUTCOME_FAILED) ? 1u : 0u;
+        skipped += (outcome == KERNEL_TEST_OUTCOME_SKIPPED) ? 1u : 0u;
+    }
+
+    kernel_test_write_result(serial, "", failed == 0u, kernel_test_next_suite_number++, suite->name,
+                             (skipped == number) ? "every test skipped" : NULL);
     return test_case;
 }
 
-static void kernel_test_write_totals(Serial_t *serial)
+static void kernel_test_write_totals(Serial_t *serial, const char *selection)
 {
+    if (selection && kernel_test_selected_count == 0u)
+        serial_write_string(serial, "# " KERNEL_TEST_SELECTION_OPTION " selected no test\n");
     serial_write_string(serial, "# Totals: pass:");
     serial_write_unsigned(serial, kernel_test_passed_count);
     serial_write_string(serial, " fail:");
@@ -347,7 +385,7 @@ void kernel_test_skip(KernelTest_t *test, const char *reason) { test->skip_reaso
 void kernel_test_measure(KernelTest_t *test, const char *key, uint32_t value)
 {
     kernel_test_write_test_prefix(test);
-    serial_write_char(test->serial, ' ');
+    serial_write_string(test->serial, ": ");
     serial_write_string(test->serial, key);
     serial_write_char(test->serial, '=');
     serial_write_unsigned(test->serial, value);
@@ -357,7 +395,7 @@ void kernel_test_measure(KernelTest_t *test, const char *key, uint32_t value)
 void kernel_test_measure_hexadecimal(KernelTest_t *test, const char *key, uint32_t value)
 {
     kernel_test_write_test_prefix(test);
-    serial_write_char(test->serial, ' ');
+    serial_write_string(test->serial, ": ");
     serial_write_string(test->serial, key);
     serial_write_char(test->serial, '=');
     serial_write_hex32(test->serial, value);
@@ -386,5 +424,5 @@ void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial)
         test_case = kernel_test_run_suite(test_case, selection, serial);
 
     if (stage == KERNEL_TEST_STAGE_BOOTED)
-        kernel_test_write_totals(serial);
+        kernel_test_write_totals(serial, selection);
 }

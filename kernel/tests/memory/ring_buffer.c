@@ -3,9 +3,6 @@
 
 KERNEL_TEST_SUITE(ring_buffer, KERNEL_TEST_STAGE_INITIALIZATION);
 
-/** Most values the order test pushes; the boot's ring is smaller. */
-#define RING_TEST_MAXIMUM_VALUES 256u
-
 /**
  * @brief Enqueues @p count consecutive values starting at @p first.
  *
@@ -52,9 +49,6 @@ KERNEL_TEST(first_in_first_out_across_the_wrap)
     const uint32_t refused_enqueues_before = kernel_ring_buffer_get_failed_enqueue_count();
     const uint32_t refused_dequeues_before = kernel_ring_buffer_get_failed_dequeue_count();
     uint32_t marker = 0xDEADBEEFu;
-
-    if (!kernel_test_check(test, capacity <= RING_TEST_MAXIMUM_VALUES, "the ring is no larger than the test expects"))
-        return;
 
     kernel_test_check(test, kernel_ring_buffer_get_mode() == KERNEL_RING_BUFFER_MODE_SPSC,
                       "the boot's ring has one producer and one consumer");

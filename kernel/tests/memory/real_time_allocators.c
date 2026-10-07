@@ -12,12 +12,20 @@ KERNEL_TEST_SUITE(real_time_allocators, KERNEL_TEST_STAGE_INITIALIZATION);
 /**
  * @brief The worst case of every frame-arena and pool operation has been measured.
  *
- * @details The bound is reported, not asserted: under emulation a single preempted operation
- *          exceeds it. What is asserted is that the measurement exists, since a worst case that
- *          reads zero after the earlier suites allocated is an instrument that records nothing.
+ * @details The test runs each operation once first, so it does not depend on another test. The
+ *          bound is reported, not checked: under emulation a single preempted operation exceeds it.
  */
 KERNEL_TEST(worst_cases_are_measured)
 {
+    if (!kernel_test_check(test, kernel_frame_arena_is_initialized() && kernel_pool_allocator_is_initialized(),
+                           "the frame arena and the pool are initialised"))
+        return;
+
+    kernel_frame_arena_reset();
+    (void) kernel_frame_arena_alloc(64u, 8u);
+    kernel_frame_arena_reset();
+    kernel_pool_free(kernel_pool_alloc());
+
     const uint32_t arena_allocation = kernel_frame_arena_get_wcet_alloc_cycles();
     const uint32_t arena_reset = kernel_frame_arena_get_wcet_reset_cycles();
     const uint32_t pool_allocation = kernel_pool_get_wcet_alloc_cycles();

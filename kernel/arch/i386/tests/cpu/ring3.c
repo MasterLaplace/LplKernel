@@ -51,7 +51,17 @@ KERNEL_TEST_MANUAL(system_call_from_user_mode, "enters user mode and halts once 
                         paging_map_page(RING3_TEST_STACK_ADDRESS, stack_page, directory_flags, table_flags);
 
     if (!kernel_test_check(test, mapped, "a user code page and a user stack page can be mapped"))
+    {
+        if (paging_is_mapped(RING3_TEST_CODE_ADDRESS))
+            paging_unmap_page(RING3_TEST_CODE_ADDRESS);
+        if (paging_is_mapped(RING3_TEST_STACK_ADDRESS))
+            paging_unmap_page(RING3_TEST_STACK_ADDRESS);
+        if (code_page)
+            physical_memory_manager_page_frame_free(code_page);
+        if (stack_page)
+            physical_memory_manager_page_frame_free(stack_page);
         return;
+    }
 
     uint8_t *const user_code = (uint8_t *) RING3_TEST_CODE_ADDRESS;
 

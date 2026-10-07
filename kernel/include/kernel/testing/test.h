@@ -29,13 +29,13 @@
  * @endcode
  *
  * - Registration: the declaration puts a pointer in the `.kernel_tests` section; no list names a
- *   test. Every `.c` under `kernel/tests/` and `kernel/arch/<arch>/tests/` is built into debug
- *   images only, which always poison memory.
+ *   test. Every `.c` of a folder of `kernel/tests/` or `kernel/arch/<arch>/tests/` is built into
+ *   debug images only, which always poison memory.
  * - Order: stage, then file, then line, the same on every build path.
  * - Report: KTAP on COM1, one subtest per suite, and each claim that did not hold.
  * - A test that checks nothing fails. kernel_test_skip() says why a test cannot run here.
- * - KERNEL_TEST_MANUAL() tests halt the machine and run only when selected:
- *   `lpl.test=exceptions.breakpoint`. `lpl.test=heap.*` narrows any run.
+ * - KERNEL_TEST_MANUAL() tests halt the machine and run only when named in full:
+ *   `lpl.test=exceptions.breakpoint`. `lpl.test=heap.*` narrows any run to the other tests.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -151,7 +151,8 @@ extern bool kernel_test_check(KernelTest_t *test, bool condition, const char *cl
 /**
  * @brief Reports that the running test cannot run here, and why.
  *
- * @details The caller returns right after. A skipped test is not judged on its checks.
+ * @details The caller returns right after. Checks made before the skip still count: one that
+ *          failed fails the test.
  *
  * @param test   The running test.
  * @param reason Why it cannot run on this machine or with this profile.

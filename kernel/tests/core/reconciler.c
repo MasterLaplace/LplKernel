@@ -15,13 +15,16 @@ KERNEL_TEST_SUITE(reconciler, KERNEL_TEST_STAGE_BOOTED);
 /**
  * @brief Spins, boundedly, until the periodic tick advances.
  *
+ * @details The bound is far above one tick at 100 Hz even on a fast processor, and is only reached
+ *          when the tick has stopped.
+ *
  * @return true when a tick was seen, which means an interrupt can end a sleep.
  */
 static bool reconciler_test_wait_for_a_tick(void)
 {
     const uint32_t ticks_before = interrupt_request_get_tick_count();
 
-    for (uint32_t spin = 0u; spin < 1000000u; ++spin)
+    for (uint32_t spin = 0u; spin < 100000000u; ++spin)
     {
         if (interrupt_request_get_tick_count() != ticks_before)
             return true;

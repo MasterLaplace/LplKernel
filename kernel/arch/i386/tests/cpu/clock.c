@@ -7,14 +7,15 @@ KERNEL_TEST_SUITE(clock, KERNEL_TEST_STAGE_INITIALIZATION);
 /**
  * @brief The periodic tick has a rate and advances while the processor spins.
  *
- * @details Bounded: a tick that never comes fails the test instead of hanging the boot.
+ * @details Bounded far above one tick at 100 Hz even on a fast processor: a tick that never comes
+ *          fails the test instead of hanging the boot.
  */
 KERNEL_TEST(periodic_tick_advances)
 {
     const uint32_t ticks_before = clock_get_tick_count();
     bool advanced = false;
 
-    for (uint32_t spin = 0u; spin < 1000000u && !advanced; ++spin)
+    for (uint32_t spin = 0u; spin < 100000000u && !advanced; ++spin)
         advanced = (clock_get_tick_count() != ticks_before);
 
     kernel_test_check(test, clock_get_tick_hz() != 0u, "the tick has a rate");

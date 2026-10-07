@@ -182,6 +182,7 @@ KERNEL_TEST(empty_domain_takes_from_its_neighbour)
         return;
     }
 
+    const uint32_t first_domain_remote_hits_before = kernel_heap_get_server_domain_remote_hit_count(0u);
     const bool forced_to_first = cpu_topology_debug_force_logical_slot(0u);
     void *const seed = kmalloc(64u);
 
@@ -210,6 +211,8 @@ KERNEL_TEST(empty_domain_takes_from_its_neighbour)
                       "by the block the first domain freed");
     kernel_test_check(test, cpu_topology_is_forced() == 0u && kernel_heap_get_server_active_domain() == 0u,
                       "the running processor is back on the first domain");
+    kernel_test_check(test, kernel_heap_get_server_domain_remote_hit_count(0u) == first_domain_remote_hits_before,
+                      "the first domain took nothing from another meanwhile");
 #endif
 }
 

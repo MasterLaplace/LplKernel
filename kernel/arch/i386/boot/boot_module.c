@@ -2,9 +2,10 @@
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
 
-/** @brief Multiboot flag bit indicating the module list is present. */
+/** @brief Multiboot flag bit indicating the command line is present. */
 #define MULTIBOOT_FLAG_COMMAND_LINE (1u << 2)
-#define MULTIBOOT_FLAG_MODULES      (1u << 3)
+/** @brief Multiboot flag bit indicating the module list is present. */
+#define MULTIBOOT_FLAG_MODULES (1u << 3)
 
 extern MultibootInfo_t *multiboot_info;
 

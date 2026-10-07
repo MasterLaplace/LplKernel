@@ -609,10 +609,10 @@ target("lpl-kernel")
     add_files("kernel/arch/i386/**.c|tests/**.c")
     add_files("kernel/arch/i386/**.s", "kernel/arch/i386/**.S")
     add_files("kernel/kernel/**.c|testing/test.c")
-    -- The runner and every test: a test is any .c under kernel/tests/ or the
-    -- architecture's tests/, so adding one edits no list here.
+    -- The runner and every test: a test is any .c of a folder of kernel/tests/ or of
+    -- the architecture's tests/, as in the Makefile, so adding one edits no list here.
     if ENABLE_SMOKE then
-        add_files("kernel/kernel/testing/test.c", "kernel/tests/**.c", "kernel/arch/i386/tests/**.c")
+        add_files("kernel/kernel/testing/test.c", "kernel/tests/*/*.c", "kernel/arch/i386/tests/*/*.c")
     end
 
     on_link(function (target)
