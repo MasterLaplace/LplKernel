@@ -44,6 +44,11 @@ for arg in "$@"; do
         --compile-db)
             USE_COMPILEDB=1
             ;;
+        # Configure the profile, install its headers, print what the kernel compiles and with
+        # which flags, and stop before building anything (tools/unbuilt-branches.sh).
+        --print-compile-commands)
+            PRINT_COMPILE_COMMANDS=1
+            ;;
         *)
             case "$arg" in
                 --*)
@@ -59,6 +64,23 @@ for arg in "$@"; do
 done
 
 . ./config.sh
+
+# Runs a command in one project's directory, with the variables its Makefile reads to
+# select the profile.
+project_make() {
+    (
+        cd "$1" && shift &&
+            DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" \
+                APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" \
+                KEYBOARD_LAYOUT="${KEYBOARD_LAYOUT:-us}" "$@"
+    )
+}
+
+if [ "${PRINT_COMPILE_COMMANDS:-0}" -eq 1 ]; then
+    . ./headers.sh >&2
+    project_make kernel $MAKE -s print-compile-commands
+    exit 0
+fi
 
 # Auto-clean when the build mode changes to avoid stale object files.
 LAST_MODE_FILE=".last_build_mode"
@@ -90,11 +112,11 @@ echo "Building with graphics mode: $GRAPHICS_MODE"
 
 for PROJECT in $PROJECTS; do
     if [ "$USE_COMPILEDB" -eq 1 ]; then
-        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" KEYBOARD_LAYOUT="${KEYBOARD_LAYOUT:-us}" compiledb $MAKE -j"$JOBS" install)
+        project_make "$PROJECT" compiledb $MAKE -j"$JOBS" install
         jq --indent 1 'map(.arguments += ["-resource-dir=/nonexistent"])' \
             $PROJECT/compile_commands.json > tmp                          \
             && mv tmp $PROJECT/compile_commands.json
     else
-        (cd "$PROJECT" && DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" KEYBOARD_LAYOUT="${KEYBOARD_LAYOUT:-us}" $MAKE -j"$JOBS" install)
+        project_make "$PROJECT" $MAKE -j"$JOBS" install
     fi
 done

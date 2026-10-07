@@ -250,6 +250,21 @@ clean:
 debug: CFLAGS+=-DDEBUG -g3 -O0
 debug: all
 
+# What this configuration compiles, for tools that preprocess the kernel the way the build does
+# (tools/unbuilt-branches.sh): the compiler, the flags of C and of preprocessed assembly, one
+# source per object, and the objects no source builds (crtbegin.o and crtend.o come from the
+# compiler). The flags are read here, so they cannot drift from the build.
+OBJECT_SOURCES=$(foreach object,$(OBJS),$(firstword $(wildcard $(object:.o=.c) $(object:.o=.S) $(object:.o=.s))))
+OBJECTS_WITHOUT_SOURCE=$(filter-out $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o,\
+    $(foreach object,$(OBJS),$(if $(wildcard $(object:.o=.c) $(object:.o=.S) $(object:.o=.s)),,$(object))))
+.PHONY: print-compile-commands
+print-compile-commands:
+	@echo 'cc: $(CC)'
+	@echo 'c-flags: -std=gnu11 $(CFLAGS) $(CPPFLAGS)'
+	@echo 'asm-flags: $(CFLAGS) $(CPPFLAGS) $(ASFLAGS)'
+	@for source in $(OBJECT_SOURCES); do echo "source: $$source"; done
+	@for object in $(OBJECTS_WITHOUT_SOURCE); do echo "no-source: $$object"; done
+
 install: install-headers install-kernel
 
 install-headers:
