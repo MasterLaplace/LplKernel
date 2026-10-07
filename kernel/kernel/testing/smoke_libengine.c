@@ -3,7 +3,7 @@
 
 #include <kernel/testing/smoke_libengine.h>
 
-#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) && !defined(LPL_PLUGIN_UNAVAILABLE)
 
 #    include <kernel/boot/boot_module.h>
 #    include <kernel/boot/init_array.h>
@@ -1341,4 +1341,4 @@ void smoke_libengine_run_all(Serial_t *com1)
     smoke_libengine_report_p21_relief(com1);
 }
 
-#endif /* LPL_KERNEL_ENABLE_SMOKE_TESTS */
+#endif /* LPL_KERNEL_ENABLE_SMOKE_TESTS && !LPL_PLUGIN_UNAVAILABLE */

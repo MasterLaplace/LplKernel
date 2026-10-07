@@ -51,7 +51,6 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
-#include <kernel/testing/smoke_test.h>
 
 #include <kernel/core/console.h>
 #include <kernel/core/reconciler.h>
@@ -60,8 +59,10 @@
 #include <kernel/diag/sysmon.h>
 #include <kernel/diag/telemetry.h>
 #include <kernel/dialogue/dialogue_channel.h>
-#include <kernel/testing/smoke_batch.h>
 #include <kernel/testing/smoke_libengine.h>
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+#    include <kernel/testing/test.h>
+#endif
 
 #if !defined(LPL_PLUGIN_UNAVAILABLE)
 #    include <libengine/libengine.h>
@@ -132,8 +133,8 @@ static uint8_t kernel_policy_enable_ioapic_keyboard_owner(void)
  *            is incomplete. The only queue where a drop corrupts;
  *          - `kernel_ring`: the general-purpose ring carries whole records, so a refused
  *            enqueue loses one record and leaves the others intact. Its counter is also raised
- *            on purpose by the ring smoke, which is exactly why it must not be counted as
- *            corrupting.
+ *            on purpose by the ring buffer's test, which is exactly why it must not be
+ *            counted as corrupting.
  */
 static void kernel_register_bounded_queues(void)
 {
@@ -188,9 +189,9 @@ static void kernel_protect_read_only_sections(void)
 /**
  * @brief Reports what the live checks saw over the boot.
  *
- * @note Called after the smoke batteries rather than before: by then the periodic tick has
- *       driven reconciler passes of its own, so `passes` exceeding what the smoke drove by
- *       hand is what shows the live check is running and not merely wired.
+ * @note Called after the tests rather than before: by then the periodic tick has driven
+ *       reconciler passes of its own, so `passes` exceeding what the reconciler's test drove
+ *       by hand is what shows the live check is running and not merely wired.
  */
 static void kernel_report_live_checks(void)
 {
@@ -245,7 +246,7 @@ static void kernel_bring_up_virtio_display(void)
  * - Initialize the APIC timer if the policy allows, then print its state.
  * - Start discovered Application Processors (APs) and print their state.
  * - Initialize the IOAPIC keyboard route if the policy allows, then print its state.
- * - Run smoke tests and give control to the user.
+ * - Run the tests of the initialization stage.
  */
 __attribute__((constructor)) void kernel_initialize(void)
 {
@@ -274,6 +275,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     }
 
     write_multiboot_info(&com1, KERNEL_VIRTUAL_BASE, multiboot_info);
+    boot_command_line_capture();
     kernel_splash_update("Parsing Multiboot Structure");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing GDT...\n");
@@ -432,8 +434,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     kernel_splash_update("Symmetric Multiprocessing & Timers");
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
-    smoke_batch_run_initialization_tests(&com1);
-    kernel_splash_update("System Smoke Target Executions");
+    kernel_test_run_stage(KERNEL_TEST_STAGE_INITIALIZATION, &com1);
+    kernel_splash_update("Kernel Tests");
 #endif
 
     peripheral_component_interconnect_scan();
@@ -469,8 +471,10 @@ void kernel_main(void)
     kernel_console_report_surface(&com1);
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
-    smoke_batch_run_post_boot_tests(&com1);
+    kernel_test_run_stage(KERNEL_TEST_STAGE_BOOTED, &com1);
+#    if !defined(LPL_PLUGIN_UNAVAILABLE)
     smoke_libengine_run_all(&com1);
+#    endif
 #endif
 
     kernel_report_live_checks();

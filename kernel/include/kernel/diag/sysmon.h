@@ -37,7 +37,7 @@
  * It samples the kernel telemetry counters each frame, animates the deltas as
  * moving particles (so you literally see data move between subsystems), draws
  * to the linear framebuffer, and loops until a key is pressed. Replaces the old
- * static smoke_test_run_graphics_demo.
+ * static graphics demo the smoke battery used to draw.
  *
  * Pure observability: it reads live, non-authoritative counters and is NOT part
  * of the deterministic engine contract.

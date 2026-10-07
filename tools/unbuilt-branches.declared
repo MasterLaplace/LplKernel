@@ -19,18 +19,17 @@ kernel/include/kernel/drivers/tty.h | #if defined(__linux__) | refuses a host co
 kernel/include/kernel/drivers/tty.h | #elif !defined(__i386__) of #if defined(__linux__) | refuses a compiler for another architecture
 kernel/arch/i386/boot/helpers/multiboot_info_helper.c | #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) | refuses a big-endian target
 kernel/arch/i386/boot/boot.S | #ifndef GRAPHICS_MODE | a default for a build that passes no GRAPHICS_MODE; both build paths pass one
+kernel/include/kernel/testing/test.h | #if !defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) || !defined(LPL_KERNEL_DEBUG_POISON) | refuses to compile a test outside a debug build; both build paths compile tests only there
 
 # Code compiled by C++ elsewhere: the kernel itself is C.
 kernel/include/kernel/* | #ifdef __cplusplus | the extern "C" wrapper, compiled by the C++ of libengine, libassistant and libknowledge that includes the header
 kernel/include/kernel/config.h | * | a copy of the shared template (MasterLaplace/.github, templates/config.h), held identical to it by check-config-header.sh: other compilers and systems, and the requirements block the libraries' C++ identity units compile
 
 # Options off by default, built by a profile the gate does not build.
-kernel/kernel/testing/smoke_test.c | #if KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL | the ring-3 smoke, off by default (#411)
 kernel/arch/i386/drivers/keyboard.c | #if defined(LPL_KERNEL_KEYBOARD_LAYOUT_AZERTY) | the AZERTY layout, built by build.sh --azerty
 kernel/include/kernel/core/console.h | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/core/console.c | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/core/console.c | #if !defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
-kernel/kernel/testing/smoke_test.c | #else of #ifdef LPL_KERNEL_DEBUG_POISON | the poison smokes without the poisoning, compiled only by a release build, which never runs the battery
 
 # Planned and never written.
 kernel/arch/i386/boot/boot2.o | no source | MULTIBOOT_VERSION=2 links a Multiboot 2 entry that was never written
