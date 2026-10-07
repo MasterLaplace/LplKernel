@@ -54,13 +54,17 @@ fi
 # keeps the fallback buildable on a C-only cross toolchain -- build_lplkernel.yml
 # builds gcc 10 with `all-gcc all-target-libgcc` and NO libstdc++, so <cstddef>
 # and friends do not exist there. Requiring C++ on that path would break it.
-if [ -n "${LPLPLUGIN_ROOT:-}" ] && [ -d "${LPLPLUGIN_ROOT}/core/include" ]; then
+#
+# A profile that carries no engine (build.sh --satellite) exports ENABLE_LIBENGINE=0
+# before this runs, and that choice stands even when LplPlugin is right there.
+if [ "${ENABLE_LIBENGINE:-}" != 0 ] && [ -n "${LPLPLUGIN_ROOT:-}" ] && [ -d "${LPLPLUGIN_ROOT}/core/include" ]; then
     export ENABLE_LIBENGINE=1
 else
+    [ "${ENABLE_LIBENGINE:-}" = 0 ] ||
+        echo "[config] LplPlugin not found -> building a plain kernel (ENABLE_LIBENGINE=0)"
     export ENABLE_LIBENGINE=0
     SYSTEM_HEADER_PROJECTS="libc kernel"
     PROJECTS="libc kernel"
-    echo "[config] LplPlugin not found -> building a plain kernel (ENABLE_LIBENGINE=0)"
 fi
 
 # Root of the LplAssistant source tree (the forward pass). A sibling checkout, like the
@@ -84,7 +88,8 @@ if [ "$ENABLE_LIBENGINE" = "1" ] && [ -n "${LPLASSISTANT_ROOT:-}" ] &&
     PROJECTS="libc libkxx libengine libassistant kernel"
 else
     export ENABLE_LIBASSISTANT=0
-    echo "[config] LplAssistant not found -> building without a mind (ENABLE_LIBASSISTANT=0)"
+    [ "$ENABLE_LIBENGINE" = "1" ] && config_reason="LplAssistant not found" || config_reason="no engine to build it on"
+    echo "[config] $config_reason -> building without a mind (ENABLE_LIBASSISTANT=0)"
 fi
 
 # Root of the LplKnowledge source tree (the memory). A sibling checkout, like the engine
@@ -114,7 +119,8 @@ if [ "$ENABLE_LIBENGINE" = "1" ] && [ -n "${LPLKNOWLEDGE_ROOT:-}" ] &&
     fi
 else
     export ENABLE_LIBKNOWLEDGE=0
-    echo "[config] LplKnowledge not found -> building without a memory (ENABLE_LIBKNOWLEDGE=0)"
+    [ "$ENABLE_LIBENGINE" = "1" ] && config_reason="LplKnowledge not found" || config_reason="no engine to build it on"
+    echo "[config] $config_reason -> building without a memory (ENABLE_LIBKNOWLEDGE=0)"
 fi
 
 export PREFIX=/usr
