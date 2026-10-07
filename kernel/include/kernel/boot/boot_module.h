@@ -37,6 +37,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** Bytes kept of the kernel's command line, its terminating NUL included. */
 #define BOOT_COMMAND_LINE_CAPACITY 256u
 
@@ -79,5 +83,9 @@ void boot_command_line_capture(void);
  * @return The NUL-terminated text, or NULL when the bootloader passed none.
  */
 const char *boot_command_line(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* BOOT_MODULE_H_ */

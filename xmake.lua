@@ -33,7 +33,7 @@ if not LPLPLUGIN_ROOT or LPLPLUGIN_ROOT == "" then
 end
 
 -- Optional engine module: if the LplPlugin source tree is not present, the
--- kernel still builds standalone (no libengine, smoke battery stubbed out). This
+-- kernel still builds standalone (no libengine and no engine test). This
 -- is the "no xmake/LplPlugin → fallback to a plain kernel" path.
 local LPLPLUGIN_AVAILABLE = os.isdir(path.join(LPLPLUGIN_ROOT, "core/include"))
 
@@ -83,11 +83,11 @@ toolchain("i686elf")
     end)
 toolchain_end()
 
--- Build modes: `xmake f -m debug` (default, ships the smoke battery) or
--- `xmake f -m release` (production image, smoke battery compiled out). The
+-- Build modes: `xmake f -m debug` (default, ships the tests) or
+-- `xmake f -m release` (production image, tests compiled out). The
 -- optimize/symbols level is pinned below to -O2 -g in BOTH modes so the
 -- bit-identical determinism signatures never depend on the mode; the mode only
--- toggles whether the diagnostic smoke battery is built in.
+-- toggles whether the tests are built in.
 add_rules("mode.debug", "mode.release")
 
 set_toolchains("i686elf")
@@ -122,7 +122,7 @@ option_end()
 option("smoke")
     set_default(true)
     set_showmenu(true)
-    set_description("Compile the kernel tests and the engine battery into the image")
+    set_description("Compile the kernel's and the engine's tests into the image")
 option_end()
 
 option("console")
@@ -134,14 +134,14 @@ option_end()
 local GRAPHICS_MODE = has_config("graphics") and 1 or 0
 -- The tests are built when requested and never in release mode (a production image):
 -- `--smoke=n` or `-m release` compiles them out. The kernel's own tests call nothing in
--- the engine and run without it; the engine's battery is added only when the engine is
+-- the engine and run without it; the engine's tests are added only when the engine is
 -- linked in. The memory poisoning comes with the tests: they check it, and only a build
 -- that poisons can fail those checks.
 local ENABLE_SMOKE = has_config("smoke") and not is_mode("release")
 
 -- The interactive console is a development surface: it reads the keyboard and
 -- runs commands, which is precisely what an immutable, API-only node is defined
--- by not having. It follows the same rule as the smoke battery — present while
+-- by not having. It follows the same rule as the tests — present while
 -- developing, absent from a production image — with one difference that matters:
 -- it can be kept without the tests. When LplPlugin is missing and the tests are off,
 -- the console is the only thing the kernel has left to run.
@@ -242,10 +242,130 @@ rule("laplace.identity")
     end)
 rule_end()
 
-target("libengine")
-    set_kind("static")
-    add_rules("laplace.identity")
-    set_basename("engine")
+-- The LplPlugin modules the kernel compiles against: their headers, and their engine tests, as
+-- ENGINE_MODULES in libengine/Makefile. net/ is here for the header-only lpl/net/Endpoint.hpp
+-- alone, which EventQueue.hpp needs.
+local kEngineModules = {
+    "core", "testing", "math", "memory", "container", "ecs", "concurrency", "physics", "platform", "input", "net",
+    "gpu", "image", "scene", "render", "engine", "procgen", "codec", "rosetta", "history", "ai", "ecology", "pack",
+    "samples"
+}
+
+-- Engine sources (single source of truth), mirroring ARCH_ENGINE_SRCS, relative to LPLPLUGIN_ROOT.
+local kEngineSources = {
+    "core/src/Log.cpp",
+    "math/src/Cordic.cpp",
+    "math/src/StateHash.cpp",
+    "math/src/Statistics.cpp",
+    "math/src/Simd.cpp",
+    "memory/src/ArenaAllocator.cpp",
+    "ecs/src/ComponentReflection.cpp",
+    "ecs/src/Partition.cpp",
+    "ecs/src/Registry.cpp",
+    "ecs/src/SystemScheduler.cpp",
+    "ecs/src/WorldPartition.cpp",
+    "physics/src/CollisionDetector.cpp",
+    "physics/src/CollisionSolver.cpp",
+    "physics/src/SleepingPolicy.cpp",
+    "physics/src/AntiTunneling.cpp",
+    "physics/src/Octree.cpp",
+    "physics/src/CpuPhysicsBackend.cpp",
+    -- procgen/: authoritative Fixed32 world generation (see the rationale in
+    -- libengine/arch/i386/make.config). Kept in lock-step with that list.
+    "math/src/Geo.cpp",
+    "procgen/src/Heightfield.cpp",
+    "procgen/src/Erosion.cpp",
+    "procgen/src/Hydrology.cpp",
+    "procgen/src/Biome.cpp",
+    "procgen/src/WaveFunctionCollapse.cpp",
+    "procgen/src/Dungeon.cpp",
+    "procgen/src/WorldBuilder.cpp",
+    "procgen/src/Voronoi.cpp",
+    "procgen/src/Aggregation.cpp",
+    "procgen/src/LSystem.cpp",
+    "procgen/src/Settlement.cpp",
+    "procgen/src/Extrusion.cpp",
+    "procgen/src/Botany.cpp",
+    "codec/src/GaloisField.cpp",
+    "codec/src/XorKernel.cpp",
+    "codec/src/BitMatrix.cpp",
+    "codec/src/GaussJordan.cpp",
+    "codec/src/FourRussians.cpp",
+    "codec/src/Prng.cpp",
+    "codec/src/Fountain.cpp",
+    "codec/src/Peeling.cpp",
+    "codec/src/Erasure.cpp",
+    "codec/src/ReedSolomon.cpp",
+    "codec/src/Parity.cpp",
+    "rosetta/src/MinimalIsa.cpp",
+    "rosetta/src/Interpreter.cpp",
+    "rosetta/src/SelfDescribing.cpp",
+    "rosetta/src/Bootstrap.cpp",
+    "rosetta/src/Engraving.cpp",
+    "rosetta/src/Parity.cpp",
+    "history/src/Fact.cpp",
+    "engine/src/systems/GroundStep.cpp",
+    "engine/src/systems/TerrainRoutes.cpp",
+    "engine/src/systems/Journey.cpp",
+    "engine/src/systems/JourneyParity.cpp",
+    "history/src/Timeline.cpp",
+    "history/src/PossibleWorld.cpp",
+    "history/src/Chronicle.cpp",
+    "history/src/Divergence.cpp",
+    "history/src/HistorySystem.cpp",
+    "history/src/Parity.cpp",
+    "procgen/src/Chunking.cpp",
+    "procgen/src/QualityGate.cpp",
+    "procgen/src/Routing.cpp",
+    "procgen/src/WorldRecipe.cpp",
+    "procgen/src/Climate.cpp",
+    "procgen/src/ShapeGrammar.cpp",
+    "procgen/src/Liminal.cpp",
+    "procgen/src/CaveSystem.cpp",
+    "procgen/src/HiGen.cpp",
+    "procgen/src/Streaming.cpp",
+    "procgen/src/Landmark.cpp",
+    "procgen/src/CaveWarren.cpp",
+
+    -- ai/: authoritative agent behaviour. A creature deciding where to go
+    -- moves an entity, so it is simulation state like any other.
+    "ai/src/StigmergyField.cpp",
+    "ai/src/AiMap.cpp",
+    "ai/src/AbstractWorld.cpp",
+    "ai/src/Swarm.cpp",
+    "ai/src/Social.cpp",
+    "ai/src/SpringBody.cpp",
+
+    -- ecology/: populations over time. Slower tick, same contract.
+    "ecology/src/Populations.cpp",
+    "ecology/src/Genome.cpp",
+    "ecology/src/Society.cpp",
+    "ecology/src/LivingRecipe.cpp",
+    -- pack/: the freestanding reader for baked game packages (.lplpak).
+    "pack/src/GamePack.cpp",
+    "pack/src/EccSection.cpp",
+    "platform/src/kernel/KernelPlatform.cpp",
+    "input/src/InputManager.cpp",
+    "image/src/Image.cpp",
+    "image/src/Painter.cpp",
+    "image/src/Codec.cpp",
+    "scene/src/Scene.cpp",
+    "render/src/Camera.cpp",
+    "render/src/kernel/KernelDisplayRenderer.cpp",
+    "engine/src/Config.cpp",
+    "engine/src/GameLoop.cpp",
+    "engine/src/systems/MovementSystem.cpp",
+    "engine/src/systems/CreatureSystems.cpp",
+    "engine/src/systems/HeightfieldCollisionSystem.cpp",
+    "engine/src/systems/PhysicsSystem.cpp",
+    "engine/src/CaveParity.cpp",
+    "engine/src/ReliefParity.cpp",
+    "engine/src/Engine.cpp"
+}
+
+-- The flags and include paths of everything compiled from LplPlugin into the kernel: the engine,
+-- and the engine's tests.
+local function add_engine_settings()
     add_cxxflags(
         "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
         "-Wall", "-Wextra",
@@ -258,150 +378,48 @@ target("libengine")
         "libkxx/include",          -- <kstd/vector.hpp> etc. (via lpl/std/*)
         "libc/include"             -- freestanding <stdint.h> etc.
     )
-    add_includedirs(
-        "libengine/include",
-        path.join(LPLPLUGIN_ROOT, "core/include"),
-        path.join(LPLPLUGIN_ROOT, "math/include"),
-        path.join(LPLPLUGIN_ROOT, "memory/include"),
-        path.join(LPLPLUGIN_ROOT, "container/include"),
-        path.join(LPLPLUGIN_ROOT, "ecs/include"),
-        path.join(LPLPLUGIN_ROOT, "concurrency/include"),
-        path.join(LPLPLUGIN_ROOT, "physics/include"),
-        path.join(LPLPLUGIN_ROOT, "platform/include"),
-        path.join(LPLPLUGIN_ROOT, "input/include"),
-        -- net/ is not compiled here (LPL_HAS_NET is left undefined); this is only
-        -- for the header-only lpl/net/Endpoint.hpp that EventQueue.hpp needs.
-        path.join(LPLPLUGIN_ROOT, "net/include"),
-        path.join(LPLPLUGIN_ROOT, "gpu/include"),
-        path.join(LPLPLUGIN_ROOT, "image/include"),
-        path.join(LPLPLUGIN_ROOT, "scene/include"),
-        path.join(LPLPLUGIN_ROOT, "render/include"),
-        path.join(LPLPLUGIN_ROOT, "engine/include"),
-        path.join(LPLPLUGIN_ROOT, "procgen/include"),
-        path.join(LPLPLUGIN_ROOT, "codec/include"),
-        path.join(LPLPLUGIN_ROOT, "rosetta/include"),
-        path.join(LPLPLUGIN_ROOT, "history/include"),
-        path.join(LPLPLUGIN_ROOT, "ai/include"),
-        path.join(LPLPLUGIN_ROOT, "ecology/include"),
-        path.join(LPLPLUGIN_ROOT, "pack/include"),
-        path.join(LPLPLUGIN_ROOT, "samples/include")
-    )
-    -- Engine sources (single source of truth), mirroring ARCH_ENGINE_SRCS.
-    add_files(
-        path.join(LPLPLUGIN_ROOT, "core/src/Log.cpp"),
-        path.join(LPLPLUGIN_ROOT, "math/src/Cordic.cpp"),
-        path.join(LPLPLUGIN_ROOT, "math/src/StateHash.cpp"),
-        path.join(LPLPLUGIN_ROOT, "math/src/Statistics.cpp"),
-        path.join(LPLPLUGIN_ROOT, "math/src/Simd.cpp"),
-        path.join(LPLPLUGIN_ROOT, "memory/src/ArenaAllocator.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecs/src/ComponentReflection.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecs/src/Partition.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecs/src/Registry.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecs/src/SystemScheduler.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecs/src/WorldPartition.cpp"),
-        path.join(LPLPLUGIN_ROOT, "physics/src/CollisionDetector.cpp"),
-        path.join(LPLPLUGIN_ROOT, "physics/src/CollisionSolver.cpp"),
-        path.join(LPLPLUGIN_ROOT, "physics/src/SleepingPolicy.cpp"),
-        path.join(LPLPLUGIN_ROOT, "physics/src/AntiTunneling.cpp"),
-        path.join(LPLPLUGIN_ROOT, "physics/src/Octree.cpp"),
-        path.join(LPLPLUGIN_ROOT, "physics/src/CpuPhysicsBackend.cpp"),
-        -- procgen/: authoritative Fixed32 world generation (see the rationale in
-        -- libengine/arch/i386/make.config). Kept in lock-step with that list.
-        path.join(LPLPLUGIN_ROOT, "math/src/Geo.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Heightfield.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Erosion.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Hydrology.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Biome.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/WaveFunctionCollapse.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Dungeon.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/WorldBuilder.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Voronoi.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Aggregation.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/LSystem.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Settlement.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Extrusion.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Botany.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/GaloisField.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/XorKernel.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/BitMatrix.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/GaussJordan.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/FourRussians.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/Prng.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/Fountain.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/Peeling.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/Erasure.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/ReedSolomon.cpp"),
-        path.join(LPLPLUGIN_ROOT, "codec/src/Parity.cpp"),
-        path.join(LPLPLUGIN_ROOT, "rosetta/src/MinimalIsa.cpp"),
-        path.join(LPLPLUGIN_ROOT, "rosetta/src/Interpreter.cpp"),
-        path.join(LPLPLUGIN_ROOT, "rosetta/src/SelfDescribing.cpp"),
-        path.join(LPLPLUGIN_ROOT, "rosetta/src/Bootstrap.cpp"),
-        path.join(LPLPLUGIN_ROOT, "rosetta/src/Engraving.cpp"),
-        path.join(LPLPLUGIN_ROOT, "rosetta/src/Parity.cpp"),
-        path.join(LPLPLUGIN_ROOT, "history/src/Fact.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/GroundStep.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/TerrainRoutes.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/Journey.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/JourneyParity.cpp"),
-        path.join(LPLPLUGIN_ROOT, "history/src/Timeline.cpp"),
-        path.join(LPLPLUGIN_ROOT, "history/src/PossibleWorld.cpp"),
-        path.join(LPLPLUGIN_ROOT, "history/src/Chronicle.cpp"),
-        path.join(LPLPLUGIN_ROOT, "history/src/Divergence.cpp"),
-        path.join(LPLPLUGIN_ROOT, "history/src/HistorySystem.cpp"),
-        path.join(LPLPLUGIN_ROOT, "history/src/Parity.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Chunking.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/QualityGate.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Routing.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/WorldRecipe.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Climate.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/ShapeGrammar.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Liminal.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/CaveSystem.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/HiGen.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Streaming.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/Landmark.cpp"),
-        path.join(LPLPLUGIN_ROOT, "procgen/src/CaveWarren.cpp"),
+    add_includedirs("libengine/include")
+    for _, module in ipairs(kEngineModules) do
+        add_includedirs(path.join(LPLPLUGIN_ROOT, module, "include"))
+    end
+end
 
-        -- ai/: authoritative agent behaviour. A creature deciding where to go
-        -- moves an entity, so it is simulation state like any other.
-        path.join(LPLPLUGIN_ROOT, "ai/src/StigmergyField.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ai/src/AiMap.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ai/src/AbstractWorld.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ai/src/Swarm.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ai/src/Social.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ai/src/SpringBody.cpp"),
-
-        -- ecology/: populations over time. Slower tick, same contract.
-        path.join(LPLPLUGIN_ROOT, "ecology/src/Populations.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecology/src/Genome.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecology/src/Society.cpp"),
-        path.join(LPLPLUGIN_ROOT, "ecology/src/LivingRecipe.cpp"),
-        -- pack/: the freestanding reader for baked game packages (.lplpak).
-        path.join(LPLPLUGIN_ROOT, "pack/src/GamePack.cpp"),
-        path.join(LPLPLUGIN_ROOT, "pack/src/EccSection.cpp"),
-        path.join(LPLPLUGIN_ROOT, "platform/src/kernel/KernelPlatform.cpp"),
-        path.join(LPLPLUGIN_ROOT, "input/src/InputManager.cpp"),
-        path.join(LPLPLUGIN_ROOT, "image/src/Image.cpp"),
-        path.join(LPLPLUGIN_ROOT, "image/src/Painter.cpp"),
-        path.join(LPLPLUGIN_ROOT, "image/src/Codec.cpp"),
-        path.join(LPLPLUGIN_ROOT, "scene/src/Scene.cpp"),
-        path.join(LPLPLUGIN_ROOT, "render/src/Camera.cpp"),
-        path.join(LPLPLUGIN_ROOT, "render/src/kernel/KernelDisplayRenderer.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/Config.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/GameLoop.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/MovementSystem.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/CreatureSystems.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/HeightfieldCollisionSystem.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/systems/PhysicsSystem.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/CaveParity.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/ReliefParity.cpp"),
-        path.join(LPLPLUGIN_ROOT, "engine/src/Engine.cpp")
-    )
-    -- libengine-local: the kernel client entry (client_app.cpp, which constructs
-    -- lpl::engine::Engine) + the P0..P6 and parity-fold smoke/diagnostic entry
-    -- points, kept in their own src/smoke/ subtree.
-    add_files("libengine/src/*.cpp", "libengine/src/smoke/*.cpp")
+target("libengine")
+    set_kind("static")
+    add_rules("laplace.identity")
+    set_basename("engine")
+    add_engine_settings()
+    for _, source in ipairs(kEngineSources) do
+        add_files(path.join(LPLPLUGIN_ROOT, source))
+    end
+    -- libengine-local: the kernel's entries into the engine (client_app.cpp, which constructs
+    -- lpl::engine::Engine, server_app.cpp, identity.cpp). The tests' seam is in libenginetests.
+    add_files("libengine/src/*.cpp|testing.cpp")
 target_end()
+
+-- libenginetests — the engine's tests for debug images: the LPL_TEST of LplPlugin's
+-- tests/<module>/ for every module above, those of tests/<module>/kernel/ for its sources only the
+-- kernel compiles, those of libengine/tests/ for what only this kernel provides, their runner, and
+-- the seam the kernel's runner calls. Linked whole, because nothing names a test.
+if ENABLE_SMOKE then
+target("libenginetests")
+    set_kind("static")
+    set_basename("enginetests")
+    add_engine_settings()
+    add_files(path.join(LPLPLUGIN_ROOT, "testing/src/Runner.cpp"), "libengine/src/testing.cpp")
+    for _, module in ipairs(kEngineModules) do
+        for _, test in ipairs(os.files(path.join(LPLPLUGIN_ROOT, "tests", module, "*.cpp"))) do
+            add_files(test)
+        end
+        for _, test in ipairs(os.files(path.join(LPLPLUGIN_ROOT, "tests", module, "kernel", "*.cpp"))) do
+            add_files(test)
+        end
+    end
+    for _, test in ipairs(os.files("libengine/tests/*.cpp")) do
+        add_files(test)
+    end
+target_end()
+end
 end -- if LPLPLUGIN_AVAILABLE
 
 -- ===========================================================================
@@ -557,8 +575,11 @@ target("lpl-kernel")
     add_deps("libk")
     if LPLPLUGIN_AVAILABLE then
         add_deps("libengine", "libkxx")
+        if ENABLE_SMOKE then
+            add_deps("libenginetests")
+        end
     else
-        -- No engine: the engine battery compiles out; the kernel tests still run.
+        -- No engine: the engine's tests compile out; the kernel's still run.
         add_defines("LPL_PLUGIN_UNAVAILABLE=1")
     end
     if LPLASSISTANT_AVAILABLE then
@@ -635,6 +656,7 @@ target("lpl-kernel")
         local crtbegin = os.iorunv(cc, {"-print-file-name=crtbegin.o"}):trim()
         local crtend = os.iorunv(cc, {"-print-file-name=crtend.o"}):trim()
 
+        local libenginetests = target:dep("libenginetests") and target:dep("libenginetests"):targetfile() or nil
         local libknowledge = target:dep("libknowledge") and target:dep("libknowledge"):targetfile() or nil
         local libassistant = target:dep("libassistant") and target:dep("libassistant"):targetfile() or nil
         local libengine = target:dep("libengine") and target:dep("libengine"):targetfile() or nil
@@ -643,7 +665,7 @@ target("lpl-kernel")
         local out = target:targetfile()
 
         -- $(CC) -T linker.ld -o lpl.kernel <free flags> crti crtbegin OBJS \
-        --       -nostdlib [-lknowledge -lassistant -lengine -lkxx] -lk -lgcc crtend crtn
+        --       -nostdlib [whole -lenginetests] [-lknowledge -lassistant -lengine -lkxx] -lk -lgcc crtend crtn
         -- Link order is libknowledge -> libassistant -> libengine -> libkxx -> libk: the
         -- memory calls `lpl::history` and the mind calls the foundation (Fixed32, CORDIC,
         -- the arena), both of which are in libengine, which calls the C++ runtime
@@ -653,6 +675,7 @@ target("lpl-kernel")
         -- of them are omitted when LplPlugin is unavailable (the kernel is then pure C).
         local argv = {"-T", linker, "-o", out, "-ffreestanding", "-O2", "-g", "-nostdlib", crti, crtbegin}
         table.join2(argv, rest)
+        if libenginetests then table.join2(argv, {"-Wl,--whole-archive", libenginetests, "-Wl,--no-whole-archive"}) end
         if libknowledge then table.insert(argv, libknowledge) end
         if libassistant then table.insert(argv, libassistant) end
         if libengine then table.insert(argv, libengine) end

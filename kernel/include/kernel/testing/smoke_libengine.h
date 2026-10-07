@@ -13,7 +13,7 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file smoke_libengine.h
- * @brief Cross-target smoke battery of the engine, assistant and knowledge gates.
+ * @brief Cross-target smoke battery of the assistant and knowledge gates.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -26,7 +26,7 @@
 #include <kernel/drivers/serial.h>
 
 /**
- * @brief Runs the cross-target smoke battery: every engine, assistant and knowledge gate.
+ * @brief Runs the cross-target smoke battery: every assistant and knowledge gate.
  *
  * Extracted from kernel_main so the boot path stays readable and so the whole
  * battery can be compiled out of a release/production image (it is only invoked

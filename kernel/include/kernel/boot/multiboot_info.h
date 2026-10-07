@@ -142,6 +142,9 @@ typedef struct __attribute__((packed)) {
     uint8_t framebuffer_bpp;     /**< Valid if flags bit 12 is set. */
     uint8_t framebuffer_type;    /**< Valid if flags bit 12 is set. */
 
+    /** GRUB aligns the colour information on four bytes: at offset 112, not the specification's 110. */
+    uint16_t framebuffer_color_info_padding;
+
     union {
         struct __attribute__((packed)) {
             FramebufferPaletteColor_t *framebuffer_palette_addr;
