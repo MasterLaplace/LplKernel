@@ -33,8 +33,8 @@ It binds every line of engine code linked into the kernel, and it is not negotia
 - Authoritative state is Fixed32 (Q16.16) and CORDIC, and it is bit-identical between the Linux
   oracle and the i686 kernel.
 - Floating point is allowed only on paths that are not authoritative, such as rendering, compiled
-  with the flags of `libengine/arch/i386/make.config`, which the host oracle shares. No float result
-  flows back into authoritative state.
+  with the flags of `libengine/arch/i386/make.config`, which the host oracle must share
+  (MasterLaplace/LplPlugin#388). No float result flows back into authoritative state.
 - No libm and no builtin transcendental (`tanf`, `powf`, `expf`, ...) in code linked into the
   kernel: derive from CORDIC and use integer powers. The hardware square root is the only one called
   directly.
