@@ -95,6 +95,10 @@ On top of the shared C and C++ rules:
   under `kernel/arch/i386/`, listed in `kernel/arch/i386/make.config`.
 - A kernel C header that C++ includes wraps its declarations in `extern "C"`. Without it the link
   fails on a mangled `_Z...` name.
+- A switch no gate profile turns on is code nothing compiles. `tools/unbuilt-branches.sh` lists every
+  source, `#if` branch, object and `-D` macro the gate profiles leave out, and fails on one that
+  `tools/unbuilt-branches.declared` does not explain: a new one gets a profile that builds it, or a
+  line there saying why not.
 
 ## Traps that are not checks yet
 

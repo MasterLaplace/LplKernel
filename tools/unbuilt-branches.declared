@@ -1,0 +1,37 @@
+# What the gate does not compile in kernel/, on purpose. tools/unbuilt-branches.sh lists
+# every source, #if branch, object and -D macro the gate profiles leave out, and fails on
+# one this file does not declare, and on a line here that matches nothing any more.
+#
+# One declaration per line: <path> | <key> | <why>
+#   path  a file under kernel/, or a shell pattern (kernel/include/kernel/*)
+#   key   the directive as the tool prints it, `file`, `no source`, `-D<MACRO> read by
+#         no source`, or `*` for every entry of the file
+#   why   the reason, and the issue that would change it
+
+# Other targets: declared ahead of their port, never compiled by an i386 profile.
+kernel/arch/arm/* | file | the ARM start files, kept for a port that does not exist yet
+kernel/include/kernel/arch/targets/* | file | the capabilities of the targets other than i386-pc
+kernel/include/kernel/arch/capabilities.h | * | the other targets, and the guards that refuse an inconsistent declaration
+kernel/kernel/memory/section_protection.c | #if !KERNEL_ARCH_HAS_WRITE_PROTECT_ENFORCEMENT | a target that cannot enforce read-only pages
+
+# Guards: an #error that fires only on a wrong compiler or target, or a default the build always overrides.
+kernel/include/kernel/drivers/tty.h | #if defined(__linux__) | refuses a host compiler
+kernel/include/kernel/drivers/tty.h | #elif !defined(__i386__) of #if defined(__linux__) | refuses a compiler for another architecture
+kernel/arch/i386/boot/helpers/multiboot_info_helper.c | #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) | refuses a big-endian target
+kernel/arch/i386/boot/boot.S | #ifndef GRAPHICS_MODE | a default for a build that passes no GRAPHICS_MODE; both build paths pass one
+
+# Code compiled by C++ elsewhere: the kernel itself is C.
+kernel/include/kernel/* | #ifdef __cplusplus | the extern "C" wrapper, compiled by the C++ of libengine, libassistant and libknowledge that includes the header
+kernel/include/kernel/config.h | * | a copy of the shared template (MasterLaplace/.github, templates/config.h), held identical to it by check-config-header.sh: other compilers and systems, and the requirements block the libraries' C++ identity units compile
+
+# Options off by default, built by a profile the gate does not build.
+kernel/kernel/testing/smoke_test.c | #if KERNEL_SMOKE_TEST_ENABLE_RING3_MINIMAL | the ring-3 smoke, off by default (#411)
+kernel/arch/i386/drivers/keyboard.c | #if defined(LPL_KERNEL_KEYBOARD_LAYOUT_AZERTY) | the AZERTY layout, built by build.sh --azerty
+kernel/include/kernel/core/console.h | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
+kernel/kernel/core/console.c | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
+kernel/kernel/core/console.c | #if !defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
+kernel/kernel/testing/smoke_test.c | #else of #ifdef LPL_KERNEL_DEBUG_POISON | the poison smokes without the poisoning, compiled only by a release build, which never runs the battery
+
+# Planned and never written.
+kernel/arch/i386/boot/boot2.o | no source | MULTIBOOT_VERSION=2 links a Multiboot 2 entry that was never written
+kernel | -DMULTIBOOT_VERSION read by no source | make.config and xmake.lua define it, and boot.S writes the Multiboot 1 header without reading it
