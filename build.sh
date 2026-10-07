@@ -4,7 +4,6 @@ set -e
 JOBS=1
 USE_COMPILEDB=0
 REALTIME_MODE=1          # default: client/realtime build (Free-List PMM)
-APIC_SMOKE_TEST_PERIODIC_MODE=0
 
 for arg in "$@"; do
     case "$arg" in
@@ -71,7 +70,6 @@ project_make() {
     (
         cd "$1" && shift &&
             DESTDIR="$SYSROOT" GRAPHICS_MODE="$GRAPHICS_MODE" REALTIME_MODE="$REALTIME_MODE" \
-                APIC_SMOKE_TEST_PERIODIC_MODE="$APIC_SMOKE_TEST_PERIODIC_MODE" \
                 KEYBOARD_LAYOUT="${KEYBOARD_LAYOUT:-us}" "$@"
     )
 }
@@ -92,7 +90,7 @@ LAST_MODE_FILE=".last_build_mode"
 # does: it flips a compile flag (-DLPL_KERNEL_ENABLE_CONSOLE) that make cannot
 # see, so without it a console-less image keeps the previous console.o and ships
 # the very surface it was built to remove.
-CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} APIC_SMOKE=$APIC_SMOKE_TEST_PERIODIC_MODE KEYBOARD=${KEYBOARD_LAYOUT:-us} ENGINE=${ENABLE_LIBENGINE:-0} SATELLITE=${SATELLITE_MODE:-0} CONSOLE=${KERNEL_CONSOLE:-1}"
+CURRENT_MODE="REALTIME=$REALTIME_MODE GRAPHICS=${GRAPHICS_MODE:-0} KEYBOARD=${KEYBOARD_LAYOUT:-us} ENGINE=${ENABLE_LIBENGINE:-0} SATELLITE=${SATELLITE_MODE:-0} CONSOLE=${KERNEL_CONSOLE:-1}"
 
 if [ -f "$LAST_MODE_FILE" ]; then
     LAST_MODE=$(cat "$LAST_MODE_FILE")

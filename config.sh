@@ -46,8 +46,8 @@ if [ -z "${LPLPLUGIN_ROOT:-}" ]; then
 fi
 
 # The engine module is optional: when the LplPlugin source tree is absent, build
-# a plain kernel (no libengine, smoke battery compiled out) instead of failing.
-# This is the "no xmake / no LplPlugin -> fallback kernel" path.
+# a plain kernel (no libengine and no engine battery; the kernel tests still run)
+# instead of failing. This is the "no xmake / no LplPlugin -> fallback kernel" path.
 #
 # libkxx is dropped along with libengine, not just unlinked: without the engine
 # the kernel is pure C, so the freestanding C++ runtime has no consumer. This

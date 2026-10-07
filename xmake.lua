@@ -112,12 +112,6 @@ option("realtime")
     set_description("Client/realtime build: Free-List PMM (else server/buddy)")
 option_end()
 
-option("apic_smoke")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Enable the APIC periodic-mode smoke test")
-option_end()
-
 option("keyboard")
     set_default("us")
     set_showmenu(true)
@@ -128,7 +122,7 @@ option_end()
 option("smoke")
     set_default(true)
     set_showmenu(true)
-    set_description("Compile the libengine P0..P6 + kernel smoke/diagnostic battery into the image")
+    set_description("Compile the kernel tests and the engine battery into the image")
 option_end()
 
 option("console")
@@ -138,20 +132,19 @@ option("console")
 option_end()
 
 local GRAPHICS_MODE = has_config("graphics") and 1 or 0
--- The smoke battery is built when explicitly requested, never in release mode (a
--- production image), and only when the engine is actually linked in (it calls
--- libengine_* symbols). `--smoke=n`, `-m release`, or a missing LplPlugin each
--- compile it out. The memory poisoning comes with it: the battery checks it, and
--- only a build that poisons can fail those checks.
-local ENABLE_SMOKE = has_config("smoke") and not is_mode("release") and LPLPLUGIN_AVAILABLE
+-- The tests are built when requested and never in release mode (a production image):
+-- `--smoke=n` or `-m release` compiles them out. The kernel's own tests call nothing in
+-- the engine and run without it; the engine's battery is added only when the engine is
+-- linked in. The memory poisoning comes with the tests: they check it, and only a build
+-- that poisons can fail those checks.
+local ENABLE_SMOKE = has_config("smoke") and not is_mode("release")
 
 -- The interactive console is a development surface: it reads the keyboard and
 -- runs commands, which is precisely what an immutable, API-only node is defined
 -- by not having. It follows the same rule as the smoke battery — present while
 -- developing, absent from a production image — with one difference that matters:
--- it does NOT depend on the engine. When LplPlugin is missing the console is the
--- only thing the kernel has left to run, so tying it to ENABLE_SMOKE (which the
--- engine's absence forces off) would leave that build with no payload at all.
+-- it can be kept without the tests. When LplPlugin is missing and the tests are off,
+-- the console is the only thing the kernel has left to run.
 local ENABLE_CONSOLE = has_config("console") and not is_mode("release")
 
 -- ===========================================================================
@@ -565,7 +558,7 @@ target("lpl-kernel")
     if LPLPLUGIN_AVAILABLE then
         add_deps("libengine", "libkxx")
     else
-        -- No engine: stub the smoke facade + skip the smoke battery entirely.
+        -- No engine: the engine battery compiles out; the kernel tests still run.
         add_defines("LPL_PLUGIN_UNAVAILABLE=1")
     end
     if LPLASSISTANT_AVAILABLE then
@@ -602,9 +595,6 @@ target("lpl-kernel")
     if has_config("realtime") then
         add_defines("LPL_KERNEL_REAL_TIME_MODE")
     end
-    if has_config("apic_smoke") then
-        add_defines("KERNEL_SMOKE_TEST_ENABLE_APIC_PERIODIC_MODE=1u")
-    end
     if get_config("keyboard") == "fr" then
         add_defines("LPL_KERNEL_KEYBOARD_LAYOUT_AZERTY")
     end
@@ -616,9 +606,14 @@ target("lpl-kernel")
     -- All i386 + portable kernel sources (crti.s/crtn.s are partitioned out in
     -- the link step below; the ARM crt files are a different arch and excluded
     -- by globbing arch/i386 only).
-    add_files("kernel/arch/i386/**.c")
+    add_files("kernel/arch/i386/**.c|tests/**.c")
     add_files("kernel/arch/i386/**.s", "kernel/arch/i386/**.S")
-    add_files("kernel/kernel/**.c")
+    add_files("kernel/kernel/**.c|testing/test.c")
+    -- The runner and every test: a test is any .c under kernel/tests/ or the
+    -- architecture's tests/, so adding one edits no list here.
+    if ENABLE_SMOKE then
+        add_files("kernel/kernel/testing/test.c", "kernel/tests/**.c", "kernel/arch/i386/tests/**.c")
+    end
 
     on_link(function (target)
         import("core.base.option")

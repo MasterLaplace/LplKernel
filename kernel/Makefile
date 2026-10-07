@@ -23,7 +23,8 @@ LDFLAGS:=$(LDFLAGS)
 # kfree and the halt primitives from libk. Archive members are pulled on demand
 # by the kernel's references (e.g. libengine_p0_smoke). When absent, the kernel
 # is pure C — no C++ runtime is needed, so libkxx is left out entirely — the
-# smoke battery is forced off and LPL_PLUGIN_UNAVAILABLE is set.
+# engine's battery is left out and LPL_PLUGIN_UNAVAILABLE is set. The kernel's own
+# tests still run: they call nothing in the engine.
 #
 # The mind and the memory ride on the same seam one rung higher: -lknowledge and
 # -lassistant come FIRST, because both call into libengine — the mind for the foundation
@@ -61,17 +62,22 @@ ENGINE_ARCHIVE:=$(wildcard $(DESTDIR)/usr/lib/libengine.a)
 else
 LIBS:=$(LIBS) -nostdlib -lk -lgcc
 CPPFLAGS:=$(CPPFLAGS) -DLPL_PLUGIN_UNAVAILABLE=1 -DLPL_ASSISTANT_UNAVAILABLE=1 -DLPL_KNOWLEDGE_UNAVAILABLE=1
-SMOKE_TESTS:=0
 endif
 
-# Smoke/diagnostic battery (libengine P0..P6 + kernel smoke batch). ON by default
-# for the script/Makefile build (debug); it calls libengine_* so it is forced off
-# when the engine is absent. Pass SMOKE_TESTS=0 (or xmake "release") to compile
-# the whole battery out of a production image. The memory poisoning comes with it:
-# the battery checks it, and only a build that poisons can fail those checks.
+# The tests (kernel/testing/test.h) and the engine's battery. ON by default for the
+# script/Makefile build (debug). Pass SMOKE_TESTS=0 (or xmake "release") to compile
+# every test out of a production image. The memory poisoning comes with them: the
+# tests check it, and only a build that poisons can fail those checks.
+#
+# A test is any .c under tests/ or $(ARCHDIR)/tests/, so adding one edits no list.
+# Sorted, because the order of $(wildcard) depends on the version of make; the
+# runner orders the tests itself, but the link should not change with the host.
 SMOKE_TESTS?=1
+KERNEL_TEST_OBJS:=
 ifeq ($(SMOKE_TESTS),1)
 CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_SMOKE_TESTS -DLPL_KERNEL_DEBUG_POISON
+KERNEL_TEST_OBJS:=kernel/testing/test.o \
+    $(patsubst %.c,%.o,$(sort $(wildcard tests/*/*.c arch/$(HOSTARCH)/tests/*/*.c)))
 endif
 
 # What the image says about itself at boot: the profile and the mode it was built for, and
@@ -101,9 +107,9 @@ kernel/core/identity.o: CPPFLAGS+=-DKERNEL_BUILD='"$(KERNEL_BUILD)"' -DKERNEL_CO
 # boots of the same image. ON for the script/Makefile build, compiled out by
 # `xmake -m release`.
 #
-# Deliberately NOT tied to SMOKE_TESTS, unlike everything else diagnostic here:
-# the engine's absence forces the smoke battery off, and in exactly that build
-# the console is the only payload the kernel has left.
+# Deliberately NOT tied to SMOKE_TESTS, unlike everything else diagnostic here: a
+# release image without the engine has no test and no world, and the console is the
+# only payload it has left.
 KERNEL_CONSOLE?=1
 ifeq ($(KERNEL_CONSOLE),1)
 CPPFLAGS:=$(CPPFLAGS) -DLPL_KERNEL_ENABLE_CONSOLE
@@ -149,7 +155,6 @@ kernel/power/tickless.o \
 kernel/power/frequency_scaling.o \
 kernel/power/wakeup_accounting.o \
 kernel/satellite/satellite_app.o \
-kernel/testing/smoke_batch.o \
 kernel/testing/smoke_libengine.o \
 kernel/diag/sysmon.o \
 kernel/diag/telemetry.o \
@@ -158,7 +163,7 @@ kernel/memory/helpers/pmm_helper.o \
 kernel/memory/helpers/heap_helper.o \
 kernel/memory/helpers/core_allocators_helper.o \
 kernel/memory/helpers/section_protection_helper.o \
-kernel/testing/smoke_test.o \
+$(KERNEL_TEST_OBJS) \
 
 OBJS=\
 $(ARCHDIR)/boot/crti.o \
@@ -243,8 +248,8 @@ $(ARCHDIR)/crtbegin.o $(ARCHDIR)/crtend.o:
 
 clean:
 	rm -f lpl.kernel
-	rm -f $(OBJS) *.o */*.o */*/*.o
-	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d
+	rm -f $(OBJS) *.o */*.o */*/*.o */*/*/*.o
+	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d */*/*/*.d
 	rm -f $(IDENTITY_STAMP) $(FLAGS_STAMP)
 
 debug: CFLAGS+=-DDEBUG -g3 -O0

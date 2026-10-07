@@ -106,6 +106,20 @@ SECTIONS
         *(.eh_frame)
     }
 
+    /**
+     * One pointer per kernel test, placed here by KERNEL_TEST() (kernel/testing/test.h) and
+     * walked by the runner between `_kernel_tests_start` and `_kernel_tests_end`. KEEP, because
+     * nothing references an entry by name: without it the linker would be free to drop them all
+     * and the runner would report zero tests, which reads like a passing run. Empty in a release
+     * image, which compiles no test.
+     */
+    .kernel_tests ALIGN(4K) : AT (ADDR (.kernel_tests) - global_kernel_start)
+    {
+        PROVIDE_HIDDEN(_kernel_tests_start = .);
+        KEEP(*(.kernel_tests))
+        PROVIDE_HIDDEN(_kernel_tests_end = .);
+    }
+
     .init_array ALIGN(4K) : AT (ADDR (.init_array) - global_kernel_start)
     {
         PROVIDE_HIDDEN(__init_array_start = .);
