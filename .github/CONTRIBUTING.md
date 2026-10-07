@@ -97,9 +97,9 @@ On top of the shared C and C++ rules:
   fails on a mangled `_Z...` name.
 - A kernel test is a `KERNEL_TEST(name)` in `kernel/tests/<area>/`, or `kernel/arch/<arch>/tests/<area>/`
   for architecture code, under one `KERNEL_TEST_SUITE` per file: no list to update. It checks its own
-  claims with `kernel_test_check`. A test that halts the machine is `KERNEL_TEST_MANUAL` and runs only
-  when the boot command line names it (`lpl.test=exceptions.breakpoint`). See
-  `kernel/include/kernel/testing/test.h`.
+  claims with `kernel_test_check` and reports in KTAP, measures included. A test that halts the machine
+  is `KERNEL_TEST_MANUAL` and runs only when the boot command line names it in full:
+  `qemu-system-i386 -kernel kernel/lpl.kernel -append lpl.test=exceptions.breakpoint`.
 - A switch no gate profile turns on is code nothing compiles. `tools/unbuilt-branches.sh` lists every
   source, `#if` branch, object and `-D` macro the gate profiles leave out, and fails on one that
   `tools/unbuilt-branches.declared` does not explain: a new one gets a profile that builds it, or a
