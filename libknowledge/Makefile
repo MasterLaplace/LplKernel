@@ -111,11 +111,23 @@ LPLKNOWLEDGE_COMMIT:=$(shell git -C $(LPLKNOWLEDGE_ROOT) rev-parse --short=7 HEA
 IDENTITY_STAMP:=obj/local/identity.stamp
 $(shell mkdir -p obj/local; echo '$(LPLKNOWLEDGE_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(LPLKNOWLEDGE_COMMIT)' > $(IDENTITY_STAMP))
 obj/local/identity.o: $(IDENTITY_STAMP)
-obj/local/identity.o: CPPFLAGS+=-DLPLKNOWLEDGE_COMMIT='"$(LPLKNOWLEDGE_COMMIT)"'
+obj/local/identity.o: private CPPFLAGS+=-DLPLKNOWLEDGE_COMMIT='"$(LPLKNOWLEDGE_COMMIT)"'
 
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+
+# make sees the sources an object is built from, not the flags it is built with: each object
+# depends on a stamp of the flags, rewritten only when they change, as in the kernel. A rule
+# writes it, not the parse: headers.sh runs make without the profile's variables.
+FLAGS_STAMP:=obj/local/flags.stamp
+$(FLAGS_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(CXXFLAGS) $(CPPFLAGS)' | cmp -s - $@ || echo '$(CXXFLAGS) $(CPPFLAGS)' > $@
+$(OBJS) $(KNOWLEDGE_TEST_OBJS): $(FLAGS_STAMP)
+
+.PHONY: FORCE
+FORCE:
 
 clean:
 	rm -f $(BINARIES) *.a
