@@ -41,6 +41,17 @@ static volatile uint32_t keyboard_scancode_ring_head = 0u;
 static volatile uint32_t keyboard_scancode_ring_tail = 0u;
 static uint32_t keyboard_scancode_drop_count = 0u; /**< producer-only counter */
 
+/**
+ * Characters decoded from the ring, waiting for the consumer.
+ *
+ * Consumer-side only, like the decoder: counting what is pending decodes the scan codes waiting,
+ * in order, so the count is the number of characters the consumer will pop, never a key release or
+ * a controller acknowledgement that decodes to nothing.
+ */
+static char keyboard_character_queue[KEYBOARD_SCANCODE_RING_CAPACITY];
+static uint32_t keyboard_character_queue_head = 0u;
+static uint32_t keyboard_character_queue_tail = 0u;
+
 static void keyboard_interrupt_handler(const InterruptFrame_t *frame)
 {
     const uint8_t scan_code = asmutils_input_byte(KEYBOARD_DATA_PORT);
@@ -78,6 +89,24 @@ static uint8_t keyboard_scancode_ring_pop(uint8_t *out_scan_code)
     return 1u;
 }
 
+static void keyboard_decode_pending_scan_codes(void)
+{
+    uint8_t scan_code = 0u;
+
+    while ((uint32_t) (keyboard_character_queue_head - keyboard_character_queue_tail) <
+               KEYBOARD_SCANCODE_RING_CAPACITY &&
+           keyboard_scancode_ring_pop(&scan_code))
+    {
+        const char decoded = personal_system_2_keyboard_decode_scancode(scan_code);
+
+        if (decoded)
+        {
+            keyboard_character_queue[keyboard_character_queue_head & KEYBOARD_SCANCODE_RING_MASK] = decoded;
+            ++keyboard_character_queue_head;
+        }
+    }
+}
+
 void keyboard_interrupt_initialize(void)
 {
     interrupt_service_routine_register_handler(IRQ_KEYBOARD_VECTOR, keyboard_interrupt_handler);
@@ -97,30 +126,27 @@ char keyboard_get_last_printable_char(void) { return keyboard_last_printable_cha
 
 uint32_t keyboard_get_pending_char_count(void)
 {
-    return (uint32_t) (keyboard_scancode_ring_head - keyboard_scancode_ring_tail);
+    keyboard_decode_pending_scan_codes();
+    return keyboard_character_queue_head - keyboard_character_queue_tail;
 }
 
 uint8_t keyboard_try_pop_char(char *out_char)
 {
-    uint8_t scan_code = 0u;
+    char decoded = 0;
 
     if (!out_char)
         return 0u;
 
-    while (keyboard_scancode_ring_pop(&scan_code))
-    {
-        const char decoded = personal_system_2_keyboard_decode_scancode(scan_code);
+    keyboard_decode_pending_scan_codes();
+    if (keyboard_character_queue_head == keyboard_character_queue_tail)
+        return 0u;
 
-        if (decoded)
-        {
-            ++keyboard_printable_count;
-            keyboard_last_printable_char = decoded;
-            *out_char = decoded;
-            return 1u;
-        }
-    }
-
-    return 0u;
+    decoded = keyboard_character_queue[keyboard_character_queue_tail & KEYBOARD_SCANCODE_RING_MASK];
+    ++keyboard_character_queue_tail;
+    ++keyboard_printable_count;
+    keyboard_last_printable_char = decoded;
+    *out_char = decoded;
+    return 1u;
 }
 
 const volatile uint32_t *keyboard_get_ring_head_address(void) { return &keyboard_scancode_ring_head; }
