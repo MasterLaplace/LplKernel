@@ -56,6 +56,7 @@
 #include <kernel/core/reconciler.h>
 #include <kernel/core/smp.h>
 #include <kernel/core/splash.h>
+#include <kernel/diag/machine.h>
 #include <kernel/diag/sysmon.h>
 #include <kernel/diag/telemetry.h>
 #include <kernel/dialogue/dialogue_channel.h>
@@ -439,6 +440,7 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     peripheral_component_interconnect_scan();
     write_peripheral_component_interconnect_info(&com1);
+    kernel_machine_report(&com1);
     kernel_splash_update("PCI Bus Enumeration");
 
     kernel_bring_up_virtio_display();
