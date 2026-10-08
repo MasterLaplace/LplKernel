@@ -261,7 +261,7 @@ static void kernel_test_write_test_prefix(KernelTest_t *test)
 }
 
 /**
- * @brief Writes the KTAP header, whose plan counts the kernel's suites and its libraries'.
+ * @brief Writes the KTAP header, whose plan counts the suites of the kernel and of its libraries.
  */
 static void kernel_test_write_header(Serial_t *serial)
 {

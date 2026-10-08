@@ -64,7 +64,7 @@ LIBS:=$(LIBS) -nostdlib -lk -lgcc
 CPPFLAGS:=$(CPPFLAGS) -DLPL_PLUGIN_UNAVAILABLE=1 -DLPL_ASSISTANT_UNAVAILABLE=1 -DLPL_KNOWLEDGE_UNAVAILABLE=1
 endif
 
-# The kernel's tests (kernel/testing/test.h) and its libraries'. ON by default for the
+# The tests of the kernel (kernel/testing/test.h) and of its libraries. ON by default for the
 # script/Makefile build (debug). Pass SMOKE_TESTS=0 (or xmake "release") to compile
 # every test out of a production image. The memory poisoning comes with them: the
 # tests check it, and only a build that poisons can fail those checks.
