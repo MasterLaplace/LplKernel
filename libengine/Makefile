@@ -20,7 +20,8 @@ LPLPLUGIN_ROOT?=$(abspath ../../LplPlugin)
 # no unwinder, no typeinfo, no guard-variable runtime). LPL_TARGET_KERNEL=1
 # routes every lpl/std/* umbrella to kstd instead of hosted libstdc++.
 CXXFLAGS:=$(CXXFLAGS) -std=gnu++23 -ffreestanding -fno-exceptions -fno-rtti \
-          -fno-threadsafe-statics -Wall -Wextra
+          -fno-threadsafe-statics -Wall -Wextra \
+          $(if $(KERNEL_FRAME_LIMIT_BYTES),-Werror=frame-larger-than=$(KERNEL_FRAME_LIMIT_BYTES))
 # The LplPlugin modules the kernel compiles against: their headers, and their engine tests.
 # net/ is here for the header-only lpl/net/Endpoint.hpp alone, which EventQueue.hpp needs.
 ENGINE_MODULES=core testing math memory container ecs concurrency physics platform input net gpu image \

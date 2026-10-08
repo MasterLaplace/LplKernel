@@ -38,7 +38,8 @@ LPLPLUGIN_ROOT?=$(abspath ../../LplPlugin)
 # and the P18 gate compile to nothing — Foundation.hpp says as much rather than emulating
 # it, and the kernel path always has the foundation by construction.
 CXXFLAGS:=$(CXXFLAGS) -std=gnu++20 -ffreestanding -fno-exceptions -fno-rtti \
-          -fno-threadsafe-statics -Wall -Wextra
+          -fno-threadsafe-statics -Wall -Wextra \
+          $(if $(KERNEL_FRAME_LIMIT_BYTES),-Werror=frame-larger-than=$(KERNEL_FRAME_LIMIT_BYTES))
 CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 -DLPL_HAS_FOUNDATION \
           -Iinclude \
           -I$(LPLKNOWLEDGE_ROOT)/include \
