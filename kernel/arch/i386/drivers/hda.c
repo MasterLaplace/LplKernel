@@ -802,6 +802,16 @@ static void hda_wait_stream_reset(uint32_t stream, bool set)
  *
  * @param stream Offset of the stream descriptor.
  */
+static void hda_wait_stream_stopped(uint32_t stream)
+{
+    for (uint32_t spin = 0u; spin < HDA_SPIN_BUDGET; ++spin)
+    {
+        if ((hda_read8(stream + HDA_STREAM_CONTROL) & HDA_STREAM_CONTROL_RUN) == 0u)
+            return;
+        asmutils_pause();
+    }
+}
+
 static void hda_reset_stream(uint32_t stream)
 {
     hda_write8(stream + HDA_STREAM_CONTROL, HDA_STREAM_CONTROL_RESET);
@@ -1075,6 +1085,24 @@ bool intel_high_definition_audio_enable_capture_interrupt(void)
     hda_write32(HDA_REG_INTERRUPT_CONTROL, hda_read32(HDA_REG_INTERRUPT_CONTROL) | HDA_INTERRUPT_CONTROL_GLOBAL_ENABLE |
                                                HDA_INTERRUPT_CONTROL_CAPTURE_STREAM);
     return true;
+}
+
+bool intel_high_definition_audio_stop_capture(void)
+{
+    if (!hda_state.capture_running)
+        return false;
+
+    const uint32_t stream = HDA_REG_STREAM_DESCRIPTOR_BASE;
+    hda_write32(HDA_REG_INTERRUPT_CONTROL,
+                hda_read32(HDA_REG_INTERRUPT_CONTROL) & ~(uint32_t) HDA_INTERRUPT_CONTROL_CAPTURE_STREAM);
+    hda_write8(stream + HDA_STREAM_CONTROL,
+               (uint8_t) (hda_read8(stream + HDA_STREAM_CONTROL) &
+                          ~(uint8_t) (HDA_STREAM_CONTROL_RUN | HDA_STREAM_CONTROL_INTERRUPT_ON_COMPLETION)));
+    hda_wait_stream_stopped(stream);
+    hda_write8(stream + HDA_STREAM_STATUS, HDA_STREAM_STATUS_ANY);
+
+    hda_state.capture_running = (hda_read8(stream + HDA_STREAM_CONTROL) & HDA_STREAM_CONTROL_RUN) != 0u;
+    return !hda_state.capture_running;
 }
 
 bool intel_high_definition_audio_acknowledge_capture_interrupt(void)
