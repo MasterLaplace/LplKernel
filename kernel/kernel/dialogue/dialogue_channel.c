@@ -1,73 +1,65 @@
 #include <kernel/dialogue/dialogue_channel.h>
 
-#define KERNEL_DIALOGUE_CHANNEL_MASK (KERNEL_DIALOGUE_CHANNEL_CAPACITY - 1u)
+#include <kernel/memory/spsc_ring.h>
+
+_Static_assert((KERNEL_DIALOGUE_CHANNEL_CAPACITY & (KERNEL_DIALOGUE_CHANNEL_CAPACITY - 1u)) == 0u,
+               "a dialogue ring has a power-of-two capacity");
 
 /**
  * @struct DialogueRing_t
- * @brief One direction.
- *
- * The producer owns `head`, the consumer owns `tail`, and neither writes the
- * other's index — which is what makes the pair safe without a lock. Both are
- * free-running counters rather than wrapped indices, so a full ring is
- * distinguishable from an empty one without spending a slot to say so.
+ * @brief One direction: the ring's indices and the bytes they point into.
  */
 typedef struct {
-    volatile uint8_t bytes[KERNEL_DIALOGUE_CHANNEL_CAPACITY];
-    volatile uint32_t head;
-    volatile uint32_t tail;
+    KernelSpscRing_t ring;                           /**< Written by the speaker, read by the listener. */
+    uint8_t bytes[KERNEL_DIALOGUE_CHANNEL_CAPACITY]; /**< The slots. */
 } DialogueRing_t;
 
-static DialogueRing_t dialogue_to_demon;
-static DialogueRing_t dialogue_to_sovereign;
-static volatile uint32_t dialogue_dropped;
+static DialogueRing_t dialogue_to_demon = {.ring = KERNEL_SPSC_RING_INITIALIZER(KERNEL_DIALOGUE_CHANNEL_CAPACITY)};
+static DialogueRing_t dialogue_to_sovereign = {.ring = KERNEL_SPSC_RING_INITIALIZER(KERNEL_DIALOGUE_CHANNEL_CAPACITY)};
 
 /**
- * @brief Pushes one byte, or drops it.
- * @param ring The direction.
- * @param byte The byte.
+ * @brief Pushes one byte, or drops it and counts it.
+ * @param direction The direction.
+ * @param byte      The byte.
  * @return false when the ring was full.
  */
-static bool dialogue_ring_push(DialogueRing_t *ring, uint8_t byte)
+static bool dialogue_ring_push(DialogueRing_t *direction, uint8_t byte)
 {
-    const uint32_t head = ring->head;
-    const uint32_t tail = ring->tail;
+    uint32_t slot = 0u;
 
-    if ((uint32_t) (head - tail) >= KERNEL_DIALOGUE_CHANNEL_CAPACITY)
+    if (kernel_spsc_ring_reserve(&direction->ring, 1u, &slot) == 0u)
     {
-        ++dialogue_dropped;
+        kernel_spsc_ring_count_rejected(&direction->ring, 1u);
         return false;
     }
 
-    ring->bytes[head & KERNEL_DIALOGUE_CHANNEL_MASK] = byte;
-    ring->head = head + 1u;
+    direction->bytes[slot] = byte;
+    kernel_spsc_ring_publish(&direction->ring, 1u);
     return true;
 }
 
 /**
  * @brief Pops one byte.
- * @param ring The direction.
- * @param out  Receives the byte.
+ * @param direction The direction.
+ * @param out       Receives the byte.
  * @return false when the ring was empty.
  */
-static bool dialogue_ring_pop(DialogueRing_t *ring, uint8_t *out)
+static bool dialogue_ring_pop(DialogueRing_t *direction, uint8_t *out)
 {
-    const uint32_t tail = ring->tail;
+    uint32_t slot = 0u;
 
-    if (ring->head == tail)
+    if (kernel_spsc_ring_peek(&direction->ring, 1u, &slot) == 0u)
         return false;
 
-    *out = ring->bytes[tail & KERNEL_DIALOGUE_CHANNEL_MASK];
-    ring->tail = tail + 1u;
+    *out = direction->bytes[slot];
+    kernel_spsc_ring_release(&direction->ring, 1u);
     return true;
 }
 
 void kernel_dialogue_channel_reset(void)
 {
-    dialogue_to_demon.head = 0u;
-    dialogue_to_demon.tail = 0u;
-    dialogue_to_sovereign.head = 0u;
-    dialogue_to_sovereign.tail = 0u;
-    dialogue_dropped = 0u;
+    kernel_spsc_ring_initialize(&dialogue_to_demon.ring, KERNEL_DIALOGUE_CHANNEL_CAPACITY);
+    kernel_spsc_ring_initialize(&dialogue_to_sovereign.ring, KERNEL_DIALOGUE_CHANNEL_CAPACITY);
 }
 
 bool kernel_dialogue_channel_offer_to_demon(uint8_t byte) { return dialogue_ring_push(&dialogue_to_demon, byte); }
@@ -91,14 +83,15 @@ bool kernel_dialogue_channel_take_for_sovereign(uint8_t *out)
     return dialogue_ring_pop(&dialogue_to_sovereign, out);
 }
 
-uint32_t kernel_dialogue_channel_pending_for_demon(void)
-{
-    return (uint32_t) (dialogue_to_demon.head - dialogue_to_demon.tail);
-}
+uint32_t kernel_dialogue_channel_pending_for_demon(void) { return kernel_spsc_ring_size(&dialogue_to_demon.ring); }
 
 uint32_t kernel_dialogue_channel_pending_for_sovereign(void)
 {
-    return (uint32_t) (dialogue_to_sovereign.head - dialogue_to_sovereign.tail);
+    return kernel_spsc_ring_size(&dialogue_to_sovereign.ring);
 }
 
-uint32_t kernel_dialogue_channel_dropped(void) { return dialogue_dropped; }
+uint32_t kernel_dialogue_channel_dropped(void)
+{
+    return kernel_spsc_ring_rejected_count(&dialogue_to_demon.ring) +
+           kernel_spsc_ring_rejected_count(&dialogue_to_sovereign.ring);
+}

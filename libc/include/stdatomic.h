@@ -38,7 +38,15 @@
  * @param p Pointer to the atomic variable.
  * @return The value loaded from the atomic variable.
  */
-static inline uint32_t atomic_load_acquire(volatile uint32_t *p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
+static inline uint32_t atomic_load_acquire(const volatile uint32_t *p) { return __atomic_load_n(p, __ATOMIC_ACQUIRE); }
+
+/**
+ * @brief Loads a value from an atomic variable, with no ordering against other accesses.
+ *
+ * @param p Pointer to the atomic variable.
+ * @return The value loaded from the atomic variable.
+ */
+static inline uint32_t atomic_load_relaxed(const volatile uint32_t *p) { return __atomic_load_n(p, __ATOMIC_RELAXED); }
 
 /**
  * @brief Stores a value to an atomic variable with release semantics.
@@ -47,6 +55,14 @@ static inline uint32_t atomic_load_acquire(volatile uint32_t *p) { return __atom
  * @param v The value to store.
  */
 static inline void atomic_store_release(volatile uint32_t *p, uint32_t v) { __atomic_store_n(p, v, __ATOMIC_RELEASE); }
+
+/**
+ * @brief Stores a value to an atomic variable, with no ordering against other accesses.
+ *
+ * @param p Pointer to the atomic variable.
+ * @param v The value to store.
+ */
+static inline void atomic_store_relaxed(volatile uint32_t *p, uint32_t v) { __atomic_store_n(p, v, __ATOMIC_RELAXED); }
 
 /**
  * @brief Atomically adds a value to an atomic variable and returns the previous value.

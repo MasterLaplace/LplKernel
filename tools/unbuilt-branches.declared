@@ -13,6 +13,7 @@ kernel/arch/arm/* | file | the ARM start files, kept for a port that does not ex
 kernel/include/kernel/arch/targets/* | file | the capabilities of the targets other than i386-pc
 kernel/include/kernel/arch/capabilities.h | * | the other targets, and the guards that refuse an inconsistent declaration
 kernel/kernel/memory/section_protection.c | #if !KERNEL_ARCH_HAS_WRITE_PROTECT_ENFORCEMENT | a target that cannot enforce read-only pages
+kernel/include/kernel/memory/spsc_ring.h | #if defined(__GCC_DESTRUCTIVE_SIZE) && __GCC_DESTRUCTIVE_SIZE > 128 | a target whose compiler asks for more than 128 bytes between two writers (256 on ARM64); i386 asks for 64
 
 # Guards: an #error that fires only on a wrong compiler or target, or a default the build always overrides.
 kernel/include/kernel/drivers/tty.h | #if defined(__linux__) | refuses a host compiler
