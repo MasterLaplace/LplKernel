@@ -51,7 +51,7 @@ libkxx.a: $(OBJS)
 	$(AR) rcs $@ $(OBJS)
 
 .cpp.o:
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 clean:
 	rm -f $(BINARIES) *.a

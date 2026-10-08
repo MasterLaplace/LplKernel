@@ -82,7 +82,7 @@ libenginetests.a: $(ENGINE_TEST_OBJS) $(ENGINE_TEST_STAMP)
 # Engine sources, pulled from LPLPLUGIN_ROOT.
 obj/%.o: $(LPLPLUGIN_ROOT)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 # The LplPlugin commit compiled in, stamped into identity.o alone. The stamp file changes
 # only when the commit does, and identity.o depends on it: make cannot see a -D change.
@@ -95,11 +95,11 @@ obj/local/identity.o: CPPFLAGS+=-DLPLPLUGIN_COMMIT='"$(LPLPLUGIN_COMMIT)"'
 # libengine-local sources.
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 obj/local/tests/%.o: tests/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 clean:
 	rm -f $(BINARIES) *.a

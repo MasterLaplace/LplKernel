@@ -67,16 +67,16 @@ libk.a: $(LIBK_OBJS)
 	$(AR) rcs $@ $(LIBK_OBJS)
 
 .c.o:
-	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS)
+	$(CC) -MD -MP -c $< -o $@ $(CFLAGS) $(CPPFLAGS)
 
 .S.o:
-	$(CC) -MD -c $< -o $@ $(CFLAGS) $(CPPFLAGS)
+	$(CC) -MD -MP -c $< -o $@ $(CFLAGS) $(CPPFLAGS)
 
 .c.libk.o:
-	$(CC) -MD -c $< -o $@ $(LIBK_CFLAGS) $(LIBK_CPPFLAGS)
+	$(CC) -MD -MP -c $< -o $@ $(LIBK_CFLAGS) $(LIBK_CPPFLAGS)
 
 .S.libk.o:
-	$(CC) -MD -c $< -o $@ $(LIBK_CFLAGS) $(LIBK_CPPFLAGS)
+	$(CC) -MD -MP -c $< -o $@ $(LIBK_CFLAGS) $(LIBK_CPPFLAGS)
 
 clean:
 	rm -f $(BINARIES) *.a
