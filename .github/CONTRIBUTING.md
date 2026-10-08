@@ -111,4 +111,3 @@ On top of the shared C and C++ rules:
 - `xmake` resolves its project from the current directory: run it at the root, or pass `-P <dir>`.
 - `./iso.sh` rebuilds the profile it is given, so `./build.sh --server && ./iso.sh` produces a client
   image. Use `./iso.sh --server`, or `./pipeline_profiles.sh` for both profiles (#418).
-- `xmake iso` packs the first `lpl.kernel` it finds under `build/`, debug or release (#419).
