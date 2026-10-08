@@ -791,9 +791,7 @@ target_end()
 task("iso")
     set_menu({usage = "xmake iso", description = "Build a bootable GRUB rescue ISO"})
     on_run(function ()
-        os.exec("xmake build lpl-kernel")
-        local kernel = table.unpack(os.files(path.join(os.scriptdir(), "build/**/lpl.kernel")))
-        assert(kernel, "lpl.kernel not found — run `xmake` first")
+        local kernel = import("kernel_image", {rootdir = path.join(os.projectdir(), "tools/xmake")})()
         local iso = path.join(os.scriptdir(), "iso")
         os.tryrm(iso)
         os.mkdir(path.join(iso, "boot/grub"))
@@ -827,9 +825,7 @@ task("qemu")
             os.execv("qemu-system-i386", {"-cdrom", path.join(os.scriptdir(), "lpl.iso"),
                 "-m", "256M", "-vga", "std", "-serial", "mon:stdio", "-no-reboot"})
         else
-            os.exec("xmake build lpl-kernel")
-            local kernel = table.unpack(os.files(path.join(os.scriptdir(), "build/**/lpl.kernel")))
-            assert(kernel, "lpl.kernel not found — run `xmake` first")
+            local kernel = import("kernel_image", {rootdir = path.join(os.projectdir(), "tools/xmake")})()
             os.execv("qemu-system-i386", {"-kernel", kernel,
                 "-m", "256M", "-serial", "mon:stdio", "-no-reboot"})
         end
@@ -843,9 +839,7 @@ task("debug")
         -- attaches and continues. Serial goes to serial.log so VS Code can run
         -- this as a background preLaunchTask. The kernel is built with -g, so the
         -- artefact under build/ carries full symbols (see launch.json `file`).
-        os.exec("xmake build lpl-kernel")
-        local kernel = table.unpack(os.files(path.join(os.scriptdir(), "build/**/lpl.kernel")))
-        assert(kernel, "lpl.kernel not found — run `xmake` first")
+        local kernel = import("kernel_image", {rootdir = path.join(os.projectdir(), "tools/xmake")})()
         local serial = path.join(os.scriptdir(), "serial.log")
         local common = {"-m", "256M", "-s", "-S", "-serial", "file:" .. serial, "-no-reboot"}
         cprint("${yellow}[debug]${clear} QEMU halted on tcp::1234 — attach gdb (F5). serial -> %s", serial)
