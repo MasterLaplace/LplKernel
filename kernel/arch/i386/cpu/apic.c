@@ -8,6 +8,9 @@ extern Serial_t com1;
 
 #define CPUID_FEAT_ECX_X2APIC (1u << 21u)
 
+/** Spurious-vector register bit that software-enables the local APIC: without it, no fixed IPI is accepted. */
+#define APIC_SPURIOUS_SOFTWARE_ENABLE_BIT (1u << 8u)
+
 static uint32_t g_apic_mmio_base = 0u;
 static bool g_x2apic_active = false;
 
@@ -34,15 +37,10 @@ bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
         apic_base |= IA32_APIC_BASE_ENABLE_BIT;
         asmutils_write_model_specific_register(IA32_APIC_BASE_MSR, apic_base);
         g_x2apic_active = false;
-
-        if (g_apic_mmio_base)
-        {
-            uint32_t svr = apic_read(LAPIC_REG_SPURIOUS);
-            apic_write(LAPIC_REG_SPURIOUS, svr | (1u << 8u));
-        }
         serial_write_string(&com1, "[Laplace Kernel]: CPU APIC mode=xapic-active (fallback)\n");
     }
 
+    apic_write(LAPIC_REG_SPURIOUS, apic_read(LAPIC_REG_SPURIOUS) | APIC_SPURIOUS_SOFTWARE_ENABLE_BIT);
     return true;
 }
 

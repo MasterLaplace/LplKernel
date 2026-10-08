@@ -60,6 +60,15 @@ static void apic_ipi_tlb_shootdown_handler(const InterruptFrame_t *frame)
     apic_send_eoi();
 }
 
+/**
+ * @brief The ICR's high word addressing @p apic_id: the 8-bit identifier in bits 31:24 in xAPIC
+ *        mode, the whole identifier in x2APIC mode, where the destination is bits 63:32 of the ICR.
+ */
+static uint32_t advanced_pic_ipi_destination(uint8_t apic_id)
+{
+    return apic_is_x2apic_active() ? (uint32_t) apic_id : (uint32_t) apic_id << 24u;
+}
+
 static uint8_t advanced_pic_ipi_wait_delivery(void)
 {
     if (apic_is_x2apic_active())
@@ -102,7 +111,7 @@ uint8_t advanced_pic_ipi_send_init(uint8_t apic_id)
         return 0u;
 
     uint32_t low = 0x00000500u | (1u << 14u) | (1u << 15u);
-    uint32_t high = (uint32_t) apic_id << 24u;
+    uint32_t high = advanced_pic_ipi_destination(apic_id);
 
     apic_write_icr(high, low);
     return advanced_pic_ipi_wait_delivery();
@@ -116,7 +125,7 @@ uint8_t advanced_pic_ipi_send_sipi(uint8_t apic_id, uint8_t startup_vector)
         return 0u;
 
     uint32_t low = (uint32_t) startup_vector | 0x00000600u;
-    uint32_t high = (uint32_t) apic_id << 24u;
+    uint32_t high = advanced_pic_ipi_destination(apic_id);
 
     apic_write_icr(high, low);
     return advanced_pic_ipi_wait_delivery();
@@ -159,7 +168,7 @@ uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint8_t sho
         return 0u;
 
     uint32_t low = (uint32_t) vector | ((uint32_t) shorthand << 18u);
-    uint32_t high = (shorthand == 0) ? ((uint32_t) apic_id << 24u) : 0u;
+    uint32_t high = (shorthand == 0) ? advanced_pic_ipi_destination(apic_id) : 0u;
 
     apic_write_icr(high, low);
     return advanced_pic_ipi_wait_delivery();
