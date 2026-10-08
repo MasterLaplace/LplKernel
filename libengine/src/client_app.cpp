@@ -46,8 +46,8 @@ void useWritableCopyOfCartridge(const void *pack_bytes, lpl::core::u32 pack_size
  *          same lpl::procgen passes the host folds — and runs the ai/ and ecology/ modules on
  *          it. CubePileWorld remains the physics demo, selected by LPL_KERNEL_WORLD_CUBEPILE.
  *
- * @note Switching the payload does not touch the parity gate, which folds runCubePileAndFold
- *       directly and never goes through a World.
+ * @note Switching the payload does not touch the parity gate: the engine test cube_pile folds the
+ *       cube pile itself and never goes through a World.
  *
  * @param recipe The world recipe the cartridge decoded to.
  * @param living The living recipe that goes with it.
