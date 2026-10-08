@@ -190,7 +190,8 @@ static void kernel_protect_read_only_sections(void)
  *
  * @note Called after the tests rather than before: by then the periodic tick has driven
  *       reconciler passes of its own, so `passes` exceeding what the reconciler's test drove
- *       by hand is what shows the live check is running and not merely wired.
+ *       by hand is what shows the live check is running and not merely wired. The published
+ *       stage of the tests runs after it and checks what these records say.
  */
 static void kernel_report_live_checks(void)
 {
@@ -474,6 +475,10 @@ void kernel_main(void)
 #endif
 
     kernel_report_live_checks();
+
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+    kernel_test_run_stage(KERNEL_TEST_STAGE_PUBLISHED, &com1);
+#endif
 
     if (hardware_abstraction_layer_display_available())
     {
