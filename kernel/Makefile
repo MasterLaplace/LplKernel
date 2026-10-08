@@ -116,7 +116,7 @@ KERNEL_COMMIT:=$(shell git rev-parse --short=7 HEAD 2>/dev/null || echo unknown)
 IDENTITY_STAMP:=kernel/core/identity.stamp
 $(shell echo '$(KERNEL_BUILD) $(KERNEL_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(KERNEL_BUILD) $(KERNEL_COMMIT)' > $(IDENTITY_STAMP))
 kernel/core/identity.o: $(IDENTITY_STAMP)
-kernel/core/identity.o: CPPFLAGS+=-DKERNEL_BUILD='"$(KERNEL_BUILD)"' -DKERNEL_COMMIT='"$(KERNEL_COMMIT)"'
+kernel/core/identity.o: private CPPFLAGS+=-DKERNEL_BUILD='"$(KERNEL_BUILD)"' -DKERNEL_COMMIT='"$(KERNEL_COMMIT)"'
 
 # Interactive console (commands read from the keyboard or COM1). A development
 # surface, and the one thing an immutable API-only node is defined by not having:

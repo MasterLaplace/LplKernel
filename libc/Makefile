@@ -78,8 +78,19 @@ libk.a: $(LIBK_OBJS)
 .S.libk.o:
 	$(CC) -MD -c $< -o $@ $(LIBK_CFLAGS) $(LIBK_CPPFLAGS)
 
+# make sees the sources an object is built from, not the flags it is built with: each object
+# depends on a stamp of the flags, rewritten only when they change, as in the kernel. A rule
+# writes it, not the parse: headers.sh runs make without the profile's variables.
+FLAGS_STAMP:=flags.stamp
+$(FLAGS_STAMP): FORCE
+	@echo '$(CFLAGS) $(CPPFLAGS) $(LIBK_CFLAGS) $(LIBK_CPPFLAGS)' | cmp -s - $@ || echo '$(CFLAGS) $(CPPFLAGS) $(LIBK_CFLAGS) $(LIBK_CPPFLAGS)' > $@
+$(OBJS) $(LIBK_OBJS): $(FLAGS_STAMP)
+
+.PHONY: FORCE
+FORCE:
+
 clean:
-	rm -f $(BINARIES) *.a
+	rm -f $(BINARIES) *.a $(FLAGS_STAMP)
 	rm -f $(OBJS) $(LIBK_OBJS) *.o */*.o */*/*.o
 	rm -f $(OBJS:.o=.d) $(LIBK_OBJS:.o=.d) *.d */*.d */*/*.d
 

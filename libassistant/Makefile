@@ -111,7 +111,7 @@ LPLASSISTANT_COMMIT:=$(shell git -C $(LPLASSISTANT_ROOT) rev-parse --short=7 HEA
 IDENTITY_STAMP:=obj/local/identity.stamp
 $(shell mkdir -p obj/local; echo '$(LPLASSISTANT_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(LPLASSISTANT_COMMIT)' > $(IDENTITY_STAMP))
 obj/local/identity.o: $(IDENTITY_STAMP)
-obj/local/identity.o: CPPFLAGS+=-DLPLASSISTANT_COMMIT='"$(LPLASSISTANT_COMMIT)"'
+obj/local/identity.o: private CPPFLAGS+=-DLPLASSISTANT_COMMIT='"$(LPLASSISTANT_COMMIT)"'
 
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
@@ -120,6 +120,18 @@ obj/local/%.o: src/%.cpp
 obj/local/tests/%.o: tests/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+
+# make sees the sources an object is built from, not the flags it is built with: each object
+# depends on a stamp of the flags, rewritten only when they change, as in the kernel. A rule
+# writes it, not the parse: headers.sh runs make without the profile's variables.
+FLAGS_STAMP:=obj/local/flags.stamp
+$(FLAGS_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(CXXFLAGS) $(CPPFLAGS)' | cmp -s - $@ || echo '$(CXXFLAGS) $(CPPFLAGS)' > $@
+$(OBJS) $(ASSISTANT_TEST_OBJS): $(FLAGS_STAMP)
+
+.PHONY: FORCE
+FORCE:
 
 clean:
 	rm -f $(BINARIES) *.a
