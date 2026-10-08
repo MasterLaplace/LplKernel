@@ -24,8 +24,9 @@
  *     boot a real lpl::engine::Engine with an injected platform and World, exactly
  *     as apps/client/main.cpp does on Linux. The kernel passes no engine state and
  *     holds no game logic.
- *   - libengine_test_suite_count / libengine_test_run: the engine's tests, which the
- *     kernel's runner reports after its own, in debug images only.
+ *   - libengine_test_suite_count / libengine_test_run: every LPL_TEST linked in, the
+ *     engine's and those of the mind and the memory, which the kernel's runner reports
+ *     after its own, in debug images only.
  *   - libengine_identity_telemetry: which LplPlugin was compiled in, printed at boot.
  *
  * There is deliberately no C simulation facade (init/step/render/entity_count):
@@ -53,7 +54,7 @@ extern "C" {
 typedef void (*libengine_test_write_t)(void *context, const char *text, size_t length);
 
 /**
- * @brief What the engine's tests came to, which the kernel adds to its own totals.
+ * @brief What the LPL_TEST tests came to, which the kernel adds to its own totals.
  */
 typedef struct {
     uint32_t passed;   /**< Tests whose every claim held. */
@@ -64,12 +65,13 @@ typedef struct {
 } libengine_test_totals_t;
 
 /**
- * @brief Number of suites the engine's tests make, for the kernel's KTAP plan.
+ * @brief Number of suites the LPL_TEST tests make, for the kernel's KTAP plan.
  */
 uint32_t libengine_test_suite_count(void);
 
 /**
- * @brief Runs the engine's tests (LPL_TEST, in debug images only) as KTAP suites numbered from
+ * @brief Runs every LPL_TEST linked into the image (in debug images only: the engine's, and the
+ *        mind's and the memory's when they are linked) as KTAP suites numbered from
  *        @p first_suite_number, which follow the kernel's own.
  *
  * @param write              Writes the report.

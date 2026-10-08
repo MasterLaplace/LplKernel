@@ -525,30 +525,30 @@
 
     #if __has_include(<lpl/infer/Inference.hpp>)
         #if !__has_include(<lplassistant/config.h>)
-            #error "LplKernel needs LplAssistant 0.1.0 or later, and the LplAssistant found has no lplassistant/config.h: update ../LplAssistant"
+            #error "LplKernel needs LplAssistant 0.2.0 or later, and the LplAssistant found has no lplassistant/config.h: update ../LplAssistant"
         #endif
         #include <lplassistant/config.h>
-        #if !LPLASSISTANT_COMPATIBLE_WITH(0, 1, 0)
+        #if !LPLASSISTANT_COMPATIBLE_WITH(0, 2, 0)
             #pragma message("found LplAssistant " LPLASSISTANT_VERSION_STRING)
             #if LPLASSISTANT_VERSION_MAJOR != 0
                 #error "LplKernel was written for LplAssistant 0.x: read what broke in its CHANGELOG, then adapt"
             #else
-                #error "LplKernel needs LplAssistant 0.1.0 or later: update ../LplAssistant"
+                #error "LplKernel needs LplAssistant 0.2.0 or later: update ../LplAssistant"
             #endif
         #endif
     #endif
 
     #if __has_include(<lpl/knowledge/KnowledgePack.hpp>)
         #if !__has_include(<lplknowledge/config.h>)
-            #error "LplKernel needs LplKnowledge 0.1.0 or later, and the LplKnowledge found has no lplknowledge/config.h: update ../LplKnowledge"
+            #error "LplKernel needs LplKnowledge 0.2.0 or later, and the LplKnowledge found has no lplknowledge/config.h: update ../LplKnowledge"
         #endif
         #include <lplknowledge/config.h>
-        #if !LPLKNOWLEDGE_COMPATIBLE_WITH(0, 1, 0)
+        #if !LPLKNOWLEDGE_COMPATIBLE_WITH(0, 2, 0)
             #pragma message("found LplKnowledge " LPLKNOWLEDGE_VERSION_STRING)
             #if LPLKNOWLEDGE_VERSION_MAJOR != 0
                 #error "LplKernel was written for LplKnowledge 0.x: read what broke in its CHANGELOG, then adapt"
             #else
-                #error "LplKernel needs LplKnowledge 0.1.0 or later: update ../LplKnowledge"
+                #error "LplKernel needs LplKnowledge 0.2.0 or later: update ../LplKnowledge"
             #endif
         #endif
     #endif

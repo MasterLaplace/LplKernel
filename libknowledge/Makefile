@@ -47,7 +47,8 @@ CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 -DLPL_HAS_FOUNDATION \
           -I$(LPLPLUGIN_ROOT)/core/include \
           -I$(LPLPLUGIN_ROOT)/math/include \
           -I$(LPLPLUGIN_ROOT)/memory/include \
-          -I$(LPLPLUGIN_ROOT)/history/include
+          -I$(LPLPLUGIN_ROOT)/history/include \
+          -I$(LPLPLUGIN_ROOT)/testing/include
 
 ARCHDIR=arch/$(HOSTARCH)
 
@@ -60,22 +61,43 @@ CPPFLAGS:=$(CPPFLAGS) $(ARCH_CPPFLAGS)
 # in the sibling checkout.
 KNOWLEDGE_OBJS=$(addprefix obj/,$(ARCH_KNOWLEDGE_SRCS:.cpp=.o))
 
-# libknowledge-local sources (the C-callable facade / smoke entry points).
+# libknowledge-local sources: the C-callable facade the kernel calls.
 LOCAL_OBJS=\
-obj/local/smoke/p18_corpus_smoke.o \
-obj/local/knowledge_boot.o \
 obj/local/identity.o
 
 OBJS=$(KNOWLEDGE_OBJS) $(LOCAL_OBJS)
 
 BINARIES=libknowledge.a
 
+# The reader's tests, for debug images: the LPL_TEST of LplKnowledge's tests/<module>/ for every
+# module compiled above. The kernel links the whole archive, because nothing names a test; their
+# runner is in libenginetests.a.
+KNOWLEDGE_MODULES=knowledge corpus
+SMOKE_TESTS?=1
+KNOWLEDGE_TEST_SRCS:=$(sort $(patsubst $(LPLKNOWLEDGE_ROOT)/%,%,$(foreach module,$(KNOWLEDGE_MODULES),\
+    $(wildcard $(LPLKNOWLEDGE_ROOT)/tests/$(module)/*.cpp))))
+KNOWLEDGE_TEST_OBJS:=$(addprefix obj/,$(KNOWLEDGE_TEST_SRCS:.cpp=.o))
+ifeq ($(SMOKE_TESTS),1)
+BINARIES+=libknowledgetests.a
+endif
+
 .PHONY: all clean install install-headers install-libs
 
 all: $(BINARIES)
 
+# Each archive is written anew: `ar r` never removes a member, and the kernel links the tests'
+# archive whole, so a test deleted or renamed would still run. The list of tests is stamped,
+# because deleting one changes no prerequisite make can see.
 libknowledge.a: $(OBJS)
+	rm -f $@
 	$(AR) rcs $@ $(OBJS)
+
+KNOWLEDGE_TEST_STAMP:=obj/local/tests.stamp
+$(shell mkdir -p obj/local; echo '$(KNOWLEDGE_TEST_OBJS)' | cmp -s - $(KNOWLEDGE_TEST_STAMP) || echo '$(KNOWLEDGE_TEST_OBJS)' > $(KNOWLEDGE_TEST_STAMP))
+
+libknowledgetests.a: $(KNOWLEDGE_TEST_OBJS) $(KNOWLEDGE_TEST_STAMP)
+	rm -f $@
+	$(AR) rcs $@ $(KNOWLEDGE_TEST_OBJS)
 
 # Knowledge sources, pulled from LPLKNOWLEDGE_ROOT.
 obj/%.o: $(LPLKNOWLEDGE_ROOT)/%.cpp
@@ -111,3 +133,4 @@ install-libs: $(BINARIES)
 
 -include $(KNOWLEDGE_OBJS:.o=.d)
 -include $(LOCAL_OBJS:.o=.d)
+-include $(KNOWLEDGE_TEST_OBJS:.o=.d)

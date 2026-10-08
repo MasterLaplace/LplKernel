@@ -107,7 +107,7 @@ extern void cpu_topology_mark_apic_id_online(uint32_t apic_id);
  * @brief Mark a CPU with the given APIC ID as offline (inverse of mark online).
  *
  * Clears the online flag for the resolved logical slot and decrements the
- * online CPU count when it was set. Used to restore state (e.g. by smoke tests
+ * online CPU count when it was set. Used to restore state (e.g. by tests
  * that temporarily register a synthetic CPU) so global topology bookkeeping is
  * never left corrupted.
  *

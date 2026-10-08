@@ -261,7 +261,7 @@ static void kernel_test_write_test_prefix(KernelTest_t *test)
 }
 
 /**
- * @brief Writes the KTAP header, whose plan counts the kernel's suites and the engine's.
+ * @brief Writes the KTAP header, whose plan counts the suites of the kernel and of its libraries.
  */
 static void kernel_test_write_header(Serial_t *serial)
 {
@@ -371,10 +371,10 @@ static void kernel_test_write_text(void *serial, const char *text, size_t length
 }
 
 /**
- * @brief Runs the engine's tests after the kernel's, as further suites of the same report, and adds
- *        what they came to to the kernel's totals.
+ * @brief Runs the LPL_TEST tests of the linked libraries after the kernel's, as further suites of
+ *        the same report, and adds what they came to to the kernel's totals.
  */
-static void kernel_test_run_engine(Serial_t *serial, const char *selection)
+static void kernel_test_run_libraries(Serial_t *serial, const char *selection)
 {
     const libengine_test_totals_t engine =
         libengine_test_run(kernel_test_write_text, serial, selection, kernel_test_next_suite_number);
@@ -463,7 +463,7 @@ void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial)
     if (stage != KERNEL_TEST_STAGE_BOOTED)
         return;
 #if !defined(LPL_PLUGIN_UNAVAILABLE)
-    kernel_test_run_engine(serial, selection);
+    kernel_test_run_libraries(serial, selection);
 #endif
     kernel_test_write_totals(serial, selection);
 }

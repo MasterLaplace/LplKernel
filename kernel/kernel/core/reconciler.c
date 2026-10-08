@@ -11,8 +11,8 @@ static KernelReconcilerDeclaration_t reconciler_declaration = {0};
 static bool reconciler_is_declared = false;
 
 /**
- * @brief The hot-loop violation counter is global and lives for the whole boot, and the smoke
- * battery raises it on purpose — proving the guard fires is what that smoke is for.
+ * @brief The hot-loop violation counter is global and lives for the whole boot, and the allocators'
+ * tests raise it on purpose — proving the guard fires is what they are for.
  *
  * Comparing its absolute value against a budget would therefore report a kernel in drift because a
  * test did its job. The baseline is taken when the declaration is adopted, and only the delta since

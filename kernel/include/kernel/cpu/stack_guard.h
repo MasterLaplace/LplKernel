@@ -43,7 +43,7 @@ extern volatile uint32_t stack_guard;
 /**
  * @brief Writes the canary. Call once, early in kernel_main.
  *
- * Arm the stack-overflow canary before running any engine/smoke code, which
+ * Arm the stack-overflow canary before running any engine or test code, which
  * is where deep C++ call chains (software rasterizer, physics sort) live.
  */
 static inline void kernel_stack_guard_arm(void) { stack_guard = KERNEL_STACK_GUARD_MAGIC; }
