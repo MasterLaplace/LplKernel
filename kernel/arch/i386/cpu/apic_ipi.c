@@ -41,21 +41,26 @@ static uint32_t apic_ipi_startup_sequence_attempt_count = 0u;
 static uint32_t apic_ipi_startup_sequence_success_count = 0u;
 
 static volatile uint32_t apic_ipi_tlb_shootdown_addr = 0u;
+static volatile uint32_t apic_ipi_tlb_shootdown_page_count = 0u;
 static volatile uint32_t apic_ipi_tlb_shootdown_pending = 0u;
 static uint32_t apic_ipi_tlb_shootdown_timeout_count = 0u;
 static uint32_t apic_ipi_tlb_shootdown_broadcast_count = 0u;
 
+static void apic_ipi_invalidate_pages(uint32_t virt_start, uint32_t page_count)
+{
+    if (virt_start == 0xFFFFFFFFu)
+    {
+        paging_flush_tlb();
+        return;
+    }
+    for (uint32_t page = 0u; page < page_count; ++page)
+        paging_invlpg(virt_start + page * PAGE_SIZE);
+}
+
 static void apic_ipi_tlb_shootdown_handler(const InterruptFrame_t *frame)
 {
     (void) frame;
-    if (apic_ipi_tlb_shootdown_addr == 0xFFFFFFFFu)
-    {
-        paging_flush_tlb();
-    }
-    else
-    {
-        paging_invlpg(apic_ipi_tlb_shootdown_addr);
-    }
+    apic_ipi_invalidate_pages(apic_ipi_tlb_shootdown_addr, apic_ipi_tlb_shootdown_page_count);
     atomic_fetch_sub(&apic_ipi_tlb_shootdown_pending, 1u);
     apic_send_eoi();
 }
@@ -165,17 +170,18 @@ uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint8_t sho
     return advanced_pic_ipi_wait_delivery();
 }
 
-void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
+void advanced_pic_ipi_broadcast_tlb_shootdown_range(uint32_t virt_start, uint32_t page_count)
 {
     uint32_t cpu_count = cpu_topology_get_online_cpu_count();
 
     if (cpu_count <= 1u)
     {
-        paging_invlpg(virt_addr);
+        apic_ipi_invalidate_pages(virt_start, page_count);
         return;
     }
 
-    apic_ipi_tlb_shootdown_addr = virt_addr;
+    apic_ipi_tlb_shootdown_addr = virt_start;
+    apic_ipi_tlb_shootdown_page_count = page_count;
     apic_ipi_tlb_shootdown_pending = cpu_count - 1u;
     ++apic_ipi_tlb_shootdown_broadcast_count;
 
@@ -194,7 +200,12 @@ void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
         }
     }
 
-    paging_invlpg(virt_addr);
+    apic_ipi_invalidate_pages(virt_start, page_count);
+}
+
+void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr)
+{
+    advanced_pic_ipi_broadcast_tlb_shootdown_range(virt_addr, 1u);
 }
 
 uint32_t advanced_pic_ipi_get_tlb_shootdown_timeout_count(void) { return apic_ipi_tlb_shootdown_timeout_count; }

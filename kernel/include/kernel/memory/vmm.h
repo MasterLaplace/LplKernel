@@ -69,9 +69,18 @@ bool kernel_vmm_reserve_at(void *virt, uint32_t page_count);
 /**
  * @brief Free a range of virtual pages (and their physical frames if mapped).
  *
+ * @details The run is unmapped with one TLB shootdown, and its frames go back to the physical memory
+ *          manager only once every CPU has acknowledged it (paging_unmap_range).
+ *
  * @param ptr Virtual address to free.
  * @param page_count Number of pages to free.
  */
 void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
+
+/**
+ * @brief Freed runs that had at least one page mapped, each unmapped with one TLB shootdown.
+ * @return The count since boot.
+ */
+uint32_t kernel_vmm_get_unmapped_range_count(void);
 
 #endif /* !KERNEL_MEMORY_VMM_H_ */

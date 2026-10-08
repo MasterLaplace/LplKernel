@@ -74,22 +74,9 @@ void kernel_pinned_free(void *ptr, uint32_t size)
     if (!pinned_initialized || !ptr || size == 0u)
         return;
 
-    uint32_t pages_to_free = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
-    uint32_t start_virt = (uint32_t) ptr;
+    const uint32_t pages_to_free = (size + PAGE_SIZE - 1u) / PAGE_SIZE;
 
-    for (uint32_t i = 0u; i < pages_to_free; ++i)
-    {
-        uint32_t virt = start_virt + (i * PAGE_SIZE);
-        uint32_t phys = 0u;
-
-        if (paging_get_physical_address(virt, &phys))
-        {
-            physical_memory_manager_page_frame_free(phys);
-        }
-
-        paging_unmap_page(virt);
-        ++pinned_released_pages;
-    }
+    pinned_released_pages += pages_to_free;
     kernel_vmm_free_pages(ptr, pages_to_free);
 }
 

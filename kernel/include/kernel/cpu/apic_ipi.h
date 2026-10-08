@@ -120,6 +120,17 @@ extern uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint
 extern void advanced_pic_ipi_broadcast_tlb_shootdown(uint32_t virt_addr);
 
 /**
+ * @brief IPI-based TLB shootdown of a run of pages, with one interrupt for the whole run.
+ *
+ * Every other CPU invalidates the @p page_count pages from @p virt_start, and the caller waits
+ * for each to acknowledge, as @ref advanced_pic_ipi_broadcast_tlb_shootdown does for one page.
+ *
+ * @param virt_start First page of the run, or 0xFFFFFFFF to flush every non-global entry.
+ * @param page_count Pages in the run.
+ */
+extern void advanced_pic_ipi_broadcast_tlb_shootdown_range(uint32_t virt_start, uint32_t page_count);
+
+/**
  * @brief IPI-based TLB flush.
  *
  * Broadcasts an IPI to all other CPUs to flush their entire TLB.
