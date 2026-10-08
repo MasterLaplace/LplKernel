@@ -1,5 +1,48 @@
 #!/bin/sh
 set -e
+
+# Whether the arguments name a profile, in the flags build.sh reads.
+names_a_profile() {
+    for argument in "$@"; do
+        case "$argument" in
+            --graphics | --text | --realtime | --client | --server | --satellite | --azerty | --qwerty)
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+# The build.sh flags that give back the profile .last_build_mode records.
+last_build_profile_flags() {
+    realtime=1
+    graphics=0
+    keyboard=us
+    satellite=0
+    for field in $(cat .last_build_mode); do
+        case "$field" in
+            REALTIME=*) realtime=${field#REALTIME=} ;;
+            GRAPHICS=*) graphics=${field#GRAPHICS=} ;;
+            KEYBOARD=*) keyboard=${field#KEYBOARD=} ;;
+            SATELLITE=*) satellite=${field#SATELLITE=} ;;
+        esac
+    done
+    if [ "$satellite" = 1 ]; then
+        printf '%s ' --satellite
+    else
+        if [ "$realtime" = 0 ]; then printf '%s ' --server; else printf '%s ' --realtime; fi
+        if [ "$graphics" = 1 ]; then printf '%s ' --graphics; else printf '%s ' --text; fi
+    fi
+    if [ "$keyboard" = fr ]; then printf '%s\n' --azerty; else printf '%s\n' --qwerty; fi
+}
+
+# Without a profile, the image is the one of the last build, not the default profile:
+# `./build.sh --server && ./iso.sh` packs a server.
+if ! names_a_profile "$@" && [ -f .last_build_mode ]; then
+    set -- $(last_build_profile_flags) "$@"
+    echo "[iso] no profile given: packing the last build's, $*"
+fi
+
 . ./build.sh "$@"
 
 mkdir -p iso/boot/grub
