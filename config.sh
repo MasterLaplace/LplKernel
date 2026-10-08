@@ -129,7 +129,11 @@ export BOOTDIR=/boot
 export LIBDIR=$EXEC_PREFIX/lib
 export INCLUDEDIR=$PREFIX/include
 
-export CFLAGS='-O2 -g -nostdinc'
+# The largest stack frame code linked into the kernel may have: a quarter of the 64 KiB boot stack
+# (.bootstrap_stack in kernel/arch/i386/boot/boot.S). A larger local is a build error rather than an
+# overflow into .bss, and goes in static storage. xmake.lua states the same limit.
+export KERNEL_FRAME_LIMIT_BYTES=16384
+export CFLAGS="-O2 -g -nostdinc -Werror=frame-larger-than=$KERNEL_FRAME_LIMIT_BYTES"
 export CPPFLAGS=''
 
 # Graphics mode configuration (default: text mode)
