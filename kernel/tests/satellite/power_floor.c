@@ -3,6 +3,7 @@
 #include <kernel/cpu/pic.h>
 #include <kernel/drivers/hda.h>
 #include <kernel/hal/hal_audio.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/power/frequency_scaling.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/tickless.h>
@@ -15,9 +16,16 @@ KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 /** Frames the satellite node runs for: 320 ms of audio, a sleep to each frame's deadline. */
 #define POWER_FLOOR_ITERATIONS 8u
 
+/** Ticks waited after the run: 100 ms at 100 Hz, two capture periods and a half. */
+#define POWER_FLOOR_TICKS_AFTER_THE_RUN 10u
+
+/** Cycles after which a wait for ticks gives up: seconds on any machine that boots this image. */
+#define POWER_FLOOR_WAIT_CYCLE_BUDGET 8000000000ull
+
 static SatelliteReport_t power_floor_report;
 static bool power_floor_ran = false;
 static bool power_floor_came_up = false;
+static uint8_t power_floor_tick_owner_was_apic = 0u;
 
 /**
  * @brief Runs the satellite node once for the whole suite, and returns what it measured.
@@ -34,15 +42,36 @@ static const SatelliteReport_t *power_floor_run_once(void)
     if (!power_floor_ran)
     {
         power_floor_ran = true;
+        power_floor_tick_owner_was_apic = interrupt_request_is_timer_owner_apic();
         power_floor_came_up = kernel_satellite_app_run(POWER_FLOOR_ITERATIONS, &power_floor_report);
     }
     return power_floor_came_up ? &power_floor_report : NULL;
 }
 
 /**
+ * @brief Waits until the periodic tick has fired @p ticks times, or gives up.
+ *
+ * @details Spins on the timestamp counter rather than halting: if the tick never came back, a halt
+ *          could wait for an interrupt that never comes, and the boot would hang instead of failing.
+ *
+ * @param ticks Ticks to wait for.
+ * @return The ticks that passed, fewer than @p ticks when the wait gave up.
+ */
+static uint32_t power_floor_wait_for_ticks(uint32_t ticks)
+{
+    const uint32_t first_tick = interrupt_request_get_tick_count();
+    const uint64_t first_cycle = asmutils_read_timestamp_counter();
+
+    while ((uint32_t) (interrupt_request_get_tick_count() - first_tick) < ticks &&
+           asmutils_read_timestamp_counter() - first_cycle < POWER_FLOOR_WAIT_CYCLE_BUDGET)
+        asmutils_pause();
+    return interrupt_request_get_tick_count() - first_tick;
+}
+
+/**
  * @brief The power floor, measured rather than promised: the processor really slept, ticks were
- *        avoided, the session spent most of its time asleep, and the tick came back at the rate it
- *        was taken.
+ *        avoided and counted against the tick in force, the session spent most of its time asleep,
+ *        and the tick came back to the timer that owned it, at the rate it was taken.
  *
  * @details A profile whose whole purpose is to spend nothing has to report a number, or "it idles
  *          cheaply" cannot be told from a spin loop. The ceiling is the reconciler's, and the duty
@@ -63,9 +92,16 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_check(test, kernel_processor_sleep_published_duty_cycle_permille() == report->duty_permille,
                       "the duty cycle the reconciler judges is this session's");
     kernel_test_check(test,
+                      (uint64_t) report->ticks_avoided * (1000000u / interrupt_request_get_timer_frequency_hz()) <=
+                          kernel_tickless_slept_microseconds(),
+                      "the ticks avoided are counted against the tick in force");
+    kernel_test_check(test,
                       !kernel_tickless_enabled() &&
                           kernel_tickless_nominal_frequency_hz() == interrupt_request_get_timer_frequency_hz(),
                       "the tick comes back at the rate it was taken");
+    kernel_test_check(test, interrupt_request_is_timer_owner_apic() == power_floor_tick_owner_was_apic,
+                      "the timer that owned the tick still owns it");
+    kernel_test_check(test, power_floor_wait_for_ticks(2u) >= 2u, "and the tick runs again");
 
     kernel_test_measure(test, "iterations", report->idle_iterations);
     kernel_test_measure(test, "sleeps", report->sleeps);
@@ -73,6 +109,9 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_measure(test, "halts", report->halts);
     kernel_test_measure(test, "duty_permille", report->duty_permille);
     kernel_test_measure(test, "ticks_avoided", report->ticks_avoided);
+    kernel_test_measure(test, "slept_microseconds", (uint32_t) kernel_tickless_slept_microseconds());
+    kernel_test_measure(test, "early_wakes", kernel_tickless_early_wakes());
+    kernel_test_measure(test, "tick_owner_apic", interrupt_request_is_timer_owner_apic());
     kernel_test_measure(test, "monitor_available", report->monitor_available);
     kernel_test_measure(test, "sleep_hints_available", kernel_processor_sleep_available_hints());
     kernel_test_measure(test, "sleep_hint_active", kernel_processor_sleep_active_hint());
@@ -132,8 +171,8 @@ KERNEL_TEST(nothing_plays_louder_than_the_ceiling)
 }
 
 /**
- * @brief The audio controller answers every verb, and its capture stream delivers buffers by
- *        interrupt during the session.
+ * @brief The audio controller answers every verb, its capture stream delivers buffers by
+ *        interrupt during the session, and stops with it.
  *
  * @details The capture claims are checked together because each alone can pass for the wrong
  *          reason: a converter can be found on a stream that never runs, and a stream can run while
@@ -157,9 +196,7 @@ KERNEL_TEST(the_capture_stream_delivers_buffers)
     kernel_test_check(test, controller->codec_mask != 0u, "a codec announced itself");
     kernel_test_check(test, controller->codec_vendor[0] != 0u, "the codec answered a verb");
     kernel_test_check(test, controller->verb_timeouts == 0u, "every codec verb was answered");
-    kernel_test_check(test,
-                      controller->capture_converter != 0u && controller->capture_running && report != NULL &&
-                          report->frames_captured > 0u,
+    kernel_test_check(test, controller->capture_converter != 0u && report != NULL && report->frames_captured > 0u,
                       "the capture stream delivers buffers");
     kernel_test_check(test, hardware_abstraction_layer_audio_capture_is_interrupt_driven(),
                       "capture is driven by the controller's interrupt");
@@ -167,6 +204,13 @@ KERNEL_TEST(the_capture_stream_delivers_buffers)
                       "the capture handler actually ran");
     kernel_test_check(test, hardware_abstraction_layer_audio_capture_overruns() == 0u,
                       "a full capture ring refused rather than overwrote");
+
+    const uint32_t interrupts_after_the_run = hardware_abstraction_layer_audio_capture_interrupt_count();
+    const uint32_t ticks_waited = power_floor_wait_for_ticks(POWER_FLOOR_TICKS_AFTER_THE_RUN);
+    kernel_test_check(test,
+                      !controller->capture_running && ticks_waited >= POWER_FLOOR_TICKS_AFTER_THE_RUN &&
+                          hardware_abstraction_layer_audio_capture_interrupt_count() == interrupts_after_the_run,
+                      "the capture stops with the session");
 
     uint8_t stream_status = 0u;
     uint32_t interrupt_status = 0u;

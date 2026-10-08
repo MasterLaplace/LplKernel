@@ -152,6 +152,17 @@ uint32_t hardware_abstraction_layer_audio_capture_interrupt_count(void);
 uint8_t hardware_abstraction_layer_audio_capture_interrupt_line(void);
 
 /**
+ * @brief Stops the capture stream, and with it the controller's capture interrupts.
+ *
+ * @details The buffers already in the ring stay there for
+ *          @ref hardware_abstraction_layer_audio_capture_take; the counters keep what the stream
+ *          delivered while it ran.
+ *
+ * @return true when a running stream was stopped.
+ */
+bool hardware_abstraction_layer_audio_capture_stop(void);
+
+/**
  * @brief Moves whatever the controller has finished into the ring.
  *
  * The producer side. Called from the capture interrupt handler where one could be

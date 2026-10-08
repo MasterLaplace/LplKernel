@@ -97,6 +97,28 @@ extern void interrupt_request_set_timer_owner_is_apic(uint8_t enabled);
 extern uint8_t interrupt_request_is_timer_owner_apic(void);
 
 /**
+ * @brief Stops the periodic tick, whichever timer owns it, so a one-shot can take its vector.
+ *
+ * @details The PIT's line is masked at the 8259, or the local APIC's periodic timer is stopped,
+ *          and the owner is kept for @ref interrupt_request_resume_periodic_tick. Until then the
+ *          timer vector carries the local APIC's one-shot: it is acknowledged at the APIC and
+ *          counted as no tick, whichever timer owned the tick before.
+ */
+extern void interrupt_request_suspend_periodic_tick(void);
+
+/**
+ * @brief Gives the tick back to the timer that owned it before the suspension, at the rate it ran.
+ */
+extern void interrupt_request_resume_periodic_tick(void);
+
+/**
+ * @brief Counts the ticks a suspended timer would have delivered, so the tick count stays continuous.
+ *
+ * @param ticks Ticks elapsed while the periodic tick was stopped.
+ */
+extern void interrupt_request_advance_tick_count(uint32_t ticks);
+
+/**
  * @brief Select keyboard interrupt ownership mode.
  *
  * 0 => legacy PIC ownership
