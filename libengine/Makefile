@@ -82,7 +82,7 @@ libenginetests.a: $(ENGINE_TEST_OBJS) $(ENGINE_TEST_STAMP)
 # Engine sources, pulled from LPLPLUGIN_ROOT.
 obj/%.o: $(LPLPLUGIN_ROOT)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 # The LplPlugin commit compiled in, stamped into identity.o alone. The stamp file changes
 # only when the commit does, and identity.o depends on it: make cannot see a -D change.
@@ -90,16 +90,28 @@ LPLPLUGIN_COMMIT:=$(shell git -C $(LPLPLUGIN_ROOT) rev-parse --short=7 HEAD 2>/d
 IDENTITY_STAMP:=obj/local/identity.stamp
 $(shell mkdir -p obj/local; echo '$(LPLPLUGIN_COMMIT)' | cmp -s - $(IDENTITY_STAMP) || echo '$(LPLPLUGIN_COMMIT)' > $(IDENTITY_STAMP))
 obj/local/identity.o: $(IDENTITY_STAMP)
-obj/local/identity.o: CPPFLAGS+=-DLPLPLUGIN_COMMIT='"$(LPLPLUGIN_COMMIT)"'
+obj/local/identity.o: private CPPFLAGS+=-DLPLPLUGIN_COMMIT='"$(LPLPLUGIN_COMMIT)"'
 
 # libengine-local sources.
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 obj/local/tests/%.o: tests/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+
+# make sees the sources an object is built from, not the flags it is built with: each object
+# depends on a stamp of the flags, rewritten only when they change, as in the kernel. A rule
+# writes it, not the parse: headers.sh runs make without the profile's variables.
+FLAGS_STAMP:=obj/local/flags.stamp
+$(FLAGS_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(CXXFLAGS) $(CPPFLAGS)' | cmp -s - $@ || echo '$(CXXFLAGS) $(CPPFLAGS)' > $@
+$(OBJS) $(ENGINE_TEST_OBJS): $(FLAGS_STAMP)
+
+.PHONY: FORCE
+FORCE:
 
 clean:
 	rm -f $(BINARIES) *.a
