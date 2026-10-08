@@ -7,6 +7,10 @@ concurrency:
 on:
   push:
     branches: [ "main" ]
+  # Every day as well: the roadmap page reads the issues of six repositories, and only a push here
+  # rebuilt it, so an issue closed elsewhere waited for the next one.
+  schedule:
+    - cron: "17 4 * * *"
   workflow_dispatch:
 
 permissions:
