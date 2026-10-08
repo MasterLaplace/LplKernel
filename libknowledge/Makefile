@@ -102,7 +102,7 @@ libknowledgetests.a: $(KNOWLEDGE_TEST_OBJS) $(KNOWLEDGE_TEST_STAMP)
 # Knowledge sources, pulled from LPLKNOWLEDGE_ROOT.
 obj/%.o: $(LPLKNOWLEDGE_ROOT)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 # libknowledge-local sources.
 # The LplKnowledge commit compiled in, stamped into identity.o alone. The stamp file changes
@@ -115,7 +115,7 @@ obj/local/identity.o: CPPFLAGS+=-DLPLKNOWLEDGE_COMMIT='"$(LPLKNOWLEDGE_COMMIT)"'
 
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 clean:
 	rm -f $(BINARIES) *.a

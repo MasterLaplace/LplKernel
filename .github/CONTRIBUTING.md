@@ -112,5 +112,3 @@ On top of the shared C and C++ rules:
 - `./iso.sh` rebuilds the profile it is given, so `./build.sh --server && ./iso.sh` produces a client
   image. Use `./iso.sh --server`, or `./pipeline_profiles.sh` for both profiles (#418).
 - `xmake iso` packs the first `lpl.kernel` it finds under `build/`, debug or release (#419).
-- After a header is renamed or removed, stale `.d` files stop `make` with "No rule to make target":
-  run `./clean.sh` (#420).

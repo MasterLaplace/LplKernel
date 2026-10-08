@@ -102,7 +102,7 @@ libassistanttests.a: $(ASSISTANT_TEST_OBJS) $(ASSISTANT_TEST_STAMP)
 # Mind sources, pulled from LPLASSISTANT_ROOT.
 obj/%.o: $(LPLASSISTANT_ROOT)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 # libassistant-local sources.
 # The LplAssistant commit compiled in, stamped into identity.o alone. The stamp file changes
@@ -115,11 +115,11 @@ obj/local/identity.o: CPPFLAGS+=-DLPLASSISTANT_COMMIT='"$(LPLASSISTANT_COMMIT)"'
 
 obj/local/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 obj/local/tests/%.o: tests/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -MD -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
+	$(CXX) -MD -MP -c $< -o $@ $(CXXFLAGS) $(CPPFLAGS)
 
 clean:
 	rm -f $(BINARIES) *.a
