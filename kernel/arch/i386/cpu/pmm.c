@@ -164,6 +164,16 @@ static bool buddy_population_in_progress = false;
 static uint32_t buddy_rejected_free_count = 0u;
 static uint32_t buddy_double_free_count = 0u;
 
+#    ifdef LPL_KERNEL_DEBUG_POISON
+/**
+ * @brief One bit per page: set when the page was poisoned on its free, cleared when it is handed out.
+ *
+ * Pages handed to the allocator at boot were never poisoned, so only the pages that carry a bit are
+ * checked when they are handed out.
+ */
+static uint8_t buddy_page_poisoned[PMM_MAX_PAGE_COUNT / 8u] = {0};
+#    endif
+
 static inline uint32_t buddy_phys_to_page_index(uint32_t phys_addr) { return phys_addr >> 12u; }
 
 static inline uint32_t buddy_order_block_size_bytes(uint8_t order) { return PAGE_SIZE << order; }
@@ -180,6 +190,62 @@ static bool buddy_is_order_aligned(uint32_t phys_addr, uint8_t order)
     return (phys_addr & (buddy_order_block_size_bytes(order) - 1u)) == 0u;
 }
 
+#    ifdef LPL_KERNEL_DEBUG_POISON
+/**
+ * @brief Fills every page of a block being freed with the poison, before it can merge.
+ *
+ * @details Before the merge, because the buddy it merges with may already hold a write made after
+ *          its own free: poisoning the merged block would erase that write before anything checked
+ *          it.
+ */
+static void buddy_poison_freed_pages(uint32_t phys_addr, uint8_t order)
+{
+    const uint32_t first_page_index = buddy_phys_to_page_index(phys_addr);
+    const uint32_t page_count = 1u << order;
+
+    for (uint32_t page_offset = 0u; page_offset < page_count; ++page_offset)
+    {
+        const uint32_t page_index = first_page_index + page_offset;
+        uint8_t *const page = (uint8_t *) pmm_phys_to_virt((page_index << 12u));
+
+        for (uint32_t i = 0u; i < PAGE_SIZE; ++i)
+            page[i] = 0xAA;
+        buddy_page_poisoned[page_index >> 3u] |= (uint8_t) (1u << (page_index & 7u));
+    }
+}
+
+/**
+ * @brief Counts every page of a block being handed out that was written into since its free.
+ *
+ * @details The first word of each page is skipped: it holds a free-list link whenever the page was
+ *          the base of a free block, however small it was split afterwards.
+ */
+static void buddy_check_handed_out_pages(uint32_t phys_addr, uint8_t order)
+{
+    const uint32_t first_page_index = buddy_phys_to_page_index(phys_addr);
+    const uint32_t page_count = 1u << order;
+
+    for (uint32_t page_offset = 0u; page_offset < page_count; ++page_offset)
+    {
+        const uint32_t page_index = first_page_index + page_offset;
+        const uint8_t bit = (uint8_t) (1u << (page_index & 7u));
+        const uint8_t *const page = (const uint8_t *) pmm_phys_to_virt((page_index << 12u));
+
+        if (!(buddy_page_poisoned[page_index >> 3u] & bit))
+            continue;
+        buddy_page_poisoned[page_index >> 3u] &= (uint8_t) ~bit;
+        for (uint32_t i = sizeof(uint32_t); i < PAGE_SIZE; ++i)
+        {
+            if (page[i] != 0xAA)
+            {
+                pmm_uaf_anomalies++;
+                break;
+            }
+        }
+    }
+}
+#    endif
+
 static void buddy_list_push(uint8_t order, uint32_t phys_addr)
 {
     uint32_t node_id = numa_policy_get_node_for_address(phys_addr);
@@ -193,15 +259,6 @@ static void buddy_list_push(uint8_t order, uint32_t phys_addr)
     buddy_free_list_heads[node_id][order] = phys_addr;
     buddy_page_is_free[page_index] = 1u;
     buddy_page_order[page_index] = order;
-
-#    ifdef LPL_KERNEL_DEBUG_POISON
-    if (order == 0u)
-    {
-        uint8_t *poison_ptr = (uint8_t *) (page_virt + 1);
-        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i)
-            poison_ptr[i] = 0xAA;
-    }
-#    endif
 
     uint32_t start_page_index = buddy_phys_to_page_index(phys_addr);
     uint32_t page_count = 1u << order;
@@ -222,21 +279,6 @@ static uint32_t buddy_list_pop_from_node(uint32_t target_node, uint8_t order)
 
     buddy_free_list_heads[target_node][order] = *page_virt;
     buddy_page_is_free[page_index] = 0u;
-
-#    ifdef LPL_KERNEL_DEBUG_POISON
-    if (order == 0u)
-    {
-        uint8_t *poison_ptr = (uint8_t *) (page_virt + 1);
-        for (uint32_t i = 0; i < PAGE_SIZE - sizeof(uint32_t); ++i)
-        {
-            if (poison_ptr[i] != 0xAA)
-            {
-                pmm_uaf_anomalies++;
-                break;
-            }
-        }
-    }
-#    endif
 
     uint32_t start_page_index = buddy_phys_to_page_index(phys_addr);
     uint32_t page_count = 1u << order;
@@ -382,6 +424,11 @@ static void buddy_insert_order(uint32_t phys_addr, uint8_t requested_order)
     uint32_t current_phys = phys_addr;
     uint32_t page_count = 1u << requested_order;
 
+#    ifdef LPL_KERNEL_DEBUG_POISON
+    if (!buddy_population_in_progress)
+        buddy_poison_freed_pages(phys_addr, requested_order);
+#    endif
+
     free_page_count += page_count;
 
     while (current_order < PMM_BUDDY_MAX_ORDER)
@@ -463,6 +510,10 @@ static uint32_t buddy_remove_order(uint8_t requested_order)
             buddy_list_push(order, right_buddy_phys);
     }
 
+#    ifdef LPL_KERNEL_DEBUG_POISON
+    buddy_check_handed_out_pages(block_phys, requested_order);
+#    endif
+
     free_page_count -= (1u << requested_order);
     pmm_update_watermarks();
     return block_phys;
@@ -486,6 +537,11 @@ static void buddy_reset_state(void)
         buddy_page_order[page_index] = 0u;
         buddy_page_allocated[page_index] = 0u;
     }
+
+#    ifdef LPL_KERNEL_DEBUG_POISON
+    for (uint32_t byte_index = 0u; byte_index < PMM_MAX_PAGE_COUNT / 8u; ++byte_index)
+        buddy_page_poisoned[byte_index] = 0u;
+#    endif
 
     buddy_population_in_progress = false;
     buddy_rejected_free_count = 0u;

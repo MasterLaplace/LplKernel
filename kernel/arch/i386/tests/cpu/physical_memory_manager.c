@@ -4,6 +4,77 @@
 
 KERNEL_TEST_SUITE(physical_memory_manager, KERNEL_TEST_STAGE_INITIALIZATION);
 
+/** Pages a test may hold while it looks for a buddy pair or waits for a page to come back. */
+#define PHYSICAL_MEMORY_MANAGER_TEST_PAGE_BUDGET 1024u
+
+#if !defined(LPL_KERNEL_REAL_TIME_MODE)
+/** Pages taken by the test of a write into a merged page, kept out of the kernel stack. */
+static uint32_t physical_memory_manager_test_pages[PHYSICAL_MEMORY_MANAGER_TEST_PAGE_BUDGET];
+
+/**
+ * @brief Allocates pages until two of them are buddies, and frees every other page it took.
+ *
+ * @param out_lower  Receives the buddy at the lower address, or 0 when none was found.
+ * @param out_higher Receives the buddy at the higher address.
+ */
+static void physical_memory_manager_test_take_a_buddy_pair(uint32_t *out_lower, uint32_t *out_higher)
+{
+    uint32_t allocated = 0u;
+
+    *out_lower = 0u;
+    *out_higher = 0u;
+    while (allocated < 128u && !*out_lower)
+    {
+        const uint32_t page = physical_memory_manager_page_frame_allocate();
+
+        if (!page)
+            break;
+        physical_memory_manager_test_pages[allocated++] = page;
+        for (uint32_t earlier = 0u; earlier + 1u < allocated; ++earlier)
+        {
+            if ((physical_memory_manager_test_pages[earlier] ^ PAGE_SIZE) == page)
+            {
+                *out_lower = page < physical_memory_manager_test_pages[earlier] ?
+                                 page :
+                                 physical_memory_manager_test_pages[earlier];
+                *out_higher = *out_lower ^ PAGE_SIZE;
+                break;
+            }
+        }
+    }
+    for (uint32_t index = 0u; index < allocated; ++index)
+    {
+        if (physical_memory_manager_test_pages[index] != *out_lower &&
+            physical_memory_manager_test_pages[index] != *out_higher)
+            physical_memory_manager_page_frame_free(physical_memory_manager_test_pages[index]);
+    }
+}
+
+/**
+ * @brief Allocates pages until @p wanted comes back, then frees every page it took.
+ *
+ * @return The allocations it took, or 0 when @p wanted did not come back within the budget.
+ */
+static uint32_t physical_memory_manager_test_allocate_until(uint32_t wanted)
+{
+    uint32_t allocated = 0u;
+    bool found = false;
+
+    while (allocated < PHYSICAL_MEMORY_MANAGER_TEST_PAGE_BUDGET && !found)
+    {
+        const uint32_t page = physical_memory_manager_page_frame_allocate();
+
+        if (!page)
+            break;
+        physical_memory_manager_test_pages[allocated++] = page;
+        found = (page == wanted);
+    }
+    for (uint32_t index = 0u; index < allocated; ++index)
+        physical_memory_manager_page_frame_free(physical_memory_manager_test_pages[index]);
+    return found ? allocated : 0u;
+}
+#endif
+
 /**
  * @brief A write into a freed page is found when the page is handed out again.
  *
@@ -42,6 +113,48 @@ KERNEL_TEST(use_after_free_is_detected)
     physical_memory_manager_page_frame_free(kept_page);
     if (handed_out_again)
         physical_memory_manager_page_frame_free(handed_out_again);
+#endif
+}
+
+/**
+ * @brief A write into a freed page is found when the page comes back, even when the page merged
+ *        with its free buddy in between.
+ *
+ * @details The merged block is kept at a higher order and split again to hand the page out: a
+ *          poison laid only on blocks of one page, at the order they are kept, never covers it.
+ */
+KERNEL_TEST(a_write_into_a_page_that_merged_is_found)
+{
+#if defined(LPL_KERNEL_REAL_TIME_MODE)
+    kernel_test_skip(test, "the client profile has no buddy allocator");
+#else
+    const uint32_t anomalies_before = physical_memory_manager_get_uaf_anomaly_count();
+    uint32_t lower = 0u;
+    uint32_t higher = 0u;
+
+    physical_memory_manager_test_take_a_buddy_pair(&lower, &higher);
+    if (!lower)
+    {
+        kernel_test_skip(test, "no buddy pair among 128 pages");
+        return;
+    }
+
+    volatile uint32_t *const stale_mapping = (volatile uint32_t *) (higher + KERNEL_VIRTUAL_BASE);
+
+    physical_memory_manager_page_frame_free(lower);
+    physical_memory_manager_page_frame_free(higher);
+    kernel_test_check(test,
+                      !physical_memory_manager_debug_is_free_block(lower, 0u) &&
+                          !physical_memory_manager_debug_is_free_block(higher, 0u),
+                      "the page merged with its free buddy");
+    stale_mapping[10] = 0xDEADBEEFu;
+
+    const uint32_t allocations = physical_memory_manager_test_allocate_until(higher);
+
+    kernel_test_check(test, allocations != 0u, "the page comes back");
+    kernel_test_check(test, physical_memory_manager_get_uaf_anomaly_count() > anomalies_before,
+                      "and the write into it is found");
+    kernel_test_measure(test, "allocations", allocations);
 #endif
 }
 
