@@ -1,4 +1,5 @@
 #include <kernel/cpu/acpi.h>
+#include <kernel/cpu/apic.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/testing/test.h>
 
@@ -157,4 +158,27 @@ KERNEL_TEST(slots_bind_to_domains)
     kernel_test_check(test, cpu_topology_get_slot_domain(local_slot) == local_slot, "binding it back restores it");
     kernel_test_check(test, cpu_topology_get_slot_domain(other_slot) == other_slot,
                       "binding one slot leaves its neighbour alone");
+}
+
+/**
+ * @brief Every processor the firmware enables comes online, whichever mode the local APIC runs in.
+ *
+ * @details In x2APIC mode the start-up interrupts were addressed as in xAPIC mode, and no application
+ *          processor answered; nothing but the smp record said so.
+ */
+KERNEL_TEST(every_processor_the_firmware_enables_comes_online)
+{
+    if (!advanced_configuration_and_power_interface_madt_is_available())
+    {
+        kernel_test_skip(test, "no MADT names the processors");
+        return;
+    }
+
+    const uint32_t enabled = advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count();
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+
+    kernel_test_check(test, online == enabled, "every processor the MADT enables is online");
+    kernel_test_measure(test, "enabled", enabled);
+    kernel_test_measure(test, "online", online);
+    kernel_test_measure(test, "x2apic", apic_is_x2apic_active() ? 1u : 0u);
 }
