@@ -63,7 +63,7 @@ extern "C" {
 /** Samples in one capture or playback buffer: forty milliseconds at 16 kHz. */
 #define KERNEL_HAL_AUDIO_FRAME_SAMPLES 640u
 
-/** Buffers the capture ring holds before it overwrites the oldest. */
+/** Buffers the capture ring holds; a full ring refuses the newest and counts it as an overrun. */
 #define KERNEL_HAL_AUDIO_RING_FRAMES 8u
 
 /**
