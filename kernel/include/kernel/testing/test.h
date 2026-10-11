@@ -61,13 +61,16 @@ extern "C" {
 
 /**
  * @enum KernelTestStage
- * @brief The two moments of the boot at which kernel tests run.
+ * @brief The three moments of the boot at which kernel tests run.
  */
 typedef enum KernelTestStage {
     KERNEL_TEST_STAGE_INITIALIZATION = 0, /**< Inside kernel_initialize, once the timers and the other CPUs are
                                                up and before the bus is enumerated. */
     KERNEL_TEST_STAGE_BOOTED = 1,         /**< From kernel_main, once every constructor has run and the
-                                               read-only sections are protected. */
+                                               read-only sections are protected. The libraries' tests follow. */
+    KERNEL_TEST_STAGE_PUBLISHED = 2,      /**< From kernel_main, after every other test and after the live
+                                               checks' records: the state the boot published, checked once
+                                               nothing else will run. */
 } KernelTestStage_t;
 
 /**
@@ -189,7 +192,8 @@ extern void kernel_test_note(KernelTest_t *test, const char *text);
  * @brief Runs every test of one stage and reports it in KTAP.
  *
  * @details The first stage to run prints the KTAP header and the plan, which counts the suites
- *          of both stages. The booted stage ends with the totals.
+ *          of every stage and of the libraries. The booted stage ends with the libraries' tests, and
+ *          the published stage with the totals.
  *
  * @param stage  The stage that has been reached.
  * @param serial Port the report is written to.

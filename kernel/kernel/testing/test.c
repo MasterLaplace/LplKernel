@@ -460,10 +460,10 @@ void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial)
     while (test_case && test_case->suite->stage == stage)
         test_case = kernel_test_run_suite(test_case, selection, serial);
 
-    if (stage != KERNEL_TEST_STAGE_BOOTED)
-        return;
+    if (stage == KERNEL_TEST_STAGE_PUBLISHED)
+        kernel_test_write_totals(serial, selection);
 #if !defined(LPL_PLUGIN_UNAVAILABLE)
-    kernel_test_run_libraries(serial, selection);
+    if (stage == KERNEL_TEST_STAGE_BOOTED)
+        kernel_test_run_libraries(serial, selection);
 #endif
-    kernel_test_write_totals(serial, selection);
 }
