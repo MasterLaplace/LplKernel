@@ -1,9 +1,14 @@
+#include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
 KERNEL_TEST_SUITE(paging, KERNEL_TEST_STAGE_INITIALIZATION);
+
+/** Pages in the run the shootdown test frees. */
+#define PAGING_TEST_RUN_PAGES 8u
 
 /**
  * @brief Searches the 4 MiB slots from @p first for one whose first two pages are unmapped.
@@ -66,4 +71,43 @@ KERNEL_TEST_MANUAL(empty_page_table_is_reclaimed, "maps pages inside the range t
     kernel_test_check(test, first_unmapped && second_unmapped, "both can be unmapped");
     kernel_test_check(test, paging_get_runtime_owned_page_table_count() == tables_before,
                       "unmapping the last page reclaims the table");
+}
+
+/**
+ * @brief Freeing a run of pages sends one TLB shootdown for the whole run, and only then gives its
+ *        frames back.
+ *
+ * @details One interrupt per page made each freed page cost a broadcast every other CPU had to
+ *          answer, and the frame was free before the shootdown that dropped its translation.
+ */
+KERNEL_TEST(a_freed_run_costs_one_shootdown)
+{
+#if defined(LPL_KERNEL_REAL_TIME_MODE)
+    kernel_test_skip(test, "checked on the server profile only");
+#else
+    const uint32_t free_before = physical_memory_manager_get_free_page_count();
+    void *const run = kernel_vmm_alloc_pages(PAGING_TEST_RUN_PAGES);
+
+    if (!kernel_test_check(test, run != NULL, "a run of pages can be allocated"))
+        return;
+
+    const uint32_t first_page = (uint32_t) (uintptr_t) run;
+    const uint32_t shootdowns_before = advanced_pic_ipi_get_tlb_shootdown_broadcast_count();
+    const uint32_t ranges_before = kernel_vmm_get_unmapped_range_count();
+
+    kernel_vmm_free_pages(run, PAGING_TEST_RUN_PAGES);
+
+    const uint32_t shootdowns = advanced_pic_ipi_get_tlb_shootdown_broadcast_count() - shootdowns_before;
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+
+    kernel_test_check(test, shootdowns == (online > 1u ? 1u : 0u), "freeing it sends one shootdown for the whole run");
+    kernel_test_check(test, kernel_vmm_get_unmapped_range_count() == ranges_before + 1u, "and counts one range");
+    kernel_test_check(
+        test, !paging_is_mapped(first_page) && !paging_is_mapped(first_page + (PAGING_TEST_RUN_PAGES - 1u) * PAGE_SIZE),
+        "no page of the run stays mapped");
+    kernel_test_check(test, physical_memory_manager_get_free_page_count() == free_before,
+                      "every frame of the run goes back");
+    kernel_test_measure(test, "shootdowns", shootdowns);
+    kernel_test_measure(test, "online", online);
+#endif
 }

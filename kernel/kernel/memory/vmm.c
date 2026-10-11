@@ -12,6 +12,7 @@
 static uint8_t vmm_bitmap[VMM_BITMAP_SIZE];
 static uint32_t vmm_last_search_index = 0u;
 static bool vmm_initialized = false;
+static uint32_t vmm_unmapped_range_count = 0u;
 
 static void vmm_bitmap_set(uint32_t index) { vmm_bitmap[index / 8] |= (1 << (index % 8)); }
 
@@ -139,15 +140,10 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count)
 
     uint32_t start_index = (virt_start - KERNEL_VMM_DYNAMIC_START) / PAGE_SIZE;
 
+    if (paging_unmap_range(virt_start, page_count, true) != 0u)
+        ++vmm_unmapped_range_count;
     for (uint32_t i = 0u; i < page_count; ++i)
-    {
-        uint32_t virt = virt_start + (i * PAGE_SIZE);
-        uint32_t phys = 0u;
-
-        if (paging_get_physical_address(virt, &phys))
-            physical_memory_manager_page_frame_free(phys);
-
-        paging_unmap_page(virt);
         vmm_bitmap_clear(start_index + i);
-    }
 }
+
+uint32_t kernel_vmm_get_unmapped_range_count(void) { return vmm_unmapped_range_count; }

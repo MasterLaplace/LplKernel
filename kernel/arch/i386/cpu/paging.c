@@ -184,6 +184,128 @@ static bool paging_is_page_table_empty(const PageTable_t *page_table)
     return true;
 }
 
+/** Mark left in an entry's OS bits between its unmapping and its release, after the shootdown. */
+#define PAGING_ENTRY_AWAITING_RELEASE 1u
+
+/**
+ * @brief Clear all fields of a Page Directory Entry.
+ * @param pde Pointer to the PDE to zero out.
+ */
+static void paging_clear_pde(PageDirectoryEntry_t *pde)
+{
+    pde->present = 0;
+    pde->read_write = 0;
+    pde->user_supervisor = 0;
+    pde->write_through = 0;
+    pde->cache_disable = 0;
+    pde->accessed = 0;
+    pde->reserved_zero = 0;
+    pde->page_size = 0;
+    pde->ignored = 0;
+    pde->available = 0;
+    pde->page_table_base = 0;
+}
+
+/**
+ * @brief Takes away every present page of a run, keeping each frame's address for its release.
+ *
+ * @return Pages that were present.
+ */
+static uint32_t paging_withdraw_pages(uint32_t virt_start, uint32_t page_count)
+{
+    uint32_t withdrawn = 0u;
+
+    for (uint32_t page = 0u; page < page_count; ++page)
+    {
+        const uint32_t virt_addr = virt_start + page * PAGE_SIZE;
+        const PageDirectoryEntry_t *const pde = &current_page_directory->entries[PAGE_DIRECTORY_INDEX(virt_addr)];
+
+        if (!pde->present)
+            continue;
+
+        PageTableEntry_t *const pte = &paging_get_page_table(pde)->entries[PAGE_TABLE_INDEX(virt_addr)];
+
+        if (!pte->present)
+            continue;
+        pte->present = 0;
+        pte->available = PAGING_ENTRY_AWAITING_RELEASE;
+        ++withdrawn;
+    }
+
+    return withdrawn;
+}
+
+/**
+ * @brief Takes away every page table of the run that the kernel created and that is now empty,
+ *        keeping its address for its release.
+ *
+ * @return Page tables taken away.
+ */
+static uint32_t paging_withdraw_empty_page_tables(uint32_t virt_start, uint32_t page_count)
+{
+    const uint32_t first = PAGE_DIRECTORY_INDEX(virt_start);
+    const uint32_t last = PAGE_DIRECTORY_INDEX(virt_start + (page_count - 1u) * PAGE_SIZE);
+    uint32_t withdrawn = 0u;
+
+    for (uint32_t pd_index = first; pd_index <= last; ++pd_index)
+    {
+        PageDirectoryEntry_t *const pde = &current_page_directory->entries[pd_index];
+
+        if (!pde->present || !page_table_runtime_owned[pd_index] ||
+            !paging_is_page_table_empty(paging_get_page_table(pde)))
+            continue;
+        pde->present = 0;
+        pde->available = PAGING_ENTRY_AWAITING_RELEASE;
+        ++withdrawn;
+    }
+
+    return withdrawn;
+}
+
+/**
+ * @brief Clears the entries of a run taken away before the shootdown, and gives their frames back.
+ *
+ * @param free_frames Whether the frames the pages mapped go back to the physical memory manager.
+ */
+static void paging_release_withdrawn_range(uint32_t virt_start, uint32_t page_count, bool free_frames)
+{
+    for (uint32_t page = 0u; page < page_count; ++page)
+    {
+        const uint32_t virt_addr = virt_start + page * PAGE_SIZE;
+        const PageDirectoryEntry_t *const pde = &current_page_directory->entries[PAGE_DIRECTORY_INDEX(virt_addr)];
+
+        if (!pde->present && pde->available != PAGING_ENTRY_AWAITING_RELEASE)
+            continue;
+
+        PageTableEntry_t *const pte = &paging_get_page_table(pde)->entries[PAGE_TABLE_INDEX(virt_addr)];
+
+        if (pte->present || pte->available != PAGING_ENTRY_AWAITING_RELEASE)
+            continue;
+        if (free_frames)
+            physical_memory_manager_page_frame_free(((uint32_t) pte->page_frame_base) << 12);
+        paging_clear_pte(pte);
+    }
+
+    const uint32_t first = PAGE_DIRECTORY_INDEX(virt_start);
+    const uint32_t last = PAGE_DIRECTORY_INDEX(virt_start + (page_count - 1u) * PAGE_SIZE);
+
+    for (uint32_t pd_index = first; pd_index <= last; ++pd_index)
+    {
+        PageDirectoryEntry_t *const pde = &current_page_directory->entries[pd_index];
+
+        if (pde->present || pde->available != PAGING_ENTRY_AWAITING_RELEASE)
+            continue;
+
+        const uint32_t page_table_phys = PAGE_FRAME_ADDR(pde);
+
+        paging_clear_pde(pde);
+        page_table_runtime_owned[pd_index] = false;
+        if (page_table_runtime_owned_count > 0u)
+            --page_table_runtime_owned_count;
+        physical_memory_manager_page_frame_free(page_table_phys);
+    }
+}
+
 void paging_initialize_runtime(void)
 {
     current_page_directory = &boot_page_directory;
@@ -225,53 +347,25 @@ bool paging_map_page(uint32_t virt_addr, uint32_t phys_addr, PageDirectoryEntry_
     return true;
 }
 
-bool paging_unmap_page(uint32_t virt_addr)
+uint32_t paging_unmap_range(uint32_t virt_start, uint32_t page_count, bool free_frames)
 {
-    if (!current_page_directory)
-        return false;
+    if (!current_page_directory || page_count == 0u)
+        return 0u;
 
-    virt_addr = PAGE_ALIGN_DOWN(virt_addr);
+    virt_start = PAGE_ALIGN_DOWN(virt_start);
 
-    uint32_t pd_index = PAGE_DIRECTORY_INDEX(virt_addr);
-    uint32_t pt_index = PAGE_TABLE_INDEX(virt_addr);
+    const uint32_t pages = paging_withdraw_pages(virt_start, page_count);
+    const uint32_t page_tables = paging_withdraw_empty_page_tables(virt_start, page_count);
 
-    PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
-    if (!pde->present)
-        return false;
+    if (pages == 0u && page_tables == 0u)
+        return 0u;
 
-    PageTable_t *page_table = paging_get_page_table(pde);
-    PageTableEntry_t *pte = &page_table->entries[pt_index];
-
-    if (!pte->present)
-        return false;
-
-    paging_clear_pte(pte);
-
-    if (page_table_runtime_owned[pd_index] && paging_is_page_table_empty(page_table))
-    {
-        uint32_t page_table_phys = PAGE_FRAME_ADDR(pde);
-
-        pde->present = 0;
-        pde->read_write = 0;
-        pde->user_supervisor = 0;
-        pde->write_through = 0;
-        pde->cache_disable = 0;
-        pde->accessed = 0;
-        pde->reserved_zero = 0;
-        pde->page_size = 0;
-        pde->ignored = 0;
-        pde->available = 0;
-        pde->page_table_base = 0;
-
-        page_table_runtime_owned[pd_index] = false;
-        if (page_table_runtime_owned_count > 0u)
-            --page_table_runtime_owned_count;
-        physical_memory_manager_page_frame_free(page_table_phys);
-    }
-
-    advanced_pic_ipi_broadcast_tlb_shootdown(virt_addr);
-    return true;
+    advanced_pic_ipi_broadcast_tlb_shootdown_range(virt_start, page_count);
+    paging_release_withdrawn_range(virt_start, page_count, free_frames);
+    return pages;
 }
+
+bool paging_unmap_page(uint32_t virt_addr) { return paging_unmap_range(virt_addr, 1u, false) == 1u; }
 
 bool paging_get_physical_address(uint32_t virt_addr, uint32_t *phys_addr)
 {

@@ -280,6 +280,22 @@ bool paging_map_page(uint32_t virt_addr, uint32_t phys_addr, PageDirectoryEntry_
 bool paging_unmap_page(uint32_t virt_addr);
 
 /**
+ * @brief Unmaps a run of pages with one TLB shootdown, and only then gives back what they used.
+ *
+ * @details Every present page of the run is taken away first, with the page tables the kernel
+ *          created that this leaves empty; one shootdown then invalidates the whole run on every
+ *          CPU, and waits for each to acknowledge. Only after it are the frames handed back to the
+ *          physical memory manager: a frame freed before every CPU dropped its translation could be
+ *          allocated again while one of them still maps it.
+ *
+ * @param virt_start  First page of the run.
+ * @param page_count  Pages in the run.
+ * @param free_frames Whether the frames the pages mapped go back to the physical memory manager.
+ * @return Pages of the run that were mapped.
+ */
+uint32_t paging_unmap_range(uint32_t virt_start, uint32_t page_count, bool free_frames);
+
+/**
  * @brief Get the physical address mapped to a virtual address
  *
  * @param virt_addr Virtual address to translate

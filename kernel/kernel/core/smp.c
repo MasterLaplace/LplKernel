@@ -7,6 +7,7 @@
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/helpers/ap_startup_helper.h>
 #include <kernel/diag/telemetry.h>
+#include <kernel/memory/vmm.h>
 
 /** Polls of the acknowledgement word before an attempt is given up. The AP writes it in real
     mode, first thing: measured at zero polls under QEMU, it is already there when the IPIs return. */
@@ -178,6 +179,7 @@ void kernel_symmetric_multiprocessing_report(Serial_t *serial)
     kernel_telemetry_write_unsigned("ap_delivered", smp_ap_delivered);
     kernel_telemetry_write_unsigned("ap_parked", smp_ap_parked);
     kernel_telemetry_write_unsigned("shootdowns", advanced_pic_ipi_get_tlb_shootdown_broadcast_count());
+    kernel_telemetry_write_unsigned("ranges_unmapped", kernel_vmm_get_unmapped_range_count());
     kernel_telemetry_write_unsigned("shootdown_timeouts", timeouts);
     kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
     kernel_telemetry_end_record();
