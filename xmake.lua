@@ -147,6 +147,11 @@ local ENABLE_SMOKE = has_config("smoke") and not is_mode("release")
 -- the console is the only thing the kernel has left to run.
 local ENABLE_CONSOLE = has_config("console") and not is_mode("release")
 
+-- The largest stack frame code linked into the kernel may have: a quarter of the 64 KiB boot stack
+-- (.bootstrap_stack in kernel/arch/i386/boot/boot.S). A larger local is a build error rather than an
+-- overflow into .bss, and goes in static storage. config.sh states the same limit for the shell build.
+local kKernelFrameLimitFlag = "-Werror=frame-larger-than=16384"
+
 -- ===========================================================================
 -- libk — freestanding C support library (libc/ FREEOBJS, libk variant).
 -- ===========================================================================
@@ -154,7 +159,7 @@ target("libk")
     set_kind("static")
     set_basename("k")
     add_cflags("-nostdinc", "-ffreestanding", "-Wall", "-Wextra", "-fstack-protector-strong",
-               "-std=gnu99", {force = true})
+               "-std=gnu99", kKernelFrameLimitFlag, {force = true})
     add_defines("__is_libc", "__is_libk")
     add_sysincludedirs("libc/include", "kernel/include")
     add_files(
@@ -192,7 +197,7 @@ target("libkxx")
     set_kind("static")
     set_basename("kxx")
     add_cxxflags("-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
-                 "-Wall", "-Wextra", {force = true})
+                 "-Wall", "-Wextra", kKernelFrameLimitFlag, {force = true})
     set_languages("gnuxx17")
     add_defines("__is_libkxx")
     add_includedirs("libkxx/include")
@@ -368,7 +373,7 @@ local kEngineSources = {
 local function add_engine_settings()
     add_cxxflags(
         "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
-        "-Wall", "-Wextra",
+        "-Wall", "-Wextra", kKernelFrameLimitFlag,
         "-msse2", "-mfpmath=sse", "-ffp-contract=off", "-fno-math-errno", "-mstackrealign",
         {force = true}
     )
@@ -443,7 +448,7 @@ local function add_assistant_settings()
     set_languages("gnuxx20")
     add_cxxflags(
         "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
-        "-Wall", "-Wextra",
+        "-Wall", "-Wextra", kKernelFrameLimitFlag,
         "-msse2", "-mfpmath=sse", "-ffp-contract=off", "-fno-math-errno", "-mstackrealign",
         {force = true}
     )
@@ -552,7 +557,7 @@ local function add_knowledge_settings()
     set_languages("gnuxx20")
     add_cxxflags(
         "-ffreestanding", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics",
-        "-Wall", "-Wextra",
+        "-Wall", "-Wextra", kKernelFrameLimitFlag,
         "-msse2", "-mfpmath=sse", "-ffp-contract=off", "-fno-math-errno", "-mstackrealign",
         {force = true}
     )
@@ -655,7 +660,7 @@ target("lpl-kernel")
     end
 
     -- C: freestanding, no standard includes (headers come from -I dirs below).
-    add_cflags("-nostdinc", "-ffreestanding", "-Wall", "-Wextra", {force = true})
+    add_cflags("-nostdinc", "-ffreestanding", "-Wall", "-Wextra", kKernelFrameLimitFlag, {force = true})
     -- Which (ISA, platform) pair this image is, mirroring what
     -- arch/i386/make.config declares on the shell path. Selects the target's
     -- capability header; without it kernel/arch/capabilities.h refuses to

@@ -35,7 +35,8 @@ LPLPLUGIN_ROOT?=$(abspath ../../LplPlugin)
 # into the real lpl::core and lpl::math — without it the determinism contract is not
 # even expressible, and Foundation.hpp says as much rather than emulating Fixed32.
 CXXFLAGS:=$(CXXFLAGS) -std=gnu++20 -ffreestanding -fno-exceptions -fno-rtti \
-          -fno-threadsafe-statics -Wall -Wextra
+          -fno-threadsafe-statics -Wall -Wextra \
+          $(if $(KERNEL_FRAME_LIMIT_BYTES),-Werror=frame-larger-than=$(KERNEL_FRAME_LIMIT_BYTES))
 CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 -DLPL_HAS_FOUNDATION \
           -Iinclude \
           -I$(LPLASSISTANT_ROOT)/include \
