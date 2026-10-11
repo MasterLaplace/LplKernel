@@ -6,6 +6,7 @@
 #include <kernel/cpu/pic.h>
 #include <kernel/drivers/ps2_keyboard.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/spsc_ring.h>
 
 #define KEYBOARD_DATA_PORT 0x60u
 
@@ -13,7 +14,7 @@
 #define IRQ_KEYBOARD_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_KEYBOARD_LINE)
 
 /**
- * @name Power-of-two capacity so head/tail wrap with a cheap mask
+ * @name Power-of-two capacities: the scan-code ring's slots, and the decoded characters
  * @{
  */
 #define KEYBOARD_SCANCODE_RING_CAPACITY 256u
@@ -25,21 +26,12 @@ static uint32_t keyboard_printable_count = 0u;
 static char keyboard_last_printable_char = 0;
 
 /**
- * Lock-free single-producer / single-consumer ring of raw scan codes.
- *
- * Producer: the IRQ1 handler (interrupt context).
- * Consumer: keyboard_try_pop_char, run from the main loop (bottom half).
- *
- * The producer owns `head`, the consumer owns `tail`; neither side touches the
- * other's index, and the indices are free-running uint32_t read through
- * `volatile`, so no shared counter and no locking are needed. Decoding (which
- * carries modifier state) happens entirely on the consumer side, keeping the
- * IRQ handler short and bounded and the modifier state race-free.
+ * Raw scan codes from the IRQ1 handler (producer) to the decoder (consumer), on the SPSC ring
+ * primitive. Decoding, which carries the modifier state, happens on the consumer side only,
+ * keeping the handler short and bounded and the modifier state race-free.
  */
-static volatile uint8_t keyboard_scancode_ring[KEYBOARD_SCANCODE_RING_CAPACITY];
-static volatile uint32_t keyboard_scancode_ring_head = 0u;
-static volatile uint32_t keyboard_scancode_ring_tail = 0u;
-static uint32_t keyboard_scancode_drop_count = 0u; /**< producer-only counter */
+static KernelSpscRing_t keyboard_scancode_ring = KERNEL_SPSC_RING_INITIALIZER(KEYBOARD_SCANCODE_RING_CAPACITY);
+static uint8_t keyboard_scancode_slots[KEYBOARD_SCANCODE_RING_CAPACITY];
 
 /**
  * Characters decoded from the ring, waiting for the consumer.
@@ -55,20 +47,17 @@ static uint32_t keyboard_character_queue_tail = 0u;
 static void keyboard_interrupt_handler(const InterruptFrame_t *frame)
 {
     const uint8_t scan_code = asmutils_input_byte(KEYBOARD_DATA_PORT);
-    const uint32_t head = keyboard_scancode_ring_head;
-    const uint32_t tail = keyboard_scancode_ring_tail;
+    uint32_t slot = 0u;
 
     (void) frame;
     ++keyboard_irq_count;
 
-    if ((uint32_t) (head - tail) >= KEYBOARD_SCANCODE_RING_CAPACITY)
-    {
-        ++keyboard_scancode_drop_count;
-    }
+    if (kernel_spsc_ring_reserve(&keyboard_scancode_ring, 1u, &slot) == 0u)
+        kernel_spsc_ring_count_rejected(&keyboard_scancode_ring, 1u);
     else
     {
-        keyboard_scancode_ring[head & KEYBOARD_SCANCODE_RING_MASK] = scan_code;
-        keyboard_scancode_ring_head = head + 1u;
+        keyboard_scancode_slots[slot] = scan_code;
+        kernel_spsc_ring_publish(&keyboard_scancode_ring, 1u);
     }
 
     if (interrupt_request_is_keyboard_owner_apic())
@@ -77,33 +66,34 @@ static void keyboard_interrupt_handler(const InterruptFrame_t *frame)
         programmable_interrupt_controller_send_end_of_interrupt(IRQ_KEYBOARD_LINE);
 }
 
-static uint8_t keyboard_scancode_ring_pop(uint8_t *out_scan_code)
-{
-    const uint32_t tail = keyboard_scancode_ring_tail;
-
-    if (keyboard_scancode_ring_head == tail)
-        return 0u;
-
-    *out_scan_code = keyboard_scancode_ring[tail & KEYBOARD_SCANCODE_RING_MASK];
-    keyboard_scancode_ring_tail = tail + 1u;
-    return 1u;
-}
-
+/**
+ * @brief Decodes the scan codes waiting, a run of slots at a time, into the character queue, as far
+ *        as it has room: each scan code decodes to at most one character.
+ */
 static void keyboard_decode_pending_scan_codes(void)
 {
-    uint8_t scan_code = 0u;
+    uint32_t room = KEYBOARD_SCANCODE_RING_CAPACITY - (keyboard_character_queue_head - keyboard_character_queue_tail);
 
-    while ((uint32_t) (keyboard_character_queue_head - keyboard_character_queue_tail) <
-               KEYBOARD_SCANCODE_RING_CAPACITY &&
-           keyboard_scancode_ring_pop(&scan_code))
+    while (room != 0u)
     {
-        const char decoded = personal_system_2_keyboard_decode_scancode(scan_code);
+        uint32_t first_slot = 0u;
+        const uint32_t run = kernel_spsc_ring_peek(&keyboard_scancode_ring, room, &first_slot);
 
-        if (decoded)
+        if (run == 0u)
+            return;
+        for (uint32_t offset = 0u; offset < run; ++offset)
         {
-            keyboard_character_queue[keyboard_character_queue_head & KEYBOARD_SCANCODE_RING_MASK] = decoded;
-            ++keyboard_character_queue_head;
+            const char decoded =
+                personal_system_2_keyboard_decode_scancode(keyboard_scancode_slots[first_slot + offset]);
+
+            if (decoded)
+            {
+                keyboard_character_queue[keyboard_character_queue_head & KEYBOARD_SCANCODE_RING_MASK] = decoded;
+                ++keyboard_character_queue_head;
+            }
         }
+        kernel_spsc_ring_release(&keyboard_scancode_ring, run);
+        room -= run;
     }
 }
 
@@ -149,8 +139,11 @@ uint8_t keyboard_try_pop_char(char *out_char)
     return 1u;
 }
 
-const volatile uint32_t *keyboard_get_ring_head_address(void) { return &keyboard_scancode_ring_head; }
+const volatile uint32_t *keyboard_get_ring_head_address(void)
+{
+    return kernel_spsc_ring_write_index_address(&keyboard_scancode_ring);
+}
 
 uint32_t keyboard_get_ring_capacity(void) { return KEYBOARD_SCANCODE_RING_CAPACITY; }
 
-uint32_t keyboard_get_dropped_char_count(void) { return keyboard_scancode_drop_count; }
+uint32_t keyboard_get_dropped_char_count(void) { return kernel_spsc_ring_rejected_count(&keyboard_scancode_ring); }
