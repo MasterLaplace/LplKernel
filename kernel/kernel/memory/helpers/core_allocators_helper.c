@@ -35,8 +35,6 @@ void write_ring_buffer_info(Serial_t *serial, bool ring_buffer_ok)
 {
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: ring buffer init=");
     serial_write_int(serial, (int32_t) ring_buffer_ok);
-    serial_write_string(serial, ", mode=");
-    serial_write_int(serial, (int32_t) kernel_ring_buffer_get_mode());
     serial_write_string(serial, ", slot_size=");
     serial_write_int(serial, (int32_t) kernel_ring_buffer_get_slot_size());
     serial_write_string(serial, ", capacity=");

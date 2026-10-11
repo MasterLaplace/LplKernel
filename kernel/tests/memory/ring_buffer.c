@@ -50,8 +50,8 @@ KERNEL_TEST(first_in_first_out_across_the_wrap)
     const uint32_t refused_dequeues_before = kernel_ring_buffer_get_failed_dequeue_count();
     uint32_t marker = 0xDEADBEEFu;
 
-    kernel_test_check(test, kernel_ring_buffer_get_mode() == KERNEL_RING_BUFFER_MODE_SPSC,
-                      "the boot's ring has one producer and one consumer");
+    kernel_test_check(test, capacity != 0u && (capacity & (capacity - 1u)) == 0u,
+                      "the boot's ring has a power-of-two capacity");
     kernel_test_check(test, ring_test_enqueue_run(0u, capacity), "the ring takes as many values as it holds");
     kernel_test_check(test, !kernel_ring_buffer_enqueue(&marker, sizeof(marker)), "a full ring refuses one more");
     kernel_test_check(test, ring_test_dequeue_run(0u, half), "the first half comes out in order");
@@ -84,4 +84,29 @@ KERNEL_TEST(ten_thousand_round_trips)
         ++round_trips;
 
     kernel_test_check(test, round_trips == 10000u, "ten thousand values come out as they went in");
+}
+
+/**
+ * @brief A record shorter than what the consumer reads comes out followed by zeros, never by what an
+ *        earlier record left in its slot.
+ */
+KERNEL_TEST(a_short_record_comes_out_zero_padded)
+{
+    if (!kernel_test_check(test, kernel_ring_buffer_is_initialized(), "the ring is initialised"))
+        return;
+
+    const uint32_t capacity = kernel_ring_buffer_get_capacity();
+    const uint32_t wide = 0xFFFFFFFFu;
+    const uint8_t narrow = 0x5Au;
+    uint32_t observed = 0u;
+    bool slots_dirtied = true;
+
+    for (uint32_t i = 0u; i < capacity && slots_dirtied; ++i)
+        slots_dirtied =
+            kernel_ring_buffer_enqueue(&wide, sizeof(wide)) && kernel_ring_buffer_dequeue(&observed, sizeof(observed));
+    kernel_test_check(test, slots_dirtied, "every slot first holds four bytes of ones");
+    kernel_test_check(test,
+                      kernel_ring_buffer_enqueue(&narrow, sizeof(narrow)) &&
+                          kernel_ring_buffer_dequeue(&observed, sizeof(observed)) && observed == 0x5Au,
+                      "a one-byte record read as four bytes comes out as that byte and three zeros");
 }
