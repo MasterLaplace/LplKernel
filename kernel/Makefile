@@ -172,6 +172,7 @@ kernel/power/tickless.o \
 kernel/power/frequency_scaling.o \
 kernel/power/wakeup_accounting.o \
 kernel/satellite/satellite_app.o \
+kernel/diag/machine.o \
 kernel/diag/sysmon.o \
 kernel/diag/telemetry.o \
 kernel/core/kernel.o \
