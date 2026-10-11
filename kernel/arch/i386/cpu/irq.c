@@ -22,6 +22,7 @@ static volatile uint32_t interrupt_request_spurious_irq15_count = 0u;
 static uint32_t interrupt_request_timer_target_frequency_hz = IRQ_TIMER_DEFAULT_FREQUENCY_HZ;
 static uint8_t interrupt_request_rtc_periodic_enabled = 0u;
 static uint8_t interrupt_request_timer_owner_is_apic = 0u;
+static volatile uint8_t interrupt_request_periodic_tick_suspended = 0u;
 /**
  * Which interrupt LINES are delivered through the IOAPIC rather than the 8259.
  *
@@ -64,6 +65,12 @@ static void interrupt_request_sample_reconciler(void)
 static void interrupt_request_timer_handler(const InterruptFrame_t *frame)
 {
     (void) frame;
+    if (interrupt_request_periodic_tick_suspended)
+    {
+        advanced_pic_timer_backend_signal_end_of_interrupt();
+        return;
+    }
+
     interrupt_request_tick_count++;
     interrupt_request_sample_reconciler();
 
@@ -192,6 +199,33 @@ uint8_t interrupt_request_is_realtime_clock_periodic_enabled(void)
 }
 
 uint8_t interrupt_request_is_timer_owner_apic(void) { return interrupt_request_timer_owner_is_apic; }
+
+void interrupt_request_suspend_periodic_tick(void)
+{
+    if (interrupt_request_periodic_tick_suspended)
+        return;
+
+    if (interrupt_request_timer_owner_is_apic)
+        advanced_pic_timer_backend_disable();
+    else
+        programmable_interrupt_controller_set_mask(IRQ_TIMER_LINE);
+    interrupt_request_periodic_tick_suspended = 1u;
+}
+
+void interrupt_request_resume_periodic_tick(void)
+{
+    if (!interrupt_request_periodic_tick_suspended)
+        return;
+
+    advanced_pic_timer_backend_disable();
+    interrupt_request_periodic_tick_suspended = 0u;
+    if (interrupt_request_timer_owner_is_apic)
+        (void) advanced_pic_timer_backend_enable_periodic_mode(interrupt_request_get_timer_frequency_hz());
+    else
+        programmable_interrupt_controller_clear_mask(IRQ_TIMER_LINE);
+}
+
+void interrupt_request_advance_tick_count(uint32_t ticks) { interrupt_request_tick_count += ticks; }
 
 uint8_t interrupt_request_is_keyboard_owner_apic(void)
 {

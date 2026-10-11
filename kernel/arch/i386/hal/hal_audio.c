@@ -111,6 +111,8 @@ bool hardware_abstraction_layer_audio_initialize(void)
     return hal_audio_codec_present;
 }
 
+bool hardware_abstraction_layer_audio_capture_stop(void) { return intel_high_definition_audio_stop_capture(); }
+
 uint32_t hardware_abstraction_layer_audio_capture_pump(void)
 {
     if (!hal_audio_codec_present)

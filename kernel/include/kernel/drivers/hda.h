@@ -251,6 +251,17 @@ uint8_t intel_high_definition_audio_capture_interrupt_line(void);
 bool intel_high_definition_audio_enable_capture_interrupt(void);
 
 /**
+ * @brief Stops the capture stream and its interrupt.
+ *
+ * @details Clears the stream's interrupt enable in INTCTL, then its run and
+ *          interrupt-on-completion bits, waits for the run bit to read back clear, and clears
+ *          the stream status, so no completion is left to fire afterwards.
+ *
+ * @return true when the stream was running and has stopped.
+ */
+bool intel_high_definition_audio_stop_capture(void);
+
+/**
  * @brief Clears whatever the capture stream asserted, and says whether a half completed.
  *
  * @details Every status bit seen is written back, errors included: the line is

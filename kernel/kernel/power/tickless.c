@@ -1,15 +1,14 @@
 #include <kernel/power/tickless.h>
 
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/power/processor_sleep.h>
 
-/** Cadence assumed for the saving figure when nothing else says otherwise. */
-#define KERNEL_TICKLESS_DEFAULT_FREQUENCY_HZ 1000u
-
 static bool tickless_permitted = false;
-static uint32_t tickless_nominal_hz = KERNEL_TICKLESS_DEFAULT_FREQUENCY_HZ;
+static uint32_t tickless_nominal_hz = 0u;
 static uint32_t tickless_ticks_avoided = 0u;
+static uint32_t tickless_microseconds_short_of_a_tick = 0u;
 static uint32_t tickless_early_wakes = 0u;
 static uint64_t tickless_slept_microseconds = 0u;
 
@@ -36,26 +35,50 @@ static uint32_t tickless_elapsed_microseconds(uint32_t requested, uint32_t armed
     return (uint32_t) ((consumed * 1000000u) / (uint64_t) timer_hz);
 }
 
-bool kernel_tickless_enable(bool no_world_instantiated, uint32_t nominal_frequency_hz)
+/**
+ * @brief Counts the ticks a stretch of sleep stood for, against the tick in force, and gives them
+ *        to the tick count.
+ *
+ * @details The microseconds short of a whole tick are carried to the next sleep rather than lost,
+ *          so the ticks counted over a session are its sleep divided by the period, whatever the
+ *          length of each sleep.
+ *
+ * @param slept Microseconds just spent with the tick stopped.
+ */
+static void tickless_count_ticks_avoided(uint32_t slept)
 {
-    if (!no_world_instantiated)
+    const uint32_t tick_microseconds = 1000000u / tickless_nominal_hz;
+    const uint64_t carried = (uint64_t) tickless_microseconds_short_of_a_tick + (uint64_t) slept;
+    const uint32_t ticks = (uint32_t) (carried / tick_microseconds);
+
+    tickless_microseconds_short_of_a_tick = (uint32_t) (carried % tick_microseconds);
+    tickless_ticks_avoided += ticks;
+    interrupt_request_advance_tick_count(ticks);
+}
+
+bool kernel_tickless_enable(bool no_world_instantiated)
+{
+    if (!no_world_instantiated || tickless_permitted)
         return false;
 
-    if (nominal_frequency_hz != 0u)
-        tickless_nominal_hz = nominal_frequency_hz;
+    const uint32_t tick_hz = interrupt_request_get_timer_frequency_hz();
+    if (tick_hz == 0u || tick_hz > 1000000u || advanced_pic_timer_backend_get_calibrated_timer_frequency_hz() == 0u)
+        return false;
 
-    advanced_pic_timer_backend_disable();
+    tickless_nominal_hz = tick_hz;
+    tickless_microseconds_short_of_a_tick = 0u;
+    interrupt_request_suspend_periodic_tick();
     tickless_permitted = true;
     return true;
 }
 
-void kernel_tickless_disable(uint32_t periodic_frequency_hz)
+void kernel_tickless_disable(void)
 {
+    if (!tickless_permitted)
+        return;
+
     tickless_permitted = false;
-    if (periodic_frequency_hz == 0u)
-        periodic_frequency_hz = tickless_nominal_hz;
-    tickless_nominal_hz = periodic_frequency_hz;
-    (void) advanced_pic_timer_backend_enable_periodic_mode(periodic_frequency_hz);
+    interrupt_request_resume_periodic_tick();
 }
 
 bool kernel_tickless_enabled(void) { return tickless_permitted; }
@@ -86,7 +109,7 @@ uint32_t kernel_tickless_sleep(uint32_t microseconds)
 
     const uint32_t elapsed = tickless_elapsed_microseconds(microseconds, armed, remaining, timer_hz);
     tickless_slept_microseconds += elapsed;
-    tickless_ticks_avoided += (uint32_t) (((uint64_t) elapsed * (uint64_t) tickless_nominal_hz) / 1000000u);
+    tickless_count_ticks_avoided(elapsed);
     return elapsed;
 }
 

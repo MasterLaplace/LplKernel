@@ -62,26 +62,28 @@ extern "C" {
 #define KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS 1000000u
 
 /**
- * @brief Permits the tick to be stopped.
+ * @brief Stops the periodic tick, whichever timer owns it, and permits sleeping without it.
+ *
+ * @details The saving is measured against the tick in force when the session starts, read from
+ *          the timer rather than assumed: a profile that reported ticks avoided against a rate it
+ *          was never running would be reporting fiction.
  *
  * @param no_world_instantiated Caller's declaration that no authoritative simulation
  *                              is running. False refuses: stopping the tick under a
  *                              World would make its cadence depend on how busy the
  *                              machine was, and every parity gate rests on it not.
- * @param nominal_frequency_hz  The cadence being given up. Taken as a parameter and
- *                              not assumed, because the saving is measured against
- *                              it: a profile that reported ticks avoided against a
- *                              rate it was never running would be reporting fiction.
- * @return true when tickless operation is now permitted.
+ * @return true when the tick is stopped; false when refused, already stopped, or when no
+ *         calibrated one-shot timer could wake a core with no tick.
  */
-bool kernel_tickless_enable(bool no_world_instantiated, uint32_t nominal_frequency_hz);
+bool kernel_tickless_enable(bool no_world_instantiated);
 
 /**
- * @brief Forbids stopping the tick and restores the periodic timer.
+ * @brief Gives the tick back to the timer that owned it, at the rate it ran, and forbids stopping
+ *        it again until the next @ref kernel_tickless_enable.
  *
- * @param periodic_frequency_hz Cadence to restore.
+ * @note Does nothing when the tick was not stopped.
  */
-void kernel_tickless_disable(uint32_t periodic_frequency_hz);
+void kernel_tickless_disable(void);
 
 /**
  * @brief Is tickless operation permitted?
@@ -109,8 +111,9 @@ uint32_t kernel_tickless_sleep(uint32_t microseconds);
  * @brief Periodic interrupts this profile did not take.
  *
  * The saving, as a number. Computed from the time actually slept and the cadence
- * that would otherwise have been running, so it is what was avoided rather than
- * what was hoped for.
+ * that was running when the tick was stopped, so it is what was avoided rather than
+ * what was hoped for. The same ticks are added to the tick count, which stays
+ * continuous across a session.
  *
  * @return The count.
  */
@@ -129,8 +132,8 @@ uint32_t kernel_tickless_early_wakes(void);
 uint64_t kernel_tickless_slept_microseconds(void);
 
 /**
- * @brief The cadence that would be running were the tick not stopped.
- * @return Hertz.
+ * @brief The cadence the last session stopped, against which its saving was counted.
+ * @return Hertz, or 0 before any session.
  */
 uint32_t kernel_tickless_nominal_frequency_hz(void);
 

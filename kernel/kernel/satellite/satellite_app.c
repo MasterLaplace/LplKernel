@@ -1,13 +1,9 @@
 #include <kernel/satellite/satellite_app.h>
 
-#include <kernel/cpu/irq.h>
 #include <kernel/hal/hal_audio.h>
 #include <kernel/power/frequency_scaling.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/tickless.h>
-
-/** Cadence the engine profiles run at, and the one this profile gives up. */
-#define SATELLITE_NOMINAL_TICK_HZ 1000u
 
 /** Microseconds of audio in one buffer, and therefore the longest useful sleep. */
 #define SATELLITE_FRAME_MICROSECONDS 40000u
@@ -114,7 +110,6 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
         return false;
 
     SatelliteReport_t report = {0};
-    const uint32_t periodic_frequency_hz = interrupt_request_get_timer_frequency_hz();
 
     kernel_processor_sleep_initialize();
     (void) kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_MAX);
@@ -125,7 +120,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.scaling_available = kernel_frequency_scaling_available() ? 1u : 0u;
     report.audio_present = hardware_abstraction_layer_audio_initialize() ? 1u : 0u;
 
-    (void) kernel_tickless_enable(true, SATELLITE_NOMINAL_TICK_HZ);
+    (void) kernel_tickless_enable(true);
     satellite_probe_output_limiter(&report);
 
     const volatile uint32_t *const written = hardware_abstraction_layer_audio_capture_write_index();
@@ -148,7 +143,8 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.ticks_avoided = kernel_tickless_ticks_avoided();
 
     satellite_govern_on_measured_duty(&report);
-    kernel_tickless_disable(periodic_frequency_hz);
+    (void) hardware_abstraction_layer_audio_capture_stop();
+    kernel_tickless_disable();
 
     *out = report;
     return true;
