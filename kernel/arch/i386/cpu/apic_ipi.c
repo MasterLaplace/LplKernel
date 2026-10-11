@@ -1,6 +1,13 @@
 #include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
 #include <stdatomic.h>
+
+/** Wait after INIT before the first STARTUP IPI: the 10 ms of the MultiProcessor Specification. */
+#define KERNEL_APIC_IPI_INIT_TO_STARTUP_MICROSECONDS 10000u
+
+/** Wait between the two STARTUP IPIs: the specification's 200 us. */
+#define KERNEL_APIC_IPI_STARTUP_TO_STARTUP_MICROSECONDS 200u
 
 #define LAPIC_ICR_LOW_OFFSET  0x300u
 #define LAPIC_ICR_HIGH_OFFSET 0x310u
@@ -143,14 +150,12 @@ uint8_t advanced_pic_ipi_send_startup_sequence(uint8_t apic_id, uint8_t startup_
     if (!advanced_pic_ipi_send_init(apic_id))
         return 0u;
 
-    for (volatile uint32_t delay = 0u; delay < 10000u; ++delay)
-        ;
+    interrupt_request_spin_microseconds(KERNEL_APIC_IPI_INIT_TO_STARTUP_MICROSECONDS);
 
     if (!advanced_pic_ipi_send_sipi(apic_id, startup_vector))
         return 0u;
 
-    for (volatile uint32_t delay = 0u; delay < 10000u; ++delay)
-        ;
+    interrupt_request_spin_microseconds(KERNEL_APIC_IPI_STARTUP_TO_STARTUP_MICROSECONDS);
 
     if (!advanced_pic_ipi_send_sipi(apic_id, startup_vector))
         return 0u;

@@ -9,20 +9,21 @@
 #include <kernel/diag/telemetry.h>
 #include <kernel/memory/vmm.h>
 
-/** Polls of the acknowledgement word before an attempt is given up. The AP writes it in real
-    mode, first thing: measured at zero polls under QEMU, it is already there when the IPIs return. */
-#define KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT 200000u
+/**
+ * Longest wait for the acknowledgement word, which the AP writes in real mode, first thing.
+ *
+ * In time, not in polls: under TCG it was there when the IPIs returned, but in x2APIC mode under KVM
+ * an IPI is one MSR write with nothing to poll, and 200,000 polls ended before the AP's vCPU had run
+ * (#504). Spent in full only by an AP that never arrives.
+ */
+#define KERNEL_AP_TRAMPOLINE_ACK_TIMEOUT_MICROSECONDS 100000u
 
 /**
- * Polls of the C-entry word before an attempt is given up.
+ * Longest wait for the C-entry word, which the AP writes after protected mode, paging and its stack.
  *
- * The AP reaches C after protected mode, paging and its stack, and under QEMU's TCG the first AP
- * to do it was measured at 722,496 polls, a warm one at 6,750: the former limit of 300,000 failed
- * the first AP of every multi-CPU boot, which then came up on a retry, or after the BSP had moved
- * on. A poll count is not a time bound, so the margin is wide: two orders of magnitude over the
- * slowest measured, and only spent in full by an AP that never arrives.
+ * The first AP under TCG took 722,496 polls to get there; a second is far above any of them.
  */
-#define KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT 100000000u
+#define KERNEL_AP_TRAMPOLINE_C_ENTRY_TIMEOUT_MICROSECONDS 1000000u
 
 /** Start-up sequences sent to one AP before it is given up and parked. */
 #define KERNEL_AP_STARTUP_MAX_ATTEMPTS 3u
@@ -125,14 +126,16 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
                 continue;
             }
 
-            ack_ok = application_processor_trampoline_wait_for_acknowledgement(KERNEL_AP_TRAMPOLINE_ACK_SPIN_LIMIT);
+            ack_ok = application_processor_trampoline_wait_for_acknowledgement(
+                KERNEL_AP_TRAMPOLINE_ACK_TIMEOUT_MICROSECONDS);
             if (!ack_ok)
             {
                 ++acknowledgement_timeouts;
                 continue;
             }
 
-            c_entry_ok = application_processor_trampoline_wait_for_c_entry(KERNEL_AP_TRAMPOLINE_C_ENTRY_SPIN_LIMIT);
+            c_entry_ok =
+                application_processor_trampoline_wait_for_c_entry(KERNEL_AP_TRAMPOLINE_C_ENTRY_TIMEOUT_MICROSECONDS);
             if (!c_entry_ok)
             {
                 ++c_entry_timeouts;
