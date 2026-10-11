@@ -5,6 +5,7 @@
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/spsc_ring.h>
 
 #include <stddef.h>
 
@@ -53,16 +54,15 @@
  */
 #define PERSONAL_SYSTEM_2_SPIN_BUDGET 100000u
 
-/** Power-of-two capacity so head/tail wrap with a mask, as in the keyboard ring. */
+/** Slots of the byte ring, a power of two. */
 #define PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY 256u
-#define PERSONAL_SYSTEM_2_MOUSE_RING_MASK     (PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY - 1u)
 
-static volatile uint8_t personal_system_2_mouse_ring[PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY];
-static volatile uint32_t personal_system_2_mouse_ring_head = 0u;
-static volatile uint32_t personal_system_2_mouse_ring_tail = 0u;
+/** Bytes from the interrupt handler (producer) to personal_system_2_mouse_try_pop_packet (consumer). */
+static KernelSpscRing_t personal_system_2_mouse_ring =
+    KERNEL_SPSC_RING_INITIALIZER(PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY);
+static uint8_t personal_system_2_mouse_ring_slots[PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY];
 
 static uint32_t personal_system_2_mouse_irq_count = 0u;
-static uint32_t personal_system_2_mouse_dropped_byte_count = 0u;
 static uint32_t personal_system_2_mouse_resynchronization_count = 0u;
 static uint8_t personal_system_2_mouse_present = 0u;
 
@@ -153,17 +153,16 @@ static uint8_t personal_system_2_mouse_status_carries_auxiliary_byte(uint8_t sta
  */
 static void personal_system_2_mouse_ring_push(uint8_t byte)
 {
-    const uint32_t head = personal_system_2_mouse_ring_head;
-    const uint32_t tail = personal_system_2_mouse_ring_tail;
+    uint32_t slot = 0u;
 
-    if ((uint32_t) (head - tail) >= PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY)
+    if (kernel_spsc_ring_reserve(&personal_system_2_mouse_ring, 1u, &slot) == 0u)
     {
-        ++personal_system_2_mouse_dropped_byte_count;
+        kernel_spsc_ring_count_rejected(&personal_system_2_mouse_ring, 1u);
         return;
     }
 
-    personal_system_2_mouse_ring[head & PERSONAL_SYSTEM_2_MOUSE_RING_MASK] = byte;
-    personal_system_2_mouse_ring_head = head + 1u;
+    personal_system_2_mouse_ring_slots[slot] = byte;
+    kernel_spsc_ring_publish(&personal_system_2_mouse_ring, 1u);
 }
 
 /**
@@ -203,11 +202,9 @@ static void personal_system_2_mouse_interrupt_handler(const InterruptFrame_t *fr
 
 static uint8_t personal_system_2_mouse_ring_peek(uint32_t offset, uint8_t *out_byte)
 {
-    const uint32_t tail = personal_system_2_mouse_ring_tail;
-
-    if ((uint32_t) (personal_system_2_mouse_ring_head - tail) <= offset)
+    if (kernel_spsc_ring_ready_count(&personal_system_2_mouse_ring) <= offset)
         return 0u;
-    *out_byte = personal_system_2_mouse_ring[(tail + offset) & PERSONAL_SYSTEM_2_MOUSE_RING_MASK];
+    *out_byte = personal_system_2_mouse_ring_slots[kernel_spsc_ring_slot_at(&personal_system_2_mouse_ring, offset)];
     return 1u;
 }
 
@@ -297,7 +294,7 @@ uint8_t personal_system_2_mouse_try_pop_packet(PersonalSystem2MousePacket_t *out
 
         if ((flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_ALWAYS_SET) == 0u)
         {
-            personal_system_2_mouse_ring_tail = personal_system_2_mouse_ring_tail + 1u;
+            kernel_spsc_ring_release(&personal_system_2_mouse_ring, 1u);
             ++personal_system_2_mouse_resynchronization_count;
             continue;
         }
@@ -307,7 +304,7 @@ uint8_t personal_system_2_mouse_try_pop_packet(PersonalSystem2MousePacket_t *out
         break;
     }
 
-    personal_system_2_mouse_ring_tail = personal_system_2_mouse_ring_tail + 3u;
+    kernel_spsc_ring_release(&personal_system_2_mouse_ring, 3u);
 
     out_packet->delta_x = personal_system_2_mouse_axis_delta(raw_x, flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_X_OVERFLOW,
                                                              flags & PERSONAL_SYSTEM_2_MOUSE_HEADER_X_NEGATIVE);
@@ -321,14 +318,17 @@ uint8_t personal_system_2_mouse_try_pop_packet(PersonalSystem2MousePacket_t *out
 
 uint32_t personal_system_2_mouse_get_pending_byte_count(void)
 {
-    return (uint32_t) (personal_system_2_mouse_ring_head - personal_system_2_mouse_ring_tail);
+    return kernel_spsc_ring_size(&personal_system_2_mouse_ring);
 }
 
 uint32_t personal_system_2_mouse_get_irq_count(void) { return personal_system_2_mouse_irq_count; }
 
 uint32_t personal_system_2_mouse_get_ring_capacity(void) { return PERSONAL_SYSTEM_2_MOUSE_RING_CAPACITY; }
 
-uint32_t personal_system_2_mouse_get_dropped_byte_count(void) { return personal_system_2_mouse_dropped_byte_count; }
+uint32_t personal_system_2_mouse_get_dropped_byte_count(void)
+{
+    return kernel_spsc_ring_rejected_count(&personal_system_2_mouse_ring);
+}
 
 uint32_t personal_system_2_mouse_get_resynchronization_count(void)
 {
