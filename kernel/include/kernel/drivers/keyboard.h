@@ -50,7 +50,13 @@ extern uint32_t keyboard_get_printable_count(void);
 extern char keyboard_get_last_printable_char(void);
 
 /**
- * @brief Return number of raw scan codes pending decode in the SPSC ring.
+ * @brief Return the number of decoded characters waiting for the consumer.
+ *
+ * @details Decodes the scan codes waiting in the ring first, so a key release or a controller
+ *          acknowledgement, which decode to nothing, is not counted. Called from the consumer side
+ *          only, like keyboard_try_pop_char.
+ *
+ * @return The number of characters keyboard_try_pop_char will hand out.
  */
 extern uint32_t keyboard_get_pending_char_count(void);
 
