@@ -4,11 +4,11 @@
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/drivers/hda.h>
+#include <kernel/memory/spsc_ring.h>
 
-static int16_t hal_audio_ring[KERNEL_HAL_AUDIO_RING_FRAMES][KERNEL_HAL_AUDIO_FRAME_SAMPLES];
-static volatile uint32_t hal_audio_write_index = 0u;
-static volatile uint32_t hal_audio_read_index = 0u;
-static volatile uint32_t hal_audio_overruns = 0u;
+/** Completed halves from the pump (producer) to hardware_abstraction_layer_audio_capture_take (consumer). */
+static KernelSpscRing_t hal_audio_ring = KERNEL_SPSC_RING_INITIALIZER(KERNEL_HAL_AUDIO_RING_FRAMES);
+static int16_t hal_audio_frames[KERNEL_HAL_AUDIO_RING_FRAMES][KERNEL_HAL_AUDIO_FRAME_SAMPLES];
 
 /** Where a half goes when the ring is full: drained from the controller, then refused. */
 static int16_t hal_audio_discard[KERNEL_HAL_AUDIO_FRAME_SAMPLES];
@@ -84,9 +84,7 @@ static bool hal_audio_route_capture_interrupt(void)
 
 bool hardware_abstraction_layer_audio_initialize(void)
 {
-    hal_audio_write_index = 0u;
-    hal_audio_read_index = 0u;
-    hal_audio_overruns = 0u;
+    kernel_spsc_ring_initialize(&hal_audio_ring, KERNEL_HAL_AUDIO_RING_FRAMES);
     hal_audio_interrupt_driven = false;
     hal_audio_interrupts = 0u;
     hal_audio_codec_present = false;
@@ -121,9 +119,9 @@ uint32_t hardware_abstraction_layer_audio_capture_pump(void)
     uint32_t moved = 0u;
     for (;;)
     {
-        const bool full = (hal_audio_write_index - hal_audio_read_index) >= KERNEL_HAL_AUDIO_RING_FRAMES;
-        int16_t *const destination =
-            full ? hal_audio_discard : hal_audio_ring[hal_audio_write_index % KERNEL_HAL_AUDIO_RING_FRAMES];
+        uint32_t slot = 0u;
+        const bool full = kernel_spsc_ring_reserve(&hal_audio_ring, 1u, &slot) == 0u;
+        int16_t *const destination = full ? hal_audio_discard : hal_audio_frames[slot];
 
         const uint32_t samples = intel_high_definition_audio_poll_capture(destination, KERNEL_HAL_AUDIO_FRAME_SAMPLES);
         if (samples == 0u)
@@ -131,11 +129,11 @@ uint32_t hardware_abstraction_layer_audio_capture_pump(void)
 
         if (full)
         {
-            ++hal_audio_overruns;
+            kernel_spsc_ring_count_rejected(&hal_audio_ring, 1u);
             continue;
         }
 
-        ++hal_audio_write_index;
+        kernel_spsc_ring_publish(&hal_audio_ring, 1u);
         ++moved;
     }
     return moved;
@@ -149,7 +147,7 @@ uint32_t hardware_abstraction_layer_audio_sample_rate(void) { return hal_audio_c
 
 const volatile uint32_t *hardware_abstraction_layer_audio_capture_write_index(void)
 {
-    return hal_audio_codec_present ? &hal_audio_write_index : NULL;
+    return hal_audio_codec_present ? kernel_spsc_ring_write_index_address(&hal_audio_ring) : NULL;
 }
 
 uint32_t hardware_abstraction_layer_audio_capture_take(int16_t *out, uint32_t capacity)
@@ -157,16 +155,14 @@ uint32_t hardware_abstraction_layer_audio_capture_take(int16_t *out, uint32_t ca
     if (out == NULL || capacity < KERNEL_HAL_AUDIO_FRAME_SAMPLES)
         return 0u;
 
-    const uint32_t write = hal_audio_write_index;
-    const uint32_t read = hal_audio_read_index;
-    if (write == read)
+    uint32_t slot = 0u;
+    if (kernel_spsc_ring_peek(&hal_audio_ring, 1u, &slot) == 0u)
         return 0u;
 
-    const uint32_t slot = read % KERNEL_HAL_AUDIO_RING_FRAMES;
     for (uint32_t i = 0u; i < KERNEL_HAL_AUDIO_FRAME_SAMPLES; ++i)
-        out[i] = hal_audio_ring[slot][i];
+        out[i] = hal_audio_frames[slot][i];
 
-    hal_audio_read_index = read + 1u;
+    kernel_spsc_ring_release(&hal_audio_ring, 1u);
     return KERNEL_HAL_AUDIO_FRAME_SAMPLES;
 }
 
@@ -219,7 +215,10 @@ bool hardware_abstraction_layer_audio_playback_active(void) { return false; }
 
 void hardware_abstraction_layer_audio_playback_flush(void) {}
 
-uint32_t hardware_abstraction_layer_audio_capture_overruns(void) { return hal_audio_overruns; }
+uint32_t hardware_abstraction_layer_audio_capture_overruns(void)
+{
+    return kernel_spsc_ring_rejected_count(&hal_audio_ring);
+}
 
 bool hardware_abstraction_layer_audio_capture_is_interrupt_driven(void) { return hal_audio_interrupt_driven; }
 

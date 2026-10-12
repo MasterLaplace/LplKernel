@@ -336,8 +336,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     bool pinned_ok = kernel_pinned_memory_initialize();
     write_core_allocators_info(&com1, frame_arena_ok, stack_allocator_ok, pool_allocator_ok, pinned_ok);
 
-    bool ring_buffer_ok = kernel_ring_buffer_initialize_ex(
-        KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE, KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT, KERNEL_RING_BUFFER_MODE_SPSC);
+    bool ring_buffer_ok =
+        kernel_ring_buffer_initialize(KERNEL_RING_BUFFER_DEFAULT_SLOT_SIZE, KERNEL_RING_BUFFER_DEFAULT_SLOT_COUNT);
     write_ring_buffer_info(&com1, ring_buffer_ok);
     kernel_splash_update("Core Allocators (Slab, Pool, Ring)");
 

@@ -15,6 +15,10 @@
  * @file ring_buffer.h
  * @brief Fixed-slot pre-allocated ring buffer.
  *
+ * The boot's byte-record ring: slots of a fixed size, allocated once, one producer and one
+ * consumer. It runs on the SPSC ring primitive (kernel/memory/spsc_ring.h), so its producer and
+ * consumer keep their indices apart and share nothing else; each side counts its own operations.
+ *
  * @author @MasterLaplace
  * @version 0.0.0
  * @date 2026-03-17
@@ -26,19 +30,27 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef enum KernelRingBufferMode {
-    KERNEL_RING_BUFFER_MODE_LOCAL = 0u,
-    KERNEL_RING_BUFFER_MODE_SPSC = 1u,
-    KERNEL_RING_BUFFER_MODE_MPSC = 2u,
-    KERNEL_RING_BUFFER_MODE_MPMC = 3u,
-} KernelRingBufferMode_t;
-
+/**
+ * @brief Allocates the ring, once.
+ *
+ * @param slot_size  Most bytes one record holds, rounded up to 8.
+ * @param slot_count Records the ring holds: a power of two.
+ * @return true when the ring is ready, including when it already was.
+ */
 extern bool kernel_ring_buffer_initialize(uint32_t slot_size, uint32_t slot_count);
 
-extern bool kernel_ring_buffer_initialize_ex(uint32_t slot_size, uint32_t slot_count, KernelRingBufferMode_t mode);
-
+/**
+ * @brief Producer: copies @p size bytes into the next slot.
+ * @return false when the ring is full, not initialized, or @p size is 0 or over the slot size.
+ */
 extern bool kernel_ring_buffer_enqueue(const void *data, uint32_t size);
 
+/**
+ * @brief Consumer: copies the oldest record into @p out_data and removes it.
+ *
+ * @details Bytes of @p out_data past the record's own size are zeroed.
+ * @return false when the ring is empty, not initialized, or @p out_size is 0 or over the slot size.
+ */
 extern bool kernel_ring_buffer_dequeue(void *out_data, uint32_t out_size);
 
 extern bool kernel_ring_buffer_is_initialized(void);
@@ -47,10 +59,10 @@ extern uint32_t kernel_ring_buffer_get_slot_size(void);
 
 extern uint32_t kernel_ring_buffer_get_capacity(void);
 
+/** @brief Records in the ring, as one snapshot. */
 extern uint32_t kernel_ring_buffer_get_count(void);
 
-extern KernelRingBufferMode_t kernel_ring_buffer_get_mode(void);
-
+/** @brief The most records the ring held after an enqueue. */
 extern uint32_t kernel_ring_buffer_get_high_watermark(void);
 
 extern uint32_t kernel_ring_buffer_get_enqueue_count(void);
