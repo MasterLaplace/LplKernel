@@ -43,10 +43,14 @@ LPL_TEST(boot_module_bakes_the_parity_world)
         test.skip("no game pack among the boot modules");
         return;
     }
-    if (!test.check(view.open(bytes, size) && view.readRecipe(wire), "the cartridge opens and its recipe decodes"))
+    lpl::procgen::WorldRecipe recipe{};
+    lpl::pack::WireRefusal refusal{};
+
+    if (!test.check(view.open(bytes, size) && view.readRecipe(wire) && lpl::pack::toEngineRecipe(wire, recipe, refusal),
+                    "the cartridge opens and its recipe decodes"))
         return;
 
-    const lpl::procgen::WorldRecipeResult cartridge = bake(lpl::pack::toEngineRecipe(wire));
+    const lpl::procgen::WorldRecipeResult cartridge = bake(recipe);
     const lpl::procgen::WorldRecipeResult reference = bake(lpl::procgen::parityWorldRecipe());
 
     test.check(cartridge == reference, "it bakes the parity world, field for field");

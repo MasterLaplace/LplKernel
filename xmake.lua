@@ -301,18 +301,15 @@ local kEngineSources = {
     "codec/src/Peeling.cpp",
     "codec/src/Erasure.cpp",
     "codec/src/ReedSolomon.cpp",
-    "codec/src/Parity.cpp",
     "rosetta/src/MinimalIsa.cpp",
     "rosetta/src/Interpreter.cpp",
     "rosetta/src/SelfDescribing.cpp",
     "rosetta/src/Bootstrap.cpp",
     "rosetta/src/Engraving.cpp",
-    "rosetta/src/Parity.cpp",
     "history/src/Fact.cpp",
     "engine/src/systems/GroundStep.cpp",
     "engine/src/systems/TerrainRoutes.cpp",
     "engine/src/systems/Journey.cpp",
-    "engine/src/systems/JourneyParity.cpp",
     "history/src/Timeline.cpp",
     "history/src/PossibleWorld.cpp",
     "history/src/Chronicle.cpp",
@@ -363,8 +360,6 @@ local kEngineSources = {
     "engine/src/systems/CreatureSystems.cpp",
     "engine/src/systems/HeightfieldCollisionSystem.cpp",
     "engine/src/systems/PhysicsSystem.cpp",
-    "engine/src/CaveParity.cpp",
-    "engine/src/ReliefParity.cpp",
     "engine/src/Engine.cpp"
 }
 
