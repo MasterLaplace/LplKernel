@@ -14,7 +14,15 @@ on:
       - '**.hpp'
       - '**.in'
       - '**.inl'
+      - '**.s'
+      - '**.S'
+      - '**.inc'
+      - '**.ld'
       - '**.sh'
+      - '**.lua'
+      - '**/Makefile'
+      - '**/make.config'
+      - 'DEPENDENCIES.lock'
       - '**/build_lplkernel.yml'
 
 jobs:
