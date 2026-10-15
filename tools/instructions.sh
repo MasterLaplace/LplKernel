@@ -12,6 +12,8 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --test NAME     count one test declared with LPL_TEST: from its body to the line that reports it
   --from SYMBOL   start counting the first time SYMBOL runs (default: from the first instruction)
   --to SYMBOL     stop counting the first time SYMBOL runs after that; needs --from
+  --times N       stop on the Nth run of --to's SYMBOL instead (default: 1); with --from and --to
+                  the same function, the window holds exactly N of its runs
   --until TEXT    without --from, stop when the serial output prints TEXT (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line
@@ -36,6 +38,7 @@ until_text="# Totals:"
 top=25
 append=""
 timeout_seconds=1800
+times=1
 keep=""
 kernel=""
 
@@ -43,6 +46,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --from) from_symbol="${2:?}"; shift 2 ;;
         --to) to_symbol="${2:?}"; shift 2 ;;
+        --times) times="${2:?}"; shift 2 ;;
         --until) until_text="${2:?}"; shift 2 ;;
         --top) top="${2:?}"; shift 2 ;;
         --test) from_symbol="lplTestBody_${2:?}"; to_symbol="lpl::testing::(anonymous namespace)::writeResult"; shift 2 ;;
@@ -103,7 +107,7 @@ if [ -n "$from_symbol" ]; then
             ambiguous) echo "more than one function ${found%=*} in $kernel" >&2; exit 2 ;;
         esac
     done
-    plugin_args="$plugin_args,begin=$begin,end=$end"
+    plugin_args="$plugin_args,begin=$begin,end=$end,times=$times"
 fi
 
 qemu_command=(qemu-system-i386 -kernel "$kernel" -smp 1 -m 512 -display none -no-reboot -monitor none

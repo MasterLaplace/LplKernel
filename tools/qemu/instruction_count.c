@@ -32,8 +32,11 @@ static GHashTable *blocks;
 static char *output_path;
 static uint64_t window_begin;
 static uint64_t window_end;
+static uint64_t window_end_executions = 1u;
+static uint64_t window_end_seen;
 static gboolean window_open;
 static gboolean window_closed;
+static gboolean window_just_opened;
 
 static uint64_t block_sum(const Block *block, size_t offset)
 {
@@ -59,6 +62,7 @@ static void open_window(unsigned int vcpu_index, void *userdata)
             block->baseline.stores = block_sum(block, offsetof(BlockCounters, stores));
         }
         window_open = TRUE;
+        window_just_opened = window_begin == window_end;
     }
     g_mutex_unlock(&blocks_lock);
 }
@@ -95,7 +99,9 @@ static void close_window(unsigned int vcpu_index, void *userdata)
     (void) vcpu_index;
     (void) userdata;
     g_mutex_lock(&blocks_lock);
-    if (window_open && !window_closed)
+    if (window_just_opened)
+        window_just_opened = FALSE;
+    else if (window_open && !window_closed && ++window_end_seen == window_end_executions)
     {
         write_counts();
         window_closed = TRUE;
@@ -185,12 +191,14 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
             known = read_address(pair[1], &window_begin);
         else if (known && g_strcmp0(pair[0], "end") == 0)
             known = read_address(pair[1], &window_end);
+        else if (known && g_strcmp0(pair[0], "times") == 0)
+            known = read_address(pair[1], &window_end_executions) && window_end_executions != 0u;
         else
             known = FALSE;
         g_strfreev(pair);
         if (!known)
         {
-            fprintf(stderr, "instruction_count: unknown argument %s (out=FILE, begin=ADDRESS, end=ADDRESS)\n",
+            fprintf(stderr, "instruction_count: unknown argument %s (out=FILE, begin=ADDRESS, end=ADDRESS, times=N)\n",
                     argv[index]);
             return -1;
         }
