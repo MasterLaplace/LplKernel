@@ -79,6 +79,11 @@ that never exercises the feature folds just as well on both targets, and only th
 control tell the two apart. A new boot measurement is printed as one
 `[LPLTLM] <domain> key=value ...` line, whose values hold no space and no `=`.
 
+A change made for speed is judged by counts, not by a clock, which on a shared machine varies more
+than most gains: `tools/instructions.sh --test <name> kernel/lpl.kernel` counts the instructions and
+memory accesses one `LPL_TEST` executes in ring 0, the same on every run, and lists the functions
+that spent them.
+
 ## Numbering
 
 Gates are written `gate P13 history`: the word, the number and the name, never `P13` alone. A gate
