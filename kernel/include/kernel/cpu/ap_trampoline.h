@@ -55,10 +55,10 @@ extern void application_processor_trampoline_reset_acknowledgement(void);
 /**
  * @brief Wait for AP trampoline acknowledgement marker.
  *
- * @param spin_limit Maximum spin iterations before timeout.
+ * @param timeout_microseconds Longest wait, measured on the IRQ0 tick.
  * @return Non-zero when acknowledgement marker observed.
  */
-extern uint8_t application_processor_trampoline_wait_for_acknowledgement(uint32_t spin_limit);
+extern uint8_t application_processor_trampoline_wait_for_acknowledgement(uint32_t timeout_microseconds);
 
 /**
  * @brief Return last observed raw acknowledgement word.
@@ -82,10 +82,10 @@ extern void application_processor_trampoline_configure_handoff(uint8_t apic_id, 
 /**
  * @brief Wait for AP C-entry completion marker from trampoline handoff.
  *
- * @param spin_limit Maximum spin iterations before timeout.
+ * @param timeout_microseconds Longest wait, measured on the IRQ0 tick.
  * @return Non-zero when C-entry marker observed.
  */
-extern uint8_t application_processor_trampoline_wait_for_c_entry(uint32_t spin_limit);
+extern uint8_t application_processor_trampoline_wait_for_c_entry(uint32_t timeout_microseconds);
 
 /**
  * @brief Return last observed raw C-entry marker word.

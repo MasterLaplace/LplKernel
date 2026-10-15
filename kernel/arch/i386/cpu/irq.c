@@ -2,6 +2,7 @@
 
 #include <kernel/core/reconciler.h>
 #include <kernel/drivers/ps2_mouse.h>
+#include <kernel/lib/asmutils.h>
 
 #define IRQ_LINE_COUNT        16u
 #define IRQ_CASCADE_LINE      2u
@@ -15,6 +16,9 @@
 #define IRQ_SPURIOUS15_VECTOR (PIC_VECTOR_OFFSET_MASTER + IRQ_SPURIOUS15_LINE)
 
 #define IRQ_TIMER_DEFAULT_FREQUENCY_HZ 100u
+
+/** Polls with no tick before a deadline stops waiting for a timer that does not run. */
+#define INTERRUPT_REQUEST_DEADLINE_STALLED_POLLS (1u << 28u)
 
 static volatile uint32_t interrupt_request_tick_count = 0u;
 static volatile uint32_t interrupt_request_spurious_irq7_count = 0u;
@@ -187,6 +191,39 @@ uint32_t interrupt_request_get_spurious_irq7_count(void) { return interrupt_requ
 uint32_t interrupt_request_get_spurious_irq15_count(void) { return interrupt_request_spurious_irq15_count; }
 
 uint32_t interrupt_request_get_timer_frequency_hz(void) { return programmable_interval_timer_get_frequency_hz(); }
+
+void interrupt_request_deadline_start(InterruptRequestDeadline_t *deadline, uint32_t microseconds)
+{
+    const uint64_t frequency_hz = interrupt_request_get_timer_frequency_hz();
+
+    deadline->start_tick = interrupt_request_tick_count;
+    deadline->ticks = (uint32_t) (((uint64_t) microseconds * frequency_hz + 999999u) / 1000000u);
+    deadline->last_tick = deadline->start_tick;
+    deadline->stalled_polls = 0u;
+}
+
+bool interrupt_request_deadline_passed(InterruptRequestDeadline_t *deadline)
+{
+    const uint32_t now = interrupt_request_tick_count;
+
+    if (now != deadline->last_tick)
+    {
+        deadline->last_tick = now;
+        deadline->stalled_polls = 0u;
+    }
+    else if (++deadline->stalled_polls >= INTERRUPT_REQUEST_DEADLINE_STALLED_POLLS)
+        return true;
+    return now - deadline->start_tick > deadline->ticks;
+}
+
+void interrupt_request_spin_microseconds(uint32_t microseconds)
+{
+    InterruptRequestDeadline_t deadline;
+
+    interrupt_request_deadline_start(&deadline, microseconds);
+    while (!interrupt_request_deadline_passed(&deadline))
+        asmutils_pause();
+}
 
 uint32_t interrupt_request_get_realtime_clock_interrupt_count(void)
 {

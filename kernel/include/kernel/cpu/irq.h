@@ -32,6 +32,7 @@
 #include <kernel/drivers/rtc.h>
 #include <kernel/lib/asmutils.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -62,6 +63,40 @@ extern uint32_t interrupt_request_get_tick_count(void);
  * @brief Return configured PIT frequency used by IRQ0 in Hertz.
  */
 extern uint32_t interrupt_request_get_timer_frequency_hz(void);
+
+/**
+ * @brief A wait of at least some microseconds, measured on the IRQ0 tick.
+ *
+ * @details Fill it with @ref interrupt_request_deadline_start, then poll
+ *          @ref interrupt_request_deadline_passed. Hardware sets floors in time, not in loop
+ *          iterations: a poll count that waited long enough where every poll traps to the
+ *          hypervisor waits a few microseconds where none does.
+ */
+typedef struct InterruptRequestDeadline {
+    uint32_t start_tick;    /**< Tick count when the wait started. */
+    uint32_t ticks;         /**< Whole ticks that must pass after the one the wait started in. */
+    uint32_t last_tick;     /**< Tick count at the last poll. */
+    uint32_t stalled_polls; /**< Polls since the tick count last moved. */
+} InterruptRequestDeadline_t;
+
+/**
+ * @brief Starts a wait of at least @p microseconds.
+ *
+ * @details Rounds up to whole ticks of IRQ0, and the tick the call lands in does not count. If IRQ0
+ *          stops ticking (interrupts masked, no timer yet), the wait ends after 2^28 polls with no
+ *          tick, instead of never.
+ */
+extern void interrupt_request_deadline_start(InterruptRequestDeadline_t *deadline, uint32_t microseconds);
+
+/**
+ * @brief True once the wait @p deadline describes is over; each call is one poll.
+ */
+extern bool interrupt_request_deadline_passed(InterruptRequestDeadline_t *deadline);
+
+/**
+ * @brief Spins for at least @p microseconds, on the IRQ0 tick.
+ */
+extern void interrupt_request_spin_microseconds(uint32_t microseconds);
 
 /**
  * @brief Return number of detected spurious IRQ7 events.

@@ -1,6 +1,7 @@
 #include <kernel/cpu/ap_trampoline.h>
+#include <kernel/cpu/irq.h>
+#include <kernel/cpu/paging.h>
 
-#define KERNEL_VIRTUAL_BASE                 0xC0000000u
 #define AP_TRAMPOLINE_PHYSICAL_BASE         0x00008000u
 #define AP_TRAMPOLINE_STARTUP_VECTOR        0x08u
 #define AP_TRAMPOLINE_MAILBOX_PHYSICAL      0x00007D00u
@@ -75,20 +76,22 @@ void application_processor_trampoline_reset_acknowledgement(void)
     *ap_trampoline_c_entry_word_pointer() = 0u;
 }
 
-uint8_t application_processor_trampoline_wait_for_acknowledgement(uint32_t spin_limit)
+uint8_t application_processor_trampoline_wait_for_acknowledgement(uint32_t timeout_microseconds)
 {
     volatile uint16_t *ack = ap_trampoline_ack_word_pointer();
+    InterruptRequestDeadline_t deadline;
 
     ++ap_trampoline_ack_wait_count;
 
-    for (uint32_t spin = 0u; spin < spin_limit; ++spin)
+    interrupt_request_deadline_start(&deadline, timeout_microseconds);
+    do
     {
         if (*ack == AP_TRAMPOLINE_ACK_MAGIC)
         {
             ++ap_trampoline_ack_success_count;
             return 1u;
         }
-    }
+    } while (!interrupt_request_deadline_passed(&deadline));
 
     ++ap_trampoline_ack_timeout_count;
 
@@ -109,20 +112,22 @@ void application_processor_trampoline_configure_handoff(uint8_t apic_id, uint32_
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_MAIN_LOOP_OFFSET) = main_loop_virtual;
 }
 
-uint8_t application_processor_trampoline_wait_for_c_entry(uint32_t spin_limit)
+uint8_t application_processor_trampoline_wait_for_c_entry(uint32_t timeout_microseconds)
 {
     volatile uint16_t *marker = ap_trampoline_c_entry_word_pointer();
+    InterruptRequestDeadline_t deadline;
 
     ++ap_trampoline_c_entry_wait_count;
 
-    for (uint32_t spin = 0u; spin < spin_limit; ++spin)
+    interrupt_request_deadline_start(&deadline, timeout_microseconds);
+    do
     {
         if (*marker == AP_TRAMPOLINE_C_ENTRY_MAGIC)
         {
             ++ap_trampoline_c_entry_success_count;
             return 1u;
         }
-    }
+    } while (!interrupt_request_deadline_passed(&deadline));
 
     ++ap_trampoline_c_entry_timeout_count;
     return 0u;
