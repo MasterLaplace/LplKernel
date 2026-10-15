@@ -21,10 +21,10 @@ typedef struct BlockCounters {
  * @brief A block of guest code, by the address it starts at, and its counters.
  */
 typedef struct Block {
-    uint64_t address;                          /**< Guest virtual address of its first instruction. */
-    uint64_t instructions;                     /**< Instructions in it. */
-    struct qemu_plugin_scoreboard *counters;   /**< One BlockCounters per vCPU. */
-    BlockCounters baseline;                    /**< The counters when the window opened, summed. */
+    uint64_t address;                        /**< Guest virtual address of its first instruction. */
+    uint64_t instructions;                   /**< Instructions in it. */
+    struct qemu_plugin_scoreboard *counters; /**< One BlockCounters per vCPU. */
+    BlockCounters baseline;                  /**< The counters when the window opened, summed. */
 } Block;
 
 static GMutex blocks_lock;
@@ -79,8 +79,7 @@ static void write_counts(void)
     while (g_hash_table_iter_next(&iterator, NULL, &value))
     {
         const Block *block = value;
-        const uint64_t executions =
-            block_sum(block, offsetof(BlockCounters, executions)) - block->baseline.executions;
+        const uint64_t executions = block_sum(block, offsetof(BlockCounters, executions)) - block->baseline.executions;
         const uint64_t loads = block_sum(block, offsetof(BlockCounters, loads)) - block->baseline.loads;
         const uint64_t stores = block_sum(block, offsetof(BlockCounters, stores)) - block->baseline.stores;
 
