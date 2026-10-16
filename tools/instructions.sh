@@ -14,17 +14,20 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --to SYMBOL     stop counting the first time SYMBOL runs after that; needs --from
   --times N       stop on the Nth run of --to's SYMBOL instead (default: 1); with --from and --to
                   the same function, the window holds exactly N of its runs
-  --until TEXT    without --from, stop when the serial output prints TEXT (default: "# Totals:")
+  --inside SYMBOL count only from each entry of SYMBOL to its return, over its first --times calls;
+                  what runs between two calls, such as a loop waiting for the next one, is left out
+  --until TEXT    without --from or --inside, stop when the serial output prints TEXT
+                  (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line
   --timeout S     give up after S seconds (default: 1800)
   --keep DIR      keep the serial log and the raw counts in DIR
   --budget FILE   check the counts against FILE, which records a window and the counts it held
 
-A budget FILE holds key=value lines: from, to and times give the window, unless the command line
-does; instructions and accesses (loads and stores) record the counts; tolerance is how far above
-them, in percent, the counts may go. Below them by more than the tolerance, the run says to record
-the new counts.
+A budget FILE holds key=value lines: from, to, inside and times give the window, unless the
+command line does; instructions and accesses (loads and stores) record the counts; tolerance is
+how far above them, in percent, the counts may go. Below them by more than the tolerance, the run
+says to record the new counts.
 
 A SYMBOL is a function's name as the symbol table spells it, or its demangled name up to the
 parenthesis of its parameters. One processor only: QEMU 10.2 crashes when -icount, a plugin and
@@ -40,6 +43,7 @@ EOF
 
 from_symbol=""
 to_symbol=""
+inside_symbol=""
 until_text="# Totals:"
 top=25
 append=""
@@ -54,6 +58,7 @@ while [ $# -gt 0 ]; do
         --from) from_symbol="${2:?}"; shift 2 ;;
         --to) to_symbol="${2:?}"; shift 2 ;;
         --times) times="${2:?}"; shift 2 ;;
+        --inside) inside_symbol="${2:?}"; shift 2 ;;
         --until) until_text="${2:?}"; shift 2 ;;
         --top) top="${2:?}"; shift 2 ;;
         --test) from_symbol="lplTestBody_${2:?}"; to_symbol="lpl::testing::(anonymous namespace)::writeResult"; shift 2 ;;
@@ -77,6 +82,7 @@ if [ -n "$budget" ]; then
             ""|"#"*) ;;
             from) [ -n "$from_symbol" ] || from_symbol="$value" ;;
             to) [ -n "$to_symbol" ] || to_symbol="$value" ;;
+            inside) [ -n "$inside_symbol" ] || inside_symbol="$value" ;;
             times) [ -n "$times" ] || times="$value" ;;
             instructions) recorded_instructions="$value" ;;
             accesses) recorded_accesses="$value" ;;
@@ -90,6 +96,10 @@ fi
 times="${times:-1}"
 if [ -n "$from_symbol" ] && [ -z "$to_symbol" ] || [ -z "$from_symbol" ] && [ -n "$to_symbol" ]; then
     echo "--from and --to go together" >&2
+    exit 2
+fi
+if [ -n "$inside_symbol" ] && [ -n "$from_symbol" ]; then
+    echo "--inside goes without --from, --to and --test" >&2
     exit 2
 fi
 
@@ -138,6 +148,14 @@ if [ -n "$from_symbol" ]; then
     done
     plugin_args="$plugin_args,begin=$begin,end=$end,times=$times"
 fi
+if [ -n "$inside_symbol" ]; then
+    inside="$(address_of "$inside_symbol")"
+    case "$inside" in
+        "") echo "no function $inside_symbol in $kernel" >&2; exit 2 ;;
+        ambiguous) echo "more than one function $inside_symbol in $kernel" >&2; exit 2 ;;
+    esac
+    plugin_args="$plugin_args,inside=$inside,times=$times"
+fi
 
 qemu_command=(qemu-system-i386 -kernel "$kernel" -smp 1 -m 512 -display none -no-reboot -monitor none
               -serial "file:$serial" -icount shift=0,sleep=off -plugin "$plugin,$plugin_args")
@@ -147,11 +165,11 @@ qemu_pid=$!
 
 finished=0
 for _ in $(seq 1 "$timeout_seconds"); do
-    if [ -n "$from_symbol" ] && [ -s "$counts" ]; then
+    if [ -n "$from_symbol$inside_symbol" ] && [ -s "$counts" ]; then
         finished=1
         break
     fi
-    if [ -z "$from_symbol" ] && [ -f "$serial" ] && grep -aqF "$until_text" "$serial"; then
+    if [ -z "$from_symbol$inside_symbol" ] && [ -f "$serial" ] && grep -aqF "$until_text" "$serial"; then
         finished=1
         break
     fi
