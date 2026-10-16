@@ -5,16 +5,15 @@
 
 KERNEL_TEST_SUITE(memory_copies, KERNEL_TEST_STAGE_INITIALIZATION);
 
-/** @brief Bytes each buffer holds: room for every offset and length the copy test tries, with margins. */
-#define MEMORY_COPIES_BUFFER_SIZE 96u
+#define MEMORY_COPIES_BUFFER_SIZE 96u /**< Bytes a buffer holds: every offset and length tried, and margins. */
 
-/** @brief Lengths copied: none, the bytes under a word, a few words, and enough for a long run of them. */
-#define MEMORY_COPIES_LONGEST 67u
+#define MEMORY_COPIES_LONGEST 67u /**< The longest copy: from none, past the bytes under a word, to many words. */
 
-/** @brief The byte a copy leaves in place: anything the copy writes outside its range shows. */
-#define MEMORY_COPIES_UNTOUCHED 0x00u
+#define MEMORY_COPIES_UNTOUCHED 0x00u /**< What a copy leaves around its range: a byte it wrote there shows. */
 
-/** @brief The byte the source holds at @p index: each one different, and none of them the untouched one. */
+/**
+ * @brief The byte the source holds at @p index: each one different, and none of them the untouched one.
+ */
 static uint8_t memory_copies_source_byte(uint32_t index) { return (uint8_t) (index + 1u); }
 
 /**
