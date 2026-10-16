@@ -19,6 +19,12 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --append TEXT   kernel command line
   --timeout S     give up after S seconds (default: 1800)
   --keep DIR      keep the serial log and the raw counts in DIR
+  --budget FILE   check the counts against FILE, which records a window and the counts it held
+
+A budget FILE holds key=value lines: from, to and times give the window, unless the command line
+does; instructions and accesses (loads and stores) record the counts; tolerance is how far above
+them, in percent, the counts may go. Below them by more than the tolerance, the run says to record
+the new counts.
 
 A SYMBOL is a function's name as the symbol table spells it, or its demangled name up to the
 parenthesis of its parameters. One processor only: QEMU 10.2 crashes when -icount, a plugin and
@@ -28,7 +34,7 @@ The QEMU plugin is built on first use, under build/qemu-plugin/, against the plu
 the QEMU it finds (qemu-system-i386 --version), fetched from QEMU's repository at that tag.
 
 Exit status: 0 when the counts were written, 1 when QEMU stopped or timed out before the end
-of the window, 2 on a usage error.
+of the window, 2 on a usage error, 3 when a count passed its budget.
 EOF
 }
 
@@ -38,8 +44,9 @@ until_text="# Totals:"
 top=25
 append=""
 timeout_seconds=1800
-times=1
+times=""
 keep=""
+budget=""
 kernel=""
 
 while [ $# -gt 0 ]; do
@@ -53,12 +60,34 @@ while [ $# -gt 0 ]; do
         --append) append="${2:?}"; shift 2 ;;
         --timeout) timeout_seconds="${2:?}"; shift 2 ;;
         --keep) keep="${2:?}"; shift 2 ;;
+        --budget) budget="${2:?}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option $1" >&2; usage >&2; exit 2 ;;
         *) [ -z "$kernel" ] || { usage >&2; exit 2; }; kernel="$1"; shift ;;
     esac
 done
 [ -n "$kernel" ] && [ -f "$kernel" ] || { usage >&2; exit 2; }
+recorded_instructions=""
+recorded_accesses=""
+tolerance=0
+if [ -n "$budget" ]; then
+    [ -f "$budget" ] || { echo "no budget file $budget" >&2; exit 2; }
+    while IFS='=' read -r key value; do
+        case "$key" in
+            ""|"#"*) ;;
+            from) [ -n "$from_symbol" ] || from_symbol="$value" ;;
+            to) [ -n "$to_symbol" ] || to_symbol="$value" ;;
+            times) [ -n "$times" ] || times="$value" ;;
+            instructions) recorded_instructions="$value" ;;
+            accesses) recorded_accesses="$value" ;;
+            tolerance) tolerance="$value" ;;
+            *) echo "unknown key $key in $budget" >&2; exit 2 ;;
+        esac
+    done <"$budget"
+    [[ "$recorded_instructions" =~ ^[1-9][0-9]*$ && "$recorded_accesses" =~ ^[1-9][0-9]*$ && "$tolerance" =~ ^[0-9]+$ ]] ||
+        { echo "$budget needs instructions and accesses above 0, and tolerance, as integers" >&2; exit 2; }
+fi
+times="${times:-1}"
 if [ -n "$from_symbol" ] && [ -z "$to_symbol" ] || [ -z "$from_symbol" ] && [ -n "$to_symbol" ]; then
     echo "--from and --to go together" >&2
     exit 2
@@ -178,4 +207,25 @@ awk -v top="$top" '
             ++listed
         }
     }
-' "$work/symbols" "$counts"
+' "$work/symbols" "$counts" >"$work/report"
+cat "$work/report"
+[ -n "$budget" ] || exit 0
+
+read -r counted_instructions counted_loads counted_stores < <(
+    sed -n '1s/^instructions=\([0-9]*\) loads=\([0-9]*\) stores=\([0-9]*\)$/\1 \2 \3/p' "$work/report")
+within=1
+check_budget() {
+    local name="$1" counted="$2" recorded="$3"
+    awk -v name="$name" -v counted="$counted" -v recorded="$recorded" -v tolerance="$tolerance" \
+        'BEGIN { printf "budget %s: %d counted, %d recorded (%+.2f %%, tolerance %d %%)\n",
+                 name, counted, recorded, 100 * (counted - recorded) / recorded, tolerance }'
+    if [ $((counted * 100)) -gt $((recorded * (100 + tolerance))) ]; then
+        echo "over budget: $name $counted, above $recorded by more than $tolerance %" >&2
+        within=0
+    elif [ $((counted * 100)) -lt $((recorded * (100 - tolerance))) ]; then
+        echo "$name $counted is below $recorded by more than $tolerance %: record it in $budget"
+    fi
+}
+check_budget instructions "$counted_instructions" "$recorded_instructions"
+check_budget accesses "$((counted_loads + counted_stores))" "$recorded_accesses"
+[ "$within" -eq 1 ] || exit 3

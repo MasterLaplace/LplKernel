@@ -84,6 +84,11 @@ than most gains: `tools/instructions.sh --test <name> kernel/lpl.kernel` counts 
 memory accesses one `LPL_TEST` executes in ring 0, the same on every run, and lists the functions
 that spent them.
 
+The server's tick has a budget, `tools/server-tick.budget`: on a release server kernel,
+`tools/instructions.sh --budget tools/server-tick.budget kernel/lpl.kernel` fails when a count passes
+the recorded one by more than its tolerance. A pull request that moves `DEPENDENCIES.lock` records the
+new counts.
+
 ## Numbering
 
 Gates are written `gate P13 history`: the word, the number and the name, never `P13` alone. A gate

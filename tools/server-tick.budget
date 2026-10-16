@@ -1,0 +1,10 @@
+# The server's authoritative tick: 60 runs of lpl::ecs::SystemScheduler::tick on a release kernel
+# (SMOKE_TESTS=0 ./build.sh --server) built with the siblings of DEPENDENCIES.lock. Checked by
+# tools/instructions.sh --budget tools/server-tick.budget kernel/lpl.kernel; a pull request that
+# moves the lock records the new counts.
+from=lpl::ecs::SystemScheduler::tick
+to=lpl::ecs::SystemScheduler::tick
+times=60
+instructions=1895606718
+accesses=1247123853
+tolerance=1
