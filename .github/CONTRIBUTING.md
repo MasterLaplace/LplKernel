@@ -82,7 +82,14 @@ control tell the two apart. A new boot measurement is printed as one
 A change made for speed is judged by counts, not by a clock, which on a shared machine varies more
 than most gains: `tools/instructions.sh --test <name> kernel/lpl.kernel` counts the instructions and
 memory accesses one `LPL_TEST` executes in ring 0, the same on every run, and lists the functions
-that spent them.
+that spent them. `--inside <function> --times <n>` counts `<n>` calls of a function instead, without
+what runs between them: the loop that paces the ticks fills whatever time the work leaves, so a window
+from one call to the next stops shrinking once the work fits in a tick.
+
+The server's tick has a budget, `tools/server-tick.budget`: on a release server kernel,
+`tools/instructions.sh --budget tools/server-tick.budget kernel/lpl.kernel` fails when a count passes
+the recorded one by more than its tolerance. A pull request that moves `DEPENDENCIES.lock` records the
+new counts.
 
 ## Numbering
 

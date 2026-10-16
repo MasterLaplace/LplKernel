@@ -1,0 +1,11 @@
+# The server's authoritative tick: what 600 calls of lpl::ecs::SystemScheduler::tick execute,
+# without the loop that waits between them, on a release kernel (SMOKE_TESTS=0 ./build.sh --server)
+# built with the siblings of DEPENDENCIES.lock. 600 ticks hold the pile's fall, its landing and its
+# settling: in the first 60 no two cubes touch. Checked by
+# tools/instructions.sh --budget tools/server-tick.budget kernel/lpl.kernel; a pull request that
+# moves the lock records the new counts.
+inside=lpl::ecs::SystemScheduler::tick
+times=600
+instructions=23380774813
+accesses=15504472844
+tolerance=1
