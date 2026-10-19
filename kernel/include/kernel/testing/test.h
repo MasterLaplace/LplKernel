@@ -36,6 +36,8 @@
  * - A test that checks nothing fails. kernel_test_skip() says why a test cannot run here.
  * - KERNEL_TEST_MANUAL() tests halt the machine and run only when named in full:
  *   `lpl.test=exceptions.breakpoint`. `lpl.test=heap.*` narrows any run to the other tests.
+ * - `lpl.test.require=power_floor.*,cartridge.*` names the tests a boot must run, the libraries'
+ *   too: one that is skipped fails, and a pattern that names no test fails the run.
  *
  * @author @MasterLaplace
  * @version 0.0.0

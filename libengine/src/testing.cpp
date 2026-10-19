@@ -23,10 +23,12 @@ private:
 extern "C" uint32_t libengine_test_suite_count(void) { return lpl::testing::suiteCount(); }
 
 extern "C" libengine_test_totals_t libengine_test_run(libengine_test_write_t write, void *context,
-                                                      const char *selection, uint32_t first_suite_number)
+                                                      const char *selection, const char *required,
+                                                      uint32_t first_suite_number)
 {
     KernelSink sink(write, context);
-    const lpl::testing::Totals totals = lpl::testing::run(sink, selection, first_suite_number);
+    const lpl::testing::Totals totals = lpl::testing::run(sink, selection, required, first_suite_number);
 
-    return libengine_test_totals_t{totals.passed, totals.failed, totals.skipped, totals.checks, totals.selected};
+    return libengine_test_totals_t{totals.passed, totals.failed,   totals.skipped,
+                                   totals.checks, totals.selected, totals.required};
 }
