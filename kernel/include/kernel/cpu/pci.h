@@ -151,6 +151,26 @@ extern const PeripheralComponentInterconnectDevice_t *peripheral_component_inter
 extern const PeripheralComponentInterconnectDevice_t *
 peripheral_component_interconnect_find_by_class(uint8_t class_code, uint8_t subclass);
 
+/**
+ * @name Bits of the command register
+ * @{
+ */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_MEMORY_SPACE (1u << 1) /**< The device answers its memory window. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_BUS_MASTER                                                           \
+    (1u << 2) /**< The device may master the bus, as DMA does. */
+/** @} */
+
+/**
+ * @brief Lets a device answer its memory window and master the bus.
+ *
+ * @note Bus mastering is the one that is easy to forget and hard to diagnose: without it every
+ *       register reads correctly and the device never touches the memory it was given.
+ *
+ * @param device The device.
+ */
+extern void peripheral_component_interconnect_enable_memory_and_bus_mastering(
+    const PeripheralComponentInterconnectDevice_t *device);
+
 /** @brief Number of Base Address Registers in a type 0 configuration header. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_BASE_ADDRESS_REGISTER_COUNT 6u
 

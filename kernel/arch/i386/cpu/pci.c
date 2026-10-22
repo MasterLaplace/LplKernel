@@ -245,3 +245,15 @@ const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect
     }
     return NULL;
 }
+
+void peripheral_component_interconnect_enable_memory_and_bus_mastering(
+    const PeripheralComponentInterconnectDevice_t *device)
+{
+    const uint16_t command = peripheral_component_interconnect_config_read_word(
+        device->bus, device->device, device->function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_COMMAND);
+
+    peripheral_component_interconnect_config_write_word(
+        device->bus, device->device, device->function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_COMMAND,
+        (uint16_t) (command | PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_MEMORY_SPACE |
+                    PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_BUS_MASTER));
+}
