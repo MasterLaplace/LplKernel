@@ -20,6 +20,9 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
                   (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line
+  --cdrom ISO     boot ISO through GRUB instead of <kernel> alone: a client gets its display and its
+                  cartridge only that way. <kernel> is still the image the ISO holds, which names
+                  the functions; GRUB passes no --append
   --timeout S     give up after S seconds (default: 1800)
   --keep DIR      keep the serial log and the raw counts in DIR
   --budget FILE   check the counts against FILE, which records a window and the counts it held
@@ -52,6 +55,7 @@ times=""
 keep=""
 budget=""
 kernel=""
+cdrom=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -63,6 +67,7 @@ while [ $# -gt 0 ]; do
         --top) top="${2:?}"; shift 2 ;;
         --test) from_symbol="lplTestBody_${2:?}"; to_symbol="lpl::testing::(anonymous namespace)::writeResult"; shift 2 ;;
         --append) append="${2:?}"; shift 2 ;;
+        --cdrom) cdrom="${2:?}"; shift 2 ;;
         --timeout) timeout_seconds="${2:?}"; shift 2 ;;
         --keep) keep="${2:?}"; shift 2 ;;
         --budget) budget="${2:?}"; shift 2 ;;
@@ -72,6 +77,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$kernel" ] && [ -f "$kernel" ] || { usage >&2; exit 2; }
+[ -z "$cdrom" ] || [ -f "$cdrom" ] || { echo "no ISO $cdrom" >&2; exit 2; }
+[ -z "$cdrom" ] || [ -z "$append" ] || { echo "--append reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 recorded_instructions=""
 recorded_accesses=""
 tolerance=0
@@ -157,7 +164,9 @@ if [ -n "$inside_symbol" ]; then
     plugin_args="$plugin_args,inside=$inside,times=$times"
 fi
 
-qemu_command=(qemu-system-i386 -kernel "$kernel" -smp 1 -m 512 -display none -no-reboot -monitor none
+boot=(-kernel "$kernel")
+[ -z "$cdrom" ] || boot=(-cdrom "$cdrom")
+qemu_command=(qemu-system-i386 "${boot[@]}" -smp 1 -m 512 -display none -no-reboot -monitor none
               -serial "file:$serial" -icount shift=0,sleep=off -plugin "$plugin,$plugin_args")
 [ -z "$append" ] || qemu_command+=(-append "$append")
 "${qemu_command[@]}" &
