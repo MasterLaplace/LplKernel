@@ -78,8 +78,8 @@ extern uint32_t advanced_pic_timer_backend_get_local_apic_version_register(void)
 /**
  * @brief Calibrate LAPIC timer rate against PIT tick cadence.
  *
- * This calibration keeps LAPIC timer masked and only produces diagnostics for
- * next-stage APIC timer ownership migration.
+ * The timer stays masked while it counts eight PIT ticks; the frequency it measures is the one
+ * periodic and one-shot modes are programmed from.
  *
  * @return Non-zero when calibration data is available, zero otherwise.
  */
@@ -93,8 +93,8 @@ extern uint32_t advanced_pic_timer_backend_get_calibrated_timer_frequency_hz(voi
 /**
  * @brief Enable LAPIC periodic timer mode using the remapped timer vector.
  *
- * This is an experimental ownership handoff path and should be used only when
- * APIC probe + late init + calibration succeeded.
+ * Every profile takes this path once the probe, the late initialization and the calibration
+ * succeeded; the PIT's IRQ0 is masked and the local timer owns the tick from then on.
  *
  * @param target_frequency_hz desired scheduler tick frequency.
  * @return Non-zero when APIC periodic mode is active, zero otherwise.

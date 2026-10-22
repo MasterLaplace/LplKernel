@@ -8,13 +8,6 @@
 static ClockProfile_t clock_profile = CLOCK_PROFILE_SERVER_THROUGHPUT;
 static const char *clock_backend_name = CLOCK_BACKEND_NAME_PIT;
 
-static uint32_t clock_select_profile_frequency_hz(void)
-{
-    if (clock_profile == CLOCK_PROFILE_CLIENT_RT)
-        return CLOCK_CLIENT_TIMER_FREQUENCY_HZ;
-    return CLOCK_SERVER_TIMER_FREQUENCY_HZ;
-}
-
 void clock_initialize(void)
 {
     uint32_t target_frequency_hz;
@@ -25,7 +18,7 @@ void clock_initialize(void)
     clock_profile = CLOCK_PROFILE_SERVER_THROUGHPUT;
 #endif
 
-    target_frequency_hz = clock_select_profile_frequency_hz();
+    target_frequency_hz = clock_get_profile_tick_hz();
     interrupt_request_set_realtime_clock_periodic_enabled(0u);
 
     if (advanced_pic_timer_backend_initialize(target_frequency_hz))
@@ -50,6 +43,13 @@ const char *clock_get_profile_name(void)
 }
 
 uint32_t clock_get_tick_hz(void) { return interrupt_request_get_timer_frequency_hz(); }
+
+uint32_t clock_get_profile_tick_hz(void)
+{
+    if (clock_profile == CLOCK_PROFILE_CLIENT_RT)
+        return CLOCK_CLIENT_TIMER_FREQUENCY_HZ;
+    return CLOCK_SERVER_TIMER_FREQUENCY_HZ;
+}
 
 uint32_t clock_get_tick_count(void) { return interrupt_request_get_tick_count(); }
 

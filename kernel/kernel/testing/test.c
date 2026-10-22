@@ -128,34 +128,6 @@ static uint32_t kernel_test_count_suite_tests(const KernelTestCase_t *first)
 }
 
 /**
- * @brief The value of @p option on the boot command line, or NULL when there is none.
- *
- * @details The option counts only at the start of a word, so `xlpl.test=` selects nothing, and
- *          `lpl.test.require=` is not `lpl.test=`.
- */
-static const char *kernel_test_option(const char *option)
-{
-    const char *command_line = boot_command_line();
-
-    if (!command_line)
-        return NULL;
-
-    for (const char *cursor = command_line; *cursor != '\0'; ++cursor)
-    {
-        if (cursor != command_line && cursor[-1] != ' ')
-            continue;
-
-        uint32_t matched = 0u;
-
-        while (option[matched] != '\0' && cursor[matched] == option[matched])
-            ++matched;
-        if (option[matched] == '\0')
-            return cursor + matched;
-    }
-    return NULL;
-}
-
-/**
  * @brief Matches @p subject against the pattern [@p pattern, @p pattern_end), where `*` matches any run.
  */
 static bool kernel_test_pattern_matches(const char *pattern, const char *pattern_end, const char *subject)
@@ -529,8 +501,8 @@ void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial)
     if (!kernel_test_header_written)
         kernel_test_write_header(serial);
 
-    const char *selection = kernel_test_option(KERNEL_TEST_SELECTION_OPTION);
-    const char *required = kernel_test_option(KERNEL_TEST_REQUIRED_OPTION);
+    const char *selection = boot_command_line_option(KERNEL_TEST_SELECTION_OPTION);
+    const char *required = boot_command_line_option(KERNEL_TEST_REQUIRED_OPTION);
     const KernelTestCase_t *test_case = kernel_test_after(NULL);
 
     while (test_case && test_case->suite->stage != stage)

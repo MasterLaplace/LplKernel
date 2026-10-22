@@ -35,6 +35,9 @@ typedef enum {
     CLOCK_PROFILE_SERVER_THROUGHPUT = 1,
 } ClockProfile_t;
 
+/** Boot option that keeps the tick on the PIT: the local timer is not calibrated, as when its calibration fails. */
+#define CLOCK_KEEP_THE_PIT_OPTION "lpl.timer=pit"
+
 /**
  * @brief Initialize timer subsystem using active build profile policy.
  */
@@ -59,6 +62,13 @@ extern const char *clock_get_profile_name(void);
  * @brief Return current scheduler tick frequency in Hertz.
  */
 extern uint32_t clock_get_tick_hz(void);
+
+/**
+ * @brief The tick frequency the build profile asks for, whichever timer keeps it.
+ *
+ * @return The frequency in hertz.
+ */
+extern uint32_t clock_get_profile_tick_hz(void);
 
 /**
  * @brief Return number of tick interrupts since clock initialization.

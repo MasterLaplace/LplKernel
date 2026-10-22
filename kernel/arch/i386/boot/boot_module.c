@@ -116,3 +116,32 @@ void boot_command_line_capture(void)
 }
 
 const char *boot_command_line(void) { return boot_command_line_captured ? boot_command_line_copy : NULL; }
+
+const char *boot_command_line_option(const char *option)
+{
+    const char *command_line = boot_command_line();
+
+    if (!command_line || !option)
+        return NULL;
+
+    for (const char *cursor = command_line; *cursor != '\0'; ++cursor)
+    {
+        if (cursor != command_line && cursor[-1] != ' ')
+            continue;
+
+        uint32_t matched = 0u;
+
+        while (option[matched] != '\0' && cursor[matched] == option[matched])
+            ++matched;
+        if (option[matched] == '\0')
+            return cursor + matched;
+    }
+    return NULL;
+}
+
+bool boot_command_line_holds(const char *word)
+{
+    const char *after = boot_command_line_option(word);
+
+    return after && (*after == '\0' || *after == ' ');
+}
