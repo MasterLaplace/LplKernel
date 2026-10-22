@@ -84,6 +84,27 @@ void boot_command_line_capture(void);
  */
 const char *boot_command_line(void);
 
+/**
+ * @brief The value of @p option on the boot command line.
+ *
+ * @details The option counts only at the start of a word, so `xlpl.test=` names nothing, and
+ *          `lpl.test.require=` is not `lpl.test=`.
+ *
+ * @param option The option's name and its `=`, as in `lpl.test=`.
+ * @return The text right after @p option, to the end of the line, or NULL when the line does not
+ *         hold it.
+ */
+const char *boot_command_line_option(const char *option);
+
+/**
+ * @brief Whether the boot command line holds @p word as a word of its own.
+ *
+ * @param word A whole word, as in `lpl.timer=pit`.
+ * @return true when a word of the line is exactly @p word: `lpl.timer=pitx` does not hold
+ *         `lpl.timer=pit`.
+ */
+bool boot_command_line_holds(const char *word);
+
 #ifdef __cplusplus
 }
 #endif
