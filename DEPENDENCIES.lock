@@ -1,5 +1,5 @@
 # The exact commits this commit builds and gates with. Refresh with tools/deps.sh lock.
 # <name> <version> <commit> <url>
-LplPlugin     0.12.0  c1a0e9efe395045bf9cf96fd810d0a4d8d8d3e3d https://github.com/MasterLaplace/LplPlugin.git
+LplPlugin     0.13.0  2e61a1848a55e88f0559d724b360057479c5d1da https://github.com/MasterLaplace/LplPlugin.git
 LplAssistant  0.3.0   81db4de838b5abe87ba454c7c2916cfedd048593 https://github.com/Christian-guajardo/LplAssistant.git
 LplKnowledge  0.2.2   b91815d8479b1daf95de4fa129de1c6f3c38e051 https://github.com/MasterLaplace/LplKnowledge.git

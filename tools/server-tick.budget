@@ -6,6 +6,6 @@
 # moves the lock records the new counts.
 inside=lpl::ecs::SystemScheduler::tick
 times=600
-instructions=417833658
-accesses=224531780
+instructions=396738478
+accesses=213236771
 tolerance=1
