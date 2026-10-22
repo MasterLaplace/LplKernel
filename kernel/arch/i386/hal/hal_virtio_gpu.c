@@ -365,46 +365,6 @@ static void walk_virtio_capabilities(const hardware_abstraction_layer_virtio_gpu
 }
 
 /**
- * @brief Maps an MMIO BAR window into kernel virtual space, cache-disabled.
- *
- * @details The VMM picks a free virtual range, which is collision-safe, and each page is
- *          mapped onto the device's physical BAR pages.
- *
- * @param phys_base_raw Physical base, as read from the base address register.
- * @param size          Window length in bytes.
- * @return The virtual address of the BAR base — a caller adds each cap.offset to reach a
- *         structure — or 0 on failure.
- */
-static uint32_t map_mmio_window(uint32_t phys_base_raw, uint32_t size)
-{
-    if (phys_base_raw == 0u || size == 0u)
-        return 0u;
-
-    const uint32_t page_offset = phys_base_raw & 0xFFFu;
-    const uint32_t phys_base = phys_base_raw & 0xFFFFF000u;
-    const uint32_t span = page_offset + size;
-    const uint32_t page_count = (span + 0xFFFu) >> 12;
-
-    void *virt = kernel_vmm_reserve_pages(page_count);
-    if (virt == (void *) 0)
-        return 0u;
-
-    const PageDirectoryEntry_t pde_flags = {.present = 1u, .read_write = 1u};
-    const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u, .cache_disable = 1u, .write_through = 1u};
-
-    const uint32_t virt_base = (uint32_t) virt;
-    for (uint32_t i = 0u; i < page_count; ++i)
-    {
-        if (!paging_map_page(virt_base + (i << 12), phys_base + (i << 12), pde_flags, pte_flags))
-        {
-            kernel_vmm_free_pages(virt, page_count);
-            return 0u;
-        }
-    }
-    return virt_base + page_offset;
-}
-
-/**
  * @brief Resets the device: writes zero to device_status and reads it back to flush the write.
  * @param status_reg Virtual address of device_status.
  */
@@ -958,7 +918,7 @@ bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_
         bar.is_io)
         return false;
 
-    const uint32_t mmio_virtual_base = map_mmio_window((uint32_t) bar.base, (uint32_t) bar.size);
+    const uint32_t mmio_virtual_base = kernel_vmm_map_device_window((uint32_t) bar.base, (uint32_t) bar.size);
     if (mmio_virtual_base == 0u)
         return false;
 

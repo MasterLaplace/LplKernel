@@ -78,6 +78,32 @@ bool kernel_vmm_reserve_at(void *virt, uint32_t page_count);
 void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
 
 /**
+ * @brief Maps a device's memory window into a free run of kernel virtual pages, uncached.
+ *
+ * @details Cache-disabled and write-through, because these are registers: a cached read would
+ *          return whatever the line held when it was filled, which for a status register is the
+ *          answer to a question nobody asked. A window that cannot be mapped whole is given back
+ *          without freeing its frames, as kernel_vmm_unmap_device_window does.
+ *
+ * @param physical_base Physical address of the window, as its base address register gives it.
+ * @param size          Window length in bytes.
+ * @return The virtual address of @p physical_base, its offset within its page kept, or 0.
+ */
+uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size);
+
+/**
+ * @brief Unmaps a window kernel_vmm_map_device_window gave, and frees none of its frames.
+ *
+ * @details The frames are the device's registers, not memory the physical memory manager handed
+ *          out: kernel_vmm_free_pages would give them to it, and the next allocation would land on
+ *          the device.
+ *
+ * @param window The address kernel_vmm_map_device_window returned.
+ * @param size   The size it was given.
+ */
+void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size);
+
+/**
  * @brief Freed runs that had at least one page mapped, each unmapped with one TLB shootdown.
  * @return The count since boot.
  */

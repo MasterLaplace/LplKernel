@@ -321,45 +321,6 @@ static void hda_write32(uint32_t offset, uint32_t value)
 }
 
 /**
- * @brief Maps a device window into virtual space, cache-disabled.
- *
- * The same shape the virtio GPU uses. Cache-disabled and write-through because these
- * are registers: a cached read would return whatever the line held when it was
- * filled, which for a status register is the answer to a question nobody asked.
- *
- * @param phys_base_raw Physical base, as read from the base address register.
- * @param size          Window length in bytes.
- * @return The virtual address of the base, or 0.
- */
-static uint32_t hda_map_window(uint32_t phys_base_raw, uint32_t size)
-{
-    if (phys_base_raw == 0u || size == 0u)
-        return 0u;
-
-    const uint32_t page_offset = phys_base_raw & 0xFFFu;
-    const uint32_t phys_base = phys_base_raw & 0xFFFFF000u;
-    const uint32_t page_count = ((page_offset + size) + 0xFFFu) >> 12;
-
-    void *const virt = kernel_vmm_reserve_pages(page_count);
-    if (virt == NULL)
-        return 0u;
-
-    const PageDirectoryEntry_t pde_flags = {.present = 1u, .read_write = 1u};
-    const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u, .cache_disable = 1u, .write_through = 1u};
-
-    const uint32_t virt_base = (uint32_t) virt;
-    for (uint32_t i = 0u; i < page_count; ++i)
-    {
-        if (!paging_map_page(virt_base + (i << 12), phys_base + (i << 12), pde_flags, pte_flags))
-        {
-            kernel_vmm_free_pages(virt, page_count);
-            return 0u;
-        }
-    }
-    return virt_base + page_offset;
-}
-
-/**
  * @brief Claims one physical page and maps it for uncached device access.
  *
  * The rings are read and written by the controller's bus master, so the memory has to
@@ -1041,7 +1002,8 @@ bool intel_high_definition_audio_initialize(IntelHighDefinitionAudioState_t *out
     if (!hda_window_is_reachable(&bar))
         return hda_publish_state(out, false);
 
-    hda_state.bar_virtual = hda_map_window((uint32_t) bar.base, bar.size != 0u ? (uint32_t) bar.size : 0x4000u);
+    hda_state.bar_virtual =
+        kernel_vmm_map_device_window((uint32_t) bar.base, bar.size != 0u ? (uint32_t) bar.size : 0x4000u);
     if (hda_state.bar_virtual == 0u)
         return hda_publish_state(out, false);
 
