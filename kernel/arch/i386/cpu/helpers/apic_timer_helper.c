@@ -89,8 +89,3 @@ void write_apic_owner_handoff_info(Serial_t *serial, uint8_t success)
         serial_write_string(serial, "\n");
     }
 }
-
-void write_apic_owner_policy_fallback_info(Serial_t *serial)
-{
-    serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: APIC ownership policy=pit-fallback\n");
-}

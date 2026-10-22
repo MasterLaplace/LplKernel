@@ -98,13 +98,17 @@ InterruptDescriptorTable_t interrupt_descriptor_table = {0};
 static TaskStateSegment_t task_state_segment = {0};
 Serial_t com1;
 
-static uint8_t kernel_policy_enable_apic_timer_owner(void)
+/**
+ * @brief Whether the local timer is calibrated, so that it can take the tick from the PIT.
+ *
+ * @details It is in every profile, unless the boot line holds CLOCK_KEEP_THE_PIT_OPTION: the kernel
+ *          then takes the path of a failed calibration, and the PIT keeps the tick.
+ *
+ * @return 1 when the local timer is to be calibrated, 0 when the boot line declines it.
+ */
+static uint8_t kernel_policy_calibrate_apic_timer(void)
 {
-#if defined(LPL_KERNEL_REAL_TIME_MODE)
-    return 1u;
-#else
-    return 0u;
-#endif
+    return boot_command_line_holds(CLOCK_KEEP_THE_PIT_OPTION) ? 0u : 1u;
 }
 
 static uint8_t kernel_policy_enable_ioapic_keyboard_owner(void)
@@ -403,25 +407,11 @@ __attribute__((constructor)) void kernel_initialize(void)
             write_ioapic_keyboard_policy_fallback_info(&com1);
         }
 
-        if (advanced_pic_timer_backend_calibrate_with_pit())
+        if (kernel_policy_calibrate_apic_timer() && advanced_pic_timer_backend_calibrate_with_pit())
         {
             write_apic_calibration_info(&com1);
-
-            if (kernel_policy_enable_apic_timer_owner())
-            {
-                if (advanced_pic_timer_backend_enable_periodic_mode(interrupt_request_get_timer_frequency_hz()))
-                {
-                    write_apic_owner_handoff_info(&com1, 1u);
-                }
-                else
-                {
-                    write_apic_owner_handoff_info(&com1, 0u);
-                }
-            }
-            else
-            {
-                write_apic_owner_policy_fallback_info(&com1);
-            }
+            write_apic_owner_handoff_info(
+                &com1, advanced_pic_timer_backend_enable_periodic_mode(interrupt_request_get_timer_frequency_hz()));
         }
         else
         {
