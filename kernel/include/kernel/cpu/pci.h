@@ -158,6 +158,8 @@ peripheral_component_interconnect_find_by_class(uint8_t class_code, uint8_t subc
 #define PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_MEMORY_SPACE (1u << 1) /**< The device answers its memory window. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_BUS_MASTER                                                           \
     (1u << 2) /**< The device may master the bus, as DMA does. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_INTERRUPT_DISABLE                                                    \
+    (1u << 10) /**< The device asserts no pin interrupt (INTx); MSI and MSI-X are not affected. */
 /** @} */
 
 /**
@@ -170,6 +172,18 @@ peripheral_component_interconnect_find_by_class(uint8_t class_code, uint8_t subc
  */
 extern void peripheral_component_interconnect_enable_memory_and_bus_mastering(
     const PeripheralComponentInterconnectDevice_t *device);
+
+/**
+ * @brief Stops a device from asserting its pin interrupt (INTx).
+ *
+ * @details For a device its driver polls. Left on, the device asserts its line once it completes
+ *          work, nothing ever de-asserts it, and a driver that takes the same line for itself
+ *          never gets out of its handler.
+ *
+ * @param device The device.
+ */
+extern void
+peripheral_component_interconnect_disable_pin_interrupt(const PeripheralComponentInterconnectDevice_t *device);
 
 /** @brief Number of Base Address Registers in a type 0 configuration header. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_BASE_ADDRESS_REGISTER_COUNT 6u
