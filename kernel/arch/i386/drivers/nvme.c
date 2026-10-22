@@ -21,7 +21,7 @@
 #define NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_QUEUE_ATTRIBUTES 0x24u   /**< AQA. */
 #define NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_SUBMISSION_QUEUE 0x28u   /**< ASQ, 64 bits. */
 #define NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_COMPLETION_QUEUE 0x30u   /**< ACQ, 64 bits. */
-#define NON_VOLATILE_MEMORY_EXPRESS_REGISTER_DOORBELLS              0x1000u /**< The admin submission tail's. */
+#define NON_VOLATILE_MEMORY_EXPRESS_REGISTER_DOORBELLS              0x1000u /**< Queue 0's submission tail. */
 /** @} */
 
 /**
@@ -42,10 +42,12 @@
 /** @} */
 
 /**
- * @name The admin queue pair
+ * @name The queue pairs
  * @{
  */
-#define NON_VOLATILE_MEMORY_EXPRESS_ADMIN_ENTRIES        64u      /**< Entries in each admin queue. */
+#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES        64u      /**< Entries in each queue, admin and I/O. */
+#define NON_VOLATILE_MEMORY_EXPRESS_ADMIN_QUEUE          0u       /**< The admin queue pair's identifier. */
+#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE   1u       /**< The I/O queue pair's identifier. */
 #define NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS    16u      /**< Dwords in a submission entry. */
 #define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_DWORDS    4u       /**< Dwords in a completion entry. */
 #define NON_VOLATILE_MEMORY_EXPRESS_COMMAND_MICROSECONDS 1000000u /**< How long a command may take. */
@@ -55,20 +57,37 @@
  * @name Admin commands and their fields
  * @{
  */
-#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY      0x06u      /**< Identify. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE   0x00u      /**< CNS 00h: a namespace. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER  0x01u      /**< CNS 01h: the controller. */
-#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE      1u         /**< The namespace identified. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE     (1u << 16) /**< Phase tag, in dword 3. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT 0xFFFFu    /**< No status: the command never completed. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_SUBMISSION_QUEUE 0x01u      /**< Create I/O Submission Queue. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_COMPLETION_QUEUE 0x05u      /**< Create I/O Completion Queue. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES            0x09u      /**< Set Features. */
+#define NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES       0x07u      /**< Number of Queues. */
+#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS    (1u << 0)  /**< PC, in dword 11 of both creations. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY                0x06u      /**< Identify. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE             0x00u      /**< CNS 00h: a namespace. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER            0x01u      /**< CNS 01h: the controller. */
+#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE                1u         /**< The namespace identified. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE               (1u << 16) /**< Phase tag, in dword 3. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT           0xFFFFu /**< No status: the command never completed. */
+/** @} */
+
+/**
+ * @name Commands of the NVM command set
+ * @{
+ */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_WRITE 0x01u    /**< Write. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_READ  0x02u    /**< Read. */
+#define NON_VOLATILE_MEMORY_EXPRESS_MOST_BLOCKS  0x10000u /**< NLB is 16 bits and 0's based. */
 /** @} */
 
 /**
  * @name Offsets in the Identify data
  * @{
  */
-#define NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_SERIAL_NUMBER 4u   /**< SN, 20 bytes of ASCII. */
-#define NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_MODEL_NUMBER  24u  /**< MN, 40 bytes of ASCII. */
+#define NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_SERIAL_NUMBER 4u  /**< SN, 20 bytes of ASCII. */
+#define NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_MODEL_NUMBER  24u /**< MN, 40 bytes of ASCII. */
+#define NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_TRANSFER_SIZE                                                           \
+    77u                                                           /**< MDTS, a power of two of pages, 0 for no limit.  \
+                                                                   */
 #define NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_NAMESPACES    516u /**< NN, a dword. */
 #define NON_VOLATILE_MEMORY_EXPRESS_NAMESPACE_SIZE           0u   /**< NSZE, a qword. */
 #define NON_VOLATILE_MEMORY_EXPRESS_NAMESPACE_FORMATTED_SIZE 26u  /**< FLBAS. */
@@ -79,23 +98,38 @@
 /** Bytes of a memory page, as the controller is told: 2^(12 + CC.MPS) with MPS zero. */
 #define NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES 4096u
 
+/** Pages one read or write may span: the first, and the 128 that one page of PRP entries lists. */
+#define NON_VOLATILE_MEMORY_EXPRESS_TRANSFER_PAGES 129u
+
+/**
+ * @brief A submission queue, the completion queue it posts to, and where both sides stand.
+ */
+typedef struct NonVolatileMemoryExpressQueuePair {
+    volatile uint32_t *submissions; /**< The submission entries, one page. */
+    volatile uint32_t *completions; /**< The completion entries, one page. */
+    uint32_t submissions_physical;  /**< Where the controller reads the submissions. */
+    uint32_t completions_physical;  /**< Where the controller writes the completions. */
+    uint32_t submission_doorbell;   /**< Offset of the submission tail doorbell. */
+    uint32_t completion_doorbell;   /**< Offset of the completion head doorbell. */
+    uint32_t tail;                  /**< Next submission entry the host fills. */
+    uint32_t head;                  /**< Next completion entry the host reads. */
+    uint32_t phase;                 /**< Phase tag a new completion carries on this pass. */
+} NonVolatileMemoryExpressQueuePair_t;
+
 static NonVolatileMemoryExpressState_t non_volatile_memory_express_found;
 static uint32_t non_volatile_memory_express_registers = 0u;
-static volatile uint32_t *non_volatile_memory_express_admin_submissions = NULL;
-static volatile uint32_t *non_volatile_memory_express_admin_completions = NULL;
+static NonVolatileMemoryExpressQueuePair_t non_volatile_memory_express_admin;
+static NonVolatileMemoryExpressQueuePair_t non_volatile_memory_express_input_output;
 static volatile uint8_t *non_volatile_memory_express_identify_data = NULL;
-static uint32_t non_volatile_memory_express_admin_submissions_physical = 0u;
-static uint32_t non_volatile_memory_express_admin_completions_physical = 0u;
 static uint32_t non_volatile_memory_express_identify_physical = 0u;
-static uint32_t non_volatile_memory_express_admin_tail = 0u;
-static uint32_t non_volatile_memory_express_admin_head = 0u;
-static uint32_t non_volatile_memory_express_admin_phase = 0u;
+static volatile uint32_t *non_volatile_memory_express_page_list = NULL;
+static uint32_t non_volatile_memory_express_page_list_physical = 0u;
 static uint16_t non_volatile_memory_express_next_command = 0u;
 
 /**
  * @brief Reads a 32-bit controller register.
  */
-static uint32_t non_volatile_memory_express_read(uint32_t offset)
+static uint32_t non_volatile_memory_express_read_register(uint32_t offset)
 {
     return *(volatile const uint32_t *) (uintptr_t) (non_volatile_memory_express_registers + offset);
 }
@@ -103,7 +137,7 @@ static uint32_t non_volatile_memory_express_read(uint32_t offset)
 /**
  * @brief Writes a 32-bit controller register.
  */
-static void non_volatile_memory_express_write(uint32_t offset, uint32_t value)
+static void non_volatile_memory_express_write_register(uint32_t offset, uint32_t value)
 {
     *(volatile uint32_t *) (uintptr_t) (non_volatile_memory_express_registers + offset) = value;
 }
@@ -114,10 +148,10 @@ static void non_volatile_memory_express_write(uint32_t offset, uint32_t value)
  * @details This kernel's physical addresses fit in 32 bits. Two 32-bit writes, low then high, are
  *          what Linux does on a 32-bit host (lo_hi_writeq).
  */
-static void non_volatile_memory_express_write_address(uint32_t offset, uint32_t low)
+static void non_volatile_memory_express_write_register_address(uint32_t offset, uint32_t low)
 {
-    non_volatile_memory_express_write(offset, low);
-    non_volatile_memory_express_write(offset + 4u, 0u);
+    non_volatile_memory_express_write_register(offset, low);
+    non_volatile_memory_express_write_register(offset + 4u, 0u);
 }
 
 /**
@@ -145,7 +179,7 @@ static bool non_volatile_memory_express_wait_ready(bool ready)
     interrupt_request_deadline_start(&deadline, non_volatile_memory_express_found.ready_timeout_milliseconds * 1000u);
     for (;;)
     {
-        const uint32_t status = non_volatile_memory_express_read(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_STATUS);
+        const uint32_t status = non_volatile_memory_express_read_register(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_STATUS);
 
         if ((status & NON_VOLATILE_MEMORY_EXPRESS_STATUS_FATAL) != 0u)
             return false;
@@ -206,37 +240,56 @@ static uint32_t non_volatile_memory_express_identify_dword(uint32_t offset)
 }
 
 /**
- * @brief Submits one admin command and polls its completion.
+ * @brief Gives a queue pair its pages and its doorbells, and empties it.
+ *
+ * @param pair       The pair.
+ * @param identifier Its queue identifier: 0 for the admin pair.
+ * @return false when no page could be claimed.
+ */
+static bool non_volatile_memory_express_prepare_pair(NonVolatileMemoryExpressQueuePair_t *pair, uint32_t identifier)
+{
+    if (!non_volatile_memory_express_claim_page((volatile void **) &pair->submissions, &pair->submissions_physical) ||
+        !non_volatile_memory_express_claim_page((volatile void **) &pair->completions, &pair->completions_physical))
+        return false;
+    pair->submission_doorbell = NON_VOLATILE_MEMORY_EXPRESS_REGISTER_DOORBELLS +
+                                2u * identifier * non_volatile_memory_express_found.doorbell_stride_bytes;
+    pair->completion_doorbell = NON_VOLATILE_MEMORY_EXPRESS_REGISTER_DOORBELLS +
+                                (2u * identifier + 1u) * non_volatile_memory_express_found.doorbell_stride_bytes;
+    pair->tail = 0u;
+    pair->head = 0u;
+    pair->phase = NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE;
+    return true;
+}
+
+/**
+ * @brief Submits one command to @p pair and polls its completion.
  *
  * @details The entry is written, then the tail doorbell: both are volatile stores, which the
  *          compiler keeps in order and an x86 processor makes visible in order, so the controller
  *          never fetches an entry before it is whole. The completion is the entry at the head whose
  *          phase tag is the one this pass of the queue expects; the head doorbell then frees it.
  *
+ * @param pair    The queue pair.
  * @param command The 16 dwords of the command; its identifier is filled in here.
  * @return The status field of the completion, 0 on success, or
  *         NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT.
  */
-static uint32_t non_volatile_memory_express_run_admin(uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS])
+static uint32_t non_volatile_memory_express_run(NonVolatileMemoryExpressQueuePair_t *pair,
+                                                uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS])
 {
-    volatile uint32_t *const entry =
-        non_volatile_memory_express_admin_submissions +
-        non_volatile_memory_express_admin_tail * NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS;
+    volatile uint32_t *const entry = pair->submissions + pair->tail * NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS;
     volatile const uint32_t *const completion =
-        non_volatile_memory_express_admin_completions +
-        non_volatile_memory_express_admin_head * NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_DWORDS;
+        pair->completions + pair->head * NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_DWORDS;
     InterruptRequestDeadline_t deadline;
 
     command[0] = (command[0] & 0xFFFFu) | ((uint32_t) non_volatile_memory_express_next_command++ << 16);
     for (uint32_t i = 0u; i < NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS; ++i)
         entry[i] = command[i];
-    non_volatile_memory_express_admin_tail =
-        (non_volatile_memory_express_admin_tail + 1u) % NON_VOLATILE_MEMORY_EXPRESS_ADMIN_ENTRIES;
-    non_volatile_memory_express_write(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_DOORBELLS,
-                                      non_volatile_memory_express_admin_tail);
+    pair->tail = (pair->tail + 1u) % NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES;
+    non_volatile_memory_express_write_register(pair->submission_doorbell, pair->tail);
 
     interrupt_request_deadline_start(&deadline, NON_VOLATILE_MEMORY_EXPRESS_COMMAND_MICROSECONDS);
-    while ((completion[3] & NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE) != non_volatile_memory_express_admin_phase)
+    while ((completion[3] & NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE) != pair->phase)
     {
         if (interrupt_request_deadline_passed(&deadline))
             return NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT;
@@ -245,13 +298,10 @@ static uint32_t non_volatile_memory_express_run_admin(uint32_t command[NON_VOLAT
 
     const uint32_t status = (completion[3] >> 17) & 0x7FFu;
 
-    non_volatile_memory_express_admin_head =
-        (non_volatile_memory_express_admin_head + 1u) % NON_VOLATILE_MEMORY_EXPRESS_ADMIN_ENTRIES;
-    if (non_volatile_memory_express_admin_head == 0u)
-        non_volatile_memory_express_admin_phase ^= NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE;
-    non_volatile_memory_express_write(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_DOORBELLS +
-                                          non_volatile_memory_express_found.doorbell_stride_bytes,
-                                      non_volatile_memory_express_admin_head);
+    pair->head = (pair->head + 1u) % NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES;
+    if (pair->head == 0u)
+        pair->phase ^= NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE;
+    non_volatile_memory_express_write_register(pair->completion_doorbell, pair->head);
     return status;
 }
 
@@ -269,7 +319,75 @@ static bool non_volatile_memory_express_identify(uint32_t structure, uint32_t na
     command[1] = namespace_identifier;
     command[6] = non_volatile_memory_express_identify_physical;
     command[10] = structure;
-    return non_volatile_memory_express_run_admin(command) == 0u;
+    return non_volatile_memory_express_run(&non_volatile_memory_express_admin, command) == 0u;
+}
+
+/**
+ * @brief Points the data pointer of @p command at @p bytes of @p buffer, page by page.
+ *
+ * @details PRP entry 1 is the first page, at the buffer's offset in it. PRP entry 2 is the second
+ *          page when the transfer ends there, or the page of PRP entries listing every page after
+ *          the first when it goes further. Each page is translated on its own, so the buffer's
+ *          pages need not be contiguous in physical memory.
+ *
+ * @return false when a page is not mapped, or the transfer spans more pages than one list holds.
+ */
+static bool non_volatile_memory_express_describe(uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS],
+                                                 uint32_t buffer, uint32_t bytes)
+{
+    const uint32_t offset = buffer & (NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES - 1u);
+    const uint32_t pages =
+        (offset + bytes + NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES - 1u) / NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES;
+    const uint32_t first_page = buffer - offset;
+    uint32_t physical = 0u;
+
+    if (pages > NON_VOLATILE_MEMORY_EXPRESS_TRANSFER_PAGES || !paging_get_physical_address(buffer, &physical))
+        return false;
+    command[6] = physical;
+    command[8] = 0u;
+    if (pages == 2u)
+    {
+        if (!paging_get_physical_address(first_page + NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES, &physical))
+            return false;
+        command[8] = physical;
+    }
+    else if (pages > 2u)
+    {
+        for (uint32_t page = 1u; page < pages; ++page)
+        {
+            if (!paging_get_physical_address(first_page + page * NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES, &physical))
+                return false;
+            non_volatile_memory_express_page_list[2u * (page - 1u)] = physical;
+            non_volatile_memory_express_page_list[2u * (page - 1u) + 1u] = 0u;
+        }
+        command[8] = non_volatile_memory_express_page_list_physical;
+    }
+    return true;
+}
+
+/**
+ * @brief Reads or writes @p block_count blocks of namespace 1 through the I/O queue pair.
+ *
+ * @return true when the controller completed the command with a success status.
+ */
+static bool non_volatile_memory_express_transfer(uint32_t opcode, uint64_t first_block, uint32_t block_count,
+                                                 uint32_t buffer)
+{
+    const NonVolatileMemoryExpressState_t *const found = &non_volatile_memory_express_found;
+    uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+
+    if (!found->input_output_queues_ready || block_count == 0u ||
+        block_count > NON_VOLATILE_MEMORY_EXPRESS_MOST_BLOCKS ||
+        block_count > found->maximum_transfer_bytes / found->block_bytes || (buffer & 3u) != 0u ||
+        first_block >= found->namespace_blocks || block_count > found->namespace_blocks - first_block ||
+        !non_volatile_memory_express_describe(command, buffer, block_count * found->block_bytes))
+        return false;
+    command[0] = opcode;
+    command[1] = NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE;
+    command[10] = (uint32_t) first_block;
+    command[11] = (uint32_t) (first_block >> 32);
+    command[12] = block_count - 1u;
+    return non_volatile_memory_express_run(&non_volatile_memory_express_input_output, command) == 0u;
 }
 
 /**
@@ -300,12 +418,12 @@ static bool non_volatile_memory_express_find(void)
         return non_volatile_memory_express_fail("its register window could not be mapped");
 
     const uint32_t capabilities_low =
-        non_volatile_memory_express_read(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CAPABILITIES);
+        non_volatile_memory_express_read_register(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CAPABILITIES);
     const uint32_t capabilities_high =
-        non_volatile_memory_express_read(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CAPABILITIES + 4u);
+        non_volatile_memory_express_read_register(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CAPABILITIES + 4u);
 
     non_volatile_memory_express_found.version =
-        non_volatile_memory_express_read(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_VERSION);
+        non_volatile_memory_express_read_register(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_VERSION);
     non_volatile_memory_express_found.maximum_queue_entries = (capabilities_low & 0xFFFFu) + 1u;
     non_volatile_memory_express_found.ready_timeout_milliseconds = ((capabilities_low >> 24) & 0xFFu) * 500u;
     non_volatile_memory_express_found.doorbell_stride_bytes = 4u << (capabilities_high & 0xFu);
@@ -314,8 +432,8 @@ static bool non_volatile_memory_express_find(void)
         return non_volatile_memory_express_fail("it does not offer the NVM command set");
     if (((capabilities_high >> 16) & 0xFu) != 0u)
         return non_volatile_memory_express_fail("it does not take 4 KiB pages");
-    if (non_volatile_memory_express_found.maximum_queue_entries < NON_VOLATILE_MEMORY_EXPRESS_ADMIN_ENTRIES)
-        return non_volatile_memory_express_fail("its queues are shorter than the admin queues");
+    if (non_volatile_memory_express_found.maximum_queue_entries < NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES)
+        return non_volatile_memory_express_fail("its queues are shorter than this driver's");
     return true;
 }
 
@@ -326,32 +444,29 @@ static bool non_volatile_memory_express_find(void)
  */
 static bool non_volatile_memory_express_reset(void)
 {
-    if (!non_volatile_memory_express_claim_page((volatile void **) &non_volatile_memory_express_admin_submissions,
-                                                &non_volatile_memory_express_admin_submissions_physical) ||
-        !non_volatile_memory_express_claim_page((volatile void **) &non_volatile_memory_express_admin_completions,
-                                                &non_volatile_memory_express_admin_completions_physical) ||
+    if (!non_volatile_memory_express_prepare_pair(&non_volatile_memory_express_admin,
+                                                  NON_VOLATILE_MEMORY_EXPRESS_ADMIN_QUEUE) ||
         !non_volatile_memory_express_claim_page((volatile void **) &non_volatile_memory_express_identify_data,
-                                                &non_volatile_memory_express_identify_physical))
+                                                &non_volatile_memory_express_identify_physical) ||
+        !non_volatile_memory_express_claim_page((volatile void **) &non_volatile_memory_express_page_list,
+                                                &non_volatile_memory_express_page_list_physical))
         return non_volatile_memory_express_fail("no page left for the queues");
 
-    non_volatile_memory_express_write(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CONFIGURATION, 0u);
+    non_volatile_memory_express_write_register(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CONFIGURATION, 0u);
     if (!non_volatile_memory_express_wait_ready(false))
         return non_volatile_memory_express_fail("it did not stop");
 
-    non_volatile_memory_express_admin_tail = 0u;
-    non_volatile_memory_express_admin_head = 0u;
-    non_volatile_memory_express_admin_phase = NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE;
-    non_volatile_memory_express_write(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_QUEUE_ATTRIBUTES,
-                                      ((NON_VOLATILE_MEMORY_EXPRESS_ADMIN_ENTRIES - 1u) << 16) |
-                                          (NON_VOLATILE_MEMORY_EXPRESS_ADMIN_ENTRIES - 1u));
-    non_volatile_memory_express_write_address(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_SUBMISSION_QUEUE,
-                                              non_volatile_memory_express_admin_submissions_physical);
-    non_volatile_memory_express_write_address(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_COMPLETION_QUEUE,
-                                              non_volatile_memory_express_admin_completions_physical);
-    non_volatile_memory_express_write(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CONFIGURATION,
-                                      NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_ENTRY_SIZE |
-                                          NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_ENTRY_SIZE |
-                                          NON_VOLATILE_MEMORY_EXPRESS_CONFIGURATION_ENABLE);
+    non_volatile_memory_express_write_register(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_QUEUE_ATTRIBUTES,
+                                               ((NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES - 1u) << 16) |
+                                                   (NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES - 1u));
+    non_volatile_memory_express_write_register_address(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_SUBMISSION_QUEUE,
+                                                       non_volatile_memory_express_admin.submissions_physical);
+    non_volatile_memory_express_write_register_address(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_ADMIN_COMPLETION_QUEUE,
+                                                       non_volatile_memory_express_admin.completions_physical);
+    non_volatile_memory_express_write_register(NON_VOLATILE_MEMORY_EXPRESS_REGISTER_CONFIGURATION,
+                                               NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_ENTRY_SIZE |
+                                                   NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_ENTRY_SIZE |
+                                                   NON_VOLATILE_MEMORY_EXPRESS_CONFIGURATION_ENABLE);
     if (!non_volatile_memory_express_wait_ready(true))
         return non_volatile_memory_express_fail("it did not become ready");
     non_volatile_memory_express_found.controller_ready = true;
@@ -376,6 +491,15 @@ static bool non_volatile_memory_express_identify_controller_and_namespace(void)
     non_volatile_memory_express_found.namespace_count =
         non_volatile_memory_express_identify_dword(NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_NAMESPACES);
 
+    const uint32_t transfer_size =
+        non_volatile_memory_express_identify_data[NON_VOLATILE_MEMORY_EXPRESS_CONTROLLER_TRANSFER_SIZE];
+    const uint32_t most_pages = NON_VOLATILE_MEMORY_EXPRESS_TRANSFER_PAGES - 1u;
+
+    non_volatile_memory_express_found.maximum_transfer_bytes =
+        (transfer_size == 0u || transfer_size > 7u || (1u << transfer_size) > most_pages ? most_pages :
+                                                                                           (1u << transfer_size)) *
+        NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES;
+
     if (!non_volatile_memory_express_identify(NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE,
                                               NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE))
         return non_volatile_memory_express_fail("Identify Namespace failed");
@@ -396,14 +520,71 @@ static bool non_volatile_memory_express_identify_controller_and_namespace(void)
     return true;
 }
 
+/**
+ * @brief Asks for one I/O queue pair, then creates its completion queue and its submission queue.
+ *
+ * @details The completion queue comes first: the submission queue names it. Both are physically
+ *          contiguous, one page each, and the completion queue raises no interrupt.
+ *
+ * @return false when a command fails or no page is left.
+ */
+static bool non_volatile_memory_express_create_input_output_queues(void)
+{
+    NonVolatileMemoryExpressQueuePair_t *const pair = &non_volatile_memory_express_input_output;
+    const uint32_t size_and_identifier =
+        ((NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES - 1u) << 16) | NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE;
+    uint32_t features[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+    uint32_t completion_queue[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+    uint32_t submission_queue[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+
+    if (!non_volatile_memory_express_prepare_pair(pair, NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE))
+        return non_volatile_memory_express_fail("no page left for the I/O queues");
+
+    features[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES;
+    features[10] = NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES;
+    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, features) != 0u)
+        return non_volatile_memory_express_fail("Set Features Number of Queues failed");
+
+    completion_queue[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_COMPLETION_QUEUE;
+    completion_queue[6] = pair->completions_physical;
+    completion_queue[10] = size_and_identifier;
+    completion_queue[11] = NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS;
+    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, completion_queue) != 0u)
+        return non_volatile_memory_express_fail("Create I/O Completion Queue failed");
+
+    submission_queue[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_SUBMISSION_QUEUE;
+    submission_queue[6] = pair->submissions_physical;
+    submission_queue[10] = size_and_identifier;
+    submission_queue[11] = (NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE << 16) |
+                           NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS;
+    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, submission_queue) != 0u)
+        return non_volatile_memory_express_fail("Create I/O Submission Queue failed");
+
+    non_volatile_memory_express_found.input_output_queues_ready = true;
+    return true;
+}
+
 bool non_volatile_memory_express_initialize(void)
 {
     memset(&non_volatile_memory_express_found, 0, sizeof(non_volatile_memory_express_found));
     return non_volatile_memory_express_find() && non_volatile_memory_express_reset() &&
-           non_volatile_memory_express_identify_controller_and_namespace();
+           non_volatile_memory_express_identify_controller_and_namespace() &&
+           non_volatile_memory_express_create_input_output_queues();
 }
 
 const NonVolatileMemoryExpressState_t *non_volatile_memory_express_state(void)
 {
     return &non_volatile_memory_express_found;
+}
+
+bool non_volatile_memory_express_read_blocks(uint64_t first_block, uint32_t block_count, void *buffer)
+{
+    return non_volatile_memory_express_transfer(NON_VOLATILE_MEMORY_EXPRESS_OPCODE_READ, first_block, block_count,
+                                                (uint32_t) (uintptr_t) buffer);
+}
+
+bool non_volatile_memory_express_write_blocks(uint64_t first_block, uint32_t block_count, const void *buffer)
+{
+    return non_volatile_memory_express_transfer(NON_VOLATILE_MEMORY_EXPRESS_OPCODE_WRITE, first_block, block_count,
+                                                (uint32_t) (uintptr_t) buffer);
 }
