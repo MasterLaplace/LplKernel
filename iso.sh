@@ -50,6 +50,9 @@ mkdir -p iso/boot/grub
 
 cp sysroot/boot/lpl.kernel iso/boot/lpl.kernel
 
+# LPL_BOOT_OPTIONS goes on the kernel's boot line, for instance
+# LPL_BOOT_OPTIONS='lpl.test.require=cartridge.*' for a debug image that must run the cartridge's tests.
+
 # The cartridge. GRUB loads it as a multiboot module, so the kernel receives a
 # game as bytes without needing a filesystem — a console loads a cartridge, it
 # does not mount a disk. Baked from the authored .lplscene when the host tool is
@@ -159,7 +162,7 @@ terminal_output gfxterm
 menuentry "lpl" {
     # Force graphics payload to kernel
     set gfxpayload=keep
-    multiboot /boot/lpl.kernel
+    multiboot /boot/lpl.kernel ${LPL_BOOT_OPTIONS:-}
 ${CARTRIDGE_ENTRY}
     boot
 }
@@ -171,7 +174,7 @@ set timeout=0
 set default=0
 
 menuentry "lpl" {
-    multiboot /boot/lpl.kernel
+    multiboot /boot/lpl.kernel ${LPL_BOOT_OPTIONS:-}
 ${CARTRIDGE_ENTRY}
     boot
 }

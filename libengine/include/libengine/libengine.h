@@ -62,6 +62,7 @@ typedef struct {
     uint32_t skipped;  /**< Tests that did not run. */
     uint32_t checks;   /**< Claims checked. */
     uint32_t selected; /**< Tests the selection named. */
+    uint32_t required; /**< One bit per pattern of the required list, set when it named one of these tests. */
 } libengine_test_totals_t;
 
 /**
@@ -77,11 +78,13 @@ uint32_t libengine_test_suite_count(void);
  * @param write              Writes the report.
  * @param context            Handed to @p write.
  * @param selection          The value of `lpl.test=`, or NULL to run every test.
+ * @param required           The value of `lpl.test.require=`, or NULL: a test it names that does not
+ *                           run fails.
  * @param first_suite_number KTAP number of the first suite.
  * @return What the tests came to.
  */
 libengine_test_totals_t libengine_test_run(libengine_test_write_t write, void *context, const char *selection,
-                                           uint32_t first_suite_number);
+                                           const char *required, uint32_t first_suite_number);
 
 /**
  * @brief Which LplPlugin this libengine was compiled from, as one telemetry record, for

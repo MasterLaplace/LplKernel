@@ -108,7 +108,7 @@ _Static_assert(sizeof(KernelSpscRingProducerEnd_t) == KERNEL_SPSC_RING_INTERFERE
     {                                                                                                                  \
         .producer = {.write_index = 0u, .cached_read_index = 0u, .rejected_count = 0u, .mask = (capacity) - 1u},       \
         .consumer = {.read_index = 0u, .cached_write_index = 0u, .mask = (capacity) - 1u},                             \
-    }
+}
 
 /**
  * @brief Empties @p ring and sets its capacity, with no other thread or handler using it.
