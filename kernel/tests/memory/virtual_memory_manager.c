@@ -1,4 +1,7 @@
+#include <kernel/cpu/apic.h>
+#include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/paging.h>
+#include <kernel/cpu/pmm.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
@@ -38,4 +41,44 @@ KERNEL_TEST(page_runs_are_served_in_range)
     if (four_pages)
         kernel_vmm_free_pages(four_pages, 4);
 #endif
+}
+
+/**
+ * @brief A device window reads the device, and is given back without freeing a frame.
+ *
+ * @details The local interrupt controller serves as the device: its version register, read through
+ *          the window, is the one apic_read gives. Its frame is the controller's, so unmapping the
+ *          window must not hand it to the physical memory manager, which would serve the next
+ *          allocation from the controller's registers.
+ */
+KERNEL_TEST(a_device_window_reads_the_device_and_frees_no_frame)
+{
+    const uint32_t base = advanced_pic_timer_backend_get_local_apic_physical_base();
+
+    if (base == 0u || apic_is_x2apic_active())
+    {
+        kernel_test_skip(test, "no local interrupt controller mapped in memory");
+        return;
+    }
+
+    const uint32_t free_before = physical_memory_manager_get_free_page_count();
+    const uint32_t rejected_before = physical_memory_manager_debug_get_rejected_free_count();
+    const uint32_t window = kernel_vmm_map_device_window(base + LAPIC_REG_VERSION, sizeof(uint32_t));
+    uint32_t physical = 0u;
+
+    kernel_test_check(test, window != 0u && (window & (PAGE_SIZE - 1u)) == LAPIC_REG_VERSION,
+                      "the window keeps the register's offset in its page");
+    if (window == 0u)
+        return;
+    kernel_test_check(test, paging_get_physical_address(window, &physical) && physical == base + LAPIC_REG_VERSION,
+                      "it maps the register's physical address");
+    kernel_test_check(test, *(volatile const uint32_t *) (uintptr_t) window == apic_read(LAPIC_REG_VERSION),
+                      "the version register reads the same through it");
+
+    kernel_vmm_unmap_device_window(window, sizeof(uint32_t));
+    kernel_test_check(test, !paging_get_physical_address(window, &physical), "the window is unmapped");
+    kernel_test_check(test,
+                      physical_memory_manager_get_free_page_count() == free_before &&
+                          physical_memory_manager_debug_get_rejected_free_count() == rejected_before,
+                      "and no frame went to the physical memory manager");
 }
