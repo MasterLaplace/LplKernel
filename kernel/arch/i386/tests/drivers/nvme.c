@@ -12,6 +12,9 @@
 /** Bytes the signature takes at the start of the image, padded with zeros. */
 #define NON_VOLATILE_MEMORY_EXPRESS_TEST_SIGNATURE_BYTES 32u
 
+/** Reads the depth test keeps in flight: more than the 256 #74 asks for, fewer than the 315 the queues hold. */
+#define NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH 300u
+
 /** Bytes of the buffer the tests read into: nine pages, so a 32 KiB read can start mid-page. */
 #define NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES (9u * 4096u)
 
@@ -24,6 +27,8 @@ typedef struct NonVolatileMemoryExpressTestRead {
     uint32_t buffer_offset; /**< Where in the buffer the read lands. */
     const char *claim;      /**< What the read checks. */
 } NonVolatileMemoryExpressTestRead_t;
+
+static NonVolatileMemoryExpressRead_t non_volatile_memory_express_test_batch[NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH];
 
 static const NonVolatileMemoryExpressTestRead_t non_volatile_memory_express_test_reads[] = {
     {1u,   512u,   0u,   "one block, inside one page"                            },
@@ -324,4 +329,65 @@ KERNEL_TEST(written_blocks_read_back_and_their_neighbours_keep_theirs)
     kernel_test_measure(test, "blocks_written", block_count * 2u);
     kernel_test_measure(test, "mismatched_bytes", wrong_written + wrong_neighbours);
     kernel_pinned_free(buffer, NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES);
+}
+
+/**
+ * @brief Three hundred reads are in flight at once, and each comes back with its own block.
+ *
+ * @details Every read is submitted before any completion is taken, spread over the I/O queue
+ *          pairs, and each reads one block from a different place. A completion is matched to its
+ *          read by the command identifier, so each read must be marked done, not only counted.
+ */
+KERNEL_TEST(three_hundred_reads_are_in_flight_at_once)
+{
+    uint8_t *const buffer = (uint8_t *) kernel_pinned_alloc(NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES);
+    const NonVolatileMemoryExpressState_t *const state = non_volatile_memory_express_state();
+
+    if (!non_volatile_memory_express_test_on_an_image(test, buffer))
+    {
+        if (buffer != NULL)
+            kernel_pinned_free(buffer, NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES);
+        return;
+    }
+    kernel_pinned_free(buffer, NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES);
+
+    const uint32_t block_bytes = state->block_bytes;
+    const uint32_t data_bytes = NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH * block_bytes;
+    uint8_t *const data = (uint8_t *) kernel_pinned_alloc(data_bytes);
+
+    if (data == NULL)
+    {
+        kernel_test_skip(test, "no pinned memory for three hundred blocks");
+        return;
+    }
+    for (uint32_t i = 0u; i < NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH; ++i)
+    {
+        non_volatile_memory_express_test_batch[i].first_block =
+            1u + (uint64_t) (i * 37u) % (state->namespace_blocks - 1u);
+        non_volatile_memory_express_test_batch[i].block_count = 1u;
+        non_volatile_memory_express_test_batch[i].buffer = data + i * block_bytes;
+    }
+
+    const uint32_t succeeded = non_volatile_memory_express_read_batch(non_volatile_memory_express_test_batch,
+                                                                      NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH);
+    uint32_t marked = 0u;
+    uint32_t mismatches = 0u;
+
+    for (uint32_t i = 0u; i < NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH; ++i)
+    {
+        const NonVolatileMemoryExpressRead_t *const read = &non_volatile_memory_express_test_batch[i];
+
+        marked += read->done ? 1u : 0u;
+        mismatches += non_volatile_memory_express_test_mismatches((const uint8_t *) read->buffer,
+                                                                  read->first_block * block_bytes, block_bytes, 0u);
+    }
+
+    kernel_test_check(test, succeeded == NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH, "every read came back");
+    kernel_test_check(test, marked == NON_VOLATILE_MEMORY_EXPRESS_TEST_DEPTH,
+                      "each read is marked done, by its own identifier");
+    kernel_test_check(test, mismatches == 0u, "each holds the bytes of its own block");
+    kernel_test_check(test, state->most_in_flight >= 256u, "at least 256 reads were in flight at once");
+    kernel_test_measure(test, "most_in_flight", state->most_in_flight);
+    kernel_test_measure(test, "mismatched_bytes", mismatches);
+    kernel_pinned_free(data, data_bytes);
 }

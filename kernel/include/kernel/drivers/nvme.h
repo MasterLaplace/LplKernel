@@ -71,6 +71,7 @@ typedef struct NonVolatileMemoryExpressState {
     uint64_t namespace_blocks;           /**< Blocks in namespace 1. */
     uint32_t block_bytes;                /**< Bytes in a block of namespace 1. */
     uint32_t maximum_transfer_bytes;     /**< The most one read or write moves. */
+    uint32_t most_in_flight;             /**< The most commands a batch had in flight at once. */
     char serial_number[NON_VOLATILE_MEMORY_EXPRESS_SERIAL_NUMBER_CAPACITY]; /**< Without its padding spaces. */
     char model_number[NON_VOLATILE_MEMORY_EXPRESS_MODEL_NUMBER_CAPACITY];   /**< Without its padding spaces. */
 } NonVolatileMemoryExpressState_t;
@@ -95,6 +96,16 @@ extern bool non_volatile_memory_express_initialize(void);
  * @return The state; all zero before the first call.
  */
 extern const NonVolatileMemoryExpressState_t *non_volatile_memory_express_state(void);
+
+/**
+ * @brief One read of a batch: where it reads, into what, and whether it came back.
+ */
+typedef struct NonVolatileMemoryExpressRead {
+    uint64_t first_block; /**< The first block read. */
+    uint32_t block_count; /**< Blocks read; the buffer may span two pages at most. */
+    void *buffer;         /**< Mapped kernel memory of block_count blocks, aligned on 4 bytes. */
+    bool done;            /**< Set once the controller completed the read with a success status. */
+} NonVolatileMemoryExpressRead_t;
 
 /**
  * @brief Reads @p block_count blocks of namespace 1, from @p first_block, into @p buffer.
@@ -123,6 +134,21 @@ extern bool non_volatile_memory_express_read_blocks(uint64_t first_block, uint32
  * @return true when every block was written; false in the same cases as a read.
  */
 extern bool non_volatile_memory_express_write_blocks(uint64_t first_block, uint32_t block_count, const void *buffer);
+
+/**
+ * @brief Submits every read of @p reads before waiting for any, and collects their completions.
+ *
+ * @details The reads are spread over the I/O queue pairs, as many in flight as the queues hold: 63
+ *          per pair, 315 in all. A read whose buffer spans more than two pages, or whose range is
+ *          out of bounds, is not submitted and stays not done. The batch gives up after one second
+ *          without a completion; the queues then need a new bring-up. The state keeps the most
+ *          reads it saw in flight at once.
+ *
+ * @param reads Reads to make; each one's done flag is set here.
+ * @param count Reads in @p reads, at most 65536.
+ * @return The reads that came back with a success status.
+ */
+extern uint32_t non_volatile_memory_express_read_batch(NonVolatileMemoryExpressRead_t *reads, uint32_t count);
 
 #ifdef __cplusplus
 }

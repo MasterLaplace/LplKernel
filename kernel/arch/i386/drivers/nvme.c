@@ -47,7 +47,8 @@
  */
 #define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES        64u      /**< Entries in each queue, admin and I/O. */
 #define NON_VOLATILE_MEMORY_EXPRESS_ADMIN_QUEUE          0u       /**< The admin queue pair's identifier. */
-#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE   1u       /**< The I/O queue pair's identifier. */
+#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE   1u       /**< The first I/O queue pair's identifier. */
+#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS   5u       /**< I/O queue pairs: 5 x 63 commands in flight. */
 #define NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS    16u      /**< Dwords in a submission entry. */
 #define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_DWORDS    4u       /**< Dwords in a completion entry. */
 #define NON_VOLATILE_MEMORY_EXPRESS_COMMAND_MICROSECONDS 1000000u /**< How long a command may take. */
@@ -119,7 +120,8 @@ typedef struct NonVolatileMemoryExpressQueuePair {
 static NonVolatileMemoryExpressState_t non_volatile_memory_express_found;
 static uint32_t non_volatile_memory_express_registers = 0u;
 static NonVolatileMemoryExpressQueuePair_t non_volatile_memory_express_admin;
-static NonVolatileMemoryExpressQueuePair_t non_volatile_memory_express_input_output;
+static NonVolatileMemoryExpressQueuePair_t
+    non_volatile_memory_express_input_output[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS];
 static volatile uint8_t *non_volatile_memory_express_identify_data = NULL;
 static uint32_t non_volatile_memory_express_identify_physical = 0u;
 static volatile uint32_t *non_volatile_memory_express_page_list = NULL;
@@ -262,47 +264,79 @@ static bool non_volatile_memory_express_prepare_pair(NonVolatileMemoryExpressQue
 }
 
 /**
+ * @brief Writes @p command into the next submission entry of @p pair, without ringing.
+ *
+ * @details The entry is whole before the doorbell names it: both are volatile stores, which the
+ *          compiler keeps in order and an x86 processor makes visible in order.
+ */
+static void non_volatile_memory_express_place(NonVolatileMemoryExpressQueuePair_t *pair,
+                                              const uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS])
+{
+    volatile uint32_t *const entry = pair->submissions + pair->tail * NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS;
+
+    for (uint32_t i = 0u; i < NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS; ++i)
+        entry[i] = command[i];
+    pair->tail = (pair->tail + 1u) % NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES;
+}
+
+/**
+ * @brief Takes the next completion of @p pair if the controller posted it, and frees its entry.
+ *
+ * @details A new completion is the entry at the head whose phase tag is the one this pass of the
+ *          queue expects. The head doorbell is written for each one taken.
+ *
+ * @param pair       The queue pair.
+ * @param out_dword0 Receives dword 0 of the completion, when not NULL.
+ * @param out_dword3 Receives dword 3: the command identifier in bits 15:0, the status above.
+ * @return false when no new completion is there.
+ */
+static bool non_volatile_memory_express_take(NonVolatileMemoryExpressQueuePair_t *pair, uint32_t *out_dword0,
+                                             uint32_t *out_dword3)
+{
+    volatile const uint32_t *const completion =
+        pair->completions + pair->head * NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_DWORDS;
+    const uint32_t dword3 = completion[3];
+
+    if ((dword3 & NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE) != pair->phase)
+        return false;
+    if (out_dword0 != NULL)
+        *out_dword0 = completion[0];
+    *out_dword3 = dword3;
+    pair->head = (pair->head + 1u) % NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES;
+    if (pair->head == 0u)
+        pair->phase ^= NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE;
+    non_volatile_memory_express_write_register(pair->completion_doorbell, pair->head);
+    return true;
+}
+
+/**
  * @brief Submits one command to @p pair and polls its completion.
  *
- * @details The entry is written, then the tail doorbell: both are volatile stores, which the
- *          compiler keeps in order and an x86 processor makes visible in order, so the controller
- *          never fetches an entry before it is whole. The completion is the entry at the head whose
- *          phase tag is the one this pass of the queue expects; the head doorbell then frees it.
- *
- * @param pair    The queue pair.
- * @param command The 16 dwords of the command; its identifier is filled in here.
+ * @param pair       The queue pair, with nothing else in flight.
+ * @param command    The 16 dwords of the command; its identifier is filled in here.
+ * @param out_dword0 Receives dword 0 of the completion, when not NULL.
  * @return The status field of the completion, 0 on success, or
  *         NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT.
  */
 static uint32_t non_volatile_memory_express_run(NonVolatileMemoryExpressQueuePair_t *pair,
-                                                uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS])
+                                                uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS],
+                                                uint32_t *out_dword0)
 {
-    volatile uint32_t *const entry = pair->submissions + pair->tail * NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS;
-    volatile const uint32_t *const completion =
-        pair->completions + pair->head * NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_DWORDS;
     InterruptRequestDeadline_t deadline;
+    uint32_t dword3 = 0u;
 
     command[0] = (command[0] & 0xFFFFu) | ((uint32_t) non_volatile_memory_express_next_command++ << 16);
-    for (uint32_t i = 0u; i < NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS; ++i)
-        entry[i] = command[i];
-    pair->tail = (pair->tail + 1u) % NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES;
+    non_volatile_memory_express_place(pair, command);
     non_volatile_memory_express_write_register(pair->submission_doorbell, pair->tail);
 
     interrupt_request_deadline_start(&deadline, NON_VOLATILE_MEMORY_EXPRESS_COMMAND_MICROSECONDS);
-    while ((completion[3] & NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE) != pair->phase)
+    while (!non_volatile_memory_express_take(pair, out_dword0, &dword3))
     {
         if (interrupt_request_deadline_passed(&deadline))
             return NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT;
         asmutils_pause();
     }
-
-    const uint32_t status = (completion[3] >> 17) & 0x7FFu;
-
-    pair->head = (pair->head + 1u) % NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES;
-    if (pair->head == 0u)
-        pair->phase ^= NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE;
-    non_volatile_memory_express_write_register(pair->completion_doorbell, pair->head);
-    return status;
+    return (dword3 >> 17) & 0x7FFu;
 }
 
 /**
@@ -319,7 +353,7 @@ static bool non_volatile_memory_express_identify(uint32_t structure, uint32_t na
     command[1] = namespace_identifier;
     command[6] = non_volatile_memory_express_identify_physical;
     command[10] = structure;
-    return non_volatile_memory_express_run(&non_volatile_memory_express_admin, command) == 0u;
+    return non_volatile_memory_express_run(&non_volatile_memory_express_admin, command, NULL) == 0u;
 }
 
 /**
@@ -366,15 +400,16 @@ static bool non_volatile_memory_express_describe(uint32_t command[NON_VOLATILE_M
 }
 
 /**
- * @brief Reads or writes @p block_count blocks of namespace 1 through the I/O queue pair.
+ * @brief Builds the command that reads or writes @p block_count blocks of namespace 1.
  *
- * @return true when the controller completed the command with a success status.
+ * @return false when the I/O queues are not ready, or the range, the size or the buffer is out of
+ *         bounds.
  */
-static bool non_volatile_memory_express_transfer(uint32_t opcode, uint64_t first_block, uint32_t block_count,
-                                                 uint32_t buffer)
+static bool non_volatile_memory_express_build_transfer(uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS],
+                                                       uint32_t opcode, uint64_t first_block, uint32_t block_count,
+                                                       uint32_t buffer)
 {
     const NonVolatileMemoryExpressState_t *const found = &non_volatile_memory_express_found;
-    uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
 
     if (!found->input_output_queues_ready || block_count == 0u ||
         block_count > NON_VOLATILE_MEMORY_EXPRESS_MOST_BLOCKS ||
@@ -387,7 +422,21 @@ static bool non_volatile_memory_express_transfer(uint32_t opcode, uint64_t first
     command[10] = (uint32_t) first_block;
     command[11] = (uint32_t) (first_block >> 32);
     command[12] = block_count - 1u;
-    return non_volatile_memory_express_run(&non_volatile_memory_express_input_output, command) == 0u;
+    return true;
+}
+
+/**
+ * @brief Reads or writes @p block_count blocks of namespace 1 through the first I/O queue pair.
+ *
+ * @return true when the controller completed the command with a success status.
+ */
+static bool non_volatile_memory_express_transfer(uint32_t opcode, uint64_t first_block, uint32_t block_count,
+                                                 uint32_t buffer)
+{
+    uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+
+    return non_volatile_memory_express_build_transfer(command, opcode, first_block, block_count, buffer) &&
+           non_volatile_memory_express_run(&non_volatile_memory_express_input_output[0], command, NULL) == 0u;
 }
 
 /**
@@ -521,45 +570,65 @@ static bool non_volatile_memory_express_identify_controller_and_namespace(void)
 }
 
 /**
- * @brief Asks for one I/O queue pair, then creates its completion queue and its submission queue.
+ * @brief Creates I/O queue pair @p identifier: its completion queue, then its submission queue.
  *
  * @details The completion queue comes first: the submission queue names it. Both are physically
  *          contiguous, one page each, and the completion queue raises no interrupt.
  *
  * @return false when a command fails or no page is left.
  */
-static bool non_volatile_memory_express_create_input_output_queues(void)
+static bool non_volatile_memory_express_create_pair(NonVolatileMemoryExpressQueuePair_t *pair, uint32_t identifier)
 {
-    NonVolatileMemoryExpressQueuePair_t *const pair = &non_volatile_memory_express_input_output;
-    const uint32_t size_and_identifier =
-        ((NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES - 1u) << 16) | NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE;
-    uint32_t features[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+    const uint32_t size_and_identifier = ((NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES - 1u) << 16) | identifier;
     uint32_t completion_queue[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
     uint32_t submission_queue[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
 
-    if (!non_volatile_memory_express_prepare_pair(pair, NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE))
+    if (!non_volatile_memory_express_prepare_pair(pair, identifier))
         return non_volatile_memory_express_fail("no page left for the I/O queues");
-
-    features[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES;
-    features[10] = NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES;
-    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, features) != 0u)
-        return non_volatile_memory_express_fail("Set Features Number of Queues failed");
 
     completion_queue[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_COMPLETION_QUEUE;
     completion_queue[6] = pair->completions_physical;
     completion_queue[10] = size_and_identifier;
     completion_queue[11] = NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS;
-    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, completion_queue) != 0u)
+    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, completion_queue, NULL) != 0u)
         return non_volatile_memory_express_fail("Create I/O Completion Queue failed");
 
     submission_queue[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_SUBMISSION_QUEUE;
     submission_queue[6] = pair->submissions_physical;
     submission_queue[10] = size_and_identifier;
-    submission_queue[11] = (NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE << 16) |
-                           NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS;
-    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, submission_queue) != 0u)
+    submission_queue[11] = (identifier << 16) | NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS;
+    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, submission_queue, NULL) != 0u)
         return non_volatile_memory_express_fail("Create I/O Submission Queue failed");
+    return true;
+}
 
+/**
+ * @brief Asks for the I/O queue pairs, and creates each.
+ *
+ * @details Each pair is one page per queue: QEMU, like many controllers, requires physically
+ *          contiguous queues, and one page is the contiguous memory this kernel can always give.
+ *          Depth comes from several pairs instead of one long queue.
+ *
+ * @return false when the controller allocates fewer pairs, a command fails, or no page is left.
+ */
+static bool non_volatile_memory_express_create_input_output_queues(void)
+{
+    const uint32_t wanted = NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS - 1u;
+    uint32_t features[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+    uint32_t allocated = 0u;
+
+    features[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES;
+    features[10] = NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES;
+    features[11] = (wanted << 16) | wanted;
+    if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, features, &allocated) != 0u)
+        return non_volatile_memory_express_fail("Set Features Number of Queues failed");
+    if ((allocated & 0xFFFFu) < wanted || (allocated >> 16) < wanted)
+        return non_volatile_memory_express_fail("the controller allocates fewer I/O queues than this driver uses");
+
+    for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
+        if (!non_volatile_memory_express_create_pair(&non_volatile_memory_express_input_output[pair],
+                                                     NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE + pair))
+            return false;
     non_volatile_memory_express_found.input_output_queues_ready = true;
     return true;
 }
@@ -587,4 +656,79 @@ bool non_volatile_memory_express_write_blocks(uint64_t first_block, uint32_t blo
 {
     return non_volatile_memory_express_transfer(NON_VOLATILE_MEMORY_EXPRESS_OPCODE_WRITE, first_block, block_count,
                                                 (uint32_t) (uintptr_t) buffer);
+}
+
+uint32_t non_volatile_memory_express_read_batch(NonVolatileMemoryExpressRead_t *reads, uint32_t count)
+{
+    uint32_t in_flight[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS] = {0u};
+    uint32_t submitted = 0u;
+    uint32_t completed = 0u;
+    uint32_t succeeded = 0u;
+    uint32_t next = 0u;
+    InterruptRequestDeadline_t deadline;
+
+    if (reads == NULL || count > NON_VOLATILE_MEMORY_EXPRESS_MOST_BLOCKS)
+        return 0u;
+    for (uint32_t i = 0u; i < count; ++i)
+        reads[i].done = false;
+
+    interrupt_request_deadline_start(&deadline, NON_VOLATILE_MEMORY_EXPRESS_COMMAND_MICROSECONDS);
+    while (next < count || completed < submitted)
+    {
+        for (; next < count; ++next)
+        {
+            NonVolatileMemoryExpressRead_t *const read = &reads[next];
+            const uint32_t pair = next % NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS;
+            const uint32_t buffer = (uint32_t) (uintptr_t) read->buffer;
+            const uint32_t pages = ((buffer & (NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES - 1u)) +
+                                    read->block_count * non_volatile_memory_express_found.block_bytes +
+                                    NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES - 1u) /
+                                   NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES;
+            uint32_t command[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
+
+            if (in_flight[pair] == NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES - 1u)
+                break;
+            if (pages > 2u ||
+                !non_volatile_memory_express_build_transfer(command, NON_VOLATILE_MEMORY_EXPRESS_OPCODE_READ,
+                                                            read->first_block, read->block_count, buffer))
+                continue;
+            command[0] |= next << 16;
+            non_volatile_memory_express_place(&non_volatile_memory_express_input_output[pair], command);
+            ++in_flight[pair];
+            ++submitted;
+        }
+        for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
+            non_volatile_memory_express_write_register(
+                non_volatile_memory_express_input_output[pair].submission_doorbell,
+                non_volatile_memory_express_input_output[pair].tail);
+        if (submitted - completed > non_volatile_memory_express_found.most_in_flight)
+            non_volatile_memory_express_found.most_in_flight = submitted - completed;
+
+        bool took = false;
+        for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
+        {
+            uint32_t dword3 = 0u;
+
+            while (non_volatile_memory_express_take(&non_volatile_memory_express_input_output[pair], NULL, &dword3))
+            {
+                const uint32_t identifier = dword3 & 0xFFFFu;
+
+                if (identifier < count && ((dword3 >> 17) & 0x7FFu) == 0u)
+                {
+                    reads[identifier].done = true;
+                    ++succeeded;
+                }
+                --in_flight[pair];
+                ++completed;
+                took = true;
+            }
+        }
+        if (took)
+            interrupt_request_deadline_start(&deadline, NON_VOLATILE_MEMORY_EXPRESS_COMMAND_MICROSECONDS);
+        else if (interrupt_request_deadline_passed(&deadline))
+            break;
+        else
+            asmutils_pause();
+    }
+    return succeeded;
 }
