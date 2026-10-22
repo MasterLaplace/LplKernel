@@ -888,6 +888,8 @@ bool hardware_abstraction_layer_virtio_gpu_probe(hardware_abstraction_layer_virt
         if (dev == (void *) 0 || !is_virtio_gpu(dev))
             continue;
 
+        peripheral_component_interconnect_enable_memory_and_bus_mastering(dev);
+        peripheral_component_interconnect_disable_pin_interrupt(dev);
         out_info->present = true;
         out_info->bus = dev->bus;
         out_info->device = dev->device;

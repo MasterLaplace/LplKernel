@@ -388,6 +388,10 @@ typedef struct {
  * 0x1050 or transitional 0x1010), and decodes the first MMIO BAR. Requires a
  * prior peripheral_component_interconnect_scan().
  *
+ * The function found may answer its memory window and master the bus, and its
+ * pin interrupt is turned off: this driver polls its queues, and a line it left
+ * asserted would hold whichever driver shares it in its handler.
+ *
  * @param out_info Destination for the probe result (present=false when none).
  * @return true when a virtio-gpu function was found.
  */

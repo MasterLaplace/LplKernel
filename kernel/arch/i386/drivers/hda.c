@@ -75,13 +75,6 @@
  */
 #define HDA_RESPONSE_INTERRUPT_COUNT_OUT_OF_THE_WAY 0xFFu
 
-/** PCI command register bits: memory space decode and bus mastering. */
-#define HDA_PCI_COMMAND_MEMORY_SPACE (1u << 1)
-#define HDA_PCI_COMMAND_BUS_MASTER   (1u << 2)
-
-/** Offset of the command register in PCI configuration space. */
-#define HDA_PCI_COMMAND_OFFSET 0x04u
-
 /** PCI class and subclass of a High Definition Audio controller. */
 #define HDA_PCI_CLASS    0x04u
 #define HDA_PCI_SUBCLASS 0x03u
@@ -782,24 +775,6 @@ static void hda_reset_stream(uint32_t stream)
 }
 
 /**
- * @brief Turns on memory decode and bus mastering, both.
- *
- * @note Bus mastering is the one that is easy to forget and hard to diagnose: without it
- *       every register reads correctly and the controller silently never touches the
- *       rings.
- *
- * @param device The controller.
- */
-static void hda_enable_memory_and_bus_mastering(const PeripheralComponentInterconnectDevice_t *device)
-{
-    uint16_t command = peripheral_component_interconnect_config_read_word(device->bus, device->device, device->function,
-                                                                          HDA_PCI_COMMAND_OFFSET);
-    command |= (uint16_t) (HDA_PCI_COMMAND_MEMORY_SPACE | HDA_PCI_COMMAND_BUS_MASTER);
-    peripheral_component_interconnect_config_write_word(device->bus, device->device, device->function,
-                                                        HDA_PCI_COMMAND_OFFSET, command);
-}
-
-/**
  * @brief Can this kernel reach the controller's register window?
  *
  * @details The window is 32-bit even where the register pair is 64: this kernel maps into
@@ -989,7 +964,7 @@ bool intel_high_definition_audio_initialize(IntelHighDefinitionAudioState_t *out
         return hda_publish_state(out, false);
     hda_state.controller_present = true;
 
-    hda_enable_memory_and_bus_mastering(device);
+    peripheral_component_interconnect_enable_memory_and_bus_mastering(device);
 
     PeripheralComponentInterconnectBaseAddressRegister_t bar;
     hda_state.interrupt_line = peripheral_component_interconnect_config_read_byte(
