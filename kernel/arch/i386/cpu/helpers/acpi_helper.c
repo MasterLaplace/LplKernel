@@ -1,6 +1,42 @@
 #include <kernel/config.h>
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/helpers/acpi_helper.h>
+#include <kernel/diag/telemetry.h>
+
+void write_acpi_tables_info(Serial_t *serial)
+{
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory =
+        advanced_configuration_and_power_interface_directory();
+    char signatures[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT * 5u + 1u];
+    uint32_t length = 0u;
+    uint32_t bad_checksums = 0u;
+
+    for (uint32_t index = 0u; index < directory->table_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceTable_t *table = &directory->tables[index];
+
+        if (index != 0u)
+            signatures[length++] = ',';
+        for (uint32_t letter = 0u; letter < sizeof(table->signature); ++letter)
+        {
+            const char character = table->signature[letter];
+            signatures[length++] = (character > ' ' && character <= '~' && character != ',') ? character : '_';
+        }
+        if (!table->checksum_valid)
+            ++bad_checksums;
+    }
+    signatures[length] = '\0';
+
+    kernel_telemetry_begin_record(serial, "acpi");
+    kernel_telemetry_write_boolean("walked", directory->walked);
+    kernel_telemetry_write_unsigned("rsdp_revision", directory->rsdp_revision);
+    kernel_telemetry_write_text("root", directory->extended_root ? "XSDT" : "RSDT");
+    kernel_telemetry_write_unsigned("tables", directory->table_count);
+    kernel_telemetry_write_unsigned("unreachable", directory->unreachable_count);
+    kernel_telemetry_write_unsigned("bad_checksums", bad_checksums);
+    kernel_telemetry_write_text("signatures", signatures);
+    kernel_telemetry_end_record();
+}
 
 void write_acpi_madt_info(Serial_t *serial)
 {

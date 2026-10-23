@@ -350,6 +350,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_pmm_buddy_info(&com1);
 
     advanced_configuration_and_power_interface_madt_initialize();
+    write_acpi_tables_info(&com1);
     write_acpi_madt_info(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())
