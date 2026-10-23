@@ -3,6 +3,7 @@
 #include <kernel/cpu/numa_policy.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/memory/vmm.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -12,14 +13,21 @@
 /** @brief Low memory reservation (BIOS, VGA, Multiboot structures). */
 #define PMM_LOW_MEMORY_LIMIT 0x00100000UL
 
-/** @brief Physical address ceiling (phys + 0xC0000000 must not overflow). */
-#define PMM_MAX_PHYS_ADDR 0x40000000UL
+/**
+ * @brief Physical address ceiling, 256 MiB.
+ *
+ * @details A frame below it is mapped at phys + 0xC0000000, the global_kernel_start of linker.ld,
+ *          so the ceiling is where that mapping meets the virtual memory manager's range: any
+ *          higher, a page the virtual memory manager maps would replace the mapping of a frame this
+ *          manager hands out. RAM above it is left unused.
+ */
+#define PMM_MAX_PHYS_ADDR (KERNEL_VMM_DYNAMIC_START - 0xC0000000UL)
 
-/** @brief Number of 4 KB pages managed below PMM_MAX_PHYS_ADDR (1 GB). */
+/** @brief Number of 4 KB pages managed below PMM_MAX_PHYS_ADDR (256 MiB). */
 #define PMM_MAX_PAGE_COUNT (PMM_MAX_PHYS_ADDR / PAGE_SIZE)
 
-/** @brief Maximum buddy order for 4 KB pages up to 1 GB (2^18 pages). */
-#define PMM_BUDDY_MAX_ORDER 18u
+/** @brief Maximum buddy order for 4 KB pages up to 256 MiB (2^16 pages). */
+#define PMM_BUDDY_MAX_ORDER 16u
 
 /** @brief Multiboot flag bit indicating presence of a memory map. */
 #define MULTIBOOT_FLAG_MMAP (1 << 6)

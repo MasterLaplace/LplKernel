@@ -162,7 +162,8 @@ extern uint32_t physical_memory_manager_get_fragmentation_ratio(void);
  *       the chicken-and-egg dependency between paging_map_page()
  *       (needs physical_memory_manager_page_frame_allocate)
  *       and the PMM (needs virtual mappings to access physical pages).
- *       After this call the PMM covers all usable RAM up to ~1 GB.
+ *       After this call the PMM covers all usable RAM below 256 MiB, where the
+ *       mapping at phys + 0xC0000000 meets the virtual memory manager's range.
  */
 extern void physical_memory_manager_extend_mapping(void);
 
