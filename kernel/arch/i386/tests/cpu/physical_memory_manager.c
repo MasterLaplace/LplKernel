@@ -1,11 +1,15 @@
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
 KERNEL_TEST_SUITE(physical_memory_manager, KERNEL_TEST_STAGE_INITIALIZATION);
 
 /** Pages a test may hold while it looks for a buddy pair or waits for a page to come back. */
 #define PHYSICAL_MEMORY_MANAGER_TEST_PAGE_BUDGET 1024u
+
+/** The highest buddy order asked about: a block of 256 MiB, aligned on where the range it is asked in begins. */
+#define PHYSICAL_MEMORY_MANAGER_TEST_HIGHEST_ORDER 16u
 
 #if !defined(LPL_KERNEL_REAL_TIME_MODE)
 /** Pages taken by the test of a write into a merged page, kept out of the kernel stack. */
@@ -341,5 +345,34 @@ KERNEL_TEST(fragmentation_ratio_stays_a_percentage)
     kernel_test_check(test, physical_memory_manager_get_free_page_count() == free_before,
                       "freeing every page restores the free count");
     kernel_test_measure(test, "ratio_scattered", ratio_scattered);
+#endif
+}
+
+/**
+ * @brief No frame whose mapping at phys + 0xC0000000 falls in the virtual memory manager's range is
+ *        free to be handed out: a page that manager maps there would replace the frame's mapping.
+ */
+KERNEL_TEST(no_free_frame_is_mapped_where_the_virtual_memory_manager_maps)
+{
+#if defined(LPL_KERNEL_REAL_TIME_MODE)
+    kernel_test_skip(test, "the client profile has no buddy allocator to ask");
+#else
+    const uint32_t first = KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE;
+    const uint32_t end = KERNEL_VMM_DYNAMIC_END - KERNEL_VIRTUAL_BASE;
+    uint32_t free_frames = 0u;
+
+    for (uint8_t order = 0u; order <= PHYSICAL_MEMORY_MANAGER_TEST_HIGHEST_ORDER; ++order)
+    {
+        const uint32_t block_bytes = PAGE_SIZE << order;
+
+        for (uint32_t block = first; block < end; block += block_bytes)
+        {
+            if (physical_memory_manager_debug_is_free_block(block, order))
+                free_frames += 1u << order;
+        }
+    }
+
+    kernel_test_check(test, free_frames == 0u, "no frame there is free to be handed out");
+    kernel_test_measure(test, "free_frames", free_frames);
 #endif
 }
