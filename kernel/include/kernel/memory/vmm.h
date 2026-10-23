@@ -104,6 +104,29 @@ uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size);
 void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size);
 
 /**
+ * @brief Maps memory the firmware wrote, such as its ACPI tables, into a free run of kernel virtual
+ *        pages, cached and read-only.
+ *
+ * @details Unlike a device window it is cached, since these frames are memory, and read-only, since
+ *          the kernel has no reason to write what the firmware describes. Like one, it does not rely
+ *          on the frames lying where the kernel's own mapping of physical memory reaches, and its
+ *          frames are never handed to the physical memory manager.
+ *
+ * @param physical_base Physical address of the first byte.
+ * @param size          Length in bytes.
+ * @return The virtual address of @p physical_base, its offset within its page kept, or 0.
+ */
+uint32_t kernel_vmm_map_firmware_window(uint32_t physical_base, uint32_t size);
+
+/**
+ * @brief Unmaps a window kernel_vmm_map_firmware_window gave, and frees none of its frames.
+ *
+ * @param window The address kernel_vmm_map_firmware_window returned.
+ * @param size   The size it was given.
+ */
+void kernel_vmm_unmap_firmware_window(uint32_t window, uint32_t size);
+
+/**
  * @brief Freed runs that had at least one page mapped, each unmapped with one TLB shootdown.
  * @return The count since boot.
  */

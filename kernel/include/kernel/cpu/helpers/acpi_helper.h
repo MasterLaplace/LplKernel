@@ -25,6 +25,12 @@
 
 #include <kernel/drivers/serial.h>
 
+/**
+ * @brief Writes the `[LPLTLM] acpi` record: the root table walked, and every table it led to.
+ *
+ * @param serial The port the record is written to.
+ */
+extern void write_acpi_tables_info(Serial_t *serial);
 extern void write_acpi_madt_info(Serial_t *serial);
 extern void write_acpi_ioapics_info(Serial_t *serial);
 extern void write_acpi_isos_info(Serial_t *serial);

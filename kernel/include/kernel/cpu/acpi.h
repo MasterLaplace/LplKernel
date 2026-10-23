@@ -25,12 +25,14 @@
 
 #include <kernel/cpu/paging.h>
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT     8u
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT        16u
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_LOCAL_APIC_COUNT 32u
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT      64u /**< Tables one directory records. */
 
 typedef struct __attribute__((packed)) {
     char signature[8];
@@ -55,6 +57,36 @@ typedef struct __attribute__((packed)) {
     uint32_t creator_id;
     uint32_t creator_revision;
 } AdvancedConfigurationAndPowerInterfaceSdtHeader_t;
+
+/**
+ * @struct AdvancedConfigurationAndPowerInterfaceTable
+ * @brief One table of the firmware, as a directory records it.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceTable {
+    char signature[4];                                               /**< Its four letters, such as "APIC". */
+    uint32_t physical_address;                                       /**< Where the firmware put it. */
+    uint32_t length;                                                 /**< Its length in bytes, header included. */
+    uint8_t revision;                                                /**< Its revision. */
+    bool checksum_valid;                                             /**< Whether its bytes sum to zero. */
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header; /**< Its firmware window, every byte mapped. */
+} AdvancedConfigurationAndPowerInterfaceTable_t;
+
+/**
+ * @struct AdvancedConfigurationAndPowerInterfaceDirectory
+ * @brief Every table a root system description pointer leads to: the entries of its root table,
+ *        then the DSDT the FADT names.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
+    bool walked;                                /**< Whether a valid root table was found and walked. */
+    uint8_t rsdp_revision;                      /**< 0 for ACPI 1.0; 2 or more when the pointer may name an XSDT. */
+    bool extended_root;                         /**< Whether the entries came from the XSDT, not the RSDT. */
+    uint32_t root_physical_address;             /**< The root table walked. */
+    uint32_t table_count;                       /**< Tables recorded. */
+    uint32_t unreachable_count;                 /**< Tables above 4 GiB, past the capacity, or not mappable. */
+    uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0. */
+    AdvancedConfigurationAndPowerInterfaceTable_t
+        tables[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT]; /**< In the order they were found. */
+} AdvancedConfigurationAndPowerInterfaceDirectory_t;
 
 typedef struct __attribute__((packed)) {
     AdvancedConfigurationAndPowerInterfaceSdtHeader_t header;
@@ -172,10 +204,58 @@ typedef struct __attribute__((packed)) {
 extern void advanced_configuration_and_power_interface_madt_initialize(void);
 
 /**
- * @brief Find an ACPI table by its signature.
+ * @brief Walks the tables a root system description pointer leads to, each mapped through a
+ *        firmware window.
  *
- * @param signature 4-character signature of the table (e.g. "SRAT").
- * @return Pointer to the mapped ACPI table header, or NULL if not found.
+ * @details The XSDT is walked when the pointer's revision is 2 or more and it names one below 4 GiB
+ *          whose signature and checksum hold; the RSDT otherwise, which is also what an XSDT that
+ *          fails its checksum falls back to. An XSDT entry above 4 GiB is counted unreachable: this
+ *          kernel maps 32-bit physical addresses. The DSDT is then taken from the FADT, whose 64-bit
+ *          X_DSDT wins when the FADT is long enough to hold it and it is not 0, as in ACPICA's
+ *          AcpiTbSelectAddress, unless it lies above 4 GiB: the 32-bit DSDT is taken then.
+ *
+ * @param rsdp_physical_address Physical address of the root system description pointer.
+ * @param out_directory         Emptied, then filled with every table found.
+ * @return false when the pointer is invalid, or names no valid root table.
+ */
+extern bool advanced_configuration_and_power_interface_read_directory(
+    uint32_t rsdp_physical_address, AdvancedConfigurationAndPowerInterfaceDirectory_t *out_directory);
+
+/**
+ * @brief Unmaps every table of a directory advanced_configuration_and_power_interface_read_directory
+ *        filled, and empties it.
+ *
+ * @param directory The directory, whose table headers must not be used afterwards.
+ */
+extern void advanced_configuration_and_power_interface_release_directory(
+    AdvancedConfigurationAndPowerInterfaceDirectory_t *directory);
+
+/**
+ * @brief The directory of the firmware's tables, read on the first call from the root pointer found
+ *        in the EBDA or the BIOS area.
+ *
+ * @return The directory, whose walked field is false when no valid root table was found.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceDirectory_t *
+advanced_configuration_and_power_interface_directory(void);
+
+/**
+ * @brief Finds a table by its signature in a directory.
+ *
+ * @param directory The directory to search.
+ * @param signature Four-character signature of the table, such as "SRAT" or "DSDT".
+ * @return The header of the first table with @p signature whose checksum holds, or NULL.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
+advanced_configuration_and_power_interface_find_in_directory(
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, const char *signature);
+
+/**
+ * @brief Finds a table of the firmware by its signature, the DSDT included.
+ *
+ * @param signature Four-character signature of the table, such as "SRAT" or "DSDT".
+ * @return The header of the table, every byte mapped, or NULL when the firmware has no such table
+ *         whose checksum holds.
  */
 extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
 advanced_configuration_and_power_interface_find_table(const char *signature);

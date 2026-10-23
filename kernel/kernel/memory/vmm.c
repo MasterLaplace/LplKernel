@@ -46,6 +46,59 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
     return (page_offset + size + PAGE_SIZE - 1u) / PAGE_SIZE;
 }
 
+/**
+ * @brief Maps the frames under @p size bytes from @p physical_base into a free run of kernel pages.
+ *
+ * @param physical_base Physical address of the window's first byte.
+ * @param size          Window length in bytes.
+ * @param pte_flags     The flags every page of the window gets.
+ * @return The virtual address of @p physical_base, its offset within its page kept, or 0 when no
+ *         run is free or a page cannot be mapped; the run is then given back, and no frame freed.
+ */
+static uint32_t vmm_map_window(uint32_t physical_base, uint32_t size, PageTableEntry_t pte_flags)
+{
+    if (physical_base == 0u || size == 0u)
+        return 0u;
+
+    const uint32_t page_offset = physical_base & (PAGE_SIZE - 1u);
+    const uint32_t first_frame = physical_base - page_offset;
+    const uint32_t page_count = vmm_window_page_count(page_offset, size);
+    void *const virt = kernel_vmm_reserve_pages(page_count);
+
+    if (virt == NULL)
+        return 0u;
+
+    const PageDirectoryEntry_t pde_flags = {.present = 1u, .read_write = 1u};
+    const uint32_t virt_start = (uint32_t) (uintptr_t) virt;
+
+    for (uint32_t i = 0u; i < page_count; ++i)
+    {
+        if (!paging_map_page(virt_start + i * PAGE_SIZE, first_frame + i * PAGE_SIZE, pde_flags, pte_flags))
+        {
+            vmm_release(virt_start, page_count, i, false);
+            return 0u;
+        }
+    }
+    return virt_start + page_offset;
+}
+
+/**
+ * @brief Unmaps a window vmm_map_window gave, and frees none of its frames.
+ *
+ * @param window The address vmm_map_window returned.
+ * @param size   The size it was given.
+ */
+static void vmm_unmap_window(uint32_t window, uint32_t size)
+{
+    if (!vmm_initialized || size == 0u || window < KERNEL_VMM_DYNAMIC_START || window >= KERNEL_VMM_DYNAMIC_END)
+        return;
+
+    const uint32_t page_offset = window & (PAGE_SIZE - 1u);
+    const uint32_t page_count = vmm_window_page_count(page_offset, size);
+
+    vmm_release(window - page_offset, page_count, page_count, false);
+}
+
 bool kernel_vmm_initialize(void)
 {
     memset(vmm_bitmap, 0, sizeof(vmm_bitmap));
@@ -169,41 +222,20 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count)
 
 uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size)
 {
-    if (physical_base == 0u || size == 0u)
-        return 0u;
-
-    const uint32_t page_offset = physical_base & (PAGE_SIZE - 1u);
-    const uint32_t first_frame = physical_base - page_offset;
-    const uint32_t page_count = vmm_window_page_count(page_offset, size);
-    void *const virt = kernel_vmm_reserve_pages(page_count);
-
-    if (virt == NULL)
-        return 0u;
-
-    const PageDirectoryEntry_t pde_flags = {.present = 1u, .read_write = 1u};
     const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u, .cache_disable = 1u, .write_through = 1u};
-    const uint32_t virt_start = (uint32_t) (uintptr_t) virt;
 
-    for (uint32_t i = 0u; i < page_count; ++i)
-    {
-        if (!paging_map_page(virt_start + i * PAGE_SIZE, first_frame + i * PAGE_SIZE, pde_flags, pte_flags))
-        {
-            vmm_release(virt_start, page_count, i, false);
-            return 0u;
-        }
-    }
-    return virt_start + page_offset;
+    return vmm_map_window(physical_base, size, pte_flags);
 }
 
-void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size)
+void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size) { vmm_unmap_window(window, size); }
+
+uint32_t kernel_vmm_map_firmware_window(uint32_t physical_base, uint32_t size)
 {
-    if (!vmm_initialized || size == 0u || window < KERNEL_VMM_DYNAMIC_START || window >= KERNEL_VMM_DYNAMIC_END)
-        return;
+    const PageTableEntry_t pte_flags = {.present = 1u};
 
-    const uint32_t page_offset = window & (PAGE_SIZE - 1u);
-    const uint32_t page_count = vmm_window_page_count(page_offset, size);
-
-    vmm_release(window - page_offset, page_count, page_count, false);
+    return vmm_map_window(physical_base, size, pte_flags);
 }
+
+void kernel_vmm_unmap_firmware_window(uint32_t window, uint32_t size) { vmm_unmap_window(window, size); }
 
 uint32_t kernel_vmm_get_unmapped_range_count(void) { return vmm_unmapped_range_count; }
