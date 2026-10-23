@@ -185,13 +185,14 @@ KERNEL_TEST(a_second_bring_up_resets_the_running_controller)
 }
 
 /**
- * @brief The bring-up turns bus mastering on itself, whatever the firmware left.
+ * @brief The bring-up turns bus mastering on itself, whatever the firmware left, and the pin
+ *        interrupt off.
  *
  * @details Firmware that boots from NVM Express turns bus mastering on, so the other tests pass
  *          whether the driver does or not. This one turns it off first: without it the controller
  *          never reads its queues, and Identify times out.
  */
-KERNEL_TEST(the_bring_up_turns_bus_mastering_on_itself)
+KERNEL_TEST(the_bring_up_turns_bus_mastering_on_and_its_pin_interrupt_off)
 {
     const PeripheralComponentInterconnectDevice_t *const device = peripheral_component_interconnect_find_by_class(
         NON_VOLATILE_MEMORY_EXPRESS_CLASS, NON_VOLATILE_MEMORY_EXPRESS_SUBCLASS);
@@ -214,6 +215,9 @@ KERNEL_TEST(the_bring_up_turns_bus_mastering_on_itself)
 
     kernel_test_check(test, (after & PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_BUS_MASTER) != 0u,
                       "bus mastering is on again after the bring-up");
+    kernel_test_check(test, (after & PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_INTERRUPT_DISABLE) != 0u,
+                      "and the pin interrupt is off: the driver polls, and a line left asserted holds whoever "
+                      "shares it in its handler (#525)");
     kernel_test_check(test, identified, "and the controller answered Identify through its queues");
     if (non_volatile_memory_express_state()->failure != NULL)
         kernel_test_note(test, non_volatile_memory_express_state()->failure);

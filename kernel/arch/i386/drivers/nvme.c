@@ -460,6 +460,7 @@ static bool non_volatile_memory_express_find(void)
         return non_volatile_memory_express_fail("its register window is out of reach");
 
     peripheral_component_interconnect_enable_memory_and_bus_mastering(device);
+    peripheral_component_interconnect_disable_pin_interrupt(device);
     if (non_volatile_memory_express_registers == 0u)
         non_volatile_memory_express_registers =
             kernel_vmm_map_device_window((uint32_t) window.base, (uint32_t) window.size);
