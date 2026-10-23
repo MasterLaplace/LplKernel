@@ -1,7 +1,7 @@
 # LplKernel's ACPI layer and AML interpreter: specification
 
 Status: adopted for #57 on 2026-10-24, when every recommendation of §10 was taken; each slice of §9 is a
-sub-issue of #57. ACPI 6.6 still answered HTTP 403 that day, so its numbers are 6.5's and Q14 stays open. Written on 2026-10-23 from six reader reports (uACPI, ACPICA, LAI and rust-osdev/acpi,
+sub-issue of #57. It was checked against ACPI 6.6 the same day (see below). Written on 2026-10-23 from six reader reports (uACPI, ACPICA, LAI and rust-osdev/acpi,
 the specification with QEMU's tables, 90 real machines, LplKernel's own needs), then revised after two checks: one
 of every citation, one of completeness and coherence (what was not taken, and why, is in the Review notes at the
 end). Nothing here is code yet.
@@ -25,13 +25,35 @@ test bench, one corpus among others: it is neither the target nor the limit.
 | [estimate] | a design estimate of this spec, to be replaced by a measurement |
 | [reading], [inferred] | a reader report's finding from reading code, or deduced from its paths; nothing was run |
 
-**The specification text.** uefi.org answers HTTP 403 to every 6.6 page, so section numbers and permalinks are
-those of the UEFI Forum's ACPI 6.5 reStructuredText source at
-[UEFI/ACPI-Specification-Release@5dabe6f](https://github.com/UEFI/ACPI-Specification-Release/tree/5dabe6f37fbe753d90292a2a419105be5d55a778).
-Two independent citations (rust-osdev's "§19.6.101", [mod.rs L2990-L2996](https://github.com/rust-osdev/acpi/blob/a69a4dfc3ec55c582901565aef1da7a2a4f623e0/src/aml/mod.rs#L2990-L2996),
-and uACPI's "6.6: 5.5.2.4.8", [types.h L411-L413](https://github.com/uACPI/uACPI/blob/c0edecef62bcac6ce3f783540099190bafadadda/include/uacpi/types.h#L411-L413))
-match the recomputed 6.5 numbers, and ACPICA tags no AML grammar item as 6.6 (specification report §1.1).
-Re-checking every number against 6.6 is open question Q14.
+**The specification text.** Section numbers and permalinks are those of the UEFI Forum's ACPI 6.5 reStructuredText
+source at
+[UEFI/ACPI-Specification-Release@5dabe6f](https://github.com/UEFI/ACPI-Specification-Release/tree/5dabe6f37fbe753d90292a2a419105be5d55a778),
+the only published form with lines to link to. The numbers were recomputed from that source; they agree with the
+6.5 PDF on all 1,263 numbered sections.
+
+**Checked against ACPI 6.6** (the PDF of May 2025, which has no published source), on 2026-10-24, which answers Q14.
+Both PDFs went through the same text extraction. Sections were matched by title, and the text of every section
+this spec cites was compared word for word.
+
+- **Numbers.** 13 of the 50 sections cited moved:
+  - 6.2.11 (`_OSC`) is 6.2.12 in 6.6;
+  - in 19.6, every operator moves by one from 19.6.36, by two from 19.6.111 and by three from 19.6.151, because
+    6.6 adds three PCC descriptor macros.
+
+  Numbers here stay 6.5's, next to their 6.5 permalinks.
+- **The AML grammar and its byte table are unchanged** (§20). Their one edit makes the PkgLength grammar say
+  `<= 63`, as its note already did.
+- **What changed that a slice must take**, each in its issue:
+  - **`_STA`** (#544). A device that returns bit 0 clear with bit 1 set is invalid and disregarded, and so is
+    one that returns bit 1 clear with bit 3 set, unless bit 0 is clear too (6.5A, ECR 2451).
+  - **Platform `_OSC`** (#545). Bit 23 (the dynamic GPE capability, §7.3.13) and bit 24 (ResourceUsage
+    honoured) are added; the reserved bits now start at 25. The answer to Q19 stands.
+  - **MADT** (#534). Types 0x18 to 0x1B describe RISC-V and are skipped by their length. The Multiprocessor
+    Wakeup structure (0x10) gains a mailbox reset; it is counted and not used.
+  - **GPEs** (#547). The dynamic GPE capability, and GPEs in low-power S0 idle (§5.6.4.3).
+  - **Power sources** (#548). The new `_PCS` and `_PST` objects, and Notify 0x83.
+- **Unchanged in substance:** `_REG`'s exemption of SystemMemory and SystemIO, `_CST`, the FADT's fields, and the
+  rules for fields and stores.
 
 **The corpus.** "The 90 machines" are the census sample of `real-firmware.md` (appendix A); "the 62" are the 42
 clients and 20 servers of `needs.md` (appendix A). Eight of those servers have only decoded text, and 30 of the
@@ -1342,7 +1364,7 @@ Answered on 2026-10-24: every recommendation below stands.
 | Q11 | The limits of §6.1 | accept, or change any value | accept; each is a counter, the corpus runs report the peaks |
 | Q12 | Test data under other licences | (a) fetch by pinned commit into `build/`, never committed, never in a published image; (b) vendor with notices | (a): QEMU's tables are GPL-2.0-or-later, linuxhw's dumps CC-BY-4.0; our own ASL stays MIT |
 | Q13 | The global lock's timing | (a) with the EC (N18); (b) in S6 if the needs path counts `global_lock_unavailable` | the S5 decision point decides, on counts; until then the access fails loudly, never unlocked |
-| Q14 | ACPI 6.6 numbering | re-check every section and line against 6.6 once uefi.org answers | do it before the spec is merged as a document |
+| Q14 | ACPI 6.6 numbering | re-check every section and line against 6.6 once uefi.org answers | done on 2026-10-24, against the 6.6 PDF: see "Checked against ACPI 6.6" at the top |
 | Q15 | Objects of `Load` relative to the root | (a) the root, as ACPICA does "for compatibility" ([exconfig.c L655-L668](https://github.com/acpica/acpica/blob/e85aa3bebaae81ed1e6d163511ac7e1eafe732cf/source/components/executer/exconfig.c#L655-L668)); (b) the spec's reading | (a), checked against the corpus' `PmRef` tables, whose scopes are absolute |
 | Q16 | Mapping attribute of SystemMemory regions | (a) cached read-write inside ACPI NVS or reclaim memory, as `memory_type` reports it, uncached elsewhere (needs a new firmware read-write window in `vmm`); (b) uncached everywhere | (a): an uncached alias of a page the firmware window maps cached is a memory-type conflict |
 | Q17 | Mixed-type `LEqual`/`LLess`/`LGreater` | (a) convert the second operand (spec, ACPICA); (b) require the same type (uACPI) | (a); the `mixed_type_comparison` counter on the corpus shows whether it ever matters |
