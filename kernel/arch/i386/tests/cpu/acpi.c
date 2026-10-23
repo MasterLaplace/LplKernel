@@ -22,15 +22,19 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_
 #define MADE_UP_FIRMWARE_SHORT_FADT_OFFSET 0x400u /**< The FADT the RSDT lists: the 116 bytes of ACPI 1.0. */
 #define MADE_UP_FIRMWARE_DSDT_32_OFFSET    0x500u /**< The DSDT both FADTs name in their 32-bit field. */
 #define MADE_UP_FIRMWARE_DSDT_64_OFFSET    0x600u /**< The DSDT X_DSDT names. */
+#define MADE_UP_FIRMWARE_FACS_32_OFFSET    0x700u /**< Where FIRMWARE_CTRL puts a FACS, when a test names one. */
+#define MADE_UP_FIRMWARE_FACS_64_OFFSET    0x740u /**< Where X_FIRMWARE_CTRL puts a FACS, when a test names one. */
 /** @} */
 
-#define MADE_UP_FIRMWARE_HEADER_BYTES       36u  /**< Bytes of a table header, and of a table that is nothing more. */
-#define MADE_UP_FIRMWARE_FADT_BYTES         244u /**< Bytes of a FADT of ACPI 6. */
-#define MADE_UP_FIRMWARE_SHORT_FADT_BYTES   116u /**< Bytes of a FADT of ACPI 1.0, which ends before X_DSDT. */
-#define MADE_UP_FIRMWARE_ABOVE_4_GIB        0x100000000ull /**< Added to an address, puts it above 4 GiB. */
-#define MADE_UP_FIRMWARE_FADT_DSDT          40u            /**< Offset of a FADT's 32-bit DSDT field. */
-#define MADE_UP_FIRMWARE_FADT_EXTENDED_DSDT 140u           /**< Offset of a FADT's X_DSDT field. */
-#define MADE_UP_FIRMWARE_RSDP_VERSION_1     20u            /**< Bytes the first checksum of a root pointer covers. */
+#define MADE_UP_FIRMWARE_HEADER_BYTES                   36u /**< Bytes of a table header, and of a table that is nothing more. */
+#define MADE_UP_FIRMWARE_FADT_BYTES                     244u /**< Bytes of a FADT of ACPI 6. */
+#define MADE_UP_FIRMWARE_SHORT_FADT_BYTES               116u /**< Bytes of a FADT of ACPI 1.0, which ends before X_DSDT. */
+#define MADE_UP_FIRMWARE_ABOVE_4_GIB                    0x100000000ull /**< Added to an address, puts it above 4 GiB. */
+#define MADE_UP_FIRMWARE_FADT_FIRMWARE_CONTROL          36u            /**< Offset of a FADT's FIRMWARE_CTRL field. */
+#define MADE_UP_FIRMWARE_FADT_DSDT                      40u            /**< Offset of a FADT's 32-bit DSDT field. */
+#define MADE_UP_FIRMWARE_FADT_EXTENDED_FIRMWARE_CONTROL 132u           /**< Offset of a FADT's X_FIRMWARE_CTRL field. */
+#define MADE_UP_FIRMWARE_FADT_EXTENDED_DSDT             140u           /**< Offset of a FADT's X_DSDT field. */
+#define MADE_UP_FIRMWARE_RSDP_VERSION_1                 20u /**< Bytes the first checksum of a root pointer covers. */
 
 /**
  * @brief A made-up firmware: every table in one page, so each lies in physically contiguous memory.
@@ -101,6 +105,21 @@ static void made_up_firmware_write_fadt(const MadeUpFirmware_t *firmware, uint32
     if (length >= MADE_UP_FIRMWARE_FADT_EXTENDED_DSDT + sizeof(extended_dsdt))
         memcpy(firmware->page + offset + MADE_UP_FIRMWARE_FADT_EXTENDED_DSDT, &extended_dsdt, sizeof(extended_dsdt));
     made_up_firmware_seal_table(firmware, offset);
+}
+
+/**
+ * @brief Names a FACS in the long FADT's FIRMWARE_CTRL and X_FIRMWARE_CTRL fields, then seals the
+ *        FADT again.
+ */
+static void made_up_firmware_name_facs(const MadeUpFirmware_t *firmware, uint32_t firmware_control,
+                                       uint64_t extended_firmware_control)
+{
+    uint8_t *fadt = firmware->page + MADE_UP_FIRMWARE_FADT_OFFSET;
+
+    memcpy(fadt + MADE_UP_FIRMWARE_FADT_FIRMWARE_CONTROL, &firmware_control, sizeof(firmware_control));
+    memcpy(fadt + MADE_UP_FIRMWARE_FADT_EXTENDED_FIRMWARE_CONTROL, &extended_firmware_control,
+           sizeof(extended_firmware_control));
+    made_up_firmware_seal_table(firmware, MADE_UP_FIRMWARE_FADT_OFFSET);
 }
 
 /**
@@ -209,6 +228,19 @@ static bool made_up_firmware_dsdt_is(const char *oem_table_id)
 }
 
 /**
+ * @brief Whether the directory records the table at @p header as one whose checksum fails.
+ */
+static bool made_up_firmware_checksum_fails(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
+{
+    for (uint32_t index = 0u; index < made_up_firmware_directory.table_count; ++index)
+    {
+        if (made_up_firmware_directory.tables[index].header == header)
+            return !made_up_firmware_directory.tables[index].checksum_valid;
+    }
+    return false;
+}
+
+/**
  * @brief A root pointer of revision 2 that names an XSDT has the XSDT walked: its 64-bit entries,
  *        and X_DSDT for the DSDT.
  */
@@ -222,6 +254,8 @@ KERNEL_TEST(the_extended_root_is_walked_when_the_pointer_names_one)
 
     const bool walked = advanced_configuration_and_power_interface_read_directory(
         firmware.physical + MADE_UP_FIRMWARE_RSDP_OFFSET, &made_up_firmware_directory);
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *corrupt =
+        advanced_configuration_and_power_interface_find_in_directory(&made_up_firmware_directory, "TSTC");
 
     kernel_test_check(test, walked && made_up_firmware_directory.walked, "the directory is read");
     kernel_test_check(test,
@@ -231,9 +265,8 @@ KERNEL_TEST(the_extended_root_is_walked_when_the_pointer_names_one)
     kernel_test_check(
         test, advanced_configuration_and_power_interface_find_in_directory(&made_up_firmware_directory, "TSTB") != NULL,
         "a table only the XSDT lists is found");
-    kernel_test_check(
-        test, !advanced_configuration_and_power_interface_find_in_directory(&made_up_firmware_directory, "TSTC"),
-        "a table whose checksum fails is not given out");
+    kernel_test_check(test, corrupt != NULL && made_up_firmware_checksum_fails(corrupt),
+                      "a table whose checksum fails is given out, recorded as failing");
     kernel_test_check(test, made_up_firmware_directory.unreachable_count == 1u,
                       "the entry above 4 GiB is counted unreachable, not truncated");
     kernel_test_check(test, made_up_firmware_directory.table_count == 5u,
@@ -320,6 +353,71 @@ KERNEL_TEST(a_dsdt_above_4_gib_gives_way_to_the_32_bit_one)
 
     kernel_test_check(test, walked && made_up_firmware_directory.extended_root, "the XSDT is walked");
     kernel_test_check(test, made_up_firmware_dsdt_is("THIRTY2 "), "the DSDT is the one the 32-bit field names");
+    made_up_firmware_close(&firmware);
+}
+
+/**
+ * @brief Of two tables with one signature, the one whose checksum holds is given out, although the
+ *        one whose checksum fails comes first.
+ */
+KERNEL_TEST(a_table_whose_checksum_holds_wins_over_one_that_fails)
+{
+    MadeUpFirmware_t firmware;
+
+    if (!made_up_firmware_open(test, &firmware))
+        return;
+    made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
+    firmware.page[MADE_UP_FIRMWARE_BOTH_OFFSET +
+                  offsetof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t, oem_table_id)] ^= 0x01u;
+    memcpy(firmware.page + MADE_UP_FIRMWARE_EXTENDED_OFFSET, "TSTA", 4u);
+    made_up_firmware_seal_table(&firmware, MADE_UP_FIRMWARE_EXTENDED_OFFSET);
+
+    const bool walked = advanced_configuration_and_power_interface_read_directory(
+        firmware.physical + MADE_UP_FIRMWARE_RSDP_OFFSET, &made_up_firmware_directory);
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *table =
+        advanced_configuration_and_power_interface_find_in_directory(&made_up_firmware_directory, "TSTA");
+
+    kernel_test_check(test, walked, "the directory is read");
+    kernel_test_check(test, table != NULL && memcmp(table->oem_table_id, "EXTENDED", sizeof(table->oem_table_id)) == 0,
+                      "the second TSTA, whose checksum holds, is the one given out");
+    made_up_firmware_close(&firmware);
+}
+
+/**
+ * @brief The FACS is the one FIRMWARE_CTRL names when it is not 0, and the one X_FIRMWARE_CTRL names
+ *        otherwise, as ACPICA and uACPI choose.
+ */
+KERNEL_TEST(the_facs_is_the_one_the_32_bit_field_names_when_it_is_set)
+{
+    MadeUpFirmware_t firmware;
+
+    if (!made_up_firmware_open(test, &firmware))
+        return;
+
+    const uint32_t rsdp = firmware.physical + MADE_UP_FIRMWARE_RSDP_OFFSET;
+    const uint32_t facs_32 = firmware.physical + MADE_UP_FIRMWARE_FACS_32_OFFSET;
+    const uint32_t facs_64 = firmware.physical + MADE_UP_FIRMWARE_FACS_64_OFFSET;
+
+    made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
+    made_up_firmware_name_facs(&firmware, facs_32, facs_64);
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_read_directory(rsdp, &made_up_firmware_directory) &&
+                          made_up_firmware_directory.firmware_control_physical_address == facs_32,
+                      "with both fields set, the 32-bit one is taken");
+    advanced_configuration_and_power_interface_release_directory(&made_up_firmware_directory);
+
+    made_up_firmware_name_facs(&firmware, 0u, facs_64);
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_read_directory(rsdp, &made_up_firmware_directory) &&
+                          made_up_firmware_directory.firmware_control_physical_address == facs_64,
+                      "with the 32-bit field at 0, X_FIRMWARE_CTRL is taken");
+    advanced_configuration_and_power_interface_release_directory(&made_up_firmware_directory);
+
+    made_up_firmware_name_facs(&firmware, 0u, MADE_UP_FIRMWARE_ABOVE_4_GIB + facs_64);
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_read_directory(rsdp, &made_up_firmware_directory) &&
+                          made_up_firmware_directory.firmware_control_physical_address == 0u,
+                      "an X_FIRMWARE_CTRL above 4 GiB, with the 32-bit field at 0, gives no FACS");
     made_up_firmware_close(&firmware);
 }
 

@@ -83,7 +83,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
     uint32_t root_physical_address;             /**< The root table walked. */
     uint32_t table_count;                       /**< Tables recorded. */
     uint32_t unreachable_count;                 /**< Tables above 4 GiB, past the capacity, or not mappable. */
-    uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0. */
+    uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
+                                                     FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL. */
     AdvancedConfigurationAndPowerInterfaceTable_t
         tables[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT]; /**< In the order they were found. */
 } AdvancedConfigurationAndPowerInterfaceDirectory_t;
@@ -242,9 +243,14 @@ advanced_configuration_and_power_interface_directory(void);
 /**
  * @brief Finds a table by its signature in a directory.
  *
+ * @details A table whose checksum fails is still given out when no table with @p signature has one
+ *          that holds, as ACPICA and uACPI do by default: dropping it can drop the DSDT, an SSDT
+ *          or the MADT of a machine whose firmware got one byte wrong. Its record says so.
+ *
  * @param directory The directory to search.
  * @param signature Four-character signature of the table, such as "SRAT" or "DSDT".
- * @return The header of the first table with @p signature whose checksum holds, or NULL.
+ * @return The header of the first table with @p signature whose checksum holds, else of the first
+ *         whose checksum fails, or NULL when the directory has none.
  */
 extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
 advanced_configuration_and_power_interface_find_in_directory(
@@ -254,8 +260,9 @@ advanced_configuration_and_power_interface_find_in_directory(
  * @brief Finds a table of the firmware by its signature, the DSDT included.
  *
  * @param signature Four-character signature of the table, such as "SRAT" or "DSDT".
- * @return The header of the table, every byte mapped, or NULL when the firmware has no such table
- *         whose checksum holds.
+ * @return The header of the table, every byte mapped, chosen as
+ *         advanced_configuration_and_power_interface_find_in_directory chooses, or NULL when the
+ *         firmware has no such table.
  */
 extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
 advanced_configuration_and_power_interface_find_table(const char *signature);

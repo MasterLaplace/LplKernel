@@ -246,26 +246,60 @@ static void acpi_record_root_entries(AdvancedConfigurationAndPowerInterfaceDirec
 }
 
 /**
- * @brief The address a FADT gives in a 32-bit field and a 64-bit one.
- *
- * @details The 64-bit field wins when the FADT is long enough to hold it and it is not 0, as in
- *          ACPICA's AcpiTbSelectAddress, unless it lies above 4 GiB, which this kernel cannot map.
- *
- * @return The address, or 0 when neither field gives one below 4 GiB.
+ * @brief Reads the address a FADT gives in its 32-bit field at @p offset_32 and in its 64-bit field
+ *        at @p offset_64, each left 0 when the FADT ends before it.
  */
-static uint32_t acpi_fadt_address(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt, uint32_t offset_32,
-                                  uint32_t offset_64)
+static void acpi_fadt_read_addresses(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt, uint32_t offset_32,
+                                     uint32_t offset_64, uint32_t *address_32, uint64_t *address_64)
 {
-    uint32_t address_32 = 0u;
-    uint64_t address_64 = 0u;
+    *address_32 = 0u;
+    *address_64 = 0u;
+    if (fadt->length >= offset_32 + sizeof(*address_32))
+        memcpy(address_32, (const uint8_t *) fadt + offset_32, sizeof(*address_32));
+    if (fadt->length >= offset_64 + sizeof(*address_64))
+        memcpy(address_64, (const uint8_t *) fadt + offset_64, sizeof(*address_64));
+}
 
-    if (fadt->length >= offset_32 + sizeof(address_32))
-        memcpy(&address_32, (const uint8_t *) fadt + offset_32, sizeof(address_32));
-    if (fadt->length >= offset_64 + sizeof(address_64))
-        memcpy(&address_64, (const uint8_t *) fadt + offset_64, sizeof(address_64));
+/**
+ * @brief The DSDT a FADT names.
+ *
+ * @details X_DSDT wins when it is not 0, as in ACPICA's AcpiTbSelectAddress, unless it lies above
+ *          4 GiB, which this kernel cannot map.
+ *
+ * @return Its address, or 0 when neither field gives one below 4 GiB.
+ */
+static uint32_t acpi_fadt_dsdt_address(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt)
+{
+    uint32_t address_32;
+    uint64_t address_64;
+
+    acpi_fadt_read_addresses(fadt, ACPI_FADT_DSDT_OFFSET, ACPI_FADT_EXTENDED_DSDT_OFFSET, &address_32, &address_64);
     if (address_64 != 0u && (address_64 >> 32u) == 0u)
         return (uint32_t) address_64;
     return address_32;
+}
+
+/**
+ * @brief The FACS a FADT names.
+ *
+ * @details FIRMWARE_CTRL wins when it is not 0, as ACPICA and uACPI choose by default because some
+ *          machines fail to resume when the 64-bit address is taken; X_FIRMWARE_CTRL otherwise,
+ *          unless it lies above 4 GiB.
+ *
+ * @return Its address, or 0 when neither field gives one below 4 GiB.
+ */
+static uint32_t acpi_fadt_facs_address(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt)
+{
+    uint32_t address_32;
+    uint64_t address_64;
+
+    acpi_fadt_read_addresses(fadt, ACPI_FADT_FIRMWARE_CONTROL_OFFSET, ACPI_FADT_EXTENDED_FIRMWARE_CONTROL_OFFSET,
+                             &address_32, &address_64);
+    if (address_32 != 0u)
+        return address_32;
+    if ((address_64 >> 32u) == 0u)
+        return (uint32_t) address_64;
+    return 0u;
 }
 
 static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_t *madt)
@@ -428,12 +462,11 @@ bool advanced_configuration_and_power_interface_read_directory(
 
     if (fadt != NULL)
     {
-        const uint32_t dsdt = acpi_fadt_address(fadt, ACPI_FADT_DSDT_OFFSET, ACPI_FADT_EXTENDED_DSDT_OFFSET);
+        const uint32_t dsdt = acpi_fadt_dsdt_address(fadt);
 
         if (dsdt != 0u)
             acpi_record_table(out_directory, dsdt);
-        out_directory->firmware_control_physical_address =
-            acpi_fadt_address(fadt, ACPI_FADT_FIRMWARE_CONTROL_OFFSET, ACPI_FADT_EXTENDED_FIRMWARE_CONTROL_OFFSET);
+        out_directory->firmware_control_physical_address = acpi_fadt_facs_address(fadt);
     }
 
     out_directory->walked = true;
@@ -470,14 +503,20 @@ const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_
     if (directory == NULL || signature == NULL)
         return NULL;
 
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *checksum_fails = NULL;
+
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceTable_t *table = &directory->tables[index];
 
-        if (table->checksum_valid && acpi_signature_matches(table->signature, signature, 4u))
+        if (!acpi_signature_matches(table->signature, signature, 4u))
+            continue;
+        if (table->checksum_valid)
             return table->header;
+        if (checksum_fails == NULL)
+            checksum_fails = table->header;
     }
-    return NULL;
+    return checksum_fails;
 }
 
 const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
