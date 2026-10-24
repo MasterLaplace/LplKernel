@@ -1064,3 +1064,332 @@ KERNEL_TEST(an_external_through_a_later_alias_to_an_object_places_nothing)
                       "ALS_ has no child, and nothing is counted");
     made_up_close(test);
 }
+
+/**
+ * @brief The node a name written from the root resolves to, or 0.
+ */
+static uint32_t made_up_node_at(const char *text)
+{
+    uint32_t index = 0u;
+
+    return (made_up_resolve(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, text, &index) ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK) ?
+               index :
+               0u;
+}
+
+/**
+ * @brief The node a name written from the root resolves to; a test that cannot find it reads node 0's
+ *        stand-in, all zero, and fails its checks.
+ */
+static const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *made_up_node(const char *text)
+{
+    static const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t none;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&made_up_load.space,
+                                                                                   made_up_node_at(text));
+
+    return (node != NULL) ? node : &none;
+}
+
+/**
+ * @brief The header of the object a value names, or a stand-in, all zero.
+ */
+static const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *
+made_up_object(const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value)
+{
+    static const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t none;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *object =
+        advanced_configuration_and_power_interface_machine_language_object(&made_up_load.heap, value->handle);
+
+    return (object != NULL) ? object : &none;
+}
+
+/**
+ * @brief The field unit a node holds, or a stand-in, all zero.
+ */
+static const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *made_up_unit(const char *text)
+{
+    static const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t none;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node = made_up_node(text);
+
+    if (node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT)
+        return &none;
+    return (const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *) (made_up_object(&node->value) +
+                                                                                       1);
+}
+
+static const uint8_t made_up_data_objects[] = {
+    0x08u, 'I', 'N',   'T',   '_',   0x0Bu, 0x34u, 0x12u, 0x08u, 'S',   'T',   'R',   '_',   0x0Du, 'a',
+    'b',   'c', 0x00u, 0x08u, 'B',   'U',   'F',   '_',   0x11u, 0x05u, 0x0Au, 0x04u, 0x01u, 0x02u, 0x08u,
+    'P',   'K', 'G',   '_',   0x12u, 0x0Du, 0x03u, 0x01u, 0x0Du, 'x',   0x00u, 0x12u, 0x06u, 0x01u, 'A',
+    'B',   'C', 'D',   0x08u, 'V',   'P',   'K',   '_',   0x13u, 0x04u, 0x0Au, 0x02u, 0x00u,
+};
+
+/**
+ * @brief A Name holds the data object it declares: an Integer, a String, a Buffer padded to its size,
+ *        a Package whose third element is a Package holding a name kept as a name, and a VarPackage
+ *        of two elements with one initialiser, the other left Uninitialized.
+ */
+KERNEL_TEST(a_name_holds_the_data_object_it_declares)
+{
+    if (!made_up_load_one(test, made_up_data_objects, sizeof(made_up_data_objects)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *integer = made_up_node("INT_");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *string =
+        made_up_object(&made_up_node("STR_")->value);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *buffer =
+        made_up_object(&made_up_node("BUF_")->value);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
+        made_up_object(&made_up_node("PKG_")->value);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *elements =
+        (const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (package + 1);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *variable =
+        made_up_object(&made_up_node("VPK_")->value);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *variable_elements =
+        (const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (variable + 1);
+    static const uint8_t buffer_bytes[] = {0x01u, 0x02u, 0x00u, 0x00u};
+
+    kernel_test_check(test,
+                      integer->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_INTEGER &&
+                          integer->value.payload == 0x1234u,
+                      "INT_ is the Integer 0x1234");
+    kernel_test_check(test, string->length == 3u && memcmp(string + 1, "abc", 4u) == 0,
+                      "STR_ is the String \"abc\", NUL kept");
+    kernel_test_check(test, buffer->length == 4u && memcmp(buffer + 1, buffer_bytes, 4u) == 0,
+                      "BUF_ is 4 bytes, its two initialisers then zeros");
+    kernel_test_check(test,
+                      package->length == 3u && elements[0].payload == 1u &&
+                          elements[1].kind ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING &&
+                          elements[2].kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE,
+                      "PKG_ holds One, a String and a Package");
+    kernel_test_check(
+        test,
+        made_up_object(&elements[2])->length == 1u &&
+            ((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (made_up_object(&elements[2]) +
+                                                                                     1))[0]
+                    .kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_NAME_REFERENCE,
+        "the inner package keeps ABCD as a name, not resolved");
+    kernel_test_check(test,
+                      variable->length == 2u &&
+                          variable_elements[0].kind ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
+                          variable_elements[1].kind ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_UNINITIALIZED &&
+                          made_up_load.heap.packages_padded == 1u,
+                      "VPK_ has two elements, the second Uninitialized, and is counted as padded");
+    kernel_test_measure_hexadecimal(
+        test, "namespace_fold",
+        advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load));
+    made_up_close(test);
+}
+
+/**
+ * @brief The namespace fold follows the values: the same table with INT_ one higher folds otherwise,
+ *        and the same table folds the same twice.
+ */
+KERNEL_TEST(the_namespace_fold_follows_the_values)
+{
+    uint8_t changed[sizeof(made_up_data_objects)];
+    uint32_t folds[3] = {0u};
+
+    memcpy(changed, made_up_data_objects, sizeof(changed));
+    changed[6] = 0x35u;
+    for (uint32_t run = 0u; run < 3u; ++run)
+    {
+        if (!made_up_load_one(test, (run == 2u) ? changed : made_up_data_objects, sizeof(made_up_data_objects)))
+            return;
+        folds[run] = advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load);
+        made_up_close(test);
+    }
+    kernel_test_check(test, folds[0] == folds[1], "the same table folds the same twice");
+    kernel_test_check(test, folds[0] != folds[2], "one integer changed changes the fold");
+}
+
+/**
+ * @brief A Buffer takes the longer of its size and its initialiser, a Package with more initialisers
+ *        than elements keeps the first, and the cut is counted.
+ */
+KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'T', 'R', 'N', '_',   0x12u, 0x05u, 0x01u, 0x01u, 0x0Au, 0x02u, 0x08u,
+        'B',   'G', '_', '_', 0x11u, 0x06u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x03u,
+    };
+    static const uint8_t longer[] = {0x01u, 0x02u, 0x03u};
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
+        made_up_object(&made_up_node("TRN_")->value);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *buffer =
+        made_up_object(&made_up_node("BG__")->value);
+
+    kernel_test_check(
+        test,
+        package->length == 1u &&
+            ((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (package + 1))[0].payload == 1u &&
+            made_up_load.heap.packages_truncated == 1u,
+        "Package (1) {One, 2} keeps One and is counted as cut");
+    kernel_test_check(test, buffer->length == 3u && memcmp(buffer + 1, longer, 3u) == 0,
+                      "Buffer (2) {1, 2, 3} holds the three bytes");
+    made_up_close(test);
+}
+
+/**
+ * @brief A region takes its space, offset and length; one built from an expression waits for the
+ *        interpreter; each unit of a field takes the bit the list has reached, past a reserved field,
+ *        and the access an AccessAs gives.
+ */
+KERNEL_TEST(a_region_and_its_field_units_take_their_layout)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x80u, 'R', 'E', 'G',   '0',   0x01u, 0x0Au, 0x80u, 0x0Au, 0x10u, 0x5Bu, 0x80u,
+        'R',   'E',   'G', '1', 0x00u, 0x72u, 0x01u, 0x01u, 0x00u, 0x0Au, 0x04u, 0x5Bu, 0x81u,
+        0x1Au, 'R',   'E', 'G', '0',   0x01u, 'F',   '0',   '_',   '_',   0x08u, 0x00u, 0x08u,
+        'F',   '1',   '_', '_', 0x10u, 0x01u, 0x03u, 0x00u, 'F',   '2',   '_',   '_',   0x20u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region =
+        (const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *) (made_up_object(
+                                                                                     &made_up_node("REG0")->value) +
+                                                                                 1);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *computed =
+        (const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *) (made_up_object(
+                                                                                     &made_up_node("REG1")->value) +
+                                                                                 1);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *first = made_up_unit("F0__");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *second = made_up_unit("F1__");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *third = made_up_unit("F2__");
+
+    kernel_test_check(test,
+                      region->space == 1u && region->state == 1u && region->offset == 0x80u && region->length == 0x10u,
+                      "REG0 is 16 ports from 0x80");
+    kernel_test_check(test, computed->state == 0u && made_up_load.values_deferred == 1u,
+                      "REG1, whose offset is Add (One, One), waits for the interpreter");
+    kernel_test_check(test,
+                      first->region == made_up_node_at("REG0") && first->bit_offset == 0u && first->bit_length == 8u &&
+                          first->access == 1u,
+                      "F0__ is the first byte, byte access");
+    kernel_test_check(test, second->bit_offset == 16u && second->bit_length == 16u && second->access == 1u,
+                      "F1__ starts past the 8 reserved bits");
+    kernel_test_check(test, third->bit_offset == 32u && third->bit_length == 32u && third->access == 3u,
+                      "F2__ takes the DWordAcc an AccessAs gives");
+    made_up_close(test);
+}
+
+/**
+ * @brief The units of an IndexField name its index and data fields, those of a BankField its region,
+ *        its bank field and its BankValue.
+ */
+KERNEL_TEST(index_and_bank_field_units_name_their_registers)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x80u, 'R', 'E',   'G',   '0',   0x01u, 0x0Au, 0x80u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x15u,
+        'R',   'E',   'G', '0',   0x01u, 'I',   'D',   'X',   '_',   0x08u, 'D',   'A',   'T',   '_',
+        0x08u, 'B',   'N', 'K',   '_',   0x08u, 0x5Bu, 0x86u, 0x0Fu, 'I',   'D',   'X',   '_',   'D',
+        'A',   'T',   '_', 0x01u, 'R',   '0',   '_',   '_',   0x08u, 0x5Bu, 0x87u, 0x11u, 'R',   'E',
+        'G',   '0',   'B', 'N',   'K',   '_',   0x0Au, 0x02u, 0x01u, 'B',   '0',   '_',   '_',   0x08u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *indexed = made_up_unit("R0__");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *banked = made_up_unit("B0__");
+
+    kernel_test_check(test,
+                      indexed->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INDEX_FIELD &&
+                          indexed->region == made_up_node_at("IDX_") &&
+                          indexed->data_or_bank == made_up_node_at("DAT_"),
+                      "R0__ goes through IDX_ and DAT_");
+    kernel_test_check(test,
+                      banked->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_BANK_FIELD &&
+                          banked->region == made_up_node_at("REG0") &&
+                          banked->data_or_bank == made_up_node_at("BNK_") && banked->bank_value == 2u,
+                      "B0__ is in REG0 when BNK_ holds 2");
+    made_up_close(test);
+}
+
+/**
+ * @brief A buffer field names its buffer and its bits: CreateDWordField at byte 2, CreateBitField at
+ *        bit 3, CreateField of 12 bits at bit 4.
+ */
+KERNEL_TEST(a_buffer_field_names_its_buffer_and_bits)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'B',   'U',   'F', '_', 0x11u, 0x03u, 0x0Au, 0x08u, 0x8Au, 'B',   'U',   'F', '_', 0x0Au,
+        0x02u, 'D',   'W',   '_', '_', 0x8Du, 'B',   'U',   'F',   '_',   0x0Au, 0x03u, 'B', 'I', 'T',
+        '_',   0x5Bu, 0x13u, 'B', 'U', 'F',   '_',   0x0Au, 0x04u, 0x0Au, 0x0Cu, 'C',   'F', '_', '_',
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const uint32_t buffer = made_up_node_at("BUF_");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *word = &made_up_node("DW__")->value;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *bit = &made_up_node("BIT_")->value;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *any = &made_up_node("CF__")->value;
+
+    kernel_test_check(test,
+                      word->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD &&
+                          word->handle == buffer && word->payload == (16u | (32ull << 32u)) && word->auxiliary == 4u,
+                      "DW__ is 32 bits from bit 16 of BUF_, read 4 bytes at a time");
+    kernel_test_check(test, bit->handle == buffer && bit->payload == (3u | (1ull << 32u)) && bit->auxiliary == 1u,
+                      "BIT_ is bit 3");
+    kernel_test_check(test, any->handle == buffer && any->payload == (4u | (12ull << 32u)) && any->auxiliary == 1u,
+                      "CF__ is 12 bits from bit 4");
+    made_up_close(test);
+}
+
+/**
+ * @brief A Processor keeps its ID and processor block, a Mutex its SyncLevel, a PowerResource its
+ *        system level and resource order; `\_OS_` and `\_REV` answer as Windows does.
+ */
+KERNEL_TEST(processors_mutexes_and_identity_keep_their_fields)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x83u, 0x0Bu, 'C', 'P',   'U',   '0',   0x01u, 0x10u, 0x08u, 0x00u, 0x00u, 0x06u, 0x5Bu, 0x01u,
+        'M',   'U',   'T',   '_', 0x05u, 0x5Bu, 0x84u, 0x08u, 'P',   'W',   'R',   '_',   0x01u, 0x03u, 0x02u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *name =
+        made_up_object(&made_up_node("_OS_")->value);
+
+    kernel_test_check(test, made_up_node("CPU0")->value.payload == (0x810u | (6ull << 32u) | (1ull << 40u)),
+                      "CPU0 is processor 1, its block 6 bytes at 0x810");
+    kernel_test_check(test, made_up_node("MUT_")->value.auxiliary == 5u, "MUT_ has SyncLevel 5");
+    kernel_test_check(test,
+                      made_up_node("PWR_")->value.auxiliary == 1u && made_up_node("PWR_")->value.payload == 0x203u,
+                      "PWR_ is level 1, order 0x203");
+    kernel_test_check(test, name->length == 20u && memcmp(name + 1, "Microsoft Windows NT", 20u) == 0,
+                      "\\_OS_ is \"Microsoft Windows NT\"");
+    kernel_test_check(test, made_up_node("_REV")->value.payload == 2u, "\\_REV is 2");
+    made_up_close(test);
+}
+
+/**
+ * @brief An If and a Store at table level are code the interpreter would run, counted; a declaration,
+ *        Noop and orphan data are not.
+ */
+KERNEL_TEST(table_level_code_is_counted)
+{
+    static const uint8_t aml[] = {
+        0xA0u, 0x08u, 0x01u, 0x08u, 'N', '1', '_', '_', 0x01u, 0x70u, 0x01u, 'N', '1', '_', '_', 0xA3u, 0x00u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_measure(test, "table_level_code", made_up_load.table_level_code);
+    kernel_test_check(test, made_up_load.table_level_code == 2u, "the If and the Store are counted, nothing else");
+    made_up_close(test);
+}
