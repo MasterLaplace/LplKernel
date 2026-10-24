@@ -43,9 +43,9 @@ extern void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *
  *          done, and the shootdown counts say whether an AP ever had to answer. The control
  *          register counts say how many APs read their CR0 and CR4 as they started, and how many
  *          of them differ from the bootstrap CPU's now. It passes when every enabled CPU is
- *          online, every AP attempted was delivered, no shootdown timed out and no AP differs. A
- *          boot asked for two CPUs that reports one is caught by whoever asked, by comparing
- *          `cpus` with the count it requested.
+ *          online, every AP attempted was delivered, no shootdown timed out, and every AP delivered
+ *          was compared and none differs. A boot asked for two CPUs that reports one is caught by
+ *          whoever asked, by comparing `cpus` with the count it requested.
  *
  * @param serial Serial port the record is written to.
  */
