@@ -23,7 +23,7 @@
 #ifndef KERNEL_CPU_NUMA_POLICY_H
 #define KERNEL_CPU_NUMA_POLICY_H
 
-#include <kernel/cpu/acpi.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/drivers/serial.h>
 

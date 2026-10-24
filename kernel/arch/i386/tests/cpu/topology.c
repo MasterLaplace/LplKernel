@@ -1,4 +1,4 @@
-#include <kernel/cpu/acpi.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/testing/test.h>

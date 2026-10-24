@@ -23,7 +23,7 @@
 #ifndef KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
 #define KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
 
-#include <kernel/cpu/acpi.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pic.h>
 

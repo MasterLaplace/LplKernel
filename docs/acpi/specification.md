@@ -130,9 +130,9 @@ architecture supplies the host interface.
 | Path | Holds |
 |---|---|
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
-| `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface's `map` |
+| `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
-| `kernel/include/kernel/acpi/machine_language_host.h` | the host interface the interpreter calls (§3.3) |
+| `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
 | `kernel/kernel/acpi/machine_language_load.c` | definition-block load, the loaded-table registry, `Load`, `LoadTable` |
@@ -157,17 +157,20 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 
 | Function | Ring 0 | Simulated host |
 |---|---|---|
-| `map(physical u64, length u64, kind)` → address or 0; `kind` is firmware read-only, firmware read-write (cached), or device (uncached) | `kernel_vmm_map_firmware_window`, a cached read-write firmware window, `kernel_vmm_map_device_window` | a sparse byte store keyed by physical address; the kind is ignored |
+| `root_system_description_pointer()` → physical address or 0 | the BIOS-area scan of `kernel/arch/i386/cpu/acpi.c`; the pointer Multiboot2 or the EFI system table gives, once #278 and #279 land | the machine under test's |
+| `map_firmware(physical u64, length u64)` → address or NULL: cached, read-only | `kernel_vmm_map_firmware_window` | a sparse byte store keyed by physical address |
+| `map_firmware_writable(...)`, `map_device(...)`: cached read-write, uncached | a cached read-write firmware window, `kernel_vmm_map_device_window` | the same store |
 | `memory_type(physical u64, length u64)` → RAM, ACPI reclaim, ACPI NVS, reserved, or unknown | the boot memory map the PMM keeps | `reserved`, unless the machine's description says otherwise |
-| `unmap(address, length, kind)` | the matching unmap | no-op |
+| `unmap_firmware(address, length)`, and one unmap for each map | the matching unmap | no-op |
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor; offsets from 0x100 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
 | `sleep_milliseconds(u32)`, `stall_microseconds(u32)` | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick; after boot the worker thread blocks (#273) | advance the virtual clock |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `pages(count)` | `kernel_vmm_alloc_pages` | `malloc` |
-| `find_table(signature, oem_id, oem_table_id, index)` | the table directory | the tables of the machine under test |
 | `log(level, text)` | serial, compiled out below the build's level | stdout |
+
+Each is `advanced_configuration_and_power_interface_host_<name>`, declared in `kernel/include/kernel/acpi/host.h`.
 
 AML runs at boot only once `clock_initialize` has started the tick. The `[LPLTLM] acpi` line reports the
 milliseconds `Sleep` and `Stall` request at boot and the ticks actually waited, since `instructions.sh` does not

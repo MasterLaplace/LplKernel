@@ -1,5 +1,5 @@
+#include <kernel/acpi/tables.h>
 #include <kernel/boot/boot_module.h>
-#include <kernel/cpu/acpi.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>

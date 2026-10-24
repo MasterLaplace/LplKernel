@@ -1,6 +1,6 @@
 #include <kernel/diag/machine.h>
 
-#include <kernel/cpu/acpi.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/cpu_identity.h>
