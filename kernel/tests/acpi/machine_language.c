@@ -522,26 +522,29 @@ KERNEL_TEST(a_single_name_searches_up_to_the_root_and_a_path_does_not)
 
 /**
  * @brief A call takes the arguments its method declares, even when the method is declared after
- *        the call: `Store (MTHA (One, Zero), Local0)` and `Store (MTHA (Zero, One), Local1)` keep
- *        both Zeros as arguments, where a wrong count turns one into a NullName target.
+ *        the call: `Store (MTHA (One, Zero), Local0)`, `Store (MTHA (Zero, One), Local1)` and
+ *        `Store (MTH4 (Zero, Zero, Zero, Zero), Local2)` keep every Zero as an argument, where a wrong
+ *        count turns one into a NullName target or an orphan.
  */
 KERNEL_TEST(a_method_call_takes_the_arguments_its_method_declares)
 {
     static const uint8_t aml[] = {
-        0x14u, 0x16u, 'M', 'A', 'I',   'N',   0x00u, 0x70u, 'M',   'T', 'H', 'A', 0x01u, 0x00u, 0x60u, 0x70u,
-        'M',   'T',   'H', 'A', 0x00u, 0x01u, 0x61u, 0x14u, 0x08u, 'M', 'T', 'H', 'A',   0x02u, 0xA4u, 0x68u,
+        0x14u, 0x20u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 'M',   'T',   'H',   'A',   0x01u,
+        0x00u, 0x60u, 0x70u, 'M',   'T',   'H',   'A',   0x00u, 0x01u, 0x61u, 0x70u, 'M',   'T',
+        'H',   '4',   0x00u, 0x00u, 0x00u, 0x00u, 0x62u, 0x14u, 0x08u, 'M',   'T',   'H',   'A',
+        0x02u, 0xA4u, 0x68u, 0x14u, 0x08u, 'M',   'T',   'H',   '4',   0x04u, 0xA4u, 0x6Bu,
     };
 
     if (!made_up_load_one(test, aml, sizeof(aml)))
         return;
     kernel_test_check(test, made_up_load.decode_errors == 0u, "the table decodes without a fault");
-    kernel_test_check(test, made_up_load.method_calls == 2u, "both calls are seen as calls");
+    kernel_test_check(test, made_up_load.method_calls == 3u, "every call is seen as a call");
     kernel_test_check(test,
-                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ZERO) == 2u,
-                      "both Zeros are arguments");
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ZERO) == 6u,
+                      "every Zero is an argument, four of them to a method of four arguments");
     kernel_test_check(test,
-                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_METHOD) == 2u,
-                      "both methods are decoded");
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_METHOD) == 3u,
+                      "every method is decoded");
     made_up_close(test);
 }
 
@@ -593,25 +596,54 @@ KERNEL_TEST(a_name_a_method_declares_lasts_as_long_as_the_method)
 }
 
 /**
- * @brief An External gives the argument count of a method no table declares, under a path no table
- *        declares either: `\_SB_.PCI0.ECRD (Zero)` keeps its Zero as an argument.
+ * @brief An External gives the argument count of a method no table declares, under a path that
+ *        exists or that no table declares either: `\_SB_.PCI0.ECRD (Zero)` and `\_SB_.MTHE (Zero)`
+ *        keep their Zero as an argument.
  */
 KERNEL_TEST(an_external_names_a_method_no_table_declares)
 {
     static const uint8_t aml[] = {
-        0x15u, '\\',  0x2Fu, 0x03u, '_',   'S', 'B', '_', 'P', 'C',   'I',   '0',   'E',   'C',   'R',
-        'D',   0x08u, 0x01u, 0x14u, 0x18u, 'M', 'A', 'I', 'N', 0x00u, 0x70u, '\\',  0x2Fu, 0x03u, '_',
-        'S',   'B',   '_',   'P',   'C',   'I', '0', 'E', 'C', 'R',   'D',   0x00u, 0x60u,
+        0x15u, '\\',  0x2Fu, 0x03u, '_',   'S',  'B',   '_', 'P', 'C',   'I',   '0',   'E',   'C',
+        'R',   'D',   0x08u, 0x01u, 0x15u, '\\', 0x2Eu, '_', 'S', 'B',   '_',   'M',   'T',   'H',
+        'E',   0x08u, 0x01u, 0x14u, 0x25u, 'M',  'A',   'I', 'N', 0x00u, 0x70u, '\\',  0x2Fu, 0x03u,
+        '_',   'S',   'B',   '_',   'P',   'C',  'I',   '0', 'E', 'C',   'R',   'D',   0x00u, 0x60u,
+        0x70u, '\\',  0x2Eu, '_',   'S',   'B',  '_',   'M', 'T', 'H',   'E',   0x00u, 0x61u,
     };
 
     if (!made_up_load_one(test, aml, sizeof(aml)))
         return;
     kernel_test_check(test, made_up_load.decode_errors == 0u && made_up_load.load_errors == 0u,
                       "the table loads and decodes without a fault");
-    kernel_test_check(test, made_up_load.method_calls == 1u, "the External is called");
+    kernel_test_check(test, made_up_load.method_calls == 2u, "both Externals are called");
     kernel_test_check(test,
-                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ZERO) == 1u,
-                      "its Zero is an argument, not a NullName target");
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ZERO) == 2u,
+                      "each Zero is an argument, not a NullName target");
+    made_up_close(test);
+}
+
+/**
+ * @brief A declaration whose path does not exist is counted and skipped alone: the method after it
+ *        is still declared.
+ */
+KERNEL_TEST(a_declaration_whose_path_does_not_exist_is_skipped_alone)
+{
+    static const uint8_t aml[] = {
+        0x08u, '\\',  0x2Eu, 'N',   'O', 'P', 'E', 'A', 'B',   'C',
+        'D',   0x01u, 0x14u, 0x07u, 'G', 'O', 'O', 'D', 0x00u, 0xA3u,
+    };
+    uint32_t good = 0u;
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.load_errors == 1u && made_up_load.decode_errors == 0u,
+                      "the missing path is the one fault, met while declaring");
+    kernel_test_check(
+        test,
+        made_up_resolve(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, "GOOD", &good) ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+            advanced_configuration_and_power_interface_machine_language_namespace_node(&made_up_load.space, good)
+                    ->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD,
+        "the method after it is declared");
     made_up_close(test);
 }
 
