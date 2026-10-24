@@ -1,3 +1,4 @@
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/ioapic.h>
 
 #define IOAPIC_MMIO_BASE_VIRT 0xFFB10000u
@@ -16,7 +17,10 @@
 #define IOAPIC_REDIR_LOW_MASKED              (1u << 16u)
 
 /** Destination APIC id field of a redirection entry: bits 24..31 of its high register. */
-#define IOAPIC_REDIR_HIGH_DESTINATION_MASK 0xFF000000u
+#define IOAPIC_REDIR_HIGH_DESTINATION_MASK  0xFF000000u
+#define IOAPIC_REDIR_HIGH_DESTINATION_SHIFT 24u /**< Where the destination field starts in the high register. */
+#define IOAPIC_HIGHEST_PHYSICAL_DESTINATION                                                                            \
+    0xFEu /**< The highest APIC ID a physical destination names: 0xFF broadcasts (SDM 325384-093US §13.6.2.1). */
 
 #define ACPI_ISO_POLARITY_MASK        0x0003u
 #define ACPI_ISO_POLARITY_ACTIVE_HIGH 0x0001u
@@ -139,7 +143,16 @@ static uint32_t io_apic_build_redirection_low(uint8_t vector, uint16_t iso_flags
     return low;
 }
 
-static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
+static uint8_t io_apic_refuse_unnameable_destination(uint32_t apic_id)
+{
+    if (apic_id <= IOAPIC_HIGHEST_PHYSICAL_DESTINATION)
+        return 0u;
+
+    io_apic_destinations_refused++;
+    return 1u;
+}
+
+static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq, uint32_t destination)
 {
     uint32_t global_system_interrupt = 0u;
     uint16_t iso_flags = 0u;
@@ -147,7 +160,7 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
     uint32_t gsi_relative = 0u;
     uint8_t vector;
     uint32_t redir_low;
-    uint32_t redir_high = 0u;
+    uint32_t redir_high;
     uint8_t redir_reg_index;
     InputOutputApicUnit_t *unit;
     InputOutputApicRouteInfo_t *route;
@@ -165,8 +178,12 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
     if (gsi_relative > 0x7Fu)
         return 0u;
 
+    if (io_apic_refuse_unnameable_destination(destination))
+        return 0u;
+
     vector = (uint8_t) (PIC_VECTOR_OFFSET_MASTER + isa_irq);
     redir_low = io_apic_build_redirection_low(vector, iso_flags);
+    redir_high = destination << IOAPIC_REDIR_HIGH_DESTINATION_SHIFT;
     redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
 
     io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
@@ -202,11 +219,12 @@ static uint8_t io_apic_read_route_destination(const InputOutputApicRouteInfo_t *
     const uint8_t redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
     const uint32_t redir_high = io_apic_register_read(unit->virtual_base, redir_reg_index + 1u);
 
-    return (uint8_t) ((redir_high & IOAPIC_REDIR_HIGH_DESTINATION_MASK) >> 24u);
+    return (uint8_t) ((redir_high & IOAPIC_REDIR_HIGH_DESTINATION_MASK) >> IOAPIC_REDIR_HIGH_DESTINATION_SHIFT);
 }
 
 void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void)
 {
+    const uint32_t bootstrap_processor = cpu_topology_get_local_apic_id();
     uint8_t io_apic_count;
 
     io_apic_state_name = "ioapic-init-start";
@@ -266,8 +284,8 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
         return;
     }
 
-    (void) io_apic_program_masked_isa_route(0u);
-    (void) io_apic_program_masked_isa_route(1u);
+    (void) io_apic_program_masked_isa_route(0u, bootstrap_processor);
+    (void) io_apic_program_masked_isa_route(1u, bootstrap_processor);
 
     if (io_apic_route_count == 0u)
         io_apic_state_name = "ioapic-init-mapped-no-routes";
@@ -403,7 +421,7 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_des
 }
 
 uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq,
-                                                                                          uint8_t apic_id)
+                                                                                          uint32_t apic_id)
 {
     int32_t route_index_signed;
     uint8_t route_index;
@@ -434,10 +452,13 @@ uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_de
     if (gsi_relative > 0x7Fu)
         return 0u;
 
+    if (io_apic_refuse_unnameable_destination(apic_id))
+        return 0u;
+
     redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
     redir_high = io_apic_register_read(unit->virtual_base, redir_reg_index + 1u);
     redir_high &= ~IOAPIC_REDIR_HIGH_DESTINATION_MASK;
-    redir_high |= ((uint32_t) apic_id << 24u);
+    redir_high |= apic_id << IOAPIC_REDIR_HIGH_DESTINATION_SHIFT;
     io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
 
     return 1u;

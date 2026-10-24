@@ -55,7 +55,10 @@ typedef struct {
  * @brief Prepare IOAPIC MMIO access and program masked ISA route entries.
  *
  * Current scope programs discovery-backed redirection entries for IRQ0/IRQ1
- * in masked mode only, preserving active interrupt ownership behavior.
+ * in masked mode only, preserving active interrupt ownership behavior. Each
+ * entry names the bootstrap processor's APIC ID, as the topology gives it: a
+ * line is not routed when no entry can name that ID, and the refusal is
+ * counted.
  */
 extern void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void);
 
@@ -137,11 +140,12 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_des
  * @brief Set the destination APIC ID for a previously programmed ISA route.
  *
  * @param isa_irq The ISA IRQ number.
- * @param apic_id The target CPU's local APIC ID.
- * @return non-zero on success, zero on failure.
+ * @param apic_id The target CPU's local APIC ID or x2APIC ID, kept whole.
+ * @return non-zero on success, zero on failure: the route is missing, or no redirection entry can name
+ *         @p apic_id, which is then counted and leaves the route where it was.
  */
 extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq,
-                                                                                                 uint8_t apic_id);
+                                                                                                 uint32_t apic_id);
 
 /**
  * @brief Return how many destinations were refused since the routes were last initialized, because a

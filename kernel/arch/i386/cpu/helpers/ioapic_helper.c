@@ -11,6 +11,9 @@ void write_ioapic_scaffold_info(Serial_t *serial)
     serial_write_string(serial, ", routes=");
     serial_write_int(serial,
                      (int32_t) input_output_advanced_programmable_interrupt_controller_get_programmed_route_count());
+    serial_write_string(serial, ", destinations_refused=");
+    serial_write_int(serial,
+                     (int32_t) input_output_advanced_programmable_interrupt_controller_get_destinations_refused());
     serial_write_string(serial, "\n");
 }
 
