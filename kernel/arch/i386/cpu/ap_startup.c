@@ -119,7 +119,7 @@ uint32_t application_processor_startup_get_reported_online_count(void) { return 
 
 uint8_t application_processor_startup_get_last_reported_apic_id(void) { return ap_startup_last_reported_apic_id; }
 
-uint32_t application_processor_startup_get_control_registers_recorded_count(void)
+uint32_t application_processor_startup_count_control_register_records(void)
 {
     uint32_t recorded = 0u;
 
@@ -128,7 +128,7 @@ uint32_t application_processor_startup_get_control_registers_recorded_count(void
     return recorded;
 }
 
-uint32_t application_processor_startup_count_control_register_differences(void)
+uint32_t application_processor_startup_count_control_register_mismatches(void)
 {
     const uint32_t control_register_0 = asmutils_read_control_register_0();
     const uint32_t control_register_4 = asmutils_read_control_register_4();

@@ -24,11 +24,11 @@ KERNEL_TEST(every_processor_runs_with_the_bootstrap_processors_control_registers
         return;
     }
 
-    const uint32_t differ = application_processor_startup_count_control_register_differences();
+    const uint32_t differ = application_processor_startup_count_control_register_mismatches();
 
     kernel_test_check(test, kernel_section_protection_write_protect_is_enabled(),
                       "the bootstrap processor sets CR0.WP");
-    kernel_test_check(test, application_processor_startup_get_control_registers_recorded_count() == online - 1u,
+    kernel_test_check(test, application_processor_startup_count_control_register_records() == online - 1u,
                       "every other online processor read its control registers");
     kernel_test_check(test, differ == 0u, "none differs from the bootstrap processor's CR0 and CR4");
     kernel_test_measure(test, "online", online);
