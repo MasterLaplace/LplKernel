@@ -905,5 +905,6 @@ KERNEL_TEST(the_same_external_twice_makes_one_node)
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(test, made_up_load.space.live_nodes == nodes + 2u,
                       "one External for \\NOPE.MTH_ and one for the missing NOPE");
+    kernel_test_check(test, made_up_load.load_errors == 0u, "the second External finds the first and counts no fault");
     made_up_close(test);
 }
