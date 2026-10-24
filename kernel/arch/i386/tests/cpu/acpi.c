@@ -1,4 +1,4 @@
-#include <kernel/cpu/acpi.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>

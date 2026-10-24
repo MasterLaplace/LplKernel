@@ -1,5 +1,5 @@
+#include <kernel/acpi/tables.h>
 #include <kernel/core/smp.h>
-#include <kernel/cpu/acpi.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/ap_trampoline.h>

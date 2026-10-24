@@ -1,5 +1,5 @@
+#include <kernel/acpi/tables.h>
 #include <kernel/config.h>
-#include <kernel/cpu/acpi.h>
 #include <kernel/cpu/helpers/acpi_helper.h>
 #include <kernel/diag/telemetry.h>
 

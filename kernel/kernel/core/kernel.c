@@ -4,9 +4,9 @@
 #include <kernel/core/identity.h>
 #include <kernel/cpu/stack_guard.h>
 
+#include <kernel/acpi/tables.h>
 #include <kernel/boot/helpers/multiboot_info_helper.h>
 #include <kernel/boot/init_array.h>
-#include <kernel/cpu/acpi.h>
 #include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/ap_trampoline.h>
