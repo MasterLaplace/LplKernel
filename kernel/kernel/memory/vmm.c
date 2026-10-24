@@ -52,12 +52,13 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
  * @param physical_base Physical address of the window's first byte.
  * @param size          Window length in bytes.
  * @param pte_flags     The flags every page of the window gets.
- * @return The virtual address of @p physical_base, its offset within its page kept, or 0 when no
- *         run is free or a page cannot be mapped; the run is then given back, and no frame freed.
+ * @return The virtual address of @p physical_base, its offset within its page kept, or 0 when the
+ *         window's last byte would lie past 4 GiB, no run is free or a page cannot be mapped; the run
+ *         is then given back, and no frame freed.
  */
 static uint32_t vmm_map_window(uint32_t physical_base, uint32_t size, PageTableEntry_t pte_flags)
 {
-    if (physical_base == 0u || size == 0u)
+    if (physical_base == 0u || size == 0u || size - 1u > UINT32_MAX - physical_base)
         return 0u;
 
     const uint32_t page_offset = physical_base & (PAGE_SIZE - 1u);
