@@ -24,7 +24,7 @@ INTERRUPT_SOURCE_OVERRIDES = 16
 ENABLED = 0x1
 ONLINE_CAPABLE = 0x2
 SHORTEST = {"00": 8, "01": 12, "02": 10, "04": 6, "05": 12, "09": 16, "0A": 12}
-FIELD = re.compile(r"^\[[0-9A-F]{3,4}h [0-9]{4} +[0-9A-F]+h?\] +(.*?) : (.*)$")
+FIELD = re.compile(r"^\[[0-9A-F]{3,}h [0-9]{4,} +[0-9A-F]+h?\] +(.*?) : (.*)$")
 RAW_ROW = re.compile(r"^\s*([0-9A-F]{4}): ((?:[0-9A-F]{2} ){1,16})")
 
 
@@ -78,7 +78,8 @@ def subtables(section):
 def number(entry, label):
     """The hexadecimal value of a field, its first word."""
     if label not in entry:
-        raise Unreadable("a subtable of type %s has no %r line" % (entry["Subtable Type"][:2], label))
+        where = "a subtable of type %s" % entry["Subtable Type"][:2] if "Subtable Type" in entry else "the header"
+        raise Unreadable("%s has no %r line" % (where, label))
     return int(entry[label].split()[0], 16)
 
 
