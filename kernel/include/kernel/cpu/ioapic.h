@@ -29,7 +29,8 @@
 
 #include <stdint.h>
 
-#define INPUT_OUTPUT_APIC_MAX_COUNT  8u
+#define INPUT_OUTPUT_APIC_MAX_COUNT                                                                                    \
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT /**< One unit for each I/O APIC the MADT keeps. */
 #define INPUT_OUTPUT_APIC_MAX_ROUTES 2u
 
 typedef struct {

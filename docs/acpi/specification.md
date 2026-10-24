@@ -395,9 +395,9 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
   CPU slot. A local APIC ID of 0xFF, an x2APIC ID of 0xFFFFFFFF, and an x2APIC ID below 0xFF in a table that also
   lists local APICs name no processor and are counted invalid, as in
   [Linux](https://github.com/torvalds/linux/blob/e5f0a698b34ed76002dc5cff3804a61c80233a7a/arch/x86/kernel/acpi/boot.c#L162-L272).
-  The MADT keeps 256 CPU slots and 256 NMI connections, past which it counts what it drops; an NMI entry whose
-  UID is 0xFF, or 0xFFFFFFFF for an x2APIC one, applies to every processor. The boot prints one
-  `[LPLTLM] acpi.madt` line with the slot count and every counter.
+  The MADT keeps 256 CPU slots, 256 NMI connections, 64 I/O APICs and 16 interrupt source overrides, past which it
+  counts what it drops; an NMI entry whose UID is 0xFF, or 0xFFFFFFFF for an x2APIC one, applies to every
+  processor. The boot prints one `[LPLTLM] acpi.madt` line with the slot count and every counter.
 - **MCFG** gives the segment groups and their ECAM bases (#58); **HPET** its base address (#60, #298). Each is
   parsed by its first consumer.
 

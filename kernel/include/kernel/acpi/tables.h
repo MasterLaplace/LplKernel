@@ -33,8 +33,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT 8u
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT    16u
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT                                                    \
+    64u /**< I/O APICs one MADT reading keeps, as many as Linux keeps on 32-bit x86. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT                                                       \
+    16u /**< Interrupt source overrides one MADT reading keeps: one per ISA interrupt. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT                                                 \
     256u /**< CPU slots one MADT reading keeps; the largest server of the corpus enables 224. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT                                    \
