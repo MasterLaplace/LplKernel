@@ -73,8 +73,8 @@ void write_acpi_madt_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("skipped", madt->skipped_count);
     kernel_telemetry_write_unsigned("io_apics", madt->io_apic_count);
     kernel_telemetry_write_unsigned("io_apics_dropped", madt->io_apics_dropped);
-    kernel_telemetry_write_unsigned("interrupt_source_overrides", madt->interrupt_source_override_count);
-    kernel_telemetry_write_unsigned("interrupt_source_overrides_dropped", madt->interrupt_source_overrides_dropped);
+    kernel_telemetry_write_unsigned("overrides", madt->interrupt_source_override_count);
+    kernel_telemetry_write_unsigned("overrides_dropped", madt->interrupt_source_overrides_dropped);
     kernel_telemetry_end_record();
 }
 
