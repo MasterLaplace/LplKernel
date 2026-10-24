@@ -3,6 +3,7 @@
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
@@ -11,8 +12,104 @@
 #define INTERRUPT_CONTROLLERS_TEST_TICKS 8u /**< Ticks the contract waits for. */
 #define INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS                                                                    \
     12u /**< The deadline's length in tick periods: more than eight, since it counts the same tick. */
+#define INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR                                                          \
+    0xFEu /**< The highest APIC ID a physical destination names: 0xFF broadcasts (SDM §13.6.2.1). */
+#define INTERRUPT_CONTROLLERS_TEST_BROADCAST             0xFFu  /**< A physical destination's broadcast. */
+#define INTERRUPT_CONTROLLERS_TEST_PAST_EIGHT_BITS       0x100u /**< The first APIC ID past a destination's 8 bits. */
+#define INTERRUPT_CONTROLLERS_TEST_ANOTHER_PROCESSOR     0x2Au /**< An identifier QEMU never gives its first processor. */
+#define INTERRUPT_CONTROLLERS_TEST_YET_ANOTHER_PROCESSOR 0x15u /**< The one taken when a route already names 0x2A. */
 
 KERNEL_TEST_SUITE(interrupt_controllers, KERNEL_TEST_STAGE_INITIALIZATION);
+
+/**
+ * @brief What the routing scaffold programmed for one identifier of the bootstrap processor.
+ */
+typedef struct {
+    uint8_t routes;        /**< Routes it programmed. */
+    uint8_t routes_naming; /**< Of those, routes whose redirection entry names the identifier. */
+    uint32_t refused;      /**< Destinations it refused. */
+} InterruptControllersRouting_t;
+
+static bool interrupt_controllers_a_route_is_live(void)
+{
+    const uint8_t route_count = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+
+    for (uint8_t route_index = 0u; route_index < route_count; ++route_index)
+    {
+        if (!input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(route_index))
+            return true;
+    }
+    return false;
+}
+
+static uint8_t interrupt_controllers_routes_naming(uint32_t apic_id)
+{
+    const uint8_t route_count = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+    uint8_t routes_naming = 0u;
+
+    for (uint8_t route_index = 0u; route_index < route_count; ++route_index)
+    {
+        if (input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(
+                route_index) == apic_id)
+            ++routes_naming;
+    }
+    return routes_naming;
+}
+
+/**
+ * @brief Why the lines cannot be routed again on this machine, or NULL when they can.
+ */
+static const char *interrupt_controllers_why_the_lines_cannot_be_routed_again(void)
+{
+    if (input_output_advanced_programmable_interrupt_controller_get_programmed_route_count() == 0u)
+        return "the boot routed no line through an input/output controller";
+    if (interrupt_controllers_a_route_is_live())
+        return "a route is live, and routing it again would mask it and drop its interrupts";
+    return NULL;
+}
+
+/**
+ * @brief Routes the lines again as if the bootstrap processor had @p apic_id, then, the topology put
+ *        back, routes them as the boot did.
+ */
+static InterruptControllersRouting_t interrupt_controllers_route_as_if_the_bootstrap_processor_were(uint32_t apic_id)
+{
+    CpuTopologySnapshot_t found;
+    InterruptControllersRouting_t routing;
+
+    cpu_topology_debug_save(&found);
+    cpu_topology_set_runtime_local_apic_id(apic_id);
+    input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
+    routing.routes = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+    routing.routes_naming = interrupt_controllers_routes_naming(apic_id);
+    routing.refused = input_output_advanced_programmable_interrupt_controller_get_destinations_refused();
+    cpu_topology_debug_restore(&found);
+    input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
+    return routing;
+}
+
+static bool interrupt_controllers_routes_are_put_back(uint8_t routes)
+{
+    return input_output_advanced_programmable_interrupt_controller_get_programmed_route_count() == routes &&
+           interrupt_controllers_routes_naming(cpu_topology_get_local_apic_id()) == routes;
+}
+
+static int32_t interrupt_controllers_find_a_masked_route(void)
+{
+    const uint8_t route_count = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+
+    for (uint8_t route_index = 0u; route_index < route_count; ++route_index)
+    {
+        if (input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(route_index))
+            return (int32_t) route_index;
+    }
+    return -1;
+}
+
+static uint8_t interrupt_controllers_move_route(uint8_t isa_irq, uint32_t apic_id)
+{
+    return input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(isa_irq, apic_id);
+}
 
 /**
  * @brief The tick's contract, whichever timer keeps it: the profile's frequency, and ticks that arrive.
@@ -68,6 +165,153 @@ KERNEL_TEST(input_output_controller_is_ready)
                       "the kernel mapped one");
     kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_get_programmed_route_count() > 0u,
                       "and programmed routes through it");
+}
+
+/**
+ * @brief Every route the boot programmed names the bootstrap processor, read back from its
+ *        redirection entry.
+ *
+ * @details The routes named APIC ID 0, which is the bootstrap processor only when its identifier is 0,
+ *          as it always is under QEMU: the next tests give the topology other identifiers to tell the
+ *          two apart.
+ */
+KERNEL_TEST(every_route_names_the_bootstrap_processor)
+{
+    const uint32_t bootstrap = cpu_topology_get_local_apic_id();
+    const uint8_t routes = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+
+    if (input_output_advanced_programmable_interrupt_controller_get_mapped_count() == 0u)
+    {
+        kernel_test_skip(test, "the kernel mapped no input/output controller");
+        return;
+    }
+    kernel_test_measure(test, "bootstrap_apic_id", bootstrap);
+    if (bootstrap > INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR)
+    {
+        kernel_test_check(test, routes == 0u, "no line is routed to a processor no redirection entry can name");
+        kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_get_destinations_refused() > 0u,
+                          "and each line refused is counted");
+        return;
+    }
+    kernel_test_check(test, routes > 0u, "lines are routed");
+    kernel_test_check(test, interrupt_controllers_routes_naming(bootstrap) == routes,
+                      "every route names the bootstrap processor");
+}
+
+/**
+ * @brief The routes follow the bootstrap processor's identifier, up to 0xFE, the highest a physical
+ *        destination names.
+ *
+ * @details The topology is given another identifier and the lines are routed again, then routed back
+ *          once it is restored. Every route named APIC ID 0, whatever the identifier.
+ */
+KERNEL_TEST(routes_follow_the_bootstrap_processor_identifier)
+{
+    const char *why_not = interrupt_controllers_why_the_lines_cannot_be_routed_again();
+
+    if (why_not != NULL)
+    {
+        kernel_test_skip(test, why_not);
+        return;
+    }
+
+    const uint8_t routes = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+    const InterruptControllersRouting_t another =
+        interrupt_controllers_route_as_if_the_bootstrap_processor_were(INTERRUPT_CONTROLLERS_TEST_ANOTHER_PROCESSOR);
+    const InterruptControllersRouting_t highest = interrupt_controllers_route_as_if_the_bootstrap_processor_were(
+        INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR);
+
+    kernel_test_check(test, another.routes == routes && highest.routes == routes,
+                      "the same lines are routed whichever identifier the bootstrap processor has");
+    kernel_test_check(test, another.routes_naming == routes, "every route names 0x2A when the bootstrap processor is");
+    kernel_test_check(test, highest.routes_naming == routes,
+                      "and 0xFE, the highest identifier a physical destination names");
+    kernel_test_check(test, another.refused == 0u && highest.refused == 0u, "neither is refused");
+    kernel_test_check(test, interrupt_controllers_routes_are_put_back(routes),
+                      "the routes are put back as the boot programmed them");
+    kernel_test_measure(test, "routes", routes);
+}
+
+/**
+ * @brief A bootstrap processor no redirection entry can name gets no route, and each line refused is
+ *        counted: 0xFF, which a physical destination takes for a broadcast, and 0x100, past its 8 bits.
+ *
+ * @details Both were routed to APIC ID 0.
+ */
+KERNEL_TEST(a_bootstrap_processor_no_entry_can_name_gets_no_route)
+{
+    const char *why_not = interrupt_controllers_why_the_lines_cannot_be_routed_again();
+
+    if (why_not != NULL)
+    {
+        kernel_test_skip(test, why_not);
+        return;
+    }
+
+    const uint8_t routes = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+    const InterruptControllersRouting_t broadcast =
+        interrupt_controllers_route_as_if_the_bootstrap_processor_were(INTERRUPT_CONTROLLERS_TEST_BROADCAST);
+    const InterruptControllersRouting_t past_eight_bits =
+        interrupt_controllers_route_as_if_the_bootstrap_processor_were(INTERRUPT_CONTROLLERS_TEST_PAST_EIGHT_BITS);
+
+    kernel_test_check(test, broadcast.routes == 0u, "0xFF, a broadcast to a physical destination, gets no route");
+    kernel_test_check(test, past_eight_bits.routes == 0u, "nor does 0x100, past the destination's 8 bits");
+    kernel_test_check(test, broadcast.refused == routes && past_eight_bits.refused == routes,
+                      "each line refused is counted");
+    kernel_test_check(test, interrupt_controllers_routes_are_put_back(routes),
+                      "the routes are put back as the boot programmed them");
+}
+
+/**
+ * @brief Moving a route refuses an identifier its redirection entry cannot name, counts it, and leaves
+ *        the route where it was.
+ *
+ * @details The identifier was cut to 8 bits: 0x100 moved the route to APIC ID 0, and 0xFF made it a
+ *          broadcast.
+ */
+KERNEL_TEST(moving_a_route_refuses_an_identifier_its_entry_cannot_name)
+{
+    const int32_t masked_route = interrupt_controllers_find_a_masked_route();
+
+    if (masked_route < 0)
+    {
+        kernel_test_skip(test, "no route is masked, and moving a live one would steer its interrupts");
+        return;
+    }
+
+    const uint8_t route_index = (uint8_t) masked_route;
+    const uint8_t isa_irq =
+        input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(route_index);
+    const uint8_t found =
+        input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(route_index);
+    const uint32_t elsewhere = (found == INTERRUPT_CONTROLLERS_TEST_ANOTHER_PROCESSOR) ?
+                                   INTERRUPT_CONTROLLERS_TEST_YET_ANOTHER_PROCESSOR :
+                                   INTERRUPT_CONTROLLERS_TEST_ANOTHER_PROCESSOR;
+
+    const uint8_t moved = interrupt_controllers_move_route(isa_irq, elsewhere);
+    const uint8_t after_move =
+        input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(route_index);
+    const uint32_t refused_before = input_output_advanced_programmable_interrupt_controller_get_destinations_refused();
+    const uint8_t broadcast_taken = interrupt_controllers_move_route(isa_irq, INTERRUPT_CONTROLLERS_TEST_BROADCAST);
+    const uint8_t after_broadcast =
+        input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(route_index);
+    const uint8_t past_eight_bits_taken =
+        interrupt_controllers_move_route(isa_irq, INTERRUPT_CONTROLLERS_TEST_PAST_EIGHT_BITS);
+    const uint8_t after_past_eight_bits =
+        input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(route_index);
+    const uint32_t refused_after = input_output_advanced_programmable_interrupt_controller_get_destinations_refused();
+
+    (void) interrupt_controllers_move_route(isa_irq, found);
+
+    kernel_test_check(test, moved && after_move == elsewhere, "a route moves to another processor");
+    kernel_test_check(test, !broadcast_taken && after_broadcast == elsewhere,
+                      "0xFF is refused, and the route stays where it was");
+    kernel_test_check(test, !past_eight_bits_taken && after_past_eight_bits == elsewhere, "so is 0x100");
+    kernel_test_check(test, refused_after == refused_before + 2u, "each refusal is counted");
+    kernel_test_check(test,
+                      input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(
+                          route_index) == found,
+                      "the route is put back where it was found");
 }
 
 /**

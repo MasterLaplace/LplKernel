@@ -28,6 +28,7 @@
 static const char *io_apic_state_name = "ioapic-not-initialized";
 static uint8_t io_apic_mapped_count = 0u;
 static uint8_t io_apic_route_count = 0u;
+static uint32_t io_apic_destinations_refused = 0u;
 static InputOutputApicUnit_t io_apic_units[INPUT_OUTPUT_APIC_MAX_COUNT] = {0};
 static InputOutputApicRouteInfo_t io_apic_routes[INPUT_OUTPUT_APIC_MAX_ROUTES] = {0};
 
@@ -211,6 +212,7 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
     io_apic_state_name = "ioapic-init-start";
     io_apic_mapped_count = 0u;
     io_apic_route_count = 0u;
+    io_apic_destinations_refused = 0u;
 
     for (uint8_t index = 0u; index < INPUT_OUTPUT_APIC_MAX_COUNT; ++index)
     {
@@ -280,6 +282,11 @@ uint8_t input_output_advanced_programmable_interrupt_controller_get_mapped_count
 uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_count(void)
 {
     return io_apic_route_count;
+}
+
+uint32_t input_output_advanced_programmable_interrupt_controller_get_destinations_refused(void)
+{
+    return io_apic_destinations_refused;
 }
 
 uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(uint8_t route_index)
