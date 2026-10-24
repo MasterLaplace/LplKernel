@@ -1,7 +1,8 @@
 # The corpus: 114 distinct machines of linuxhw/ACPI at d6d30c6ef6f45506567f25a302c64f009d8f5f4e,
 # desktops, notebooks, tablets and servers of every FADT revision from 1.0 to 6.5, one report per line.
-# 90 are what select_sample.py picks from the repository's tree listing. The other 24 complete a set
-# of 42 clients of the 2017 to 2024 models, 21 Intel and 21 AMD, and every server with a dump.
+# 90 are what select_sample.py picks from the repository's tree listing, every server with a dump
+# among them. The other 24 are clients of the 2017 to 2024 models: with 18 of the 90, they make a set
+# of 42 clients, 21 Intel and 21 AMD.
 All In One/Acer/Aspire/Aspire Z3-715/9F6A5601CE04
 All In One/Acidanthera/iMac17/iMac17,1/1414BFD2B4B8
 All In One/Apple/iMac11/iMac11,3/9C99E007509B

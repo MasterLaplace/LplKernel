@@ -10,7 +10,6 @@
 #define RECORDED_MACHINE_FIRST_ADDRESS      0x00100000u /**< Where the tables the FADT does not name are served from. */
 #define RECORDED_MACHINE_ALIGNMENT          16u         /**< Alignment of each table served there. */
 #define RECORDED_MACHINE_MAXIMUM_LENGTH     0x01000000u /**< A longer header length is taken for a corrupt one. */
-#define RECORDED_MACHINE_HEADER_BYTES       36u         /**< Bytes of a table header. */
 #define RECORDED_MACHINE_ROOT_POINTER_BYTES 48u         /**< Bytes kept for the root pointer, before the XSDT. */
 #define RECORDED_MACHINE_FADT_DSDT          40u         /**< Offset of a FADT's 32-bit DSDT field. */
 #define RECORDED_MACHINE_FADT_EXTENDED_DSDT 140u        /**< Offset of a FADT's X_DSDT field. */
@@ -180,19 +179,6 @@ static bool recorded_machine_is_left_out(const RecordedTable_t *table)
 }
 
 /**
- * @brief Pads @p table to the length its header gives, so that every byte the header claims can be
- *        mapped.
- */
-static bool recorded_machine_pad_to_header(RecordedTable_t *table)
-{
-    const uint64_t length = recorded_machine_read_field(table, 4u, 4u);
-
-    if (length <= table->length || length > RECORDED_MACHINE_MAXIMUM_LENGTH)
-        return true;
-    return recorded_machine_grow(table, (uint32_t) length);
-}
-
-/**
  * @brief The first address from @p cursor, aligned, where @p length bytes overlap none of the
  *        @p reserved_count ranges at @p reserved, each @p reserved_length bytes long.
  */
@@ -253,42 +239,77 @@ static void recorded_machine_write_root(uint8_t *root, uint64_t address, const u
                           offsetof(AdvancedConfigurationAndPowerInterfaceRsdp_t, extended_checksum));
 
     memcpy(xsdt->signature, "XSDT", sizeof(xsdt->signature));
-    xsdt->length = RECORDED_MACHINE_HEADER_BYTES + entry_count * (uint32_t) sizeof(uint64_t);
+    xsdt->length = (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t) +
+                   entry_count * (uint32_t) sizeof(uint64_t);
     xsdt->revision = 1u;
     memcpy(xsdt->oem_id, "LPLKRN", sizeof(xsdt->oem_id));
     memcpy(xsdt->oem_table_id, "RECORDED", sizeof(xsdt->oem_table_id));
-    memcpy((uint8_t *) xsdt + RECORDED_MACHINE_HEADER_BYTES, entries, entry_count * sizeof(uint64_t));
+    memcpy((uint8_t *) xsdt + (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t), entries,
+           entry_count * sizeof(uint64_t));
     recorded_machine_seal((uint8_t *) xsdt, xsdt->length,
                           offsetof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t, checksum));
 }
 
 /**
- * @brief Serves the tables of @p machine: the DSDT where the FADT names it, every other one from
+ * @brief Whether @p address is one of the @p count addresses at @p addresses.
+ */
+static bool recorded_machine_holds(const uint64_t *addresses, uint32_t count, uint64_t address)
+{
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        if (addresses[index] == address)
+            return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Serves @p dsdt at every address a FADT of @p machine names, by its 32-bit field or by
+ *        X_DSDT, whichever FADT the directory takes, and adds those addresses to @p reserved.
+ */
+static bool recorded_machine_serve_dsdt(RecordedMachine_t *machine, const RecordedTable_t *dsdt, uint64_t *reserved,
+                                        uint32_t *reserved_count, const char **error)
+{
+    for (uint32_t index = 0u; dsdt != NULL && index < machine->table_count; ++index)
+    {
+        const RecordedTable_t *fadt = &machine->tables[index];
+
+        if (memcmp(fadt->signature, "FACP", 4u) != 0)
+            continue;
+
+        const uint64_t named[] = {
+            recorded_machine_read_field(fadt, RECORDED_MACHINE_FADT_DSDT, 4u),
+            recorded_machine_read_field(fadt, RECORDED_MACHINE_FADT_EXTENDED_DSDT, 8u),
+        };
+
+        for (uint32_t field = 0u; field < 2u; ++field)
+        {
+            if (named[field] == 0u || recorded_machine_holds(reserved, *reserved_count, named[field]))
+                continue;
+            if (!advanced_configuration_and_power_interface_simulated_host_place(&machine->simulated, named[field],
+                                                                                 dsdt->bytes, dsdt->length))
+            {
+                *error = "the DSDT cannot be served where a FADT names it";
+                return false;
+            }
+            reserved[(*reserved_count)++] = named[field];
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Serves the tables of @p machine: the DSDT where each FADT names it, every other one from
  *        RECORDED_MACHINE_FIRST_ADDRESS, then the root pointer and the XSDT that list them.
  */
 static bool recorded_machine_serve(RecordedMachine_t *machine, const char **error)
 {
-    const RecordedTable_t *fadt = recorded_machine_find(machine, "FACP");
     RecordedTable_t *dsdt = recorded_machine_find(machine, "DSDT");
-    const uint64_t named[] = {
-        recorded_machine_read_field(fadt, RECORDED_MACHINE_FADT_DSDT, 4u),
-        recorded_machine_read_field(fadt, RECORDED_MACHINE_FADT_EXTENDED_DSDT, 8u),
-    };
-    uint64_t reserved[2];
+    uint64_t reserved[2u * RECORDED_MACHINE_MAX_TABLES];
     uint32_t reserved_count = 0u;
 
-    for (uint32_t index = 0u; dsdt != NULL && index < 2u; ++index)
-    {
-        if (named[index] == 0u || (reserved_count == 1u && reserved[0] == named[index]))
-            continue;
-        if (!advanced_configuration_and_power_interface_simulated_host_place(&machine->simulated, named[index],
-                                                                             dsdt->bytes, dsdt->length))
-        {
-            *error = "the DSDT cannot be served where the FADT names it";
-            return false;
-        }
-        reserved[reserved_count++] = named[index];
-    }
+    if (!recorded_machine_serve_dsdt(machine, dsdt, reserved, &reserved_count, error))
+        return false;
 
     uint64_t entries[RECORDED_MACHINE_MAX_TABLES];
     uint32_t entry_count = 0u;
@@ -315,8 +336,9 @@ static bool recorded_machine_serve(RecordedMachine_t *machine, const char **erro
         cursor = address + table->length;
     }
 
-    const uint32_t root_length =
-        RECORDED_MACHINE_ROOT_POINTER_BYTES + RECORDED_MACHINE_HEADER_BYTES + entry_count * (uint32_t) sizeof(uint64_t);
+    const uint32_t root_length = RECORDED_MACHINE_ROOT_POINTER_BYTES +
+                                 (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t) +
+                                 entry_count * (uint32_t) sizeof(uint64_t);
     const uint64_t root_address =
         recorded_machine_free_address(cursor, root_length, reserved, reserved_count, dsdt_length);
 
@@ -350,11 +372,6 @@ bool recorded_machine_open(RecordedMachine_t *machine, const char *path, const c
 
         if (table->length >= 4u)
             memcpy(table->signature, table->bytes, sizeof(table->signature));
-        if (!recorded_machine_pad_to_header(table))
-        {
-            *error = "no memory for a table";
-            return false;
-        }
     }
     return recorded_machine_serve(machine, error);
 }

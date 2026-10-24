@@ -95,11 +95,12 @@ typedef struct AdvancedConfigurationAndPowerInterfaceTable {
 typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
     const AdvancedConfigurationAndPowerInterfaceHost_t *host; /**< The host its tables are mapped through. */
     bool walked;                                              /**< Whether a valid root table was found and walked. */
-    uint8_t rsdp_revision;                      /**< 0 for ACPI 1.0; 2 or more when the pointer may name an XSDT. */
-    bool extended_root;                         /**< Whether the entries came from the XSDT, not the RSDT. */
-    uint32_t root_physical_address;             /**< The root table walked. */
-    uint32_t table_count;                       /**< Tables recorded. */
-    uint32_t unreachable_count;                 /**< Tables above 4 GiB, past the capacity, or not mappable. */
+    uint8_t rsdp_revision;          /**< 0 for ACPI 1.0; 2 or more when the pointer may name an XSDT. */
+    bool extended_root;             /**< Whether the entries came from the XSDT, not the RSDT. */
+    uint32_t root_physical_address; /**< The root table walked. */
+    uint32_t table_count;           /**< Tables recorded. */
+    uint32_t
+        unreachable_count; /**< Tables above 4 GiB, the root pointer included, past the capacity, or not mappable. */
     uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
                                                      FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL. */
     AdvancedConfigurationAndPowerInterfaceTable_t
@@ -342,8 +343,8 @@ extern const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configu
  *
  * @param host          The host whose firmware is read.
  * @param out_directory Emptied, then filled with every table found.
- * @return false when the host gives no pointer below 4 GiB, or one that is invalid or names no
- *         valid root table.
+ * @return false when the host gives no pointer, one above 4 GiB, which is counted unreachable, or
+ *         one that is invalid or names no valid root table.
  */
 extern bool advanced_configuration_and_power_interface_read_directory(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,

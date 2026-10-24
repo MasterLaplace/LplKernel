@@ -196,6 +196,9 @@ static void made_up_firmware_write(const MadeUpFirmware_t *firmware, uint8_t rsd
 /**
  * @brief Serves the made-up firmware's page through a simulated host whose root pointer is the
  *        one at MADE_UP_FIRMWARE_RSDP_OFFSET.
+ *
+ * @details The page is served again MADE_UP_FIRMWARE_ABOVE_4_GIB higher, so that an address a test
+ *          puts above 4 GiB names real bytes, and only the directory's refusal keeps them out.
  */
 static void made_up_firmware_open(MadeUpFirmware_t *firmware)
 {
@@ -204,6 +207,9 @@ static void made_up_firmware_open(MadeUpFirmware_t *firmware)
     advanced_configuration_and_power_interface_simulated_host_open(&made_up_firmware_host);
     (void) advanced_configuration_and_power_interface_simulated_host_place(&made_up_firmware_host, firmware->physical,
                                                                            firmware->page, MADE_UP_FIRMWARE_PAGE_BYTES);
+    (void) advanced_configuration_and_power_interface_simulated_host_place(
+        &made_up_firmware_host, MADE_UP_FIRMWARE_ABOVE_4_GIB + firmware->physical, firmware->page,
+        MADE_UP_FIRMWARE_PAGE_BYTES);
     made_up_firmware_host.root_system_description_pointer = firmware->physical + MADE_UP_FIRMWARE_RSDP_OFFSET;
 }
 
@@ -219,13 +225,16 @@ static bool made_up_firmware_read(void)
 }
 
 /**
- * @brief Unmaps what the directory read, and checks that every window it mapped is unmapped.
+ * @brief Unmaps what the directory read, and checks that every window it mapped is unmapped, each
+ *        by the address and the length it was mapped with.
  */
 static void made_up_firmware_release(KernelTest_t *test)
 {
     advanced_configuration_and_power_interface_release_directory(&made_up_firmware_directory);
     kernel_test_check(test, made_up_firmware_host.outstanding_maps == 0u,
                       "every window the directory mapped is unmapped once it is released");
+    kernel_test_check(test, made_up_firmware_host.mismatched_unmaps == 0u,
+                      "every unmap names a window by the address and the length it was mapped with");
 }
 
 /**
@@ -420,7 +429,7 @@ KERNEL_TEST(the_facs_is_the_one_the_32_bit_field_names_when_it_is_set)
 
 /**
  * @brief A host that gives no root pointer, or one above 4 GiB, has no directory read, and nothing
- *        mapped.
+ *        mapped; one above 4 GiB is counted unreachable.
  */
 KERNEL_TEST(a_host_without_a_root_pointer_below_4_gib_gives_no_directory)
 {
@@ -438,5 +447,7 @@ KERNEL_TEST(a_host_without_a_root_pointer_below_4_gib_gives_no_directory)
         MADE_UP_FIRMWARE_ABOVE_4_GIB + firmware.physical + MADE_UP_FIRMWARE_RSDP_OFFSET;
     kernel_test_check(test, !made_up_firmware_read() && made_up_firmware_directory.table_count == 0u,
                       "a root pointer above 4 GiB is not truncated to one below");
+    kernel_test_check(test, made_up_firmware_directory.unreachable_count == 1u,
+                      "a root pointer above 4 GiB is counted unreachable, not taken for none");
     made_up_firmware_release(test);
 }

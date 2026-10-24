@@ -30,7 +30,8 @@ static void harness_print_directory(const AdvancedConfigurationAndPowerInterface
  * @brief Walks the tables of the dump at @p path as the kernel walks a live machine's, and prints
  *        the directory.
  *
- * @return 0 when the directory was read and every window it mapped was unmapped, 1 otherwise.
+ * @return 0 when the directory was read and every window it mapped was unmapped by its address and
+ *         length, 1 otherwise.
  */
 static int harness_walk_machine(const char *path)
 {
@@ -47,9 +48,10 @@ static int harness_walk_machine(const char *path)
     {
         harness_print_directory(&directory);
         advanced_configuration_and_power_interface_release_directory(&directory);
-        status = (machine.simulated.outstanding_maps == 0u) ? 0 : 1;
+        status = (machine.simulated.outstanding_maps == 0u && machine.simulated.mismatched_unmaps == 0u) ? 0 : 1;
         if (status != 0)
-            fprintf(stderr, "test-acpi: %s: %u windows left mapped\n", path, machine.simulated.outstanding_maps);
+            fprintf(stderr, "test-acpi: %s: %u windows left mapped, %u unmaps that named no window\n", path,
+                    machine.simulated.outstanding_maps, machine.simulated.mismatched_unmaps);
     }
     recorded_machine_close(&machine);
     return status;

@@ -15,11 +15,12 @@
  * @file recorded_machine.h
  * @brief The firmware of a machine recorded by acpidump, served by a simulated host.
  *
- * A dump holds every table the machine's firmware handed to Linux, but neither its root pointer
- * nor its root table, and every table address is 0. What the FADT names keeps its real address:
- * the DSDT is served there. Every other table is served at an address of the harness's choosing,
- * and a root pointer and an XSDT that list them all are written, so that the kernel walks the
- * recorded machine as it walks a live one.
+ * A dump holds every table the machine's firmware handed to Linux, the SSDTs it loads at run time
+ * included, but neither its root pointer nor its root table, and every table address is 0. What a
+ * FADT names keeps its real address: the DSDT is served there. Every other table is served at an
+ * address of the harness's choosing, and a root pointer and an XSDT that list them all are
+ * written. A live machine's XSDT leaves out the SSDTs loaded at run time; telling them apart takes
+ * the interpreter's Load, so until then the directory holds them too.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -41,7 +42,7 @@
  */
 typedef struct RecordedTable {
     char signature[4]; /**< Its four letters, from its first bytes. */
-    uint8_t *bytes;    /**< Its bytes, at least as many as its header's length. */
+    uint8_t *bytes;    /**< Its bytes, as many as the dump holds: a table cut short is never padded. */
     uint32_t length;   /**< How many of them the table has. */
     uint32_t capacity; /**< How many @p bytes can hold before it grows. */
 } RecordedTable_t;

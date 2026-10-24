@@ -35,20 +35,31 @@ static const void *simulated_host_map_firmware(void *context, uint64_t physical_
     const AdvancedConfigurationAndPowerInterfaceSimulatedRange_t *range =
         simulated_host_range_holding(simulated, physical_address, length);
 
-    if (range == NULL || length == 0u)
+    if (range == NULL || length == 0u ||
+        simulated->outstanding_maps == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS)
         return NULL;
+
+    const void *address = range->bytes + (physical_address - range->physical_address);
+
+    simulated->maps[simulated->outstanding_maps].address = address;
+    simulated->maps[simulated->outstanding_maps].length = length;
     ++simulated->outstanding_maps;
-    return range->bytes + (physical_address - range->physical_address);
+    return address;
 }
 
 static void simulated_host_unmap_firmware(void *context, const void *address, uint64_t length)
 {
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
 
-    (void) address;
-    (void) length;
-    if (simulated->outstanding_maps != 0u)
-        --simulated->outstanding_maps;
+    for (uint32_t index = 0u; index < simulated->outstanding_maps; ++index)
+    {
+        if (simulated->maps[index].address == address && simulated->maps[index].length == length)
+        {
+            simulated->maps[index] = simulated->maps[--simulated->outstanding_maps];
+            return;
+        }
+    }
+    ++simulated->mismatched_unmaps;
 }
 
 void advanced_configuration_and_power_interface_simulated_host_open(
@@ -60,6 +71,7 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.unmap_firmware = simulated_host_unmap_firmware;
     simulated->root_system_description_pointer = 0u;
     simulated->outstanding_maps = 0u;
+    simulated->mismatched_unmaps = 0u;
     simulated->range_count = 0u;
 }
 

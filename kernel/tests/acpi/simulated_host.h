@@ -34,6 +34,8 @@
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES                                           \
     128u /**< Ranges one simulated host holds: a recorded machine's tables, each placed once. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS                                             \
+    128u /**< Maps one simulated host keeps open at once: a full directory, and the one being opened. */
 
 /**
  * @brief Bytes a simulated host serves at a physical address.
@@ -45,8 +47,16 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedRange {
 } AdvancedConfigurationAndPowerInterfaceSimulatedRange_t;
 
 /**
+ * @brief A map a simulated host gave and that has not been unmapped.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedMap {
+    const void *address; /**< What map_firmware returned. */
+    uint64_t length;     /**< The length it was given. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedMap_t;
+
+/**
  * @brief A host whose physical memory is the ranges placed in it: a map succeeds when one range
- *        holds every byte asked for.
+ *        holds every byte asked for, and an unmap must name an open map by its address and length.
  *
  * @details It points at itself through host.context, so it is used where it was opened and never
  *          copied.
@@ -54,10 +64,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedRange {
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */
     uint64_t root_system_description_pointer;          /**< What the host gives as the root pointer, or 0. */
-    uint32_t outstanding_maps;                         /**< Maps not unmapped yet. */
+    uint32_t outstanding_maps;                         /**< Maps not unmapped yet, each kept in maps. */
+    uint32_t mismatched_unmaps;                        /**< Unmaps whose address and length name no open map. */
     uint32_t range_count;                              /**< Ranges placed. */
     AdvancedConfigurationAndPowerInterfaceSimulatedRange_t
         ranges[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES]; /**< In the order placed. */
+    AdvancedConfigurationAndPowerInterfaceSimulatedMap_t
+        maps[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS]; /**< The open maps, in no order. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedHost_t;
 
 /**

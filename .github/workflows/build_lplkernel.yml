@@ -26,6 +26,9 @@ on:
       - '**/build_lplkernel.yml'
       - 'tools/acpi/**'
 
+permissions:
+  contents: read
+
 jobs:
   build_lplkernel:
     timeout-minutes: 20
@@ -187,6 +190,9 @@ jobs:
     - uses: xmake-io/github-action-setup-xmake@3a1a5dddfc7fa625d9a698738334bf55655a861a # v1.2.5
       with:
         xmake-version: v3.1.1
+
+    - name: The ACPI layer holds no architecture
+      run: tools/acpi/check-portable.sh
 
     - name: The ACPI tests on the host
       run: |

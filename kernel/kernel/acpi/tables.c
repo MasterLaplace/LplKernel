@@ -438,8 +438,13 @@ bool advanced_configuration_and_power_interface_read_directory(
 
     const uint64_t rsdp_physical_address = host->root_system_description_pointer(host->context);
 
-    if (rsdp_physical_address == 0u || (rsdp_physical_address >> 32u) != 0u)
+    if (rsdp_physical_address == 0u)
         return false;
+    if ((rsdp_physical_address >> 32u) != 0u)
+    {
+        ++out_directory->unreachable_count;
+        return false;
+    }
 
     const AdvancedConfigurationAndPowerInterfaceRsdp_t *rsdp =
         host->map_firmware(host->context, rsdp_physical_address, sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t));

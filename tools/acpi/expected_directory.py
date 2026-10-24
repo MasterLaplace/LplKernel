@@ -5,11 +5,12 @@ Usage: python3 -I tools/acpi/expected_directory.py <dump>
 Computed from the dump alone, apart from the kernel's code, with the reader of
 real_firmware_census.py. A dump holds no root pointer and no root table, so the harness writes an
 XSDT that lists every table but the root pointer, the root tables, the FACS and the DSDT, in the
-dump's order; the DSDT follows when the FADT names one, by X_DSDT below 4 GiB or by its 32-bit field,
-and is served there.
+dump's order; the DSDT follows when the FADT the directory takes names one, by X_DSDT below 4 GiB or
+by its 32-bit field. The harness serves the DSDT at every address a FADT names, and serves each table
+with as many bytes as the dump holds, never padded.
 A directory records 64 tables and counts the rest unreachable, with every table whose bytes or
-header length cannot be a table. The FACS is the 32-bit FIRMWARE_CTRL when it is not 0, else
-X_FIRMWARE_CTRL when it lies below 4 GiB, else none.
+header length cannot be a table, or whose header claims more bytes than the dump holds. The FACS is
+the 32-bit FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL when it lies below 4 GiB, else none.
 """
 import os
 import sys
@@ -38,7 +39,18 @@ def can_be_mapped(data):
     if len(data) < HEADER_BYTES:
         return False
     length = int.from_bytes(data[4:8], "little")
-    return HEADER_BYTES <= length <= MAXIMUM_LENGTH
+    return HEADER_BYTES <= length <= min(len(data), MAXIMUM_LENGTH)
+
+
+def checksum_holds(data):
+    length = int.from_bytes(data[4:8], "little")
+    return sum(data[:length]) % 256 == 0
+
+
+def lookup(recorded, signature):
+    """The table the directory gives for a signature: the first whose checksum holds, else the first."""
+    matching = [data for data in recorded if data[:4] == signature]
+    return next((data for data in matching if checksum_holds(data)), matching[0] if matching else None)
 
 
 def main():
@@ -54,7 +66,7 @@ def main():
             recorded.append(data)
 
     facs = 0
-    fadt_recorded = next((data for data in recorded if data[:4] == b"FACP"), None)
+    fadt_recorded = lookup(recorded, b"FACP")
     if fadt_recorded is not None:
         length = int.from_bytes(fadt_recorded[4:8], "little")
         dsdt_32 = field(fadt_recorded, length, 40, 4)
