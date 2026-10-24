@@ -27,6 +27,8 @@
 #ifndef KERNEL_ACPI_TABLES_H
 #define KERNEL_ACPI_TABLES_H
 
+#include <kernel/acpi/host.h>
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -91,12 +93,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceTable {
  *        then the DSDT the FADT names.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
-    bool walked;                                /**< Whether a valid root table was found and walked. */
-    uint8_t rsdp_revision;                      /**< 0 for ACPI 1.0; 2 or more when the pointer may name an XSDT. */
-    bool extended_root;                         /**< Whether the entries came from the XSDT, not the RSDT. */
-    uint32_t root_physical_address;             /**< The root table walked. */
-    uint32_t table_count;                       /**< Tables recorded. */
-    uint32_t unreachable_count;                 /**< Tables above 4 GiB, past the capacity, or not mappable. */
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host; /**< The host its tables are mapped through. */
+    bool walked;                                              /**< Whether a valid root table was found and walked. */
+    uint8_t rsdp_revision;          /**< 0 for ACPI 1.0; 2 or more when the pointer may name an XSDT. */
+    bool extended_root;             /**< Whether the entries came from the XSDT, not the RSDT. */
+    uint32_t root_physical_address; /**< The root table walked. */
+    uint32_t table_count;           /**< Tables recorded. */
+    uint32_t
+        unreachable_count; /**< Tables above 4 GiB, the root pointer included, past the capacity, or not mappable. */
     uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
                                                      FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL. */
     AdvancedConfigurationAndPowerInterfaceTable_t
@@ -327,8 +331,8 @@ advanced_configuration_and_power_interface_read_madt(const AdvancedConfiguration
 extern const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configuration_and_power_interface_madt(void);
 
 /**
- * @brief Walks the tables a root system description pointer leads to, each mapped through a
- *        firmware window.
+ * @brief Walks the tables the root system description pointer of a host leads to, each mapped
+ *        through a firmware window of that host.
  *
  * @details The XSDT is walked when the pointer's revision is 2 or more and it names one below 4 GiB
  *          whose signature and checksum hold; the RSDT otherwise, which is also what an XSDT that
@@ -337,16 +341,18 @@ extern const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configu
  *          X_DSDT wins when the FADT is long enough to hold it and it is not 0, as in ACPICA's
  *          AcpiTbSelectAddress, unless it lies above 4 GiB: the 32-bit DSDT is taken then.
  *
- * @param rsdp_physical_address Physical address of the root system description pointer.
- * @param out_directory         Emptied, then filled with every table found.
- * @return false when the pointer is invalid, or names no valid root table.
+ * @param host          The host whose firmware is read.
+ * @param out_directory Emptied, then filled with every table found.
+ * @return false when the host gives no pointer, one above 4 GiB, which is counted unreachable, or
+ *         one that is invalid or names no valid root table.
  */
 extern bool advanced_configuration_and_power_interface_read_directory(
-    uint32_t rsdp_physical_address, AdvancedConfigurationAndPowerInterfaceDirectory_t *out_directory);
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfaceDirectory_t *out_directory);
 
 /**
  * @brief Unmaps every table of a directory advanced_configuration_and_power_interface_read_directory
- *        filled, and empties it.
+ *        filled, through the host it was read from, and empties it.
  *
  * @param directory The directory, whose table headers must not be used afterwards.
  */
@@ -354,8 +360,8 @@ extern void advanced_configuration_and_power_interface_release_directory(
     AdvancedConfigurationAndPowerInterfaceDirectory_t *directory);
 
 /**
- * @brief The directory of the firmware's tables, read on the first call from the root pointer the
- *        host gives.
+ * @brief The directory of this machine's firmware tables, read on the first call through
+ *        advanced_configuration_and_power_interface_machine_host.
  *
  * @return The directory, whose walked field is false when no valid root table was found.
  */

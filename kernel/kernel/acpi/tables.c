@@ -49,35 +49,37 @@ static uint8_t acpi_signature_matches(const char *lhs, const char *rhs, size_t l
 }
 
 /**
- * @brief Maps every byte of the table at @p physical_address through a firmware window: its header
- *        first, for its length, then the whole of it.
+ * @brief Maps every byte of the table at @p physical_address through a firmware window of @p host:
+ *        its header first, for its length, then the whole of it.
  *
  * @return Its header, or NULL when it cannot be mapped, or its length is shorter than a header or
  *         longer than ACPI_TABLE_MAXIMUM_LENGTH.
  */
-static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *acpi_map_table(uint32_t physical_address)
+static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
+acpi_map_table(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t physical_address)
 {
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
-        advanced_configuration_and_power_interface_host_map_firmware(physical_address, sizeof(*header));
+        host->map_firmware(host->context, physical_address, sizeof(*header));
 
     if (header == NULL)
         return NULL;
 
     const uint32_t length = header->length;
 
-    advanced_configuration_and_power_interface_host_unmap_firmware(header, sizeof(*header));
+    host->unmap_firmware(host->context, header, sizeof(*header));
     if (length < sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t) || length > ACPI_TABLE_MAXIMUM_LENGTH)
         return NULL;
 
-    return advanced_configuration_and_power_interface_host_map_firmware(physical_address, length);
+    return host->map_firmware(host->context, physical_address, length);
 }
 
 /**
- * @brief Unmaps a table acpi_map_table mapped.
+ * @brief Unmaps a table acpi_map_table mapped through @p host.
  */
-static void acpi_unmap_table(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
+static void acpi_unmap_table(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                             const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
 {
-    advanced_configuration_and_power_interface_host_unmap_firmware(header, header->length);
+    host->unmap_firmware(host->context, header, header->length);
 }
 
 /**
@@ -93,7 +95,7 @@ static void acpi_record_table(AdvancedConfigurationAndPowerInterfaceDirectory_t 
         return;
     }
 
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = acpi_map_table(physical_address);
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = acpi_map_table(directory->host, physical_address);
 
     if (header == NULL)
     {
@@ -112,18 +114,19 @@ static void acpi_record_table(AdvancedConfigurationAndPowerInterfaceDirectory_t 
 }
 
 /**
- * @brief Maps the root table at @p physical_address when its signature is @p signature and its
- *        checksum holds.
+ * @brief Maps the root table at @p physical_address through @p host when its signature is
+ *        @p signature and its checksum holds.
  *
  * @return Its header, or NULL.
  */
-static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *acpi_map_root(uint32_t physical_address,
-                                                                              const char *signature)
+static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
+acpi_map_root(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t physical_address,
+              const char *signature)
 {
     if (physical_address == 0u)
         return NULL;
 
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *root = acpi_map_table(physical_address);
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *root = acpi_map_table(host, physical_address);
 
     if (root == NULL)
         return NULL;
@@ -131,7 +134,7 @@ static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *acpi_map_root(ui
         advanced_configuration_and_power_interface_checksum_holds(root, root->length))
         return root;
 
-    acpi_unmap_table(root);
+    acpi_unmap_table(host, root);
     return NULL;
 }
 
@@ -425,15 +428,26 @@ bool advanced_configuration_and_power_interface_checksum_holds(const void *bytes
 }
 
 bool advanced_configuration_and_power_interface_read_directory(
-    uint32_t rsdp_physical_address, AdvancedConfigurationAndPowerInterfaceDirectory_t *out_directory)
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfaceDirectory_t *out_directory)
 {
-    if (out_directory == NULL)
+    if (host == NULL || out_directory == NULL)
         return false;
     memset(out_directory, 0, sizeof(*out_directory));
+    out_directory->host = host;
+
+    const uint64_t rsdp_physical_address = host->root_system_description_pointer(host->context);
+
+    if (rsdp_physical_address == 0u)
+        return false;
+    if ((rsdp_physical_address >> 32u) != 0u)
+    {
+        ++out_directory->unreachable_count;
+        return false;
+    }
 
     const AdvancedConfigurationAndPowerInterfaceRsdp_t *rsdp =
-        advanced_configuration_and_power_interface_host_map_firmware(
-            rsdp_physical_address, sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t));
+        host->map_firmware(host->context, rsdp_physical_address, sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t));
 
     if (rsdp == NULL)
         return false;
@@ -451,15 +465,14 @@ bool advanced_configuration_and_power_interface_read_directory(
     const uint64_t xsdt_physical_address = extended ? rsdp->xsdt_address : 0u;
 
     out_directory->rsdp_revision = rsdp->revision;
-    advanced_configuration_and_power_interface_host_unmap_firmware(
-        rsdp, sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t));
+    host->unmap_firmware(host->context, rsdp, sizeof(AdvancedConfigurationAndPowerInterfaceRsdp_t));
     if (!valid)
         return false;
 
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *root = NULL;
 
     if (xsdt_physical_address != 0u && (xsdt_physical_address >> 32u) == 0u)
-        root = acpi_map_root((uint32_t) xsdt_physical_address, ACPI_XSDT_SIGNATURE);
+        root = acpi_map_root(host, (uint32_t) xsdt_physical_address, ACPI_XSDT_SIGNATURE);
     if (root != NULL)
     {
         out_directory->extended_root = true;
@@ -467,14 +480,14 @@ bool advanced_configuration_and_power_interface_read_directory(
     }
     else
     {
-        root = acpi_map_root(rsdt_physical_address, ACPI_RSDT_SIGNATURE);
+        root = acpi_map_root(host, rsdt_physical_address, ACPI_RSDT_SIGNATURE);
         if (root == NULL)
             return false;
         out_directory->root_physical_address = rsdt_physical_address;
     }
 
     acpi_record_root_entries(out_directory, root, out_directory->extended_root ? sizeof(uint64_t) : sizeof(uint32_t));
-    acpi_unmap_table(root);
+    acpi_unmap_table(host, root);
 
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt =
         advanced_configuration_and_power_interface_find_in_directory(out_directory, ACPI_FADT_SIGNATURE);
@@ -499,7 +512,7 @@ void advanced_configuration_and_power_interface_release_directory(
         return;
 
     for (uint32_t index = 0u; index < directory->table_count; ++index)
-        acpi_unmap_table(directory->tables[index].header);
+        acpi_unmap_table(directory->host, directory->tables[index].header);
     memset(directory, 0, sizeof(*directory));
 }
 
@@ -507,13 +520,9 @@ const AdvancedConfigurationAndPowerInterfaceDirectory_t *advanced_configuration_
 {
     if (!acpi_directory_read)
     {
-        const uint64_t rsdp_physical_address =
-            advanced_configuration_and_power_interface_host_root_system_description_pointer();
-
         acpi_directory_read = true;
-        if (rsdp_physical_address != 0u && (rsdp_physical_address >> 32u) == 0u)
-            (void) advanced_configuration_and_power_interface_read_directory((uint32_t) rsdp_physical_address,
-                                                                             &acpi_directory);
+        (void) advanced_configuration_and_power_interface_read_directory(
+            &advanced_configuration_and_power_interface_machine_host, &acpi_directory);
     }
     return &acpi_directory;
 }

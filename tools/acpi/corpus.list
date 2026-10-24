@@ -1,0 +1,119 @@
+# The corpus: 114 distinct machines of linuxhw/ACPI at d6d30c6ef6f45506567f25a302c64f009d8f5f4e,
+# desktops, notebooks, tablets and servers of every FADT revision from 1.0 to 6.5, one report per line.
+# 90 are what select_sample.py picks from the repository's tree listing, every server with a dump
+# among them. The other 24 are clients of the 2017 to 2024 models: with 18 of the 90, they make a set
+# of 42 clients, 21 Intel and 21 AMD.
+All In One/Acer/Aspire/Aspire Z3-715/9F6A5601CE04
+All In One/Acidanthera/iMac17/iMac17,1/1414BFD2B4B8
+All In One/Apple/iMac11/iMac11,3/9C99E007509B
+All In One/Apple/iMac12/iMac12,2/521204017BE2
+All In One/Apple/iMac12/iMac12,2/54AE332D4943
+All In One/Apple/iMac8/iMac8,1/D19176E847E3
+All In One/Dell/Inspiron/Inspiron One 2310/5F83FBD970E4
+Convertible/ASUSTek Computer/ROG/ROG Flow X16 GV601VV_GV601VV/5CF203E984E3
+Convertible/Dell/Latitude/Latitude 7400 2-in-1/5DA0C196CB26
+Convertible/Hewlett-Packard/ENVY/ENVY x360 Convertible 15-dr1xxx/6FE4CE9270F1
+Convertible/Lenovo/IdeaPadFlex/IdeaPadFlex 5 14ITL05 82HS/9192B985B108
+Convertible/Lenovo/ThinkPad/ThinkPad X1 Yoga Gen 8 21HRS2KF00/B184FD76ACEB
+Convertible/Lenovo/Yoga/Yoga 7 14ARB7 82QF/F1C26F90A9A2
+Desktop/ASRock/B650/B650 PG Lightning/69B64D1D19B3
+Desktop/ASRock/B650E/B650E PG Riptide WiFi/1C91A62EE21C
+Desktop/ASRock/X570/X570 Steel Legend/BDEF664E9D74
+Desktop/ASRock/X600/X600M-STX/B3207C0D0F29
+Desktop/ASUSTek Computer/P5QL/P5QL PRO/772A7DDD8BC2
+Desktop/ASUSTek Computer/PRIME/PRIME B550-PLUS/A7BCABE66EA7
+Desktop/ASUSTek Computer/PRIME/PRIME Z690-P/71656898DEBA
+Desktop/ASUSTek Computer/ROG/ROG Maximus Z790 APEX ENCORE/453214F7306F
+Desktop/ASUSTek Computer/ROG/ROG STRIX X670E-F GAMING WIFI/754107881C80
+Desktop/ASUSTek Computer/ROG/ROG STRIX Z390-H GAMING/5180182BC315
+Desktop/Dell/OptiPlex/OptiPlex 3080/0B33085DFA99
+Desktop/Dell/Precision/Precision T3600/0B35AA5C5E30
+Desktop/GMKtec/NucBox/NucBox K6/429D41325B4F
+Desktop/Gigabyte Technology/B550/B550 VISION D/B4D3FA24F862
+Desktop/Gigabyte Technology/B650M/B650M GAMING X AX/894FB7D28F2C
+Desktop/Gigabyte Technology/X570/X570 AORUS MASTER/DBD6D480B744
+Desktop/Gigabyte Technology/Z790/Z790 AORUS PRO X/E0010E25DF58
+Desktop/Google/Fizz/Fizz/2273995FC33A
+Desktop/Hewlett-Packard/Compaq/Compaq dc7800 Small Form Factor/80DC1538C4FA
+Desktop/Hewlett-Packard/EliteDesk/EliteDesk 800 G6 Tower PC/6FF7238799B4
+Desktop/Intel/HM/HM570/00089523C3BB
+Desktop/Lenovo/ThinkCentre/ThinkCentre M710q 10MR0009US/57EC640B0AFD
+Desktop/Lenovo/ThinkCentre/ThinkCentre M800 10FW0004US/0E606A2AA43D
+Desktop/MSI/MS-7/MS-7C02/E7F57A01752D
+Desktop/MSI/MS-7/MS-7E16/B75C85853132
+Desktop/MSI/MS/MS-7222/05B8285F38BF
+Desktop/Supermicro/X7/X7DB8/22C25EDFF9A3
+Mini Pc/AMI/Aptio/Aptio CRB/259F9FDD46E2
+Mini Pc/ASUSTek Computer/MINIPC/MINIPC PN50/8F8267FBEFAB
+Mini Pc/ASUSTek Computer/MINIPC/MINIPC PN51/601482F8255B
+Mini Pc/ASUSTek Computer/MINIPC/MINIPC PN64/3FE1EFBB7936
+Mini Pc/ASUSTek Computer/NUC14/NUC14RVH-B/85078AD9A204
+Mini Pc/Apple/Macmini6/Macmini6,2/11618970C18C
+Mini Pc/Intel/NUC7/NUC7i5BNH/4365F3695489
+Mini Pc/Micro Computer (HK) Tech Limited/Venus/Venus series/1A22AA46EED2
+Mini Pc/Micro Computer (HK) Tech Limited/Venus/Venus series/BF25615C9DFE
+Mini Pc/Win element/M/M600/6FEB8CCAF9C0
+Mini Pc/congatec/conga-MA5/conga-MA5 B.2/127575E26FEC
+Notebook/ASUSTek Computer/ASUS/ASUS Vivobook S 16 M5606UA_M5606UA/037824CE679C
+Notebook/ASUSTek Computer/ASUS/ASUS Zenbook S 16 UM5606WA_UM5606WA/4AF98851C2C6
+Notebook/ASUSTek Computer/VivoBook_ASUSLaptop/VivoBook_ASUSLaptop X712UA_M712UA/99159D204D05
+Notebook/Acer/Aspire/Aspire A315-51/271FAD3C73AD
+Notebook/Acer/Nitro/Nitro AN515-57/4CB3C339C4C7
+Notebook/Acer/Swift/Swift SF314-43/9E594C0A2F6E
+Notebook/Apple/MacBookPro11/MacBookPro11,2/52FAAEDDED9D
+Notebook/Dell/Latitude/Latitude 5414/0AAC6C2F8F5C
+Notebook/Dell/Latitude/Latitude 7420/3834AF24A903
+Notebook/Dell/Precision/Precision 5680/0860983CD2A9
+Notebook/Dell/Precision/Precision 7710/145D17B24DF6
+Notebook/Dell/XPS/XPS 15 9510/C539C20629A7
+Notebook/Framework/Laptop/Laptop 13/717EDB7C4975
+Notebook/Framework/Laptop/Laptop 16/4C9287F693BF
+Notebook/Google/Swanky/Swanky/FD625A1DFD7C
+Notebook/HUAWEI/KLVL-WXX/KLVL-WXX9/EC3A5551C690
+Notebook/HUAWEI/KLVL-WXXW/KLVL-WXXW/75C30DF145FB
+Notebook/Hewlett-Packard/EliteBook/EliteBook 850 G8 Notebook PC/5BEFC8C16D82
+Notebook/Hewlett-Packard/EliteBook/EliteBook 855 G7 Notebook PC/CDE21A5A11E3
+Notebook/Hewlett-Packard/Pavilion/Pavilion g6/704FAFDEB09B
+Notebook/Hewlett-Packard/ProBook/ProBook 445 G8 Notebook PC/FE0F9EF08732
+Notebook/Lenovo/IdeaPad/IdeaPad Slim 3 15ABR8 82XM/F9685D1E4132
+Notebook/Lenovo/IdeaPad/IdeaPad Z470/C7F3CC0C50BF
+Notebook/Lenovo/Legion/Legion Slim 5 14APH8 82Y5/995C3FA83027
+Notebook/Lenovo/ThinkPad/ThinkPad T14 Gen 3 21CF004PGE/696E48381F84
+Notebook/Lenovo/ThinkPad/ThinkPad T14s Gen 3 21CQ0045GE/930650D3950C
+Notebook/Lenovo/ThinkPad/ThinkPad W540 20BHS11M00/F5785B0C6551
+Notebook/Lenovo/ThinkPad/ThinkPad X1 Carbon Gen 11 21HNSAD001/42EB5EF5FC48
+Notebook/Lenovo/Yoga/Yoga Slim 7 14APU8 83AA/F4301A2723AE
+Notebook/MSI/GP63/GP63 Leopard 8RD/52757605F366
+Notebook/MSI/Prestige/Prestige 13 AI+ Evo A2VMG/F253BBB7B294
+Notebook/Razer/Blade/Blade/F55394D068BE
+Notebook/Samsung Electronics/530U3/530U3C-530U4C-532U3C/88F78C105A26
+Notebook/System76/Pangolin/Pangolin/4F5C02C371C7
+Notebook/Toshiba/Satellite/Satellite L850/D864DF1B0926
+Notebook/Valve/Jupiter/Jupiter/D98C04F8D964
+Notebook/Valve/Jupiter/Jupiter/F3B9E861E0CA
+Server/Dell/PowerEdge/PowerEdge R820/E5985CCBA349
+Server/Fujitsu/PRIMERGY/PRIMERGY/41B1E7A57925
+Server/Hewlett-Packard/ProLiant/ProLiant DL165 G7/1979FBF2D488
+Server/Hewlett-Packard/ProLiant/ProLiant DL360 G5/A8DA802364DF
+Server/Hewlett-Packard/ProLiant/ProLiant DL360 G7/60DCEE46526A
+Server/Hewlett-Packard/ProLiant/ProLiant DL380 G5/97BE895CF6E6
+Server/Intel/ArcherCity/ArcherCity/356135E81941
+Server/Quanta/QuantaMicro/QuantaMicro X10E-9N/01ACEA39AAB2
+Server/Supermicro/H8/H8DGU/57ED146F2C3C
+Server/Supermicro/H8/H8QG6/58E82626C3C5
+Server/Supermicro/SYS-4029/SYS-4029GP-TRT/E456D1C2E64A
+Server/Supermicro/X8/X8DTT/CE92DF29C87C
+Tablet/ASUSTek Computer/ROG/ROG Flow Z13 GZ301VU_GZ301VU/68279BE5FE48
+Tablet/Chuwi/UBook/UBook X/D592012A6396
+Tablet/Hewlett-Packard/Elite/Elite x2 G4/412FF4236D9F
+Tablet/Hewlett-Packard/Elite/Elite x2 G4/E04B58623222
+Tablet/Hewlett-Packard/Pavilion/Pavilion x2 Detachable/3FE302D11C0A
+Tablet/Lenovo/MIIX/MIIX 3-1030 80HV/04FF5A51E4B0
+Tablet/Lenovo/MIIX/MIIX 310-10ICR 80SG/049BD2B36280
+Tablet/Lenovo/Others/Others/3647B31878D4
+Tablet/MSI/Claw/Claw A1M/E9FB50149AEE
+Tablet/Microsoft/Surface/Surface Laptop 3/4E426AB8062D
+Tablet/Microsoft/Surface/Surface Laptop/4CA7E4FC50A4
+Tablet/Microsoft/Surface/Surface Pro 3/074C5C2E091B
+Tablet/Microsoft/Surface/Surface Pro/773032238BB5
+Tablet/Star Labs/StarLite/StarLite/728634434C6F

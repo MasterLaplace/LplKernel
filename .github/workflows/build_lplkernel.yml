@@ -24,6 +24,10 @@ on:
       - '**/make.config'
       - 'DEPENDENCIES.lock'
       - '**/build_lplkernel.yml'
+      - 'tools/acpi/**'
+
+permissions:
+  contents: read
 
 jobs:
   build_lplkernel:
@@ -172,3 +176,32 @@ jobs:
           echo "ISO not found - build failed"
           exit 1
         fi
+
+  # The ACPI layer on the host: the tests ring 0 runs too, then the directory of each machine of
+  # the quick list of recorded firmware.
+  acpi_host:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - uses: xmake-io/github-action-setup-xmake@3a1a5dddfc7fa625d9a698738334bf55655a861a # v1.2.5
+      with:
+        xmake-version: v3.1.1
+
+    - name: The ACPI layer holds no architecture
+      run: tools/acpi/check-portable.sh
+
+    - name: The ACPI tests on the host
+      run: |
+        set -e
+        xmake build -y test-acpi
+        build/acpi-host/test-acpi
+
+    - name: The quick list of recorded machines
+      run: |
+        set -e
+        tools/acpi-corpus.sh fetch quick
+        tools/acpi-corpus.sh check quick

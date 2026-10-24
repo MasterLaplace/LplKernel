@@ -1,0 +1,19 @@
+# The quick list: 9 machines of the corpus, each for what it holds that the others lack.
+# Dell Precision 5680: its size, a vendor _OSI and 32 KiB fields.
+Notebook/Dell/Precision/Precision 5680/0860983CD2A9
+# MSI MS-7E16: AMD, a DSDT of revision 4.
+Desktop/MSI/MS-7/MS-7E16/B75C85853132
+# ASUS NUC14: method calls at table level, and a method that calls itself.
+Mini Pc/ASUSTek Computer/NUC14/NUC14RVH-B/85078AD9A204
+# HP Pavilion x2: 86 nested blocks, GenericSerialBus, GPIO and OEM regions, a hardware-reduced FADT.
+Tablet/Hewlett-Packard/Pavilion/Pavilion x2 Detachable/3FE302D11C0A
+# Surface Pro: a Switch on Local0 at table level.
+Tablet/Microsoft/Surface/Surface Pro/773032238BB5
+# Lenovo IdeaPad Z470: packages outside any name, and dynamic SSDTs.
+Notebook/Lenovo/IdeaPad/IdeaPad Z470/C7F3CC0C50BF
+# Valve Jupiter: 32-bit integers.
+Notebook/Valve/Jupiter/Jupiter/F3B9E861E0CA
+# Intel ArcherCity: LoadTable, PRM and a 4 MiB field.
+Server/Intel/ArcherCity/ArcherCity/356135E81941
+# HP ProLiant DL360 G5: the smallest.
+Server/Hewlett-Packard/ProLiant/ProLiant DL360 G5/A8DA802364DF

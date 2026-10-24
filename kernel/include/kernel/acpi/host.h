@@ -15,8 +15,9 @@
  * @file host.h
  * @brief What the ACPI layer asks of the machine it runs on.
  *
- * The ACPI tables and their readers hold no architecture: they reach the machine through these
- * calls alone. kernel/arch/<arch>/cpu/acpi_host.c answers them in ring 0.
+ * The ACPI tables and their readers hold no architecture: they reach the machine through a host
+ * alone, a value they are given. kernel/arch/<arch>/cpu/acpi_host.c gives the machine's, in ring 0;
+ * kernel/tests/acpi/simulated_host.c gives one that serves made-up and recorded firmware.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -29,28 +30,23 @@
 #include <stdint.h>
 
 /**
- * @brief The root system description pointer the platform gives.
+ * @brief What the ACPI layer asks of the machine it runs on.
  *
- * @return Its physical address, or 0 when the platform gives none.
+ * @details Each call is given back the context first. map_firmware maps the length bytes the
+ *          firmware wrote at a physical address, cached and read-only, and returns their address,
+ *          or NULL when the range cannot be mapped; unmap_firmware takes back what it returned,
+ *          given the same length.
  */
-extern uint64_t advanced_configuration_and_power_interface_host_root_system_description_pointer(void);
+typedef struct AdvancedConfigurationAndPowerInterfaceHost {
+    void *context;                                              /**< The host's own state, or NULL. */
+    uint64_t (*root_system_description_pointer)(void *context); /**< The root pointer's physical address, or 0. */
+    const void *(*map_firmware)(void *context, uint64_t physical_address, uint64_t length); /**< Maps firmware bytes. */
+    void (*unmap_firmware)(void *context, const void *address, uint64_t length);            /**< Unmaps them. */
+} AdvancedConfigurationAndPowerInterfaceHost_t;
 
 /**
- * @brief Maps memory the firmware wrote, cached and read-only.
- *
- * @param physical_address Physical address of the first byte.
- * @param length           Length in bytes.
- * @return The address of @p physical_address, or NULL when the range cannot be mapped.
+ * @brief The host the boot reads this machine's firmware through.
  */
-extern const void *advanced_configuration_and_power_interface_host_map_firmware(uint64_t physical_address,
-                                                                                uint64_t length);
-
-/**
- * @brief Unmaps a range advanced_configuration_and_power_interface_host_map_firmware mapped.
- *
- * @param address The address it returned.
- * @param length  The length it was given.
- */
-extern void advanced_configuration_and_power_interface_host_unmap_firmware(const void *address, uint64_t length);
+extern const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host;
 
 #endif /* KERNEL_ACPI_HOST_H */

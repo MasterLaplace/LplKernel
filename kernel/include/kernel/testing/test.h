@@ -202,6 +202,14 @@ extern void kernel_test_note(KernelTest_t *test, const char *text);
  */
 extern void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial);
 
+/**
+ * @brief How many tests have failed so far, counting a pattern of `lpl.test.require=` that named
+ *        no test as one.
+ *
+ * @return The count, which a runner outside the kernel turns into its exit status.
+ */
+extern uint32_t kernel_test_failure_count(void);
+
 #ifdef __cplusplus
 }
 #endif
