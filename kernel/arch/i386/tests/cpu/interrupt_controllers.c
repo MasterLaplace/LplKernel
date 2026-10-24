@@ -281,11 +281,12 @@ KERNEL_TEST(a_bootstrap_processor_no_entry_can_name_gets_no_route)
 }
 
 /**
- * @brief Moving a route refuses an identifier its redirection entry cannot name, counts it, and leaves
- *        the route where it was.
+ * @brief Moving a route refuses an identifier its redirection entry cannot name, and leaves the route
+ *        where it was.
  *
  * @details The identifier was cut to 8 bits: 0x100 moved the route to APIC ID 0, and 0xFF made it a
- *          broadcast.
+ *          broadcast. The caller learns of a refusal from the value returned: the count is the
+ *          scaffold's, which the machine record reports after this test has run.
  */
 KERNEL_TEST(moving_a_route_refuses_an_identifier_its_entry_cannot_name)
 {
@@ -330,7 +331,8 @@ KERNEL_TEST(moving_a_route_refuses_an_identifier_its_entry_cannot_name)
     kernel_test_check(test, !broadcast_taken && after_broadcast == elsewhere,
                       "0xFF is refused, and the route stays where it was");
     kernel_test_check(test, !past_eight_bits_taken && after_past_eight_bits == elsewhere, "so is 0x100");
-    kernel_test_check(test, refused_after == refused_before + 2u, "each refusal is counted");
+    kernel_test_check(test, refused_after == refused_before,
+                      "and neither counts as a line the scaffold refused, which the machine record reports");
     kernel_test_check(test,
                       input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(
                           route_index) == found,
