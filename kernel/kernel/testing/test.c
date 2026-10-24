@@ -517,3 +517,5 @@ void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial)
         kernel_test_run_libraries(serial, selection, required);
 #endif
 }
+
+uint32_t kernel_test_failure_count(void) { return kernel_test_failed_count; }

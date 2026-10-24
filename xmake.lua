@@ -206,13 +206,6 @@ target("libkxx")
 target_end()
 end -- if LPLPLUGIN_AVAILABLE
 
--- ===========================================================================
--- libengine — the LplPlugin engine compiled -ffreestanding into a static lib.
--- HARD determinism: SSE math, contraction off, bit-identical to the xmake
--- (Linux) oracle. -mstackrealign because the i386 kernel stack is not yet
--- 16-byte aligned on entry. LPL_TARGET_KERNEL=1 routes lpl/std/* to kstd (libkxx).
--- ===========================================================================
-if LPLPLUGIN_AVAILABLE then
 -- What the image says about itself at boot: the profile and the mode, and the commits of
 -- this repository and of LplPlugin, stamped into one file of each target (identity.c,
 -- identity.cpp), so a new commit recompiles those two files and nothing else. The Makefile
@@ -247,6 +240,13 @@ rule("laplace.identity")
     end)
 rule_end()
 
+-- ===========================================================================
+-- libengine — the LplPlugin engine compiled -ffreestanding into a static lib.
+-- HARD determinism: SSE math, contraction off, bit-identical to the xmake
+-- (Linux) oracle. -mstackrealign because the i386 kernel stack is not yet
+-- 16-byte aligned on entry. LPL_TARGET_KERNEL=1 routes lpl/std/* to kstd (libkxx).
+-- ===========================================================================
+if LPLPLUGIN_AVAILABLE then
 -- The LplPlugin modules the kernel compiles against: their headers, and their engine tests, as
 -- ENGINE_MODULES in libengine/Makefile. net/ is here for the header-only lpl/net/Endpoint.hpp
 -- alone, which EventQueue.hpp needs.
@@ -783,6 +783,30 @@ target("lpl-kernel")
 
         cprint("${green}[lpl.kernel]${clear} linked + multiboot OK -> %s", out)
     end)
+target_end()
+
+-- ===========================================================================
+-- test-acpi — the ACPI layer on the build machine: its tables code and its tests, compiled
+-- for the host and read through the simulated host of kernel/tests/acpi/, which ring 0 uses
+-- too. The kernel's own test runner reports them, so tools/parity.sh compares the two sides;
+-- tools/acpi/host/platform.c gives it stdout for a serial port and no boot command line, so
+-- every test runs. `--machine <dump>` walks a recorded machine's tables instead.
+-- ===========================================================================
+target("test-acpi")
+    set_kind("binary")
+    set_plat(os.host())
+    set_arch(os.arch())
+    set_toolchains("gcc")
+    set_default(false)
+    set_targetdir("build/acpi-host")
+    set_policy("build.sanitizer.address", true)
+    set_policy("build.sanitizer.undefined", true)
+    add_cflags("-Wall", "-Wextra", "-Werror", {force = true})
+    add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS", "LPL_KERNEL_DEBUG_POISON", "LPL_PLUGIN_UNAVAILABLE=1")
+    add_includedirs("kernel/include", "kernel/tests/acpi")
+    add_files("kernel/kernel/acpi/*.c", "kernel/kernel/testing/test.c", "kernel/tests/acpi/*.c",
+              "tools/acpi/host/*.c")
+    add_ldflags("-Wl,-T," .. path.join(os.scriptdir(), "tools/acpi/host/kernel_tests.ld"), {force = true})
 target_end()
 
 -- ===========================================================================

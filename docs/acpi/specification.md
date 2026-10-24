@@ -145,9 +145,9 @@ architecture supplies the host interface.
 | `kernel/kernel/acpi/processor_idle.c` | `_CST` per processor, its binding to CPU slots, the published table (§3.10) |
 | `kernel/arch/i386/cpu/acpi_host.c` | the host interface in ring 0: windows, memory types, ports, PCI, time, sleep |
 | `kernel/arch/i386/lib/asmutils.s`, `kernel/include/kernel/lib/asmutils.h` | a 64-bit memory-mapped read and write as two 32-bit accesses, low then high (§5.3) |
-| `kernel/tests/acpi/simulated_host.c` | the simulated host: sparse memory, zero-filled ports, simulated PCI, virtual clock, target parameters; one source for the host harness and the ring-0 corpus test |
+| `kernel/tests/acpi/simulated_host.c`, `simulated_host.h` | the simulated host: sparse memory, zero-filled ports, simulated PCI, virtual clock, target parameters; one source for the host harness and the ring-0 corpus test |
 | `kernel/tests/acpi/*.c` | `KERNEL_TEST`s with made-up AML, and the ring-0 corpus test; also compiled into the host harness |
-| `tools/acpi/host/` | the host harness, an xmake target of this repository (`test-acpi`): the simulated host, the acpidump reader, the corpus runner, the needs-path closure, a KTAP printer |
+| `tools/acpi/host/` | the host harness, an xmake target of this repository (`test-acpi`): the simulated host, the acpidump reader, the corpus runner, the needs-path closure, and the kernel's own test runner as KTAP printer |
 | `tools/acpi-corpus.sh` | fetches the pinned corpora by commit into `build/acpi-corpus/`, builds the corpus lists and one Multiboot module per machine; never commits their bytes |
 
 ### 3.3 The host interface
@@ -161,7 +161,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `map_firmware(physical u64, length u64)` → address or NULL: cached, read-only | `kernel_vmm_map_firmware_window` | a sparse byte store keyed by physical address |
 | `map_firmware_writable(...)`, `map_device(...)`: cached read-write, uncached | a cached read-write firmware window, `kernel_vmm_map_device_window` | the same store |
 | `memory_type(physical u64, length u64)` → RAM, ACPI reclaim, ACPI NVS, reserved, or unknown | the boot memory map the PMM keeps | `reserved`, unless the machine's description says otherwise |
-| `unmap_firmware(address, length)`, and one unmap for each map | the matching unmap | no-op |
+| `unmap_firmware(address, length)`, and one unmap for each map | the matching unmap | counted, so that a test sees every map unmapped |
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor; offsets from 0x100 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
@@ -170,7 +170,10 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `pages(count)` | `kernel_vmm_alloc_pages` | `malloc` |
 | `log(level, text)` | serial, compiled out below the build's level | stdout |
 
-Each is `advanced_configuration_and_power_interface_host_<name>`, declared in `kernel/include/kernel/acpi/host.h`.
+A host is a value, `AdvancedConfigurationAndPowerInterfaceHost_t` in `kernel/include/kernel/acpi/host.h`, with one
+function pointer per call. The tables and the interpreter are given the host they read through. Ring 0's is
+`advanced_configuration_and_power_interface_machine_host`; a test opens a simulated host beside it, since the
+made-up tables and the corpus run through the simulated host in ring 0 too (§8.7).
 
 AML runs at boot only once `clock_initialize` has started the tick. The `[LPLTLM] acpi` line reports the
 milliseconds `Sleep` and `Stall` request at boot and the ticks actually waited, since `instructions.sh` does not
@@ -918,6 +921,10 @@ published image. The made-up ASL is ours, under MIT.
   ArcherCity, HP ProLiant DL360 G5), runs on every pull request that touches the interpreter. *Corpus*, 114
   distinct machines, desktops, notebooks, tablets and servers of every FADT revision from 1.0 to 6.5, runs to close
   an issue. *Full*, every report with a binary dump, runs on demand. No list names a machine the project works on.
+- **A dump holds neither the root pointer nor the root tables**, and every address it prints is 0, but the FADT
+  keeps the addresses it names. The harness serves the DSDT there, every other table but the FACS at an address of
+  its own, and writes a root pointer and an XSDT that list them in the dump's order. The directory read from it is
+  compared with one `tools/acpi/expected_directory.py` reads from the same dump, apart from the kernel's code.
 - **For each machine** the harness prints the decode errors, the namespace dump and its fold, the census counts,
   the needs-path closure, and the needs-path run (§3.8, steps 0 to 9) with the opcodes, spaces and access types it
   executed.

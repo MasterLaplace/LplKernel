@@ -20,6 +20,9 @@
 build/
 .xmake/
 
+# Python bytecode of the tools
+__pycache__/
+
 # Bootloader files
 iso/boot/grub/
 sysroot
