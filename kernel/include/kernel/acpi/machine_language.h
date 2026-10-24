@@ -46,8 +46,6 @@
     1024u /**< Nodes the methods being decoded create (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FRAMES                                         \
     64u /**< Method bodies nested in one another (§6.1). */
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_DEFERRED_EXTERNALS                             \
-    256u /**< External declarations one load retries once every table is declared. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_IN_METHOD                                    \
     1u /**< Block placement: inside a method body. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_METHOD_BODY                                  \
@@ -80,17 +78,6 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock {
     uint32_t scope;        /**< The scope its names are read in. */
     uint32_t start;        /**< Offset of the opcode that opened it, or of the table's first term. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock_t;
-
-/**
- * @brief An External whose path did not exist yet when the first pass met it: it names an object a
- *        later table declares, and is placed once every table is declared.
- */
-typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageDeferredExternal {
-    uint32_t scope;                                                         /**< The scope it was read in. */
-    uint32_t table;                                                         /**< The table it lies in. */
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t name; /**< Its NameString; its ObjectType and
-                                                                                argument count follow it. */
-} AdvancedConfigurationAndPowerInterfaceMachineLanguageDeferredExternal_t;
 
 /**
  * @brief One definition block of a load, and what decoding it found.
@@ -141,12 +128,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                                         stack. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock_t
         blocks[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS]; /**< The block stack. */
-    uint32_t deferred_count; /**< Externals waiting for their path. */
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageDeferredExternal_t
-        deferred[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_DEFERRED_EXTERNALS]; /**< Those
-                                                                                                          Externals. */
-    uint32_t temporary_count; /**< Temporary nodes alive. */
-    uint32_t frame_count;     /**< Method bodies being decoded. */
+    uint32_t temporary_count;                                                           /**< Temporary nodes alive. */
+    uint32_t frame_count; /**< Method bodies being decoded. */
     uint32_t temporaries[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TEMPORARY_NODES]; /**< The
                                                                                                               temporary
                                                                                                               nodes, in
@@ -178,9 +161,9 @@ extern bool advanced_configuration_and_power_interface_machine_language_open(
  *
  * @details A table whose checksum fails is declared all the same, and counted. A declaration whose
  *          path does not exist is counted in load_errors and skipped alone, its body with it; an
- *          External is kept for later instead, since it may name what a later table declares. Any
- *          other fault skips the innermost construct with a PkgLength around it, or the rest of the
- *          table when there is none or when a PkgLength crosses its parent, and is counted too.
+ *          External is left to a later pass instead, since it may name what a later table declares.
+ *          Any other fault skips the innermost construct with a PkgLength around it, or the rest of
+ *          the table when there is none or when a PkgLength crosses its parent, and is counted too.
  * @param load   An open load.
  * @param header The table, every byte of its length readable; kept until the load is closed.
  * @return false when the load already holds ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES
@@ -191,9 +174,13 @@ extern bool advanced_configuration_and_power_interface_machine_language_declare_
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header);
 
 /**
- * @brief Places the Externals the first pass could not, then runs the second pass over every table
- *        declared: every term is decoded and counted, method bodies included, and each fault is
- *        recorded in its table and skipped as the first pass skips it.
+ * @brief Places the Externals the first pass could not, in a pass over every table declared, then runs
+ *        the second pass: every term is decoded and counted, method bodies included, and each fault
+ *        is recorded in its table and skipped as the first pass skips it.
+ *
+ * @details An External whose path does not exist once every table is declared is placed all the
+ *          same, its missing segments created as Externals with no object: firmware calls such a
+ *          method behind CondRefOf, and the second pass needs its argument count.
  *
  * @param load An open load whose tables are declared.
  */

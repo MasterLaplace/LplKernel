@@ -30,8 +30,12 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t MachineLangu
  *        every term and counts it.
  */
 typedef enum MachineLanguagePass {
-    MACHINE_LANGUAGE_PASS_DECLARE, /**< Declares named objects; skips method bodies. */
-    MACHINE_LANGUAGE_PASS_DECODE,  /**< Decodes and counts every term; declares nothing. */
+    MACHINE_LANGUAGE_PASS_DECLARE,   /**< Declares named objects; skips method bodies. */
+    MACHINE_LANGUAGE_PASS_EXTERNALS, /**< Places the Externals whose path the first pass could not find, once every
+                                          table is declared; skips method bodies, declares nothing else, records no
+                                          fault. */
+    MACHINE_LANGUAGE_PASS_DECODE,    /**< Decodes and counts every term; declares only the temporary nodes of method
+                                          bodies. */
 } MachineLanguagePass_t;
 
 /**
@@ -46,6 +50,9 @@ typedef struct MachineLanguageWalk {
     uint32_t block_count;                                              /**< Constructs open, the table included. */
     uint32_t fault_opcode;                                             /**< The opcode a fault at pc belongs to. */
     MachineLanguagePass_t pass;                                        /**< Which pass it is. */
+    uint32_t last_created;                     /**< The node the last declaration created, 0 when it created none. */
+    uint32_t external_start;                   /**< The External the third pass places, by its opcode's offset, or 0. */
+    MachineLanguageNameString_t external_name; /**< That External's NameString. */
 } MachineLanguageWalk_t;
 
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t machine_language_boot_load;
@@ -137,6 +144,8 @@ static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLa
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
 
+    if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS)
+        return;
     if (walk->pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
         machine_language_count_load_error(load, status);
@@ -238,12 +247,14 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
     {
         MachineLanguageNode_t *node = machine_language_node(walk, existing);
 
+        walk->last_created = 0u;
         if (node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) && type != MACHINE_LANGUAGE_NODE(EXTERNAL))
         {
             node->type = type;
             node->owner = (uint16_t) (walk->table + 1u);
             memset(&node->value, 0, sizeof(node->value));
             ++load->declarations;
+            walk->last_created = existing;
         }
         else if (type != MACHINE_LANGUAGE_NODE(EXTERNAL))
             ++load->duplicates;
@@ -254,6 +265,7 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
         &load->space, parent, segment, type, (uint16_t) (walk->table + 1u), out_index);
     if (status == MACHINE_LANGUAGE_OK)
         ++load->declarations;
+    walk->last_created = (status == MACHINE_LANGUAGE_OK) ? *out_index : 0u;
     return status;
 }
 
@@ -297,6 +309,7 @@ static MachineLanguageStatus_t machine_language_declare_temporary(MachineLanguag
     const uint32_t existing =
         advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent, segment);
 
+    walk->last_created = 0u;
     if (existing != 0u)
     {
         *out_index = existing;
@@ -310,7 +323,10 @@ static MachineLanguageStatus_t machine_language_declare_temporary(MachineLanguag
             &load->space, parent, segment, type, (uint16_t) (walk->table + 1u), out_index);
 
     if (status == MACHINE_LANGUAGE_OK)
+    {
         load->temporaries[load->temporary_count++] = *out_index;
+        walk->last_created = *out_index;
+    }
     return status;
 }
 
@@ -343,51 +359,26 @@ static uint8_t machine_language_declared_type(uint32_t opcode)
 }
 
 /**
- * @brief Keeps an External whose path does not exist yet, to place it once every table is declared.
+ * @brief The node an External's last segment belongs to, in the third pass: every missing segment
+ *        before it is created as an External with no object, since no table declares it.
  */
-static MachineLanguageStatus_t machine_language_defer_external(MachineLanguageWalk_t *walk,
-                                                               const MachineLanguageNameString_t *name)
+static MachineLanguageStatus_t machine_language_external_parent(MachineLanguageWalk_t *walk, uint32_t *out_parent)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
-
-    if (load->deferred_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_DEFERRED_EXTERNALS)
-    {
-        machine_language_record_fault(walk, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND));
-        return MACHINE_LANGUAGE_OK;
-    }
-
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageDeferredExternal_t *deferred =
-        &load->deferred[load->deferred_count++];
-
-    deferred->scope = machine_language_top_block(walk)->scope;
-    deferred->table = walk->table;
-    deferred->name = *name;
-    return MACHINE_LANGUAGE_OK;
-}
-
-/**
- * @brief The node a deferred External's last segment belongs to, every missing segment before it
- *        created as an External with no object, since no table will declare it any more.
- */
-static MachineLanguageStatus_t machine_language_external_parent(
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageDeferredExternal_t *deferred, const uint8_t *bytes,
-    uint32_t *out_parent)
-{
-    const MachineLanguageNameString_t *name = &deferred->name;
-    uint32_t parent = name->root ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT : deferred->scope;
+    const MachineLanguageNameString_t *name = &walk->external_name;
+    uint32_t parent = name->root ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT :
+                                   machine_language_top_block(walk)->scope;
 
     for (uint32_t climb = 0u; climb < name->parent_prefixes; ++climb)
     {
-        parent =
-            advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, parent)->parent;
+        parent = machine_language_node(walk, parent)->parent;
         if (parent == 0u)
             return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
     }
     for (uint32_t segment = 0u; segment + 1u < name->segment_count; ++segment)
     {
         const uint32_t seg = advanced_configuration_and_power_interface_machine_language_name_segment(
-            bytes, name->segments + segment * 4u);
+            walk->bytes, name->segments + segment * 4u);
         uint32_t child =
             advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent, seg);
 
@@ -395,8 +386,7 @@ static MachineLanguageStatus_t machine_language_external_parent(
         {
             const MachineLanguageStatus_t status =
                 advanced_configuration_and_power_interface_machine_language_namespace_add_child(
-                    &load->space, parent, seg, MACHINE_LANGUAGE_NODE(EXTERNAL), (uint16_t) (deferred->table + 1u),
-                    &child);
+                    &load->space, parent, seg, MACHINE_LANGUAGE_NODE(EXTERNAL), (uint16_t) (walk->table + 1u), &child);
 
             if (status != MACHINE_LANGUAGE_OK)
                 return status;
@@ -409,61 +399,79 @@ static MachineLanguageStatus_t machine_language_external_parent(
 }
 
 /**
- * @brief Places each External the first pass kept, where nothing holds its name yet. A segment of
- *        its path that still does not exist is created as an External with no object: the second
- *        pass needs the argument count of a method that firmware calls only behind CondRefOf.
+ * @brief Places, in the third pass, the External whose NameString the walk kept and whose ObjectType
+ *        and argument count it has just read, where nothing holds its name: a method no table
+ *        declares is then still called with the right number of arguments. One whose path still
+ *        cannot be placed, climbing above the root, is counted.
  */
-static void machine_language_place_deferred_externals(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+static void machine_language_place_external(MachineLanguageWalk_t *walk, uint8_t object_type, uint8_t arguments)
 {
-    for (uint32_t index = 0u; index < load->deferred_count; ++index)
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
+    const uint32_t segment = advanced_configuration_and_power_interface_machine_language_name_segment(
+        walk->bytes, walk->external_name.segments + (walk->external_name.segment_count - 1u) * 4u);
+    uint32_t parent = 0u;
+    uint32_t node = 0u;
+    MachineLanguageStatus_t status = machine_language_external_parent(walk, &parent);
+
+    walk->external_start = 0u;
+    if (status == MACHINE_LANGUAGE_OK &&
+        advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent,
+                                                                                         segment) != 0u)
+        return;
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
+            &load->space, parent, segment, MACHINE_LANGUAGE_NODE(EXTERNAL), (uint16_t) (walk->table + 1u), &node);
+    if (status != MACHINE_LANGUAGE_OK)
     {
-        const AdvancedConfigurationAndPowerInterfaceMachineLanguageDeferredExternal_t *deferred =
-            &load->deferred[index];
-        const uint8_t *bytes = (const uint8_t *) load->tables[deferred->table].header;
-        const uint32_t after = deferred->name.segments + deferred->name.segment_count * 4u;
-        const uint32_t segment = advanced_configuration_and_power_interface_machine_language_name_segment(
-            bytes, deferred->name.segments + (deferred->name.segment_count - 1u) * 4u);
-        uint32_t parent = 0u;
-        uint32_t node = 0u;
-        MachineLanguageStatus_t status = machine_language_external_parent(load, deferred, bytes, &parent);
-
-        if (status == MACHINE_LANGUAGE_OK &&
-            advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent,
-                                                                                             segment) != 0u)
-            continue;
-        if (status == MACHINE_LANGUAGE_OK)
-            status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
-                &load->space, parent, segment, MACHINE_LANGUAGE_NODE(EXTERNAL), (uint16_t) (deferred->table + 1u),
-                &node);
-        if (status != MACHINE_LANGUAGE_OK)
-        {
-            machine_language_count_load_error(load, status);
-            continue;
-        }
-
-        MachineLanguageNode_t *external =
-            advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
-
-        external->value.auxiliary = bytes[after];
-        external->value.payload = bytes[after + 1u] & 0x7u;
-        ++load->declarations;
+        machine_language_count_load_error(load, status);
+        return;
     }
-    load->deferred_count = 0u;
+    machine_language_node(walk, node)->value.auxiliary = object_type;
+    machine_language_node(walk, node)->value.payload = arguments & 0x7u;
+    ++load->declarations;
+}
+
+/**
+ * @brief What an External's NameString means in the third pass: nothing when a node holds the name;
+ *        a NullName is counted; any other is kept until its ObjectType and argument count are read.
+ */
+static void machine_language_keep_external(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active,
+                                           const MachineLanguageNameString_t *name)
+{
+    uint32_t parent = 0u;
+    uint32_t segment = 0u;
+
+    if (name->segment_count == 0u)
+    {
+        machine_language_count_load_error(walk->load, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND));
+        return;
+    }
+    if (advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
+            &walk->load->space, machine_language_top_block(walk)->scope, walk->bytes, name, &parent, &segment) ==
+            MACHINE_LANGUAGE_OK &&
+        advanced_configuration_and_power_interface_machine_language_namespace_find_child(&walk->load->space, parent,
+                                                                                         segment) != 0u)
+        return;
+    walk->external_name = *name;
+    walk->external_start = active->start;
 }
 
 /**
  * @brief What a NameString operand of the active operator means: a Scope's target, an Alias's
  *        source then its new name, or the name a declaration creates. The first pass creates
- *        permanent nodes; the second creates temporary ones in method bodies, and at table level
- *        only finds the scope a construct opens. The second pass never fails on a name: a scope it
- *        cannot find is the one it is in.
+ *        permanent nodes; the third places the Externals the first could not; the second creates
+ *        temporary nodes in method bodies. Past the first pass, at table level, a construct only
+ *        finds the scope it opens, and a scope that cannot be found is the one the walk is in.
  */
 static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *walk,
                                                          MachineLanguagePendingOperator_t *active,
                                                          const MachineLanguageNameString_t *name)
 {
     const MachineLanguageBlock_t *block = machine_language_top_block(walk);
-    const bool decoding = walk->pass == MACHINE_LANGUAGE_PASS_DECODE;
+    const bool declaring = walk->pass == MACHINE_LANGUAGE_PASS_DECLARE;
+    const bool opens_scope =
+        (advanced_configuration_and_power_interface_machine_language_descriptor(active->opcode)->flags &
+         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_OPENS_SCOPE) != 0u;
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
     if (active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE) ||
@@ -471,7 +479,7 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
     {
         status = advanced_configuration_and_power_interface_machine_language_namespace_resolve(
             &walk->load->space, block->scope, walk->bytes, name, &active->node);
-        if (status == MACHINE_LANGUAGE_OK || (!decoding && active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)))
+        if (status == MACHINE_LANGUAGE_OK || (declaring && active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)))
             return status;
         active->node = (active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)) ? block->scope : 0u;
         return MACHINE_LANGUAGE_OK;
@@ -484,29 +492,26 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
 
     if (type == 0xFFu)
         return MACHINE_LANGUAGE_OK;
-    if (decoding && block->placement == 0u)
+    if (!declaring && block->placement == 0u)
     {
-        if ((advanced_configuration_and_power_interface_machine_language_descriptor(active->opcode)->flags &
-             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_OPENS_SCOPE) != 0u)
+        if (opens_scope)
             active->node = machine_language_declared_node(walk, name);
+        else if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
+            machine_language_keep_external(walk, active, name);
         return MACHINE_LANGUAGE_OK;
     }
     if (type == MACHINE_LANGUAGE_NODE(ALIAS) && target == 0u)
-        return decoding ? MACHINE_LANGUAGE_OK : MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
-    status = decoding ? machine_language_declare_temporary(walk, name, type, &active->node) :
-                        machine_language_declare(walk, name, type, &active->node);
-    if (status == MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND) &&
-        (advanced_configuration_and_power_interface_machine_language_descriptor(active->opcode)->flags &
-         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_OPENS_SCOPE) == 0u)
+        return declaring ? MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND) : MACHINE_LANGUAGE_OK;
+    status = declaring ? machine_language_declare(walk, name, type, &active->node) :
+                         machine_language_declare_temporary(walk, name, type, &active->node);
+    if (status == MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND) && !opens_scope)
     {
         active->node = 0u;
-        if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
-            return machine_language_defer_external(walk, name);
-        machine_language_record_fault(walk, status);
+        if (active->opcode != MACHINE_LANGUAGE_OPCODE(EXTERNAL))
+            machine_language_record_fault(walk, status);
         return MACHINE_LANGUAGE_OK;
     }
-    if (status == MACHINE_LANGUAGE_OK && type == MACHINE_LANGUAGE_NODE(ALIAS) &&
-        machine_language_node(walk, active->node)->type == MACHINE_LANGUAGE_NODE(ALIAS))
+    if (status == MACHINE_LANGUAGE_OK && type == MACHINE_LANGUAGE_NODE(ALIAS) && active->node == walk->last_created)
         machine_language_node(walk, active->node)->value.handle = target;
     return status;
 }
@@ -756,7 +761,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     if (active.opcode == MACHINE_LANGUAGE_OPCODE(METHOD))
     {
         machine_language_record_method(walk, &active);
-        if (walk->pass == MACHINE_LANGUAGE_PASS_DECLARE)
+        if (walk->pass != MACHINE_LANGUAGE_PASS_DECODE)
         {
             --walk->pending_count;
             walk->pc = active.end;
@@ -822,7 +827,10 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
         if (active->end - walk->pc < fixed_widths[kind])
             return MACHINE_LANGUAGE_STATUS(TRUNCATED);
         walk->pc += fixed_widths[kind];
-        if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL) && active->operands_done == 3u)
+        if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL) && active->operands_done == 3u &&
+            walk->external_start == active->start && walk->external_start != 0u)
+            machine_language_place_external(walk, walk->bytes[walk->pc - 2u], walk->bytes[walk->pc - 1u]);
+        else if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL) && active->operands_done == 3u)
         {
             MachineLanguageNode_t *node = machine_language_node(walk, active->node);
 
@@ -962,7 +970,8 @@ bool advanced_configuration_and_power_interface_machine_language_declare_table(
 void advanced_configuration_and_power_interface_machine_language_decode_tables(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
-    machine_language_place_deferred_externals(load);
+    for (uint32_t table = 0u; table < load->table_count; ++table)
+        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS);
     for (uint32_t table = 0u; table < load->table_count; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE);
 }
