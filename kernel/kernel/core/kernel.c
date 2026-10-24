@@ -352,18 +352,15 @@ __attribute__((constructor)) void kernel_initialize(void)
     advanced_configuration_and_power_interface_madt_initialize();
     write_acpi_tables_info(&com1);
     write_acpi_madt_info(&com1);
+    write_acpi_madt_record(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())
     {
-        for (uint8_t lapic_index = 0u;
-             lapic_index < advanced_configuration_and_power_interface_madt_get_local_apic_count(); ++lapic_index)
-        {
-            if (!advanced_configuration_and_power_interface_madt_is_local_apic_enabled(lapic_index))
-                continue;
+        const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt =
+            advanced_configuration_and_power_interface_madt();
 
-            (void) cpu_topology_register_discovered_apic_id(
-                advanced_configuration_and_power_interface_madt_get_local_apic_id(lapic_index));
-        }
+        for (uint32_t slot = 0u; slot < madt->processor_count; ++slot)
+            (void) cpu_topology_register_discovered_apic_id(madt->processors[slot].apic_id);
 
         write_cpu_topology_madt_sync_info(&com1);
     }

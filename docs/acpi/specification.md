@@ -388,7 +388,12 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
   set; an Online Capable entry is counted and unused, since there is no hotplug; an entry with both flags clear is
   ignored ([§5.2.12.2]). Every other type, the RISC-V types and the Multiprocessor Wakeup structure among them, is
   skipped by its length and counted. No CPU cap sits below the profile's, and the ACPI Processor UID is kept per
-  CPU slot.
+  CPU slot. A local APIC ID of 0xFF, an x2APIC ID of 0xFFFFFFFF, and an x2APIC ID below 0xFF in a table that also
+  lists local APICs name no processor and are counted invalid, as in
+  [Linux](https://github.com/torvalds/linux/blob/e5f0a698b34ed76002dc5cff3804a61c80233a7a/arch/x86/kernel/acpi/boot.c#L162-L272).
+  The MADT keeps 256 CPU slots and 256 NMI connections, past which it counts what it drops; an NMI entry whose
+  UID is 0xFF, or 0xFFFFFFFF for an x2APIC one, applies to every processor. The boot prints one
+  `[LPLTLM] acpi.madt` line with the slot count and every counter.
 - **MCFG** gives the segment groups and their ECAM bases (#58); **HPET** its base address (#60, #298). Each is
   parsed by its first consumer.
 

@@ -49,11 +49,29 @@ void write_acpi_madt_info(Serial_t *serial)
     serial_write_string(serial, ", ioapic_count=");
     serial_write_int(serial, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_count());
     serial_write_string(serial, ", lapic_count=");
-    serial_write_int(serial, (int32_t) advanced_configuration_and_power_interface_madt_get_local_apic_count());
+    serial_write_unsigned(serial, advanced_configuration_and_power_interface_madt()->processor_count);
     serial_write_string(serial, ", iso_count=");
     serial_write_int(serial,
                      (int32_t) advanced_configuration_and_power_interface_madt_get_interrupt_source_override_count());
     serial_write_string(serial, "\n");
+}
+
+void write_acpi_madt_record(Serial_t *serial)
+{
+    const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt = advanced_configuration_and_power_interface_madt();
+
+    kernel_telemetry_begin_record(serial, "acpi.madt");
+    kernel_telemetry_write_boolean("read", madt->available);
+    kernel_telemetry_write_boolean("checksum_valid", madt->checksum_valid);
+    kernel_telemetry_write_unsigned("processors", madt->processor_count);
+    kernel_telemetry_write_unsigned("processors_dropped", madt->processors_dropped);
+    kernel_telemetry_write_unsigned("online_capable", madt->online_capable_count);
+    kernel_telemetry_write_unsigned("disabled", madt->disabled_count);
+    kernel_telemetry_write_unsigned("invalid", madt->invalid_count);
+    kernel_telemetry_write_unsigned("nmis", madt->non_maskable_interrupt_count);
+    kernel_telemetry_write_unsigned("nmis_dropped", madt->non_maskable_interrupts_dropped);
+    kernel_telemetry_write_unsigned("skipped", madt->skipped_count);
+    kernel_telemetry_end_record();
 }
 
 void write_acpi_ioapics_info(Serial_t *serial)

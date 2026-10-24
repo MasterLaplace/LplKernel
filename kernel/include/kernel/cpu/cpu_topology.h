@@ -179,6 +179,14 @@ extern uint32_t cpu_topology_get_slot_for_apic_id(uint32_t apic_id);
 extern uint32_t cpu_topology_get_discovered_cpu_count(void);
 
 /**
+ * @brief The slots the topology gives @p processors processors: one each, up to its capacity.
+ *
+ * @param processors How many processors the firmware enables.
+ * @return @p processors, or CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC when there are more.
+ */
+extern uint32_t cpu_topology_slots_for(uint32_t processors);
+
+/**
  * @brief Get a human-readable name of the topology discovery source.
  *
  * This indicates how the CPU topology was discovered (e.g., "cpuid-apic-id",

@@ -13,8 +13,8 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file tables.h
- * @brief The firmware's ACPI tables: the directory of every table, and the MADT's local APICs,
- *        I/O APICs and interrupt overrides.
+ * @brief The firmware's ACPI tables: the directory of every table, and the MADT's processors, NMI
+ *        connections, I/O APICs and interrupt overrides.
  *
  * Architecture-free: the tables are mapped, and the root system description pointer found, through
  * the host interface of kernel/acpi/host.h.
@@ -31,10 +31,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT     8u
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT        16u
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_LOCAL_APIC_COUNT 32u
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT      64u /**< Tables one directory records. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT 8u
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT    16u
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT                                                 \
+    256u /**< CPU slots one MADT reading keeps; the largest server of the corpus enables 224. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT                                    \
+    256u /**< NMI connections one MADT reading keeps; firmware lists up to one per processor. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ENABLED 0x1u /**< Local APIC flag: ready for use. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ONLINE_CAPABLE                                                 \
+    0x2u /**< Local APIC flag: not enabled, but can be enabled at run time. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ALL_PROCESSORS                                                      \
+    0xFFFFFFFFu /**< The processor UID of an NMI connection that every processor has. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT 64u /**< Tables one directory records. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ROOT_SYSTEM_DESCRIPTION_POINTER_SIGNATURE                           \
     "RSD PTR " /**< A root pointer's 8 letters. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ROOT_SYSTEM_DESCRIPTION_POINTER_VERSION_1_LENGTH                    \
@@ -139,17 +147,56 @@ typedef struct __attribute__((packed)) {
     uint16_t flags;
 } AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t;
 
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+    uint8_t processor_unique_identifier; /**< 0xFF for every processor. */
+    uint16_t flags;
+    uint8_t local_interrupt;
+} AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+    uint16_t reserved;
+    uint32_t x2apic_id;
+    uint32_t flags;
+    uint32_t processor_unique_identifier;
+} AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t length;
+    uint16_t flags;
+    uint32_t processor_unique_identifier; /**< 0xFFFFFFFF for every processor. */
+    uint8_t local_interrupt;
+    uint8_t reserved[3];
+} AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t;
+
 typedef struct {
     uint8_t id;
     uint32_t physical_base;
     uint32_t gsi_base;
 } AdvancedConfigurationAndPowerInterfaceIoApicInfo_t;
 
-typedef struct {
-    uint8_t acpi_processor_id;
-    uint8_t apic_id;
-    uint32_t flags;
-} AdvancedConfigurationAndPowerInterfaceLocalApicInfo_t;
+/**
+ * @brief A CPU slot: a processor whose MADT entry, local APIC or local x2APIC, has its Enabled flag
+ *        set.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceProcessor {
+    uint32_t processor_unique_identifier; /**< Its ACPI Processor UID: its processor object's `_UID`. */
+    uint32_t apic_id;                     /**< Its local APIC ID, or its x2APIC ID. */
+} AdvancedConfigurationAndPowerInterfaceProcessor_t;
+
+/**
+ * @brief The local interrupt input a processor's NMI is wired to, from a local APIC NMI or a local
+ *        x2APIC NMI entry.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceProcessorNonMaskableInterrupt {
+    uint32_t processor_unique_identifier; /**< Its processor's UID, or the value that means every one. */
+    uint16_t flags;                       /**< MPS INTI flags: polarity and trigger mode. */
+    uint8_t local_interrupt;              /**< The local APIC input, LINT0 or LINT1. */
+} AdvancedConfigurationAndPowerInterfaceProcessorNonMaskableInterrupt_t;
 
 typedef struct {
     uint8_t bus;
@@ -157,6 +204,36 @@ typedef struct {
     uint32_t global_system_interrupt;
     uint16_t flags;
 } AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t;
+
+/**
+ * @brief What one reading of a MADT found.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMadtState {
+    const char *state_name;                /**< How the reading went, as the boot reports it. */
+    bool available;                        /**< Whether every entry was read, to the table's end. */
+    bool checksum_valid;                   /**< Whether its bytes sum to zero; one that fails is read all the same. */
+    uint32_t local_apic_physical_base;     /**< The local APICs' base, the 64-bit override's when it gives one. */
+    uint32_t processor_count;              /**< CPU slots, in the order the table lists them. */
+    uint32_t processors_dropped;           /**< Enabled processors past the last slot, counted. */
+    uint32_t online_capable_count;         /**< Processors that can be enabled at run time: counted, unused. */
+    uint32_t disabled_count;               /**< Processor entries with both flags clear, which OSPM ignores. */
+    uint32_t invalid_count;                /**< Enabled entries whose APIC ID names no processor: 0xFF for a local APIC,
+                                                0xFFFFFFFF for an x2APIC, or an x2APIC ID below 0xFF when local APIC
+                                                entries name processors. */
+    uint32_t non_maskable_interrupt_count; /**< NMI connections kept. */
+    uint32_t non_maskable_interrupts_dropped; /**< NMI connections past the capacity, counted. */
+    uint32_t skipped_count;                   /**< Entries of a type not read, or shorter than their type. */
+    uint8_t io_apic_count;                    /**< I/O APICs kept. */
+    uint8_t interrupt_source_override_count;  /**< Interrupt source overrides kept. */
+    AdvancedConfigurationAndPowerInterfaceProcessor_t
+        processors[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT]; /**< The CPU slots. */
+    AdvancedConfigurationAndPowerInterfaceProcessorNonMaskableInterrupt_t non_maskable_interrupts
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT]; /**< The NMI connections. */
+    AdvancedConfigurationAndPowerInterfaceIoApicInfo_t
+        io_apics[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT]; /**< The I/O APICs. */
+    AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t
+        interrupt_source_overrides[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT]; /**< The overrides. */
+} AdvancedConfigurationAndPowerInterfaceMadtState_t;
 
 typedef struct __attribute__((packed)) {
     AdvancedConfigurationAndPowerInterfaceSdtHeader_t header;
@@ -214,11 +291,40 @@ typedef struct __attribute__((packed)) {
 extern bool advanced_configuration_and_power_interface_checksum_holds(const void *bytes, size_t length);
 
 /**
- * @brief Parse ACPI RSDP/RSDT and discover MADT topology metadata.
+ * @brief Reads the firmware's MADT into the boot's MADT state.
  *
- * Current scope is discovery-only (no IOAPIC programming yet).
+ * @details The state names the MADT as not found when the directory has none, and otherwise holds
+ *          what advanced_configuration_and_power_interface_read_madt found in it.
  */
 extern void advanced_configuration_and_power_interface_madt_initialize(void);
+
+/**
+ * @brief Reads every entry of a MADT.
+ *
+ * @details Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for a local APIC or local
+ *          x2APIC entry whose Enabled flag is set; an Online Capable entry is counted and unused, and
+ *          one with both flags clear is counted and ignored. As Linux does, a local APIC ID of 0xFF
+ *          and an x2APIC ID of 0xFFFFFFFF name no processor, nor does an x2APIC ID below 0xFF when
+ *          local APIC entries name processors. An NMI entry for processor UID 0xFF keeps
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ALL_PROCESSORS. Every other type is skipped by
+ *          its length and counted. A table whose checksum fails is read all the same, and recorded.
+ *
+ * @param table     The table, every byte of its length readable.
+ * @param out_state Emptied, then filled with what the table holds.
+ * @return false when @p table is NULL or shorter than a MADT header, when an entry's length runs past
+ *         the table's end or is shorter than two bytes, or when the local APIC override lies above
+ *         4 GiB; @p out_state then says why, and keeps what was read before.
+ */
+extern bool
+advanced_configuration_and_power_interface_read_madt(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *table,
+                                                     AdvancedConfigurationAndPowerInterfaceMadtState_t *out_state);
+
+/**
+ * @brief The boot's MADT state, which advanced_configuration_and_power_interface_madt_initialize fills.
+ *
+ * @return The state, never NULL.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configuration_and_power_interface_madt(void);
 
 /**
  * @brief Walks the tables a root system description pointer leads to, each mapped through a
@@ -297,26 +403,6 @@ extern uint8_t advanced_configuration_and_power_interface_madt_is_available(void
  * @brief Return MADT-reported local APIC physical base address.
  */
 extern uint32_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void);
-
-/**
- * @brief Return discovered Local APIC count from MADT entries.
- */
-extern uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_count(void);
-
-/**
- * @brief Return discovered Local APIC id for an index.
- */
-extern uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_id(uint8_t index);
-
-/**
- * @brief Return non-zero when Local APIC entry is MADT-enabled (flags bit0).
- */
-extern uint8_t advanced_configuration_and_power_interface_madt_is_local_apic_enabled(uint8_t index);
-
-/**
- * @brief Return number of MADT Local APIC entries with enabled flag set.
- */
-extern uint8_t advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count(void);
 
 /**
  * @brief Return discovered IOAPIC count from MADT entries.

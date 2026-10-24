@@ -32,7 +32,7 @@ KERNEL_TEST(local_controller_is_ready)
 {
     kernel_test_check(test, advanced_configuration_and_power_interface_madt_is_available(),
                       "the firmware has an interrupt controller table");
-    kernel_test_check(test, advanced_configuration_and_power_interface_madt_get_local_apic_count() > 0u,
+    kernel_test_check(test, advanced_configuration_and_power_interface_madt()->processor_count > 0u,
                       "it lists at least one local controller");
     kernel_test_check(test, advanced_configuration_and_power_interface_madt_get_local_apic_physical_base() != 0u,
                       "it gives the local controllers' address");
