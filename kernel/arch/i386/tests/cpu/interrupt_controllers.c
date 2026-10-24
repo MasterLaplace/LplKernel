@@ -9,15 +9,19 @@
 #include <kernel/lib/asmutils.h>
 #include <kernel/testing/test.h>
 
+#include <string.h>
+
 #define INTERRUPT_CONTROLLERS_TEST_TICKS 8u /**< Ticks the contract waits for. */
 #define INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS                                                                    \
     12u /**< The deadline's length in tick periods: more than eight, since it counts the same tick. */
 #define INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR                                                          \
-    0xFEu /**< The highest APIC ID a physical destination names: 0xFF broadcasts (SDM §13.6.2.1). */
+    0xFEu /**< The highest APIC ID a physical destination names: 0xFF broadcasts (SDM 325384-093US §13.6.2.1). */
 #define INTERRUPT_CONTROLLERS_TEST_BROADCAST             0xFFu  /**< A physical destination's broadcast. */
 #define INTERRUPT_CONTROLLERS_TEST_PAST_EIGHT_BITS       0x100u /**< The first APIC ID past a destination's 8 bits. */
 #define INTERRUPT_CONTROLLERS_TEST_ANOTHER_PROCESSOR     0x2Au /**< An identifier QEMU never gives its first processor. */
 #define INTERRUPT_CONTROLLERS_TEST_YET_ANOTHER_PROCESSOR 0x15u /**< The one taken when a route already names 0x2A. */
+#define INTERRUPT_CONTROLLERS_TEST_UNNAMEABLE_STATE                                                                    \
+    "ioapic-init-bootstrap-processor-unnameable" /**< The state when no entry can name the bootstrap processor. */
 
 KERNEL_TEST_SUITE(interrupt_controllers, KERNEL_TEST_STAGE_INITIALIZATION);
 
@@ -28,6 +32,7 @@ typedef struct {
     uint8_t routes;        /**< Routes it programmed. */
     uint8_t routes_naming; /**< Of those, routes whose redirection entry names the identifier. */
     uint32_t refused;      /**< Destinations it refused. */
+    const char *state;     /**< The state it ended in. */
 } InterruptControllersRouting_t;
 
 static bool interrupt_controllers_a_route_is_live(void)
@@ -56,6 +61,11 @@ static uint8_t interrupt_controllers_routes_naming(uint32_t apic_id)
     return routes_naming;
 }
 
+static bool interrupt_controllers_state_is(const char *state, const char *name)
+{
+    return state != NULL && strlen(state) == strlen(name) && memcmp(state, name, strlen(name)) == 0;
+}
+
 /**
  * @brief Why the lines cannot be routed again on this machine, or NULL when they can.
  */
@@ -70,7 +80,9 @@ static const char *interrupt_controllers_why_the_lines_cannot_be_routed_again(vo
 
 /**
  * @brief Routes the lines again as if the bootstrap processor had @p apic_id, then, the topology put
- *        back, routes them as the boot did.
+ *        back, routes them again to the bootstrap processor.
+ *
+ * @details The boot's move of IRQ1 is not replayed: it names the processor the scaffold names.
  */
 static InterruptControllersRouting_t interrupt_controllers_route_as_if_the_bootstrap_processor_were(uint32_t apic_id)
 {
@@ -83,6 +95,7 @@ static InterruptControllersRouting_t interrupt_controllers_route_as_if_the_boots
     routing.routes = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
     routing.routes_naming = interrupt_controllers_routes_naming(apic_id);
     routing.refused = input_output_advanced_programmable_interrupt_controller_get_destinations_refused();
+    routing.state = input_output_advanced_programmable_interrupt_controller_get_state_name();
     cpu_topology_debug_restore(&found);
     input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
     return routing;
@@ -258,6 +271,11 @@ KERNEL_TEST(a_bootstrap_processor_no_entry_can_name_gets_no_route)
     kernel_test_check(test, past_eight_bits.routes == 0u, "nor does 0x100, past the destination's 8 bits");
     kernel_test_check(test, broadcast.refused == routes && past_eight_bits.refused == routes,
                       "each line refused is counted");
+    kernel_test_check(
+        test,
+        interrupt_controllers_state_is(broadcast.state, INTERRUPT_CONTROLLERS_TEST_UNNAMEABLE_STATE) &&
+            interrupt_controllers_state_is(past_eight_bits.state, INTERRUPT_CONTROLLERS_TEST_UNNAMEABLE_STATE),
+        "the controller's state says why, apart from a line that does not resolve");
     kernel_test_check(test, interrupt_controllers_routes_are_put_back(routes),
                       "the routes are put back as the boot programmed them");
 }
@@ -273,9 +291,14 @@ KERNEL_TEST(moving_a_route_refuses_an_identifier_its_entry_cannot_name)
 {
     const int32_t masked_route = interrupt_controllers_find_a_masked_route();
 
+    if (input_output_advanced_programmable_interrupt_controller_get_programmed_route_count() == 0u)
+    {
+        kernel_test_skip(test, "the boot routed no line through an input/output controller");
+        return;
+    }
     if (masked_route < 0)
     {
-        kernel_test_skip(test, "no route is masked, and moving a live one would steer its interrupts");
+        kernel_test_skip(test, "every route is live, and moving one would steer its interrupts");
         return;
     }
 
