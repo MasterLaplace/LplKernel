@@ -32,6 +32,7 @@
 
 #include <kernel/acpi/machine_language_decoder.h>
 #include <kernel/acpi/machine_language_namespace.h>
+#include <kernel/acpi/machine_language_objects.h>
 #include <kernel/acpi/tables.h>
 
 #include <stdbool.h>
@@ -103,6 +104,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t space; /**< The namespace it declares into. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t heap;       /**< The objects its nodes hold. */
     uint8_t status;              /**< OK, or why the namespace could not be opened. */
     uint8_t integer_bits;        /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
     uint32_t table_count;        /**< Tables declared. */
@@ -120,6 +122,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t unresolved_names;    /**< Of those, the ones that named nothing. */
     uint32_t pending_peak;        /**< Most operators pending at once. */
     uint32_t blocks_peak;         /**< Most constructs open at once. */
+    uint32_t values_deferred;     /**< Declarations whose object needs the interpreter: a Name, a region or a
+                                       buffer field built from an expression. */
+    uint32_t table_level_code;    /**< Statements at table level that are neither declarations nor data. */
     uint32_t
         opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes the decoding
                                                                                               pass decoded, per
@@ -200,6 +205,21 @@ extern void advanced_configuration_and_power_interface_machine_language_decode_t
 extern void advanced_configuration_and_power_interface_machine_language_load_directory(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory);
+
+/**
+ * @brief Folds a load's namespace as the parity record of the specification (§8.7) does: FNV-1a,
+ *        32 bits, over a depth-first walk in declaration order, External nodes apart. Per node: its
+ *        depth, its name and its type, then an Integer; a String's or a Buffer's length and bytes; a
+ *        Package's count and each element the same way, a name element as its path bytes; a
+ *        method's flags and body length; a region's space, offset and length; a field unit's kind,
+ *        bit offset, bit length, access and update rule; a Processor's ID, block address and block
+ *        length. Nothing that holds an address or an index is folded.
+ *
+ * @param load A load whose tables are decoded.
+ * @return The fold.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_fold(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
  * @brief Gives a load's pages back to its host.
