@@ -142,21 +142,22 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_des
  * @param isa_irq The ISA IRQ number.
  * @param apic_id The target CPU's local APIC ID or x2APIC ID, kept whole.
  * @return non-zero on success, zero on failure: the route is missing, or no redirection entry can name
- *         @p apic_id, which is then counted and leaves the route where it was.
+ *         @p apic_id, and the route stays where it was.
  */
 extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq,
                                                                                                  uint32_t apic_id);
 
 /**
- * @brief Return how many destinations were refused since the routes were last initialized, because a
- *        redirection entry cannot name them.
+ * @brief Return how many lines the routing scaffold refused to route, at its last run, because no
+ *        redirection entry can name the bootstrap processor.
  *
  * @details A physical destination holds 8 bits, and 0xFF in it is a broadcast (Intel SDM 325384-093US,
  *          §13.6.2.1): a processor whose APIC ID is 0xFF or more is reached only through interrupt
  *          remapping (#108).
  *
- * @return The lines the routing scaffold refused to route to the bootstrap processor, plus the moves
- *         input_output_advanced_programmable_interrupt_controller_set_isa_route_destination() refused.
+ * @return The lines refused. A move that
+ *         input_output_advanced_programmable_interrupt_controller_set_isa_route_destination() refuses is
+ *         not counted: its caller learns of it from the value returned.
  */
 extern uint32_t input_output_advanced_programmable_interrupt_controller_get_destinations_refused(void);
 

@@ -143,13 +143,9 @@ static uint32_t io_apic_build_redirection_low(uint8_t vector, uint16_t iso_flags
     return low;
 }
 
-static uint8_t io_apic_refuse_unnameable_destination(uint32_t apic_id)
+static uint8_t io_apic_can_name_destination(uint32_t apic_id)
 {
-    if (apic_id <= IOAPIC_HIGHEST_PHYSICAL_DESTINATION)
-        return 0u;
-
-    io_apic_destinations_refused++;
-    return 1u;
+    return (apic_id <= IOAPIC_HIGHEST_PHYSICAL_DESTINATION) ? 1u : 0u;
 }
 
 static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq, uint32_t destination)
@@ -178,8 +174,11 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq, uint32_t destin
     if (gsi_relative > 0x7Fu)
         return 0u;
 
-    if (io_apic_refuse_unnameable_destination(destination))
+    if (!io_apic_can_name_destination(destination))
+    {
+        io_apic_destinations_refused++;
         return 0u;
+    }
 
     vector = (uint8_t) (PIC_VECTOR_OFFSET_MASTER + isa_irq);
     redir_low = io_apic_build_redirection_low(vector, iso_flags);
@@ -458,7 +457,7 @@ uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_de
     if (gsi_relative > 0x7Fu)
         return 0u;
 
-    if (io_apic_refuse_unnameable_destination(apic_id))
+    if (!io_apic_can_name_destination(apic_id))
         return 0u;
 
     redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
