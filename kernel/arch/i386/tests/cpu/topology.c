@@ -48,6 +48,116 @@ KERNEL_TEST(sparse_identifiers_get_compact_slots)
 }
 
 /**
+ * @brief x2APIC identifiers of 0xFF and more keep their own slots, and each slot gives back the
+ *        identifier it was given.
+ *
+ * @details Cut to 8 bits, 0x100 took the slot of 0x0, 0x1FF that of 0xFF, and a slot held an
+ *          identifier no processor has.
+ */
+KERNEL_TEST(x2apic_identifiers_keep_their_own_slots)
+{
+    static const uint32_t identifiers[] = {0x0u, 0x2u, 0x100u, 0x102u, 0x1FFu, 0x105u, 0xFFu};
+    const uint32_t identifier_count = sizeof(identifiers) / sizeof(identifiers[0]);
+    CpuTopologySnapshot_t found;
+    const uint32_t local_apic_before = cpu_topology_get_local_apic_id();
+    const uint8_t forced_before = cpu_topology_is_forced();
+    uint32_t slots[sizeof(identifiers) / sizeof(identifiers[0])];
+    uint32_t read_back[sizeof(identifiers) / sizeof(identifiers[0])];
+
+    cpu_topology_debug_save(&found);
+    if (forced_before)
+        cpu_topology_debug_clear_forced_logical_slot();
+    cpu_topology_debug_reset_discovery();
+
+    for (uint32_t index = 0u; index < identifier_count; ++index)
+        slots[index] = cpu_topology_register_discovered_apic_id(identifiers[index]);
+    for (uint32_t index = 0u; index < identifier_count; ++index)
+        read_back[index] = cpu_topology_get_apic_id_at_slot(index);
+
+    const uint32_t discovered = cpu_topology_get_discovered_cpu_count();
+    const uint32_t slot_of_0x100 = cpu_topology_get_slot_for_apic_id(0x100u);
+
+    cpu_topology_debug_restore(&found);
+
+    uint32_t slots_in_order = 0u;
+    uint32_t identifiers_given_back = 0u;
+
+    for (uint32_t index = 0u; index < identifier_count; ++index)
+    {
+        slots_in_order += (slots[index] == index) ? 1u : 0u;
+        identifiers_given_back += (read_back[index] == identifiers[index]) ? 1u : 0u;
+    }
+    kernel_test_check(test, slots_in_order == identifier_count, "each identifier gets the next slot");
+    kernel_test_check(test, identifiers_given_back == identifier_count, "each slot gives back its identifier");
+    kernel_test_check(test, discovered == identifier_count, "seven distinct identifiers count seven processors");
+    kernel_test_check(test, slot_of_0x100 == 2u, "0x100 is found at its own slot");
+    kernel_test_check(test, topology_test_is_restored(&found, forced_before, local_apic_before),
+                      "the topology is put back as it was found");
+    kernel_test_measure(test, "slots_in_order", slots_in_order);
+    kernel_test_measure(test, "identifiers_given_back", identifiers_given_back);
+}
+
+/**
+ * @brief A slot nothing was registered at names no processor, with a value no processor has.
+ *
+ * @details 0xFF, which an empty slot used to give, is a valid x2APIC identifier.
+ */
+KERNEL_TEST(an_empty_slot_names_no_processor)
+{
+    CpuTopologySnapshot_t found;
+    const uint8_t forced_before = cpu_topology_is_forced();
+
+    cpu_topology_debug_save(&found);
+    if (forced_before)
+        cpu_topology_debug_clear_forced_logical_slot();
+    cpu_topology_debug_reset_discovery();
+
+    (void) cpu_topology_register_discovered_apic_id(0x0u);
+    const uint32_t empty_slot = cpu_topology_get_apic_id_at_slot(1u);
+    const uint32_t past_the_last = cpu_topology_get_apic_id_at_slot(CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC);
+
+    cpu_topology_debug_restore(&found);
+
+    kernel_test_check(test, empty_slot == CPU_TOPOLOGY_NO_PROCESSOR, "an empty slot names no processor");
+    kernel_test_check(test, past_the_last == CPU_TOPOLOGY_NO_PROCESSOR, "nor does a slot past the last");
+}
+
+/**
+ * @brief Once every slot is taken, a new identifier gets no slot, and marking it online changes no
+ *        processor's state.
+ *
+ * @details The identifier used to come back as if it were a slot: 5 named the slot of the sixth
+ *          processor, which marking 5 online then marked.
+ */
+KERNEL_TEST(a_full_topology_gives_no_slot)
+{
+    CpuTopologySnapshot_t found;
+    const uint8_t forced_before = cpu_topology_is_forced();
+
+    cpu_topology_debug_save(&found);
+    if (forced_before)
+        cpu_topology_debug_clear_forced_logical_slot();
+    cpu_topology_debug_reset_discovery();
+
+    for (uint32_t index = 0u; index < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++index)
+        (void) cpu_topology_register_discovered_apic_id(100u + index);
+
+    const uint32_t online_before = cpu_topology_get_online_cpu_count();
+    const uint32_t slot_of_5 = cpu_topology_register_discovered_apic_id(5u);
+
+    cpu_topology_mark_apic_id_online(5u);
+
+    const uint32_t online_after = cpu_topology_get_online_cpu_count();
+    const uint32_t discovered = cpu_topology_get_discovered_cpu_count();
+
+    cpu_topology_debug_restore(&found);
+
+    kernel_test_check(test, slot_of_5 == CPU_TOPOLOGY_NO_SLOT, "a 33rd identifier gets no slot");
+    kernel_test_check(test, online_after == online_before, "marking it online marks no processor");
+    kernel_test_check(test, discovered == CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC, "the topology still counts 32");
+}
+
+/**
  * @brief Every processor the firmware's interrupt table enables is discovered.
  */
 KERNEL_TEST(firmware_processors_are_discovered)

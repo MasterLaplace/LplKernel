@@ -29,6 +29,8 @@
 #include <stdint.h>
 
 #define CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC 32u
+#define CPU_TOPOLOGY_NO_PROCESSOR            0xFFFFFFFFu /**< The identifier of an empty slot: none, x2APIC included. */
+#define CPU_TOPOLOGY_NO_SLOT                 0xFFFFFFFFu /**< The slot of an identifier the topology does not hold. */
 
 /**
  * @brief Everything the topology holds, so a check that rewrites it can put it back.
