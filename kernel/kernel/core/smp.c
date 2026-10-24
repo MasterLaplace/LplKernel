@@ -7,7 +7,6 @@
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/helpers/ap_startup_helper.h>
 #include <kernel/diag/telemetry.h>
-#include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
 
 /**
@@ -81,9 +80,6 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
     }
 
     write_ap_trampoline_installed_info(com1);
-
-    application_processor_trampoline_configure_control_registers(asmutils_read_control_register_0(),
-                                                                 asmutils_read_control_register_4());
 
     application_processor_bootstrap_reset_iteration();
 

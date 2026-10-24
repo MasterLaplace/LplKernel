@@ -53,8 +53,7 @@ ap_trampoline_protected_entry:
     movw %ax, %es
     movw %ax, %ss
 
-    /* The bootstrap CPU's control registers, loaded whole: INIT leaves CR4 at 0 and CR0 at 60000010H
-       with CD and NW unchanged (Intel SDM vol. 3, Table 12-1). CR4 goes first, before paging reads it. */
+    /* CR4 before CR0: once CR0 turns paging on, the walk reads CR4 (PSE, PGE, PAE). */
     movl AP_MAILBOX_CR4, %eax
     movl %eax, %cr4
 
