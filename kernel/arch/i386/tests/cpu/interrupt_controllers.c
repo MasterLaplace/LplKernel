@@ -357,8 +357,8 @@ KERNEL_TEST(a_refused_line_is_left_masked)
     {
         lines[route_index] =
             input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(route_index);
-        (void) interrupt_controllers_move_route(lines[route_index], absent);
-        (void) input_output_advanced_programmable_interrupt_controller_enable_isa_route(lines[route_index]);
+        if (interrupt_controllers_move_route(lines[route_index], absent))
+            (void) input_output_advanced_programmable_interrupt_controller_enable_isa_route(lines[route_index]);
     }
     const uint8_t unmasked_before = interrupt_controllers_lines_left_unmasked(lines, routes);
 
