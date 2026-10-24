@@ -11,12 +11,14 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
 
   fetch  adds the dumps of a list to those already fetched: quick (tools/acpi/quick.list), corpus
          (tools/acpi/corpus.list, the default) or full (every report with a dump, written to
-         build/acpi-corpus/full.list)
+         build/acpi-corpus/full.list); each report's decoded tables come too, kept in the clone's
+         objects and never checked out
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
-         directory with what tools/acpi/expected_directory.py reads from the same dump
+         directory with what tools/acpi/expected_directory.py reads from the same dump, and its MADT
+         with what tools/acpi/expected_madt.py reads from the report's decoded tables
 
-Exit status: 0 when every machine agrees, 1 when one does not or its dump is missing, 2 on a usage
-error.
+Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
+missing, 2 on a usage error.
 USAGE
 }
 
@@ -48,7 +50,23 @@ dump_patterns() {
     sed -e 's|[][\*?!#]|\\&|g' -e 's|^\(.*\)$|/\1.bin|'
 }
 
-# Fetches the pinned commit's trees alone, then checks out the dumps of the list $1.
+# Fetches, in one request, the decoded reports of the list $1 the clone lacks: the check reads them from the
+# object store, where they stay compressed and out of the work tree. A fetch given no object would fetch the
+# remote's branches instead, so none is made when nothing is missing.
+fetch_decoded() {
+    local wanted present missing
+    wanted="$(reports "$1" | while IFS= read -r report; do
+        git -C "$LINUXHW" rev-parse "$LINUXHW_COMMIT:$report"
+    done)"
+    present="$(git -C "$LINUXHW" cat-file --batch-all-objects --batch-check='%(objectname)' 2>/dev/null)"
+    missing="$(comm -23 <(sort -u <<<"$wanted") <(sort -u <<<"$present"))"
+    [[ -n "$missing" ]] || return 0
+    git -C "$LINUXHW" -c fetch.negotiationAlgorithm=noop fetch -q --no-tags --no-write-fetch-head \
+        --recurse-submodules=no --filter=blob:none --stdin origin <<<"$missing"
+}
+
+# Fetches the pinned commit's trees alone, then checks out the dumps of the list $1 and fetches their decoded
+# reports.
 fetch() {
     if [[ ! -d "$LINUXHW/.git" ]]; then
         git init -q "$LINUXHW"
@@ -60,15 +78,27 @@ fetch() {
     { git -C "$LINUXHW" sparse-checkout list 2>/dev/null || true; reports "$1" | dump_patterns; } | sort -u |
         git -C "$LINUXHW" sparse-checkout set --no-cone --stdin
     git -C "$LINUXHW" checkout -q --detach "$LINUXHW_COMMIT"
+    fetch_decoded "$1"
     echo "$(reports "$1" | wc -l) dumps in the $1 list, $(find "$LINUXHW" -name '*.bin' -not -path '*/.git/*' | wc -l) in $LINUXHW"
     echo "ACPI dumps collected by hw-probe users at linux-hardware.org, published by linuxhw under CC-BY-4.0;"
     echo "changed: converted from acpidump text to binary tables."
 }
 
-# Compares the directory the kernel's code reads from each dump of the list $1 with the expected one.
+# Tells whether the clone holds the decoded report of the machine $1, never fetching it.
+has_decoded() {
+    GIT_NO_LAZY_FETCH=1 git -C "$LINUXHW" cat-file -e "$LINUXHW_COMMIT:$1" 2>/dev/null
+}
+
+# Prints the decoded report of the machine $1 from the clone's objects.
+decoded() {
+    GIT_NO_LAZY_FETCH=1 git -C "$LINUXHW" cat-file blob "$LINUXHW_COMMIT:$1"
+}
+
+# Compares the directory and the MADT the kernel's code reads from each dump of the list $1 with the expected
+# ones, then says how many CPU slots, I/O APICs, overrides and NMI connections the comparison held.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 machine dump actual expected
+    local number=0 agree=0 compared="" machine dump actual expected
     while IFS= read -r machine; do
         number=$((number + 1))
         dump="$LINUXHW/$machine.bin"
@@ -76,8 +106,14 @@ check() {
             echo "not ok $number $machine: no dump, run fetch first"
             continue
         fi
+        if ! has_decoded "$machine"; then
+            echo "not ok $number $machine: no decoded report, run fetch first"
+            continue
+        fi
         actual="$("$HARNESS" --machine "$dump" 2>&1)" || true
-        expected="$(python3 -I "$ROOT/tools/acpi/expected_directory.py" "$dump")"
+        expected="$(python3 -I "$ROOT/tools/acpi/expected_directory.py" "$dump")
+$(decoded "$machine" | python3 -I "$ROOT/tools/acpi/expected_madt.py" "$dump" -)" || true
+        compared+="$expected"$'\n'
         if [[ "$actual" == "$expected" ]]; then
             echo "ok $number $machine"
             agree=$((agree + 1))
@@ -86,7 +122,10 @@ check() {
             diff <(echo "$expected") <(echo "$actual") | sed 's/^/    # /' || true
         fi
     done < <(reports "$1")
-    echo "# directory: $agree of $number machines agree"
+    echo "# directory and MADT: $agree of $number machines agree"
+    echo "# compared: $(grep -c '^processor ' <<<"$compared") CPU slots," \
+        "$(grep -c '^io_apic ' <<<"$compared") I/O APICs, $(grep -c '^override ' <<<"$compared") overrides," \
+        "$(grep -c '^nmi ' <<<"$compared") NMI connections"
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
 }
 

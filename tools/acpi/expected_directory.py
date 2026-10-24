@@ -53,8 +53,10 @@ def lookup(recorded, signature):
     return next((data for data in matching if checksum_holds(data)), matching[0] if matching else None)
 
 
-def main():
-    tables = [bytes(entry["bytes"]) for entry in real_firmware_census.read_acpidump(sys.argv[1])]
+def read_directory(path):
+    """The tables the directory records for the dump at path, in its order, the count it calls unreachable, and
+    the FACS."""
+    tables = [bytes(entry["bytes"]) for entry in real_firmware_census.read_acpidump(path)]
     dsdt = next((data for data in tables if data[:4] == b"DSDT"), None)
     listed = [data for data in tables if data is not dsdt and not is_left_out(data)]
 
@@ -79,7 +81,11 @@ def main():
         facs_32 = field(fadt_recorded, length, 36, 4)
         facs_64 = field(fadt_recorded, length, 132, 8)
         facs = facs_32 if facs_32 != 0 else (facs_64 if facs_64 >> 32 == 0 else 0)
+    return recorded, unreachable, facs
 
+
+def main():
+    recorded, unreachable, facs = read_directory(sys.argv[1])
     print("tables=%u unreachable=%u facs=0x%08X" % (len(recorded), unreachable, facs))
     for data in recorded:
         info, _ = real_firmware_census.describe_table({"label": "", "bytes": data, "gaps": 0})
