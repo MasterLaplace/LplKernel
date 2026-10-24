@@ -16,6 +16,8 @@
 #define AP_TRAMPOLINE_MAILBOX_C_ENTRY_OFFSET      16u
 #define AP_TRAMPOLINE_MAILBOX_LOGICAL_SLOT_OFFSET 20u
 #define AP_TRAMPOLINE_MAILBOX_MAIN_LOOP_OFFSET    24u
+#define AP_TRAMPOLINE_MAILBOX_CR0_OFFSET          28u
+#define AP_TRAMPOLINE_MAILBOX_CR4_OFFSET          32u
 
 extern const uint8_t ap_trampoline_blob_start[];
 extern const uint8_t ap_trampoline_blob_end[];
@@ -110,6 +112,13 @@ void application_processor_trampoline_configure_handoff(uint8_t apic_id, uint32_
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_C_ENTRY_OFFSET) = c_entry_virtual;
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_LOGICAL_SLOT_OFFSET) = logical_slot;
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_MAIN_LOOP_OFFSET) = main_loop_virtual;
+}
+
+void application_processor_trampoline_configure_control_registers(uint32_t control_register_0,
+                                                                  uint32_t control_register_4)
+{
+    *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_CR0_OFFSET) = control_register_0;
+    *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_CR4_OFFSET) = control_register_4;
 }
 
 uint8_t application_processor_trampoline_wait_for_c_entry(uint32_t timeout_microseconds)

@@ -80,6 +80,19 @@ extern void application_processor_trampoline_configure_handoff(uint8_t apic_id, 
                                                                uint32_t main_loop_virtual, uint32_t cr3_physical);
 
 /**
+ * @brief Hand every AP the control registers it starts with.
+ *
+ * @details The trampoline loads this CR4 before it enables paging, then this CR0 whole, in place of
+ *          the CR0 that INIT leaves: 60000010H with CD and NW unchanged, and CR4 at 0 (Intel SDM
+ *          vol. 3, Table 12-1). Called once, before the first start-up sequence.
+ *
+ * @param control_register_0 The CR0 each AP loads, PE and PG included.
+ * @param control_register_4 The CR4 each AP loads before paging.
+ */
+extern void application_processor_trampoline_configure_control_registers(uint32_t control_register_0,
+                                                                         uint32_t control_register_4);
+
+/**
  * @brief Wait for AP C-entry completion marker from trampoline handoff.
  *
  * @param timeout_microseconds Longest wait, measured on the IRQ0 tick.
