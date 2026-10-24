@@ -59,10 +59,35 @@ static bool made_up_open(KernelTest_t *test)
 }
 
 /**
- * @brief Closes the made-up load and checks that every page went back to the host.
+ * @brief Checks the namespace holds together (every live node found by its parent and name, one slot
+ *        each, as many as it counts), then closes the made-up load and checks that every page went
+ *        back to the host.
  */
 static void made_up_close(KernelTest_t *test)
 {
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_load.space;
+    uint32_t live = 1u;
+    uint32_t found = 0u;
+    uint32_t slots = 0u;
+
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT + 1u;
+         index < space->node_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(space, index);
+
+        if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) != 0u)
+            continue;
+        ++live;
+        found += (advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                      &made_up_load.space, node->parent, node->name) == index) ?
+                     1u :
+                     0u;
+    }
+    for (uint32_t slot = 0u; slot < space->slot_capacity; ++slot)
+        slots += (space->slots[slot] != 0u) ? 1u : 0u;
+    kernel_test_check(test, live == space->live_nodes && found + 1u == live && slots + 1u == live,
+                      "every live node is found by its parent and name, in one slot each");
     advanced_configuration_and_power_interface_machine_language_close(&made_up_load);
     kernel_test_check(test, made_up_host.outstanding_pages == 0u, "every page goes back to the host");
 }
@@ -721,5 +746,142 @@ KERNEL_TEST(a_faulty_table_gives_way_to_the_next)
                           made_up_load.tables[3].first_error ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE,
                       "an If where Store expects an operand is refused");
+    made_up_close(test);
+}
+
+/**
+ * @brief An External cut short after its name at the end of its table reads nothing past the table,
+ *        and an External of NullName creates no node and is counted.
+ */
+KERNEL_TEST(an_external_cut_short_or_without_a_name_creates_nothing)
+{
+    static const uint8_t cut[] = {0x15u, 0x2Eu, 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B'};
+    static const uint8_t nameless[] = {0x15u, 0x00u, 0x08u, 0x01u};
+
+    if (!made_up_open(test))
+        return;
+
+    const uint32_t nodes = made_up_load.space.live_nodes;
+
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", cut, sizeof(cut)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", nameless, sizeof(nameless)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test, made_up_load.space.live_nodes == nodes, "neither External creates a node");
+    kernel_test_check(test, made_up_load.load_errors >= 2u, "the cut one and the nameless one are counted");
+    made_up_close(test);
+}
+
+/**
+ * @brief Three hundred Externals on paths no table declares are all placed, with no cap: a call to
+ *        the last keeps its argument.
+ */
+KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
+{
+    static uint8_t aml[300u * 18u + 32u];
+    uint32_t length = 0u;
+    uint32_t call = 0u;
+
+    for (uint32_t index = 0u; index < 300u; ++index)
+    {
+        static const uint8_t prefix[] = {0x15u, '\\', 0x2Fu, 0x03u, '_', 'S', 'B', '_'};
+
+        memcpy(aml + length, prefix, sizeof(prefix));
+        length += (uint32_t) sizeof(prefix);
+        aml[length++] = 'D';
+        aml[length++] = (uint8_t) ('0' + index / 100u);
+        aml[length++] = (uint8_t) ('0' + (index / 10u) % 10u);
+        aml[length++] = (uint8_t) ('0' + index % 10u);
+        memcpy(aml + length, "MTH_", 4u);
+        length += 4u;
+        aml[length++] = 0x08u;
+        aml[length++] = 0x01u;
+    }
+    call = length;
+    {
+        static const uint8_t main_method[] = {0x14u, 0x18u, 'M', 'A', 'I', 'N',   0x00u, 0x70u, '\\',
+                                              0x2Fu, 0x03u, '_', 'S', 'B', '_',   'D',   '2',   '9',
+                                              '9',   'M',   'T', 'H', '_', 0x00u, 0x60u};
+
+        memcpy(aml + length, main_method, sizeof(main_method));
+        length += (uint32_t) sizeof(main_method);
+    }
+    if (!made_up_open(test))
+        return;
+
+    static uint8_t table[sizeof(aml) + 36u];
+    uint8_t sum = 0u;
+
+    memset(table, 0, sizeof(table));
+    memcpy(table, "DSDT", 4u);
+    table[4] = (uint8_t) (36u + length);
+    table[5] = (uint8_t) ((36u + length) >> 8u);
+    table[8] = 2u;
+    memcpy(table + 36, aml, length);
+    for (uint32_t byte = 0u; byte < 36u + length; ++byte)
+        sum = (uint8_t) (sum + table[byte]);
+    table[9] = (uint8_t) (0u - sum);
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) table);
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_measure(test, "externals_call_offset", call);
+    kernel_test_check(test, made_up_load.load_errors == 0u && made_up_load.decode_errors == 0u,
+                      "every External is placed, without a fault");
+    kernel_test_check(test,
+                      made_up_load.method_calls == 1u &&
+                          made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ZERO) == 1u,
+                      "the call to the 300th keeps its Zero as an argument");
+    made_up_close(test);
+}
+
+/**
+ * @brief An Alias declared twice keeps its first target, and an Alias of the same name in a method
+ *        body leaves the permanent one alone.
+ */
+KERNEL_TEST(an_alias_keeps_its_first_target)
+{
+    static const uint8_t first[] = {0x08u, 'T',   'G', 'T', '1', 0x01u, 0x08u, 'T', 'G', 'T', '2',
+                                    0x01u, 0x06u, 'T', 'G', 'T', '1',   'A',   'L', 'I', '_'};
+    static const uint8_t second[] = {0x06u, 'T', 'G',   'T',   '2', 'A', 'L', 'I', '_',  0x14u, 0x10u, 'M', 'A',
+                                     'I',   'N', 0x00u, 0x06u, 'T', 'G', 'T', '2', '\\', 'A',   'L',   'I', '_'};
+
+    if (!made_up_open(test))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", first, sizeof(first)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", second, sizeof(second)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+
+    uint32_t alias = 0u;
+    uint32_t target = 0u;
+    uint32_t first_target = 0u;
+
+    kernel_test_check(
+        test,
+        made_up_resolve(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, "TGT1", &first_target) ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK,
+        "TGT1 is declared");
+    alias = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &made_up_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, made_up_segment("ALI_"));
+    target = advanced_configuration_and_power_interface_machine_language_namespace_node(&made_up_load.space, alias)
+                 ->value.handle;
+    kernel_test_check(test, target == first_target && made_up_load.duplicates == 1u,
+                      "ALI_ still names TGT1, and the second Alias is counted");
+    made_up_close(test);
+}
+
+/**
+ * @brief Load yields a value, as ACPICA parses it: `If (Load (RG00, Local0))` decodes.
+ */
+KERNEL_TEST(load_may_stand_where_a_value_is_expected)
+{
+    static const uint8_t aml[] = {0x14u, 0x10u, 'L', 'D', 'T', 'B', 0x00u, 0xA0u, 0x08u,
+                                  0x5Bu, 0x20u, 'R', 'G', '0', '0', 0x60u, 0xA3u};
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.decode_errors == 0u, "the If around Load decodes");
     made_up_close(test);
 }
