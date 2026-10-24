@@ -153,7 +153,9 @@ KERNEL_TEST(the_register_window_is_mapped_only_below_4_gib)
         kernel_test_check(test, mapping.mapped == 0u && mapping.mmio_virtual_base == 0u,
                           "and the mapping records no window");
         kernel_test_check(test, mapping.window_out_of_reach != 0u, "and the driver says it is out of reach");
-        kernel_test_check(test, hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach(),
+        kernel_test_check(test,
+                          hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach() &&
+                              !hardware_abstraction_layer_virtio_gpu_display_active(),
                           "and so did the bring-up at boot, which left the display off");
     }
     else
