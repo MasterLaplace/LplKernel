@@ -209,7 +209,7 @@ KERNEL_TEST(local_controller_is_ready)
 
 /**
  * @brief The firmware describes an input/output interrupt controller, and the kernel routes lines
- *        through it.
+ *        through it, or refuses them all for a bootstrap processor no redirection entry can name.
  */
 KERNEL_TEST(input_output_controller_is_ready)
 {
@@ -217,8 +217,10 @@ KERNEL_TEST(input_output_controller_is_ready)
                       "the firmware lists an input/output controller");
     kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_get_mapped_count() > 0u,
                       "the kernel mapped one");
-    kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_get_programmed_route_count() > 0u,
-                      "and programmed routes through it");
+    kernel_test_check(test,
+                      input_output_advanced_programmable_interrupt_controller_get_programmed_route_count() > 0u ||
+                          input_output_advanced_programmable_interrupt_controller_get_lines_refused() > 0u,
+                      "and programmed routes through it, or refused the lines for want of a destination");
 }
 
 /**
