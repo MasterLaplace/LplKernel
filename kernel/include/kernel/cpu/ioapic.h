@@ -161,4 +161,17 @@ extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_r
  */
 extern uint32_t input_output_advanced_programmable_interrupt_controller_get_destinations_refused(void);
 
+/**
+ * @brief Read back whether the redirection entry an ISA line resolves to is masked, whether the line is
+ *        routed or not.
+ *
+ * @details The tests read with it what a refused line leaves in its entry, which no route records.
+ *
+ * @param isa_irq The ISA IRQ line.
+ * @param masked Receives 1 when the entry's mask bit is set, 0 when it is clear.
+ * @return 1 when the line resolves to an entry of a mapped I/O APIC, 0 when it does not, @p masked then
+ *         left alone.
+ */
+extern uint8_t input_output_advanced_programmable_interrupt_controller_read_line_mask(uint8_t isa_irq, uint8_t *masked);
+
 #endif /* KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

@@ -312,6 +312,28 @@ uint32_t input_output_advanced_programmable_interrupt_controller_get_destination
     return io_apic_destinations_refused;
 }
 
+uint8_t input_output_advanced_programmable_interrupt_controller_read_line_mask(uint8_t isa_irq, uint8_t *masked)
+{
+    uint32_t global_system_interrupt = 0u;
+    uint16_t iso_flags = 0u;
+    uint8_t unit_index = 0u;
+    uint32_t gsi_relative = 0u;
+    uint8_t redir_reg_index;
+    uint32_t redir_low;
+
+    if (!masked)
+        return 0u;
+    if (!advanced_configuration_and_power_interface_madt_resolve_isa_irq(isa_irq, &global_system_interrupt, &iso_flags))
+        return 0u;
+    if (!io_apic_find_unit_for_gsi(global_system_interrupt, &unit_index, &gsi_relative) || gsi_relative > 0x7Fu)
+        return 0u;
+
+    redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
+    redir_low = io_apic_register_read(io_apic_units[unit_index].virtual_base, redir_reg_index);
+    *masked = (redir_low & IOAPIC_REDIR_LOW_MASKED) ? 1u : 0u;
+    return 1u;
+}
+
 uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(uint8_t route_index)
 {
     if (route_index >= io_apic_route_count)

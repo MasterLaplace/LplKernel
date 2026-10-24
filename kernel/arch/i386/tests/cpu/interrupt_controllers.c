@@ -124,6 +124,46 @@ static uint8_t interrupt_controllers_move_route(uint8_t isa_irq, uint32_t apic_i
     return input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(isa_irq, apic_id);
 }
 
+static bool interrupt_controllers_a_processor_has(uint32_t apic_id)
+{
+    const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt = advanced_configuration_and_power_interface_madt();
+
+    for (uint32_t slot = 0u; slot < madt->processor_count; ++slot)
+    {
+        if (madt->processors[slot].apic_id == apic_id)
+            return true;
+    }
+    return false;
+}
+
+/**
+ * @brief The lowest APIC ID a physical destination names that no processor of the MADT has, or
+ *        CPU_TOPOLOGY_NO_PROCESSOR when every one of them has a processor.
+ */
+static uint32_t interrupt_controllers_find_an_absent_processor(void)
+{
+    for (uint32_t apic_id = 1u; apic_id <= INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR; ++apic_id)
+    {
+        if (!interrupt_controllers_a_processor_has(apic_id) && apic_id != cpu_topology_get_local_apic_id())
+            return apic_id;
+    }
+    return CPU_TOPOLOGY_NO_PROCESSOR;
+}
+
+static uint8_t interrupt_controllers_lines_left_unmasked(const uint8_t *lines, uint8_t line_count)
+{
+    uint8_t unmasked = 0u;
+
+    for (uint8_t index = 0u; index < line_count; ++index)
+    {
+        uint8_t masked = 1u;
+
+        if (input_output_advanced_programmable_interrupt_controller_read_line_mask(lines[index], &masked) && !masked)
+            ++unmasked;
+    }
+    return unmasked;
+}
+
 /**
  * @brief The tick's contract, whichever timer keeps it: the profile's frequency, and ticks that arrive.
  *
@@ -278,6 +318,62 @@ KERNEL_TEST(a_bootstrap_processor_no_entry_can_name_gets_no_route)
         "the controller's state says why, apart from a line that does not resolve");
     kernel_test_check(test, interrupt_controllers_routes_are_put_back(routes),
                       "the routes are put back as the boot programmed them");
+}
+
+/**
+ * @brief A line refused for its destination is left masked, as the scaffold leaves every line it
+ *        programs, whatever the entry held before.
+ *
+ * @details The routed lines are first unmasked, aimed at a processor the MADT does not list so that
+ *          nothing receives them, then routed again for 0x100. A refusal returned without writing the
+ *          entry, and left it as it was.
+ */
+KERNEL_TEST(a_refused_line_is_left_masked)
+{
+    const char *why_not = interrupt_controllers_why_the_lines_cannot_be_routed_again();
+
+    if (why_not != NULL)
+    {
+        kernel_test_skip(test, why_not);
+        return;
+    }
+
+    const uint32_t absent = interrupt_controllers_find_an_absent_processor();
+
+    if (absent == CPU_TOPOLOGY_NO_PROCESSOR)
+    {
+        kernel_test_skip(test, "every identifier a physical destination names has a processor");
+        return;
+    }
+
+    const uint8_t routes = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
+    uint8_t lines[INPUT_OUTPUT_APIC_MAX_ROUTES];
+    CpuTopologySnapshot_t found;
+
+    for (uint8_t route_index = 0u; route_index < routes; ++route_index)
+    {
+        lines[route_index] =
+            input_output_advanced_programmable_interrupt_controller_get_programmed_route_irq(route_index);
+        (void) interrupt_controllers_move_route(lines[route_index], absent);
+        (void) input_output_advanced_programmable_interrupt_controller_enable_isa_route(lines[route_index]);
+    }
+    const uint8_t unmasked_before = interrupt_controllers_lines_left_unmasked(lines, routes);
+
+    cpu_topology_debug_save(&found);
+    cpu_topology_set_runtime_local_apic_id(INTERRUPT_CONTROLLERS_TEST_PAST_EIGHT_BITS);
+    input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
+    const uint8_t unmasked_after = interrupt_controllers_lines_left_unmasked(lines, routes);
+    cpu_topology_debug_restore(&found);
+    input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
+
+    kernel_test_check(test, unmasked_before == routes,
+                      "the routed lines are unmasked first, aimed at a processor that does not exist");
+    kernel_test_check(test, unmasked_after == 0u, "a line refused for its destination is left masked");
+    kernel_test_check(test,
+                      interrupt_controllers_routes_are_put_back(routes) && !interrupt_controllers_a_route_is_live() &&
+                          interrupt_controllers_lines_left_unmasked(lines, routes) == 0u,
+                      "the routes are put back masked, as the boot programmed them");
+    kernel_test_measure(test, "absent_apic_id", absent);
 }
 
 /**
