@@ -130,6 +130,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
     uint32_t run_count;       /**< Runs taken. */
     uint32_t node_count;      /**< Node indices used, the unused node 0 included. */
     uint32_t free_nodes;      /**< The last node removed, whose next_sibling links the others, or 0. */
+    uint32_t live_nodes;      /**< Nodes in the namespace, the root included, the removed ones apart. */
     uint32_t max_nodes;       /**< The node cap. */
     uint32_t arena_bytes;     /**< Bytes taken from the host: runs and hash table. */
     uint32_t max_arena_bytes; /**< The arena cap. */

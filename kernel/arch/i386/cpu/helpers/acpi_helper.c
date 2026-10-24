@@ -98,7 +98,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("load_errors", load->load_errors);
     kernel_telemetry_write_unsigned("decode_errors", load->decode_errors);
     kernel_telemetry_write_unsigned("checksum_bad_loaded", load->checksum_bad_loaded);
-    kernel_telemetry_write_unsigned("nodes", load->space.node_count);
+    kernel_telemetry_write_unsigned("nodes", load->space.live_nodes);
     kernel_telemetry_write_unsigned("arena_bytes", load->space.arena_bytes);
     kernel_telemetry_write_unsigned("lookups", load->space.lookups);
     kernel_telemetry_write_unsigned("probes", load->space.probes);

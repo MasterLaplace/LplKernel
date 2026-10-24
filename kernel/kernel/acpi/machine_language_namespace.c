@@ -403,6 +403,7 @@ advanced_configuration_and_power_interface_machine_language_namespace_add_child(
         advanced_configuration_and_power_interface_machine_language_namespace_node(space, index);
 
     memset(node, 0, sizeof(*node));
+    ++space->live_nodes;
     node->name = name;
     node->parent = parent;
     node->type = type;
@@ -443,6 +444,7 @@ void advanced_configuration_and_power_interface_machine_language_namespace_remov
     machine_language_namespace_unlink(space, node, index);
     machine_language_namespace_unplace(space, node, index);
     node->flags = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE;
+    --space->live_nodes;
     node->next_sibling = space->free_nodes;
     space->free_nodes = index;
 }
