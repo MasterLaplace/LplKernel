@@ -67,6 +67,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t outstanding_maps;                         /**< Maps not unmapped yet, each kept in maps. */
     uint32_t mismatched_unmaps;                        /**< Unmaps whose address and length name no open map. */
     uint32_t range_count;                              /**< Ranges placed. */
+    uint32_t outstanding_pages;                        /**< Pages given and not taken back yet. */
     AdvancedConfigurationAndPowerInterfaceSimulatedRange_t
         ranges[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES]; /**< In the order placed. */
     AdvancedConfigurationAndPowerInterfaceSimulatedMap_t
@@ -74,7 +75,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
 } AdvancedConfigurationAndPowerInterfaceSimulatedHost_t;
 
 /**
- * @brief Empties a simulated host: no range, no root pointer, nothing mapped.
+ * @brief Empties a simulated host: no range, no root pointer, nothing mapped, no page given. Its pages
+ *        come from kernel_vmm_alloc_pages, which the host harness gives too.
  *
  * @param simulated The host, which must stay where it is from now on.
  */
