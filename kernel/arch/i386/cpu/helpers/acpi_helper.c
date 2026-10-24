@@ -1,3 +1,4 @@
+#include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/config.h>
 #include <kernel/cpu/helpers/acpi_helper.h>
@@ -71,6 +72,38 @@ void write_acpi_madt_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("nmis", madt->non_maskable_interrupt_count);
     kernel_telemetry_write_unsigned("nmis_dropped", madt->non_maskable_interrupts_dropped);
     kernel_telemetry_write_unsigned("skipped", madt->skipped_count);
+    kernel_telemetry_end_record();
+}
+
+void write_acpi_machine_language_record(Serial_t *serial)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load =
+        advanced_configuration_and_power_interface_machine_language();
+    uint32_t terms = 0u;
+
+    for (uint32_t index = 0u; index < load->table_count; ++index)
+        terms += load->tables[index].terms;
+    kernel_telemetry_begin_record(serial, "acpi.aml");
+    kernel_telemetry_write_text("status",
+                                advanced_configuration_and_power_interface_machine_language_status_name(load->status));
+    kernel_telemetry_write_unsigned("tables", load->table_count);
+    kernel_telemetry_write_unsigned("bytes", load->bytes);
+    kernel_telemetry_write_unsigned("integer_bits", load->integer_bits);
+    kernel_telemetry_write_unsigned("terms", terms);
+    kernel_telemetry_write_unsigned("declarations", load->declarations);
+    kernel_telemetry_write_unsigned("duplicates", load->duplicates);
+    kernel_telemetry_write_unsigned("method_calls", load->method_calls);
+    kernel_telemetry_write_unsigned("name_references", load->name_references);
+    kernel_telemetry_write_unsigned("unresolved_names", load->unresolved_names);
+    kernel_telemetry_write_unsigned("load_errors", load->load_errors);
+    kernel_telemetry_write_unsigned("decode_errors", load->decode_errors);
+    kernel_telemetry_write_unsigned("checksum_bad_loaded", load->checksum_bad_loaded);
+    kernel_telemetry_write_unsigned("nodes", load->space.node_count);
+    kernel_telemetry_write_unsigned("arena_bytes", load->space.arena_bytes);
+    kernel_telemetry_write_unsigned("lookups", load->space.lookups);
+    kernel_telemetry_write_unsigned("probes", load->space.probes);
+    kernel_telemetry_write_unsigned("pending_peak", load->pending_peak);
+    kernel_telemetry_write_unsigned("blocks_peak", load->blocks_peak);
     kernel_telemetry_end_record();
 }
 
