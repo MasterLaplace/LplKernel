@@ -14,9 +14,9 @@ uint8_t application_processor_bootstrap_initialize(void)
 
     for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
     {
-        uint8_t apic_id = cpu_topology_get_apic_id_at_slot(slot);
+        const uint32_t apic_id = cpu_topology_get_apic_id_at_slot(slot);
 
-        if (apic_id == 0xFFu || apic_id == bsp_apic_id)
+        if (apic_id == CPU_TOPOLOGY_NO_PROCESSOR || apic_id == bsp_apic_id)
             continue;
 
         if (static_stack_index >= AP_BOOTSTRAP_MAX_APS)
@@ -37,7 +37,7 @@ uint8_t application_processor_bootstrap_initialize(void)
     return 1u;
 }
 
-ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_by_apic_id(uint8_t apic_id)
+ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_by_apic_id(uint32_t apic_id)
 {
     for (uint32_t slot = 0u; slot < 32u; ++slot)
     {

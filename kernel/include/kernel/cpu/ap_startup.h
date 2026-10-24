@@ -46,7 +46,7 @@ extern InterruptDescriptorTable_t interrupt_descriptor_table;
  * report back to the BSP.
  */
 typedef struct APLocalContext {
-    uint8_t apic_id;
+    uint32_t apic_id;
     uint32_t logical_slot;
     uint8_t initialized;
 } ApplicationProcessorLocalContext_t;
@@ -85,11 +85,11 @@ extern uint8_t application_processor_startup_ensure_low_identity_mapping(void);
  * Called by AP after real→protected mode jump.
  * Sets up GDT, IDT, paging, APIC ID registration, and domain affinity.
  *
- * @param apic_id Physical APIC ID of this AP.
+ * @param apic_id Physical APIC ID of this AP, an x2APIC ID in x2APIC mode.
  * @param logical_slot Compacted logical CPU slot from topology.
  * @param stack_top Virtual address of AP's stack top.
  */
-extern void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logical_slot, void *stack_top);
+extern void application_processor_startup_initialize_cpu(uint32_t apic_id, uint32_t logical_slot, void *stack_top);
 
 /**
  * @brief Record a successful AP bootstrap acknowledgement.
@@ -97,10 +97,10 @@ extern void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32
  * Used by BSP after INIT/SIPI + trampoline acknowledgement while full AP
  * protected-mode handoff is still being integrated.
  *
- * @param apic_id Physical APIC ID of this AP.
+ * @param apic_id Physical APIC ID of this AP, an x2APIC ID in x2APIC mode.
  * @param logical_slot Compacted logical CPU slot from topology.
  */
-extern void application_processor_startup_report_bootstrap_ack(uint8_t apic_id, uint32_t logical_slot);
+extern void application_processor_startup_report_bootstrap_ack(uint32_t apic_id, uint32_t logical_slot);
 
 /**
  * @brief Return number of APs that reported online via startup initialization.
@@ -109,8 +109,10 @@ extern uint32_t application_processor_startup_get_reported_online_count(void);
 
 /**
  * @brief Return last APIC ID reported online during AP startup.
+ *
+ * @return That APIC ID, or CPU_TOPOLOGY_NO_PROCESSOR before any AP reported.
  */
-extern uint8_t application_processor_startup_get_last_reported_apic_id(void);
+extern uint32_t application_processor_startup_get_last_reported_apic_id(void);
 
 /**
  * @brief Count the records of control registers the APs made as they entered C, one per AP.
@@ -132,9 +134,9 @@ extern uint32_t application_processor_startup_count_control_register_mismatches(
 
 /**
  * @brief Get this AP's APIC ID.
- * @return Physical APIC ID; 0xFF if not initialized.
+ * @return Physical APIC ID, an x2APIC ID in x2APIC mode; 0 if not initialized.
  */
-extern uint8_t application_processor_startup_get_apic_id(void);
+extern uint32_t application_processor_startup_get_apic_id(void);
 
 /**
  * @brief Get this AP's logical CPU slot.

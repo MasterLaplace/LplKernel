@@ -107,12 +107,6 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
         return 0u;
     }
 
-    if ((apic_base_msr & IA32_APIC_BASE_X2APIC_MODE_BIT) != 0u)
-    {
-        advanced_pic_timer_backend_state_name = "apic-probe-x2apic-mode-unsupported";
-        return 0u;
-    }
-
     local_apic_physical_base_u64 = apic_base_msr & IA32_APIC_BASE_PHYSICAL_BASE_MASK;
     if (local_apic_physical_base_u64 == 0u)
     {
@@ -124,7 +118,9 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
     advanced_pic_timer_local_apic_is_bootstrap_processor =
         (uint8_t) (((apic_base_msr & IA32_APIC_BASE_BSP_BIT) != 0u) ? 1u : 0u);
 
-    advanced_pic_timer_backend_state_name = "apic-probe-xapic-mmio-ready";
+    advanced_pic_timer_backend_state_name = ((apic_base_msr & IA32_APIC_BASE_X2APIC_MODE_BIT) != 0u) ?
+                                                "apic-probe-x2apic-from-firmware" :
+                                                "apic-probe-xapic-mmio-ready";
 
     /* TODO: APIC MMIO timer programming and IRQ vector routing are not wired yet. */
     return 0u;
