@@ -17,9 +17,9 @@ KERNEL_TEST_SUITE(interrupt_controllers, KERNEL_TEST_STAGE_INITIALIZATION);
 /**
  * @brief The tick's contract, whichever timer keeps it: the profile's frequency, and ticks that arrive.
  *
- * @details The wait ends after eight ticks, or, should the tick stop, once the deadline has polled 2^28
- *          times without one. A count of loop iterations ran out before eight ticks under KVM. The
- *          deadline counts the same tick, so the pace of the ticks is not checked here.
+ * @details The wait ends after eight ticks, or, should the tick stop, once the deadline's limit of
+ *          polls without a tick runs out. A count of loop iterations ran out before eight ticks under
+ *          KVM. The deadline counts the same tick, so the pace of the ticks is not checked here.
  */
 static void interrupt_controllers_check_the_tick_contract(KernelTest_t *test)
 {
