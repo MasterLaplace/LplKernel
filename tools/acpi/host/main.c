@@ -83,6 +83,7 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
     }
     advanced_configuration_and_power_interface_machine_language_load_directory(&load, directory);
     printf("aml tables=%u bytes=%u decode_errors=%u\n", load.table_count, load.bytes, load.decode_errors);
+    printf("aml faults load_errors=%u unresolved_names=%u\n", load.load_errors, load.unresolved_names);
     for (uint32_t index = 0u; index < load.table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load.tables[index];
