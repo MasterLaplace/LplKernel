@@ -38,7 +38,7 @@
  * @brief Bootstrap entry for an Application Processor (AP).
  *
  * Contains APIC ID, logical slot mapping, and stack allocation info.
- * @param apic_id  APIC ID of the AP (0-255); 0xFF indicates invalid/not present.
+ * @param apic_id  APIC ID of the AP, an x2APIC ID in x2APIC mode.
  * @param logical_slot  Logical CPU slot index assigned during topology discovery.
  * @param stack_base  Virtual address of the base of the allocated stack region for this AP.
  * @param stack_size  Size of the allocated stack region in bytes.
@@ -46,7 +46,7 @@
  * @param booted  Flag indicating whether the AP has been successfully booted.
  */
 typedef struct APBootstrapEntry {
-    uint8_t apic_id;
+    uint32_t apic_id;
     uint32_t logical_slot;
     void *stack_base;
     uint32_t stack_size;
@@ -95,7 +95,7 @@ extern uint8_t application_processor_bootstrap_initialize(void);
  * @brief Get AP bootstrap entry by APIC ID.
  * @return Pointer to entry; NULL if APIC ID not found.
  */
-extern ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_by_apic_id(uint8_t apic_id);
+extern ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_get_entry_by_apic_id(uint32_t apic_id);
 
 /**
  * @brief Get AP bootstrap entry by logical CPU slot.

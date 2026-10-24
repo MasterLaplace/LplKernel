@@ -75,8 +75,9 @@ extern uint32_t cpu_topology_get_logical_slot(void);
  *
  * Called during topology discovery to map APIC IDs to logical slots.
  *
- * @param apic_id APIC ID to register (0-255).
- * @return Logical slot index assigned to this APIC ID, or 0 if registration failed.
+ * @param apic_id Local APIC ID or x2APIC ID to register, kept whole.
+ * @return Logical slot index assigned to this APIC ID, or CPU_TOPOLOGY_NO_SLOT once every slot
+ *         holds another.
  */
 extern uint32_t cpu_topology_register_discovered_apic_id(uint32_t apic_id);
 
@@ -94,7 +95,7 @@ extern uint32_t cpu_topology_get_local_apic_id(void);
  * when topology discovery is already complete. It also marks the APIC ID as
  * valid and online.
  *
- * @param apic_id APIC ID to set for the current CPU (0-255).
+ * @param apic_id Local APIC ID or x2APIC ID to set for the current CPU.
  */
 extern void cpu_topology_set_runtime_local_apic_id(uint32_t apic_id);
 
@@ -161,7 +162,8 @@ extern uint32_t cpu_topology_get_slot_domain(uint32_t slot);
  * @brief Get the APIC ID registered for a logical CPU slot.
  *
  * @param slot Logical CPU slot index to query.
- * @return APIC ID registered for this slot, or 0xFF if invalid.
+ * @return APIC ID registered for this slot, or CPU_TOPOLOGY_NO_PROCESSOR when the slot is empty or
+ *         past the last.
  */
 extern uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot);
 
@@ -169,7 +171,7 @@ extern uint32_t cpu_topology_get_apic_id_at_slot(uint32_t slot);
  * @brief Get the logical CPU slot associated with a given APIC ID.
  *
  * @param apic_id APIC ID to query.
- * @return Logical slot index, or 0xFFFFFFFFu if the APIC ID is unknown.
+ * @return Logical slot index, or CPU_TOPOLOGY_NO_SLOT if the APIC ID is unknown.
  */
 extern uint32_t cpu_topology_get_slot_for_apic_id(uint32_t apic_id);
 

@@ -15,19 +15,16 @@ static uint32_t kernel_cr3_cached = 0u;
 static ApplicationProcessorLocalContext_t ap_local_context = {0};
 static Serial_t *ap_serial_port = NULL;
 static uint32_t ap_startup_reported_online_count = 0u;
-static uint8_t ap_startup_last_reported_apic_id = 0xFFu;
-static uint8_t ap_startup_reported_apic_bitmap[32] = {0u};
+static uint32_t ap_startup_last_reported_apic_id = CPU_TOPOLOGY_NO_PROCESSOR;
+static bool ap_startup_reported_slots[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {false};
 static ApplicationProcessorControlRegisters_t ap_startup_control_registers[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0};
 
-static uint8_t ap_startup_try_mark_reported_apic_id(uint8_t apic_id)
+static bool ap_startup_try_mark_reported_slot(uint32_t logical_slot)
 {
-    uint32_t byte_index = (uint32_t) apic_id >> 3u;
-    uint8_t bit_mask = (uint8_t) (1u << (apic_id & 0x7u));
-
-    if ((ap_startup_reported_apic_bitmap[byte_index] & bit_mask) != 0u)
-        return 0u;
-    ap_startup_reported_apic_bitmap[byte_index] |= bit_mask;
-    return 1u;
+    if (logical_slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC || ap_startup_reported_slots[logical_slot])
+        return false;
+    ap_startup_reported_slots[logical_slot] = true;
+    return true;
 }
 
 static void ap_startup_record_control_registers(uint32_t logical_slot)
@@ -42,11 +39,11 @@ static void ap_startup_record_control_registers(uint32_t logical_slot)
     };
 }
 
-static void ap_startup_record_online_event(uint8_t apic_id, uint32_t logical_slot)
+static void ap_startup_record_online_event(uint32_t apic_id, uint32_t logical_slot)
 {
     cpu_topology_register_discovered_apic_id(apic_id);
     cpu_topology_mark_apic_id_online(apic_id);
-    if (ap_startup_try_mark_reported_apic_id(apic_id))
+    if (ap_startup_try_mark_reported_slot(logical_slot))
     {
         ++ap_startup_reported_online_count;
         ap_startup_last_reported_apic_id = apic_id;
@@ -78,7 +75,7 @@ uint8_t application_processor_startup_ensure_low_identity_mapping(void)
     return (uint8_t) ((page_directory[0] & 0x1u) != 0u);
 }
 
-void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logical_slot, void *stack_top)
+void application_processor_startup_initialize_cpu(uint32_t apic_id, uint32_t logical_slot, void *stack_top)
 {
     ap_startup_record_control_registers(logical_slot);
 
@@ -101,7 +98,7 @@ void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logi
     if (ap_serial_port)
     {
         serial_write_string(ap_serial_port, "[AP ");
-        serial_write_hex8(ap_serial_port, apic_id);
+        serial_write_hex32(ap_serial_port, apic_id);
         serial_write_string(ap_serial_port, "]: initialized at slot=");
         serial_write_int(ap_serial_port, (int32_t) logical_slot);
         serial_write_string(ap_serial_port, ", domain=");
@@ -110,14 +107,14 @@ void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logi
     }
 }
 
-void application_processor_startup_report_bootstrap_ack(uint8_t apic_id, uint32_t logical_slot)
+void application_processor_startup_report_bootstrap_ack(uint32_t apic_id, uint32_t logical_slot)
 {
     ap_startup_record_online_event(apic_id, logical_slot);
 }
 
 uint32_t application_processor_startup_get_reported_online_count(void) { return ap_startup_reported_online_count; }
 
-uint8_t application_processor_startup_get_last_reported_apic_id(void) { return ap_startup_last_reported_apic_id; }
+uint32_t application_processor_startup_get_last_reported_apic_id(void) { return ap_startup_last_reported_apic_id; }
 
 uint32_t application_processor_startup_count_control_register_records(void)
 {
@@ -145,7 +142,7 @@ uint32_t application_processor_startup_count_control_register_mismatches(void)
     return differences;
 }
 
-uint8_t application_processor_startup_get_apic_id(void) { return ap_local_context.apic_id; }
+uint32_t application_processor_startup_get_apic_id(void) { return ap_local_context.apic_id; }
 
 uint32_t application_processor_startup_get_logical_slot(void) { return ap_local_context.logical_slot; }
 

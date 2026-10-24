@@ -5,15 +5,16 @@
 KERNEL_TEST_SUITE(interprocessor_interrupts, KERNEL_TEST_STAGE_PUBLISHED);
 
 /**
- * @brief In xAPIC mode, an identifier past 8 bits gets no interrupt: the destination field holds
- *        8 bits, and what fits of a longer identifier names another processor.
+ * @brief In xAPIC mode, an identifier the destination field cannot hold alone gets no interrupt:
+ *        past 8 bits, what fits names another processor, and 0xFF names every one.
  *
- * @details 0x1FE fits as 0xFE, which no processor of a small machine holds. Sent, the INIT reached
- *          whichever processor holds 0xFE.
+ * @details 0x1FE fits as 0xFE, which no processor of a small machine holds. Sent, an INIT or a
+ *          STARTUP reached whichever processor holds 0xFE.
  */
-KERNEL_TEST(an_identifier_past_eight_bits_gets_no_interrupt_in_xapic_mode)
+KERNEL_TEST(an_identifier_xapic_cannot_address_gets_no_interrupt)
 {
     const uint32_t past_eight_bits = 0x1FEu;
+    const uint32_t xapic_broadcast = 0xFFu;
 
     if (apic_is_x2apic_active())
     {
@@ -26,9 +27,51 @@ KERNEL_TEST(an_identifier_past_eight_bits_gets_no_interrupt_in_xapic_mode)
         return;
     }
 
-    const uint32_t attempts_before = advanced_pic_ipi_get_init_attempt_count();
-    const uint8_t sent = advanced_pic_ipi_send_init(past_eight_bits);
+    const uint32_t init_attempts_before = advanced_pic_ipi_get_init_attempt_count();
+    const uint32_t startup_attempts_before = advanced_pic_ipi_get_sipi_attempt_count();
 
-    kernel_test_check(test, sent == 0u, "the INIT is refused");
-    kernel_test_check(test, advanced_pic_ipi_get_init_attempt_count() == attempts_before, "and never attempted");
+    kernel_test_check(test, advanced_pic_ipi_send_init(past_eight_bits) == 0u, "an INIT for 0x1FE is refused");
+    kernel_test_check(test, advanced_pic_ipi_send_sipi(past_eight_bits, 0x08u) == 0u, "a STARTUP for 0x1FE is refused");
+    kernel_test_check(test, advanced_pic_ipi_send_fixed(past_eight_bits, 0xF0u, ADVANCED_PIC_IPI_SHORT_NONE) == 0u,
+                      "a fixed interrupt for 0x1FE is refused");
+    kernel_test_check(test, advanced_pic_ipi_send_init(xapic_broadcast) == 0u, "an INIT for 0xFF is refused");
+    kernel_test_check(test,
+                      advanced_pic_ipi_get_init_attempt_count() == init_attempts_before &&
+                          advanced_pic_ipi_get_sipi_attempt_count() == startup_attempts_before,
+                      "none was attempted");
+}
+
+/**
+ * @brief In x2APIC mode, the broadcast identifier gets no interrupt meant for one processor.
+ *
+ * @details 0xFFFFFFFF is also what an empty slot of the topology holds: sent, an INIT reached every
+ *          processor, the sender included.
+ */
+KERNEL_TEST(the_x2apic_broadcast_gets_no_interrupt)
+{
+    const uint32_t x2apic_broadcast = 0xFFFFFFFFu;
+
+    if (!apic_is_x2apic_active())
+    {
+        kernel_test_skip(test, "the local APIC is in xAPIC mode");
+        return;
+    }
+    if (!advanced_pic_ipi_is_ready())
+    {
+        kernel_test_skip(test, "no local APIC sends interrupts");
+        return;
+    }
+
+    const uint32_t init_attempts_before = advanced_pic_ipi_get_init_attempt_count();
+    const uint32_t startup_attempts_before = advanced_pic_ipi_get_sipi_attempt_count();
+
+    kernel_test_check(test, advanced_pic_ipi_send_init(x2apic_broadcast) == 0u, "an INIT for 0xFFFFFFFF is refused");
+    kernel_test_check(test, advanced_pic_ipi_send_sipi(x2apic_broadcast, 0x08u) == 0u,
+                      "a STARTUP for 0xFFFFFFFF is refused");
+    kernel_test_check(test, advanced_pic_ipi_send_fixed(x2apic_broadcast, 0xF0u, ADVANCED_PIC_IPI_SHORT_NONE) == 0u,
+                      "a fixed interrupt for 0xFFFFFFFF is refused");
+    kernel_test_check(test,
+                      advanced_pic_ipi_get_init_attempt_count() == init_attempts_before &&
+                          advanced_pic_ipi_get_sipi_attempt_count() == startup_attempts_before,
+                      "none was attempted");
 }

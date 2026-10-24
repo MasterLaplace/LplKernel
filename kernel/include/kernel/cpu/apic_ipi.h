@@ -59,11 +59,13 @@ extern void advanced_pic_ipi_enable_local_apic(void);
  * - Clear local registers (except APIC ID)
  * - Wait for SIPI to specify startup code location
  *
- * @param apic_id Physical APIC ID of target processor.
+ * @param apic_id Physical APIC ID of target processor, an x2APIC ID in x2APIC mode.
  * @return Non-zero if delivery succeeded (complete or pending);
- *         zero if timeout waiting for delivery.
+ *         zero if timeout waiting for delivery, or when the local APIC's mode cannot address
+ *         @p apic_id: past 0xFE in xAPIC mode, 0xFFFFFFFF in x2APIC mode. Such an INIT is never
+ *         attempted.
  */
-extern uint8_t advanced_pic_ipi_send_init(uint8_t apic_id);
+extern uint8_t advanced_pic_ipi_send_init(uint32_t apic_id);
 
 /**
  * @brief Send Startup IPI (SIPI) to begin AP execution.
@@ -74,23 +76,25 @@ extern uint8_t advanced_pic_ipi_send_init(uint8_t apic_id);
  *
  * Must be preceded by INIT. Per IA-32 SDM, two SIPIs are recommended.
  *
- * @param apic_id Physical APIC ID of target processor.
+ * @param apic_id Physical APIC ID of target processor, an x2APIC ID in x2APIC mode.
  * @param startup_vector Page number (0x00–0xFF). Actual address
  *                       in physical memory = vector × 4096.
- * @return Non-zero if delivery succeeded; zero on timeout.
+ * @return Non-zero if delivery succeeded; zero on timeout, or when the local APIC's mode cannot
+ *         address @p apic_id, as for advanced_pic_ipi_send_init.
  */
-extern uint8_t advanced_pic_ipi_send_sipi(uint8_t apic_id, uint8_t startup_vector);
+extern uint8_t advanced_pic_ipi_send_sipi(uint32_t apic_id, uint8_t startup_vector);
 
 /**
  * @brief Standard AP bootstrap: INIT → delay(200µs) → SIPI → delay(200µs) → SIPI.
  *
  * This is the recommended sequence per Intel IA-32 Software Developer's Manual.
  *
- * @param apic_id Physical APIC ID of target processor.
+ * @param apic_id Physical APIC ID of target processor, an x2APIC ID in x2APIC mode.
  * @param startup_vector Page number for AP startup code.
- * @return Non-zero if all steps succeeded; zero if any step fails.
+ * @return Non-zero if all steps succeeded; zero if any step fails, or when the local APIC's mode
+ *         cannot address @p apic_id, as for advanced_pic_ipi_send_init.
  */
-extern uint8_t advanced_pic_ipi_send_startup_sequence(uint8_t apic_id, uint8_t startup_vector);
+extern uint8_t advanced_pic_ipi_send_startup_sequence(uint32_t apic_id, uint8_t startup_vector);
 
 #define ADVANCED_PIC_IPI_SHORT_NONE     0u
 #define ADVANCED_PIC_IPI_SHORT_SELF     1u
@@ -100,12 +104,13 @@ extern uint8_t advanced_pic_ipi_send_startup_sequence(uint8_t apic_id, uint8_t s
 /**
  * @brief Send a fixed-vector IPI to a target or shorthand.
  *
- * @param apic_id Physical APIC ID (ignored if shorthand != SHORT_NONE).
+ * @param apic_id Physical APIC ID, an x2APIC ID in x2APIC mode (ignored if shorthand != SHORT_NONE).
  * @param vector Target interrupt vector (32–255).
  * @param shorthand Destination shorthand (e.g., all including self, all excluding self).
- * @return Non-zero if delivery succeeded; zero on timeout.
+ * @return Non-zero if delivery succeeded; zero on timeout, or when, without a shorthand, the local
+ *         APIC's mode cannot address @p apic_id, as for advanced_pic_ipi_send_init.
  */
-extern uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint8_t shorthand);
+extern uint8_t advanced_pic_ipi_send_fixed(uint32_t apic_id, uint8_t vector, uint8_t shorthand);
 
 /**
  * @brief IPI-based TLB shootdown.

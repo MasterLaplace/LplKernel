@@ -73,12 +73,22 @@ static void apic_ipi_tlb_shootdown_handler(const InterruptFrame_t *frame)
 }
 
 /**
+ * @brief Whether the local APIC's mode can address @p apic_id alone: up to 0xFE in xAPIC mode, whose
+ *        destination field holds 8 bits and broadcasts at 0xFF, and anything but the broadcast
+ *        0xFFFFFFFF in x2APIC mode.
+ */
+static bool advanced_pic_ipi_addresses(uint32_t apic_id)
+{
+    return apic_is_x2apic_active() ? apic_id != 0xFFFFFFFFu : apic_id < 0xFFu;
+}
+
+/**
  * @brief The ICR's high word addressing @p apic_id: the 8-bit identifier in bits 31:24 in xAPIC
  *        mode, the whole identifier in x2APIC mode, where the destination is bits 63:32 of the ICR.
  */
-static uint32_t advanced_pic_ipi_destination(uint8_t apic_id)
+static uint32_t advanced_pic_ipi_destination(uint32_t apic_id)
 {
-    return apic_is_x2apic_active() ? (uint32_t) apic_id : (uint32_t) apic_id << 24u;
+    return apic_is_x2apic_active() ? apic_id : apic_id << 24u;
 }
 
 static uint8_t advanced_pic_ipi_wait_delivery(void)
@@ -115,8 +125,10 @@ void advanced_pic_ipi_enable_local_apic(void)
     apic_write(LAPIC_REG_SPURIOUS, svr | (1u << 8u));
 }
 
-uint8_t advanced_pic_ipi_send_init(uint8_t apic_id)
+uint8_t advanced_pic_ipi_send_init(uint32_t apic_id)
 {
+    if (!advanced_pic_ipi_addresses(apic_id))
+        return 0u;
     ++apic_ipi_init_attempt_count;
 
     if (!advanced_pic_ipi_wait_delivery())
@@ -129,8 +141,10 @@ uint8_t advanced_pic_ipi_send_init(uint8_t apic_id)
     return advanced_pic_ipi_wait_delivery();
 }
 
-uint8_t advanced_pic_ipi_send_sipi(uint8_t apic_id, uint8_t startup_vector)
+uint8_t advanced_pic_ipi_send_sipi(uint32_t apic_id, uint8_t startup_vector)
 {
+    if (!advanced_pic_ipi_addresses(apic_id))
+        return 0u;
     ++apic_ipi_sipi_attempt_count;
 
     if (!advanced_pic_ipi_wait_delivery())
@@ -143,7 +157,7 @@ uint8_t advanced_pic_ipi_send_sipi(uint8_t apic_id, uint8_t startup_vector)
     return advanced_pic_ipi_wait_delivery();
 }
 
-uint8_t advanced_pic_ipi_send_startup_sequence(uint8_t apic_id, uint8_t startup_vector)
+uint8_t advanced_pic_ipi_send_startup_sequence(uint32_t apic_id, uint8_t startup_vector)
 {
     ++apic_ipi_startup_sequence_attempt_count;
 
@@ -172,8 +186,10 @@ uint32_t advanced_pic_ipi_get_startup_sequence_attempt_count(void) { return apic
 
 uint32_t advanced_pic_ipi_get_startup_sequence_success_count(void) { return apic_ipi_startup_sequence_success_count; }
 
-uint8_t advanced_pic_ipi_send_fixed(uint8_t apic_id, uint8_t vector, uint8_t shorthand)
+uint8_t advanced_pic_ipi_send_fixed(uint32_t apic_id, uint8_t vector, uint8_t shorthand)
 {
+    if (shorthand == ADVANCED_PIC_IPI_SHORT_NONE && !advanced_pic_ipi_addresses(apic_id))
+        return 0u;
     if (!advanced_pic_ipi_wait_delivery())
         return 0u;
 

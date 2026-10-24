@@ -74,7 +74,7 @@ ap_trampoline_paged_entry:
     movl AP_MAILBOX_STACK_TOP_HIGH, %esp
 
     movl AP_MAILBOX_C_ENTRY_HIGH, %eax
-    movzbl AP_MAILBOX_APIC_ID_HIGH, %ebx
+    movl AP_MAILBOX_APIC_ID_HIGH, %ebx
     movl AP_MAILBOX_LOGICAL_SLOT_HIGH, %ecx
     movl AP_MAILBOX_STACK_TOP_HIGH, %edx
 

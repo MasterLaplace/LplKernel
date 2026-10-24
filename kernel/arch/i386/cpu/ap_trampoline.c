@@ -103,11 +103,11 @@ uint8_t application_processor_trampoline_wait_for_acknowledgement(uint32_t timeo
 
 uint16_t application_processor_trampoline_get_acknowledgement_word(void) { return *ap_trampoline_ack_word_pointer(); }
 
-void application_processor_trampoline_configure_handoff(uint8_t apic_id, uint32_t logical_slot,
+void application_processor_trampoline_configure_handoff(uint32_t apic_id, uint32_t logical_slot,
                                                         uint32_t stack_top_virtual, uint32_t c_entry_virtual,
                                                         uint32_t main_loop_virtual, uint32_t cr3_physical)
 {
-    *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_APIC_ID_OFFSET) = (uint32_t) apic_id;
+    *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_APIC_ID_OFFSET) = apic_id;
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_CR3_OFFSET) = cr3_physical;
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_STACK_TOP_OFFSET) = stack_top_virtual;
     *ap_trampoline_mailbox_word_pointer(AP_TRAMPOLINE_MAILBOX_C_ENTRY_OFFSET) = c_entry_virtual;

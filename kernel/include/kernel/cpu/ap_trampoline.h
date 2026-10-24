@@ -72,14 +72,14 @@ extern uint16_t application_processor_trampoline_get_acknowledgement_word(void);
  *          before it enables paging, then that CR0 whole, in place of what INIT leaves, CR0 at
  *          60000010H with CD and NW unchanged and CR4 at 0 (Intel SDM vol. 3, Table 12-1).
  *
- * @param apic_id Target AP APIC ID.
+ * @param apic_id Target AP APIC ID, an x2APIC ID in x2APIC mode.
  * @param logical_slot Logical slot assigned to this AP.
  * @param stack_top_virtual AP stack top virtual address.
  * @param c_entry_virtual AP C entry virtual address.
  * @param main_loop_virtual AP main loop virtual address.
  * @param cr3_physical Shared kernel CR3 physical address.
  */
-extern void application_processor_trampoline_configure_handoff(uint8_t apic_id, uint32_t logical_slot,
+extern void application_processor_trampoline_configure_handoff(uint32_t apic_id, uint32_t logical_slot,
                                                                uint32_t stack_top_virtual, uint32_t c_entry_virtual,
                                                                uint32_t main_loop_virtual, uint32_t cr3_physical);
 

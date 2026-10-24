@@ -39,7 +39,7 @@
  * @param apic_id The AP to park.
  * @return 1 when the INIT was delivered.
  */
-static uint8_t kernel_symmetric_multiprocessing_park(uint8_t apic_id)
+static uint8_t kernel_symmetric_multiprocessing_park(uint32_t apic_id)
 {
     const uint8_t parked = advanced_pic_ipi_send_init(apic_id);
     cpu_topology_unmark_apic_id_online(apic_id);
