@@ -456,7 +456,8 @@ static bool non_volatile_memory_express_find(void)
 
     if (!peripheral_component_interconnect_read_base_address_register(device->bus, device->device, device->function, 0u,
                                                                       &window) ||
-        window.is_io || (window.base >> 32) != 0u || window.size < 2u * NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES)
+        !peripheral_component_interconnect_memory_window_is_reachable(&window) ||
+        window.size < 2u * NON_VOLATILE_MEMORY_EXPRESS_PAGE_BYTES)
         return non_volatile_memory_express_fail("its register window is out of reach");
 
     peripheral_component_interconnect_enable_memory_and_bus_mastering(device);
