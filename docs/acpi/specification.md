@@ -192,7 +192,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Structure | Fields | Bytes | Notes |
 |---|---|---|---|
 | **Value** (`…Value_t`) | `kind u8`, `flags u8`, `auxiliary u16`, `handle u32`, `payload u64` | 16 | Integers live in `payload`, with no allocation. Strings, buffers and packages are `handle` = object; a literal becomes one when it is evaluated. A reference is `kind`, plus a target node or object, plus an element index. |
-| **Node** | `name u32` (the NameSeg as an integer), `parent u32`, `first_child u32`, `next_sibling u32`, `previous_sibling u32` (circular: the first child's previous is the last), `type u8`, `flags u8`, `owner u16` (a table, or "temporary"), `value Value` | 40 | Declaration order is kept for walks (`_INI` order, dumps); O(1) append and O(1) unlink of temporaries. The object of a Name, Method, buffer field, mutex, Processor or PowerResource fits in `value`, with no second allocation. |
+| **Node** | `name u32` (the NameSeg as an integer), `parent u32`, `first_child u32`, `next_sibling u32`, `previous_sibling u32` (circular: the first child's previous is the last), `type u8`, `flags u8`, `owner u16` (the table that declared it; a temporary is known by the context's stack), `value Value` | 40 | Declaration order is kept for walks (`_INI` order, dumps); O(1) append and O(1) unlink of temporaries. The object of a Name, Method, buffer field, mutex, Processor or PowerResource fits in `value`, with no second allocation. |
 | **Hash slot** | `node u32` (0 is empty) | 4, at a load of at most 1/2, so 8 per node | One open-addressing table for the whole namespace, keyed by (parent, NameSeg): linear probing, backward-shift deletion so no tombstones, a fixed unseeded 32-bit multiplicative mix. |
 | **Object header** | `references u32` (saturating), `kind u8`, `flags u8`, `auxiliary u16`, `length u32`, padding | 16 | One allocation per string, buffer or package: the bytes, or the `length` element values, follow the header. |
 | **Region object** | `space u8`, `state u8`, `pci_device u32` (segment, bus, device and function, packed once attached), `offset u64`, `length u64`, `mapping u32`, `owner_device u32` | 32 | Attached lazily, at the first access. |
@@ -237,8 +237,10 @@ Rules:
 never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic.
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
-bodies are skipped at load by their PkgLength and decoded only when called, so load time follows the declarations
-and the table-level code.
+bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
+declared, the load decodes each body once, running nothing: a body that would lose its place is found at boot rather
+than when firmware calls it, and the walk creates no node but the temporaries each body declares while it is
+decoded.
 
 **The loop**, in order of precedence at each step:
 
@@ -273,7 +275,8 @@ inside it. The error report names the table, the offset, the opcode and the meth
 
 **A table load is a frame.** A definition block runs as a pseudo-method whose named objects are permanent and whose
 `Local0` to `Local7` exist. `Load` and `LoadTable` push such a frame on the same stack, so a load from a method
-costs no C stack. Loading is single-pass and in order: table-level code sees only what was declared before it.
+costs no C stack. Declarations load in one pass and in order: table-level code sees only what was declared before
+it. An `External` whose path no table has declared yet is placed by a pass of its own once every table is declared.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
@@ -734,7 +737,6 @@ that reaches it. The corpus runs report the peaks.
 | Pending operators | 256 |
 | Values | 1,024 |
 | Temporary nodes per evaluation | 1,024 |
-| Externals waiting for their path while tables load | 256 |
 | Nested internal (host-triggered) evaluations | 2 |
 | Loop iterations per evaluation, every `While` back-edge | 2^20 |
 | Time requested per evaluation (`Sleep` milliseconds and `Stall` microseconds) | 30 s |
@@ -941,8 +943,8 @@ published image. The made-up ASL is ours, under MIT.
   integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
 - **The census oracle**: every opcode count of every machine equals that of the census script. Per table, the
   declaration counts are compared with the `iasl` disassembly shipped with each dump; they differ where `iasl`
-  guessed the argument counts of methods it could not resolve, or left an object out, and each such table is
-  listed.
+  guessed the argument counts of methods it could not resolve, left an object out, or where the report's
+  disassembly is cut short, and each such table is listed.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
   lines in declaration order and compared, without the nodes ACPICA creates for `External`.

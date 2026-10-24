@@ -414,9 +414,7 @@ static void machine_language_place_external(MachineLanguageWalk_t *walk, uint8_t
     MachineLanguageStatus_t status = machine_language_external_parent(walk, &parent);
 
     walk->external_start = 0u;
-    if (status == MACHINE_LANGUAGE_OK &&
-        advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent,
-                                                                                         segment) != 0u)
+    if (status == MACHINE_LANGUAGE_OK && segment == 0u)
         return;
     if (status == MACHINE_LANGUAGE_OK)
         status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
