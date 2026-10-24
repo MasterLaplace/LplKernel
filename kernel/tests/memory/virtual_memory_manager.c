@@ -84,16 +84,21 @@ KERNEL_TEST(a_device_window_reads_the_device_and_frees_no_frame)
 }
 
 /**
- * @brief A device window whose last byte would lie past 4 GiB is refused.
+ * @brief A device window whose last byte would lie past 4 GiB is refused, and the last page below it
+ *        is mapped.
  *
  * @details Each page of a window used to be computed in 32 bits: two pages from 0xFFFFF000 came back
  *          mapped, the second on physical page 0, uncached and writable.
  */
 KERNEL_TEST(a_device_window_past_4_gib_is_refused)
 {
-    const uint32_t window = kernel_vmm_map_device_window(0xFFFFF000u, 2u * PAGE_SIZE);
+    const uint32_t last_page = kernel_vmm_map_device_window(0xFFFFF000u, PAGE_SIZE);
+    const uint32_t past = kernel_vmm_map_device_window(0xFFFFF000u, 2u * PAGE_SIZE);
 
-    if (window != 0u)
-        kernel_vmm_unmap_device_window(window, 2u * PAGE_SIZE);
-    kernel_test_check(test, window == 0u, "two pages from 0xFFFFF000 are refused");
+    if (last_page != 0u)
+        kernel_vmm_unmap_device_window(last_page, PAGE_SIZE);
+    if (past != 0u)
+        kernel_vmm_unmap_device_window(past, 2u * PAGE_SIZE);
+    kernel_test_check(test, last_page != 0u, "the page from 0xFFFFF000 is mapped");
+    kernel_test_check(test, past == 0u, "two pages from 0xFFFFF000 are refused");
 }
