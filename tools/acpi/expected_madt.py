@@ -6,8 +6,7 @@ Each linuxhw report ships its tables decoded by iasl next to its dump. The MADT 
 gives, the first whose checksum holds, else the first; its section of the report is the one whose raw bytes
 are that table's. Every field comes from the section's `[xxxh]` lines, apart from the kernel's code; the
 rules that turn them into CPU slots and counters are the specification's, section 3.9. The MADT keeps 256
-CPU slots and 256 NMI connections and counts the rest; like the kernel, it keeps 8 I/O APICs and 16
-interrupt source overrides and drops the rest without a count (#556).
+CPU slots, 256 NMI connections, 64 I/O APICs and 16 interrupt source overrides, and counts the rest.
 """
 import os
 import re
@@ -19,7 +18,7 @@ import expected_directory  # noqa: E402
 
 PROCESSOR_SLOTS = 256
 NON_MASKABLE_INTERRUPTS = 256
-IO_APICS = 8
+IO_APICS = 64
 INTERRUPT_SOURCE_OVERRIDES = 16
 ENABLED = 0x1
 ONLINE_CAPABLE = 0x2
@@ -90,7 +89,7 @@ def read(header, entries, data):
         entry["Subtable Type"][:2] == "00" and number(entry, "Local Apic ID") != 0xFF
         and number(entry, "Flags (decoded below)") & usable for entry in entries)
     counts = dict.fromkeys(("processors_dropped", "online_capable", "disabled", "invalid", "nmis_dropped",
-                            "skipped"), 0)
+                            "skipped", "io_apics_dropped", "overrides_dropped"), 0)
     processors, io_apics, overrides, connections = [], [], [], []
 
     def processor(flags, valid, apic_id, uid):
@@ -124,11 +123,15 @@ def read(header, entries, data):
             valid = apic_id != 0xFFFFFFFF and not (local_apic_processors and apic_id < 0xFF)
             processor(number(entry, "Flags (decoded below)"), valid, apic_id, number(entry, "Processor UID"))
         elif kind == "01":
-            if len(io_apics) < IO_APICS:
+            if len(io_apics) == IO_APICS:
+                counts["io_apics_dropped"] += 1
+            else:
                 io_apics.append("io_apic id=%u address=0x%08X gsi_base=%u" % (
                     number(entry, "I/O Apic ID"), number(entry, "Address"), number(entry, "Interrupt")))
         elif kind == "02":
-            if len(overrides) < INTERRUPT_SOURCE_OVERRIDES:
+            if len(overrides) == INTERRUPT_SOURCE_OVERRIDES:
+                counts["overrides_dropped"] += 1
+            else:
                 overrides.append("override bus=%u source=%u gsi=%u flags=0x%04X" % (
                     number(entry, "Bus"), number(entry, "Source"), number(entry, "Interrupt"),
                     number(entry, "Flags (decoded below)")))
@@ -143,10 +146,12 @@ def read(header, entries, data):
             raise Unreadable("no report of the corpus decodes a local APIC address override: its lines are unknown")
 
     summary = ("madt read=1 checksum=%s local_apic=0x%08X processors=%u processors_dropped=%u online_capable=%u "
-               "disabled=%u invalid=%u nmis=%u nmis_dropped=%u skipped=%u io_apics=%u overrides=%u") % (
+               "disabled=%u invalid=%u nmis=%u nmis_dropped=%u skipped=%u io_apics=%u io_apics_dropped=%u "
+               "overrides=%u overrides_dropped=%u") % (
         "ok" if sum(data) % 256 == 0 else "bad", number(header, "Local Apic Address"), len(processors),
         counts["processors_dropped"], counts["online_capable"], counts["disabled"], counts["invalid"],
-        len(connections), counts["nmis_dropped"], counts["skipped"], len(io_apics), len(overrides))
+        len(connections), counts["nmis_dropped"], counts["skipped"], len(io_apics), counts["io_apics_dropped"],
+        len(overrides), counts["overrides_dropped"])
     return [summary] + processors + io_apics + overrides + connections
 
 
