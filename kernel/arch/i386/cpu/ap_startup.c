@@ -2,12 +2,22 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/idt.h>
 
+/**
+ * @brief The control registers one application processor read on itself as it entered C.
+ */
+typedef struct ApplicationProcessorControlRegisters {
+    uint32_t control_register_0; /**< CR0 as the trampoline left it. */
+    uint32_t control_register_4; /**< CR4 as the trampoline left it. */
+    bool recorded;               /**< Whether the processor of this slot reached C and read them. */
+} ApplicationProcessorControlRegisters_t;
+
 static uint32_t kernel_cr3_cached = 0u;
 static ApplicationProcessorLocalContext_t ap_local_context = {0};
 static Serial_t *ap_serial_port = NULL;
 static uint32_t ap_startup_reported_online_count = 0u;
 static uint8_t ap_startup_last_reported_apic_id = 0xFFu;
 static uint8_t ap_startup_reported_apic_bitmap[32] = {0u};
+static ApplicationProcessorControlRegisters_t ap_startup_control_registers[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0};
 
 static uint8_t ap_startup_try_mark_reported_apic_id(uint8_t apic_id)
 {
@@ -18,6 +28,18 @@ static uint8_t ap_startup_try_mark_reported_apic_id(uint8_t apic_id)
         return 0u;
     ap_startup_reported_apic_bitmap[byte_index] |= bit_mask;
     return 1u;
+}
+
+static void ap_startup_record_control_registers(uint32_t logical_slot)
+{
+    if (logical_slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC)
+        return;
+
+    ap_startup_control_registers[logical_slot] = (ApplicationProcessorControlRegisters_t){
+        .control_register_0 = asmutils_read_control_register_0(),
+        .control_register_4 = asmutils_read_control_register_4(),
+        .recorded = true,
+    };
 }
 
 static void ap_startup_record_online_event(uint8_t apic_id, uint32_t logical_slot)
@@ -58,6 +80,8 @@ uint8_t application_processor_startup_ensure_low_identity_mapping(void)
 
 void application_processor_startup_initialize_cpu(uint8_t apic_id, uint32_t logical_slot, void *stack_top)
 {
+    ap_startup_record_control_registers(logical_slot);
+
     ap_local_context.apic_id = apic_id;
     ap_local_context.logical_slot = logical_slot;
     ap_local_context.initialized = 1u;
@@ -94,6 +118,32 @@ void application_processor_startup_report_bootstrap_ack(uint8_t apic_id, uint32_
 uint32_t application_processor_startup_get_reported_online_count(void) { return ap_startup_reported_online_count; }
 
 uint8_t application_processor_startup_get_last_reported_apic_id(void) { return ap_startup_last_reported_apic_id; }
+
+uint32_t application_processor_startup_get_control_registers_recorded_count(void)
+{
+    uint32_t recorded = 0u;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        recorded += ap_startup_control_registers[slot].recorded ? 1u : 0u;
+    return recorded;
+}
+
+uint32_t application_processor_startup_count_control_register_differences(void)
+{
+    const uint32_t control_register_0 = asmutils_read_control_register_0();
+    const uint32_t control_register_4 = asmutils_read_control_register_4();
+    uint32_t differences = 0u;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        const ApplicationProcessorControlRegisters_t *found = &ap_startup_control_registers[slot];
+
+        if (found->recorded &&
+            (found->control_register_0 != control_register_0 || found->control_register_4 != control_register_4))
+            ++differences;
+    }
+    return differences;
+}
 
 uint8_t application_processor_startup_get_apic_id(void) { return ap_local_context.apic_id; }
 

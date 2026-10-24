@@ -113,6 +113,24 @@ extern uint32_t application_processor_startup_get_reported_online_count(void);
 extern uint8_t application_processor_startup_get_last_reported_apic_id(void);
 
 /**
+ * @brief Count the APs that read their control registers as they entered C.
+ *
+ * @return How many APs recorded their CR0 and CR4, read on themselves before anything else.
+ */
+extern uint32_t application_processor_startup_get_control_registers_recorded_count(void);
+
+/**
+ * @brief Count the APs whose CR0 or CR4, read as they entered C, differ from the calling CPU's.
+ *
+ * @details Called on the bootstrap CPU, it says whether every AP runs with the bootstrap CPU's
+ *          control registers: write protection, caching and the SSE enables included. A bit the
+ *          bootstrap CPU sets after the APs started counts as a difference.
+ *
+ * @return How many recorded APs differ; 0 when none recorded.
+ */
+extern uint32_t application_processor_startup_count_control_register_differences(void);
+
+/**
  * @brief Get this AP's APIC ID.
  * @return Physical APIC ID; 0xFF if not initialized.
  */
