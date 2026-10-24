@@ -23,6 +23,7 @@
 #ifndef KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_H
 #define KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -220,5 +221,20 @@ typedef struct PeripheralComponentInterconnectBaseAddressRegister {
 extern uint8_t peripheral_component_interconnect_read_base_address_register(
     uint8_t bus, uint8_t device, uint8_t function, uint8_t index,
     PeripheralComponentInterconnectBaseAddressRegister_t *out_bar);
+
+/**
+ * @brief Can this kernel map the memory window a decoded Base Address Register describes?
+ *
+ * @details This kernel maps a 32-bit physical space, so a window placed above 4 GiB is out of its
+ *          reach even behind a 64-bit register pair. A driver refuses such a window rather than cut
+ *          its base to the low 32 bits and map whatever lies there, uncached and writable. A window
+ *          that starts below 4 GiB and ends past it is refused by kernel_vmm_map_device_window.
+ *
+ * @param bar A decoded Base Address Register.
+ * @return true for a memory window whose base lies below 4 GiB; false for an I/O window, or for a
+ *         memory window above 4 GiB.
+ */
+extern bool peripheral_component_interconnect_memory_window_is_reachable(
+    const PeripheralComponentInterconnectBaseAddressRegister_t *bar);
 
 #endif /* KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_H */

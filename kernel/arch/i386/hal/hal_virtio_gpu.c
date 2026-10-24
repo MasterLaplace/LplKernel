@@ -268,9 +268,11 @@ static bool is_virtio_gpu(const PeripheralComponentInterconnectDevice_t *dev)
 }
 
 /**
- * @brief Records the first implemented memory BAR of a function in the probe result.
+ * @brief Records the first implemented memory BAR of a function in the probe result, when this
+ *        kernel can reach it.
  *
- * @details Modern virtio-pci puts its notify, common and device configuration in memory space.
+ * @details Modern virtio-pci puts its notify, common and device configuration in memory space. A
+ *          first memory BAR above 4 GiB is recorded as none, rather than as its low 32 bits.
  *
  * @note An I/O BAR flagged 64-bit skips the slot after it, which such a BAR consumes.
  *
@@ -292,6 +294,8 @@ static void decode_first_memory_bar(const PeripheralComponentInterconnectDevice_
                 ++index;
             continue;
         }
+        if (!peripheral_component_interconnect_memory_window_is_reachable(&bar))
+            return;
         out_info->mmio_base = (uint32_t) bar.base;
         out_info->mmio_size = (uint32_t) bar.size;
         out_info->mmio_bar_index = bar.index;
@@ -919,6 +923,11 @@ bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_
                                                                       out_mapping->common.bar, &bar) ||
         bar.is_io)
         return false;
+    if (!peripheral_component_interconnect_memory_window_is_reachable(&bar))
+    {
+        out_mapping->window_out_of_reach = 1u;
+        return false;
+    }
 
     const uint32_t mmio_virtual_base = kernel_vmm_map_device_window((uint32_t) bar.base, (uint32_t) bar.size);
     if (mmio_virtual_base == 0u)
