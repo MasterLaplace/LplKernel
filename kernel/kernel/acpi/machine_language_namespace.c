@@ -30,36 +30,6 @@ static uint32_t machine_language_namespace_hash(uint32_t parent, uint32_t name)
 }
 
 /**
- * @brief Takes @p count pages from the host, within the arena cap.
- */
-static void *
-machine_language_namespace_take_pages(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
-                                      uint32_t count)
-{
-    const uint32_t bytes = count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
-
-    if (bytes > space->max_arena_bytes - space->arena_bytes)
-        return NULL;
-
-    void *pages = space->host->allocate_pages(space->host->context, count);
-
-    if (pages != NULL)
-        space->arena_bytes += bytes;
-    return pages;
-}
-
-/**
- * @brief Gives back @p count pages taken by machine_language_namespace_take_pages.
- */
-static void
-machine_language_namespace_give_pages(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
-                                      void *pages, uint32_t count)
-{
-    space->host->release_pages(space->host->context, pages, count);
-    space->arena_bytes -= count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
-}
-
-/**
  * @brief Pages a hash table of @p slot_capacity slots takes.
  */
 static uint32_t machine_language_namespace_slot_pages(uint32_t slot_capacity)
@@ -88,7 +58,8 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 machine_language_namespace_grow_slots(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
 {
     const uint32_t capacity = space->slot_capacity * 2u;
-    uint32_t *slots = machine_language_namespace_take_pages(space, machine_language_namespace_slot_pages(capacity));
+    uint32_t *slots = advanced_configuration_and_power_interface_machine_language_namespace_take_pages(
+        space, machine_language_namespace_slot_pages(capacity));
 
     if (slots == NULL)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
@@ -102,8 +73,8 @@ machine_language_namespace_grow_slots(AdvancedConfigurationAndPowerInterfaceMach
         if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) == 0u)
             machine_language_namespace_place(slots, capacity, node, index);
     }
-    machine_language_namespace_give_pages(space, space->slots,
-                                          machine_language_namespace_slot_pages(space->slot_capacity));
+    advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
+        space, space->slots, machine_language_namespace_slot_pages(space->slot_capacity));
     space->slots = slots;
     space->slot_capacity = capacity;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
@@ -187,8 +158,9 @@ machine_language_namespace_new_index(AdvancedConfigurationAndPowerInterfaceMachi
         if (space->run_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS)
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_NAMESPACE_NODES;
 
-        AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *run = machine_language_namespace_take_pages(
-            space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *run =
+            advanced_configuration_and_power_interface_machine_language_namespace_take_pages(
+                space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
 
         if (run == NULL)
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
@@ -283,6 +255,28 @@ machine_language_namespace_predefine(AdvancedConfigurationAndPowerInterfaceMachi
         machine_language_namespace_segment(name), type, 0u, out_index);
 }
 
+void *advanced_configuration_and_power_interface_machine_language_namespace_take_pages(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t count)
+{
+    const uint32_t bytes = count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
+
+    if (bytes > space->max_arena_bytes - space->arena_bytes)
+        return NULL;
+
+    void *pages = space->host->allocate_pages(space->host->context, count);
+
+    if (pages != NULL)
+        space->arena_bytes += bytes;
+    return pages;
+}
+
+void advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, void *pages, uint32_t count)
+{
+    space->host->release_pages(space->host->context, pages, count);
+    space->arena_bytes -= count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
+}
+
 AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_namespace_open(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
@@ -308,7 +302,7 @@ advanced_configuration_and_power_interface_machine_language_namespace_open(
     space->max_nodes = max_nodes;
     space->max_arena_bytes = max_arena_bytes;
     space->node_count = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
-    space->slots = machine_language_namespace_take_pages(space, 1u);
+    space->slots = advanced_configuration_and_power_interface_machine_language_namespace_take_pages(space, 1u);
     if (space->slots == NULL)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
     space->slot_capacity = MACHINE_LANGUAGE_NAMESPACE_FIRST_SLOTS;
@@ -336,11 +330,11 @@ void advanced_configuration_and_power_interface_machine_language_namespace_close
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
 {
     for (uint32_t run = 0u; run < space->run_count; ++run)
-        machine_language_namespace_give_pages(space, space->runs[run],
-                                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
+        advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
+            space, space->runs[run], ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
     if (space->slots != NULL)
-        machine_language_namespace_give_pages(space, space->slots,
-                                              machine_language_namespace_slot_pages(space->slot_capacity));
+        advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
+            space, space->slots, machine_language_namespace_slot_pages(space->slot_capacity));
     space->run_count = 0u;
     space->slots = NULL;
     space->slot_capacity = 0u;
