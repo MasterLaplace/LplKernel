@@ -212,6 +212,15 @@ static int32_t io_apic_find_programmed_route_index_by_irq(uint8_t isa_irq)
     return -1;
 }
 
+static const char *io_apic_routing_state_name(void)
+{
+    if (io_apic_route_count > 0u)
+        return "ioapic-init-masked-routes-ready";
+    if (io_apic_destinations_refused > 0u)
+        return "ioapic-init-bootstrap-processor-unnameable";
+    return "ioapic-init-mapped-no-routes";
+}
+
 static uint8_t io_apic_read_route_destination(const InputOutputApicRouteInfo_t *route)
 {
     const InputOutputApicUnit_t *unit = &io_apic_units[route->io_apic_index];
@@ -224,7 +233,7 @@ static uint8_t io_apic_read_route_destination(const InputOutputApicRouteInfo_t *
 
 void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void)
 {
-    const uint32_t bootstrap_processor = cpu_topology_get_local_apic_id();
+    const uint32_t bootstrap_processor_apic_id = cpu_topology_get_local_apic_id();
     uint8_t io_apic_count;
 
     io_apic_state_name = "ioapic-init-start";
@@ -284,13 +293,10 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
         return;
     }
 
-    (void) io_apic_program_masked_isa_route(0u, bootstrap_processor);
-    (void) io_apic_program_masked_isa_route(1u, bootstrap_processor);
+    (void) io_apic_program_masked_isa_route(0u, bootstrap_processor_apic_id);
+    (void) io_apic_program_masked_isa_route(1u, bootstrap_processor_apic_id);
 
-    if (io_apic_route_count == 0u)
-        io_apic_state_name = "ioapic-init-mapped-no-routes";
-    else
-        io_apic_state_name = "ioapic-init-masked-routes-ready";
+    io_apic_state_name = io_apic_routing_state_name();
 }
 
 const char *input_output_advanced_programmable_interrupt_controller_get_state_name(void) { return io_apic_state_name; }

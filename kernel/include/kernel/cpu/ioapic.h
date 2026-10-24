@@ -57,8 +57,8 @@ typedef struct {
  * Current scope programs discovery-backed redirection entries for IRQ0/IRQ1
  * in masked mode only, preserving active interrupt ownership behavior. Each
  * entry names the bootstrap processor's APIC ID, as the topology gives it: a
- * line is not routed when no entry can name that ID, and the refusal is
- * counted.
+ * line is not routed when no entry can name that ID, the refusal is counted,
+ * and the state is then ioapic-init-bootstrap-processor-unnameable.
  */
 extern void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void);
 
