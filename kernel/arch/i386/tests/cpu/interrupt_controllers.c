@@ -8,16 +8,18 @@
 #include <kernel/lib/asmutils.h>
 #include <kernel/testing/test.h>
 
-#define INTERRUPT_CONTROLLERS_TEST_TICKS            8u  /**< Ticks the contract waits for. */
-#define INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS 12u /**< Tick periods the wait may last, half again as many. */
+#define INTERRUPT_CONTROLLERS_TEST_TICKS 8u /**< Ticks the contract waits for. */
+#define INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS                                                                    \
+    12u /**< The deadline's length in tick periods: more than eight, since it counts the same tick. */
 
 KERNEL_TEST_SUITE(interrupt_controllers, KERNEL_TEST_STAGE_INITIALIZATION);
 
 /**
  * @brief The tick's contract, whichever timer keeps it: the profile's frequency, and ticks that arrive.
  *
- * @details The wait ends on a deadline rather than on a count of loop iterations, which ran out before
- *          eight ticks under KVM. A stopped tick ends it too, after the deadline's stalled polls.
+ * @details The wait ends after eight ticks, or, should the tick stop, once the deadline has polled 2^28
+ *          times without one. A count of loop iterations ran out before eight ticks under KVM. The
+ *          deadline counts the same tick, so the pace of the ticks is not checked here.
  */
 static void interrupt_controllers_check_the_tick_contract(KernelTest_t *test)
 {
@@ -36,7 +38,7 @@ static void interrupt_controllers_check_the_tick_contract(KernelTest_t *test)
         asmutils_pause();
 
     kernel_test_check(test, clock_get_tick_count() - start >= INTERRUPT_CONTROLLERS_TEST_TICKS,
-                      "eight ticks arrive before the deadline");
+                      "eight ticks arrive before the tick stalls");
 }
 
 /**
