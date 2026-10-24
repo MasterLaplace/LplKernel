@@ -49,7 +49,6 @@ typedef struct {
     uint8_t io_apic_id;
     uint8_t masked;
     uint16_t iso_flags;
-    uint8_t destination_apic_id;
 } InputOutputApicRouteInfo_t;
 
 /**
@@ -125,7 +124,11 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso
 extern uint8_t input_output_advanced_programmable_interrupt_controller_enable_isa_route(uint8_t isa_irq);
 
 /**
- * @brief Return programmed destination APIC ID for route index.
+ * @brief Read back the destination APIC ID a programmed route's redirection entry holds.
+ *
+ * @param route_index The route, below the programmed route count.
+ * @return The 8-bit destination field of the route's entry, as its I/O APIC holds it, or 0 when
+ *         @p route_index names no programmed route.
  */
 extern uint8_t
 input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(uint8_t route_index);

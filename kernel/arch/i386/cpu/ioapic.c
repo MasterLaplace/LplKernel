@@ -179,7 +179,6 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq)
     route->io_apic_id = unit->id;
     route->masked = 1u;
     route->iso_flags = iso_flags;
-    route->destination_apic_id = 0u;
     io_apic_route_count++;
     return 1u;
 }
@@ -193,6 +192,16 @@ static int32_t io_apic_find_programmed_route_index_by_irq(uint8_t isa_irq)
     }
 
     return -1;
+}
+
+static uint8_t io_apic_read_route_destination(const InputOutputApicRouteInfo_t *route)
+{
+    const InputOutputApicUnit_t *unit = &io_apic_units[route->io_apic_index];
+    const uint32_t gsi_relative = route->global_system_interrupt - unit->gsi_base;
+    const uint8_t redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
+    const uint32_t redir_high = io_apic_register_read(unit->virtual_base, redir_reg_index + 1u);
+
+    return (uint8_t) ((redir_high & IOAPIC_REDIR_HIGH_DESTINATION_MASK) >> 24u);
 }
 
 void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void)
@@ -383,7 +392,7 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_des
 {
     if (route_index >= io_apic_route_count)
         return 0u;
-    return io_apic_routes[route_index].destination_apic_id;
+    return io_apic_read_route_destination(&io_apic_routes[route_index]);
 }
 
 uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq,
@@ -424,6 +433,5 @@ uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_de
     redir_high |= ((uint32_t) apic_id << 24u);
     io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
 
-    route->destination_apic_id = apic_id;
     return 1u;
 }
