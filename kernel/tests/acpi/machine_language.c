@@ -9,7 +9,7 @@
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_machine_language, KERNEL_TEST_STAGE_INITIALIZATION);
 
 #define MADE_UP_TABLE_CAPACITY 2048u           /**< Bytes of each buffer a made-up table is written in. */
-#define MADE_UP_TABLE_COUNT    3u              /**< Made-up tables one test may load. */
+#define MADE_UP_TABLE_COUNT    4u              /**< Made-up tables one test may load. */
 #define MADE_UP_MAX_NODES      1024u           /**< The node cap of a made-up load. */
 #define MADE_UP_MAX_ARENA      (1024u * 1024u) /**< The arena cap of a made-up load. */
 #define MADE_UP_HEADER         36u             /**< Bytes of a table header. */
@@ -679,13 +679,16 @@ KERNEL_TEST(a_connection_buffer_is_decoded_as_a_buffer)
 
 /**
  * @brief A PkgLength that passes its method's end abandons the rest of its table, an unterminated
- *        string is cut, and the next table loads all the same.
+ *        string is cut, a statement where an operand is expected is refused, and each next table loads
+ *        all the same.
  */
 KERNEL_TEST(a_faulty_table_gives_way_to_the_next)
 {
     static const uint8_t crossing[] = {0x14u, 0x0Au, 'B', 'A', 'D', '_', 0x00u, 0xA0u, 0x3Fu, 0x00u, 0xA3u};
     static const uint8_t unterminated[] = {0x08u, 'S', 'T', 'R', '_', 0x0Du, 'a', 'b', 'c'};
     static const uint8_t good[] = {0x14u, 0x07u, 'G', 'O', 'O', 'D', 0x00u, 0xA3u};
+    static const uint8_t statement_operand[] = {0x14u, 0x0Cu, 'B',   'A',   'D',   '2',  0x00u,
+                                                0x70u, 0xA0u, 0x03u, 0x01u, 0xA3u, 0x60u};
 
     if (!made_up_open(test))
         return;
@@ -695,6 +698,8 @@ KERNEL_TEST(a_faulty_table_gives_way_to_the_next)
         &made_up_load, made_up_table(1u, "SSDT", unterminated, sizeof(unterminated)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(2u, "SSDT", good, sizeof(good)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(3u, "SSDT", statement_operand, sizeof(statement_operand)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(
         test,
@@ -711,5 +716,10 @@ KERNEL_TEST(a_faulty_table_gives_way_to_the_next)
                       made_up_load.tables[2].decode_errors == 0u &&
                           made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 1u,
                       "the third table decodes whole");
+    kernel_test_check(test,
+                      made_up_load.tables[3].decode_errors == 1u &&
+                          made_up_load.tables[3].first_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE,
+                      "an If where Store expects an operand is refused");
     made_up_close(test);
 }
