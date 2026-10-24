@@ -1210,13 +1210,16 @@ KERNEL_TEST(the_namespace_fold_follows_the_values)
 
 /**
  * @brief A Buffer takes the longer of its size and its initialiser, a Package with more initialisers
- *        than elements keeps the first, and the cut is counted.
+ *        than elements keeps the first, the cut is counted, and the dropped initialiser writes nothing;
+ *        a Name declared twice keeps its first value.
  */
 KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
 {
     static const uint8_t aml[] = {
-        0x08u, 'T', 'R', 'N', '_',   0x12u, 0x05u, 0x01u, 0x01u, 0x0Au, 0x02u, 0x08u,
-        'B',   'G', '_', '_', 0x11u, 0x06u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x03u,
+        0x08u, 'T', 'R',   'N',   '_',   0x12u, 0x05u, 0x01u, 0x01u, 0x0Au, 0x02u, 0x08u, 'B',
+        'G',   '_', '_',   0x11u, 0x06u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x03u, 0x08u, 'O',   'V',
+        'F',   '_', 0x12u, 0x07u, 0x01u, 0x12u, 0x03u, 0x01u, 0x01u, 0x00u, 0x08u, 'D',   'U',
+        'P',   '_', 0x01u, 0x08u, 'D',   'U',   'P',   '_',   0x0Au, 0x02u,
     };
     static const uint8_t longer[] = {0x01u, 0x02u, 0x03u};
 
@@ -1232,10 +1235,20 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
         test,
         package->length == 1u &&
             ((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (package + 1))[0].payload == 1u &&
-            made_up_load.heap.packages_truncated == 1u,
-        "Package (1) {One, 2} keeps One and is counted as cut");
+            made_up_load.heap.packages_truncated == 2u,
+        "Package (1) {One, 2} keeps One, and it and OVF_ are counted as cut");
     kernel_test_check(test, buffer->length == 3u && memcmp(buffer + 1, longer, 3u) == 0,
                       "Buffer (2) {1, 2, 3} holds the three bytes");
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *outer =
+        made_up_object(&made_up_node("OVF_")->value);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *inner =
+        made_up_object((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (outer + 1));
+
+    kernel_test_check(test, outer->length == 1u && inner->length == 1u,
+                      "Package (1) {Package (1) {One}, Zero} drops Zero without touching the package after it");
+    kernel_test_check(test, made_up_node("DUP_")->value.payload == 1u && made_up_load.duplicates == 1u,
+                      "a second Name (DUP_) is counted, and the first keeps its value");
     made_up_close(test);
 }
 
