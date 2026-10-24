@@ -163,6 +163,16 @@ extern uint32_t asmutils_get_page_fault_linear_address(void);
 extern uint32_t asmutils_read_control_register_0(void);
 
 /**
+ * @brief Read the CR4 control register.
+ *
+ * boot.S sets OSFXSR and OSXMMEXCPT there on the bootstrap CPU; every other CPU starts with the
+ * value the bootstrap CPU hands it.
+ *
+ * @return The value of the CR4 register.
+ */
+extern uint32_t asmutils_read_control_register_4(void);
+
+/**
  * @brief Execute the CPUID instruction.
  *
  * @param leaf The CPUID leaf (input EAX).

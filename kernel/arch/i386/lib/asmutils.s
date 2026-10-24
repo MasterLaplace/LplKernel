@@ -114,6 +114,12 @@ asmutils_read_control_register_0:
     movl %cr0, %eax
     ret
 
+.globl asmutils_read_control_register_4
+.type asmutils_read_control_register_4, @function
+asmutils_read_control_register_4:
+    movl %cr4, %eax
+    ret
+
 .globl asmutils_cpuid
 .type asmutils_cpuid, @function
 asmutils_cpuid:

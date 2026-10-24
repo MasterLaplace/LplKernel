@@ -7,6 +7,7 @@
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/helpers/ap_startup_helper.h>
 #include <kernel/diag/telemetry.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
 
 /**
@@ -80,6 +81,9 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
     }
 
     write_ap_trampoline_installed_info(com1);
+
+    application_processor_trampoline_configure_control_registers(asmutils_read_control_register_0(),
+                                                                 asmutils_read_control_register_4());
 
     application_processor_bootstrap_reset_iteration();
 
@@ -170,8 +174,11 @@ void kernel_symmetric_multiprocessing_report(Serial_t *serial)
     const uint32_t madt_cpus = madt ? advanced_configuration_and_power_interface_madt()->processor_count : 1u;
     const uint32_t online = cpu_topology_get_online_cpu_count();
     const uint32_t timeouts = advanced_pic_ipi_get_tlb_shootdown_timeout_count();
-    const bool pass =
-        (online == cpu_topology_slots_for(madt_cpus)) && (smp_ap_delivered == smp_ap_attempted) && (timeouts == 0u);
+    const uint32_t control_registers_compared = application_processor_startup_count_control_register_records();
+    const uint32_t control_registers_differ = application_processor_startup_count_control_register_mismatches();
+    const bool pass = (online == cpu_topology_slots_for(madt_cpus)) && (smp_ap_delivered == smp_ap_attempted) &&
+                      (timeouts == 0u) && (control_registers_compared == smp_ap_delivered) &&
+                      (control_registers_differ == 0u);
 
     kernel_telemetry_begin_record(serial, "smp");
     kernel_telemetry_write_boolean("madt", madt);
@@ -184,6 +191,8 @@ void kernel_symmetric_multiprocessing_report(Serial_t *serial)
     kernel_telemetry_write_unsigned("shootdowns", advanced_pic_ipi_get_tlb_shootdown_broadcast_count());
     kernel_telemetry_write_unsigned("ranges_unmapped", kernel_vmm_get_unmapped_range_count());
     kernel_telemetry_write_unsigned("shootdown_timeouts", timeouts);
+    kernel_telemetry_write_unsigned("control_registers_compared", control_registers_compared);
+    kernel_telemetry_write_unsigned("control_registers_differ", control_registers_differ);
     kernel_telemetry_write_text("result", pass ? "(pass)" : "(fail)");
     kernel_telemetry_end_record();
 }
