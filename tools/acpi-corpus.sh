@@ -3,8 +3,9 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: tools/acpi-corpus.sh fetch [quick|corpus|full]
+Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu]
        tools/acpi-corpus.sh check [quick|corpus|full]
+       tools/acpi-corpus.sh namespace [quick|corpus|full|qemu]
 
 The firmware of recorded machines, which the ACPI layer is checked on. linuxhw/ACPI is fetched at a
 pinned commit into build/acpi-corpus/, never committed and never put in an image.
@@ -13,12 +14,18 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          (tools/acpi/corpus.list, the default) or full (every report with a dump, written to
          build/acpi-corpus/full.list); each report's decoded tables come too, kept in the clone's
          objects and never checked out
+         acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit; qemu fetches the
+         reference tables of QEMU at a pinned release, its 47 x86 configurations
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
          directory with what tools/acpi/expected_directory.py reads from the same dump, its MADT
          with what tools/acpi/expected_madt.py reads from the report's decoded tables, and the
          opcodes its definition blocks decode with what tools/acpi/aml_census.py counts; then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
          the report's iASL disassembly, and lists the tables where they differ
+  namespace  loads each machine of a list, or each QEMU configuration, with `test-acpi --namespace`
+         and compares its namespace with the one acpiexec loads from the same tables; a machine whose
+         tables run code at table level is counted and left out, since that code waits for the
+         interpreter
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error.
@@ -31,6 +38,14 @@ readonly LINUXHW="$CORPUS/linuxhw"
 readonly LINUXHW_URL="https://github.com/linuxhw/ACPI.git"
 readonly LINUXHW_COMMIT="d6d30c6ef6f45506567f25a302c64f009d8f5f4e"
 readonly HARNESS="$ROOT/build/acpi-host/test-acpi"
+readonly ACPICA="$CORPUS/acpica"
+readonly ACPICA_URL="https://github.com/acpica/acpica.git"
+readonly ACPICA_COMMIT="e85aa3bebaae81ed1e6d163511ac7e1eafe732cf"
+readonly ACPICA_BIN="$ACPICA/generate/unix/bin"
+readonly QEMU="$CORPUS/qemu"
+readonly QEMU_URL="https://github.com/qemu/qemu.git"
+readonly QEMU_COMMIT="2d3df8abca265c9bcc9e438d691d561592060998"
+readonly QEMU_TABLES="$QEMU/tests/data/acpi/x86"
 
 # Refuses, with the usage, a list that is not quick, corpus or full.
 known_list() {
@@ -38,6 +53,80 @@ known_list() {
         quick | corpus | full) ;;
         *) usage >&2; exit 2 ;;
     esac
+}
+
+# Clones ACPICA at the pinned commit, its blobs fetched as the checkout needs them, and builds the three
+# tools the oracles use.
+fetch_acpica() {
+    if [[ ! -d "$ACPICA/.git" ]]; then
+        git clone -q --filter=blob:none --no-checkout "$ACPICA_URL" "$ACPICA"
+    fi
+    git -C "$ACPICA" fetch -q --depth 1 origin "$ACPICA_COMMIT"
+    git -C "$ACPICA" checkout -q --detach "$ACPICA_COMMIT"
+    make -C "$ACPICA" -s -j"$(nproc)" iasl acpiexec acpixtract >/dev/null
+}
+
+# Fetches QEMU's reference ACPI tables at the pinned release, and nothing else of QEMU.
+fetch_qemu() {
+    if [[ ! -d "$QEMU/.git" ]]; then
+        git clone -q --filter=blob:none --no-checkout "$QEMU_URL" "$QEMU"
+    fi
+    git -C "$QEMU" sparse-checkout set --no-cone tests/data/acpi/x86
+    git -C "$QEMU" fetch -q --depth 1 origin "$QEMU_COMMIT"
+    git -C "$QEMU" checkout -q --detach "$QEMU_COMMIT"
+    echo "QEMU's reference tables, GPL-2.0-or-later, used as data and never committed."
+}
+
+# Prints each QEMU configuration as its DSDT, then its SSDT when the configuration has one, one per line.
+qemu_configurations() {
+    local dsdt variant
+    for dsdt in "$QEMU_TABLES"/{pc,q35,microvm}/DSDT*; do
+        variant="${dsdt##*/DSDT}"
+        if [[ -f "${dsdt%/*}/SSDT$variant" ]]; then
+            printf '%s %s\n' "$dsdt" "${dsdt%/*}/SSDT$variant"
+        else
+            printf '%s\n' "$dsdt"
+        fi
+    done
+}
+
+# Compares the namespace the kernel's code loads with acpiexec's, for each machine of the list $1 or each
+# QEMU configuration; a machine with code at table level is counted apart.
+namespace_check() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "namespace: no acpiexec, run fetch acpica first" >&2; exit 1; }
+    local number=0 agree=0 deferred=0 waiting=0 subject ours theirs result
+    local -a tables
+    ours="$(mktemp)" theirs="$(mktemp)"
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        if [[ "$1" == qemu ]]; then
+            read -ra tables <<<"$subject"
+            "$HARNESS" --namespace-tables "${tables[@]}" >"$ours" 2>&1 || true
+            python3 -I "$ROOT/tools/acpi/acpiexec_namespace.py" "$ACPICA_BIN" --tables "${tables[@]}" >"$theirs"
+            subject="${tables[0]#"$QEMU_TABLES"/}"
+        else
+            "$HARNESS" --namespace "$LINUXHW/$subject.bin" >"$ours" 2>&1 || true
+            if ! grep -q '^aml namespace table_level_code=0 ' "$ours"; then
+                echo "skip $number $subject: $(head -1 "$ours" | cut -d' ' -f3)"
+                deferred=$((deferred + 1))
+                continue
+            fi
+            python3 -I "$ROOT/tools/acpi/acpiexec_namespace.py" "$ACPICA_BIN" "$LINUXHW/$subject.bin" >"$theirs"
+        fi
+        if result="$(python3 -I "$ROOT/tools/acpi/compare_namespace.py" "$ours" "$theirs")"; then
+            echo "ok $number $subject: $result"
+            agree=$((agree + 1))
+            waiting=$((waiting + $(cut -d' ' -f3 <<<"$result")))
+        else
+            echo "not ok $number $subject"
+            sed 's/^/    # /' <<<"$result"
+        fi
+    done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
+    rm -f "$ours" "$theirs"
+    echo "# namespace: $agree of $((number - deferred)) agree with acpiexec; $deferred run code at table level;" \
+        "$waiting nodes wait for the interpreter"
+    [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
 }
 
 # Prints the reports of a list, one per line, without its comments.
@@ -150,7 +239,15 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
 }
 
 case "${1:-}" in
-    fetch) known_list "${2:-corpus}"; mkdir -p "$CORPUS"; fetch "${2:-corpus}" ;;
+    fetch)
+        mkdir -p "$CORPUS"
+        case "${2:-corpus}" in
+            acpica) fetch_acpica ;;
+            qemu) fetch_qemu ;;
+            *) known_list "${2:-corpus}"; fetch "${2:-corpus}" ;;
+        esac
+        ;;
+    namespace) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; namespace_check "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     -h | --help) usage ;;
     *) usage >&2; exit 2 ;;
