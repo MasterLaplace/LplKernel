@@ -87,7 +87,8 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
  *
  * @param physical_base Physical address of the window, as its base address register gives it.
  * @param size          Window length in bytes.
- * @return The virtual address of @p physical_base, its offset within its page kept, or 0.
+ * @return The virtual address of @p physical_base, its offset within its page kept, or 0, as when the
+ *         window's last byte would lie past 4 GiB.
  */
 uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size);
 
@@ -114,7 +115,8 @@ void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size);
  *
  * @param physical_base Physical address of the first byte.
  * @param size          Length in bytes.
- * @return The virtual address of @p physical_base, its offset within its page kept, or 0.
+ * @return The virtual address of @p physical_base, its offset within its page kept, or 0, as when the
+ *         window's last byte would lie past 4 GiB.
  */
 uint32_t kernel_vmm_map_firmware_window(uint32_t physical_base, uint32_t size);
 
