@@ -167,11 +167,11 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
 void kernel_symmetric_multiprocessing_report(Serial_t *serial)
 {
     const bool madt = advanced_configuration_and_power_interface_madt_is_available() != 0u;
-    const uint32_t madt_cpus =
-        madt ? advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count() : 1u;
+    const uint32_t madt_cpus = madt ? advanced_configuration_and_power_interface_madt()->processor_count : 1u;
     const uint32_t online = cpu_topology_get_online_cpu_count();
     const uint32_t timeouts = advanced_pic_ipi_get_tlb_shootdown_timeout_count();
-    const bool pass = (online == madt_cpus) && (smp_ap_delivered == smp_ap_attempted) && (timeouts == 0u);
+    const bool pass =
+        (online == cpu_topology_slots_for(madt_cpus)) && (smp_ap_delivered == smp_ap_attempted) && (timeouts == 0u);
 
     kernel_telemetry_begin_record(serial, "smp");
     kernel_telemetry_write_boolean("madt", madt);

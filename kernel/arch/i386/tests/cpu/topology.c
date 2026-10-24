@@ -58,11 +58,12 @@ KERNEL_TEST(firmware_processors_are_discovered)
         return;
     }
 
-    const uint32_t enabled = advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count();
+    const uint32_t enabled = advanced_configuration_and_power_interface_madt()->processor_count;
     const uint32_t local_slot = cpu_topology_register_discovered_apic_id(cpu_topology_get_local_apic_id());
     const uint32_t discovered = cpu_topology_get_discovered_cpu_count();
 
-    kernel_test_check(test, discovered >= enabled, "every processor the firmware enables is discovered");
+    kernel_test_check(test, discovered >= cpu_topology_slots_for(enabled),
+                      "every processor the firmware enables is discovered, up to the kernel's slots");
     kernel_test_check(test, local_slot < discovered, "the running processor has a slot among them");
     kernel_test_measure(test, "enabled", enabled);
 }
@@ -174,10 +175,11 @@ KERNEL_TEST(every_processor_the_firmware_enables_comes_online)
         return;
     }
 
-    const uint32_t enabled = advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count();
+    const uint32_t enabled = advanced_configuration_and_power_interface_madt()->processor_count;
     const uint32_t online = cpu_topology_get_online_cpu_count();
 
-    kernel_test_check(test, online == enabled, "every processor the MADT enables is online");
+    kernel_test_check(test, online == cpu_topology_slots_for(enabled),
+                      "every processor the MADT enables is online, up to the kernel's slots");
     kernel_test_measure(test, "enabled", enabled);
     kernel_test_measure(test, "online", online);
     kernel_test_measure(test, "x2apic", apic_is_x2apic_active() ? 1u : 0u);

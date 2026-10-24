@@ -15,18 +15,23 @@
 #define ACPI_FADT_EXTENDED_FIRMWARE_CONTROL_OFFSET 132u /**< X_FIRMWARE_CTRL: the FACS, 64 bits. */
 #define ACPI_FADT_EXTENDED_DSDT_OFFSET             140u /**< X_DSDT: the DSDT, 64 bits. */
 
-static const char *acpi_madt_state_name = "acpi-not-initialized";
-static uint8_t acpi_madt_available = 0u;
-static uint32_t acpi_madt_local_apic_physical_base = 0u;
-static uint8_t acpi_madt_local_apic_count = 0u;
-static AdvancedConfigurationAndPowerInterfaceLocalApicInfo_t
-    acpi_madt_local_apic_info[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_LOCAL_APIC_COUNT] = {0};
-static uint8_t acpi_madt_io_apic_count = 0u;
-static AdvancedConfigurationAndPowerInterfaceIoApicInfo_t
-    acpi_madt_io_apic_info[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT] = {0};
-static uint8_t acpi_madt_iso_count = 0u;
-static AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t
-    acpi_madt_iso_info[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT] = {0};
+/**
+ * @name The MADT entry types this reader reads
+ * @{
+ */
+#define ACPI_MADT_LOCAL_APIC                          0x0u /**< Processor Local APIC. */
+#define ACPI_MADT_IO_APIC                             0x1u /**< I/O APIC. */
+#define ACPI_MADT_INTERRUPT_SOURCE_OVERRIDE           0x2u /**< Interrupt Source Override. */
+#define ACPI_MADT_LOCAL_APIC_NON_MASKABLE_INTERRUPT   0x4u /**< Local APIC NMI. */
+#define ACPI_MADT_LOCAL_APIC_ADDRESS                  0x5u /**< Local APIC Address Override. */
+#define ACPI_MADT_LOCAL_X2APIC                        0x9u /**< Processor Local x2APIC. */
+#define ACPI_MADT_LOCAL_X2APIC_NON_MASKABLE_INTERRUPT 0xAu /**< Local x2APIC NMI. */
+/** @} */
+
+#define ACPI_MADT_INVALID_APIC_ID   0xFFu       /**< A local APIC ID that names no processor. */
+#define ACPI_MADT_INVALID_X2APIC_ID 0xFFFFFFFFu /**< An x2APIC ID that names no processor. */
+
+static AdvancedConfigurationAndPowerInterfaceMadtState_t acpi_madt = {.state_name = "acpi-not-initialized"};
 static AdvancedConfigurationAndPowerInterfaceDirectory_t acpi_directory;
 static bool acpi_directory_read = false;
 
@@ -213,111 +218,197 @@ static uint32_t acpi_fadt_facs_address(const AdvancedConfigurationAndPowerInterf
     return 0u;
 }
 
-static uint8_t acpi_parse_madt(const AdvancedConfigurationAndPowerInterfaceMadt_t *madt)
+/**
+ * @brief Whether a processor entry's flags let the processor run, now or once enabled at run time.
+ */
+static bool acpi_madt_processor_usable(uint32_t flags)
 {
-    const uint8_t *entry_ptr;
-    const uint8_t *entry_end;
+    return (flags & (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ENABLED |
+                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ONLINE_CAPABLE)) != 0u;
+}
 
-    if (!madt)
-        return 0u;
+/**
+ * @brief Whether a local APIC entry of @p madt names a processor that can run, which makes an
+ *        x2APIC entry below 0xFF name none.
+ */
+static bool acpi_madt_has_local_apic_processors(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *madt)
+{
+    const uint8_t *entry = (const uint8_t *) madt + sizeof(AdvancedConfigurationAndPowerInterfaceMadt_t);
+    const uint8_t *end = (const uint8_t *) madt + madt->length;
 
-    if (!advanced_configuration_and_power_interface_checksum_holds(madt, madt->header.length))
+    while (entry + sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t) <= end &&
+           entry[1] >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t) && entry + entry[1] <= end)
     {
-        acpi_madt_state_name = "acpi-madt-checksum-invalid";
-        return 0u;
+        const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *local_apic =
+            (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *) entry;
+
+        if (entry[0] == ACPI_MADT_LOCAL_APIC && entry[1] >= sizeof(*local_apic) &&
+            local_apic->apic_id != ACPI_MADT_INVALID_APIC_ID && acpi_madt_processor_usable(local_apic->flags))
+            return true;
+        entry += entry[1];
+    }
+    return false;
+}
+
+/**
+ * @brief Gives the processor of a local APIC or local x2APIC entry a CPU slot when its Enabled flag
+ *        is set and @p apic_id_valid, and counts it otherwise.
+ */
+static void acpi_madt_add_processor(AdvancedConfigurationAndPowerInterfaceMadtState_t *state, uint32_t flags,
+                                    bool apic_id_valid, uint32_t apic_id, uint32_t processor_unique_identifier)
+{
+    if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ENABLED) == 0u)
+    {
+        if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ONLINE_CAPABLE) != 0u)
+            ++state->online_capable_count;
+        else
+            ++state->disabled_count;
+        return;
+    }
+    if (!apic_id_valid)
+    {
+        ++state->invalid_count;
+        return;
+    }
+    if (state->processor_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT)
+    {
+        ++state->processors_dropped;
+        return;
     }
 
-    acpi_madt_local_apic_physical_base = madt->local_apic_address;
+    AdvancedConfigurationAndPowerInterfaceProcessor_t *processor = &state->processors[state->processor_count++];
 
-    entry_ptr = (const uint8_t *) madt + sizeof(AdvancedConfigurationAndPowerInterfaceMadt_t);
-    entry_end = (const uint8_t *) madt + madt->header.length;
+    processor->processor_unique_identifier = processor_unique_identifier;
+    processor->apic_id = apic_id;
+}
 
-    while (entry_ptr + sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t) <= entry_end)
+/**
+ * @brief Keeps the NMI connection of a local APIC NMI or local x2APIC NMI entry, or counts it past the
+ *        capacity.
+ */
+static void acpi_madt_add_non_maskable_interrupt(AdvancedConfigurationAndPowerInterfaceMadtState_t *state,
+                                                 uint32_t processor_unique_identifier, uint16_t flags,
+                                                 uint8_t local_interrupt)
+{
+    if (state->non_maskable_interrupt_count ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT)
     {
-        const AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t *entry =
-            (const AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t *) entry_ptr;
-
-        if (entry->length < sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t))
-        {
-            acpi_madt_state_name = "acpi-madt-entry-length-invalid";
-            return 0u;
-        }
-
-        if (entry_ptr + entry->length > entry_end)
-        {
-            acpi_madt_state_name = "acpi-madt-entry-out-of-bounds";
-            return 0u;
-        }
-
-        if (entry->type == 0u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t))
-        {
-            const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *lapic_entry =
-                (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *) entry_ptr;
-
-            if (acpi_madt_local_apic_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_LOCAL_APIC_COUNT)
-            {
-                AdvancedConfigurationAndPowerInterfaceLocalApicInfo_t *info =
-                    &acpi_madt_local_apic_info[acpi_madt_local_apic_count];
-                info->acpi_processor_id = lapic_entry->acpi_processor_id;
-                info->apic_id = lapic_entry->apic_id;
-                info->flags = lapic_entry->flags;
-                acpi_madt_local_apic_count++;
-            }
-        }
-        else if (entry->type == 1u && entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t))
-        {
-            const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *ioapic_entry =
-                (const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *) entry_ptr;
-
-            if (acpi_madt_io_apic_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT)
-            {
-                AdvancedConfigurationAndPowerInterfaceIoApicInfo_t *info =
-                    &acpi_madt_io_apic_info[acpi_madt_io_apic_count];
-                info->id = ioapic_entry->io_apic_id;
-                info->physical_base = ioapic_entry->io_apic_address;
-                info->gsi_base = ioapic_entry->global_system_interrupt_base;
-                acpi_madt_io_apic_count++;
-            }
-        }
-        else if (entry->type == 2u &&
-                 entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t))
-        {
-            const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *iso_entry =
-                (const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *) entry_ptr;
-
-            if (acpi_madt_iso_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT)
-            {
-                AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *info =
-                    &acpi_madt_iso_info[acpi_madt_iso_count];
-                info->bus = iso_entry->bus;
-                info->source_irq = iso_entry->source;
-                info->global_system_interrupt = iso_entry->global_system_interrupt;
-                info->flags = iso_entry->flags;
-                acpi_madt_iso_count++;
-            }
-        }
-        else if (entry->type == 5u &&
-                 entry->length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t))
-        {
-            const AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t *lapic_override_entry =
-                (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t *) entry_ptr;
-
-            if ((lapic_override_entry->local_apic_address >> 32u) != 0u)
-            {
-                acpi_madt_state_name = "acpi-madt-lapic-addr-64bit-unsupported";
-                return 0u;
-            }
-
-            acpi_madt_local_apic_physical_base = (uint32_t) lapic_override_entry->local_apic_address;
-        }
-
-        entry_ptr += entry->length;
+        ++state->non_maskable_interrupts_dropped;
+        return;
     }
 
-    acpi_madt_available = 1u;
-    acpi_madt_state_name =
-        (acpi_madt_io_apic_count == 0u) ? "acpi-madt-ready-no-ioapic" : "acpi-madt-ready-ioapic-found";
-    return 1u;
+    AdvancedConfigurationAndPowerInterfaceProcessorNonMaskableInterrupt_t *connection =
+        &state->non_maskable_interrupts[state->non_maskable_interrupt_count++];
+
+    connection->processor_unique_identifier = processor_unique_identifier;
+    connection->flags = flags;
+    connection->local_interrupt = local_interrupt;
+}
+
+/**
+ * @brief Reads one MADT entry of a type that names a processor or its NMI connection.
+ *
+ * @return false when its type is none of those, or it is shorter than its type.
+ */
+static bool acpi_madt_read_processor_entry(AdvancedConfigurationAndPowerInterfaceMadtState_t *state,
+                                           const uint8_t *entry, bool local_apic_processors)
+{
+    const uint8_t type = entry[0];
+    const uint8_t length = entry[1];
+
+    if (type == ACPI_MADT_LOCAL_APIC && length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t))
+    {
+        const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *local_apic =
+            (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *) entry;
+
+        acpi_madt_add_processor(state, local_apic->flags, local_apic->apic_id != ACPI_MADT_INVALID_APIC_ID,
+                                local_apic->apic_id, local_apic->acpi_processor_id);
+        return true;
+    }
+    if (type == ACPI_MADT_LOCAL_X2APIC &&
+        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t))
+    {
+        const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t *local_x2apic =
+            (const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t *) entry;
+        const bool valid = local_x2apic->x2apic_id != ACPI_MADT_INVALID_X2APIC_ID &&
+                           !(local_apic_processors && local_x2apic->x2apic_id < ACPI_MADT_INVALID_APIC_ID);
+
+        acpi_madt_add_processor(state, local_x2apic->flags, valid, local_x2apic->x2apic_id,
+                                local_x2apic->processor_unique_identifier);
+        return true;
+    }
+    if (type == ACPI_MADT_LOCAL_APIC_NON_MASKABLE_INTERRUPT &&
+        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t))
+    {
+        const AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t *connection =
+            (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t *) entry;
+        const uint32_t processor_unique_identifier =
+            (connection->processor_unique_identifier == ACPI_MADT_INVALID_APIC_ID) ?
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ALL_PROCESSORS :
+                connection->processor_unique_identifier;
+
+        acpi_madt_add_non_maskable_interrupt(state, processor_unique_identifier, connection->flags,
+                                             connection->local_interrupt);
+        return true;
+    }
+    if (type == ACPI_MADT_LOCAL_X2APIC_NON_MASKABLE_INTERRUPT &&
+        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t))
+    {
+        const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t *connection =
+            (const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t *) entry;
+
+        acpi_madt_add_non_maskable_interrupt(state, connection->processor_unique_identifier, connection->flags,
+                                             connection->local_interrupt);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Reads one MADT entry of a type that names an I/O APIC or an interrupt source override.
+ *
+ * @return false when its type is neither, or it is shorter than its type.
+ */
+static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfaceMadtState_t *state,
+                                           const uint8_t *entry)
+{
+    const uint8_t type = entry[0];
+    const uint8_t length = entry[1];
+
+    if (type == ACPI_MADT_IO_APIC && length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t))
+    {
+        const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *io_apic =
+            (const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *) entry;
+
+        if (state->io_apic_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT)
+        {
+            AdvancedConfigurationAndPowerInterfaceIoApicInfo_t *info = &state->io_apics[state->io_apic_count++];
+
+            info->id = io_apic->io_apic_id;
+            info->physical_base = io_apic->io_apic_address;
+            info->gsi_base = io_apic->global_system_interrupt_base;
+        }
+        return true;
+    }
+    if (type == ACPI_MADT_INTERRUPT_SOURCE_OVERRIDE &&
+        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t))
+    {
+        const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *override =
+            (const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *) entry;
+
+        if (state->interrupt_source_override_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT)
+        {
+            AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *info =
+                &state->interrupt_source_overrides[state->interrupt_source_override_count++];
+
+            info->bus = override->bus;
+            info->source_irq = override->source;
+            info->global_system_interrupt = override->global_system_interrupt;
+            info->flags = override->flags;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool advanced_configuration_and_power_interface_checksum_holds(const void *bytes, size_t length)
@@ -456,122 +547,151 @@ advanced_configuration_and_power_interface_find_table(const char *signature)
         advanced_configuration_and_power_interface_directory(), signature);
 }
 
-void advanced_configuration_and_power_interface_madt_initialize(void)
+bool advanced_configuration_and_power_interface_read_madt(
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *table,
+    AdvancedConfigurationAndPowerInterfaceMadtState_t *out_state)
 {
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *sdt;
-
-    acpi_madt_state_name = "acpi-madt-search";
-    acpi_madt_available = 0u;
-    acpi_madt_local_apic_physical_base = 0u;
-    acpi_madt_local_apic_count = 0u;
-    acpi_madt_io_apic_count = 0u;
-    acpi_madt_iso_count = 0u;
-
-    sdt = advanced_configuration_and_power_interface_find_table(ACPI_MADT_SIGNATURE);
-    if (!sdt)
+    if (out_state == NULL)
+        return false;
+    memset(out_state, 0, sizeof(*out_state));
+    if (table == NULL)
     {
-        acpi_madt_state_name = "acpi-madt-not-found";
-        return;
+        out_state->state_name = "acpi-madt-not-found";
+        return false;
+    }
+    if (table->length < sizeof(AdvancedConfigurationAndPowerInterfaceMadt_t))
+    {
+        out_state->state_name = "acpi-madt-too-short";
+        return false;
     }
 
-    acpi_parse_madt((const AdvancedConfigurationAndPowerInterfaceMadt_t *) sdt);
+    const AdvancedConfigurationAndPowerInterfaceMadt_t *madt =
+        (const AdvancedConfigurationAndPowerInterfaceMadt_t *) table;
+    const bool local_apic_processors = acpi_madt_has_local_apic_processors(table);
+    const uint8_t *entry = (const uint8_t *) madt + sizeof(AdvancedConfigurationAndPowerInterfaceMadt_t);
+    const uint8_t *end = (const uint8_t *) madt + table->length;
+
+    out_state->checksum_valid = advanced_configuration_and_power_interface_checksum_holds(table, table->length);
+    out_state->local_apic_physical_base = madt->local_apic_address;
+
+    while (entry + sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t) <= end)
+    {
+        const uint8_t type = entry[0];
+        const uint8_t length = entry[1];
+
+        if (length < sizeof(AdvancedConfigurationAndPowerInterfaceMadtEntryHeader_t))
+        {
+            out_state->state_name = "acpi-madt-entry-length-invalid";
+            return false;
+        }
+        if (entry + length > end)
+        {
+            out_state->state_name = "acpi-madt-entry-out-of-bounds";
+            return false;
+        }
+
+        if (type == ACPI_MADT_LOCAL_APIC_ADDRESS &&
+            length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t))
+        {
+            const uint64_t address =
+                ((const AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t *) entry)
+                    ->local_apic_address;
+
+            if ((address >> 32u) != 0u)
+            {
+                out_state->state_name = "acpi-madt-lapic-addr-64bit-unsupported";
+                return false;
+            }
+            out_state->local_apic_physical_base = (uint32_t) address;
+        }
+        else if (!acpi_madt_read_processor_entry(out_state, entry, local_apic_processors) &&
+                 !acpi_madt_read_interrupt_entry(out_state, entry))
+        {
+            ++out_state->skipped_count;
+        }
+        entry += length;
+    }
+
+    out_state->available = true;
+    out_state->state_name =
+        (out_state->io_apic_count == 0u) ? "acpi-madt-ready-no-ioapic" : "acpi-madt-ready-ioapic-found";
+    return true;
 }
 
-const char *advanced_configuration_and_power_interface_madt_get_state_name(void) { return acpi_madt_state_name; }
+void advanced_configuration_and_power_interface_madt_initialize(void)
+{
+    (void) advanced_configuration_and_power_interface_read_madt(
+        advanced_configuration_and_power_interface_find_table(ACPI_MADT_SIGNATURE), &acpi_madt);
+}
 
-uint8_t advanced_configuration_and_power_interface_madt_is_available(void) { return acpi_madt_available; }
+const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configuration_and_power_interface_madt(void)
+{
+    return &acpi_madt;
+}
+
+const char *advanced_configuration_and_power_interface_madt_get_state_name(void) { return acpi_madt.state_name; }
+
+uint8_t advanced_configuration_and_power_interface_madt_is_available(void) { return acpi_madt.available ? 1u : 0u; }
 
 uint32_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void)
 {
-    return acpi_madt_local_apic_physical_base;
+    return acpi_madt.local_apic_physical_base;
 }
 
-uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_count(void)
-{
-    return acpi_madt_local_apic_count;
-}
-
-uint8_t advanced_configuration_and_power_interface_madt_get_local_apic_id(uint8_t index)
-{
-    if (index >= acpi_madt_local_apic_count)
-        return 0u;
-    return acpi_madt_local_apic_info[index].apic_id;
-}
-
-uint8_t advanced_configuration_and_power_interface_madt_is_local_apic_enabled(uint8_t index)
-{
-    if (index >= acpi_madt_local_apic_count)
-        return 0u;
-    return (uint8_t) ((acpi_madt_local_apic_info[index].flags & 0x1u) != 0u);
-}
-
-uint8_t advanced_configuration_and_power_interface_madt_get_enabled_local_apic_count(void)
-{
-    uint8_t enabled_count = 0u;
-
-    for (uint8_t index = 0u; index < acpi_madt_local_apic_count; ++index)
-    {
-        if ((acpi_madt_local_apic_info[index].flags & 0x1u) != 0u)
-            ++enabled_count;
-    }
-
-    return enabled_count;
-}
-
-uint8_t advanced_configuration_and_power_interface_madt_get_io_apic_count(void) { return acpi_madt_io_apic_count; }
+uint8_t advanced_configuration_and_power_interface_madt_get_io_apic_count(void) { return acpi_madt.io_apic_count; }
 
 uint8_t advanced_configuration_and_power_interface_madt_get_io_apic_id(uint8_t index)
 {
-    if (index >= acpi_madt_io_apic_count)
+    if (index >= acpi_madt.io_apic_count)
         return 0u;
-    return acpi_madt_io_apic_info[index].id;
+    return acpi_madt.io_apics[index].id;
 }
 
 uint32_t advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(uint8_t index)
 {
-    if (index >= acpi_madt_io_apic_count)
+    if (index >= acpi_madt.io_apic_count)
         return 0u;
-    return acpi_madt_io_apic_info[index].physical_base;
+    return acpi_madt.io_apics[index].physical_base;
 }
 
 uint32_t advanced_configuration_and_power_interface_madt_get_io_apic_gsi_base(uint8_t index)
 {
-    if (index >= acpi_madt_io_apic_count)
+    if (index >= acpi_madt.io_apic_count)
         return 0u;
-    return acpi_madt_io_apic_info[index].gsi_base;
+    return acpi_madt.io_apics[index].gsi_base;
 }
 
 uint8_t advanced_configuration_and_power_interface_madt_get_interrupt_source_override_count(void)
 {
-    return acpi_madt_iso_count;
+    return acpi_madt.interrupt_source_override_count;
 }
 
 uint8_t advanced_configuration_and_power_interface_madt_get_interrupt_source_override_bus(uint8_t index)
 {
-    if (index >= acpi_madt_iso_count)
+    if (index >= acpi_madt.interrupt_source_override_count)
         return 0u;
-    return acpi_madt_iso_info[index].bus;
+    return acpi_madt.interrupt_source_overrides[index].bus;
 }
 
 uint8_t advanced_configuration_and_power_interface_madt_get_interrupt_source_override_source_irq(uint8_t index)
 {
-    if (index >= acpi_madt_iso_count)
+    if (index >= acpi_madt.interrupt_source_override_count)
         return 0u;
-    return acpi_madt_iso_info[index].source_irq;
+    return acpi_madt.interrupt_source_overrides[index].source_irq;
 }
 
 uint32_t advanced_configuration_and_power_interface_madt_get_interrupt_source_override_gsi(uint8_t index)
 {
-    if (index >= acpi_madt_iso_count)
+    if (index >= acpi_madt.interrupt_source_override_count)
         return 0u;
-    return acpi_madt_iso_info[index].global_system_interrupt;
+    return acpi_madt.interrupt_source_overrides[index].global_system_interrupt;
 }
 
 uint16_t advanced_configuration_and_power_interface_madt_get_interrupt_source_override_flags(uint8_t index)
 {
-    if (index >= acpi_madt_iso_count)
+    if (index >= acpi_madt.interrupt_source_override_count)
         return 0u;
-    return acpi_madt_iso_info[index].flags;
+    return acpi_madt.interrupt_source_overrides[index].flags;
 }
 
 uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t interrupt_request,
@@ -581,15 +701,16 @@ uint8_t advanced_configuration_and_power_interface_madt_resolve_isa_irq(uint8_t 
     if (!global_system_interrupt || !flags)
         return 0u;
 
-    if (!acpi_madt_available)
+    if (!acpi_madt.available)
         return 0u;
 
     *global_system_interrupt = interrupt_request;
     *flags = 0u;
 
-    for (uint8_t index = 0u; index < acpi_madt_iso_count; ++index)
+    for (uint8_t index = 0u; index < acpi_madt.interrupt_source_override_count; ++index)
     {
-        const AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *iso = &acpi_madt_iso_info[index];
+        const AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *iso =
+            &acpi_madt.interrupt_source_overrides[index];
 
         if (iso->bus != 0u)
             continue;
@@ -614,12 +735,12 @@ uint8_t advanced_configuration_and_power_interface_madt_find_io_apic_for_gsi(uin
     if (!io_apic_index)
         return 0u;
 
-    if (!acpi_madt_available || acpi_madt_io_apic_count == 0u)
+    if (!acpi_madt.available || acpi_madt.io_apic_count == 0u)
         return 0u;
 
-    for (uint8_t index = 0u; index < acpi_madt_io_apic_count; ++index)
+    for (uint8_t index = 0u; index < acpi_madt.io_apic_count; ++index)
     {
-        uint32_t current_base = acpi_madt_io_apic_info[index].gsi_base;
+        uint32_t current_base = acpi_madt.io_apics[index].gsi_base;
 
         if (current_base > global_system_interrupt)
             continue;

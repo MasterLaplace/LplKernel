@@ -200,6 +200,11 @@ uint32_t cpu_topology_get_slot_for_apic_id(uint32_t apic_id)
 
 uint32_t cpu_topology_get_discovered_cpu_count(void) { return cpu_topology_discovered_cpu_count; }
 
+uint32_t cpu_topology_slots_for(uint32_t processors)
+{
+    return (processors < CPU_TOPOLOGY_MAX_LOGICAL_CPUS) ? processors : CPU_TOPOLOGY_MAX_LOGICAL_CPUS;
+}
+
 const char *cpu_topology_get_source_name(void) { return cpu_topology_source_name; }
 
 bool cpu_topology_debug_force_logical_slot(uint32_t slot)
