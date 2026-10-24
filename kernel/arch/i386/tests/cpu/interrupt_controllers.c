@@ -8,21 +8,37 @@
 #include <kernel/lib/asmutils.h>
 #include <kernel/testing/test.h>
 
+#define INTERRUPT_CONTROLLERS_TEST_TICKS 8u /**< Ticks the contract waits for. */
+#define INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS                                                                    \
+    12u /**< The deadline's length in tick periods: more than eight, since it counts the same tick. */
+
 KERNEL_TEST_SUITE(interrupt_controllers, KERNEL_TEST_STAGE_INITIALIZATION);
 
 /**
  * @brief The tick's contract, whichever timer keeps it: the profile's frequency, and ticks that arrive.
+ *
+ * @details The wait ends after eight ticks, or, should the tick stop, once the deadline's limit of
+ *          polls without a tick runs out. A count of loop iterations ran out before eight ticks under
+ *          KVM. The deadline counts the same tick, so the pace of the ticks is not checked here.
  */
 static void interrupt_controllers_check_the_tick_contract(KernelTest_t *test)
 {
+    const uint32_t tick_hz = clock_get_tick_hz();
     const uint32_t start = clock_get_tick_count();
+    InterruptRequestDeadline_t deadline;
 
-    for (uint32_t spin = 0u; spin < 50000000u && clock_get_tick_count() - start < 8u; ++spin)
-        asmutils_no_operation();
-
-    kernel_test_check(test, clock_get_tick_hz() == clock_get_profile_tick_hz(),
+    kernel_test_check(test, tick_hz != 0u && tick_hz == clock_get_profile_tick_hz(),
                       "the tick keeps the profile's frequency");
-    kernel_test_check(test, clock_get_tick_count() - start >= 8u, "eight ticks arrive within a bounded spin");
+    if (tick_hz == 0u)
+        return;
+
+    interrupt_request_deadline_start(&deadline, INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS * (1000000u / tick_hz));
+    while (clock_get_tick_count() - start < INTERRUPT_CONTROLLERS_TEST_TICKS &&
+           !interrupt_request_deadline_passed(&deadline))
+        asmutils_pause();
+
+    kernel_test_check(test, clock_get_tick_count() - start >= INTERRUPT_CONTROLLERS_TEST_TICKS,
+                      "eight ticks arrive before the tick stalls");
 }
 
 /**
