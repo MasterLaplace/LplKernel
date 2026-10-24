@@ -623,6 +623,17 @@ bool hardware_abstraction_layer_virtio_gpu_display_init(void);
 bool hardware_abstraction_layer_virtio_gpu_display_active(void);
 
 /**
+ * @brief Did hardware_abstraction_layer_virtio_gpu_display_init() leave the display off because the
+ *        GPU's register window lies above 4 GiB?
+ *
+ * @details This kernel maps a 32-bit physical space, so such a window is refused and nothing is
+ *          mapped. The boot reports that cause apart from a GPU that is absent or failed its handshake.
+ *
+ * @return true when the last bring-up refused the GPU's register window as out of reach.
+ */
+bool hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach(void);
+
+/**
  * @brief Fill @p out_descriptor from the active scanout surface.
  *
  * @note The physical address is reported as 0: the surface is backed by a scatter-gather

@@ -215,7 +215,13 @@ static void kernel_bring_up_virtio_display(void)
 {
     if (!hardware_abstraction_layer_virtio_gpu_display_init())
     {
-        serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display: unavailable (software-LFB only)\n");
+        if (hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach())
+            serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING
+                                       "]: virtio-gpu display: register window above 4 GiB, out of reach "
+                                       "(software-LFB only)\n");
+        else
+            serial_write_string(&com1,
+                                "[" KERNEL_SYSTEM_STRING "]: virtio-gpu display: unavailable (software-LFB only)\n");
         return;
     }
 

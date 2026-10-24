@@ -151,14 +151,18 @@ KERNEL_TEST(the_register_window_is_mapped_only_below_4_gib)
     {
         kernel_test_check(test, !mapped, "a window above 4 GiB is refused");
         kernel_test_check(test, mapping.mapped == 0u && mapping.mmio_virtual_base == 0u,
-                          "and no page is mapped for it");
+                          "and the mapping records no window");
         kernel_test_check(test, mapping.window_out_of_reach != 0u, "and the driver says it is out of reach");
+        kernel_test_check(test, hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach(),
+                          "and so did the bring-up at boot, which left the display off");
     }
     else
     {
         kernel_test_check(test, mapped, "a window below 4 GiB is mapped");
         kernel_test_check(test, mapping.mmio_physical_base == (uint32_t) window.base, "at the base its register gives");
         kernel_test_check(test, mapping.window_out_of_reach == 0u, "and is not said to be out of reach");
+        kernel_test_check(test, !hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach(),
+                          "nor was it at boot");
     }
 }
 

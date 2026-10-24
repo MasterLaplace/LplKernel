@@ -1155,6 +1155,11 @@ bool hardware_abstraction_layer_virtio_gpu_display_init(void)
 
 bool hardware_abstraction_layer_virtio_gpu_display_active(void) { return g_display_ready; }
 
+bool hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach(void)
+{
+    return g_mapping.window_out_of_reach != 0u;
+}
+
 bool hardware_abstraction_layer_virtio_gpu_display_query(
     hardware_abstraction_layer_surface_descriptor_t *out_descriptor)
 {
