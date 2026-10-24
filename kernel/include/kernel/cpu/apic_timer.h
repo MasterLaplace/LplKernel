@@ -32,8 +32,8 @@
 /**
  * @brief Initialize advanced PIC timer backend (probe-only in current stage).
  *
- * @details The local APIC may come in xAPIC or in x2APIC mode: the firmware hands it over in x2APIC
- *          mode when a processor's x2APIC ID is 0xFF or more (Intel SDM vol. 3, §13.12.8.1).
+ * @details The local APIC may come in xAPIC or in x2APIC mode: by default, the firmware hands it over
+ *          in x2APIC mode when a processor's x2APIC ID is 0xFF or more (Intel SDM vol. 3, §13.12.7).
  *
  * @return Non-zero when advanced PIC timer backend is active, zero when unavailable.
  */

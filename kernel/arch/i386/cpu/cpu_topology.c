@@ -1,8 +1,10 @@
 #include <kernel/cpu/cpu_topology.h>
 
-#define CPU_TOPOLOGY_CPUID_LEAF_FEATURES 0x00000001u
-#define CPU_TOPOLOGY_CPUID_EDX_APIC_BIT  (1u << 9u)
-#define CPU_TOPOLOGY_MAX_LOGICAL_CPUS    CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC
+#define CPU_TOPOLOGY_CPUID_LEAF_MAXIMUM           0x00000000u
+#define CPU_TOPOLOGY_CPUID_LEAF_FEATURES          0x00000001u
+#define CPU_TOPOLOGY_CPUID_LEAF_EXTENDED_TOPOLOGY 0x0000000Bu
+#define CPU_TOPOLOGY_CPUID_EDX_APIC_BIT           (1u << 9u)
+#define CPU_TOPOLOGY_MAX_LOGICAL_CPUS             CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC
 
 static uint8_t cpu_topology_initialized = 0u;
 static uint8_t cpu_topology_forced_slot_enabled = 0u;
@@ -48,6 +50,30 @@ static uint32_t cpu_topology_register_apic_id_internal(uint32_t apic_id)
     return CPU_TOPOLOGY_NO_SLOT;
 }
 
+/**
+ * @brief The running processor's whole x2APIC ID from the extended topology leaf, which reports it in
+ *        xAPIC mode too, or the 8-bit initial APIC ID @p features_ebx holds when the leaf is absent
+ *        (Intel SDM vol. 3, §13.12.8).
+ */
+static uint32_t cpu_topology_read_own_apic_id(uint32_t features_ebx)
+{
+    uint32_t maximum_leaf = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(CPU_TOPOLOGY_CPUID_LEAF_MAXIMUM, 0u, &maximum_leaf, &ebx, &ecx, &edx);
+    if (maximum_leaf >= CPU_TOPOLOGY_CPUID_LEAF_EXTENDED_TOPOLOGY)
+    {
+        uint32_t eax = 0u;
+
+        asmutils_cpuid(CPU_TOPOLOGY_CPUID_LEAF_EXTENDED_TOPOLOGY, 0u, &eax, &ebx, &ecx, &edx);
+        if (ebx != 0u)
+            return edx;
+    }
+    return (features_ebx >> 24u) & 0xFFu;
+}
+
 static void cpu_topology_detect_from_cpuid(void)
 {
     uint32_t eax = 0u;
@@ -65,7 +91,7 @@ static void cpu_topology_detect_from_cpuid(void)
         return;
     }
 
-    cpu_topology_local_apic_id = (ebx >> 24u) & 0xFFu;
+    cpu_topology_local_apic_id = cpu_topology_read_own_apic_id(ebx);
     cpu_topology_apic_id_valid = 1u;
     cpu_topology_source_name = "topology-cpuid-apic-id";
     (void) cpu_topology_register_apic_id_internal(cpu_topology_local_apic_id);
