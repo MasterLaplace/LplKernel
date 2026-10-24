@@ -14,8 +14,11 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          build/acpi-corpus/full.list); each report's decoded tables come too, kept in the clone's
          objects and never checked out
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
-         directory with what tools/acpi/expected_directory.py reads from the same dump, and its MADT
-         with what tools/acpi/expected_madt.py reads from the report's decoded tables
+         directory with what tools/acpi/expected_directory.py reads from the same dump, its MADT
+         with what tools/acpi/expected_madt.py reads from the report's decoded tables, and the
+         opcodes its definition blocks decode with what tools/acpi/aml_census.py counts; then
+         tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
+         the report's iASL disassembly, and lists the tables where they differ
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error.
