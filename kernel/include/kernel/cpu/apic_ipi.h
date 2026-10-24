@@ -45,6 +45,15 @@ extern void advanced_pic_ipi_initialize(uint32_t lapic_virtual_base);
 extern uint8_t advanced_pic_ipi_is_ready(void);
 
 /**
+ * @brief Whether the local APIC, in its current mode, can address @p apic_id alone.
+ *
+ * @param apic_id A local APIC ID, or an x2APIC ID in x2APIC mode.
+ * @return true up to 0xFE in xAPIC mode, whose destination field holds 8 bits and broadcasts at 0xFF,
+ *         and for anything but the broadcast 0xFFFFFFFF in x2APIC mode.
+ */
+extern bool advanced_pic_ipi_can_address(uint32_t apic_id);
+
+/**
  * @brief Enable the Local APIC on the current CPU.
  *
  * Sets the software-enable bit in the Spurious Vector Register (SVR 0x0F0).
@@ -61,9 +70,8 @@ extern void advanced_pic_ipi_enable_local_apic(void);
  *
  * @param apic_id Physical APIC ID of target processor, an x2APIC ID in x2APIC mode.
  * @return Non-zero if delivery succeeded (complete or pending);
- *         zero if timeout waiting for delivery, or when the local APIC's mode cannot address
- *         @p apic_id: past 0xFE in xAPIC mode, 0xFFFFFFFF in x2APIC mode. Such an INIT is never
- *         attempted.
+ *         zero if timeout waiting for delivery, or when advanced_pic_ipi_can_address refuses
+ *         @p apic_id, in which case no INIT is attempted.
  */
 extern uint8_t advanced_pic_ipi_send_init(uint32_t apic_id);
 
