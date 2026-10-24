@@ -174,17 +174,18 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq, uint32_t destin
     if (gsi_relative > 0x7Fu)
         return 0u;
 
+    vector = (uint8_t) (PIC_VECTOR_OFFSET_MASTER + isa_irq);
+    redir_low = io_apic_build_redirection_low(vector, iso_flags);
+    redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
+
     if (!io_apic_can_name_destination(destination))
     {
+        io_apic_register_write(unit->virtual_base, redir_reg_index, redir_low);
         io_apic_destinations_refused++;
         return 0u;
     }
 
-    vector = (uint8_t) (PIC_VECTOR_OFFSET_MASTER + isa_irq);
-    redir_low = io_apic_build_redirection_low(vector, iso_flags);
     redir_high = destination << IOAPIC_REDIR_HIGH_DESTINATION_SHIFT;
-    redir_reg_index = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (gsi_relative * 2u));
-
     io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
     io_apic_register_write(unit->virtual_base, redir_reg_index, redir_low);
 
