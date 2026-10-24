@@ -132,7 +132,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
-| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h` | the decoder's and the namespace's interfaces, for the layers above them and the tests |
+| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h` | the decoder's, the namespace's and the objects' interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
@@ -198,7 +198,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Region object** | `space u8`, `state u8`, `pci_device u32` (segment, bus, device and function, packed once attached), `offset u64`, `length u64`, `mapping u32`, `owner_device u32` | 32 | Attached lazily, at the first access. |
 | **Field unit object** | `kind u8` (normal, index, bank), `access u8`, `update u8`, `lock u8`, `region u32` (or the index field's node), `data_or_bank u32`, `bank_value u32`, `bit_offset u32`, `bit_length u32` | 28 | A 4 MiB field still costs 28 bytes. |
 | **Method** | in the node's `value`: `handle` = table, `payload` = body offset u32 and body length u32, `auxiliary` = MethodFlags | 0 extra | Bodies are never copied. |
-| **Buffer field** | in the node's `value`: `handle` = buffer object, `payload` = bit offset u32 and bit length u32 | 0 extra | |
+| **Buffer field** | in the node's `value`: `handle` = the buffer's node, `payload` = bit offset u32 and bit length u32, `auxiliary` = access width in bytes | 0 extra | The node, not the object: `CopyObject` to the buffer replaces its object. |
 | **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 5), `argument_count u8`, `flags u8` | about 272 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
 | **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
