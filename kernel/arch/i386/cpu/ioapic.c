@@ -32,7 +32,7 @@
 static const char *io_apic_state_name = "ioapic-not-initialized";
 static uint8_t io_apic_mapped_count = 0u;
 static uint8_t io_apic_route_count = 0u;
-static uint32_t io_apic_destinations_refused = 0u;
+static uint32_t io_apic_lines_refused = 0u;
 static InputOutputApicUnit_t io_apic_units[INPUT_OUTPUT_APIC_MAX_COUNT] = {0};
 static InputOutputApicRouteInfo_t io_apic_routes[INPUT_OUTPUT_APIC_MAX_ROUTES] = {0};
 
@@ -181,7 +181,7 @@ static uint8_t io_apic_program_masked_isa_route(uint8_t isa_irq, uint32_t destin
     if (!io_apic_can_name_destination(destination))
     {
         io_apic_register_write(unit->virtual_base, redir_reg_index, redir_low);
-        io_apic_destinations_refused++;
+        io_apic_lines_refused++;
         return 0u;
     }
 
@@ -216,7 +216,7 @@ static const char *io_apic_routing_state_name(void)
 {
     if (io_apic_route_count > 0u)
         return "ioapic-init-masked-routes-ready";
-    if (io_apic_destinations_refused > 0u)
+    if (io_apic_lines_refused > 0u)
         return "ioapic-init-bootstrap-processor-unnameable";
     return "ioapic-init-mapped-no-routes";
 }
@@ -239,7 +239,7 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
     io_apic_state_name = "ioapic-init-start";
     io_apic_mapped_count = 0u;
     io_apic_route_count = 0u;
-    io_apic_destinations_refused = 0u;
+    io_apic_lines_refused = 0u;
 
     for (uint8_t index = 0u; index < INPUT_OUTPUT_APIC_MAX_COUNT; ++index)
     {
@@ -308,12 +308,12 @@ uint8_t input_output_advanced_programmable_interrupt_controller_get_programmed_r
     return io_apic_route_count;
 }
 
-uint32_t input_output_advanced_programmable_interrupt_controller_get_destinations_refused(void)
+uint32_t input_output_advanced_programmable_interrupt_controller_get_lines_refused(void)
 {
-    return io_apic_destinations_refused;
+    return io_apic_lines_refused;
 }
 
-uint8_t input_output_advanced_programmable_interrupt_controller_read_line_mask(uint8_t isa_irq, uint8_t *masked)
+uint8_t input_output_advanced_programmable_interrupt_controller_debug_read_line_mask(uint8_t isa_irq, uint8_t *masked)
 {
     uint32_t global_system_interrupt = 0u;
     uint16_t iso_flags = 0u;

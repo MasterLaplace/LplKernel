@@ -94,7 +94,7 @@ static InterruptControllersRouting_t interrupt_controllers_route_as_if_the_boots
     input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
     routing.routes = input_output_advanced_programmable_interrupt_controller_get_programmed_route_count();
     routing.routes_naming = interrupt_controllers_routes_naming(apic_id);
-    routing.refused = input_output_advanced_programmable_interrupt_controller_get_destinations_refused();
+    routing.refused = input_output_advanced_programmable_interrupt_controller_get_lines_refused();
     routing.state = input_output_advanced_programmable_interrupt_controller_get_state_name();
     cpu_topology_debug_restore(&found);
     input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
@@ -158,7 +158,8 @@ static uint8_t interrupt_controllers_lines_left_unmasked(const uint8_t *lines, u
     {
         uint8_t masked = 1u;
 
-        if (input_output_advanced_programmable_interrupt_controller_read_line_mask(lines[index], &masked) && !masked)
+        if (input_output_advanced_programmable_interrupt_controller_debug_read_line_mask(lines[index], &masked) &&
+            !masked)
             ++unmasked;
     }
     return unmasked;
@@ -242,7 +243,7 @@ KERNEL_TEST(every_route_names_the_bootstrap_processor)
     if (bootstrap > INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR)
     {
         kernel_test_check(test, routes == 0u, "no line is routed to a processor no redirection entry can name");
-        kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_get_destinations_refused() > 0u,
+        kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_get_lines_refused() > 0u,
                           "and each line refused is counted");
         return;
     }
@@ -411,7 +412,7 @@ KERNEL_TEST(moving_a_route_refuses_an_identifier_its_entry_cannot_name)
     const uint8_t moved = interrupt_controllers_move_route(isa_irq, elsewhere);
     const uint8_t after_move =
         input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(route_index);
-    const uint32_t refused_before = input_output_advanced_programmable_interrupt_controller_get_destinations_refused();
+    const uint32_t refused_before = input_output_advanced_programmable_interrupt_controller_get_lines_refused();
     const uint8_t broadcast_taken = interrupt_controllers_move_route(isa_irq, INTERRUPT_CONTROLLERS_TEST_BROADCAST);
     const uint8_t after_broadcast =
         input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(route_index);
@@ -419,7 +420,7 @@ KERNEL_TEST(moving_a_route_refuses_an_identifier_its_entry_cannot_name)
         interrupt_controllers_move_route(isa_irq, INTERRUPT_CONTROLLERS_TEST_PAST_EIGHT_BITS);
     const uint8_t after_past_eight_bits =
         input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(route_index);
-    const uint32_t refused_after = input_output_advanced_programmable_interrupt_controller_get_destinations_refused();
+    const uint32_t refused_after = input_output_advanced_programmable_interrupt_controller_get_lines_refused();
 
     (void) interrupt_controllers_move_route(isa_irq, found);
 

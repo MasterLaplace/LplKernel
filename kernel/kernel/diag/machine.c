@@ -64,8 +64,8 @@ void kernel_machine_report(Serial_t *serial)
     machine_write_value("acpi", advanced_configuration_and_power_interface_madt_get_state_name());
     machine_write_value("apic", machine_local_apic_mode());
     machine_write_value("ioapic", input_output_advanced_programmable_interrupt_controller_get_state_name());
-    kernel_telemetry_write_unsigned("ioapic_destinations_refused",
-                                    input_output_advanced_programmable_interrupt_controller_get_destinations_refused());
+    kernel_telemetry_write_unsigned("ioapic_lines_refused",
+                                    input_output_advanced_programmable_interrupt_controller_get_lines_refused());
     machine_write_value("topology", cpu_topology_get_source_name());
     kernel_telemetry_write_boolean("audio_controller", peripheral_component_interconnect_find_by_class(
                                                            MACHINE_AUDIO_CLASS, MACHINE_AUDIO_SUBCLASS) != NULL);

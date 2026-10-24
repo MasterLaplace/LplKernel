@@ -160,7 +160,7 @@ extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_r
  *         input_output_advanced_programmable_interrupt_controller_set_isa_route_destination() refuses is
  *         not counted: its caller learns of it from the value returned.
  */
-extern uint32_t input_output_advanced_programmable_interrupt_controller_get_destinations_refused(void);
+extern uint32_t input_output_advanced_programmable_interrupt_controller_get_lines_refused(void);
 
 /**
  * @brief Read back whether the redirection entry an ISA line resolves to is masked, whether the line is
@@ -170,9 +170,10 @@ extern uint32_t input_output_advanced_programmable_interrupt_controller_get_dest
  *
  * @param isa_irq The ISA IRQ line.
  * @param masked Receives 1 when the entry's mask bit is set, 0 when it is clear.
- * @return 1 when the line resolves to an entry of a mapped I/O APIC, 0 when it does not, @p masked then
- *         left alone.
+ * @return 1 when the line resolves to an entry of a mapped I/O APIC, 0 when it does not or when @p masked
+ *         is NULL, @p masked then left alone.
  */
-extern uint8_t input_output_advanced_programmable_interrupt_controller_read_line_mask(uint8_t isa_irq, uint8_t *masked);
+extern uint8_t input_output_advanced_programmable_interrupt_controller_debug_read_line_mask(uint8_t isa_irq,
+                                                                                            uint8_t *masked);
 
 #endif /* KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */
