@@ -157,7 +157,7 @@
       NONE)                                                                                                            \
     X(LOAD_TABLE, 0x1F, "LoadTable", 0, 0, 0, 0, TERM_ARGUMENT, TERM_ARGUMENT, TERM_ARGUMENT, TERM_ARGUMENT,           \
       TERM_ARGUMENT, TERM_ARGUMENT)                                                                                    \
-    X(LOAD, 0x20, "Load", 0, 1, 0, 0, SUPER_NAME, TARGET, NONE, NONE, NONE, NONE)                                      \
+    X(LOAD, 0x20, "Load", 0, 0, 0, 0, SUPER_NAME, TARGET, NONE, NONE, NONE, NONE)                                      \
     X(STALL, 0x21, "Stall", 0, 1, 0, 0, TERM_ARGUMENT, NONE, NONE, NONE, NONE, NONE)                                   \
     X(SLEEP, 0x22, "Sleep", 0, 1, 0, 0, TERM_ARGUMENT, NONE, NONE, NONE, NONE, NONE)                                   \
     X(ACQUIRE, 0x23, "Acquire", 0, 0, 0, 0, SUPER_NAME, WORD_DATA, NONE, NONE, NONE, NONE)                             \
