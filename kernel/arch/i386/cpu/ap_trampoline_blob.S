@@ -14,6 +14,8 @@
 .set AP_MAILBOX_C_ENTRY,      (AP_MAILBOX_BASE_PHYS + 16)
 .set AP_MAILBOX_LOGICAL_SLOT, (AP_MAILBOX_BASE_PHYS + 20)
 .set AP_MAILBOX_MAIN_LOOP,    (AP_MAILBOX_BASE_PHYS + 24)
+.set AP_MAILBOX_CR0,          (AP_MAILBOX_BASE_PHYS + 28)
+.set AP_MAILBOX_CR4,          (AP_MAILBOX_BASE_PHYS + 32)
 
 .set AP_MAILBOX_APIC_ID_HIGH,      (AP_HIGH_HALF_BASE + AP_MAILBOX_APIC_ID)
 .set AP_MAILBOX_STACK_TOP_HIGH,    (AP_HIGH_HALF_BASE + AP_MAILBOX_STACK_TOP)
@@ -51,11 +53,14 @@ ap_trampoline_protected_entry:
     movw %ax, %es
     movw %ax, %ss
 
+    /* CR4 before CR0: once CR0 turns paging on, the walk reads CR4 (PSE, PGE, PAE). */
+    movl AP_MAILBOX_CR4, %eax
+    movl %eax, %cr4
+
     movl AP_MAILBOX_CR3, %eax
     movl %eax, %cr3
 
-    movl %cr0, %eax
-    orl $0x80000000, %eax
+    movl AP_MAILBOX_CR0, %eax
     movl %eax, %cr0
     movl $(AP_HIGH_HALF_BASE + AP_TRAMPOLINE_BASE_PHYS + (ap_trampoline_paged_entry - ap_trampoline_blob_start)), %eax
     jmp *%eax

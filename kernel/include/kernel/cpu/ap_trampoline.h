@@ -68,6 +68,10 @@ extern uint16_t application_processor_trampoline_get_acknowledgement_word(void);
 /**
  * @brief Configure AP trampoline handoff mailbox for one AP startup attempt.
  *
+ * @details The AP also takes the calling CPU's CR0 and CR4, read here: the trampoline loads that CR4
+ *          before it enables paging, then that CR0 whole, in place of what INIT leaves, CR0 at
+ *          60000010H with CD and NW unchanged and CR4 at 0 (Intel SDM vol. 3, Table 12-1).
+ *
  * @param apic_id Target AP APIC ID.
  * @param logical_slot Logical slot assigned to this AP.
  * @param stack_top_virtual AP stack top virtual address.
