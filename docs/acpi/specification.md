@@ -132,6 +132,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
+| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h` | the decoder's and the namespace's interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
@@ -168,7 +169,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
 | `sleep_milliseconds(u32)`, `stall_microseconds(u32)` | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick; after boot the worker thread blocks (#273) | advance the virtual clock |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
-| `pages(count)` | `kernel_vmm_alloc_pages` | `malloc` |
+| `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
 | `log(level, text)` | serial, compiled out below the build's level | stdout |
 
 A host is a value, `AdvancedConfigurationAndPowerInterfaceHost_t` in `kernel/include/kernel/acpi/host.h`, with one
@@ -199,8 +200,8 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Method** | in the node's `value`: `handle` = table, `payload` = body offset u32 and body length u32, `auxiliary` = MethodFlags | 0 extra | Bodies are never copied. |
 | **Buffer field** | in the node's `value`: `handle` = buffer object, `payload` = bit offset u32 and bit length u32 | 0 extra | |
 | **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 5), `argument_count u8`, `flags u8` | about 272 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
-| **Pending operator** | `descriptor u16`, `operands_done u8`, `flags u8`, `start u32`, `end u32` (its PkgLength end, if any), `value_base u16`, `target u16` | 16 | |
-| **Block** | `kind u8` (scope, if, else, while, package, table), `start u32` (a While's predicate), `end u32`, `scope u32` | 16 | |
+| **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
+| **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `physical u64`, `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `length u32`, `checksum u8`, `checksum_valid u8`, `oem_table_id[8]`, `origin u8` (static, `Load`, `LoadTable`), `owner u16` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 50 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. |
 
@@ -442,9 +443,9 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
 | NameSeg | 4 bytes: `A-Z` or `_` first, then `A-Z`, `0-9` or `_`; compared as a `uint32_t` | [§20.2.2] | |
 | NameString | `\` or `^`*, then a NameSeg, `0x2E` and 2 segments, `0x2F` and a count (1 to 255) and segments, or `0x00` (NullName) | [§20.2.2] | a count of 0 is a decode error |
 | TermArg | any expression, a `LocalX`, an `ArgX`, a constant, or a NameString (data object, field read or method call) | [§20.2.5] | the only context-sensitive point: a call's argument count comes from the namespace |
-| SuperName | SimpleName, `Debug`, or a reference-yielding expression (`RefOf`, `DerefOf`, `Index`) | [§20.2.2] | a method there is called |
+| SuperName | SimpleName, `Debug`, or a reference-yielding expression (`RefOf`, `DerefOf`, `Index`) | [§20.2.2] | a method there is called; any other opcode that is not a statement is decoded there too, as in ACPICA's parser: firmware ships `Store (X, Add (Local1, 8))` |
 | Target | SuperName or NullName | | NullName discards the result |
-| SimpleName | NameString, `ArgX`, `LocalX` | | **never a call:** the operand of `CondRefOf` and `RefOf`, `ObjectType`, the destination of `CopyObject`. The grammar allows a call there; following it literally loses sync on almost every real firmware at `CondRefOf (\_OSI, Local0)`. |
+| SimpleName | NameString, `ArgX`, `LocalX`, and whatever SuperName accepts | | **never a call:** the operand of `CondRefOf` and `RefOf`, `ObjectType`, the destination of `CopyObject`. The grammar allows a call there; following it literally loses sync on almost every real firmware at `CondRefOf (\_OSI, Local0)`. |
 | ByteData, WordData, DWordData, QWordData | little-endian fixed fields | [§20.2.3] | |
 | FieldList | named, reserved (`0x00`), AccessAs (`0x01`), Connection (`0x02` and a NameString or a Buffer), ExtendedAccessAs (`0x03`) | [§20.2.5.2] | all five decoded |
 | PackageElementList | a DataRefObject or a NameString per element | [§20.2.5.4] | an expression as an element is refused |
@@ -652,7 +653,7 @@ Each row is a decision, and has at least one test (§8).
 | Region and field operands | Evaluated when the declaration runs. | [§19.6.100] |
 | The first-method rule | Not implemented: no real table puts a named control method first. | [§5.4.2] |
 | Integer width | Fixed once from the DSDT's revision, for every table: below 2, every integer is 32 bits, results are masked, `Ones` is `0xFFFFFFFF` and Integer to Buffer gives 4 bytes. | [§19.6.29] |
-| `External` | Creates nothing at run time. | [§19.6.46] |
+| `External` | Creates nothing at run time. Its node only gives the decoder a method's argument count, and a declaration of the object replaces it. One whose path does not exist is placed once every table is declared, the missing segments created as Externals: firmware calls such methods behind `CondRefOf`. | [§19.6.46] |
 | Unresolved names | An error only when executed: in methods they sit behind `CondRefOf` or capability bits. | |
 | Names inside packages | Kept as a lazy path with its scope, resolved when the element is read, at most 8 indirections, then `name_resolution_loop`. Resolving at creation would make the result depend on the order tables load in. | [§19.6.102] |
 | Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted. | [§19.6.102] |
@@ -733,6 +734,7 @@ that reaches it. The corpus runs report the peaks.
 | Pending operators | 256 |
 | Values | 1,024 |
 | Temporary nodes per evaluation | 1,024 |
+| Externals waiting for their path while tables load | 256 |
 | Nested internal (host-triggered) evaluations | 2 |
 | Loop iterations per evaluation, every `While` back-edge | 2^20 |
 | Time requested per evaluation (`Sleep` milliseconds and `Stall` microseconds) | 30 s |
@@ -937,8 +939,10 @@ published image. The made-up ASL is ours, under MIT.
   records as the host harness; without a module the test is skipped, and the CI job that passes one names it on
   `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so the 64-bit
   integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
-- **The census oracle**: per-table declaration counts equal those of the census script and of the `iasl`
-  disassembly shipped with each dump.
+- **The census oracle**: every opcode count of every machine equals that of the census script. Per table, the
+  declaration counts are compared with the `iasl` disassembly shipped with each dump; they differ where `iasl`
+  guessed the argument counts of methods it could not resolve, or left an object out, and each such table is
+  listed.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
   lines in declaration order and compared, without the nodes ACPICA creates for `External`.
