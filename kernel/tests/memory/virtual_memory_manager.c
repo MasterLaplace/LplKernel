@@ -82,3 +82,18 @@ KERNEL_TEST(a_device_window_reads_the_device_and_frees_no_frame)
                           physical_memory_manager_debug_get_rejected_free_count() == rejected_before,
                       "and no frame went to the physical memory manager");
 }
+
+/**
+ * @brief A device window whose last byte would lie past 4 GiB is refused.
+ *
+ * @details Each page of a window used to be computed in 32 bits: two pages from 0xFFFFF000 came back
+ *          mapped, the second on physical page 0, uncached and writable.
+ */
+KERNEL_TEST(a_device_window_past_4_gib_is_refused)
+{
+    const uint32_t window = kernel_vmm_map_device_window(0xFFFFF000u, 2u * PAGE_SIZE);
+
+    if (window != 0u)
+        kernel_vmm_unmap_device_window(window, 2u * PAGE_SIZE);
+    kernel_test_check(test, window == 0u, "two pages from 0xFFFFF000 are refused");
+}
