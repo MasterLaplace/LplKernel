@@ -885,3 +885,25 @@ KERNEL_TEST(load_may_stand_where_a_value_is_expected)
     kernel_test_check(test, made_up_load.decode_errors == 0u, "the If around Load decodes");
     made_up_close(test);
 }
+
+/**
+ * @brief The same External on a missing path, in two tables, makes one node, not two.
+ */
+KERNEL_TEST(the_same_external_twice_makes_one_node)
+{
+    static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'N', 'O', 'P', 'E', 'M', 'T', 'H', '_', 0x08u, 0x02u};
+
+    if (!made_up_open(test))
+        return;
+
+    const uint32_t nodes = made_up_load.space.live_nodes;
+
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", external, sizeof(external)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", external, sizeof(external)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test, made_up_load.space.live_nodes == nodes + 2u,
+                      "one External for \\NOPE.MTH_ and one for the missing NOPE");
+    made_up_close(test);
+}
