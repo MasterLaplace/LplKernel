@@ -52,12 +52,13 @@ dump_patterns() {
 
 # Fetches, in one request, the decoded reports of the list $1 the clone lacks: the check reads them from the
 # object store, where they stay compressed and out of the work tree. A fetch given no object would fetch the
-# remote's branches instead, so none is made when nothing is missing.
+# remote's branches instead, so none is made when nothing is missing; a report the pinned commit lacks stops it.
 fetch_decoded() {
     local wanted present missing
     wanted="$(reports "$1" | while IFS= read -r report; do
-        git -C "$LINUXHW" rev-parse "$LINUXHW_COMMIT:$report"
-    done)"
+        git -C "$LINUXHW" rev-parse --verify --quiet "$LINUXHW_COMMIT:$report" ||
+            { echo "fetch: $report: no decoded report at $LINUXHW_COMMIT" >&2; exit 1; }
+    done)" || exit 1
     present="$(git -C "$LINUXHW" cat-file --batch-all-objects --batch-check='%(objectname)' 2>/dev/null)"
     missing="$(comm -23 <(sort -u <<<"$wanted") <(sort -u <<<"$present"))"
     [[ -n "$missing" ]] || return 0
@@ -84,7 +85,8 @@ fetch() {
     echo "changed: converted from acpidump text to binary tables."
 }
 
-# Tells whether the clone holds the decoded report of the machine $1, never fetching it.
+# Tells whether the clone holds the decoded report of the machine $1, never fetching it from git 2.45 on;
+# an older git fetches it instead.
 has_decoded() {
     GIT_NO_LAZY_FETCH=1 git -C "$LINUXHW" cat-file -e "$LINUXHW_COMMIT:$1" 2>/dev/null
 }
