@@ -5,7 +5,11 @@
 #define MACHINE_LANGUAGE_OBJECT_ALIGNMENT 16u /**< Bytes every object starts on, and is rounded up to. */
 #define MACHINE_LANGUAGE_OBJECT_OFFSET_BITS                                                                            \
     12u /**< Bits of a handle that hold an object's offset in its run, in units of the alignment. */
-#define MACHINE_LANGUAGE_MAX_NESTED_PACKAGES 32u /**< Packages one data object nests. */
+#define MACHINE_LANGUAGE_MAX_NESTED_PACKAGES 32u /**< Packages one data object nests (§6.1). */
+#define MACHINE_LANGUAGE_MAX_PAYLOAD_BYTES                                                                             \
+    (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES +                                    \
+     1u) /**< The largest payload: a String of the largest length and its NUL; a VarPackage of the most elements       \
+            takes as much. */
 #define MACHINE_LANGUAGE_RUN_BYTES                                                                                     \
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_RUN_PAGES *                                    \
      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES) /**< Bytes of a run of small objects. */
@@ -83,7 +87,7 @@ machine_language_heap_take_run(AdvancedConfigurationAndPowerInterfaceMachineLang
                                uint32_t *out_run)
 {
     if (heap->run_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OBJECT_RUNS)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_OBJECT_RUNS;
 
     void *run = advanced_configuration_and_power_interface_machine_language_namespace_take_pages(space, pages);
 
@@ -228,8 +232,8 @@ advanced_configuration_and_power_interface_machine_language_object_allocate(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 
-    if (payload_bytes > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS * 16u)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
+    if (payload_bytes > MACHINE_LANGUAGE_MAX_PAYLOAD_BYTES)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES;
     if (bytes >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES)
         status = machine_language_heap_take_run(
             heap, space,
@@ -242,9 +246,9 @@ advanced_configuration_and_power_interface_machine_language_object_allocate(
         {
             status = machine_language_heap_take_run(
                 heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_RUN_PAGES, &run);
-            heap->small_run = (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK) ?
-                                  run + 1u :
-                                  heap->small_run;
+            if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+                return status;
+            heap->small_run = run + 1u;
             heap->small_used = 0u;
         }
         run = heap->small_run - 1u;

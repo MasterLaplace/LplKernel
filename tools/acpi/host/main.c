@@ -212,7 +212,7 @@ static uint32_t harness_unit_access_bytes(const AdvancedConfigurationAndPowerInt
             advanced_configuration_and_power_interface_machine_language_object(&load->heap, region->value.handle) :
             NULL;
 
-    if (unit->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_FIELD && object != NULL &&
+    if (unit->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL && object != NULL &&
         region->value.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION &&
         ((const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *) (object + 1))->space == 0x03u &&
         unit->bit_length > 8u && (unit->bit_length + 7u) / 8u < 256u)
@@ -268,10 +268,10 @@ static void harness_print_node_value(const AdvancedConfigurationAndPowerInterfac
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *other =
             advanced_configuration_and_power_interface_machine_language_namespace_node(space, unit->data_or_bank);
 
-        if (unit->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INDEX_FIELD)
+        if (unit->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX)
             printf("IndexField Idx [%.4s] Dat [%.4s]", (const char *) &region->name,
                    other ? (const char *) &other->name : "????");
-        else if (unit->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_BANK_FIELD)
+        else if (unit->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK)
             printf("BankField Rgn [%.4s] Bnk [%.4s]", (const char *) &region->name,
                    other ? (const char *) &other->name : "????");
         else

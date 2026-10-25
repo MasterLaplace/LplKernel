@@ -51,6 +51,9 @@ typedef struct MachineLanguageFieldList {
     uint8_t access;        /**< The AccessType in force. */
     uint8_t update;        /**< The UpdateRule. */
     uint8_t lock;          /**< The LockRule. */
+    bool builds;           /**< Whether its units get objects: not when a name it needs is missing, nor when its
+                                BankValue waits for the interpreter. */
+    bool deferred;         /**< Whether its units wait for the interpreter, counted each. */
 } MachineLanguageFieldList_t;
 
 /**
@@ -204,13 +207,15 @@ static void machine_language_close_block(MachineLanguageWalk_t *walk)
 
 /**
  * @brief Goes on after a fault: past the innermost construct with a PkgLength around it, else
- *        past the rest of the table, which is also where a PkgLength crossing its parent leads.
+ *        past the rest of the table, which is also where a PkgLength crossing its parent and an
+ *        exhausted arena lead (§6.2).
  */
 static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status)
 {
     const MachineLanguageBlock_t *block = machine_language_top_block(walk);
 
-    if (status != MACHINE_LANGUAGE_STATUS(PACKAGE_LENGTH_OUT_OF_PARENT))
+    if (status != MACHINE_LANGUAGE_STATUS(PACKAGE_LENGTH_OUT_OF_PARENT) &&
+        status != MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY))
     {
         for (uint32_t index = walk->pending_count; index > block->pending_base; --index)
         {
@@ -679,10 +684,26 @@ static uint8_t machine_language_type_of_value(uint8_t kind)
 }
 
 /**
+ * @brief What a builder does with a status: an exhausted arena stops the table; a malformed operand
+ *        is left to the walk, which meets it on the same bytes; any other fault is counted here.
+ */
+static MachineLanguageStatus_t machine_language_build_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status)
+{
+    if (status == MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY))
+        return status;
+    if (status != MACHINE_LANGUAGE_OK && status != MACHINE_LANGUAGE_STATUS(TRUNCATED) &&
+        status != MACHINE_LANGUAGE_STATUS(INVALID_OPCODE) &&
+        status != MACHINE_LANGUAGE_STATUS(PACKAGE_LENGTH_OUT_OF_PARENT))
+        machine_language_count_load_error(walk->load, status);
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Builds a Name's object from its data object, which starts at the walk's pc; one that needs
  *        the interpreter is counted and left Uninitialized.
  */
-static void machine_language_build_name(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
+static MachineLanguageStatus_t machine_language_build_name(MachineLanguageWalk_t *walk,
+                                                           const MachineLanguagePendingOperator_t *active)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
@@ -693,21 +714,23 @@ static void machine_language_build_name(MachineLanguageWalk_t *walk, const Machi
         &load->heap, &load->space, &source, walk->pc, active->end, &value, &constant);
 
     if (status != MACHINE_LANGUAGE_OK)
-        machine_language_count_load_error(load, status);
-    else if (!constant)
+        return machine_language_build_fault(walk, status);
+    if (!constant)
         ++load->values_deferred;
     else
     {
         node->value = value;
         node->type = machine_language_type_of_value(value.kind);
     }
+    return MACHINE_LANGUAGE_OK;
 }
 
 /**
  * @brief Builds an OperationRegion's object once its space is read: its offset and length start at
  *        the walk's pc, and wait for the interpreter when they are not constants.
  */
-static void machine_language_build_region(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
+static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk_t *walk,
+                                                             const MachineLanguagePendingOperator_t *active)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
@@ -730,10 +753,7 @@ static void machine_language_build_region(MachineLanguageWalk_t *walk, const Mac
             (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t),
             (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t), &handle);
     if (status != MACHINE_LANGUAGE_OK)
-    {
-        machine_language_count_load_error(load, status);
-        return;
-    }
+        return machine_language_build_fault(walk, status);
 
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region =
         (AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t
@@ -747,11 +767,14 @@ static void machine_language_build_region(MachineLanguageWalk_t *walk, const Mac
     load->values_deferred += constant ? 0u : 1u;
     node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION;
     node->value.handle = handle;
+    return MACHINE_LANGUAGE_OK;
 }
 
 /**
  * @brief Builds the buffer field a Create*Field just declared: its buffer, which must be a name of a
- *        Buffer, and its bit offset and length, which must be constants.
+ *        Buffer, and its bit offset and length, which must be constants that fit 32 bits; one past
+ *        them is counted as index_out_of_range and left without an object. Whether it fits its
+ *        buffer is checked at access, since CopyObject may give the buffer another object.
  */
 static void machine_language_build_buffer_field(MachineLanguageWalk_t *walk,
                                                 const MachineLanguagePendingOperator_t *active)
@@ -794,6 +817,12 @@ static void machine_language_build_buffer_field(MachineLanguageWalk_t *walk,
     const uint64_t bit_length = any_length ? length : ((shape == 0u) ? 1u : 8u * widths[shape]);
     MachineLanguageNode_t *node = machine_language_node(walk, active->node);
 
+    if (index > 0xFFFFFFFFull || bit_offset > 0xFFFFFFFFull || bit_length > 0xFFFFFFFFull)
+    {
+        machine_language_count_load_error(load, MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE));
+        return;
+    }
+
     node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD;
     node->value.auxiliary = widths[shape];
     node->value.handle = buffer;
@@ -802,7 +831,9 @@ static void machine_language_build_buffer_field(MachineLanguageWalk_t *walk,
 
 /**
  * @brief Starts the field list of a Field, an IndexField or a BankField: reads again its names, its
- *        BankValue and its FieldFlags, which the walk has just passed.
+ *        BankValue and its FieldFlags, which the walk has just passed. A name that resolves to nothing
+ *        is counted once, and the units get no object; a BankValue that is not a constant makes each
+ *        unit wait for the interpreter.
  */
 static void machine_language_begin_field_list(MachineLanguageWalk_t *walk,
                                               const MachineLanguagePendingOperator_t *active)
@@ -818,6 +849,7 @@ static void machine_language_begin_field_list(MachineLanguageWalk_t *walk,
     bool constant = false;
 
     memset(field, 0, sizeof(*field));
+    field->builds = true;
     field->opcode = active->opcode;
     field->access = flags & 0x0Fu;
     field->lock = (flags >> 4u) & 0x1u;
@@ -830,37 +862,43 @@ static void machine_language_begin_field_list(MachineLanguageWalk_t *walk,
         return;
     if (advanced_configuration_and_power_interface_machine_language_namespace_resolve(
             &load->space, source.scope, walk->bytes, &name, &field->region) != MACHINE_LANGUAGE_OK)
-        field->region = 0u;
-    if (active->opcode == MACHINE_LANGUAGE_OPCODE(FIELD) ||
-        advanced_configuration_and_power_interface_machine_language_read_name_string(
-            walk->bytes, after, active->end, &name, &after) != MACHINE_LANGUAGE_OK)
-        return;
-    if (advanced_configuration_and_power_interface_machine_language_namespace_resolve(
-            &load->space, source.scope, walk->bytes, &name, &field->data_or_bank) != MACHINE_LANGUAGE_OK)
-        field->data_or_bank = 0u;
-    if (active->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD) &&
-        advanced_configuration_and_power_interface_machine_language_evaluate_integer(
-            &load->space, &source, after, active->end, &bank, &after, &constant) == MACHINE_LANGUAGE_OK)
+        field->builds = false;
+    if (active->opcode != MACHINE_LANGUAGE_OPCODE(FIELD) &&
+        (advanced_configuration_and_power_interface_machine_language_read_name_string(
+             walk->bytes, after, active->end, &name, &after) != MACHINE_LANGUAGE_OK ||
+         advanced_configuration_and_power_interface_machine_language_namespace_resolve(
+             &load->space, source.scope, walk->bytes, &name, &field->data_or_bank) != MACHINE_LANGUAGE_OK))
+        field->builds = false;
+    if (!field->builds)
     {
-        field->bank_value = (uint32_t) bank;
-        load->values_deferred += constant ? 0u : 1u;
+        machine_language_count_load_error(load, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND));
+        return;
     }
+    if (active->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD) &&
+        (advanced_configuration_and_power_interface_machine_language_evaluate_integer(
+             &load->space, &source, after, active->end, &bank, &after, &constant) != MACHINE_LANGUAGE_OK ||
+         !constant))
+    {
+        field->builds = false;
+        field->deferred = true;
+        return;
+    }
+    field->bank_value = (uint32_t) bank;
 }
 
 /**
  * @brief Builds the unit a field list just declared, at the bit the list has reached.
  */
-static void machine_language_build_field_unit(MachineLanguageWalk_t *walk, uint32_t index, uint32_t bit_length)
+static MachineLanguageStatus_t machine_language_build_field_unit(MachineLanguageWalk_t *walk, uint32_t index,
+                                                                 uint32_t bit_length)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const MachineLanguageFieldList_t *field = &walk->field;
     uint32_t handle = 0u;
 
-    if (field->region == 0u)
-    {
-        ++load->values_deferred;
-        return;
-    }
+    load->values_deferred += field->deferred ? 1u : 0u;
+    if (!field->builds)
+        return MACHINE_LANGUAGE_OK;
 
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
         &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT,
@@ -868,17 +906,18 @@ static void machine_language_build_field_unit(MachineLanguageWalk_t *walk, uint3
         (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t), &handle);
 
     if (status != MACHINE_LANGUAGE_OK)
-    {
-        machine_language_count_load_error(load, status);
-        return;
-    }
+        return machine_language_build_fault(walk, status);
 
     AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *unit =
         (AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t
              *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1);
     MachineLanguageNode_t *node = machine_language_node(walk, index);
 
-    unit->kind = (uint8_t) field->opcode;
+    unit->kind = (field->opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD)) ?
+                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX :
+                 (field->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD)) ?
+                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK :
+                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL;
     unit->access = field->access;
     unit->update = field->update;
     unit->lock = field->lock;
@@ -889,6 +928,7 @@ static void machine_language_build_field_unit(MachineLanguageWalk_t *walk, uint3
     unit->bit_length = bit_length;
     node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT;
     node->value.handle = handle;
+    return MACHINE_LANGUAGE_OK;
 }
 
 /**
@@ -1012,6 +1052,18 @@ static MachineLanguageStatus_t machine_language_package_element(MachineLanguageW
 }
 
 /**
+ * @brief Moves the field list past @p bit_length bits; in the first pass, a list that passes 2^32
+ *        bits, which a unit's offset cannot hold, is refused as index_out_of_range.
+ */
+static MachineLanguageStatus_t machine_language_advance_field(MachineLanguageWalk_t *walk, uint32_t bit_length)
+{
+    if (walk->pass == MACHINE_LANGUAGE_PASS_DECLARE && bit_length > 0xFFFFFFFFu - walk->field.bit)
+        return MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE);
+    walk->field.bit += bit_length;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Decodes one element of a FieldList: a reserved field, an AccessAs, a Connection to a name
  *        or a buffer, an ExtendedAccessAs, or a named field unit, which the declaration pass declares.
  */
@@ -1031,7 +1083,8 @@ static MachineLanguageStatus_t machine_language_field_element(MachineLanguageWal
     case 0x00u:
         status = advanced_configuration_and_power_interface_machine_language_read_package_length(
             walk->bytes, start + 1u, limit, &bit_length, &after);
-        walk->field.bit += bit_length;
+        if (status == MACHINE_LANGUAGE_OK)
+            status = machine_language_advance_field(walk, bit_length);
         break;
     case 0x01u:
     case 0x03u:
@@ -1057,15 +1110,19 @@ static MachineLanguageStatus_t machine_language_field_element(MachineLanguageWal
         if (status == MACHINE_LANGUAGE_OK)
             status = advanced_configuration_and_power_interface_machine_language_read_package_length(
                 walk->bytes, after, limit, &bit_length, &after);
+        if (status == MACHINE_LANGUAGE_OK && walk->pass == MACHINE_LANGUAGE_PASS_DECLARE &&
+            bit_length > 0xFFFFFFFFu - walk->field.bit)
+            status = MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE);
         if (status == MACHINE_LANGUAGE_OK && walk->pass == MACHINE_LANGUAGE_PASS_DECLARE)
         {
             status = machine_language_declare(walk, &name, MACHINE_LANGUAGE_NODE(FIELD_UNIT), &index);
             if (status == MACHINE_LANGUAGE_OK && machine_language_builds(walk, index))
-                machine_language_build_field_unit(walk, index, bit_length);
+                status = machine_language_build_field_unit(walk, index, bit_length);
         }
         else if (status == MACHINE_LANGUAGE_OK && machine_language_top_block(walk)->placement != 0u)
             status = machine_language_declare_temporary(walk, &name, MACHINE_LANGUAGE_NODE(FIELD_UNIT), &index);
-        walk->field.bit += (status == MACHINE_LANGUAGE_OK) ? bit_length : 0u;
+        if (status == MACHINE_LANGUAGE_OK)
+            status = machine_language_advance_field(walk, bit_length);
         break;
     }
     if (status == MACHINE_LANGUAGE_OK)
@@ -1224,11 +1281,11 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
     default:
         if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u &&
             machine_language_builds(walk, active->node))
-            machine_language_build_name(walk, active);
+            status = machine_language_build_name(walk, active);
         else if (active->opcode == MACHINE_LANGUAGE_OPCODE(OPERATION_REGION) && active->operands_done == 3u &&
                  machine_language_builds(walk, active->node))
-            machine_language_build_region(walk, active);
-        return machine_language_term(walk, kind);
+            status = machine_language_build_region(walk, active);
+        return (status == MACHINE_LANGUAGE_OK) ? machine_language_term(walk, kind) : status;
     }
 }
 

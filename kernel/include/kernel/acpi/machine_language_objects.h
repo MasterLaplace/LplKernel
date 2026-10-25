@@ -100,10 +100,24 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t;
 
 /**
+ * @brief Which kind of field list a unit belongs to (§3.4).
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnitKind {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL = 0, /**< A Field's: in its region. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX = 1,  /**< An IndexField's: through
+                                                                                           an index and a data
+                                                                                           field. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK = 2,   /**< A BankField's: in its
+                                                                                           region once a bank field
+                                                                                           holds its BankValue. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnitKind_t;
+
+/**
  * @brief A unit of a Field, an IndexField or a BankField (§3.4).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit {
-    uint8_t kind;          /**< The opcode that declared it: Field, IndexField or BankField, as a descriptor index. */
+    uint8_t kind;          /**< Normal, index or bank: an
+                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_* kind. */
     uint8_t access;        /**< AccessType, from the FieldFlags or the last AccessAs before it. */
     uint8_t update;        /**< UpdateRule. */
     uint8_t lock;          /**< LockRule. */

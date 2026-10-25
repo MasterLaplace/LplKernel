@@ -288,7 +288,13 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
                                                                                                    §6.1 allows. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES,     /**< A string or buffer
                                                                                                    passes 64 KiB. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,                  /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INDEX_OUT_OF_RANGE,     /**< A buffer field or a
+                                                                                                   field unit past what
+                                                                                                   its offset can hold. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_OBJECT_RUNS, /**< The object heap holds
+                                                                                              as many runs as it
+                                                                                              can. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,             /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**

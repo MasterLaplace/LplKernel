@@ -123,7 +123,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t pending_peak;        /**< Most operators pending at once. */
     uint32_t blocks_peak;         /**< Most constructs open at once. */
     uint32_t values_deferred;     /**< Declarations whose object needs the interpreter: a Name, a region or a
-                                       buffer field built from an expression. */
+                                       buffer field built from an expression, and each unit of a BankField whose
+                                       BankValue is one. */
     uint32_t table_level_code;    /**< Statements at table level that are neither declarations nor data. */
     uint32_t
         opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes the decoding
