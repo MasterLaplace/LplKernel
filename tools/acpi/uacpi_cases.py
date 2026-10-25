@@ -10,7 +10,8 @@ loads it and evaluates `\\MAIN`. A case is
   waits       when it stops on what this kernel does not run yet, named on the line: an opcode it decodes but does not
               execute, or a field access, that the evaluation or a statement of the table's code met, or the issue the
               divergences list names for it, and fails;
-  not ok      otherwise, a listed divergence that passes included, so that the list stays true.
+  not ok      otherwise: a listed case that passes, so that the list stays true, and a harness that runs past 120 s
+              included.
 Prints one line per case, then the counts; exits 1 when a case is not ok.
 """
 import os
@@ -54,9 +55,13 @@ def evaluate(iasl, harness, case, work):
     compiled = subprocess.run([iasl, *flags, "-oa", "-p", aml, case], capture_output=True, text=True, timeout=60)
     if compiled.returncode != 0 or not os.path.exists(aml + ".aml"):
         return None
-    output = subprocess.run([harness, "--evaluate", "\\MAIN", aml + ".aml"], capture_output=True, text=True,
-                            errors="replace", timeout=120).stdout
     result = {"status": None, "type": None, "value": None, "unimplemented": [], "failed": []}
+    try:
+        output = subprocess.run([harness, "--evaluate", "\\MAIN", aml + ".aml"], capture_output=True, text=True,
+                                errors="replace", timeout=120).stdout
+    except subprocess.TimeoutExpired:
+        result["status"] = "harness_timeout"
+        output = ""
     for line in output.splitlines():
         if line.startswith("aml evaluate status="):
             result["status"] = line.split("=", 1)[1]
@@ -87,43 +92,40 @@ def matches(kind, expected, result):
     return int(result["value"]) == int(expected, 0)
 
 
+def classify(case, kind, expected, result, listed):
+    """The class of a case that ran, and its line."""
+    if result is None:
+        return "not ok", "not ok %s: iasl refuses it" % case
+    if matches(kind, expected, result):
+        if case in listed:
+            return "not ok", "not ok %s: listed, and passes" % case
+        return "ok", "ok %s" % case
+    if case in listed and listed[case].startswith("#"):
+        return "waits", "waits %s: %s" % (case, listed[case])
+    if case in listed:
+        return "divergence", "divergence %s: %s" % (case, listed[case])
+    if waiting(result):
+        return "waits", "waits %s: %s" % (case, " ".join(waiting(result)))
+    return "not ok", "not ok %s: status %s, %s %s instead of %s %s" % (case, result["status"], result["type"],
+                                                                      result["value"], kind, expected)
+
+
 def main():
     iasl, harness, cases, listed_path = sys.argv[1:5]
     listed = divergences(listed_path)
     counts = {"ok": 0, "divergence": 0, "skip": 0, "waits": 0, "not ok": 0}
     names = sorted(name for name in os.listdir(cases) if name.endswith(".asl"))
-    work = tempfile.mkdtemp()
-    for name in names:
-        case = name[:-4]
-        kind, expected = expectation(os.path.join(cases, name))
-        if kind is None or expected.startswith("check-"):
-            print("skip %s: %s tests uACPI's own API" % (case, expected))
-            counts["skip"] += 1
-            continue
-        result = evaluate(iasl, harness, os.path.join(cases, name), work)
-        if result is None:
-            print("not ok %s: iasl refuses it" % case)
-            counts["not ok"] += 1
-        elif matches(kind, expected, result):
-            if case in listed:
-                print("not ok %s: listed as a divergence, and passes" % case)
-                counts["not ok"] += 1
+    with tempfile.TemporaryDirectory() as work:
+        for name in names:
+            case = name[:-4]
+            kind, expected = expectation(os.path.join(cases, name))
+            if kind is None or expected.startswith("check-"):
+                verdict, line = "skip", "skip %s: %s tests uACPI's own API" % (case, expected)
             else:
-                print("ok %s" % case)
-                counts["ok"] += 1
-        elif case in listed and listed[case].startswith("#"):
-            print("waits %s: %s" % (case, listed[case]))
-            counts["waits"] += 1
-        elif case in listed:
-            print("divergence %s: %s" % (case, listed[case]))
-            counts["divergence"] += 1
-        elif waiting(result):
-            print("waits %s: %s" % (case, " ".join(waiting(result))))
-            counts["waits"] += 1
-        else:
-            print("not ok %s: status %s, %s %s instead of %s %s" % (case, result["status"], result["type"],
-                                                                   result["value"], kind, expected))
-            counts["not ok"] += 1
+                verdict, line = classify(case, kind, expected, evaluate(iasl, harness, os.path.join(cases, name), work),
+                                         listed)
+            print(line)
+            counts[verdict] += 1
     print("# uacpi: %u ok, %u divergences, %u skipped, %u wait for what the kernel does not run yet, %u not ok, of %u"
           % (counts["ok"], counts["divergence"], counts["skip"], counts["waits"], counts["not ok"], len(names)))
     sys.exit(1 if counts["not ok"] or not names else 0)
