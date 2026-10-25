@@ -44,6 +44,34 @@
     32u /**< I/O ports one simulated host gives a value to read. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES                                         \
     256u /**< Accesses the log keeps: the first ones, the others only counted. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC                                          \
+    "LPLACPIM" /**< The first eight bytes of an image. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT                                      \
+    8u /**< What each range of an image, and the bytes after it, are padded to. */
+
+/**
+ * @brief The head of an image: the firmware a simulated host serves, saved as bytes, so that a debug
+ *        kernel booted with it as a Multiboot module serves the same bytes at the same addresses as
+ *        the host harness.
+ *
+ * @details range_count ranges follow it, in the order they were placed: each an
+ *          AdvancedConfigurationAndPowerInterfaceSimulatedHostImageRange_t, then its bytes, padded
+ *          with zeros to a multiple of ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT.
+ *          The image ends with the last range's padding. Every field is little-endian.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHostImageHeader {
+    char magic[8]; /**< ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC, without its NUL. */
+    uint64_t root_system_description_pointer; /**< What the host gives as the root pointer, or 0. */
+    uint64_t range_count;                     /**< Ranges that follow. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedHostImageHeader_t;
+
+/**
+ * @brief One range of an image, followed by its bytes.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHostImageRange {
+    uint64_t physical_address; /**< Physical address of its first byte. */
+    uint64_t length;           /**< Its length in bytes, its padding apart. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedHostImageRange_t;
 
 /**
  * @brief Bytes a simulated host serves at a physical address.
@@ -259,5 +287,23 @@ extern bool advanced_configuration_and_power_interface_simulated_host_poke(
 extern bool advanced_configuration_and_power_interface_simulated_host_place(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, const void *bytes,
     uint64_t length);
+
+/**
+ * @brief Opens a simulated host that serves the firmware an image holds: each of its ranges where it
+ *        says, and its root pointer.
+ *
+ * @param simulated The host, which must stay where it is from now on.
+ * @param image     The image, kept by the caller as long as the host is used: its bytes are served in
+ *                  place.
+ * @param length    Bytes of the image.
+ * @param error     Receives what the image does wrong, when it is refused.
+ * @return false when the image is shorter than its header, does not start with
+ *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC, holds more ranges than
+ *         a simulated host, has a range that is empty, runs past its end or overlaps another, or holds
+ *         bytes after its last range; the host then serves nothing.
+ */
+extern bool advanced_configuration_and_power_interface_simulated_host_open_image(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, const void *image, uint64_t length,
+    const char **error);
 
 #endif /* KERNEL_TESTS_ACPI_SIMULATED_HOST_H */
