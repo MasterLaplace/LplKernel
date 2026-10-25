@@ -230,15 +230,13 @@ advanced_configuration_and_power_interface_machine_language_field_write(
  * @param space        Its RegionSpace byte.
  * @param offset       Its offset in its space.
  * @param length       Its length in bytes.
- * @param evaluated    Whether its offset and length were evaluated: one whose operands wait for the
- *                     interpreter has neither, and its accesses fail with REGION_UNEVALUATED.
  * @param owner_device The device it is declared in, or 0.
  * @return OK; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_region_build(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset,
-    uint64_t length, bool evaluated, uint32_t owner_device);
+    uint64_t length, uint32_t owner_device);
 
 /**
  * @brief Gives a node the field unit object @p shape describes (§5.3), whether a table declares it or

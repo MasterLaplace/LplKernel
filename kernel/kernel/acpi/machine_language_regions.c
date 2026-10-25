@@ -859,14 +859,13 @@ static MachineLanguageStatus_t machine_language_build_object(MachineLanguageLoad
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_region_build(
-    MachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset, uint64_t length, bool evaluated,
-    uint32_t owner_device)
+    MachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset, uint64_t length, uint32_t owner_device)
 {
     const MachineLanguageRegion_t region = {
         .space = space,
-        .state = evaluated ? 1u : 0u,
-        .offset = evaluated ? offset : 0u,
-        .length = evaluated ? length : 0u,
+        .state = 1u,
+        .offset = offset,
+        .length = length,
         .owner_device = owner_device,
     };
 
