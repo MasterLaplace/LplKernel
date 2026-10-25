@@ -27,6 +27,64 @@ static void platform_unmap_no_firmware(void *context, const void *address, uint6
     (void) length;
 }
 
+static uint8_t platform_no_memory_type(void *context, uint64_t physical_address, uint64_t length)
+{
+    (void) context;
+    (void) physical_address;
+    (void) length;
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_UNKNOWN;
+}
+
+static void *platform_map_no_memory(void *context, uint64_t physical_address, uint64_t length)
+{
+    (void) context;
+    (void) physical_address;
+    (void) length;
+    return NULL;
+}
+
+static void platform_unmap_no_memory(void *context, void *address, uint64_t length)
+{
+    (void) context;
+    (void) address;
+    (void) length;
+}
+
+static uint32_t platform_read_no_memory(void *context, const void *address, uint64_t physical_address, uint8_t width)
+{
+    (void) context;
+    (void) address;
+    (void) physical_address;
+    (void) width;
+    return 0u;
+}
+
+static void platform_write_no_memory(void *context, void *address, uint64_t physical_address, uint8_t width,
+                                     uint32_t value)
+{
+    (void) context;
+    (void) address;
+    (void) physical_address;
+    (void) width;
+    (void) value;
+}
+
+static uint32_t platform_read_no_port(void *context, uint16_t port, uint8_t width)
+{
+    (void) context;
+    (void) port;
+    (void) width;
+    return 0u;
+}
+
+static void platform_write_no_port(void *context, uint16_t port, uint8_t width, uint32_t value)
+{
+    (void) context;
+    (void) port;
+    (void) width;
+    (void) value;
+}
+
 static void *platform_allocate_pages(void *context, uint32_t count)
 {
     (void) context;
@@ -44,6 +102,15 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .root_system_description_pointer = platform_no_root_system_description_pointer,
     .map_firmware = platform_map_no_firmware,
     .unmap_firmware = platform_unmap_no_firmware,
+    .memory_type = platform_no_memory_type,
+    .map_firmware_writable = platform_map_no_memory,
+    .unmap_firmware_writable = platform_unmap_no_memory,
+    .map_device = platform_map_no_memory,
+    .unmap_device = platform_unmap_no_memory,
+    .read_memory = platform_read_no_memory,
+    .write_memory = platform_write_no_memory,
+    .port_read = platform_read_no_port,
+    .port_write = platform_write_no_port,
     .allocate_pages = platform_allocate_pages,
     .release_pages = platform_release_pages,
 };

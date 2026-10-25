@@ -89,6 +89,17 @@ extern void physical_memory_manager_page_frame_free_order(uint32_t phys_addr, ui
 extern uint32_t physical_memory_manager_get_free_page_count(void);
 
 /**
+ * @brief Says what the boot memory map holds at a physical range.
+ *
+ * @param physical_address First byte of the range.
+ * @param length           Its length in bytes.
+ * @return The Multiboot type of the entry that holds the whole range (1 usable, 2 reserved, 3 ACPI
+ *         reclaimable, 4 ACPI NVS, 5 defective), or 0 when no entry holds it whole, the range is
+ *         empty or wraps, or the boot gave no memory map.
+ */
+extern uint32_t physical_memory_manager_memory_type(uint64_t physical_address, uint64_t length);
+
+/**
  * @brief Return the active PMM strategy name.
  *
  * @return Human-readable strategy string selected at compile time.

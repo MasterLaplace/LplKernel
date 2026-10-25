@@ -36,6 +36,14 @@
     128u /**< Ranges one simulated host holds: a recorded machine's tables, each placed once. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS                                             \
     128u /**< Maps one simulated host keeps open at once: a full directory, and the one being opened. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_PAGES                                            \
+    64u /**< Pages of simulated memory one host holds once written. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MEMORY_TYPES                                     \
+    16u /**< Ranges of the memory map one simulated host describes. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_PORTS                                            \
+    32u /**< I/O ports one simulated host gives a value to read. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES                                         \
+    256u /**< Accesses the log keeps: the first ones, the others only counted. */
 
 /**
  * @brief Bytes a simulated host serves at a physical address.
@@ -47,19 +55,79 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedRange {
 } AdvancedConfigurationAndPowerInterfaceSimulatedRange_t;
 
 /**
+ * @brief Which call gave a map, so that only its own unmap takes it back.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceSimulatedMapKind {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE = 0,          /**< map_firmware. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE_WRITABLE = 1, /**< map_firmware_writable. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_DEVICE = 2,            /**< map_device. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedMapKind_t;
+
+/**
  * @brief A map a simulated host gave and that has not been unmapped.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedMap {
-    const void *address; /**< What map_firmware returned. */
+    const void *address; /**< What the map returned. */
     uint64_t length;     /**< The length it was given. */
+    uint8_t kind;        /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_* kind. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedMap_t;
+
+/**
+ * @brief A page of simulated memory, taken at its first write: its bytes start as the ranges placed
+ *        and the fill byte give them.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPage {
+    uint64_t physical_address; /**< Its first byte. */
+    uint8_t *bytes;            /**< Its 4096 bytes, from kernel_vmm_alloc_pages. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedPage_t;
+
+/**
+ * @brief A range of the memory map a simulated host describes.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedMemoryType {
+    uint64_t physical_address; /**< Its first byte. */
+    uint64_t length;           /**< Its length in bytes. */
+    uint8_t type;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_* type. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedMemoryType_t;
+
+/**
+ * @brief What an access of the log did.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceSimulatedAccessKind {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_READ = 1,  /**< read_memory. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_WRITE = 2, /**< write_memory. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_READ = 3,    /**< port_read. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE = 4,   /**< port_write. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedAccessKind_t;
+
+/**
+ * @brief One access the simulated host was asked for, in order.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedAccess {
+    uint8_t kind;     /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_* access kind. */
+    uint8_t width;    /**< Its width in bytes. */
+    uint16_t port;    /**< The port, for a port access. */
+    uint32_t value;   /**< The value read or written. */
+    uint64_t address; /**< The physical address, for a memory access. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t;
+
+/**
+ * @brief The value a simulated I/O port reads as; every other port reads as 0.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
+    uint16_t port;  /**< The port. */
+    uint32_t value; /**< What a read of it gives, cut to the read's width. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedPort_t;
 
 /**
  * @brief A host whose physical memory is the ranges placed in it: a map succeeds when one range
  *        holds every byte asked for, and an unmap must name an open map by its address and length.
  *
  * @details It points at itself through host.context, so it is used where it was opened and never
- *          copied.
+ *          copied. Memory mapped writable or uncached is reached through read_memory and
+ *          write_memory alone: what the ranges hold, or the fill byte, until a write takes the page;
+ *          its maps return an address that is never read. Its I/O space reads as 0 but for the ports
+ *          given a value, and ignores writes. Every access is logged in order.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */
@@ -68,10 +136,27 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t mismatched_unmaps;                        /**< Unmaps whose address and length name no open map. */
     uint32_t range_count;                              /**< Ranges placed. */
     uint32_t outstanding_pages;                        /**< Pages given and not taken back yet. */
+    uint8_t memory_fill;                               /**< What memory no range covers reads as. */
+    uint8_t map_marker;                                /**< What a writable or uncached map points at. */
+    uint32_t page_count;                               /**< Pages of simulated memory taken. */
+    uint32_t writes_dropped;                           /**< Memory writes with no page left to take. */
+    uint32_t memory_type_count;                        /**< Ranges of the memory map described. */
+    uint32_t port_count;                               /**< Ports given a value. */
+    uint32_t access_count;                             /**< Accesses made, logged or not. */
     AdvancedConfigurationAndPowerInterfaceSimulatedRange_t
         ranges[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES]; /**< In the order placed. */
     AdvancedConfigurationAndPowerInterfaceSimulatedMap_t
         maps[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS]; /**< The open maps, in no order. */
+    AdvancedConfigurationAndPowerInterfaceSimulatedPage_t
+        pages[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_PAGES]; /**< In the order taken. */
+    AdvancedConfigurationAndPowerInterfaceSimulatedMemoryType_t
+        memory_types[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MEMORY_TYPES]; /**< The memory
+                                                                                                      map; reserved
+                                                                                                      elsewhere. */
+    AdvancedConfigurationAndPowerInterfaceSimulatedPort_t
+        ports[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_PORTS]; /**< The ports given a value. */
+    AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t
+        accesses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES]; /**< The first accesses. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedHost_t;
 
 /**
@@ -82,6 +167,63 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
  */
 extern void advanced_configuration_and_power_interface_simulated_host_open(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated);
+
+/**
+ * @brief Gives back the pages of simulated memory a host took; the host stays usable, its memory as
+ *        the ranges and the fill byte give it.
+ *
+ * @param simulated The host.
+ */
+extern void advanced_configuration_and_power_interface_simulated_host_close(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated);
+
+/**
+ * @brief Describes a range of the memory map: memory_type answers @p type inside it.
+ *
+ * @param simulated        The host.
+ * @param physical_address Its first byte.
+ * @param length           Its length in bytes.
+ * @param type             An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_* type.
+ * @return false when the host describes as many ranges as it can.
+ */
+extern bool advanced_configuration_and_power_interface_simulated_host_describe(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, uint64_t length,
+    uint8_t type);
+
+/**
+ * @brief Gives an I/O port the value its reads give.
+ *
+ * @param simulated The host.
+ * @param port      The port.
+ * @param value     What a read gives, cut to its width.
+ * @return false when the host gives values to as many ports as it can.
+ */
+extern bool advanced_configuration_and_power_interface_simulated_host_set_port(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint16_t port, uint32_t value);
+
+/**
+ * @brief Reads simulated memory as read_memory would, without logging it.
+ *
+ * @param simulated        The host.
+ * @param physical_address The first byte.
+ * @param width            Bytes to read, 1 to 8, little-endian.
+ * @return What the bytes hold.
+ */
+extern uint64_t advanced_configuration_and_power_interface_simulated_host_peek(
+    const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, uint8_t width);
+
+/**
+ * @brief Writes simulated memory as write_memory would, without logging it.
+ *
+ * @param simulated        The host.
+ * @param physical_address The first byte.
+ * @param bytes            What to write.
+ * @param length           How many bytes.
+ * @return false when a page could not be taken, the bytes before it written.
+ */
+extern bool advanced_configuration_and_power_interface_simulated_host_poke(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, const void *bytes,
+    uint32_t length);
 
 /**
  * @brief Serves @p length bytes at @p physical_address.

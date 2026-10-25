@@ -739,6 +739,26 @@ uint32_t physical_memory_manager_page_frame_allocate_order(uint8_t order)
 
 uint32_t physical_memory_manager_get_free_page_count(void) { return free_page_count; }
 
+uint32_t physical_memory_manager_memory_type(uint64_t physical_address, uint64_t length)
+{
+    uint8_t *mmap_base = NULL;
+    uint32_t mmap_length = 0u;
+    uint32_t offset = 0u;
+    MemoryMapEntry_t *entry = NULL;
+
+    if (length == 0u || physical_address + length < physical_address ||
+        !pmm_get_multiboot_mmap(&mmap_base, &mmap_length))
+        return 0u;
+    while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
+    {
+        if (physical_address >= entry->base_addr && physical_address - entry->base_addr < entry->length &&
+            length <= entry->length - (physical_address - entry->base_addr))
+            return entry->type;
+        offset += sizeof(uint32_t) + entry->size;
+    }
+    return 0u;
+}
+
 const char *physical_memory_manager_get_strategy_name(void) { return pmm_strategy_name; }
 
 bool physical_memory_manager_debug_is_free_block(uint32_t phys_addr, uint8_t order)

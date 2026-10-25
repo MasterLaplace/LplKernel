@@ -24,6 +24,123 @@ simulated_host_range_holding(const AdvancedConfigurationAndPowerInterfaceSimulat
     return NULL;
 }
 
+/**
+ * @brief The index of the page of simulated memory taken at @p page_address, or page_count.
+ */
+static uint32_t simulated_host_page(const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                    uint64_t page_address)
+{
+    uint32_t index = 0u;
+
+    while (index < simulated->page_count && simulated->pages[index].physical_address != page_address)
+        ++index;
+    return index;
+}
+
+/**
+ * @brief The byte at @p physical_address before any write: what a range holds there, or the fill.
+ */
+static uint8_t simulated_host_initial_byte(const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                           uint64_t physical_address)
+{
+    const AdvancedConfigurationAndPowerInterfaceSimulatedRange_t *range =
+        simulated_host_range_holding(simulated, physical_address, 1u);
+
+    return (range != NULL) ? range->bytes[physical_address - range->physical_address] : simulated->memory_fill;
+}
+
+/**
+ * @brief The byte simulated memory holds at @p physical_address.
+ */
+static uint8_t simulated_host_byte(const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                   uint64_t physical_address)
+{
+    const uint32_t page = simulated_host_page(simulated, physical_address & ~0xFFFull);
+
+    return (page < simulated->page_count) ? simulated->pages[page].bytes[physical_address & 0xFFFu] :
+                                            simulated_host_initial_byte(simulated, physical_address);
+}
+
+/**
+ * @brief Writes a byte of simulated memory, taking its page at the first write; false when no page
+ *        is left to take.
+ */
+static bool simulated_host_write_byte(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                      uint64_t physical_address, uint8_t value)
+{
+    const uint64_t page_address = physical_address & ~0xFFFull;
+    const uint32_t page = simulated_host_page(simulated, page_address);
+
+    if (page == simulated->page_count)
+    {
+        uint8_t *bytes = (simulated->page_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_PAGES) ?
+                             kernel_vmm_alloc_pages(1u) :
+                             NULL;
+
+        if (bytes == NULL)
+            return false;
+        for (uint32_t offset = 0u; offset < 4096u; ++offset)
+            bytes[offset] = simulated_host_initial_byte(simulated, page_address + offset);
+        simulated->pages[page].physical_address = page_address;
+        simulated->pages[page].bytes = bytes;
+        ++simulated->page_count;
+    }
+    simulated->pages[page].bytes[physical_address & 0xFFFu] = value;
+    return true;
+}
+
+/**
+ * @brief Logs an access; past the log's capacity it is only counted.
+ */
+static void simulated_host_log(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint8_t kind,
+                               uint8_t width, uint16_t port, uint64_t address, uint32_t value)
+{
+    if (simulated->access_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES)
+    {
+        AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &simulated->accesses[simulated->access_count];
+
+        access->kind = kind;
+        access->width = width;
+        access->port = port;
+        access->value = value;
+        access->address = address;
+    }
+    ++simulated->access_count;
+}
+
+/**
+ * @brief Records a map of @p kind, or returns NULL when the host keeps as many maps as it can.
+ */
+static const void *simulated_host_record_map(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                             const void *address, uint64_t length, uint8_t kind)
+{
+    if (simulated->outstanding_maps == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS)
+        return NULL;
+    simulated->maps[simulated->outstanding_maps].address = address;
+    simulated->maps[simulated->outstanding_maps].length = length;
+    simulated->maps[simulated->outstanding_maps].kind = kind;
+    ++simulated->outstanding_maps;
+    return address;
+}
+
+/**
+ * @brief Takes back the open map of @p kind at @p address with @p length, or counts a mismatch.
+ */
+static void simulated_host_forget_map(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                      const void *address, uint64_t length, uint8_t kind)
+{
+    for (uint32_t index = 0u; index < simulated->outstanding_maps; ++index)
+    {
+        if (simulated->maps[index].address == address && simulated->maps[index].length == length &&
+            simulated->maps[index].kind == kind)
+        {
+            simulated->maps[index] = simulated->maps[--simulated->outstanding_maps];
+            return;
+        }
+    }
+    ++simulated->mismatched_unmaps;
+}
+
 static uint64_t simulated_host_root_system_description_pointer(void *context)
 {
     const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
@@ -37,31 +154,113 @@ static const void *simulated_host_map_firmware(void *context, uint64_t physical_
     const AdvancedConfigurationAndPowerInterfaceSimulatedRange_t *range =
         simulated_host_range_holding(simulated, physical_address, length);
 
-    if (range == NULL || length == 0u ||
-        simulated->outstanding_maps == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS)
+    if (range == NULL || length == 0u)
         return NULL;
-
-    const void *address = range->bytes + (physical_address - range->physical_address);
-
-    simulated->maps[simulated->outstanding_maps].address = address;
-    simulated->maps[simulated->outstanding_maps].length = length;
-    ++simulated->outstanding_maps;
-    return address;
+    return simulated_host_record_map(simulated, range->bytes + (physical_address - range->physical_address), length,
+                                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE);
 }
 
 static void simulated_host_unmap_firmware(void *context, const void *address, uint64_t length)
 {
+    simulated_host_forget_map(context, address, length,
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE);
+}
+
+static uint8_t simulated_host_memory_type(void *context, uint64_t physical_address, uint64_t length)
+{
+    const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+
+    for (uint32_t index = 0u; index < simulated->memory_type_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedMemoryType_t *range = &simulated->memory_types[index];
+
+        if (physical_address >= range->physical_address && physical_address - range->physical_address < range->length &&
+            length <= range->length - (physical_address - range->physical_address))
+            return range->type;
+    }
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_RESERVED;
+}
+
+static void *simulated_host_map_memory(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                       uint64_t physical_address, uint64_t length, uint8_t kind)
+{
+    if (length == 0u || physical_address + length < physical_address)
+        return NULL;
+    return (void *) simulated_host_record_map(simulated, &simulated->map_marker, length, kind);
+}
+
+static void *simulated_host_map_firmware_writable(void *context, uint64_t physical_address, uint64_t length)
+{
+    return simulated_host_map_memory(context, physical_address, length,
+                                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE_WRITABLE);
+}
+
+static void simulated_host_unmap_firmware_writable(void *context, void *address, uint64_t length)
+{
+    simulated_host_forget_map(context, address, length,
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE_WRITABLE);
+}
+
+static void *simulated_host_map_device(void *context, uint64_t physical_address, uint64_t length)
+{
+    return simulated_host_map_memory(context, physical_address, length,
+                                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_DEVICE);
+}
+
+static void simulated_host_unmap_device(void *context, void *address, uint64_t length)
+{
+    simulated_host_forget_map(context, address, length,
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_DEVICE);
+}
+
+static uint32_t simulated_host_read_memory(void *context, const void *address, uint64_t physical_address, uint8_t width)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+    const uint32_t value =
+        (uint32_t) advanced_configuration_and_power_interface_simulated_host_peek(simulated, physical_address, width);
+
+    (void) address;
+    simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_READ, width, 0u,
+                       physical_address, value);
+    return value;
+}
+
+static void simulated_host_write_memory(void *context, void *address, uint64_t physical_address, uint8_t width,
+                                        uint32_t value)
+{
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
 
-    for (uint32_t index = 0u; index < simulated->outstanding_maps; ++index)
+    (void) address;
+    simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_WRITE, width, 0u,
+                       physical_address, value);
+    for (uint8_t offset = 0u; offset < width; ++offset)
     {
-        if (simulated->maps[index].address == address && simulated->maps[index].length == length)
+        if (!simulated_host_write_byte(simulated, physical_address + offset, (uint8_t) (value >> (8u * offset))))
         {
-            simulated->maps[index] = simulated->maps[--simulated->outstanding_maps];
+            ++simulated->writes_dropped;
             return;
         }
     }
-    ++simulated->mismatched_unmaps;
+}
+
+static uint32_t simulated_host_port_read(void *context, uint16_t port, uint8_t width)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+    const uint32_t mask = (width >= 4u) ? 0xFFFFFFFFu : ((1u << (8u * width)) - 1u);
+    uint32_t value = 0u;
+
+    for (uint32_t index = 0u; index < simulated->port_count; ++index)
+        if (simulated->ports[index].port == port)
+            value = simulated->ports[index].value & mask;
+    simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_READ, width, port, 0u,
+                       value);
+    return value;
+}
+
+static void simulated_host_port_write(void *context, uint16_t port, uint8_t width, uint32_t value)
+{
+    simulated_host_log(context, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE, width, port, 0u,
+                       value);
 }
 
 static void *simulated_host_allocate_pages(void *context, uint32_t count)
@@ -89,6 +288,15 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.root_system_description_pointer = simulated_host_root_system_description_pointer;
     simulated->host.map_firmware = simulated_host_map_firmware;
     simulated->host.unmap_firmware = simulated_host_unmap_firmware;
+    simulated->host.memory_type = simulated_host_memory_type;
+    simulated->host.map_firmware_writable = simulated_host_map_firmware_writable;
+    simulated->host.unmap_firmware_writable = simulated_host_unmap_firmware_writable;
+    simulated->host.map_device = simulated_host_map_device;
+    simulated->host.unmap_device = simulated_host_unmap_device;
+    simulated->host.read_memory = simulated_host_read_memory;
+    simulated->host.write_memory = simulated_host_write_memory;
+    simulated->host.port_read = simulated_host_port_read;
+    simulated->host.port_write = simulated_host_port_write;
     simulated->host.allocate_pages = simulated_host_allocate_pages;
     simulated->host.release_pages = simulated_host_release_pages;
     simulated->root_system_description_pointer = 0u;
@@ -96,6 +304,68 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->mismatched_unmaps = 0u;
     simulated->range_count = 0u;
     simulated->outstanding_pages = 0u;
+    simulated->memory_fill = 0u;
+    simulated->page_count = 0u;
+    simulated->writes_dropped = 0u;
+    simulated->memory_type_count = 0u;
+    simulated->port_count = 0u;
+    simulated->access_count = 0u;
+}
+
+void advanced_configuration_and_power_interface_simulated_host_close(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated)
+{
+    while (simulated->page_count > 0u)
+        kernel_vmm_free_pages(simulated->pages[--simulated->page_count].bytes, 1u);
+}
+
+bool advanced_configuration_and_power_interface_simulated_host_describe(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, uint64_t length,
+    uint8_t type)
+{
+    if (simulated->memory_type_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MEMORY_TYPES)
+        return false;
+
+    AdvancedConfigurationAndPowerInterfaceSimulatedMemoryType_t *range =
+        &simulated->memory_types[simulated->memory_type_count++];
+
+    range->physical_address = physical_address;
+    range->length = length;
+    range->type = type;
+    return true;
+}
+
+bool advanced_configuration_and_power_interface_simulated_host_set_port(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint16_t port, uint32_t value)
+{
+    if (simulated->port_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_PORTS)
+        return false;
+    simulated->ports[simulated->port_count].port = port;
+    simulated->ports[simulated->port_count].value = value;
+    ++simulated->port_count;
+    return true;
+}
+
+uint64_t advanced_configuration_and_power_interface_simulated_host_peek(
+    const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, uint8_t width)
+{
+    uint64_t value = 0u;
+
+    for (uint8_t offset = 0u; offset < width; ++offset)
+        value |= (uint64_t) simulated_host_byte(simulated, physical_address + offset) << (8u * offset);
+    return value;
+}
+
+bool advanced_configuration_and_power_interface_simulated_host_poke(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, const void *bytes,
+    uint32_t length)
+{
+    const uint8_t *source = bytes;
+
+    for (uint32_t offset = 0u; offset < length; ++offset)
+        if (!simulated_host_write_byte(simulated, physical_address + offset, source[offset]))
+            return false;
+    return true;
 }
 
 bool advanced_configuration_and_power_interface_simulated_host_place(

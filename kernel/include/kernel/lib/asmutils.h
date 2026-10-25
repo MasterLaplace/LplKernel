@@ -42,6 +42,22 @@ extern void asmutils_output_byte(uint16_t port, uint8_t byte_value);
 extern uint8_t asmutils_input_byte(uint16_t port);
 
 /**
+ * @brief Write a 16-bit word to an I/O port.
+ *
+ * @param port The I/O port address.
+ * @param word_value The 16-bit value to write.
+ */
+extern void asmutils_output_word(uint16_t port, uint16_t word_value);
+
+/**
+ * @brief Read a 16-bit word from an I/O port.
+ *
+ * @param port The I/O port address.
+ * @return The 16-bit value read from the port.
+ */
+extern uint16_t asmutils_input_word(uint16_t port);
+
+/**
  * @brief Write a 32-bit double word to an I/O port.
  *
  * @param port The I/O port address.

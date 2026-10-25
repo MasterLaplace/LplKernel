@@ -239,4 +239,11 @@ uint32_t kernel_vmm_map_firmware_window(uint32_t physical_base, uint32_t size)
 
 void kernel_vmm_unmap_firmware_window(uint32_t window, uint32_t size) { vmm_unmap_window(window, size); }
 
+uint32_t kernel_vmm_map_firmware_writable_window(uint32_t physical_base, uint32_t size)
+{
+    const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u};
+
+    return vmm_map_window(physical_base, size, pte_flags);
+}
+
 uint32_t kernel_vmm_get_unmapped_range_count(void) { return vmm_unmapped_range_count; }
