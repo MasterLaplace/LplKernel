@@ -27,9 +27,16 @@ bool made_up_load_table(KernelTest_t *test, AdvancedConfigurationAndPowerInterfa
                         const uint8_t *aml, uint32_t length)
 {
     advanced_configuration_and_power_interface_simulated_host_open(host);
+    return made_up_load_on(test, load, &host->host, table, revision, aml, length);
+}
+
+bool made_up_load_on(KernelTest_t *test, AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint8_t *table, uint8_t revision,
+                     const uint8_t *aml, uint32_t length)
+{
     if (!kernel_test_check(test,
                            advanced_configuration_and_power_interface_machine_language_open(
-                               load, &host->host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+                               load, host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
                            "the namespace opens"))
     {
         advanced_configuration_and_power_interface_machine_language_close(load);

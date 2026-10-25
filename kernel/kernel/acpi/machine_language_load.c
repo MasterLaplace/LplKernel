@@ -119,6 +119,15 @@ static uint32_t machine_language_limit(MachineLanguageWalk_t *walk)
 }
 
 /**
+ * @brief Whether the walk is the declaration pass at table level, where code runs as it is met.
+ */
+static bool machine_language_runs_code(MachineLanguageWalk_t *walk)
+{
+    return walk->pass == MACHINE_LANGUAGE_PASS_DECLARE && !walk->load->declares_every_branch &&
+           machine_language_top_block(walk)->placement == 0u;
+}
+
+/**
  * @brief The node at @p index of the walk's namespace.
  */
 static MachineLanguageNode_t *machine_language_node(MachineLanguageWalk_t *walk, uint32_t index)
@@ -779,8 +788,28 @@ static MachineLanguageStatus_t machine_language_build_name(MachineLanguageWalk_t
 }
 
 /**
+ * @brief Reads an integer operand of a declaration at @p start: a constant, or, where table-level code
+ *        runs, what the interpreter makes of it; @p out_known is false when neither gave one.
+ */
+static MachineLanguageStatus_t machine_language_operand_integer(
+    MachineLanguageWalk_t *walk, const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t *source,
+    uint32_t start, uint32_t end, uint64_t *out_value, uint32_t *out_after, bool *out_known)
+{
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_evaluate_integer(
+        &walk->load->space, source, start, end, out_value, out_after, out_known);
+
+    if (status != MACHINE_LANGUAGE_OK || *out_known || !machine_language_runs_code(walk))
+        return status;
+    *out_known =
+        advanced_configuration_and_power_interface_machine_language_run_table_term(
+            walk->load, walk->table, source->scope, start, end, true, out_value, out_after) == MACHINE_LANGUAGE_OK;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Builds an OperationRegion's object once its space is read: its offset and length start at
- *        the walk's pc, and wait for the interpreter when they are not constants.
+ *        the walk's pc, constants, or run where table-level code runs; they wait for the interpreter
+ *        otherwise.
  */
 static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk_t *walk,
                                                              const MachineLanguagePendingOperator_t *active)
@@ -794,12 +823,11 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
     uint32_t after = 0u;
     uint32_t handle = 0u;
     bool constant = false;
-    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_evaluate_integer(
-        &load->space, &source, walk->pc, active->end, &offset, &after, &constant);
+    MachineLanguageStatus_t status =
+        machine_language_operand_integer(walk, &source, walk->pc, active->end, &offset, &after, &constant);
 
     if (status == MACHINE_LANGUAGE_OK && constant)
-        status = advanced_configuration_and_power_interface_machine_language_evaluate_integer(
-            &load->space, &source, after, active->end, &length, &after, &constant);
+        status = machine_language_operand_integer(walk, &source, after, active->end, &length, &after, &constant);
     if (status == MACHINE_LANGUAGE_OK)
         status = advanced_configuration_and_power_interface_machine_language_object_allocate(
             &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION,
@@ -885,8 +913,8 @@ static void machine_language_build_buffer_field(MachineLanguageWalk_t *walk,
 /**
  * @brief Starts the field list of a Field, an IndexField or a BankField: reads again its names, its
  *        BankValue and its FieldFlags, which the walk has just passed. A name that resolves to nothing
- *        is counted once, and the units get no object; a BankValue that is not a constant makes each
- *        unit wait for the interpreter.
+ *        is counted once, and the units get no object; a BankValue that is neither a constant nor run
+ *        as table-level code makes each unit wait for the interpreter.
  */
 static void machine_language_begin_field_list(MachineLanguageWalk_t *walk,
                                               const MachineLanguagePendingOperator_t *active)
@@ -928,8 +956,8 @@ static void machine_language_begin_field_list(MachineLanguageWalk_t *walk,
         return;
     }
     if (active->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD) &&
-        (advanced_configuration_and_power_interface_machine_language_evaluate_integer(
-             &load->space, &source, after, active->end, &bank, &after, &constant) != MACHINE_LANGUAGE_OK ||
+        (machine_language_operand_integer(walk, &source, after, active->end, &bank, &after, &constant) !=
+             MACHINE_LANGUAGE_OK ||
          !constant))
     {
         field->builds = false;
@@ -1035,15 +1063,6 @@ static void machine_language_count_table_level_code(MachineLanguageWalk_t *walk,
     if (walk->pass == MACHINE_LANGUAGE_PASS_DECODE && machine_language_top_block(walk)->placement == 0u &&
         machine_language_is_code(name, opcode))
         ++walk->load->table_level_code;
-}
-
-/**
- * @brief Whether the walk is the declaration pass at table level, where code runs as it is met.
- */
-static bool machine_language_runs_code(MachineLanguageWalk_t *walk)
-{
-    return walk->pass == MACHINE_LANGUAGE_PASS_DECLARE && !walk->load->declares_every_branch &&
-           machine_language_top_block(walk)->placement == 0u;
 }
 
 /**
@@ -1839,6 +1858,7 @@ void advanced_configuration_and_power_interface_machine_language_load_directory(
 void advanced_configuration_and_power_interface_machine_language_close(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
+    advanced_configuration_and_power_interface_machine_language_regions_close(load);
     advanced_configuration_and_power_interface_machine_language_heap_close(&load->heap, &load->space);
     advanced_configuration_and_power_interface_machine_language_namespace_close(&load->space);
 }

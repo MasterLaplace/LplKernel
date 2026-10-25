@@ -1227,9 +1227,9 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
 }
 
 /**
- * @brief A region takes its space, offset and length; one built from an expression waits for the
- *        interpreter; each unit of a field takes the bit the list has reached, past a reserved field,
- *        and the access an AccessAs gives.
+ * @brief A region takes its space, offset and length; one built from an expression takes what its
+ *        declaration computes when it runs; each unit of a field takes the bit the list has reached,
+ *        past a reserved field, and the access an AccessAs gives.
  */
 KERNEL_TEST(a_region_and_its_field_units_take_their_layout)
 {
@@ -1258,8 +1258,8 @@ KERNEL_TEST(a_region_and_its_field_units_take_their_layout)
     kernel_test_check(test,
                       region->space == 1u && region->state == 1u && region->offset == 0x80u && region->length == 0x10u,
                       "REG0 is 16 ports from 0x80");
-    kernel_test_check(test, computed->state == 0u && made_up_load.values_deferred == 1u,
-                      "REG1, whose offset is Add (One, One), waits for the interpreter");
+    kernel_test_check(test, computed->state == 1u && computed->offset == 2u && made_up_load.values_deferred == 0u,
+                      "REG1, whose offset is Add (One, One), takes the offset 2 when its declaration runs");
     kernel_test_check(test,
                       first->region == made_up_node_at("REG0") && first->bit_offset == 0u && first->bit_length == 8u &&
                           first->access == 1u,
@@ -1597,8 +1597,8 @@ KERNEL_TEST(an_offset_past_32_bits_is_refused)
 
 /**
  * @brief A field list builds no unit when a name it needs is missing, counted once as name_not_found;
- *        a BankField whose BankValue is an expression leaves its units waiting for the interpreter,
- *        each counted.
+ *        a BankField whose BankValue is an expression takes what its declaration computes when it
+ *        runs.
  */
 KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
 {
@@ -1621,10 +1621,10 @@ KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_NOT_FOUND,
                       "the units of a field in the missing NOPE get no object, and NOPE is counted once");
     kernel_test_check(test,
-                      made_up_node("B1__")->value.kind !=
+                      made_up_node("B1__")->value.kind ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT &&
-                          made_up_load.values_deferred == 1u,
-                      "B1__, banked on Add (One, One), waits for the interpreter, counted");
+                          made_up_unit("B1__")->bank_value == 2u && made_up_load.values_deferred == 0u,
+                      "B1__, banked on Add (One, One), takes the BankValue 2 when its declaration runs");
     made_up_close(test);
 }
 

@@ -302,18 +302,35 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_UNIMPLEMENTED_OPERATOR, /**< An opcode decoded
                                                                                                    but not executed
                                                                                                    (§4.5). */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_FIELD_ACCESS_DEFERRED,  /**< A field or buffer
-                                                                                                   field accessed
-                                                                                                   before its slice
-                                                                                                   lands. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH,  /**< An operand of the wrong
-                                                                                           type, or an impossible
-                                                                                           conversion. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_DIVIDE_BY_ZERO, /**< A division or a modulo by
-                                                                                           zero. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_EXISTS,    /**< A method creates a name
-                                                                                           that exists already. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,          /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_FIELD_ACCESS_DEFERRED,  /**< A buffer field
+                                                                                                   accessed before
+                                                                                                   its slice lands. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH,     /**< An operand of the wrong
+                                                                                              type, or an impossible
+                                                                                              conversion. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_DIVIDE_BY_ZERO,    /**< A division or a modulo by
+                                                                                              zero. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_EXISTS,       /**< A method creates a name
+                                                                                              that exists already. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_SPACE_UNSUPPORTED, /**< A region space with
+                                                                                             no handler (§4.4). */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_REGION_BOUNDS,     /**< An access past its
+                                                                                             region (§5.3). */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_ADDRESS_UNREACHABLE,     /**< An address the
+                                                                                                   host cannot reach:
+                                                                                                   past 4 GiB on i686, or
+                                                                                                   a map it refused. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_GLOBAL_LOCK_UNAVAILABLE, /**< A Lock field
+                                                                                                   before the global
+                                                                                                   lock lands. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_REGION_UNEVALUATED,   /**< A region whose offset
+                                                                                                and length were never
+                                                                                                evaluated. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_ACCESS_WIDTH_INVALID, /**< A reserved
+                                                                                                AccessType, or a
+                                                                                                datum wider than
+                                                                                                its space allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,                /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**

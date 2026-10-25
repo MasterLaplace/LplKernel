@@ -376,3 +376,23 @@ KERNEL_TEST(no_free_frame_is_mapped_where_the_virtual_memory_manager_maps)
     kernel_test_measure(test, "free_frames", free_frames);
 #endif
 }
+
+/**
+ * @brief The copy of the boot memory map says what a range is: a frame the allocator gives is usable
+ *        memory; an empty range, one that wraps, and one past every entry are nothing.
+ */
+KERNEL_TEST(the_memory_map_says_what_a_range_is)
+{
+    const uint32_t frame = physical_memory_manager_page_frame_allocate();
+
+    if (!kernel_test_check(test, frame != 0u, "a frame is taken"))
+        return;
+    kernel_test_check(test, physical_memory_manager_memory_type(frame, PAGE_SIZE) == 1u,
+                      "the frame lies in usable memory");
+    kernel_test_check(test,
+                      physical_memory_manager_memory_type(frame, 0u) == 0u &&
+                          physical_memory_manager_memory_type(0xFFFFFFFFFFFFF000ull, 0x2000u) == 0u &&
+                          physical_memory_manager_memory_type(0x7FFFFFFF000000ull, PAGE_SIZE) == 0u,
+                      "an empty range, a wrapping one and one past every entry are nothing");
+    physical_memory_manager_page_frame_free(frame);
+}

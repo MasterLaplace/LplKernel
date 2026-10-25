@@ -97,7 +97,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | No wall clock on a compared path | Loop and sleep budgets count work: iterations, and the milliseconds `Sleep` and `Stall` *request*, never elapsed time. In parity runs `Timer` is a virtual clock, advanced by those requests and by a fixed quantum on every read, so a loop that polls `Timer` ends the same way on both targets. A wait on hardware (the switch to ACPI mode, §3.8 step 0) is bounded in time and its polls counted; it is never on a compared path. |
 | Fixed-width folds | Folds see `uint32_t` and `uint64_t` fields and node indices only: never a pointer, a `size_t` or an occupancy. |
 | Integers | Every AML integer is a `uint64_t` on both targets, masked to 32 bits when the DSDT's revision is below 2 ([§19.6.29]). 64-bit division on i686 goes through libgcc. |
-| No inline assembly | Port I/O, the 64-bit memory-mapped accesses of i686 (§5.3) and the global lock's compare-exchange are `asmutils` routines. |
+| No inline assembly | Port I/O and the global lock's compare-exchange are `asmutils` routines; a 64-bit memory-mapped datum of i686 is two 32-bit accesses the field engine makes (§5.3). |
 | Naming | Externs `advanced_configuration_and_power_interface_…` for the tables and `advanced_configuration_and_power_interface_machine_language_…` for the interpreter, types `AdvancedConfigurationAndPowerInterface…_t`, static helpers `acpi_…`. |
 | Tests | `KERNEL_TEST`s in `kernel/tests/acpi/` for architecture-free code, in `kernel/arch/i386/tests/acpi/` otherwise. A host tool's own tests, such as the needs-path closure's, are `host_*` suites in `tools/acpi/host/`: ring 0 never runs them, and `tools/parity.sh` leaves them out. |
 | Unbuilt branches | The host harness and every compile-time switch of the interpreter have a gate profile that builds them, or a line in `tools/unbuilt-branches.declared`. `kernel/kernel/acpi/` builds only where `KERNEL_ARCH_HAS_FIRMWARE_TABLES` is 1. |
@@ -133,7 +133,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
-| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h` | the decoder's, the namespace's, the objects' and the interpreter's interfaces, for the layers above them and the tests |
+| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h`, `kernel/include/kernel/acpi/machine_language_regions.h` | the decoder's, the namespace's, the objects', the interpreter's and the regions' interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
@@ -146,7 +146,7 @@ architecture supplies the host interface.
 | `kernel/kernel/acpi/resources.c` | the zero-copy resource-template iterator |
 | `kernel/kernel/acpi/processor_idle.c` | `_CST` per processor, its binding to CPU slots, the published table (§3.10) |
 | `kernel/arch/i386/cpu/acpi_host.c` | the host interface in ring 0: windows, memory types, ports, PCI, time, sleep |
-| `kernel/arch/i386/lib/asmutils.s`, `kernel/include/kernel/lib/asmutils.h` | a 64-bit memory-mapped read and write as two 32-bit accesses, low then high (§5.3) |
+| `kernel/arch/i386/lib/asmutils.s`, `kernel/include/kernel/lib/asmutils.h` | the 8-, 16- and 32-bit port accesses of the ring-0 host |
 | `kernel/tests/acpi/simulated_host.c`, `simulated_host.h` | the simulated host: sparse memory, zero-filled ports, simulated PCI, virtual clock, target parameters; one source for the host harness and the ring-0 corpus test |
 | `kernel/tests/acpi/*.c` | `KERNEL_TEST`s with made-up AML, and the ring-0 corpus test; also compiled into the host harness |
 | `tools/acpi/host/` | the host harness, an xmake target of this repository (`test-acpi`): its entry point, the acpidump reader, the corpus runner, the needs-path closure; it compiles the simulated host, `kernel/tests/acpi/` and the kernel's test runner, which prints its KTAP, from `kernel/` |
@@ -162,10 +162,11 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 |---|---|---|
 | `root_system_description_pointer()` → physical address or 0 | the BIOS-area scan of `kernel/arch/i386/cpu/acpi.c`; the pointer Multiboot2 or the EFI system table gives, once #278 and #279 land | the machine under test's |
 | `map_firmware(physical u64, length u64)` → address or NULL: cached, read-only | `kernel_vmm_map_firmware_window` | a sparse byte store keyed by physical address |
-| `map_firmware_writable(...)`, `map_device(...)`: cached read-write, uncached | a cached read-write firmware window, `kernel_vmm_map_device_window` | the same store |
+| `map_firmware_writable(...)`, `map_device(...)`: cached read-write, uncached | a cached read-write firmware window, `kernel_vmm_map_device_window` | an address that is never read: the store is reached through `read_memory` and `write_memory` |
+| `read_memory(address, physical u64, width u8)`, `write_memory(...)`: one access of 1, 2 or 4 bytes to what one of those two mapped | a volatile access through the window | the store: what the placed bytes hold, or the fill byte, until a write takes the page; every access logged in order |
 | `memory_type(physical u64, length u64)` → RAM, ACPI reclaim, ACPI NVS, reserved, or unknown | the boot memory map the PMM keeps | `reserved`, unless the machine's description says otherwise |
 | `unmap_firmware(address, length)`, and one unmap for each map | the matching unmap | matched to its map by address and length, so that a test sees every map unmapped as it was mapped |
-| `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled |
+| `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor; offsets from 0x100 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
 | `sleep_milliseconds(u32)`, `stall_microseconds(u32)` | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick; after boot the worker thread blocks (#273) | advance the virtual clock |
@@ -624,7 +625,8 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | PCI_Config regions | the address comes from `_SEG`, `_BBN` and `_ADR` through the bridges, resolved once at attach; the header is write-protected (§5.3). Offsets from 0x100 need ECAM (#58) and fail with `address_unreachable`, counted, until then | [§5.5.2.4.1] |
 | EmbeddedControl | no handler: an access fails and is counted; `_REG(3, 1)` is never called (§1.4) | |
 | SystemCMOS, GenericSerialBus, GeneralPurposeIo, IPMI, PlatformRtMechanism, SMBus, PciBarTarget, PCC, FFixedHW, OEM 0x80-0xFF | no handler (§1.4) | |
-| AccessType ByteAcc, WordAcc, DWordAcc, QWordAcc | one access per datum of that width; on i686 a 64-bit SystemMemory datum is two 32-bit accesses, low then high (§5.3) | [§19.6.48] |
+| AccessType ByteAcc, WordAcc, DWordAcc, QWordAcc | one access per datum of that width; on i686 a 64-bit SystemMemory datum is two 32-bit accesses, low then high (§5.3); a QWordAcc datum of SystemIO, wider than any port, fails with `access_width_invalid` | [§19.6.48] |
+| AccessType 6 to 15, reserved | the access fails with `access_width_invalid`, as ACPICA and uACPI refuse the field | [§19.6.48] |
 | AnyAcc | byte access, as Windows does | [§19.6.48] |
 | BufferAcc | byte access on the three spaces; the protocol buffers of GenericSerialBus, SMBus and IPMI wait for their handlers | [§19.6.48] |
 | UpdateRule Preserve, WriteAsZeros, WriteAsOnes | all three | [§19.6.48] |
@@ -707,10 +709,10 @@ Each row is a decision, and has at least one test (§8).
 | Region bounds | An access must fit its region; rounding the region's length up to the access width is allowed and counted. | [§19.6.48] |
 | Region lifetime | Attached at the first access, not at declaration: handler chosen, PCI address resolved, mapping taken from the cache. | |
 | `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates after initialisation. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
-| Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIT, the PIC and PCI itself, and AML must not race it. | |
+| Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIC and PCI itself, and AML must not race it; the PIT, the RTC and CMOS follow once `_OSI` asks, as on Windows, and the other ports the kernel drives, COM1 and the keyboard controller, are not protected. | |
 | PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. | |
-| Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the pages it touches, as one entry of the mapping cache, never the declared region. The host's `memory_type` decides the kind: ACPI NVS or reclaim memory is mapped cached read-write, anything else uncached, since an uncached alias of a page the firmware window maps cached is a memory-type conflict. | [§5.5.2.4.1] |
-| 64-bit data on i686 | A `QWordAcc` SystemMemory datum is two 32-bit accesses, low then high, through an `asmutils` routine; one access on x86-64. The simulated host sees the same order. `split_qword_accesses` counts them. | |
+| Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is mapped cached read-write, anything else uncached, since an uncached alias of a page mapped cached elsewhere, by the kernel's own map of RAM or by the firmware window, is a memory-type conflict. Below 64 MiB, the boot map covers every page cached, so an uncached window there is such an alias until #590. | [§5.5.2.4.1] |
+| 64-bit data on i686 | A `QWordAcc` datum is two 32-bit host accesses, low then high, which the field engine makes itself; one access on x86-64. The simulated host sees the same order. `split_qword_accesses` counts them. | |
 
 ### 5.4 The Windows identity real firmware expects
 
@@ -783,10 +785,12 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | `Return` outside a method | | fails, the statement skipped | `invalid_opcode` |
 | Wrong type, impossible conversion | fails ([§19.3.5.4]) | construct skipped | `type_mismatch` |
 | Division by zero | fails | construct skipped | `divide_by_zero` |
-| Index or buffer field out of range | fails | construct skipped | `index_out_of_range` |
+| Index or buffer field out of range, or an index or BankValue its register cannot hold | fails | construct skipped | `index_out_of_range` |
 | Reference cycle | fails | construct skipped | `reference_cycle` |
 | A limit of §6.1 | fails with the limit's name | construct skipped | `limit_<name>` |
 | Region without handler, out of bounds, or unreachable (above 4 GiB on i686, a PCI offset from 0x100 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
+| A field of a region whose offset and length were never evaluated: declared in a branch that did not run, or its operands failed | fails | construct skipped | `region_unevaluated` |
+| A reserved AccessType, or a QWordAcc datum of SystemIO | fails | construct skipped | `access_width_invalid` |
 | `Lock` field or `\_GL` before the global lock lands | fails | construct skipped | `global_lock_unavailable` |
 | A `Load` or `LoadTable` form outside §1.4 | fails | construct skipped | `load_form_unsupported` |
 | Protected port or PCI header | not a fault: zero read, write dropped | same | counted only |

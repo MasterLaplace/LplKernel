@@ -1,7 +1,10 @@
 #include <kernel/acpi/host.h>
 #include <kernel/cpu/acpi.h>
+#include <kernel/cpu/pmm.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
 
+#include <stdbool.h>
 #include <stddef.h>
 
 static uint64_t acpi_host_root_system_description_pointer(void *context)
@@ -24,6 +27,100 @@ static void acpi_host_unmap_firmware(void *context, const void *address, uint64_
     kernel_vmm_unmap_firmware_window((uint32_t) (uintptr_t) address, (uint32_t) length);
 }
 
+static bool acpi_host_reaches(uint64_t physical_address, uint64_t length)
+{
+    return length != 0u && physical_address <= UINT32_MAX && length - 1u <= UINT32_MAX - physical_address;
+}
+
+static uint8_t acpi_host_memory_type(void *context, uint64_t physical_address, uint64_t length)
+{
+    (void) context;
+    switch (physical_memory_manager_memory_type(physical_address, length))
+    {
+    case 1u: return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_RAM;
+    case 2u:
+    case 5u: return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_RESERVED;
+    case 3u: return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_ACPI_RECLAIM;
+    case 4u: return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_ACPI_NVS;
+    default: return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_UNKNOWN;
+    }
+}
+
+static void *acpi_host_map_firmware_writable(void *context, uint64_t physical_address, uint64_t length)
+{
+    (void) context;
+    if (!acpi_host_reaches(physical_address, length))
+        return NULL;
+    return (void *) (uintptr_t) kernel_vmm_map_firmware_writable_window((uint32_t) physical_address, (uint32_t) length);
+}
+
+static void acpi_host_unmap_firmware_writable(void *context, void *address, uint64_t length)
+{
+    (void) context;
+    kernel_vmm_unmap_firmware_window((uint32_t) (uintptr_t) address, (uint32_t) length);
+}
+
+static void *acpi_host_map_device(void *context, uint64_t physical_address, uint64_t length)
+{
+    (void) context;
+    if (!acpi_host_reaches(physical_address, length))
+        return NULL;
+    return (void *) (uintptr_t) kernel_vmm_map_device_window((uint32_t) physical_address, (uint32_t) length);
+}
+
+static void acpi_host_unmap_device(void *context, void *address, uint64_t length)
+{
+    (void) context;
+    kernel_vmm_unmap_device_window((uint32_t) (uintptr_t) address, (uint32_t) length);
+}
+
+static uint32_t acpi_host_read_memory(void *context, const void *address, uint64_t physical_address, uint8_t width)
+{
+    (void) context;
+    (void) physical_address;
+    switch (width)
+    {
+    case 1u: return *(const volatile uint8_t *) address;
+    case 2u: return *(const volatile uint16_t *) address;
+    default: return *(const volatile uint32_t *) address;
+    }
+}
+
+static void acpi_host_write_memory(void *context, void *address, uint64_t physical_address, uint8_t width,
+                                   uint32_t value)
+{
+    (void) context;
+    (void) physical_address;
+    switch (width)
+    {
+    case 1u: *(volatile uint8_t *) address = (uint8_t) value; break;
+    case 2u: *(volatile uint16_t *) address = (uint16_t) value; break;
+    default: *(volatile uint32_t *) address = value; break;
+    }
+}
+
+static uint32_t acpi_host_port_read(void *context, uint16_t port, uint8_t width)
+{
+    (void) context;
+    switch (width)
+    {
+    case 1u: return asmutils_input_byte(port);
+    case 2u: return asmutils_input_word(port);
+    default: return asmutils_input_dword(port);
+    }
+}
+
+static void acpi_host_port_write(void *context, uint16_t port, uint8_t width, uint32_t value)
+{
+    (void) context;
+    switch (width)
+    {
+    case 1u: asmutils_output_byte(port, (uint8_t) value); break;
+    case 2u: asmutils_output_word(port, (uint16_t) value); break;
+    default: asmutils_output_dword(port, value); break;
+    }
+}
+
 static void *acpi_host_allocate_pages(void *context, uint32_t count)
 {
     (void) context;
@@ -41,6 +138,15 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .root_system_description_pointer = acpi_host_root_system_description_pointer,
     .map_firmware = acpi_host_map_firmware,
     .unmap_firmware = acpi_host_unmap_firmware,
+    .memory_type = acpi_host_memory_type,
+    .map_firmware_writable = acpi_host_map_firmware_writable,
+    .unmap_firmware_writable = acpi_host_unmap_firmware_writable,
+    .map_device = acpi_host_map_device,
+    .unmap_device = acpi_host_unmap_device,
+    .read_memory = acpi_host_read_memory,
+    .write_memory = acpi_host_write_memory,
+    .port_read = acpi_host_port_read,
+    .port_write = acpi_host_port_write,
     .allocate_pages = acpi_host_allocate_pages,
     .release_pages = acpi_host_release_pages,
 };

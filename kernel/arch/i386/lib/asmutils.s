@@ -23,6 +23,28 @@ asmutils_output_byte:
     popl %ebp
     ret
 
+.globl asmutils_input_word
+.type asmutils_input_word, @function
+asmutils_input_word:
+    pushl %ebp
+    movl %esp, %ebp
+    movl 8(%ebp), %edx
+    xorl %eax, %eax
+    inw %dx, %ax
+    popl %ebp
+    ret
+
+.globl asmutils_output_word
+.type asmutils_output_word, @function
+asmutils_output_word:
+    pushl %ebp
+    movl %esp, %ebp
+    movl 8(%ebp), %edx
+    movl 12(%ebp), %eax
+    outw %ax, %dx
+    popl %ebp
+    ret
+
 .globl asmutils_input_dword
 .type asmutils_input_dword, @function
 asmutils_input_dword:

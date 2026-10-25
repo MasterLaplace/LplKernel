@@ -129,6 +129,21 @@ uint32_t kernel_vmm_map_firmware_window(uint32_t physical_base, uint32_t size);
 void kernel_vmm_unmap_firmware_window(uint32_t window, uint32_t size);
 
 /**
+ * @brief Maps memory the firmware writes too, such as its ACPI NVS variables, into a free run of
+ *        kernel virtual pages, cached and writable.
+ *
+ * @details Cached like a firmware window, since these frames are memory and an uncached alias of a
+ *          page mapped cached elsewhere is a memory-type conflict; writable, since AML stores to
+ *          them. kernel_vmm_unmap_firmware_window takes it back.
+ *
+ * @param physical_base Physical address of the first byte.
+ * @param size          Length in bytes.
+ * @return The virtual address of @p physical_base, its offset within its page kept, or 0, as when the
+ *         window's last byte would lie past 4 GiB.
+ */
+uint32_t kernel_vmm_map_firmware_writable_window(uint32_t physical_base, uint32_t size);
+
+/**
  * @brief Freed runs that had at least one page mapped, each unmapped with one TLB shootdown.
  * @return The count since boot.
  */

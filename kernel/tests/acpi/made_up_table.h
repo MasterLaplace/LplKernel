@@ -68,6 +68,23 @@ extern bool made_up_load_table(KernelTest_t *test, AdvancedConfigurationAndPower
                                uint8_t revision, const uint8_t *aml, uint32_t length);
 
 /**
+ * @brief Loads @p aml as made_up_load_table does, through @p host as it stands: a simulated host
+ *        already given its memory and ports, or the machine's.
+ *
+ * @param test     The test, which the namespace opening is checked on.
+ * @param load     Filled; closed with advanced_configuration_and_power_interface_machine_language_close.
+ * @param host     The host.
+ * @param table    The buffer the table is written in.
+ * @param revision The DSDT's revision.
+ * @param aml      The AML.
+ * @param length   Bytes of AML.
+ * @return false when the namespace could not be opened.
+ */
+extern bool made_up_load_on(KernelTest_t *test, AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                            const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint8_t *table, uint8_t revision,
+                            const uint8_t *aml, uint32_t length);
+
+/**
  * @brief The node at the root named @p name.
  *
  * @param load The load.

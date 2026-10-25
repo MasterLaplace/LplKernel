@@ -34,6 +34,7 @@
 #include <kernel/acpi/machine_language_interpreter.h>
 #include <kernel/acpi/machine_language_namespace.h>
 #include <kernel/acpi/machine_language_objects.h>
+#include <kernel/acpi/machine_language_regions.h>
 #include <kernel/acpi/tables.h>
 
 #include <stdbool.h>
@@ -155,6 +156,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                                           body began. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t evaluation; /**< What running AML holds and
                                                                                        counted. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t regions;       /**< The mapping cache, and what field
+                                                                                       accesses counted. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;
 
 /**
@@ -178,6 +181,49 @@ extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_run_table_term(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start,
     uint32_t limit, bool value, uint64_t *out_integer, uint32_t *out_after);
+
+/**
+ * @brief Reads a field unit (§5.3): one access per datum of its access width, in its region for a
+ *        Field, through its bank or index register for a BankField or an IndexField.
+ *
+ * @param load      The load.
+ * @param node      The unit's node.
+ * @param out_value Receives an Integer when the unit is no wider than the load's integers, a Buffer
+ *                  of its bytes otherwise.
+ * @return OK; TYPE_MISMATCH when the node holds no unit or a register is not a unit of a Field;
+ *         GLOBAL_LOCK_UNAVAILABLE for a Lock field; REGION_UNEVALUATED, REGION_BOUNDS,
+ *         ADDRESS_UNREACHABLE or SPACE_UNSUPPORTED when a datum cannot be reached; LIMIT_BUFFER_BYTES
+ *         or OUT_OF_MEMORY when its Buffer cannot be built.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_field_read(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
+
+/**
+ * @brief Writes a value to a field unit (§5.3): an Integer's bits, or a String's or a Buffer's
+ *        bytes, cut or zero-extended to the unit; a datum the unit covers in part keeps its other
+ *        bits by the unit's UpdateRule.
+ *
+ * @param load  The load.
+ * @param node  The unit's node.
+ * @param value What to write.
+ * @return OK, or why it failed, as for the read; TYPE_MISMATCH too for a value of another type, and
+ *         LIMIT_BUFFER_BYTES for a unit wider than the largest Buffer. A failure may leave the datums
+ *         before it written.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_field_write(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value);
+
+/**
+ * @brief Gives every mapping of the load's cache back to its host.
+ *
+ * @param load The load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_regions_close(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
  * @brief Counts a While back-edge of table-level code against the budget of 2^20 that a table's code
