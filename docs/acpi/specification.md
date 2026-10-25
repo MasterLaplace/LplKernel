@@ -133,7 +133,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
-| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h` | the decoder's, the namespace's and the objects' interfaces, for the layers above them and the tests |
+| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h` | the decoder's, the namespace's, the objects' and the interpreter's interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
@@ -235,7 +235,9 @@ Rules:
 ### 3.6 Execution model
 
 **One loop, explicit stacks, no C recursion.** The stacks are fixed arrays sized by the limits of §6.1, so they are
-never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic.
+never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic. Until #587, the
+declaration pass walks the control flow of table-level code itself and hands the loop one statement or predicate at
+a time (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
@@ -281,18 +283,20 @@ it. An `External` whose path no table has declared yet is placed by a pass of it
 
 **The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
 predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
-skipped, and declares nothing. A predicate that fails declares both its branches without running their code, so
-that a failure never takes an object out of the namespace. The decoding pass still decodes the body of a construct
-the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its names resolve against
-objects that do not exist.
+skipped, and declares nothing. Until #539 and #541 run what makes predicates fail today, a predicate that fails
+declares both its branches without running their code, counted (`declared_not_run`), so that a failure never takes
+an object out of the namespace. The decoding pass still decodes the body of a construct the declaration pass did
+not declare, but counts its faults apart (`undeclared_faults`): its names resolve against objects that do not
+exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
 the same stacks, and the access resumes when they return. They count against the same depth limit.
 
 **Errors** carry a typed status (§6.2). In a method, an error unwinds every frame of the evaluation: temporaries
-removed, mutexes released, values dropped. At table level, it skips the innermost enclosing PkgLength construct and
-the load goes on.
+removed, mutexes released, values dropped. At table level, a statement that fails to run is skipped, a predicate
+that fails is handled as above, a fault in the declaration pass's own decoding skips the innermost enclosing
+PkgLength construct, and the load goes on.
 
 ### 3.7 Concurrency
 
@@ -635,7 +639,7 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 
 | Case | Behaviour | Counter |
 |---|---|---|
-| An opcode decoded but not executed: outside the needs path, `DataTableRegion`, `Nor`, `Revision` | in a method, the evaluation fails with `unimplemented_operator`; at definition-block level, the innermost enclosing PkgLength construct is skipped and the load goes on | `unimplemented_operator[opcode]` |
+| An opcode decoded but not executed: outside the needs path, `DataTableRegion`, `Nor`, `Revision` | in a method, the evaluation fails with `unimplemented_operator`; at definition-block level, the statement or predicate that holds it fails as in §6.2 and the load goes on | `unimplemented_operator[opcode]` |
 | `Load` from a Buffer; `LoadTable` with a non-empty RootPath, ParameterPath or ParameterData | fails as above | `load_form_unsupported` |
 | A `Lock` field access or `Acquire (\_GL)` before the global lock lands | fails as above | `global_lock_unavailable` |
 | A byte that is not an opcode | fails as above, with `invalid_opcode`; at table level without an enclosing construct, the rest of the table is abandoned and the next table loads | `invalid_opcode` |
@@ -773,7 +777,8 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | Truncated operand, bad NameString | fails | the innermost enclosing construct is skipped | `truncated` |
 | Invalid or unimplemented opcode | fails | construct skipped | `invalid_opcode`, `unimplemented_operator` |
 | Name not found when executed | fails | construct skipped | `name_not_found` |
-| A method creates a name that exists, as a `Name` in a loop | fails | | `name_exists` |
+| A method creates a name that exists, as a `Name` in a loop | fails | a duplicate: skipped and counted (§5.1) | `name_exists`, `duplicates` |
+| `Return` outside a method | | fails, the statement skipped | `invalid_opcode` |
 | Wrong type, impossible conversion | fails ([§19.3.5.4]) | construct skipped | `type_mismatch` |
 | Division by zero | fails | construct skipped | `divide_by_zero` |
 | Index or buffer field out of range | fails | construct skipped | `index_out_of_range` |
@@ -784,6 +789,10 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | A `Load` or `LoadTable` form outside §1.4 | fails | construct skipped | `load_form_unsupported` |
 | Protected port or PCI header | not a fault: zero read, write dropped | same | counted only |
 | Arena exhausted | fails | the table load stops | `out_of_memory` |
+
+At definition-block level, "construct skipped" means: a statement that fails to run is skipped, a predicate that
+fails declares both branches without running them (§3.6), and a fault in the declaration pass's own decoding skips
+the innermost enclosing PkgLength construct.
 
 Every failure unwinds the evaluation completely: temporaries removed, mutexes released, values dropped, the context
 reset. The caller receives the typed status and decides.
@@ -954,7 +963,8 @@ published image. The made-up ASL is ours, under MIT.
   integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
 - **The census oracle**: every opcode count of every machine equals that of the census script, the tables loaded
   declaring every branch of table-level code and running none of it, as the census reads them; running it, which
-  declares only the branches taken, is checked against `acpiexec` instead. Per table, the declaration counts are
+  declares only the branches taken, is checked against `acpiexec` instead, on the machines whose table-level code
+  runs without a failure: `namespace corpus` names how many it leaves out. Per table, the declaration counts are
   compared with the `iasl` disassembly shipped with each dump; they differ where `iasl` guessed the argument counts
   of methods it could not resolve, left an object out, or where the report's disassembly is cut short, and each
   such table is listed.
