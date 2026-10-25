@@ -1,3 +1,4 @@
+#include "made_up_table.h"
 #include "simulated_host.h"
 
 #include <kernel/acpi/machine_language.h>
@@ -12,7 +13,6 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_machine_language, K
 #define MADE_UP_TABLE_COUNT    4u              /**< Made-up tables one test may load. */
 #define MADE_UP_MAX_NODES      1024u           /**< The node cap of a made-up load. */
 #define MADE_UP_MAX_ARENA      (1024u * 1024u) /**< The arena cap of a made-up load. */
-#define MADE_UP_HEADER         36u             /**< Bytes of a table header. */
 #define MADE_UP_MULTI_SEGMENTS 255u            /**< NameSegs of the longest multi path. */
 
 static uint8_t made_up_tables[MADE_UP_TABLE_COUNT][MADE_UP_TABLE_CAPACITY];
@@ -29,21 +29,7 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t made_up_load;
 static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *made_up_table(uint32_t index, const char *signature,
                                                                               const uint8_t *aml, uint32_t length)
 {
-    uint8_t *table = made_up_tables[index];
-    uint8_t sum = 0u;
-
-    memset(table, 0, MADE_UP_TABLE_CAPACITY);
-    memcpy(table, signature, 4u);
-    table[4] = (uint8_t) (MADE_UP_HEADER + length);
-    table[5] = (uint8_t) ((MADE_UP_HEADER + length) >> 8u);
-    table[8] = 2u;
-    memcpy(table + 10, "LPLTST", 6u);
-    memcpy(table + 16, "MADEUPML", 8u);
-    memcpy(table + MADE_UP_HEADER, aml, length);
-    for (uint32_t byte = 0u; byte < MADE_UP_HEADER + length; ++byte)
-        sum = (uint8_t) (sum + table[byte]);
-    table[9] = (uint8_t) (0u - sum);
-    return (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) table;
+    return made_up_definition_block(made_up_tables[index], signature, aml, length);
 }
 
 /**
@@ -1660,13 +1646,13 @@ KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
  */
 KERNEL_TEST(a_string_of_the_largest_length_is_built)
 {
-    static uint8_t table[MADE_UP_HEADER + 2u * (6u + 65537u + 1u)];
+    static uint8_t table[MADE_UP_TABLE_HEADER + 2u * (6u + 65537u + 1u)];
     static const uint8_t names[2][5] = {
         {0x08u, 'S', 'B', 'I', 'G'},
         {0x08u, 'S', 'O', 'V', 'R'}
     };
     const uint32_t lengths[2] = {65536u, 65537u};
-    uint32_t end = MADE_UP_HEADER;
+    uint32_t end = MADE_UP_TABLE_HEADER;
 
     for (uint32_t name = 0u; name < 2u; ++name)
     {
