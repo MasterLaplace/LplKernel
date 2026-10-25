@@ -3,7 +3,9 @@
 
 KERNEL_TEST_SUITE(boot_command_line, KERNEL_TEST_STAGE_BOOTED);
 
-static char boot_command_line_test_line[BOOT_COMMAND_LINE_CAPACITY + 1u];
+#define BOOT_COMMAND_LINE_TEST_LONGEST 1024u /**< The longest line a test builds, sized apart from the capacity. */
+
+static char boot_command_line_test_line[BOOT_COMMAND_LINE_TEST_LONGEST + 1u];
 static char boot_command_line_test_copy[BOOT_COMMAND_LINE_CAPACITY];
 
 /**
