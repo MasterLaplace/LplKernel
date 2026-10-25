@@ -84,8 +84,28 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_FADT_RESET_REGISTER_SUPPORTED (1u << 10u) /**< Flags bit RESET_REG_SUP. */
 #define ACPI_FADT_FLAGS_IGNORED_WHEN_REDUCED                                                                           \
     0x0003618Eu /**< Flags bits 1, 2, 3, 7, 8, 13, 14, 16 and 17, which a hardware-reduced platform ignores. */
-#define ACPI_GENERIC_ADDRESS_MAXIMUM_WIDTH 255u     /**< The widest register a Generic Address Structure holds. */
-#define ACPI_INPUT_OUTPUT_PORTS            0x10000u /**< Ports in the I/O space. */
+#define ACPI_GENERIC_ADDRESS_MAXIMUM_WIDTH   255u    /**< The widest register a Generic Address Structure holds. */
+#define ACPI_SYSTEM_CONTROL_INTERRUPT_ENABLE 0x0001u /**< PM1 control bit SCI_EN: the OS owns the fixed hardware. */
+#define ACPI_FIXED_EVENT_ENABLES                                                                                       \
+    0x0721u /**< PM1 enable bits TMR_EN, GBL_EN, PWRBTN_EN, SLPBTN_EN and RTC_EN; bit 14, PCIEXP_WAKE_DIS, is no event \
+               enable. */
+#define ACPI_MODE_POLL_MILLISECONDS 1u /**< What the switch to ACPI mode sleeps between two reads of SCI_EN. */
+
+/**
+ * @brief The ports the switch to ACPI mode reads and writes, each 0 for a block the FADT does not give.
+ */
+typedef struct AcpiModeRegisters {
+    uint16_t control_ports[2];                 /**< PM1a_CNT and PM1b_CNT, where SCI_EN is read. */
+    uint16_t event_enable_ports[2];            /**< PM1a_EN and PM1b_EN, the second half of each PM1 event block. */
+    uint8_t event_enable_widths[2];            /**< Their width in bytes, 1 or 2. */
+    uint16_t general_purpose_enable_ports[2];  /**< GPE0_EN and GPE1_EN, the second half of each GPE block. */
+    uint8_t general_purpose_enable_lengths[2]; /**< Their length in bytes, each written alone. */
+} AcpiModeRegisters_t;
+
+static const char *const acpi_mode_outcome_names[] = {
+    "not-run", "hardware-reduced", "unreachable", "already", "no-command-port", "no-legacy-mode", "switched", "failed",
+};
+#define ACPI_INPUT_OUTPUT_PORTS 0x10000u /**< Ports in the I/O space. */
 
 /**
  * @name The MADT entry types this reader reads
@@ -106,6 +126,7 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 static AdvancedConfigurationAndPowerInterfaceMadtState_t acpi_madt = {.state_name = "acpi-not-initialized"};
 static AdvancedConfigurationAndPowerInterfaceDirectory_t acpi_directory;
 static bool acpi_directory_read = false;
+static AdvancedConfigurationAndPowerInterfaceModeSwitch_t acpi_mode;
 
 static uint8_t acpi_signature_matches(const char *lhs, const char *rhs, size_t length)
 {
@@ -420,6 +441,148 @@ static void acpi_fadt_read_fields(const uint8_t *copy, AdvancedConfigurationAndP
 }
 
 /**
+ * @brief Locates the enable register of a PM1 event or GPE block @p bytes long: its second half.
+ *
+ * @return false when the block gives an address but does not lie wholly in the I/O space, or is too
+ *         short to hold an enable register; @p out_port is 0 for a block that gives none.
+ */
+static bool acpi_mode_locate_enables(const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *block,
+                                     uint32_t bytes, uint16_t *out_port, uint8_t *out_bytes)
+{
+    const uint16_t first = advanced_configuration_and_power_interface_input_output_port(block, bytes);
+
+    *out_port = 0u;
+    *out_bytes = 0u;
+    if (block->address == 0u)
+        return true;
+    if (first == 0u || bytes < 2u)
+        return false;
+    *out_port = (uint16_t) (first + bytes / 2u);
+    *out_bytes = (uint8_t) (bytes / 2u);
+    return true;
+}
+
+/**
+ * @brief Locates the PM1 control registers of @p fadt, where SCI_EN is read.
+ *
+ * @return false when PM1a's is not a port, or PM1b's gives an address that is not one.
+ */
+static bool acpi_mode_locate_control(const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+                                     AcpiModeRegisters_t *registers)
+{
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *block =
+            &fadt->power_management_control_blocks[index];
+
+        registers->control_ports[index] = advanced_configuration_and_power_interface_input_output_port(block, 2u);
+        if (registers->control_ports[index] == 0u && (index == 0u || block->address != 0u))
+            return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Locates the PM1 and GPE enable registers of @p fadt, which the switch clears.
+ *
+ * @return false when a block that gives an address is not one this layer reaches.
+ */
+static bool acpi_mode_locate_event_enables(const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+                                           AcpiModeRegisters_t *registers)
+{
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        uint8_t half = 0u;
+
+        if (!acpi_mode_locate_enables(&fadt->power_management_event_blocks[index],
+                                      fadt->power_management_event_blocks[index].bit_width / 8u,
+                                      &registers->event_enable_ports[index], &half) ||
+            !acpi_mode_locate_enables(
+                &fadt->general_purpose_event_blocks[index], fadt->general_purpose_event_block_lengths[index],
+                &registers->general_purpose_enable_ports[index], &registers->general_purpose_enable_lengths[index]))
+            return false;
+        registers->event_enable_widths[index] = (half >= 2u) ? 2u : half;
+    }
+    return true;
+}
+
+/**
+ * @brief Whether SCI_EN reads set in either PM1 control register.
+ */
+static bool acpi_mode_system_control_interrupt_enabled(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                                       const AcpiModeRegisters_t *registers)
+{
+    uint32_t control = 0u;
+
+    for (uint32_t index = 0u; index < 2u; ++index)
+        if (registers->control_ports[index] != 0u)
+            control |= host->port_read(host->context, registers->control_ports[index], 2u);
+    return (control & ACPI_SYSTEM_CONTROL_INTERRUPT_ENABLE) != 0u;
+}
+
+/**
+ * @brief Writes every GPE enable byte 0, and clears the fixed-event enables of each PM1 enable
+ *        register, writing its other bits back.
+ *
+ * @return The enable registers written.
+ */
+static uint32_t acpi_mode_clear_event_enables(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                              const AcpiModeRegisters_t *registers)
+{
+    uint32_t written = 0u;
+
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        for (uint32_t byte = 0u; byte < registers->general_purpose_enable_lengths[index]; ++byte, ++written)
+            host->port_write(host->context, (uint16_t) (registers->general_purpose_enable_ports[index] + byte), 1u, 0u);
+    }
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        const uint16_t port = registers->event_enable_ports[index];
+        const uint8_t width = registers->event_enable_widths[index];
+
+        if (port == 0u)
+            continue;
+        host->port_write(host->context, port, width,
+                         host->port_read(host->context, port, width) & ~ACPI_FIXED_EVENT_ENABLES);
+        ++written;
+    }
+    return written;
+}
+
+/**
+ * @brief Reads SCI_EN until it reads set, the host sleeping ACPI_MODE_POLL_MILLISECONDS between two
+ *        reads, at most ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS times and for
+ *        at most ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS.
+ */
+static void acpi_mode_wait_for_system_control_interrupt(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                                        const AcpiModeRegisters_t *registers,
+                                                        AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_switch)
+{
+    for (;;)
+    {
+        ++out_switch->polls;
+        if (acpi_mode_system_control_interrupt_enabled(host, registers))
+        {
+            out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED;
+            return;
+        }
+        if (out_switch->polls == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS ||
+            out_switch->waited_milliseconds >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS)
+        {
+            out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED;
+            return;
+        }
+
+        const uint32_t slept = host->sleep_milliseconds(host->context, ACPI_MODE_POLL_MILLISECONDS);
+
+        out_switch->waited_milliseconds = (slept > UINT32_MAX - out_switch->waited_milliseconds) ?
+                                              UINT32_MAX :
+                                              out_switch->waited_milliseconds + slept;
+    }
+}
+
+/**
  * @brief Whether a processor entry's flags let the processor run, now or once enabled at run time.
  */
 static bool acpi_madt_processor_usable(uint32_t flags)
@@ -668,6 +831,73 @@ uint16_t advanced_configuration_and_power_interface_input_output_port(
         reg->address > ACPI_INPUT_OUTPUT_PORTS - bytes)
         return 0u;
     return (uint16_t) reg->address;
+}
+
+void advanced_configuration_and_power_interface_enter_acpi_mode(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+    AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_switch)
+{
+    AcpiModeRegisters_t registers;
+
+    memset(out_switch, 0, sizeof(*out_switch));
+    memset(&registers, 0, sizeof(registers));
+    if (!fadt->present)
+        return;
+    if (fadt->hardware_reduced)
+    {
+        out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_HARDWARE_REDUCED;
+        return;
+    }
+    if (!acpi_mode_locate_control(fadt, &registers))
+    {
+        out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE;
+        return;
+    }
+    if (acpi_mode_system_control_interrupt_enabled(host, &registers))
+    {
+        out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_ALREADY;
+        return;
+    }
+    if (fadt->system_management_interrupt_command == 0u)
+    {
+        out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_COMMAND_PORT;
+        return;
+    }
+    if (fadt->enable_command == 0u)
+    {
+        out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_LEGACY_MODE;
+        return;
+    }
+    if (fadt->system_management_interrupt_command >= ACPI_INPUT_OUTPUT_PORTS ||
+        !acpi_mode_locate_event_enables(fadt, &registers))
+    {
+        out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE;
+        return;
+    }
+
+    out_switch->enable_registers_cleared = acpi_mode_clear_event_enables(host, &registers);
+    host->port_write(host->context, (uint16_t) fadt->system_management_interrupt_command, 1u, fadt->enable_command);
+    acpi_mode_wait_for_system_control_interrupt(host, &registers, out_switch);
+}
+
+void advanced_configuration_and_power_interface_mode_initialize(void)
+{
+    advanced_configuration_and_power_interface_enter_acpi_mode(
+        &advanced_configuration_and_power_interface_machine_host,
+        &advanced_configuration_and_power_interface_directory()->fixed_description, &acpi_mode);
+}
+
+const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *advanced_configuration_and_power_interface_mode(void)
+{
+    return &acpi_mode;
+}
+
+const char *advanced_configuration_and_power_interface_mode_outcome_name(uint8_t outcome)
+{
+    if (outcome >= sizeof(acpi_mode_outcome_names) / sizeof(acpi_mode_outcome_names[0]))
+        return "unknown";
+    return acpi_mode_outcome_names[outcome];
 }
 
 bool advanced_configuration_and_power_interface_read_directory(

@@ -55,6 +55,10 @@
     0u /**< The address space of a Generic Address Structure in memory. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_INPUT_OUTPUT                                           \
     1u /**< The address space of a Generic Address Structure in the I/O space. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS                                                  \
+    3000u /**< Reads of SCI_EN the switch to ACPI mode makes at most, 1 ms apart. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS                                           \
+    3000u /**< Milliseconds the switch to ACPI mode waits between them at most, as the host counts them. */
 
 typedef struct __attribute__((packed)) {
     char signature[8];
@@ -147,6 +151,37 @@ typedef struct AdvancedConfigurationAndPowerInterfaceFixedDescription {
     AdvancedConfigurationAndPowerInterfaceGenericAddress_t sleep_control_register; /**< SLEEP_CONTROL_REG. */
     AdvancedConfigurationAndPowerInterfaceGenericAddress_t sleep_status_register;  /**< SLEEP_STATUS_REG. */
 } AdvancedConfigurationAndPowerInterfaceFixedDescription_t;
+
+/**
+ * @brief How the switch to ACPI mode ended (§3.8 step 0).
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceModeOutcome {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN = 0,          /**< No FADT, or no switch yet. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_HARDWARE_REDUCED = 1, /**< A hardware-reduced platform, which
+                                                                               boots in ACPI mode: no access made. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE = 2,      /**< A PM1 control block, SMI_CMD, or a block
+                                                                               whose enables it clears is not wholly
+                                                                               in the I/O space: nothing written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_ALREADY = 3,          /**< SCI_EN was set: nothing written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_COMMAND_PORT = 4,  /**< SMI_CMD is 0: nothing written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_LEGACY_MODE = 5,   /**< ACPI_ENABLE is 0, which a platform
+                                                                               without legacy mode gives: nothing
+                                                                               written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED = 6,         /**< ACPI_ENABLE written, and SCI_EN set
+                                                                               within the bound. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED = 7,           /**< ACPI_ENABLE written, and SCI_EN still
+                                                                               clear past the bound: legacy mode. */
+} AdvancedConfigurationAndPowerInterfaceModeOutcome_t;
+
+/**
+ * @brief What one switch to ACPI mode did.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceModeSwitch {
+    uint8_t outcome;                   /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_* outcome. */
+    uint32_t enable_registers_cleared; /**< GPE and PM1 enable registers written before ACPI_ENABLE. */
+    uint32_t polls;                    /**< Reads of SCI_EN once ACPI_ENABLE was written. */
+    uint32_t waited_milliseconds;      /**< Milliseconds the host waited between them, as it counts them. */
+} AdvancedConfigurationAndPowerInterfaceModeSwitch_t;
 
 /**
  * @struct AdvancedConfigurationAndPowerInterfaceDirectory
@@ -427,6 +462,49 @@ extern bool advanced_configuration_and_power_interface_read_fixed_description(
  */
 extern uint16_t advanced_configuration_and_power_interface_input_output_port(
     const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *reg, uint32_t bytes);
+
+/**
+ * @brief Puts the platform a normalised FADT describes in ACPI mode, through @p host (§3.8 step 0).
+ *
+ * @details Nothing is written when the platform is hardware-reduced, when SCI_EN, in either PM1
+ *          control register, is already set, when SMI_CMD or ACPI_ENABLE is 0, or when a PM1 control
+ *          block, SMI_CMD or a PM1 event or GPE block is not wholly in the I/O space. Otherwise every
+ *          GPE enable register is written 0, the fixed-event enable bits of each PM1 enable register
+ *          are cleared, the other bits written back, and then ACPI_ENABLE is written to SMI_CMD. SCI_EN
+ *          is then read up to ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS times, the
+ *          host sleeping 1 ms between two reads, until it reads set or the host has waited
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS. The SCI line is
+ *          neither masked nor unmasked here: the caller keeps it masked.
+ *
+ * @param host       The host whose I/O ports and clock are used.
+ * @param fadt       The platform's normalised FADT.
+ * @param out_switch Emptied, then filled with the outcome and the counts.
+ */
+extern void advanced_configuration_and_power_interface_enter_acpi_mode(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+    AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_switch);
+
+/**
+ * @brief Puts this machine in ACPI mode, through advanced_configuration_and_power_interface_machine_host
+ *        and the FADT of the boot's directory, before any AML runs; needs the kernel tick running.
+ */
+extern void advanced_configuration_and_power_interface_mode_initialize(void);
+
+/**
+ * @brief What advanced_configuration_and_power_interface_mode_initialize did.
+ *
+ * @return The boot's switch, never NULL; its outcome is not run before the boot's switch.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *advanced_configuration_and_power_interface_mode(void);
+
+/**
+ * @brief The name the boot's telemetry gives a switch's outcome.
+ *
+ * @param outcome An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_* outcome.
+ * @return Its name, such as "switched", or "unknown" for a value that names none.
+ */
+extern const char *advanced_configuration_and_power_interface_mode_outcome_name(uint8_t outcome);
 
 /**
  * @brief Walks the tables the root system description pointer of a host leads to, each mapped

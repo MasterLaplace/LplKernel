@@ -354,6 +354,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_acpi_tables_info(&com1);
     write_acpi_madt_info(&com1);
     write_acpi_madt_record(&com1);
+    advanced_configuration_and_power_interface_mode_initialize();
+    write_acpi_mode_record(&com1);
     advanced_configuration_and_power_interface_machine_language_initialize();
     write_acpi_machine_language_record(&com1);
 

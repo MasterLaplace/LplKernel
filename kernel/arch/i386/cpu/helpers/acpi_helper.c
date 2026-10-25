@@ -106,6 +106,24 @@ void write_acpi_madt_record(Serial_t *serial)
     kernel_telemetry_end_record();
 }
 
+void write_acpi_mode_record(Serial_t *serial)
+{
+    const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *mode = advanced_configuration_and_power_interface_mode();
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt =
+        &advanced_configuration_and_power_interface_directory()->fixed_description;
+
+    kernel_telemetry_begin_record(serial, "acpi.mode");
+    kernel_telemetry_write_text("outcome", advanced_configuration_and_power_interface_mode_outcome_name(mode->outcome));
+    kernel_telemetry_write_unsigned("enables_cleared", mode->enable_registers_cleared);
+    kernel_telemetry_write_unsigned("polls", mode->polls);
+    kernel_telemetry_write_unsigned("waited_ms", mode->waited_milliseconds);
+    kernel_telemetry_write_unsigned("fadt_revision", fadt->revision);
+    kernel_telemetry_write_unsigned("sci_int", fadt->system_control_interrupt);
+    kernel_telemetry_write_hexadecimal("smi_command", fadt->system_management_interrupt_command);
+    kernel_telemetry_write_hexadecimal("enable_command", fadt->enable_command);
+    kernel_telemetry_end_record();
+}
+
 void write_acpi_machine_language_record(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load =

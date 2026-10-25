@@ -4,6 +4,8 @@
 
 #include <stddef.h>
 
+#define SIMULATED_HOST_SYSTEM_CONTROL_INTERRUPT_ENABLE 0x1u /**< SCI_EN, bit 0 of a PM1 control register. */
+
 /**
  * @brief The range of @p simulated that holds every byte of [@p physical_address,
  *        @p physical_address + @p length), or NULL.
@@ -305,6 +307,8 @@ static uint32_t simulated_host_port_read(void *context, uint16_t port, uint8_t w
     for (uint32_t index = 0u; index < simulated->port_count; ++index)
         if (simulated->ports[index].port == port)
             value = simulated->ports[index].value & mask;
+    if (port == simulated->firmware_control_port && simulated->clock_milliseconds >= simulated->firmware_enabled_at)
+        value |= SIMULATED_HOST_SYSTEM_CONTROL_INTERRUPT_ENABLE;
     simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_READ, width, port, 0u,
                        value);
     return value;
@@ -312,8 +316,26 @@ static uint32_t simulated_host_port_read(void *context, uint16_t port, uint8_t w
 
 static void simulated_host_port_write(void *context, uint16_t port, uint8_t width, uint32_t value)
 {
-    simulated_host_log(context, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE, width, port, 0u,
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+
+    simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE, width, port, 0u,
                        value);
+    if (port == simulated->firmware_command_port && port != 0u && width == 1u &&
+        value == simulated->firmware_enable_command)
+        simulated->firmware_enabled_at = (simulated->firmware_enable_milliseconds == UINT32_MAX) ?
+                                             UINT64_MAX :
+                                             simulated->clock_milliseconds + simulated->firmware_enable_milliseconds;
+}
+
+static uint32_t simulated_host_sleep_milliseconds(void *context, uint32_t milliseconds)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+    const uint32_t tick = simulated->tick_milliseconds;
+    const uint32_t ticks = (tick == 0u) ? 0u : ((milliseconds + tick - 1u) / tick);
+    const uint32_t waited = (tick == 0u) ? milliseconds : ((ticks == 0u) ? 1u : ticks) * tick;
+
+    simulated->clock_milliseconds += waited;
+    return waited;
 }
 
 static void *simulated_host_allocate_pages(void *context, uint32_t count)
@@ -351,6 +373,7 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.compare_exchange = simulated_host_compare_exchange;
     simulated->host.port_read = simulated_host_port_read;
     simulated->host.port_write = simulated_host_port_write;
+    simulated->host.sleep_milliseconds = simulated_host_sleep_milliseconds;
     simulated->host.allocate_pages = simulated_host_allocate_pages;
     simulated->host.release_pages = simulated_host_release_pages;
     simulated->root_system_description_pointer = 0u;
@@ -369,6 +392,13 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->firmware_lock_address = 0u;
     simulated->firmware_holds_for_reads = 0u;
     simulated->firmware_wants_lock = false;
+    simulated->clock_milliseconds = 0u;
+    simulated->tick_milliseconds = 0u;
+    simulated->firmware_command_port = 0u;
+    simulated->firmware_enable_command = 0u;
+    simulated->firmware_control_port = 0u;
+    simulated->firmware_enable_milliseconds = 0u;
+    simulated->firmware_enabled_at = UINT64_MAX;
 }
 
 void advanced_configuration_and_power_interface_simulated_host_close(
