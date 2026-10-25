@@ -1042,8 +1042,8 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_a_connection)
     static const MadeUpFieldUnit_t units[] = {
         {"NU__", 8u}
     };
-    static const uint8_t connection_field[] = {0x5Bu, 0x81u, 0x0Bu, 'R', 'A', 'M', 'R', 0x01u, 0x02u,
-                                               'R',   'A',   'M',   'R', 'C', 'U', '_', 0x08u};
+    static const uint8_t connection_field[] = {0x5Bu, 0x81u, 0x10u, 'R', 'A', 'M', 'R', 0x01u, 0x02u,
+                                               'R',   'A',   'M',   'R', 'C', 'U', '_', '_',   0x08u};
     static const uint8_t calls[] = {'M', 'N', 'O', 'R', 'M', 'C', 'O', 'N'};
     MadeUpAml_t body;
 
@@ -1073,7 +1073,7 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_a_connection)
 KERNEL_TEST(an_access_as_in_a_method_s_field_list_widens_the_units_after_it)
 {
     static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u};
-    static const uint8_t field[] = {0x5Bu, 0x81u, 0x0Bu, 'R', 'A', 'M', 'R', 0x01u,
+    static const uint8_t field[] = {0x5Bu, 0x81u, 0x0Eu, 'R', 'A', 'M', 'R', 0x01u,
                                     0x01u, 0x03u, 0x00u, 'D', 'W', '_', '_', 0x20u};
     static const uint8_t return_unit[] = {0xA4u, 'D', 'W', '_', '_'};
     static const uint8_t store_call[] = {0x70u, 'M', 'A', 'C', 'C', 'R', 'D', '_', '_'};
