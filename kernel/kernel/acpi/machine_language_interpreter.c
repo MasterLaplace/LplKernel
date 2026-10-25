@@ -988,11 +988,30 @@ static MachineLanguageStatus_t machine_language_store_to_reference(MachineLangua
 }
 
 /**
+ * @brief Whether a store to a local that holds a reference replaces the reference rather than going
+ *        through it (§5.2): the value is a reference itself, or the reference leads to nothing or to an
+ *        object that holds no data, as firmware that stores CondRefOf twice to Local0 expects.
+ */
+static bool machine_language_rebinds(MachineLanguageLoad_t *load, const MachineLanguageValue_t *slot,
+                                     const MachineLanguageValue_t *value)
+{
+    MachineLanguageLocation_t location;
+
+    if (machine_language_is_reference(value->kind) ||
+        machine_language_locate(load, slot, false, &location) != MACHINE_LANGUAGE_OK)
+        return true;
+    return location.kind == MACHINE_LANGUAGE_LOCATION_NODE &&
+           machine_language_holds_no_data(
+               advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, location.node)
+                   ->type);
+}
+
+/**
  * @brief Stores a value where a target says, and takes the references both hold (§5.2): NullName
- *        drops it; a local is overwritten, unless it holds a reference, which takes the value in
- *        place; an argument is overwritten, or what the reference it holds refers to; a named object
- *        takes it, through the reference it holds if it holds one; Debug counts it; a reference is
- *        followed; a value that is no target, such as a constant, takes nothing.
+ *        drops it; a local is overwritten, unless it holds a reference to data, which takes the value
+ *        in place; an argument is overwritten, or what the reference it holds refers to; a named
+ *        object takes it, through the reference it holds if it holds one; Debug counts it; a
+ *        reference is followed; a value that is no target, such as a constant, takes nothing.
  */
 static MachineLanguageStatus_t machine_language_store(MachineLanguageLoad_t *load, MachineLanguageValue_t *value,
                                                       MachineLanguageValue_t *target)
@@ -1010,7 +1029,8 @@ static MachineLanguageStatus_t machine_language_store(MachineLanguageLoad_t *loa
              target->auxiliary == MACHINE_LANGUAGE_TARGET_ARGUMENT)
     {
         slot = machine_language_slot(evaluation, target);
-        if (!machine_language_is_reference(slot->kind))
+        if (!machine_language_is_reference(slot->kind) ||
+            (target->auxiliary == MACHINE_LANGUAGE_TARGET_LOCAL && machine_language_rebinds(load, slot, value)))
         {
             const MachineLanguageLocation_t location = machine_language_frame_location(evaluation, target);
 
@@ -2643,8 +2663,32 @@ static MachineLanguageStatus_t machine_language_dereference_of(MachineLanguageLo
 }
 
 /**
+ * @brief Gives DerefOf (Index (...)) its result in DerefOf's place (§7.2, O8): what the reference
+ *        refers to, read at once and the reference, whose count it takes, released; where DerefOf
+ *        stands for a target, the reference itself, counted.
+ */
+static MachineLanguageStatus_t machine_language_read_at_once(MachineLanguageLoad_t *load,
+                                                             MachineLanguageValue_t *reference)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t value;
+
+    --evaluation->operator_count;
+    if (machine_language_names_target(evaluation))
+    {
+        ++evaluation->references_built;
+        return machine_language_deliver(load, *reference);
+    }
+
+    const MachineLanguageStatus_t status = machine_language_dereference(load, reference, &value);
+
+    machine_language_release(load, reference);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, value) : status;
+}
+
+/**
  * @brief Runs Index: a reference to an element of a Package, or to a byte of a Buffer or a String,
- *        never a copy (§5.2), counted unless DerefOf reads it at once (§7.2, O8).
+ *        never a copy (§5.2), counted; DerefOf (Index (...)) builds none (§7.2, O8).
  */
 static MachineLanguageStatus_t machine_language_index(MachineLanguageLoad_t *load)
 {
@@ -2678,11 +2722,10 @@ static MachineLanguageStatus_t machine_language_index(MachineLanguageLoad_t *loa
                                                                         MACHINE_LANGUAGE_VALUE(REFERENCE_BYTE);
     reference.handle = source.handle;
     reference.payload = index;
-    evaluation->references_built +=
-        (receiver != NULL && receiver->opcode == MACHINE_LANGUAGE_OPCODE(DEREFERENCE_OF) &&
-         target.kind == MACHINE_LANGUAGE_TARGET && target.auxiliary == MACHINE_LANGUAGE_TARGET_NONE) ?
-            0u :
-            1u;
+    if (receiver != NULL && receiver->opcode == MACHINE_LANGUAGE_OPCODE(DEREFERENCE_OF) &&
+        target.kind == MACHINE_LANGUAGE_TARGET && target.auxiliary == MACHINE_LANGUAGE_TARGET_NONE)
+        return machine_language_read_at_once(load, &reference);
+    ++evaluation->references_built;
     return machine_language_store_and_deliver(load, reference, &target);
 }
 

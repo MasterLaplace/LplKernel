@@ -1109,9 +1109,12 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     }
 
     uint8_t *target = (uint8_t *) (buffer + 1);
+    const bool backwards =
+        bytes >= target && bytes < target + buffer->length && (uint64_t) (bytes - target) * 8u < offset;
 
-    for (uint32_t bit = 0u; bit < length; ++bit)
+    for (uint32_t step = 0u; step < length; ++step)
     {
+        const uint32_t bit = backwards ? length - 1u - step : step;
         const uint64_t index = (uint64_t) offset + bit;
         const uint32_t value = (bit / 8u < count) ? machine_language_bit(bytes, bit) : 0u;
 

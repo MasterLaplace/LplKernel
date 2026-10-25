@@ -528,7 +528,8 @@ advanced_configuration_and_power_interface_machine_language_buffer_field_read(
 /**
  * @brief Writes a value into a buffer field's bits, zero-extended, the Buffer's other bits kept: an
  *        Integer whole, a String or a Buffer through its last field-sized chunk, as Windows writes it
- *        chunk after chunk; a field of length 0 takes nothing.
+ *        chunk after chunk; a field of length 0 takes nothing. A source that is the field's own Buffer
+ *        is taken as it was before the write.
  *
  * @param heap         The heap.
  * @param field        The buffer field.

@@ -115,7 +115,8 @@ static void references_close(KernelTest_t *test)
  *        is True for a name that exists, \_OSI included, and False for one that does not or that only
  *        an External declares; a reference to a local that a method returns gives its caller the
  *        value (§6.3); a reference to a table's local lives as long as the table's locals do; a store
- *        through a local keeps the type of what it refers to, and one to an element that holds a
+ *        through a local keeps the type of what it refers to, unless the value is a reference or what
+ *        it refers to holds no data, which replace the reference; one to an element that holds a
  *        reference writes through it; a reference to a local or to a name of a method that returned
  *        fails, and Return gives the caller what it referred to instead; a package element that names
  *        the name referring to it fails after 8 names (§5.1).
@@ -132,43 +133,51 @@ KERNEL_TEST(references_follow_names_locals_and_arguments)
         0x08u, 'R',   '0',   '1',   '1',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '2',   0x0Au, 0x07u, 0x08u, 'R',
         '0',   '1',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '4',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',
         '5',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '6',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '7',   0x0Au,
-        0x07u, 0x08u, 'P',   'K',   'G',   'L',   0x12u, 0x06u, 0x01u, 'A',   'L',   'S',   'L',   0x08u, 'A',   'L',
-        'S',   'L',   0x0Au, 0x00u, 0x14u, 0x10u, 'M',   'D',   'R',   'F',   0x00u, 0x70u, 0x71u, 'I',   'N',   'T',
-        '0',   0x60u, 0xA4u, 0x83u, 0x60u, 0x14u, 0x14u, 'M',   'L',   'O',   'C',   0x00u, 0x70u, 0x0Au, 0x05u, 0x61u,
-        0x70u, 0x71u, 0x61u, 0x60u, 0x70u, 0x0Au, 0x09u, 0x60u, 0xA4u, 0x61u, 0x14u, 0x0Au, 'M',   'S',   'E',   'T',
-        0x01u, 0x70u, 0x0Au, 0x07u, 0x68u, 0x14u, 0x12u, 'M',   'A',   'R',   'G',   0x00u, 0x70u, 0x0Au, 0x01u, 0x60u,
-        'M',   'S',   'E',   'T',   0x71u, 0x60u, 0xA4u, 0x60u, 0x14u, 0x15u, 'M',   'C',   'O',   'N',   0x00u, 0xA0u,
-        0x0Bu, 0x5Bu, 0x12u, 'I',   'N',   'T',   '0',   0x60u, 0xA4u, 0x83u, 0x60u, 0xA4u, 0x0Au, 0x00u, 0x14u, 0x0Du,
-        'M',   'R',   'E',   'T',   0x00u, 0x70u, 0x0Au, 0x42u, 0x60u, 0xA4u, 0x71u, 0x60u, 0x14u, 0x1Bu, 'M',   'C',
-        'H',   'N',   0x00u, 0x70u, 0x0Au, 0x10u, 0x60u, 0x70u, 0x71u, 0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u, 0x70u,
-        0x71u, 0x62u, 0x63u, 0x75u, 0x63u, 0xA4u, 0x83u, 0x63u, 0x14u, 0x12u, 'M',   'S',   'T',   'R',   0x00u, 0x70u,
-        0x0Du, 0x5Cu, 'I',   'N',   'T',   '0',   0x00u, 0x60u, 0xA4u, 0x83u, 0x60u, 0x14u, 0x18u, 'M',   'K',   'I',
-        'N',   0x00u, 0x70u, 0x0Du, 0x61u, 0x62u, 0x63u, 0x00u, 0x61u, 0x70u, 0x71u, 0x61u, 0x60u, 0x70u, 0x0Au, 0x41u,
-        0x60u, 0xA4u, 0x8Eu, 0x61u, 0x14u, 0x12u, 'M',   'K',   'R',   'F',   0x01u, 0x70u, 0x0Au, 0x99u, 0x60u, 0x70u,
-        0x71u, 0x60u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x12u, 'M',   'R',   'D',   'F',   0x01u, 0x70u, 0x0Au,
-        0x5Au, 0x60u, 0xA4u, 0x83u, 0x83u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x18u, 'M',   'D',   'N',   'G',
-        0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'R',   'F',   0x60u, 0xA4u, 'M',   'R',
-        'D',   'F',   0x60u, 0x14u, 0x13u, 'M',   'T',   'M',   'P',   0x08u, 0x08u, 'T',   'M',   'P',   'N',   0x0Au,
-        0x11u, 0xA4u, 0x71u, 'T',   'M',   'P',   'N',   0x14u, 0x18u, 'M',   'K',   'T',   'P',   0x09u, 0x08u, 'T',
-        'M',   'P',   'N',   0x0Au, 0x33u, 0x70u, 0x71u, 'T',   'M',   'P',   'N',   0x88u, 0x68u, 0x0Au, 0x00u, 0x00u,
-        0x14u, 0x15u, 'M',   'R',   'T',   'P',   0x09u, 0x08u, 'O',   'T',   'H',   'R',   0x0Au, 0x22u, 0xA4u, 0x83u,
-        0x83u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x18u, 'M',   'D',   'T',   'P',   0x00u, 0x70u, 0x12u, 0x04u,
-        0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'T',   'P',   0x60u, 0xA4u, 'M',   'R',   'T',   'P',   0x60u, 0x14u,
-        0x1Au, 'M',   'D',   'N',   'C',   0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'R',
-        'F',   0x60u, 0xA4u, 0x83u, 0x83u, 0x88u, 0x60u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x23u, 'M',   'E',   'L',   'R',
-        0x00u, 0x70u, 0x0Au, 0x05u, 0x61u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 0x70u, 0x71u, 0x61u, 0x88u,
-        0x60u, 0x0Au, 0x00u, 0x00u, 0x70u, 0x0Au, 0x09u, 0x88u, 0x60u, 0x0Au, 0x00u, 0x00u, 0xA4u, 0x61u, 0x70u, 'M',
-        'D',   'R',   'F',   'R',   '0',   '0',   '0',   0x70u, 'M',   'L',   'O',   'C',   'R',   '0',   '0',   '1',
-        0x70u, 'M',   'A',   'R',   'G',   'R',   '0',   '0',   '2',   0x70u, 'M',   'C',   'O',   'N',   'R',   '0',
-        '0',   '3',   0x70u, 0x5Bu, 0x12u, 0x5Cu, 'U',   'N',   'D',   'F',   0x00u, 'R',   '0',   '0',   '4',   0x70u,
-        0x5Bu, 0x12u, 0x5Cu, '_',   'O',   'S',   'I',   0x00u, 'R',   '0',   '0',   '5',   0x70u, 0x5Bu, 0x12u, 0x5Cu,
-        'N',   'O',   'P',   'E',   0x00u, 'R',   '0',   '0',   '6',   0x70u, 'M',   'R',   'E',   'T',   'R',   '0',
-        '0',   '7',   0x70u, 'M',   'C',   'H',   'N',   'R',   '0',   '0',   '8',   0x70u, 'M',   'S',   'T',   'R',
-        'R',   '0',   '0',   '9',   0x70u, 0x0Au, 0x77u, 0x60u, 0x70u, 0x71u, 0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u,
-        0x70u, 0x83u, 0x62u, 'R',   '0',   '1',   '0',   0x70u, 'M',   'K',   'I',   'N',   'R',   '0',   '1',   '1',
-        0x70u, 'M',   'D',   'N',   'G',   'R',   '0',   '1',   '2',   0x70u, 'M',   'T',   'M',   'P',   'R',   '0',
-        '1',   '3',   0x70u, 'M',   'D',   'T',   'P',   'R',   '0',   '1',   '4',   0x70u, 'M',   'D',   'N',   'C',
-        'R',   '0',   '1',   '5',   0x70u, 'M',   'E',   'L',   'R',   'R',   '0',   '1',   '6',   0x9Du, 0x88u, 'P',
+        0x07u, 0x08u, 'R',   '0',   '1',   '8',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '9',   0x0Au, 0x07u, 0x08u,
+        'P',   'K',   'G',   'L',   0x12u, 0x06u, 0x01u, 'A',   'L',   'S',   'L',   0x08u, 'A',   'L',   'S',   'L',
+        0x0Au, 0x00u, 0x14u, 0x10u, 'M',   'D',   'R',   'F',   0x00u, 0x70u, 0x71u, 'I',   'N',   'T',   '0',   0x60u,
+        0xA4u, 0x83u, 0x60u, 0x14u, 0x14u, 'M',   'L',   'O',   'C',   0x00u, 0x70u, 0x0Au, 0x05u, 0x61u, 0x70u, 0x71u,
+        0x61u, 0x60u, 0x70u, 0x0Au, 0x09u, 0x60u, 0xA4u, 0x61u, 0x14u, 0x0Au, 'M',   'S',   'E',   'T',   0x01u, 0x70u,
+        0x0Au, 0x07u, 0x68u, 0x14u, 0x12u, 'M',   'A',   'R',   'G',   0x00u, 0x70u, 0x0Au, 0x01u, 0x60u, 'M',   'S',
+        'E',   'T',   0x71u, 0x60u, 0xA4u, 0x60u, 0x14u, 0x15u, 'M',   'C',   'O',   'N',   0x00u, 0xA0u, 0x0Bu, 0x5Bu,
+        0x12u, 'I',   'N',   'T',   '0',   0x60u, 0xA4u, 0x83u, 0x60u, 0xA4u, 0x0Au, 0x00u, 0x14u, 0x0Du, 'M',   'R',
+        'E',   'T',   0x00u, 0x70u, 0x0Au, 0x42u, 0x60u, 0xA4u, 0x71u, 0x60u, 0x14u, 0x1Bu, 'M',   'C',   'H',   'N',
+        0x00u, 0x70u, 0x0Au, 0x10u, 0x60u, 0x70u, 0x71u, 0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u, 0x70u, 0x71u, 0x62u,
+        0x63u, 0x75u, 0x63u, 0xA4u, 0x83u, 0x63u, 0x14u, 0x12u, 'M',   'S',   'T',   'R',   0x00u, 0x70u, 0x0Du, 0x5Cu,
+        'I',   'N',   'T',   '0',   0x00u, 0x60u, 0xA4u, 0x83u, 0x60u, 0x14u, 0x18u, 'M',   'K',   'I',   'N',   0x00u,
+        0x70u, 0x0Du, 0x61u, 0x62u, 0x63u, 0x00u, 0x61u, 0x70u, 0x71u, 0x61u, 0x60u, 0x70u, 0x0Au, 0x41u, 0x60u, 0xA4u,
+        0x8Eu, 0x61u, 0x14u, 0x12u, 'M',   'K',   'R',   'F',   0x01u, 0x70u, 0x0Au, 0x99u, 0x60u, 0x70u, 0x71u, 0x60u,
+        0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x12u, 'M',   'R',   'D',   'F',   0x01u, 0x70u, 0x0Au, 0x5Au, 0x60u,
+        0xA4u, 0x83u, 0x83u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x18u, 'M',   'D',   'N',   'G',   0x00u, 0x70u,
+        0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'R',   'F',   0x60u, 0xA4u, 'M',   'R',   'D',   'F',
+        0x60u, 0x14u, 0x13u, 'M',   'T',   'M',   'P',   0x08u, 0x08u, 'T',   'M',   'P',   'N',   0x0Au, 0x11u, 0xA4u,
+        0x71u, 'T',   'M',   'P',   'N',   0x14u, 0x18u, 'M',   'K',   'T',   'P',   0x09u, 0x08u, 'T',   'M',   'P',
+        'N',   0x0Au, 0x33u, 0x70u, 0x71u, 'T',   'M',   'P',   'N',   0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x15u,
+        'M',   'R',   'T',   'P',   0x09u, 0x08u, 'O',   'T',   'H',   'R',   0x0Au, 0x22u, 0xA4u, 0x83u, 0x83u, 0x88u,
+        0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x18u, 'M',   'D',   'T',   'P',   0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au,
+        0x00u, 0x60u, 'M',   'K',   'T',   'P',   0x60u, 0xA4u, 'M',   'R',   'T',   'P',   0x60u, 0x14u, 0x1Au, 'M',
+        'D',   'N',   'C',   0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'R',   'F',   0x60u,
+        0xA4u, 0x83u, 0x83u, 0x88u, 0x60u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x28u, 'M',   'C',   'R',   '2',   0x00u, 0x70u,
+        0x0Au, 0x00u, 0x61u, 0xA0u, 0x0Bu, 0x5Bu, 0x12u, 0x5Cu, 'M',   'D',   'R',   'F',   0x60u, 0x75u, 0x61u, 0xA0u,
+        0x0Bu, 0x5Bu, 0x12u, 0x5Cu, 'I',   'N',   'T',   '0',   0x60u, 0x75u, 0x61u, 0xA4u, 0x72u, 0x61u, 0x83u, 0x60u,
+        0x00u, 0x14u, 0x2Eu, 'M',   'C',   'R',   'B',   0x01u, 0xA0u, 0x0Au, 0x5Bu, 0x12u, 0x5Cu, '_',   'O',   'S',
+        'I',   0x60u, 0xA3u, 0x70u, 0x68u, 0x60u, 0x8Au, 0x60u, 0x0Au, 0x00u, 'C',   'D',   'W',   '1',   0x7Du, 'C',
+        'D',   'W',   '1',   0x0Au, 0x10u, 'C',   'D',   'W',   '1',   0xA4u, 0x83u, 0x88u, 0x60u, 0x0Au, 0x00u, 0x00u,
+        0x14u, 0x23u, 'M',   'E',   'L',   'R',   0x00u, 0x70u, 0x0Au, 0x05u, 0x61u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au,
+        0x00u, 0x60u, 0x70u, 0x71u, 0x61u, 0x88u, 0x60u, 0x0Au, 0x00u, 0x00u, 0x70u, 0x0Au, 0x09u, 0x88u, 0x60u, 0x0Au,
+        0x00u, 0x00u, 0xA4u, 0x61u, 0x70u, 'M',   'D',   'R',   'F',   'R',   '0',   '0',   '0',   0x70u, 'M',   'L',
+        'O',   'C',   'R',   '0',   '0',   '1',   0x70u, 'M',   'A',   'R',   'G',   'R',   '0',   '0',   '2',   0x70u,
+        'M',   'C',   'O',   'N',   'R',   '0',   '0',   '3',   0x70u, 0x5Bu, 0x12u, 0x5Cu, 'U',   'N',   'D',   'F',
+        0x00u, 'R',   '0',   '0',   '4',   0x70u, 0x5Bu, 0x12u, 0x5Cu, '_',   'O',   'S',   'I',   0x00u, 'R',   '0',
+        '0',   '5',   0x70u, 0x5Bu, 0x12u, 0x5Cu, 'N',   'O',   'P',   'E',   0x00u, 'R',   '0',   '0',   '6',   0x70u,
+        'M',   'R',   'E',   'T',   'R',   '0',   '0',   '7',   0x70u, 'M',   'C',   'H',   'N',   'R',   '0',   '0',
+        '8',   0x70u, 'M',   'S',   'T',   'R',   'R',   '0',   '0',   '9',   0x70u, 0x0Au, 0x77u, 0x60u, 0x70u, 0x71u,
+        0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u, 0x70u, 0x83u, 0x62u, 'R',   '0',   '1',   '0',   0x70u, 'M',   'K',
+        'I',   'N',   'R',   '0',   '1',   '1',   0x70u, 'M',   'D',   'N',   'G',   'R',   '0',   '1',   '2',   0x70u,
+        'M',   'T',   'M',   'P',   'R',   '0',   '1',   '3',   0x70u, 'M',   'D',   'T',   'P',   'R',   '0',   '1',
+        '4',   0x70u, 'M',   'D',   'N',   'C',   'R',   '0',   '1',   '5',   0x70u, 'M',   'E',   'L',   'R',   'R',
+        '0',   '1',   '6',   0x70u, 'M',   'C',   'R',   '2',   'R',   '0',   '1',   '8',   0x70u, 'M',   'C',   'R',
+        'B',   0x11u, 0x07u, 0x0Au, 0x04u, 0x01u, 0x00u, 0x00u, 0x00u, 'R',   '0',   '1',   '9',   0x9Du, 0x88u, 'P',
         'K',   'G',   'L',   0x0Au, 0x00u, 0x00u, 'A',   'L',   'S',   'L',   0x70u, 0x83u, 0x88u, 'P',   'K',   'G',
         'L',   0x0Au, 0x00u, 0x00u, 'R',   '0',   '1',   '7',
     };
@@ -203,6 +212,12 @@ KERNEL_TEST(references_follow_names_locals_and_arguments)
     kernel_test_check(test, references_integer("R016") == 9u,
                       "a store to an element that holds a reference writes through it, as Windows does");
     kernel_test_check(
+        test, references_integer("R018") == 0x1236u,
+        "CondRefOf to a Local0 that refers to a method replaces the reference, as firmware's _PPC code needs");
+    kernel_test_check(
+        test, references_integer("R019") == 0x11u,
+        "a Buffer stored to a Local0 that refers to \\_OSI replaces the reference, as firmware's _OSC needs");
+    kernel_test_check(
         test,
         references_integer("R017") == 7u &&
             references_failed(
@@ -221,7 +236,7 @@ KERNEL_TEST(references_follow_names_locals_and_arguments)
  *        through it changes the named object, Increment works in place, an element that is a name is
  *        resolved when read, an index past the end fails with index_out_of_range, and a store through
  *        an argument that holds an Index overwrites the element. DerefOf (Index (...)) builds no
- *        reference (§7.2, O8).
+ *        reference, unless it names a target, as ObjectType's operand does (§7.2, O8).
  */
 KERNEL_TEST(index_refers_to_the_element_not_a_copy)
 {
@@ -271,8 +286,8 @@ KERNEL_TEST(index_refers_to_the_element_not_a_copy)
                 1u,
         "Index (PKG0, 3) fails with index_out_of_range");
     kernel_test_check(test, references_integer("R007") == 2u, "Arg0 = \"STR\" through Index (PKG0, 0) makes a String");
-    kernel_test_check(test, references_load.evaluation.references_built == 7u,
-                      "the seven Index results that are not read by DerefOf are the only references built");
+    kernel_test_check(test, references_load.evaluation.references_built == 8u,
+                      "eight Index results build references: DerefOf reads the others at once");
     references_close(test);
 }
 
@@ -312,8 +327,9 @@ KERNEL_TEST(match_gives_the_first_element_both_tests_accept)
  * @brief Buffer fields read and write their bits (§5.2): the fixed-width ones read as Integers,
  *        CreateField as a Buffer; a write changes only the field's bits; a field over an argument
  *        writes the argument's Buffer, as _OSC does; CreateField past the Buffer fails with
- *        index_out_of_range (§6.3), and a field of length 0 reads as an empty Buffer and writes
- *        nothing.
+ *        index_out_of_range (§6.3), as does a read of a field past its Buffer; a field of length 0
+ *        reads as an empty Buffer and writes nothing; a field that takes its own Buffer takes it as it
+ *        was before the store.
  */
 KERNEL_TEST(buffer_fields_read_and_write_their_bits)
 {
@@ -324,12 +340,14 @@ KERNEL_TEST(buffer_fields_read_and_write_their_bits)
         'D',   '0',   0x8Fu, 'B',   'U',   'F',   '0',   0x0Au, 0x00u, 'Q',   'W',   'D',   '0',   0x8Du, 'B',   'U',
         'F',   '0',   0x0Au, 0x09u, 'B',   'I',   'T',   '0',   0x5Bu, 0x13u, 'B',   'U',   'F',   '0',   0x0Au, 0x04u,
         0x0Au, 0x0Cu, 'F',   'L',   'D',   '0',   0x08u, 'B',   'U',   'F',   '1',   0x11u, 0x03u, 0x0Au, 0x04u, 0x8Au,
-        'B',   'U',   'F',   '1',   0x0Au, 0x02u, 'P',   'A',   'S',   'T',   0x08u, 'R',   '0',   '0',   '0',   0x0Au,
-        0x07u, 0x08u, 'R',   '0',   '0',   '1',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '2',   0x0Au, 0x07u, 0x08u,
-        'R',   '0',   '0',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '4',   0x0Au, 0x07u, 0x08u, 'R',   '0',
-        '0',   '5',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '6',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '7',
-        0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '8',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '9',   0x0Au, 0x00u,
-        0x08u, 'R',   '0',   '1',   '0',   0x0Au, 0x07u, 0x14u, 0x23u, 'M',   'O',   'S',   'C',   0x01u, 0x8Au, 0x68u,
+        'B',   'U',   'F',   '1',   0x0Au, 0x02u, 'P',   'A',   'S',   'T',   0x08u, 'B',   'U',   'F',   '2',   0x11u,
+        0x05u, 0x0Au, 0x02u, 0xFFu, 0x00u, 0x5Bu, 0x13u, 'B',   'U',   'F',   '2',   0x0Au, 0x04u, 0x0Au, 0x0Cu, 'F',
+        'L',   'D',   '2',   0x08u, 'R',   '0',   '0',   '0',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '1',   0x0Au,
+        0x07u, 0x08u, 'R',   '0',   '0',   '2',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '3',   0x0Au, 0x07u, 0x08u,
+        'R',   '0',   '0',   '4',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '5',   0x0Au, 0x00u, 0x08u, 'R',   '0',
+        '0',   '6',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '7',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '8',
+        0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '9',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '1',   '0',   0x0Au, 0x07u,
+        0x08u, 'R',   '0',   '1',   '1',   0x0Au, 0x00u, 0x14u, 0x23u, 'M',   'O',   'S',   'C',   0x01u, 0x8Au, 0x68u,
         0x0Au, 0x00u, 'C',   'D',   'W',   '1',   0x8Au, 0x68u, 0x0Au, 0x04u, 'C',   'D',   'W',   '2',   0x7Du, 'C',
         'D',   'W',   '1',   0x0Au, 0x10u, 'C',   'D',   'W',   '2',   0xA4u, 0x68u, 0x14u, 0x1Au, 'M',   'B',   'I',
         'G',   0x00u, 0x5Bu, 0x13u, 'B',   'U',   'F',   '1',   0x0Cu, 0xF0u, 0xFFu, 0xFFu, 0xFFu, 0x0Au, 0x20u, 'F',
@@ -343,12 +361,14 @@ KERNEL_TEST(buffer_fields_read_and_write_their_bits)
         'D',   '0',   0x9Du, 'M',   'O',   'S',   'C',   0x11u, 0x0Bu, 0x0Au, 0x08u, 0x01u, 0x02u, 0x00u, 0x00u, 0x00u,
         0x00u, 0x00u, 0x00u, 'R',   '0',   '0',   '6',   0x9Du, 'B',   'U',   'F',   '0',   'R',   '0',   '0',   '7',
         0x70u, 'M',   'B',   'I',   'G',   'R',   '0',   '0',   '8',   0x9Du, 'M',   'E',   'M',   'P',   'R',   '0',
-        '0',   '9',   0x70u, 'P',   'A',   'S',   'T',   'R',   '0',   '1',   '0',
+        '0',   '9',   0x70u, 'P',   'A',   'S',   'T',   'R',   '0',   '1',   '0',   0x70u, 'B',   'U',   'F',   '2',
+        'F',   'L',   'D',   '2',   0x9Du, 'B',   'U',   'F',   '2',   'R',   '0',   '1',   '1',
     };
     static const uint8_t created[] = {0x30u, 0x02u};
     static const uint8_t answered[] = {0x01u, 0x02u, 0x00u, 0x00u, 0x11u, 0x02u, 0x00u, 0x00u};
     static const uint8_t written[] = {0x01u, 0xA8u, 0x5Au, 0x5Au, 0x89u, 0xABu, 0xCDu, 0xEFu};
     static const uint8_t zeros[] = {0x00u, 0x00u, 0x00u, 0x00u};
+    static const uint8_t overlapped[] = {0xFFu, 0x0Fu};
 
     if (!references_run(test, aml, sizeof(aml)))
         return;
@@ -382,6 +402,10 @@ KERNEL_TEST(buffer_fields_read_and_write_their_bits)
             references_holds("BUF1", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, zeros,
                              sizeof(zeros)),
         "a field of length 0 reads as an empty Buffer and writes nothing");
+    kernel_test_check(test,
+                      references_holds("R011", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                                       overlapped, sizeof(overlapped)),
+                      "FLD2, bits 4 to 15 of BUF2, takes BUF2's first 12 bits as they were before the store");
     references_close(test);
 }
 
