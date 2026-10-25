@@ -109,11 +109,8 @@ static uint64_t machine_language_mask(const MachineLanguageLoad_t *load, uint64_
  */
 static MachineLanguageValue_t machine_language_integer(uint64_t integer)
 {
-    MachineLanguageValue_t value;
+    const MachineLanguageValue_t value = {.kind = MACHINE_LANGUAGE_VALUE(INTEGER), .payload = integer};
 
-    memset(&value, 0, sizeof(value));
-    value.kind = MACHINE_LANGUAGE_VALUE(INTEGER);
-    value.payload = integer;
     return value;
 }
 
@@ -130,12 +127,10 @@ static MachineLanguageValue_t machine_language_truth(const MachineLanguageLoad_t
  */
 static MachineLanguageValue_t machine_language_target(MachineLanguageTargetKind_t kind, uint32_t handle)
 {
-    MachineLanguageValue_t value;
+    const MachineLanguageValue_t value = {.kind = MACHINE_LANGUAGE_TARGET,
+                                          .auxiliary = (uint16_t) kind,
+                                          .handle = handle};
 
-    memset(&value, 0, sizeof(value));
-    value.kind = MACHINE_LANGUAGE_TARGET;
-    value.auxiliary = (uint16_t) kind;
-    value.handle = handle;
     return value;
 }
 
@@ -210,6 +205,13 @@ static MachineLanguageStatus_t machine_language_integer_of(MachineLanguageLoad_t
                                                            const MachineLanguageValue_t *value, uint64_t *out_integer)
 {
     bool forbidden = false;
+
+    if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+    {
+        *out_integer = value->payload;
+        return MACHINE_LANGUAGE_OK;
+    }
+
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
         &load->heap, value, machine_language_bits(load), out_integer, &forbidden);
 
@@ -334,7 +336,7 @@ static MachineLanguageStatus_t machine_language_overwrite(MachineLanguageLoad_t 
         return status;
     machine_language_release(load, slot);
     *slot = *value;
-    memset(value, 0, sizeof(*value));
+    value->kind = MACHINE_LANGUAGE_VALUE(UNINITIALIZED);
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -878,8 +880,8 @@ static MachineLanguageStatus_t machine_language_name_element(MachineLanguageLoad
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    memset(&value, 0, sizeof(value));
     value.kind = MACHINE_LANGUAGE_VALUE(NAME_REFERENCE);
+    value.flags = 0u;
     value.auxiliary = frame->table;
     value.handle = machine_language_block(evaluation)->scope;
     value.payload = frame->pc;
@@ -1563,7 +1565,7 @@ static MachineLanguageStatus_t machine_language_concatenate(MachineLanguageLoad_
     MachineLanguageValue_t target = machine_language_pop(evaluation);
     MachineLanguageValue_t second = machine_language_pop(evaluation);
     MachineLanguageValue_t first = machine_language_pop(evaluation);
-    MachineLanguageValue_t converted;
+    MachineLanguageValue_t converted = {0};
     MachineLanguageValue_t result = {0};
     uint8_t first_scratch[8];
     uint8_t second_scratch[8];
@@ -1573,7 +1575,6 @@ static MachineLanguageStatus_t machine_language_concatenate(MachineLanguageLoad_
     uint32_t second_length = 0u;
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
 
-    memset(&converted, 0, sizeof(converted));
     if (first.kind == MACHINE_LANGUAGE_VALUE(INTEGER) || first.kind == MACHINE_LANGUAGE_VALUE(STRING) ||
         first.kind == MACHINE_LANGUAGE_VALUE(BUFFER))
     {
@@ -1668,7 +1669,7 @@ static MachineLanguageStatus_t machine_language_to_string(MachineLanguageLoad_t 
 
 /**
  * @brief Runs Mid: the slice of a String or a Buffer that starts at the index and runs the length
- *        asked, cut at its end; past its end, an empty one.
+ *        asked, cut at its end; past its end, an empty one. An Integer is read as a Buffer (§5.2).
  */
 static MachineLanguageStatus_t machine_language_mid(MachineLanguageLoad_t *load)
 {
@@ -1679,6 +1680,9 @@ static MachineLanguageStatus_t machine_language_mid(MachineLanguageLoad_t *load)
     MachineLanguageValue_t source = machine_language_pop(evaluation);
     MachineLanguageValue_t result = {0};
 
+    if (status == MACHINE_LANGUAGE_OK && source.kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+        status = advanced_configuration_and_power_interface_machine_language_value_to_buffer(
+            &load->heap, &load->space, &source, machine_language_bits(load), &source);
     if (status == MACHINE_LANGUAGE_OK && source.kind != MACHINE_LANGUAGE_VALUE(STRING) &&
         source.kind != MACHINE_LANGUAGE_VALUE(BUFFER))
         status = MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);

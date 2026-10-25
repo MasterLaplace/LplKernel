@@ -14,6 +14,9 @@
 #define MACHINE_LANGUAGE_OBJECT_DYING                                                                                  \
     0x80u /**< Header flag: the object has no reference left and waits to be freed, its count linking the next. */
 #define MACHINE_LANGUAGE_SATURATED 0xFFFFFFFFu /**< A reference count that never moves again (§3.5). */
+#define MACHINE_LANGUAGE_FINE_CLASS_BYTES                                                                              \
+    256u /**< Small blocks up to this size round up to the alignment; larger ones to a quarter of a power of two. */
+#define MACHINE_LANGUAGE_CLASSES_PER_DOUBLING 4u /**< Size classes between two powers of two past 256 bytes. */
 #define MACHINE_LANGUAGE_RUN_BYTES                                                                                     \
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_RUN_PAGES *                                    \
      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES) /**< Bytes of a run of small objects. */
@@ -127,10 +130,45 @@ static uint64_t machine_language_block_bytes(uint64_t payload)
 }
 
 /**
- * @brief The size class of a small block of @p bytes, a multiple of the alignment below
- *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES.
+ * @brief The size class of a small object of @p bytes, a multiple of the alignment below
+ *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES: one per multiple
+ *        of the alignment up to MACHINE_LANGUAGE_FINE_CLASS_BYTES, then four per power of two, so that an
+ *        object that grows keeps meeting blocks its smaller self gave back.
  */
-static uint32_t machine_language_size_class(uint32_t bytes) { return bytes / MACHINE_LANGUAGE_OBJECT_ALIGNMENT - 1u; }
+static uint32_t machine_language_size_class(uint32_t bytes)
+{
+    uint32_t low = MACHINE_LANGUAGE_FINE_CLASS_BYTES;
+    uint32_t size_class = MACHINE_LANGUAGE_FINE_CLASS_BYTES / MACHINE_LANGUAGE_OBJECT_ALIGNMENT;
+
+    if (bytes <= MACHINE_LANGUAGE_FINE_CLASS_BYTES)
+        return bytes / MACHINE_LANGUAGE_OBJECT_ALIGNMENT - 1u;
+    while (bytes > 2u * low)
+    {
+        low *= 2u;
+        size_class += MACHINE_LANGUAGE_CLASSES_PER_DOUBLING;
+    }
+    return size_class +
+           (bytes - low + low / MACHINE_LANGUAGE_CLASSES_PER_DOUBLING - 1u) /
+               (low / MACHINE_LANGUAGE_CLASSES_PER_DOUBLING) -
+           1u;
+}
+
+/**
+ * @brief The bytes of a block of size class @p size_class.
+ */
+static uint32_t machine_language_class_bytes(uint32_t size_class)
+{
+    const uint32_t fine = MACHINE_LANGUAGE_FINE_CLASS_BYTES / MACHINE_LANGUAGE_OBJECT_ALIGNMENT;
+
+    if (size_class < fine)
+        return (size_class + 1u) * MACHINE_LANGUAGE_OBJECT_ALIGNMENT;
+
+    const uint32_t low = MACHINE_LANGUAGE_FINE_CLASS_BYTES
+                         << ((size_class - fine) / MACHINE_LANGUAGE_CLASSES_PER_DOUBLING);
+
+    return low + ((size_class - fine) % MACHINE_LANGUAGE_CLASSES_PER_DOUBLING + 1u) *
+                     (low / MACHINE_LANGUAGE_CLASSES_PER_DOUBLING);
+}
 
 /**
  * @brief Takes a run of @p pages pages from the arena, in the first slot a large object gave back or
@@ -159,14 +197,14 @@ static MachineLanguageStatus_t machine_language_heap_take_run(MachineLanguageHea
 }
 
 /**
- * @brief Finds a small block of @p bytes: the one its size class freed last, or a new one cut from
- *        the current run, or from a new run when it does not fit.
+ * @brief Finds a block of @p size_class: the one its class freed last, or a new one cut from the
+ *        current run, or from a new run when it does not fit.
  */
 static MachineLanguageStatus_t machine_language_heap_take_small_block(MachineLanguageHeap_t *heap,
-                                                                      MachineLanguageNamespace_t *space, uint32_t bytes,
-                                                                      uint32_t *out_handle)
+                                                                      MachineLanguageNamespace_t *space,
+                                                                      uint32_t size_class, uint32_t *out_handle)
 {
-    const uint32_t size_class = machine_language_size_class(bytes);
+    const uint32_t bytes = machine_language_class_bytes(size_class);
     uint32_t run = 0u;
 
     if (heap->free_blocks[size_class] != 0u)
@@ -202,10 +240,12 @@ static void machine_language_heap_free_block(MachineLanguageHeap_t *heap, Machin
     const uint32_t bytes =
         (uint32_t) machine_language_block_bytes(machine_language_payload_bytes(header->kind, header->length));
     const uint32_t run = (handle >> MACHINE_LANGUAGE_OBJECT_OFFSET_BITS) - 1u;
+    const bool large = bytes >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES;
+    const uint32_t size_class = large ? 0u : machine_language_size_class(bytes);
 
-    heap->object_bytes -= bytes;
+    heap->object_bytes -= large ? bytes : machine_language_class_bytes(size_class);
     ++heap->objects_freed;
-    if (bytes >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES)
+    if (large)
     {
         advanced_configuration_and_power_interface_machine_language_namespace_give_pages(space, heap->runs[run],
                                                                                          heap->run_pages[run]);
@@ -215,22 +255,27 @@ static void machine_language_heap_free_block(MachineLanguageHeap_t *heap, Machin
     }
     header->kind = MACHINE_LANGUAGE_OBJECT_FREE;
     header->flags = 0u;
-    header->references = heap->free_blocks[machine_language_size_class(bytes)];
-    heap->free_blocks[machine_language_size_class(bytes)] = handle;
+    header->references = heap->free_blocks[size_class];
+    heap->free_blocks[size_class] = handle;
 }
 
 /**
  * @brief Takes one reference off an object; one left with none joins @p chain, linked through its
- *        count, to be freed. A saturated count, and an object already on the chain, never move.
+ *        count, to be freed. A saturated count never moves; a release of an object already freed, or
+ *        already on the chain, changes nothing and is counted, since each is a defect.
  */
 static void machine_language_count_down(MachineLanguageHeap_t *heap, uint32_t handle, uint32_t *chain)
 {
     MachineLanguageHeader_t *header = advanced_configuration_and_power_interface_machine_language_object(heap, handle);
 
-    if (header == NULL || header->kind == MACHINE_LANGUAGE_OBJECT_FREE ||
-        header->references == MACHINE_LANGUAGE_SATURATED || header->references == 0u ||
-        (header->flags & MACHINE_LANGUAGE_OBJECT_DYING) != 0u)
+    if (header != NULL && header->references == MACHINE_LANGUAGE_SATURATED)
         return;
+    if (header == NULL || header->kind == MACHINE_LANGUAGE_OBJECT_FREE || header->references == 0u ||
+        (header->flags & MACHINE_LANGUAGE_OBJECT_DYING) != 0u)
+    {
+        ++heap->stale_releases;
+        return;
+    }
     if (--header->references != 0u)
         return;
     header->flags |= MACHINE_LANGUAGE_OBJECT_DYING;
@@ -353,6 +398,19 @@ machine_language_open_package(AdvancedConfigurationAndPowerInterfaceMachineLangu
     out_frame->count = (uint32_t) count;
     out_frame->end = end;
     *out_first = first;
+    return status;
+}
+
+/**
+ * @brief Gives back the packages a data object left open, each with what it holds, and returns
+ *        @p status: a data object that waits for the interpreter, or is malformed, keeps nothing.
+ */
+static MachineLanguageStatus_t machine_language_abandon(MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space,
+                                                        const MachineLanguagePackageFrame_t *frames, uint32_t depth,
+                                                        MachineLanguageStatus_t status)
+{
+    while (depth != 0u)
+        advanced_configuration_and_power_interface_machine_language_object_release(heap, space, frames[--depth].handle);
     return status;
 }
 
@@ -487,11 +545,10 @@ machine_language_buffer_string_length(const uint8_t *bytes, uint32_t length,
     uint64_t characters = (length != 0u) ? length - 1u : 0u;
 
     for (uint32_t index = 0u; index < length; ++index)
-        characters += (form == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_IMPLICIT)    ? 2u :
-                      (form == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_HEXADECIMAL) ? 4u :
-                      (bytes[index] >= 100u)                                                                   ? 3u :
-                      (bytes[index] >= 10u)                                                                    ? 2u :
-                                                                                                                 1u;
+        characters += (form != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_DECIMAL) ? 4u :
+                      (bytes[index] >= 100u)                                                               ? 3u :
+                      (bytes[index] >= 10u)                                                                ? 2u :
+                                                                                                             1u;
     return characters;
 }
 
@@ -510,7 +567,7 @@ static void machine_language_write_buffer_string(const uint8_t *bytes, uint32_t 
     {
         if (index != 0u)
             *out++ = implicit ? ' ' : ',';
-        if (!implicit && !decimal)
+        if (!decimal)
         {
             *out++ = '0';
             *out++ = 'x';
@@ -668,6 +725,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES;
 
     const uint32_t bytes = (uint32_t) machine_language_block_bytes(payload);
+    uint32_t block_bytes = bytes;
 
     if (bytes >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES)
     {
@@ -679,18 +737,21 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         handle = (run + 1u) << MACHINE_LANGUAGE_OBJECT_OFFSET_BITS;
     }
     else
-        status = machine_language_heap_take_small_block(heap, space, bytes, &handle);
+    {
+        block_bytes = machine_language_class_bytes(machine_language_size_class(bytes));
+        status = machine_language_heap_take_small_block(heap, space, machine_language_size_class(bytes), &handle);
+    }
     if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
         return status;
 
     MachineLanguageHeader_t *header = advanced_configuration_and_power_interface_machine_language_object(heap, handle);
 
-    memset(header, 0, bytes);
+    memset(header, 0, block_bytes);
     header->references = 1u;
     header->kind = kind;
     header->length = length;
     ++heap->objects;
-    heap->object_bytes += bytes;
+    heap->object_bytes += block_bytes;
     if (heap->object_bytes > heap->object_bytes_peak)
         heap->object_bytes_peak = heap->object_bytes;
     *out_handle = handle;
@@ -771,7 +832,9 @@ void advanced_configuration_and_power_interface_machine_language_value_release(M
 {
     if (advanced_configuration_and_power_interface_machine_language_value_holds_object(value->kind))
         advanced_configuration_and_power_interface_machine_language_object_release(heap, space, value->handle);
-    memset(value, 0, sizeof(*value));
+    value->kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_UNINITIALIZED;
+    value->flags = 0u;
+    value->handle = 0u;
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_value_allocate(
@@ -1024,7 +1087,9 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
             value.handle = frames[depth].handle;
         }
         else if (pc >= end)
-            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
+            return machine_language_abandon(
+                heap, space, frames, depth,
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED);
         else if (advanced_configuration_and_power_interface_machine_language_starts_name(source->bytes[pc]))
         {
             AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t name;
@@ -1034,7 +1099,7 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
             status = advanced_configuration_and_power_interface_machine_language_read_name_string(source->bytes, pc,
                                                                                                   end, &name, &after);
             if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-                return status;
+                return machine_language_abandon(heap, space, frames, depth, status);
             value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_NAME_REFERENCE;
             value.auxiliary = source->table;
             value.handle = source->scope;
@@ -1046,7 +1111,7 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
             status = advanced_configuration_and_power_interface_machine_language_read_opcode(source->bytes, pc, end,
                                                                                              &opcode, &after);
             if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-                return status;
+                return machine_language_abandon(heap, space, frames, depth, status);
             if (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_STRING_PREFIX)
                 status = machine_language_string(heap, space, source, after, end, &value, &pc);
             else if (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_BUFFER ||
@@ -1067,7 +1132,9 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
                 else if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
                 {
                     if (depth == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES)
-                        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+                        return machine_language_abandon(
+                            heap, space, frames, depth,
+                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK);
                     status = machine_language_open_package(heap, space, source, opcode, after, package_end,
                                                            &frames[depth], &first, &constant);
                     if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK && constant)
@@ -1084,7 +1151,7 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
                 value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER;
             }
             if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK || !constant)
-                return status;
+                return machine_language_abandon(heap, space, frames, depth, status);
         }
         if (depth == 0u)
         {
@@ -1098,6 +1165,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
         if (frame->index < frame->count)
             machine_language_elements(advanced_configuration_and_power_interface_machine_language_object(
                 heap, frame->handle))[frame->index] = value;
+        else
+            advanced_configuration_and_power_interface_machine_language_value_release(heap, space, &value);
         ++frame->index;
     }
 }

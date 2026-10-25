@@ -46,7 +46,8 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS                      \
     4096u /**< Elements of a VarPackage (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_SIZE_CLASSES                                \
-    255u /**< Size classes of small objects, one per multiple of 16 bytes below 4,096, headers included. */
+    32u /**< Size classes of small objects, headers included: every 16 bytes up to 256, then four per power of two     \
+           up to 4,096. */
 
 /**
  * @brief What a value is: the ACPI ObjectType numbers (ACPI 6.6 §19.6.97) for the data objects,
@@ -157,6 +158,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap {
                                                                                                                none. */
     uint32_t objects;            /**< Objects allocated. */
     uint32_t objects_freed;      /**< Of those, the ones freed: objects - objects_freed are alive. */
+    uint32_t stale_releases;     /**< Releases of an object already freed or left with no reference: each is a
+                                      defect, and changes nothing. */
     uint32_t object_bytes;       /**< Bytes the live objects' blocks take, headers included. */
     uint32_t object_bytes_peak;  /**< The most object_bytes reached. */
     uint32_t packages_padded;    /**< Packages with fewer initialisers than elements, padded with Uninitialized. */
@@ -323,12 +326,13 @@ advanced_configuration_and_power_interface_machine_language_value_to_integer_exp
  * @brief How an Integer or a Buffer is written as a String.
  */
 typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStringForm {
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_IMPLICIT = 0, /**< ACPI's implicit conversion:
-                                                                                         an Integer as 8 or 16
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_IMPLICIT = 0, /**< The implicit conversion, as
+                                                                                         ACPICA writes it: an
+                                                                                         Integer as 8 or 16
                                                                                          uppercase hexadecimal
-                                                                                         digits, a Buffer as two
-                                                                                         per byte separated by
-                                                                                         spaces. */
+                                                                                         digits, a Buffer as 0x and
+                                                                                         two digits per byte,
+                                                                                         separated by spaces. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_HEXADECIMAL,  /**< ToHexString: an Integer as 0x
                                                                                          and its digits, a Buffer as
                                                                                          0x and two digits per byte,

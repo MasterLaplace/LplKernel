@@ -72,6 +72,7 @@ static void made_up_close(KernelTest_t *test)
         slots += (space->slots[slot] != 0u) ? 1u : 0u;
     kernel_test_check(test, live == space->live_nodes && found + 1u == live && slots + 1u == live,
                       "every live node is found by its parent and name, in one slot each");
+    kernel_test_check(test, made_up_load.heap.stale_releases == 0u, "no release found nothing to release");
     advanced_configuration_and_power_interface_machine_language_close(&made_up_load);
     kernel_test_check(test, made_up_host.outstanding_pages == 0u, "every page goes back to the host");
 }
@@ -1468,17 +1469,17 @@ static uint32_t made_up_buffers(uint8_t *aml, char letter, uint32_t count, uint1
 
 /**
  * @brief An arena exhausted while a table builds its objects stops that table (§6.2), and spoils
- *        nothing: with room for the first run of objects only, the 17th buffer of 3,840 bytes in a
- *        Scope does not fit, the Name after the Scope is never declared, and a String a second table
- *        builds afterwards lands past the buffers, never over them.
+ *        nothing: with room for the first run of objects only, the 16th buffer of 4,000 bytes in a
+ *        Scope, each in a block of 4 KiB, does not fit, the Name after the Scope is never declared, and
+ *        a String a second table builds afterwards lands past the buffers, never over them.
  */
 KERNEL_TEST(an_exhausted_arena_stops_the_table_and_spoils_nothing)
 {
-    static uint8_t aml[5u + 17u * 10u + 6u];
-    static const uint8_t scope[] = {0x10u, 0x4Eu, 0x0Au, '\\', 0x00u};
+    static uint8_t aml[5u + 16u * 10u + 6u];
+    static const uint8_t scope[] = {0x10u, 0x44u, 0x0Au, '\\', 0x00u};
     static const uint8_t string[] = {0x08u, 'S', 'T', 'R', '1', 0x0Du, 'a', 'b', 'c', 0x00u};
     static const uint8_t last[] = {0x08u, 'L', 'A', 'S', 'T', 0x01u};
-    const uint32_t length = (uint32_t) sizeof(scope) + made_up_buffers(aml + sizeof(scope), 'B', 17u, 0x0F00u);
+    const uint32_t length = (uint32_t) sizeof(scope) + made_up_buffers(aml + sizeof(scope), 'B', 16u, 0x0FA0u);
     uint32_t arena = 0u;
     bool untouched = true;
 
@@ -1510,14 +1511,14 @@ KERNEL_TEST(an_exhausted_arena_stops_the_table_and_spoils_nothing)
     kernel_test_check(test,
                       made_up_load.first_load_error ==
                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY,
-                      "the 17th buffer runs out of memory");
+                      "the 16th buffer runs out of memory");
     kernel_test_check(test,
-                      made_up_object(&made_up_node("B015")->value)->length == 0x0F00u &&
-                          made_up_node("B016")->value.kind !=
+                      made_up_object(&made_up_node("B014")->value)->length == 0x0FA0u &&
+                          made_up_node("B015")->value.kind !=
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
-                      "16 buffers are built, the 17th is not");
+                      "15 buffers are built, the 16th is not");
     kernel_test_check(test, made_up_node_at("LAST") == 0u, "the table stops there: LAST is never declared");
-    kernel_test_check(test, first->length == 0x0F00u && untouched, "B000 still holds 3,840 zeros");
+    kernel_test_check(test, first->length == 0x0FA0u && untouched, "B000 still holds 4,000 zeros");
     kernel_test_check(test, text->length == 3u && memcmp(text + 1, "abc", 4u) == 0,
                       "the next table's String is built where it fits");
     made_up_close(test);

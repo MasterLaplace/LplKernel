@@ -11,8 +11,10 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_values, KERNEL_TEST
 
 #define VALUES_TABLE_CAPACITY 640u                  /**< Bytes of the buffer a made-up DSDT is written in. */
 #define VALUES_ONES           0xFFFFFFFFFFFFFFFFull /**< Ones, and True, under a revision-2 table. */
+#define VALUES_MAX_REACHABLE  1024u                 /**< Objects the walk of a made-up namespace can tell apart. */
 
 static uint8_t values_table[VALUES_TABLE_CAPACITY];
+static uint32_t values_reachable[VALUES_MAX_REACHABLE];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t values_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t values_load;
 
@@ -121,6 +123,57 @@ static bool values_value_is_integer(const AdvancedConfigurationAndPowerInterface
 static uint32_t values_live_objects(void) { return values_load.heap.objects - values_load.heap.objects_freed; }
 
 /**
+ * @brief Notes the object @p handle among the @p count reachable ones, unless it is there already.
+ */
+static void values_note_reachable(uint32_t *count, uint32_t handle)
+{
+    for (uint32_t index = 0u; index < *count; ++index)
+        if (values_reachable[index] == handle)
+            return;
+    if (*count < VALUES_MAX_REACHABLE)
+        values_reachable[(*count)++] = handle;
+}
+
+/**
+ * @brief The objects the namespace reaches: those its nodes hold, and those their packages nest, each
+ *        counted once.
+ */
+static uint32_t values_reachable_objects(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &values_load.space;
+    uint32_t count = 0u;
+
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT; index < space->node_count;
+         ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(space, index);
+
+        if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) == 0u &&
+            advanced_configuration_and_power_interface_machine_language_value_holds_object(node->value.kind))
+            values_note_reachable(&count, node->value.handle);
+    }
+    for (uint32_t seen = 0u; seen < count; ++seen)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *object =
+            advanced_configuration_and_power_interface_machine_language_object(&values_load.heap,
+                                                                               values_reachable[seen]);
+
+        for (uint32_t element = 0u;
+             element < object->length &&
+             object->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE;
+             ++element)
+        {
+            const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value = values_element(object, element);
+
+            if (advanced_configuration_and_power_interface_machine_language_value_holds_object(value->kind))
+                values_note_reachable(&count, value->handle);
+        }
+    }
+    return count;
+}
+
+/**
  * @brief How many runs failed with @p status.
  */
 static uint32_t values_failed(AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status)
@@ -129,9 +182,11 @@ static uint32_t values_failed(AdvancedConfigurationAndPowerInterfaceMachineLangu
 }
 
 /**
- * @brief Checks that every run left the evaluation's stacks empty, then closes the load.
+ * @brief Checks that every run left the evaluation's stacks empty, that the heap holds what the
+ *        namespace reaches and @p unreachable objects more, and that no release found nothing to
+ *        release; then closes the load.
  */
-static void values_close(KernelTest_t *test)
+static void values_close_with(KernelTest_t *test, uint32_t unreachable)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &values_load.evaluation;
 
@@ -140,9 +195,17 @@ static void values_close(KernelTest_t *test)
                           evaluation->operator_count == 0u && evaluation->block_count == 0u &&
                           values_load.temporary_count == 0u,
                       "every run leaves no frame, value, operator, block or temporary node behind");
+    kernel_test_check(test, values_live_objects() == values_reachable_objects() + unreachable,
+                      "the heap holds the objects the namespace reaches, and no other");
+    kernel_test_check(test, values_load.heap.stale_releases == 0u, "no release found nothing to release");
     advanced_configuration_and_power_interface_machine_language_close(&values_load);
     kernel_test_check(test, values_host.outstanding_pages == 0u, "every page goes back to the host");
 }
+
+/**
+ * @brief Closes the load as values_close_with does, every live object reachable.
+ */
+static void values_close(KernelTest_t *test) { values_close_with(test, 0u); }
 
 /**
  * @brief Strings, buffers and packages are built while methods run (§4.3): a String literal; a Buffer
@@ -431,8 +494,9 @@ KERNEL_TEST(strings_and_buffers_compare_by_their_bytes)
 /**
  * @brief Concatenate gives the type of its first operand and converts the second to it (§5.2): two
  *        Integers make a Buffer of 16 bytes; a String takes an Integer as 16 hexadecimal digits and
- *        a Buffer as two digits per byte, separated by spaces; a Buffer takes a String with its NUL
- *        and an Integer as 8 bytes. Its target takes the result as a Store does.
+ *        a Buffer as 0x and two digits per byte, separated by spaces, as ACPICA writes them; a Buffer
+ *        takes a String with its NUL and an Integer as 8 bytes. Its target takes the result as a
+ *        Store does.
  */
 KERNEL_TEST(concatenate_gives_the_type_of_its_first_operand)
 {
@@ -464,8 +528,8 @@ KERNEL_TEST(concatenate_gives_the_type_of_its_first_operand)
                       "Concatenate (Buffer { 1 }, \"AB\") takes the String with its NUL");
     kernel_test_check(test, values_buffer_is("R004", with_integer, sizeof(with_integer)),
                       "Concatenate (Buffer { 1 }, 0x0102) takes 8 bytes of the Integer");
-    kernel_test_check(test, values_string_is("R005", "AB01 AB"),
-                      "Concatenate (\"AB\", Buffer { 1, 0xAB }) writes the Buffer as \"01 AB\"");
+    kernel_test_check(test, values_string_is("R005", "AB0x01 0xAB"),
+                      "Concatenate (\"AB\", Buffer { 1, 0xAB }) writes the Buffer as \"0x01 0xAB\"");
     kernel_test_check(test, values_integer("R006") == 0x5958u, "the Integer target takes \"XY\"'s bytes");
     kernel_test_check(test, values_load.evaluation.mixed_type_comparisons == 4u, "the four mixed operands are counted");
     kernel_test_check(test, values_load.evaluation.failures == 0u, "nothing fails");
@@ -543,7 +607,8 @@ KERNEL_TEST(the_explicit_conversions_give_what_acpi_and_windows_give)
 }
 
 /**
- * @brief Mid takes a slice of a String or a Buffer, empty past its end; SizeOf reads a String's, a
+ * @brief Mid takes a slice of a String or a Buffer, an Integer read as a Buffer, empty past its end;
+ *        SizeOf reads a String's, a
  *        Buffer's or a Package's length, and fails on an Integer as type_mismatch; ObjectType gives
  *        the ACPI number of every kind of object, 0 for an uninitialized local; a Name in a method
  *        holds a Buffer whose size an argument gives.
@@ -562,31 +627,33 @@ KERNEL_TEST(mid_size_of_and_object_type_read_what_they_are_given)
         'M',   0x01u, 0x08u, 'T',   'M',   'P',   '0',   0x11u, 0x02u, 0x68u, 0xA4u, 0x87u, 'T',   'M',   'P',   '0',
         0x08u, 'M',   '0',   '0',   '0',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',   '1',   0x0Au, 0x00u, 0x08u, 'M',
         '0',   '0',   '2',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',   '3',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',
-        '4',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '0',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '0',   '1',   0x0Au,
-        0x00u, 0x08u, 'Z',   '0',   '0',   '2',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '3',   0x0Au, 0x00u, 0x08u,
-        'Z',   '0',   '0',   '4',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '5',   0x0Au, 0x00u, 0x08u, 'Z',   '0',
-        '0',   '6',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '7',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '8',
-        0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '9',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '1',   '0',   0x0Au, 0x00u,
-        0x08u, 'Z',   '0',   '1',   '1',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '1',   '2',   0x0Au, 0x07u, 0x08u, 'Z',
-        '0',   '1',   '3',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',   '4',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',
-        '5',   0x0Au, 0x07u, 0x9Du, 0x9Eu, 0x0Du, 'A',   'B',   'C',   'D',   'E',   'F',   0x00u, 0x0Au, 0x02u, 0x0Au,
-        0x03u, 0x00u, 'M',   '0',   '0',   '0',   0x9Du, 0x9Eu, 0x0Du, 'A',   'B',   'C',   0x00u, 0x0Au, 0x01u, 0x0Au,
-        0x0Au, 0x00u, 'M',   '0',   '0',   '1',   0x9Du, 0x9Eu, 0x11u, 0x06u, 0x0Au, 0x03u, 0x01u, 0x02u, 0x03u, 0x0Au,
-        0x05u, 0x0Au, 0x01u, 0x00u, 'M',   '0',   '0',   '2',   0x9Du, 0x9Eu, 0x0Du, 'A',   'B',   'C',   0x00u, 0x0Au,
-        0x00u, 0x0Au, 0x00u, 0x00u, 'M',   '0',   '0',   '3',   0x9Du, 0x9Eu, 0x11u, 0x07u, 0x0Au, 0x04u, 0x01u, 0x02u,
-        0x03u, 0x04u, 0x0Au, 0x01u, 0x0Au, 0x02u, 0x00u, 'M',   '0',   '0',   '4',   0x70u, 0x87u, 'S',   'T',   'R',
-        '0',   'Z',   '0',   '0',   '1',   0x70u, 0x87u, 'B',   'U',   'F',   '0',   'Z',   '0',   '0',   '2',   0x70u,
-        0x87u, 'P',   'K',   'G',   '0',   'Z',   '0',   '0',   '3',   0x70u, 'M',   'L',   'O',   'C',   'Z',   '0',
-        '0',   '4',   0x70u, 0x8Eu, 'I',   'N',   'T',   '0',   'Z',   '0',   '0',   '5',   0x70u, 0x8Eu, 'S',   'T',
-        'R',   '0',   'Z',   '0',   '0',   '6',   0x70u, 0x8Eu, 'B',   'U',   'F',   '0',   'Z',   '0',   '0',   '7',
-        0x70u, 0x8Eu, 'P',   'K',   'G',   '0',   'Z',   '0',   '0',   '8',   0x70u, 0x8Eu, 'D',   'E',   'V',   '0',
-        'Z',   '0',   '0',   '9',   0x70u, 0x8Eu, 'M',   'T',   'H',   'D',   'Z',   '0',   '1',   '0',   0x70u, 0x8Eu,
-        'M',   'T',   'X',   '0',   'Z',   '0',   '1',   '1',   0x70u, 0x8Eu, 'R',   'E',   'G',   '0',   'Z',   '0',
-        '1',   '4',   0x70u, 0x8Eu, 'F',   'L',   'D',   '0',   'Z',   '0',   '1',   '2',   0x70u, 'M',   'U',   'N',
-        'I',   'Z',   '0',   '1',   '3',   0x70u, 0x87u, 'I',   'N',   'T',   '0',   'Z',   '0',   '0',   '0',   0x70u,
-        'M',   'N',   'A',   'M',   0x0Au, 0x09u, 'Z',   '0',   '1',   '5',
+        '4',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',   '5',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '0',   0x0Au,
+        0x07u, 0x08u, 'Z',   '0',   '0',   '1',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '2',   0x0Au, 0x00u, 0x08u,
+        'Z',   '0',   '0',   '3',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '4',   0x0Au, 0x00u, 0x08u, 'Z',   '0',
+        '0',   '5',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '6',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '7',
+        0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '8',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '9',   0x0Au, 0x00u,
+        0x08u, 'Z',   '0',   '1',   '0',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '1',   '1',   0x0Au, 0x00u, 0x08u, 'Z',
+        '0',   '1',   '2',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',   '3',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',
+        '4',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',   '5',   0x0Au, 0x07u, 0x9Du, 0x9Eu, 0x0Du, 'A',   'B',   'C',
+        'D',   'E',   'F',   0x00u, 0x0Au, 0x02u, 0x0Au, 0x03u, 0x00u, 'M',   '0',   '0',   '0',   0x9Du, 0x9Eu, 0x0Du,
+        'A',   'B',   'C',   0x00u, 0x0Au, 0x01u, 0x0Au, 0x0Au, 0x00u, 'M',   '0',   '0',   '1',   0x9Du, 0x9Eu, 0x11u,
+        0x06u, 0x0Au, 0x03u, 0x01u, 0x02u, 0x03u, 0x0Au, 0x05u, 0x0Au, 0x01u, 0x00u, 'M',   '0',   '0',   '2',   0x9Du,
+        0x9Eu, 0x0Du, 'A',   'B',   'C',   0x00u, 0x0Au, 0x00u, 0x0Au, 0x00u, 0x00u, 'M',   '0',   '0',   '3',   0x9Du,
+        0x9Eu, 0x11u, 0x07u, 0x0Au, 0x04u, 0x01u, 0x02u, 0x03u, 0x04u, 0x0Au, 0x01u, 0x0Au, 0x02u, 0x00u, 'M',   '0',
+        '0',   '4',   0x9Du, 0x9Eu, 0x0Bu, 'B',   'A',   0x0Au, 0x00u, 0x0Au, 0x01u, 0x00u, 'M',   '0',   '0',   '5',
+        0x70u, 0x87u, 'S',   'T',   'R',   '0',   'Z',   '0',   '0',   '1',   0x70u, 0x87u, 'B',   'U',   'F',   '0',
+        'Z',   '0',   '0',   '2',   0x70u, 0x87u, 'P',   'K',   'G',   '0',   'Z',   '0',   '0',   '3',   0x70u, 'M',
+        'L',   'O',   'C',   'Z',   '0',   '0',   '4',   0x70u, 0x8Eu, 'I',   'N',   'T',   '0',   'Z',   '0',   '0',
+        '5',   0x70u, 0x8Eu, 'S',   'T',   'R',   '0',   'Z',   '0',   '0',   '6',   0x70u, 0x8Eu, 'B',   'U',   'F',
+        '0',   'Z',   '0',   '0',   '7',   0x70u, 0x8Eu, 'P',   'K',   'G',   '0',   'Z',   '0',   '0',   '8',   0x70u,
+        0x8Eu, 'D',   'E',   'V',   '0',   'Z',   '0',   '0',   '9',   0x70u, 0x8Eu, 'M',   'T',   'H',   'D',   'Z',
+        '0',   '1',   '0',   0x70u, 0x8Eu, 'M',   'T',   'X',   '0',   'Z',   '0',   '1',   '1',   0x70u, 0x8Eu, 'R',
+        'E',   'G',   '0',   'Z',   '0',   '1',   '4',   0x70u, 0x8Eu, 'F',   'L',   'D',   '0',   'Z',   '0',   '1',
+        '2',   0x70u, 'M',   'U',   'N',   'I',   'Z',   '0',   '1',   '3',   0x70u, 0x87u, 'I',   'N',   'T',   '0',
+        'Z',   '0',   '0',   '0',   0x70u, 'M',   'N',   'A',   'M',   0x0Au, 0x09u, 'Z',   '0',   '1',   '5',
     };
     static const uint8_t slice[] = {0x02u, 0x03u};
+    static const uint8_t low_byte[] = {0x42u};
 
     if (!values_run(test, 2u, aml, sizeof(aml)))
         return;
@@ -595,6 +662,8 @@ KERNEL_TEST(mid_size_of_and_object_type_read_what_they_are_given)
     kernel_test_check(test, values_buffer_is("M002", slice, 0u), "Mid past a Buffer's end is an empty Buffer");
     kernel_test_check(test, values_string_is("M003", ""), "Mid of length 0 is \"\"");
     kernel_test_check(test, values_buffer_is("M004", slice, sizeof(slice)), "Mid (Buffer { 1, 2, 3, 4 }, 1, 2)");
+    kernel_test_check(test, values_buffer_is("M005", low_byte, sizeof(low_byte)),
+                      "Mid (0x4142, 0, 1) reads the Integer as a Buffer: Buffer { 0x42 }");
     kernel_test_check(test,
                       values_integer("Z001") == 4u && values_integer("Z002") == 6u && values_integer("Z003") == 3u &&
                           values_integer("Z004") == 5u,
@@ -758,5 +827,76 @@ KERNEL_TEST(a_saturated_reference_count_is_never_freed)
         advanced_configuration_and_power_interface_machine_language_object_release(heap, space, handle);
     kernel_test_check(test, object->references == 0xFFFFFFFFu && heap->objects_freed == freed,
                       "three releases leave it saturated and alive");
+    values_close_with(test, 1u);
+}
+
+/**
+ * @brief A Name whose object waits for the interpreter, or whose Package holds more initialisers than
+ *        elements, keeps nothing it cannot use (§5.1): the packages and strings the load built before it
+ *        met Buffer (Add (1, 1)) or Package (Add (1, 1)) are freed, as is the initialiser past the
+ *        count.
+ */
+KERNEL_TEST(a_name_whose_object_waits_or_is_cut_keeps_nothing_else)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'P',   '0',   '0',   '0',   0x12u, 0x0Du, 0x02u, 0x0Du, 0x41u, 0x00u, 0x11u, 0x07u, 0x72u, 0x0Au,
+        0x01u, 0x0Au, 0x01u, 0x00u, 0x08u, 'P',   '0',   '0',   '1',   0x12u, 0x08u, 0x01u, 0x0Du, 0x42u, 0x00u,
+        0x0Du, 0x43u, 0x00u, 0x08u, 'P',   '0',   '0',   '2',   0x12u, 0x13u, 0x01u, 0x12u, 0x10u, 0x02u, 0x0Du,
+        0x44u, 0x00u, 0x13u, 0x0Au, 0x72u, 0x0Au, 0x01u, 0x0Au, 0x01u, 0x00u, 0x0Du, 0x45u, 0x00u,
+    };
+
+    if (!values_run(test, 2u, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *cut =
+        values_object("P001", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE);
+
+    kernel_test_check(test,
+                      made_up_root_node(&values_load, "P000")->type ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_UNINITIALIZED &&
+                          made_up_root_node(&values_load, "P002")->type ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_UNINITIALIZED &&
+                          values_load.values_deferred == 2u,
+                      "P000 and P002 wait for the interpreter");
+    kernel_test_check(test,
+                      cut != NULL && cut->length == 1u &&
+                          values_value_holds(values_element(cut, 0u),
+                                             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING,
+                                             "B", 1u) &&
+                          values_load.heap.packages_truncated == 1u,
+                      "Package (1) { \"B\", \"C\" } holds \"B\" alone, counted");
+    values_close(test);
+}
+
+/**
+ * @brief A String that grows by 20 characters 200 times, up to 4,000, takes no more than two runs of
+ *        the heap: each size it leaves behind serves a later one of its class (§3.5).
+ */
+KERNEL_TEST(a_growing_string_reuses_the_blocks_it_gives_back)
+{
+    static const uint8_t empty[] = {0x08u, 'R', 'E', 'S', '0', 0x00u};
+    static const uint8_t aml[] = {
+        0x08u, 'R',   'E',   'S',   '0',   0x0Au, 0x00u, 0x14u, '2',   'M',   'G',   'R',   'W',   0x00u,
+        0x70u, 0x0Du, 0x00u, 0x60u, 0x70u, 0x0Au, 0x00u, 0x61u, 0xA2u, 0x20u, 0x95u, 0x61u, 0x0Au, 0xC8u,
+        0x73u, 0x60u, 0x0Du, 'A',   'B',   'C',   'D',   'E',   'F',   'G',   'H',   'I',   'J',   'K',
+        'L',   'M',   'N',   'O',   'P',   'Q',   'R',   'S',   'T',   0x00u, 0x60u, 0x75u, 0x61u, 0xA4u,
+        0x87u, 0x60u, 0x70u, 'M',   'G',   'R',   'W',   'R',   'E',   'S',   '0',
+    };
+
+    if (!values_run(test, 2u, empty, sizeof(empty)))
+        return;
+
+    const uint32_t arena = values_load.space.arena_bytes;
+
+    values_close(test);
+    if (!values_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_measure(test, "arena_growth", values_load.space.arena_bytes - arena);
+    kernel_test_check(test, values_integer("RES0") == 4000u, "the String reaches 4,000 characters");
+    kernel_test_check(test,
+                      values_load.space.arena_bytes - arena <=
+                          2u * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_RUN_PAGES *
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES,
+                      "the heap took two runs at most");
     values_close(test);
 }
