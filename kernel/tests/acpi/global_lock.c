@@ -114,8 +114,10 @@ static uint32_t global_lock_word(void)
 static void global_lock_close(KernelTest_t *test)
 {
     advanced_configuration_and_power_interface_machine_language_close(&global_lock_load);
-    kernel_test_check(test, global_lock_host.outstanding_maps == 0u && global_lock_host.mismatched_unmaps == 0u,
-                      "every map is unmapped as it was mapped");
+    kernel_test_check(test,
+                      global_lock_host.outstanding_maps == 0u && global_lock_host.mismatched_unmaps == 0u &&
+                          global_lock_host.inconsistent_accesses == 0u,
+                      "every access went where its mapping puts it, and every map is unmapped as it was mapped");
     advanced_configuration_and_power_interface_simulated_host_close(&global_lock_host);
 }
 
