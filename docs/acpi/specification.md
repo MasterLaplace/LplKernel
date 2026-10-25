@@ -168,7 +168,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor; offsets from 0x100 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
-| `sleep_milliseconds(u32)`, `stall_microseconds(u32)` | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick; after boot the worker thread blocks (#273) | advance the virtual clock |
+| `sleep_milliseconds(u32)` → the milliseconds waited, `stall_microseconds(u32)` | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick, which a sleep returns; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
 | `log(level, text)` | serial, compiled out below the build's level | stdout |
@@ -330,12 +330,13 @@ Run once at boot by the bootstrap processor.
 
 0. **Put the platform in ACPI mode,** before any AML runs: firmware written for Windows has only ever run its `_INI`
    and `_OSC` in ACPI mode.
-   1. Skip the switch if SCI_EN is already set, if SMI_CMD is 0, or if the FADT is hardware-reduced, which boots
-      in ACPI mode only ([§3.11.1]).
+   1. Skip the switch if SCI_EN is already set, if SMI_CMD is 0, if ACPI_ENABLE is 0, which declares no legacy mode
+      ([§5.2.9]), or if the FADT is hardware-reduced, which boots in ACPI mode only ([§3.11.1]). The switch reaches
+      its registers as I/O ports alone: a PM1 or GPE block outside the I/O space skips it too, counted.
    2. Clear every GPE enable bit and every PM1 fixed-event enable bit, and keep the SCI line (SCI_INT) masked in the
       8259 or the I/O APIC, so that no event raises an SCI that nothing handles.
-   3. Write ACPI_ENABLE to SMI_CMD from the bootstrap processor, and wait for SCI_EN ([§5.2.9]): at most 3,000 polls
-      1 ms apart on the kernel tick, counted.
+   3. Write ACPI_ENABLE to SMI_CMD from the bootstrap processor, and wait for SCI_EN ([§5.2.9]): polls 1 ms apart on
+      the kernel tick, at most 3,000 of them and 3,000 ms as the tick counts them, counted.
 1. **Load the DSDT, then every SSDT** of the root table in directory order, each as a table frame. A failing table
    is counted and the next one loads; a table whose checksum fails is loaded and counted (§3.9). The integer width
    is fixed from the DSDT's revision before the first byte runs.
@@ -401,7 +402,9 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
   4 GiB, otherwise none. Some machines fail to resume on the 64-bit address (Linux bug 74021).
 - **The FADT is normalised once:** its revision recomputed from its length; a zeroed local copy of at most the known
   length, so that the fields a short FADT lacks read 0; the legacy register blocks converted to Generic Address
-  Structures. The fields read are those of N4 (§1.2), plus the PM1 and GPE blocks.
+  Structures, unless the 64-bit block gives an address. PSTATE_CNT and CST_CNT, which ACPI 1.0 reserved, read 0 up to
+  revision 2; RESET_REG reads absent without RESET_REG_SUP; a hardware-reduced FADT reads 0 in every field ACPI tells
+  OSPM to ignore ([§5.2.9]). The fields read are those of N4 (§1.2), plus the PM1 and GPE blocks.
 - **The switch to ACPI mode** is a routine of the tables layer: SCI_EN read, enables cleared, ACPI_ENABLE written,
   a bounded poll (§3.8 step 0).
 - **The MADT.** Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for an entry whose Enabled flag is
