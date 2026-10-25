@@ -56,7 +56,8 @@ The needs path is the set of evaluations the kernel makes at boot, and every met
 - the table-level code of every definition block;
 - `\_INI`, `\_SB._INI`, `_REG`, `_STA` and `_INI` (§3.8);
 - `\_SB._OSC`, and processor `_OSC` or `_PDC`;
-- `_CST` (§3.10);
+- `_CST`, and the `_UID` that binds a processor to its CPU (§3.10);
+- `_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID`, which a PCI_Config region evaluates as it attaches (§3.6);
 - the tables that `Load` and `LoadTable` bring in.
 
 It decides which opcodes are executed (§4.1). It is computed on every corpus machine twice: as a static closure,
@@ -98,7 +99,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | Integers | Every AML integer is a `uint64_t` on both targets, masked to 32 bits when the DSDT's revision is below 2 ([§19.6.29]). 64-bit division on i686 goes through libgcc. |
 | No inline assembly | Port I/O, the 64-bit memory-mapped accesses of i686 (§5.3) and the global lock's compare-exchange are `asmutils` routines. |
 | Naming | Externs `advanced_configuration_and_power_interface_…` for the tables and `advanced_configuration_and_power_interface_machine_language_…` for the interpreter, types `AdvancedConfigurationAndPowerInterface…_t`, static helpers `acpi_…`. |
-| Tests | `KERNEL_TEST`s in `kernel/tests/acpi/` for architecture-free code, in `kernel/arch/i386/tests/acpi/` otherwise. |
+| Tests | `KERNEL_TEST`s in `kernel/tests/acpi/` for architecture-free code, in `kernel/arch/i386/tests/acpi/` otherwise. A host tool's own tests, such as the needs-path closure's, are `host_*` suites in `tools/acpi/host/`: ring 0 never runs them, and `tools/parity.sh` leaves them out. |
 | Unbuilt branches | The host harness and every compile-time switch of the interpreter have a gate profile that builds them, or a line in `tools/unbuilt-branches.declared`. `kernel/kernel/acpi/` builds only where `KERNEL_ARCH_HAS_FIRMWARE_TABLES` is 1. |
 | i686 now, long mode later (#96) | No pointer is stored in the namespace or in an object, with two exceptions that are never folded: the loaded-table registry's address of a table's bytes, and a frame's transient code pointer (§3.4). Physical addresses are `uint64_t` in every interface. CI also compiles `kernel/kernel/acpi/*.c` with the host's gcc and `-ffreestanding -m64 -mno-red-zone -mcmodel=kernel -nostdinc` against libk's headers and `kernel/include/kernel/acpi/` alone (`tools/acpi/check-portable.sh`). On i686 an address above 4 GiB fails loudly and is never truncated. |
 | Firmware memory is read-only | AML is read through the cached read-only firmware window, and the interpreter never writes to it. |

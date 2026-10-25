@@ -119,7 +119,8 @@ On top of the shared C and C++ rules:
 - The ACPI layer also runs on the build machine: `xmake build test-acpi && build/acpi-host/test-acpi > acpi.log`
   runs `kernel/tests/acpi/` through the kernel's own runner, and `tools/parity.sh acpi.log serial.log` compares it
   with ring 0. `tools/acpi-corpus.sh fetch` then `check` walk the tables of recorded machines
-  ([specification](../docs/acpi/specification.md#84-real-firmware-linuxhwacpi), §8.4).
+  ([specification](../docs/acpi/specification.md#84-real-firmware-linuxhwacpi), §8.4). A test of a host tool, which ring 0
+  never runs, belongs to a suite named `host_*`, which `tools/parity.sh` leaves out.
 - A switch no gate profile turns on is code nothing compiles. `tools/unbuilt-branches.sh` lists every
   source, `#if` branch, object and `-D` macro the gate profiles leave out, and fails on one that
   `tools/unbuilt-branches.declared` does not explain: a new one gets a profile that builds it, or a

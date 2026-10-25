@@ -135,6 +135,19 @@ static bool machine_language_method_arguments(MachineLanguageWalk_t *walk, uint3
 }
 
 /**
+ * @brief Tells the observer, when there is one, of an opcode or a call the decoding pass decoded, and
+ *        of the method whose body holds it.
+ */
+static void machine_language_observe(MachineLanguageWalk_t *walk, uint32_t opcode, uint32_t callee)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
+
+    if (load->observer != NULL)
+        load->observer(load->observer_context,
+                       (load->frame_count != 0u) ? load->frame_methods[load->frame_count - 1u] : 0u, opcode, callee);
+}
+
+/**
  * @brief Counts an opcode in the decoding pass.
  */
 static void machine_language_count_opcode(MachineLanguageWalk_t *walk, uint32_t opcode)
@@ -143,6 +156,7 @@ static void machine_language_count_opcode(MachineLanguageWalk_t *walk, uint32_t 
         return;
     ++walk->load->opcodes[opcode];
     ++walk->load->tables[walk->table].terms;
+    machine_language_observe(walk, opcode, 0u);
 }
 
 /**
@@ -622,6 +636,8 @@ static MachineLanguageStatus_t machine_language_name_term(MachineLanguageWalk_t 
     if (!resolved || !may_call || !machine_language_method_arguments(walk, index, &arguments))
         return MACHINE_LANGUAGE_OK;
     load->method_calls += counting ? 1u : 0u;
+    if (counting)
+        machine_language_observe(walk, MACHINE_LANGUAGE_CALL, index);
     if (arguments == 0u)
         return MACHINE_LANGUAGE_OK;
     if (walk->pending_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PENDING_OPERATORS)
@@ -1186,7 +1202,10 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     if (machine_language_builds(walk, active.node))
         machine_language_build_scope_object(walk, &active);
     if (placement == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_METHOD_BODY)
+    {
+        load->frame_methods[load->frame_count] = active.node;
         load->temporary_bases[load->frame_count++] = (uint16_t) load->temporary_count;
+    }
     --walk->pending_count;
 
     MachineLanguageBlock_t *block = &walk->load->blocks[walk->block_count++];

@@ -1,3 +1,4 @@
+#include "made_up_table.h"
 #include "simulated_host.h"
 
 #include <kernel/acpi/machine_language.h>
@@ -12,7 +13,6 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_machine_language, K
 #define MADE_UP_TABLE_COUNT    4u              /**< Made-up tables one test may load. */
 #define MADE_UP_MAX_NODES      1024u           /**< The node cap of a made-up load. */
 #define MADE_UP_MAX_ARENA      (1024u * 1024u) /**< The arena cap of a made-up load. */
-#define MADE_UP_HEADER         36u             /**< Bytes of a table header. */
 #define MADE_UP_MULTI_SEGMENTS 255u            /**< NameSegs of the longest multi path. */
 
 static uint8_t made_up_tables[MADE_UP_TABLE_COUNT][MADE_UP_TABLE_CAPACITY];
@@ -29,21 +29,7 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t made_up_load;
 static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *made_up_table(uint32_t index, const char *signature,
                                                                               const uint8_t *aml, uint32_t length)
 {
-    uint8_t *table = made_up_tables[index];
-    uint8_t sum = 0u;
-
-    memset(table, 0, MADE_UP_TABLE_CAPACITY);
-    memcpy(table, signature, 4u);
-    table[4] = (uint8_t) (MADE_UP_HEADER + length);
-    table[5] = (uint8_t) ((MADE_UP_HEADER + length) >> 8u);
-    table[8] = 2u;
-    memcpy(table + 10, "LPLTST", 6u);
-    memcpy(table + 16, "MADEUPML", 8u);
-    memcpy(table + MADE_UP_HEADER, aml, length);
-    for (uint32_t byte = 0u; byte < MADE_UP_HEADER + length; ++byte)
-        sum = (uint8_t) (sum + table[byte]);
-    table[9] = (uint8_t) (0u - sum);
-    return (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) table;
+    return made_up_definition_block(made_up_tables[index], signature, aml, length);
 }
 
 /**
@@ -808,20 +794,10 @@ KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
     if (!made_up_open(test))
         return;
 
-    static uint8_t table[sizeof(aml) + 36u];
-    uint8_t sum = 0u;
+    static uint8_t table[sizeof(aml) + MADE_UP_TABLE_HEADER];
 
-    memset(table, 0, sizeof(table));
-    memcpy(table, "DSDT", 4u);
-    table[4] = (uint8_t) (36u + length);
-    table[5] = (uint8_t) ((36u + length) >> 8u);
-    table[8] = 2u;
-    memcpy(table + 36, aml, length);
-    for (uint32_t byte = 0u; byte < 36u + length; ++byte)
-        sum = (uint8_t) (sum + table[byte]);
-    table[9] = (uint8_t) (0u - sum);
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) table);
+        &made_up_load, made_up_definition_block(table, "DSDT", aml, length));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(test, made_up_load.load_errors == 0u && made_up_load.decode_errors == 0u,
                       "every External is placed, without a fault");
@@ -1660,30 +1636,27 @@ KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
  */
 KERNEL_TEST(a_string_of_the_largest_length_is_built)
 {
-    static uint8_t table[MADE_UP_HEADER + 2u * (6u + 65537u + 1u)];
+    static uint8_t aml[2u * (6u + 65537u + 1u)];
+    static uint8_t table[MADE_UP_TABLE_HEADER + sizeof(aml)];
     static const uint8_t names[2][5] = {
         {0x08u, 'S', 'B', 'I', 'G'},
         {0x08u, 'S', 'O', 'V', 'R'}
     };
     const uint32_t lengths[2] = {65536u, 65537u};
-    uint32_t end = MADE_UP_HEADER;
+    uint32_t length = 0u;
 
     for (uint32_t name = 0u; name < 2u; ++name)
     {
-        memcpy(table + end, names[name], 5u);
-        table[end + 5u] = 0x0Du;
-        memset(table + end + 6u, 'x', lengths[name]);
-        table[end + 6u + lengths[name]] = 0x00u;
-        end += 6u + lengths[name] + 1u;
+        memcpy(aml + length, names[name], 5u);
+        aml[length + 5u] = 0x0Du;
+        memset(aml + length + 6u, 'x', lengths[name]);
+        aml[length + 6u + lengths[name]] = 0x00u;
+        length += 6u + lengths[name] + 1u;
     }
-    memcpy(table, "DSDT", 4u);
-    for (uint32_t byte = 0u; byte < 4u; ++byte)
-        table[4u + byte] = (uint8_t) (end >> (8u * byte));
-    table[8] = 2u;
     if (!made_up_open(test))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) table);
+        &made_up_load, made_up_definition_block(table, "DSDT", aml, length));
     kernel_test_check(test, made_up_object(&made_up_node("SBIG")->value)->length == 65536u,
                       "a String of 65,536 characters is built");
     kernel_test_check(test,

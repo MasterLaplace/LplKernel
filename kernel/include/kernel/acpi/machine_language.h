@@ -96,6 +96,20 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t;
 
 /**
+ * @brief What the decoding pass reports to an observer: each opcode it decodes, and each call, with the
+ *        method whose body holds it, 0 at table level.
+ *
+ * @param context The observer's own state.
+ * @param method  The node of the method being decoded, the scope around it when its declaration was not
+ *                found, or 0 for table-level code.
+ * @param opcode  The descriptor decoded, or ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
+ *                for a call.
+ * @param callee  The node a call names, 0 for an opcode.
+ */
+typedef void (*AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t)(void *context, uint32_t method,
+                                                                                uint32_t opcode, uint32_t callee);
+
+/**
  * @brief A load: its namespace, its tables, what it counted, and the stacks its passes use.
  *
  * @details The decoding pass decodes a method body as the method would run: the objects it declares
@@ -139,6 +153,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
         blocks[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS]; /**< The block stack. */
     uint32_t temporary_count;                                                           /**< Temporary nodes alive. */
     uint32_t frame_count; /**< Method bodies being decoded. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t
+        observer;           /**< Told of each opcode and call the decoding pass decodes, or NULL. */
+    void *observer_context; /**< What the observer is given back. */
+    uint32_t frame_methods[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FRAMES]; /**< The node of
+                                                                                                        each method
+                                                                                                        body being
+                                                                                                        decoded. */
     uint32_t temporaries[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TEMPORARY_NODES]; /**< The
                                                                                                               temporary
                                                                                                               nodes, in
