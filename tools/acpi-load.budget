@@ -1,0 +1,10 @@
+# Window W1 of the ACPI specification (§7.4): the load of q35's boot tables, its declaration and decoding passes,
+# on a release server kernel (SMOKE_TESTS=0 ./build.sh --server). Checked by
+# tools/instructions.sh --budget tools/acpi-load.budget kernel/lpl.kernel; a change that moves the load records the
+# new counts.
+inside=advanced_configuration_and_power_interface_machine_language_load_directory
+times=1
+machine=q35
+instructions=2321519
+accesses=1205379
+tolerance=1

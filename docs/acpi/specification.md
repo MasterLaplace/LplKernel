@@ -133,7 +133,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
-| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h` | the decoder's, the namespace's and the objects' interfaces, for the layers above them and the tests |
+| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h` | the decoder's, the namespace's, the objects' and the interpreter's interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
@@ -200,7 +200,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Field unit object** | `kind u8` (normal, index, bank), `access u8`, `update u8`, `lock u8`, `region u32` (or the index field's node), `data_or_bank u32`, `bank_value u32`, `bit_offset u32`, `bit_length u32` | 24 | A 4 MiB field still costs 24 bytes. |
 | **Method** | in the node's `value`: `handle` = table, `payload` = body offset u32 and body length u32, `auxiliary` = MethodFlags | 0 extra | Bodies are never copied. |
 | **Buffer field** | in the node's `value`: `handle` = the buffer's node, `payload` = bit offset u32 and bit length u32, `auxiliary` = access width in bytes | 0 extra | The node, not the object: `CopyObject` to the buffer replaces its object. |
-| **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 5), `argument_count u8`, `flags u8` | about 272 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
+| **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 4), `table u16`, `argument_count u8` | about 272 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
 | **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `physical u64`, `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `length u32`, `checksum u8`, `checksum_valid u8`, `oem_table_id[8]`, `origin u8` (static, `Load`, `LoadTable`), `owner u16` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory. `bytes` is one of the two pointers of §2: printed, never folded. |
@@ -235,7 +235,9 @@ Rules:
 ### 3.6 Execution model
 
 **One loop, explicit stacks, no C recursion.** The stacks are fixed arrays sized by the limits of §6.1, so they are
-never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic.
+never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic. Until #587, the
+declaration pass walks the control flow of table-level code itself and hands the loop one statement or predicate at
+a time (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
@@ -279,13 +281,22 @@ inside it. The error report names the table, the offset, the opcode and the meth
 costs no C stack. Declarations load in one pass and in order: table-level code sees only what was declared before
 it. An `External` whose path no table has declared yet is placed by a pass of its own once every table is declared.
 
+**The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
+predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
+skipped, and declares nothing. Until #539, #540 and #541 run what makes predicates fail today, a predicate that fails
+declares both its branches without running their code, counted (`declared_not_run`), so that a failure never takes
+an object out of the namespace. The decoding pass still decodes the body of a construct the declaration pass did
+not declare, but counts its faults apart (`undeclared_faults`): its names resolve against objects that do not
+exist.
+
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
 the same stacks, and the access resumes when they return. They count against the same depth limit.
 
 **Errors** carry a typed status (§6.2). In a method, an error unwinds every frame of the evaluation: temporaries
-removed, mutexes released, values dropped. At table level, it skips the innermost enclosing PkgLength construct and
-the load goes on.
+removed, mutexes released, values dropped. At table level, a statement that fails to run is skipped, a predicate
+that fails is handled as above, a fault in the declaration pass's own decoding skips the innermost enclosing
+PkgLength construct, and the load goes on.
 
 ### 3.7 Concurrency
 
@@ -628,7 +639,7 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 
 | Case | Behaviour | Counter |
 |---|---|---|
-| An opcode decoded but not executed: outside the needs path, `DataTableRegion`, `Nor`, `Revision` | in a method, the evaluation fails with `unimplemented_operator`; at definition-block level, the innermost enclosing PkgLength construct is skipped and the load goes on | `unimplemented_operator[opcode]` |
+| An opcode decoded but not executed: outside the needs path, `DataTableRegion`, `Nor`, `Revision` | in a method, the evaluation fails with `unimplemented_operator`; at definition-block level, the statement or predicate that holds it fails as in §6.2 and the load goes on | `unimplemented_operator[opcode]` |
 | `Load` from a Buffer; `LoadTable` with a non-empty RootPath, ParameterPath or ParameterData | fails as above | `load_form_unsupported` |
 | A `Lock` field access or `Acquire (\_GL)` before the global lock lands | fails as above | `global_lock_unavailable` |
 | A byte that is not an opcode | fails as above, with `invalid_opcode`; at table level without an enclosing construct, the rest of the table is abandoned and the next table loads | `invalid_opcode` |
@@ -753,8 +764,10 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | Region mapping cache | 64 entries, each the pages one access touched |
 
-The node and arena caps depend on the profile, and probe counts follow the hash capacity. A parity run passes the
-target's caps to both sides and prints them in the record header (§8.7).
+A table load is one evaluation: its table-level code and the methods it calls share these limits, and the count of
+back-edges starts again from zero with each table. The node and arena caps depend on the profile, and probe counts
+follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
+(§8.7).
 
 ### 6.2 What happens on bad AML
 
@@ -766,6 +779,8 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | Truncated operand, bad NameString | fails | the innermost enclosing construct is skipped | `truncated` |
 | Invalid or unimplemented opcode | fails | construct skipped | `invalid_opcode`, `unimplemented_operator` |
 | Name not found when executed | fails | construct skipped | `name_not_found` |
+| A method creates a name that exists, as a `Name` in a loop | fails | a duplicate: skipped and counted (§5.1) | `name_exists`, `duplicates` |
+| `Return` outside a method | | fails, the statement skipped | `invalid_opcode` |
 | Wrong type, impossible conversion | fails ([§19.3.5.4]) | construct skipped | `type_mismatch` |
 | Division by zero | fails | construct skipped | `divide_by_zero` |
 | Index or buffer field out of range | fails | construct skipped | `index_out_of_range` |
@@ -776,6 +791,10 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | A `Load` or `LoadTable` form outside §1.4 | fails | construct skipped | `load_form_unsupported` |
 | Protected port or PCI header | not a fault: zero read, write dropped | same | counted only |
 | Arena exhausted | fails | the table load stops | `out_of_memory` |
+
+At definition-block level, "construct skipped" means: a statement that fails to run is skipped, a predicate that
+fails declares both branches without running them (§3.6), and a fault in the declaration pass's own decoding skips
+the innermost enclosing PkgLength construct.
 
 Every failure unwinds the evaluation completely: temporaries removed, mutexes released, values dropped, the context
 reset. The caller receives the typed status and decides.
@@ -854,7 +873,7 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 
 | Window | Command | Budget files | First target |
 |---|---|---|---|
-| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_definition_block --times <tables> kernel/lpl.kernel` on `q35`; debug: the same `--inside` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | at most 300 instructions per named object created; 0 allocations per method declared |
+| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | at most 300 instructions per named object created; 0 allocations per method declared |
 | W2 initialisation (§3.8, steps 0 to 9) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same during the ring-0 corpus test | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget` | its first measurement |
 | W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget` | its first measurement |
 | W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT | debug: `--inside kernel_test_body_<test>` | `tools/acpi-microbenchmark.debug.budget` | at most 200 instructions per loop iteration, 0 allocations |
@@ -944,10 +963,13 @@ published image. The made-up ASL is ours, under MIT.
   records as the host harness; without a module the test is skipped, and the CI job that passes one names it on
   `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so the 64-bit
   integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
-- **The census oracle**: every opcode count of every machine equals that of the census script. Per table, the
-  declaration counts are compared with the `iasl` disassembly shipped with each dump; they differ where `iasl`
-  guessed the argument counts of methods it could not resolve, left an object out, or where the report's
-  disassembly is cut short, and each such table is listed.
+- **The census oracle**: every opcode count of every machine equals that of the census script, the tables loaded
+  declaring every branch of table-level code and running none of it, as the census reads them; running it, which
+  declares only the branches taken, is checked against `acpiexec` instead, on the machines whose table-level code
+  runs without a failure: `namespace corpus` names how many it leaves out. Per table, the declaration counts are
+  compared with the `iasl` disassembly shipped with each dump; they differ where `iasl` guessed the argument counts
+  of methods it could not resolve, left an object out, or where the report's disassembly is cut short, and each
+  such table is listed.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
   lines and compared path by path, without the nodes ACPICA creates for `External`.

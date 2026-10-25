@@ -36,7 +36,7 @@ static bool closure_walk(KernelTest_t *test, const uint8_t *aml, uint32_t length
         return false;
     }
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &closure_load, made_up_definition_block(closure_table, "DSDT", aml, length));
+        &closure_load, made_up_definition_block(closure_table, "DSDT", 2u, aml, length));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&closure_load);
     needs_path_closure_walk(&closure, &closure_load);
     return kernel_test_check(test, closure_load.decode_errors == 0u && closure.dropped == 0u,
