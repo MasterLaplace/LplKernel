@@ -431,7 +431,7 @@ KERNEL_TEST(a_region_past_4_gib_is_unreachable)
     };
 
     regions_begin();
-    made_up_aml_region(&regions_aml, "HIGR", 0x00u, 0x100000000ull, 4u);
+    made_up_aml_region(&regions_aml, "HIGR", 0x00u, 0x100010000ull, 4u);
     made_up_aml_field(&regions_aml, "HIGR", REGIONS_BYTE_ACCESS, above, 1u);
     made_up_aml_region(&regions_aml, "ACRR", 0x00u, 0xFFFFFFFEull, 4u);
     made_up_aml_field(&regions_aml, "ACRR", REGIONS_DWORD_ACCESS, across, 1u);
