@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-KERNEL_TEST_SUITE(needs_path_closure, KERNEL_TEST_STAGE_INITIALIZATION);
+KERNEL_TEST_SUITE(host_needs_path_closure, KERNEL_TEST_STAGE_INITIALIZATION);
 
 #define CLOSURE_TABLE_CAPACITY 256u           /**< Bytes of the buffer the made-up DSDT is written in. */
 #define CLOSURE_MAX_NODES      256u           /**< The node cap of the made-up load. */

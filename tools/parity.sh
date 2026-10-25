@@ -13,12 +13,12 @@ so a new value in a test is compared without a change here.
 Each <host-log> is what a host test binary printed: LplPlugin's `test-engine`, LplAssistant's
 `test-assistant`, LplKnowledge's `test-knowledge`. <serial-log> is what a debug kernel printed
 on COM1. Every test the hosts ran must have run in ring 0 and printed the same records, in the
-same order. Tests that exist on one side only (the kernel's own, or the tests of what only the
-kernel compiles) are not compared.
+same order. Tests that exist on one side only (the kernel's own, the tests of what only the
+kernel compiles, or a suite named host_* that tests a host tool) are not compared.
 
   --self-test  check that a difference, a missing test, a repeated run and an empty host log
-               all fail, and that several host logs and a serial log with carriage returns
-               still compare
+               all fail, and that several host logs, a serial log with carriage returns and a
+               host_* suite ring 0 never runs still compare
 
 Exit status: 0 when every test the host ran agrees, 1 when one does not or when the host
 log holds no test, 2 on a usage error.
@@ -61,7 +61,7 @@ compare() {
     LC_ALL=C join -a 1 -e missing -o 0,1.2,1.3,2.2,2.3 \
         <(summarize "${hosts[@]}" | LC_ALL=C sort -k1,1) <(summarize "$ring0" | LC_ALL=C sort -k1,1) |
         awk '
-            $2 == "skipped" { next }
+            $2 == "skipped" || index($1, "host_") == 1 { next }
             {
                 ++compared
                 if ($2 == "failed") { print "not ok " $1 ": fails on the host"; ++differences; next }
@@ -124,6 +124,8 @@ KTAP version 1
 ok 1 other
 EOF
     cat "$directory/host" "$directory/second" >"$directory/both"
+    sed 's/Subtest: other/Subtest: host_tool/; s/other\.fold/host_tool.fold/; s/^ok 1 other/ok 1 host_tool/' "$directory/second" >"$directory/tool"
+    cat "$directory/host" "$directory/tool" >"$directory/with_tool"
 
     local failures=0
     compare "$directory/host" "$directory/host" >/dev/null || { echo "self-test: a log differs from itself"; failures=$((failures + 1)); }
@@ -136,6 +138,7 @@ EOF
     compare "$directory/host" "$directory/second" "$directory/both" >/dev/null || { echo "self-test: two host logs did not compare with one serial log"; failures=$((failures + 1)); }
     ! compare "$directory/host" "$directory/second" "$directory/host" >/dev/null || { echo "self-test: a test of the second host log that ring 0 did not run passed"; failures=$((failures + 1)); }
     ! compare "$directory/host" "$directory/host" "$directory/host" >/dev/null || { echo "self-test: one test name in two host logs passed"; failures=$((failures + 1)); }
+    compare "$directory/with_tool" "$directory/host" >/dev/null || { echo "self-test: a host_ suite ring 0 does not run was compared"; failures=$((failures + 1)); }
     [ "$failures" -eq 0 ] || return 1
     echo "self-test: ok"
 }
