@@ -72,7 +72,7 @@ static void made_up_close(KernelTest_t *test)
         slots += (space->slots[slot] != 0u) ? 1u : 0u;
     kernel_test_check(test, live == space->live_nodes && found + 1u == live && slots + 1u == live,
                       "every live node is found by its parent and name, in one slot each");
-    kernel_test_check(test, made_up_load.heap.stale_releases == 0u, "no release found nothing to release");
+    kernel_test_check(test, made_up_load.heap.stale_handles == 0u, "no retain or release met a dead object");
     advanced_configuration_and_power_interface_machine_language_close(&made_up_load);
     kernel_test_check(test, made_up_host.outstanding_pages == 0u, "every page goes back to the host");
 }

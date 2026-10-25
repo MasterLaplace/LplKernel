@@ -158,8 +158,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap {
                                                                                                                none. */
     uint32_t objects;            /**< Objects allocated. */
     uint32_t objects_freed;      /**< Of those, the ones freed: objects - objects_freed are alive. */
-    uint32_t stale_releases;     /**< Releases of an object already freed or left with no reference: each is a
-                                      defect, and changes nothing. */
+    uint32_t stale_handles;      /**< Retains and releases of an object already freed, dying or left with no
+                                      reference: each is a defect, and changes nothing. A release whose block
+                                      another object took meanwhile is not seen. */
     uint32_t object_bytes;       /**< Bytes the live objects' blocks take, headers included. */
     uint32_t object_bytes_peak;  /**< The most object_bytes reached. */
     uint32_t packages_padded;    /**< Packages with fewer initialisers than elements, padded with Uninitialized. */

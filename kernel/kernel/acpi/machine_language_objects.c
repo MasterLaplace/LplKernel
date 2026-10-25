@@ -21,6 +21,13 @@
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_RUN_PAGES *                                    \
      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES) /**< Bytes of a run of small objects. */
 
+_Static_assert(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES ==
+                       MACHINE_LANGUAGE_FINE_CLASS_BYTES << 4u &&
+                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_SIZE_CLASSES ==
+                       MACHINE_LANGUAGE_FINE_CLASS_BYTES / MACHINE_LANGUAGE_OBJECT_ALIGNMENT +
+                           4u * MACHINE_LANGUAGE_CLASSES_PER_DOUBLING,
+               "the size classes are the fine ones, then four doublings from 256 bytes to the large objects");
+
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t MachineLanguageValue_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t MachineLanguageSource_t;
@@ -273,7 +280,7 @@ static void machine_language_count_down(MachineLanguageHeap_t *heap, uint32_t ha
     if (header == NULL || header->kind == MACHINE_LANGUAGE_OBJECT_FREE || header->references == 0u ||
         (header->flags & MACHINE_LANGUAGE_OBJECT_DYING) != 0u)
     {
-        ++heap->stale_releases;
+        ++heap->stale_handles;
         return;
     }
     if (--header->references != 0u)
@@ -775,8 +782,15 @@ void advanced_configuration_and_power_interface_machine_language_object_retain(M
 {
     MachineLanguageHeader_t *header = advanced_configuration_and_power_interface_machine_language_object(heap, handle);
 
-    if (header != NULL && header->references != MACHINE_LANGUAGE_SATURATED)
-        ++header->references;
+    if (header != NULL && header->references == MACHINE_LANGUAGE_SATURATED)
+        return;
+    if (header == NULL || header->kind == MACHINE_LANGUAGE_OBJECT_FREE || header->references == 0u ||
+        (header->flags & MACHINE_LANGUAGE_OBJECT_DYING) != 0u)
+    {
+        ++heap->stale_handles;
+        return;
+    }
+    ++header->references;
 }
 
 void advanced_configuration_and_power_interface_machine_language_object_release(MachineLanguageHeap_t *heap,

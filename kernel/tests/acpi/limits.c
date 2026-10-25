@@ -49,7 +49,7 @@ static void limits_close(KernelTest_t *test)
                           evaluation->operator_count == 0u && evaluation->block_count == 0u &&
                           limits_load.temporary_count == 0u,
                       "a failed run leaves no frame, value, operator, block or temporary node behind");
-    kernel_test_check(test, limits_load.heap.stale_releases == 0u, "no release found nothing to release");
+    kernel_test_check(test, limits_load.heap.stale_handles == 0u, "no retain or release met a dead object");
     advanced_configuration_and_power_interface_machine_language_close(&limits_load);
 }
 

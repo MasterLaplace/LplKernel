@@ -183,8 +183,8 @@ static uint32_t values_failed(AdvancedConfigurationAndPowerInterfaceMachineLangu
 
 /**
  * @brief Checks that every run left the evaluation's stacks empty, that the heap holds what the
- *        namespace reaches and @p unreachable objects more, and that no release found nothing to
- *        release; then closes the load.
+ *        namespace reaches and @p unreachable objects more, and that no retain or release met a dead
+ *        object; then closes the load.
  */
 static void values_close_with(KernelTest_t *test, uint32_t unreachable)
 {
@@ -197,7 +197,7 @@ static void values_close_with(KernelTest_t *test, uint32_t unreachable)
                       "every run leaves no frame, value, operator, block or temporary node behind");
     kernel_test_check(test, values_live_objects() == values_reachable_objects() + unreachable,
                       "the heap holds the objects the namespace reaches, and no other");
-    kernel_test_check(test, values_load.heap.stale_releases == 0u, "no release found nothing to release");
+    kernel_test_check(test, values_load.heap.stale_handles == 0u, "no retain or release met a dead object");
     advanced_configuration_and_power_interface_machine_language_close(&values_load);
     kernel_test_check(test, values_host.outstanding_pages == 0u, "every page goes back to the host");
 }
@@ -831,6 +831,45 @@ KERNEL_TEST(a_saturated_reference_count_is_never_freed)
 }
 
 /**
+ * @brief A retain or a release of a handle whose object was freed is counted and changes nothing
+ *        (§3.5): the freed block's link to the next free block stays, and the next object of its size
+ *        takes the block with a count of 1.
+ */
+KERNEL_TEST(a_dead_handle_is_counted_and_changes_nothing)
+{
+    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '0', 0x00u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap = &values_load.heap;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &values_load.space;
+    uint32_t handle = 0u;
+    uint32_t again = 0u;
+
+    if (!values_run(test, 2u, aml, sizeof(aml)))
+        return;
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 3u, &handle);
+    advanced_configuration_and_power_interface_machine_language_object_release(heap, space, handle);
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *freed =
+        advanced_configuration_and_power_interface_machine_language_object(heap, handle);
+    const uint32_t link = freed->references;
+
+    advanced_configuration_and_power_interface_machine_language_object_retain(heap, handle);
+    advanced_configuration_and_power_interface_machine_language_object_release(heap, space, handle);
+    kernel_test_check(test, heap->stale_handles == 2u && freed->references == link,
+                      "the retain and the release of the freed String are counted, and its link stays");
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 3u, &again);
+    kernel_test_check(test,
+                      again == handle &&
+                          advanced_configuration_and_power_interface_machine_language_object(heap, again)->references ==
+                              1u,
+                      "the next String of its size takes the block, with a count of 1");
+    advanced_configuration_and_power_interface_machine_language_object_release(heap, space, again);
+    heap->stale_handles = 0u;
+    values_close(test);
+}
+
+/**
  * @brief A Name whose object waits for the interpreter, or whose Package holds more initialisers than
  *        elements, keeps nothing it cannot use (§5.1): the packages and strings the load built before it
  *        met Buffer (Add (1, 1)) or Package (Add (1, 1)) are freed, as is the initialiser past the
@@ -869,8 +908,8 @@ KERNEL_TEST(a_name_whose_object_waits_or_is_cut_keeps_nothing_else)
 }
 
 /**
- * @brief A String that grows by 20 characters 200 times, up to 4,000, takes no more than two runs of
- *        the heap: each size it leaves behind serves a later one of its class (§3.5).
+ * @brief A String that grows by 20 characters 200 times, up to 4,000, takes one run of the heap at
+ *        most: each size it leaves behind serves a later one of its class (§3.5).
  */
 KERNEL_TEST(a_growing_string_reuses_the_blocks_it_gives_back)
 {
@@ -895,8 +934,8 @@ KERNEL_TEST(a_growing_string_reuses_the_blocks_it_gives_back)
     kernel_test_check(test, values_integer("RES0") == 4000u, "the String reaches 4,000 characters");
     kernel_test_check(test,
                       values_load.space.arena_bytes - arena <=
-                          2u * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_RUN_PAGES *
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_RUN_PAGES *
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES,
-                      "the heap took two runs at most");
+                      "the heap took one run at most");
     values_close(test);
 }
