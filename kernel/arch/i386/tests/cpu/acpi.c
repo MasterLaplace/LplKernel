@@ -1,4 +1,5 @@
 #include <kernel/acpi/tables.h>
+#include <kernel/cpu/clock.h>
 #include <kernel/cpu/ioapic.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
@@ -181,4 +182,28 @@ KERNEL_TEST(the_boot_puts_the_platform_in_acpi_mode_with_its_interrupt_masked)
     kernel_test_measure(test, "polls", mode->polls);
     kernel_test_measure(test, "waited_ms", mode->waited_milliseconds);
     kernel_test_measure(test, "sci_int", interrupt);
+}
+
+/**
+ * @brief The machine host's sleep waits at least a whole tick for 1 ms, and says how many
+ *        milliseconds it waited, no more than the ticks that passed around it.
+ */
+KERNEL_TEST(the_machine_host_sleeps_on_the_tick_and_says_how_long)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t before = clock_get_tick_count();
+    const uint32_t waited = host->sleep_milliseconds(host->context, 1u);
+    const uint32_t ticks = clock_get_tick_count() - before;
+
+    if (hertz == 0u)
+    {
+        kernel_test_skip(test, "no tick runs");
+        return;
+    }
+    kernel_test_check(test, ticks >= 2u, "a sleep of 1 ms lets a whole tick pass, the one it lands in not counted");
+    kernel_test_check(test, (uint64_t) waited * hertz >= 1000u,
+                      "it says it waited at least as many milliseconds as a tick lasts");
+    kernel_test_check(test, (uint64_t) waited * hertz <= (uint64_t) ticks * 1000u,
+                      "it says no more than the ticks that passed around it");
 }
