@@ -20,9 +20,6 @@ extern const KernelTestCase_t *const _kernel_tests_end[];
 /** Patterns the required option may hold: one bit each in kernel_test_required_named. */
 #define KERNEL_TEST_MOST_REQUIRED_PATTERNS 32u
 
-/** Longest "suite.test" a selection pattern is matched against; a longer name is cut there. */
-#define KERNEL_TEST_QUALIFIED_NAME_CAPACITY 128u
-
 /** Indentation of a line that belongs to a suite's subtest. */
 #define KERNEL_TEST_SUBTEST_INDENT "    "
 
@@ -128,29 +125,48 @@ static uint32_t kernel_test_count_suite_tests(const KernelTestCase_t *first)
 }
 
 /**
- * @brief Matches @p subject against the pattern [@p pattern, @p pattern_end), where `*` matches any run.
+ * @brief The character at @p position of the qualified name "suite.test" of @p test_case, whose suite
+ *        name is @p suite_length characters long; NUL at its end.
  */
-static bool kernel_test_pattern_matches(const char *pattern, const char *pattern_end, const char *subject)
+static char kernel_test_qualified_character(const KernelTestCase_t *test_case, uint32_t suite_length, uint32_t position)
 {
-    const char *star = NULL;
-    const char *resume = NULL;
+    if (position < suite_length)
+        return test_case->suite->name[position];
+    if (position == suite_length)
+        return '.';
+    return test_case->name[position - suite_length - 1u];
+}
 
-    while (*subject != '\0')
+/**
+ * @brief Matches the qualified name "suite.test" of @p test_case, read in place whatever its length,
+ *        against the pattern [@p pattern, @p pattern_end), where `*` matches any run.
+ */
+static bool kernel_test_pattern_matches(const char *pattern, const char *pattern_end, const KernelTestCase_t *test_case)
+{
+    uint32_t suite_length = 0u;
+    const char *star = NULL;
+    uint32_t resume = 0u;
+    uint32_t position = 0u;
+
+    while (test_case->suite->name[suite_length] != '\0')
+        ++suite_length;
+    for (char subject = kernel_test_qualified_character(test_case, suite_length, 0u); subject != '\0';
+         subject = kernel_test_qualified_character(test_case, suite_length, position))
     {
         if (pattern < pattern_end && *pattern == '*')
         {
             star = pattern++;
-            resume = subject;
+            resume = position;
         }
-        else if (pattern < pattern_end && *pattern == *subject)
+        else if (pattern < pattern_end && *pattern == subject)
         {
             ++pattern;
-            ++subject;
+            ++position;
         }
         else if (star)
         {
             pattern = star + 1;
-            subject = ++resume;
+            position = ++resume;
         }
         else
         {
@@ -161,19 +177,6 @@ static bool kernel_test_pattern_matches(const char *pattern, const char *pattern
     while (pattern < pattern_end && *pattern == '*')
         ++pattern;
     return pattern == pattern_end;
-}
-
-static void kernel_test_qualified_name(const KernelTestCase_t *test_case, char *buffer)
-{
-    uint32_t length = 0u;
-
-    for (const char *c = test_case->suite->name; *c != '\0' && length + 1u < KERNEL_TEST_QUALIFIED_NAME_CAPACITY; ++c)
-        buffer[length++] = *c;
-    if (length + 1u < KERNEL_TEST_QUALIFIED_NAME_CAPACITY)
-        buffer[length++] = '.';
-    for (const char *c = test_case->name; *c != '\0' && length + 1u < KERNEL_TEST_QUALIFIED_NAME_CAPACITY; ++c)
-        buffer[length++] = *c;
-    buffer[length] = '\0';
 }
 
 static bool kernel_test_pattern_has_a_star(const char *pattern, const char *pattern_end)
@@ -195,10 +198,6 @@ static bool kernel_test_pattern_has_a_star(const char *pattern, const char *patt
  */
 static bool kernel_test_is_selected_by(const char *selection, const KernelTestCase_t *test_case, bool named_in_full)
 {
-    char qualified_name[KERNEL_TEST_QUALIFIED_NAME_CAPACITY];
-
-    kernel_test_qualified_name(test_case, qualified_name);
-
     const char *pattern = selection;
 
     for (;;)
@@ -208,7 +207,7 @@ static bool kernel_test_is_selected_by(const char *selection, const KernelTestCa
         while (*pattern_end != '\0' && *pattern_end != ',' && *pattern_end != ' ')
             ++pattern_end;
         if (pattern_end > pattern && !(named_in_full && kernel_test_pattern_has_a_star(pattern, pattern_end)) &&
-            kernel_test_pattern_matches(pattern, pattern_end, qualified_name))
+            kernel_test_pattern_matches(pattern, pattern_end, test_case))
             return true;
         if (*pattern_end != ',')
             return false;
@@ -223,18 +222,16 @@ static bool kernel_test_is_selected_by(const char *selection, const KernelTestCa
  */
 static uint32_t kernel_test_patterns_naming(const char *patterns, const KernelTestCase_t *test_case)
 {
-    char qualified_name[KERNEL_TEST_QUALIFIED_NAME_CAPACITY];
     uint32_t naming = 0u;
     const char *pattern = patterns;
 
-    kernel_test_qualified_name(test_case, qualified_name);
     for (uint32_t index = 0u; index < KERNEL_TEST_MOST_REQUIRED_PATTERNS; ++index)
     {
         const char *pattern_end = pattern;
 
         while (*pattern_end != '\0' && *pattern_end != ',' && *pattern_end != ' ')
             ++pattern_end;
-        if (pattern_end > pattern && kernel_test_pattern_matches(pattern, pattern_end, qualified_name))
+        if (pattern_end > pattern && kernel_test_pattern_matches(pattern, pattern_end, test_case))
             naming |= 1u << index;
         if (*pattern_end != ',')
             break;
@@ -408,9 +405,26 @@ static void kernel_test_run_libraries(Serial_t *serial, const char *selection, c
 #endif
 
 /**
+ * @brief Writes a line for the first pattern of the required option past the ones it reads, and counts
+ *        it as a failed test: the tests it and those after it name are not required.
+ */
+static void kernel_test_write_unread_required(Serial_t *serial, const char *pattern)
+{
+    if (*pattern == '\0' || *pattern == ',' || *pattern == ' ')
+        return;
+    serial_write_string(serial, "# " KERNEL_TEST_REQUIRED_OPTION " reads ");
+    serial_write_unsigned(serial, KERNEL_TEST_MOST_REQUIRED_PATTERNS);
+    serial_write_string(serial, " patterns: the pattern ");
+    for (const char *c = pattern; *c != '\0' && *c != ',' && *c != ' '; ++c)
+        serial_write_char(serial, *c);
+    serial_write_string(serial, " and those after it are not read\n");
+    ++kernel_test_failed_count;
+}
+
+/**
  * @brief Writes a line for every pattern of the required option that named no test, kernel's or
  *        libraries', and counts each as a failed test: a pattern that names nothing requires
- *        nothing, and is a typo or a test renamed since.
+ *        nothing, and is a typo or a test renamed since. A pattern past the ones it reads fails too.
  */
 static void kernel_test_write_unnamed_required(Serial_t *serial, const char *required)
 {
@@ -431,9 +445,11 @@ static void kernel_test_write_unnamed_required(Serial_t *serial, const char *req
             ++kernel_test_failed_count;
         }
         if (*pattern_end != ',')
-            break;
+            return;
         pattern = pattern_end + 1;
     }
+    if (required)
+        kernel_test_write_unread_required(serial, pattern);
 }
 
 /**

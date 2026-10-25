@@ -37,7 +37,8 @@
  * - KERNEL_TEST_MANUAL() tests halt the machine and run only when named in full:
  *   `lpl.test=exceptions.breakpoint`. `lpl.test=heap.*` narrows any run to the other tests.
  * - `lpl.test.require=power_floor.*,cartridge.*` names the tests a boot must run, the libraries'
- *   too: one that is skipped fails, and a pattern that names no test fails the run.
+ *   too: one that is skipped fails, and a pattern that names no test fails the run, as does a
+ *   33rd pattern, which is not read. A pattern is matched against the whole "suite.test", however long.
  * - A boot line longer than the kernel keeps fails the run: what it lost may have named a test.
  *
  * @author @MasterLaplace
