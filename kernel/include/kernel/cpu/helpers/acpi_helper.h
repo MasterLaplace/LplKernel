@@ -44,7 +44,8 @@ extern void write_acpi_madt_record(Serial_t *serial);
 /**
  * @brief Writes the `[LPLTLM] acpi.aml` record: what the boot's load of the definition blocks
  *        decoded, declared and built, what waits for the interpreter, its faults, what its namespace
- *        and stacks took, and the namespace fold.
+ *        and stacks took, and the namespace fold; then the `[LPLTLM] acpi.regions` record: its field
+ *        accesses and what reaching their regions took.
  *
  * @param serial The port the record is written to.
  */

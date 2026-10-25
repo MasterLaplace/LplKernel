@@ -4,6 +4,30 @@
 #include <kernel/cpu/helpers/acpi_helper.h>
 #include <kernel/diag/telemetry.h>
 
+/**
+ * @brief Writes the `[LPLTLM] acpi.regions` record: the field accesses of the boot's load, and what
+ *        reaching their regions took.
+ */
+static void
+acpi_helper_write_regions_record(Serial_t *serial,
+                                 const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t *regions)
+{
+    uint32_t refused = 0u;
+
+    for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
+        refused += regions->space_unsupported[space];
+    kernel_telemetry_begin_record(serial, "acpi.regions");
+    kernel_telemetry_write_unsigned("field_reads", regions->field_reads);
+    kernel_telemetry_write_unsigned("field_writes", regions->field_writes);
+    kernel_telemetry_write_unsigned("map_calls", regions->map_calls);
+    kernel_telemetry_write_unsigned("mapping_cache_hits", regions->mapping_cache_hits);
+    kernel_telemetry_write_unsigned("split_qword_accesses", regions->split_qword_accesses);
+    kernel_telemetry_write_unsigned("protected_port_accesses", regions->protected_port_accesses);
+    kernel_telemetry_write_unsigned("region_lengths_rounded", regions->region_lengths_rounded);
+    kernel_telemetry_write_unsigned("space_unsupported", refused);
+    kernel_telemetry_end_record();
+}
+
 void write_acpi_tables_info(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory =
@@ -116,6 +140,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_hexadecimal(
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
+    acpi_helper_write_regions_record(serial, &load->regions);
 }
 
 void write_acpi_ioapics_info(Serial_t *serial)

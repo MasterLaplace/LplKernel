@@ -72,17 +72,25 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 }
 
 /**
- * @brief Prints what running table-level code did: its runs and failures, the failures per status,
- *        and the opcodes that failed as unimplemented.
+ * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
+ *        failures per status, the region spaces refused, and the opcodes that failed as unimplemented.
  */
 static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t *regions = &load->regions;
 
     printf("aml run statements=%u failures=%u implicit_returns=%u uninitialized_operands=%u frames_peak=%u "
            "values_peak=%u declared_not_run=%u\n",
            evaluation->runs, evaluation->failures, evaluation->implicit_returns, evaluation->uninitialized_operands,
            evaluation->frames_peak, evaluation->values_peak, load->declared_not_run);
+    printf("aml run regions field_reads=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
+           "split_qword_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u\n",
+           regions->field_reads, regions->field_writes, regions->map_calls, regions->mapping_cache_hits,
+           regions->split_qword_accesses, regions->protected_port_accesses, regions->region_lengths_rounded);
+    for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
+        if (regions->space_unsupported[space] != 0u)
+            printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);
     for (uint32_t status = 1u; status < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT;
          ++status)
         if (evaluation->statuses[status] != 0u)
