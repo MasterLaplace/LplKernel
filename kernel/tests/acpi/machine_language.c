@@ -769,7 +769,7 @@ KERNEL_TEST(an_external_cut_short_or_without_a_name_creates_nothing)
         &made_up_load, made_up_table(1u, "SSDT", nameless, sizeof(nameless)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(test, made_up_load.space.live_nodes == nodes, "neither External creates a node");
-    kernel_test_check(test, made_up_load.load_errors >= 2u, "the cut one and the nameless one are counted");
+    kernel_test_check(test, made_up_load.load_errors == 2u, "the cut one and the nameless one are counted, once each");
     made_up_close(test);
 }
 
@@ -781,7 +781,6 @@ KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
 {
     static uint8_t aml[300u * 18u + 32u];
     uint32_t length = 0u;
-    uint32_t call = 0u;
 
     for (uint32_t index = 0u; index < 300u; ++index)
     {
@@ -798,7 +797,6 @@ KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
         aml[length++] = 0x08u;
         aml[length++] = 0x01u;
     }
-    call = length;
     {
         static const uint8_t main_method[] = {0x14u, 0x18u, 'M', 'A', 'I', 'N',   0x00u, 0x70u, '\\',
                                               0x2Fu, 0x03u, '_', 'S', 'B', '_',   'D',   '2',   '9',
@@ -825,7 +823,6 @@ KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) table);
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
-    kernel_test_measure(test, "externals_call_offset", call);
     kernel_test_check(test, made_up_load.load_errors == 0u && made_up_load.decode_errors == 0u,
                       "every External is placed, without a fault");
     kernel_test_check(test,
@@ -906,5 +903,164 @@ KERNEL_TEST(the_same_external_twice_makes_one_node)
     kernel_test_check(test, made_up_load.space.live_nodes == nodes + 2u,
                       "one External for \\NOPE.MTH_ and one for the missing NOPE");
     kernel_test_check(test, made_up_load.load_errors == 0u, "the second External finds the first and counts no fault");
+    made_up_close(test);
+}
+
+/**
+ * @brief Two Externals through an Alias a later table declares make one node, under the Alias, which
+ *        the namespace finds by its parent and name.
+ */
+KERNEL_TEST(two_externals_through_a_later_alias_make_one_node)
+{
+    static const uint8_t externals[] = {
+        0x15u, '\\', 0x2Eu, 'A', 'L', 'S', '_', 'F', 'O', 'O', '_', 0x08u, 0x01u,
+        0x15u, '\\', 0x2Eu, 'A', 'L', 'S', '_', 'F', 'O', 'O', '_', 0x08u, 0x01u,
+    };
+    static const uint8_t alias[] = {0x06u, '\\', '_', 'S', 'B', '_', '\\', 'A', 'L', 'S', '_'};
+
+    if (!made_up_open(test))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", externals, sizeof(externals)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", alias, sizeof(alias)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test, made_up_load.load_errors == 0u, "both Externals are placed without a fault");
+    made_up_close(test);
+}
+
+/**
+ * @brief The Externals pass places nothing from a Scope or a Device it cannot find: the External in
+ *        their body names no path any table declares, and a name that climbs to the root still
+ *        resolves to nothing. An External on a missing path makes the pass run.
+ */
+KERNEL_TEST(an_external_in_a_scope_that_cannot_be_found_is_not_placed)
+{
+    static const uint8_t aml[] = {
+        0x10u, 0x0Du, '\\',  'N',   'O',   'P',   'E', 0x15u, 'F', 'O', 'O',   '_',   0x08u, 0x02u, 0x5Bu,
+        0x82u, 0x12u, '\\',  0x2Eu, 'N',   'O',   'P', 'E',   'D', 'E', 'V',   '0',   0x15u, 'B',   'A',
+        'R',   '_',   0x08u, 0x01u, 0x14u, 0x0Au, 'M', 'A',   'I', 'N', 0x00u, 'F',   'O',   'O',   '_',
+        0x15u, '\\',  0x2Eu, 'M',   'I',   'S',   'S', 'I',   'N', 'G', '_',   0x08u, 0x00u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    uint32_t index = 0u;
+
+    kernel_test_check(
+        test,
+        made_up_resolve(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, "FOO_", &index) !=
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+            made_up_resolve(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, "BAR_", &index) !=
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK,
+        "neither FOO_ nor BAR_ lands at the root");
+    kernel_test_check(test, made_up_load.unresolved_names == 1u && made_up_load.decode_errors == 0u,
+                      "FOO_ in MAIN resolves to nothing, and decodes");
+    made_up_close(test);
+}
+
+/**
+ * @brief A second Alias of the same name in a method body leaves the first's target: the call
+ *        through it takes the one argument of MTH1, not the two of MTH2, and the Noop after it stays
+ *        a statement.
+ */
+KERNEL_TEST(a_second_alias_in_a_body_keeps_the_first_target)
+{
+    static const uint8_t aml[] = {
+        0x14u, 0x07u, 'M', 'T', 'H', '1', 0x01u, 0xA3u, 0x14u, 0x07u, 'M', 'T', 'H', '2',   0x02u, 0xA3u,
+        0x14u, 0x1Eu, 'M', 'A', 'I', 'N', 0x00u, 0x06u, 'M',   'T',   'H', '1', 'A', 'L',   'I',   '_',
+        0x06u, 'M',   'T', 'H', '2', 'A', 'L',   'I',   '_',   'A',   'L', 'I', '_', 0x01u, 0xA3u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.decode_errors == 0u, "ALI_ (One) takes one argument, and Noop follows it");
+    made_up_close(test);
+}
+
+/**
+ * @brief An External in a method body never rewrites the argument count of the External the table
+ *        declares.
+ */
+KERNEL_TEST(an_external_in_a_body_keeps_the_table_s_argument_count)
+{
+    static const uint8_t aml[] = {
+        0x15u, '\\', 'E',   'X',   'T',  '_', 0x08u, 0x01u, 0x14u, 0x0Eu, 'M',   'A',
+        'I',   'N',  0x00u, 0x15u, '\\', 'E', 'X',   'T',   '_',   0x08u, 0x03u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    uint32_t index = 0u;
+
+    kernel_test_check(
+        test,
+        made_up_resolve(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, "EXT_", &index) ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+            advanced_configuration_and_power_interface_machine_language_namespace_node(&made_up_load.space, index)
+                    ->value.payload == 1u,
+        "EXT_ still takes one argument");
+    made_up_close(test);
+}
+
+/**
+ * @brief An External the namespace has no node for is counted once, by the Externals pass, not by
+ *        the declaration pass as well.
+ */
+KERNEL_TEST(an_external_past_the_node_cap_is_counted_once)
+{
+    static const uint8_t aml[] = {0x15u, '\\', 'X', 'X', 'X', '_', 0x08u, 0x01u};
+    uint32_t nodes = 0u;
+
+    if (!made_up_open(test))
+        return;
+    nodes = made_up_load.space.node_count - 1u;
+    advanced_configuration_and_power_interface_machine_language_close(&made_up_load);
+    advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &made_up_load, &made_up_host.host, nodes, MADE_UP_MAX_ARENA),
+                           "the namespace opens full"))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", aml, sizeof(aml)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test,
+                      made_up_load.load_errors == 1u &&
+                          made_up_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_NAMESPACE_NODES,
+                      "the External is counted once, as limit_namespace_nodes");
+    made_up_close(test);
+}
+
+/**
+ * @brief An External through an Alias a later table declares, to an object that exists, places
+ *        nothing: the Alias stays without a child.
+ */
+KERNEL_TEST(an_external_through_a_later_alias_to_an_object_places_nothing)
+{
+    static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'A', 'L', 'S', '_', 'F', 'O', 'O', '_', 0x01u, 0x00u};
+    static const uint8_t declarations[] = {
+        0x06u, '\\',  '_', 'S', 'B', '_', '\\', 'A', 'L', 'S', '_',   0x08u,
+        '\\',  0x2Eu, '_', 'S', 'B', '_', 'F',  'O', 'O', '_', 0x01u,
+    };
+
+    if (!made_up_open(test))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", external, sizeof(external)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", declarations, sizeof(declarations)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *alias =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(
+            &made_up_load.space,
+            advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                &made_up_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+                made_up_segment("ALS_")));
+
+    kernel_test_check(test, alias != NULL && alias->first_child == 0u && made_up_load.load_errors == 0u,
+                      "ALS_ has no child, and nothing is counted");
     made_up_close(test);
 }
