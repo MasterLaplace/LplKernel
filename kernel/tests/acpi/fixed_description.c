@@ -16,6 +16,7 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_fixed_description, 
 #define MADE_UP_FADT_ACPI_ENABLE       52u  /**< ACPI_ENABLE, 1 byte. */
 #define MADE_UP_FADT_PSTATE_CNT        55u  /**< PSTATE_CNT, 1 byte, reserved in ACPI 1.0. */
 #define MADE_UP_FADT_PM1A_EVT_BLK      56u  /**< PM1a_EVT_BLK, 4 bytes. */
+#define MADE_UP_FADT_PM1B_EVT_BLK      60u  /**< PM1b_EVT_BLK, 4 bytes. */
 #define MADE_UP_FADT_PM1A_CNT_BLK      64u  /**< PM1a_CNT_BLK, 4 bytes. */
 #define MADE_UP_FADT_PM1B_CNT_BLK      68u  /**< PM1b_CNT_BLK, 4 bytes. */
 #define MADE_UP_FADT_PM_TMR_BLK        76u  /**< PM_TMR_BLK, 4 bytes. */
@@ -31,6 +32,7 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_fixed_description, 
 #define MADE_UP_FADT_RESET_VALUE       128u /**< RESET_VALUE, 1 byte. */
 #define MADE_UP_FADT_MINOR_VERSION     131u /**< FADT Minor Version, 1 byte. */
 #define MADE_UP_FADT_X_PM1A_EVT_BLK    148u /**< X_PM1a_EVT_BLK, a Generic Address Structure. */
+#define MADE_UP_FADT_X_PM1B_EVT_BLK    160u /**< X_PM1b_EVT_BLK, a Generic Address Structure. */
 #define MADE_UP_FADT_X_PM1A_CNT_BLK    172u /**< X_PM1a_CNT_BLK, a Generic Address Structure. */
 #define MADE_UP_FADT_X_PM_TMR_BLK      208u /**< X_PM_TMR_BLK, a Generic Address Structure. */
 #define MADE_UP_FADT_X_GPE0_BLK        220u /**< X_GPE0_BLK, a Generic Address Structure. */
@@ -43,13 +45,10 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_fixed_description, 
  * @name The flags the made-up FADTs set
  * @{
  */
-#define MADE_UP_FADT_RESET_REG_SUP   (1u << 10u) /**< RESET_REG_SUP: RESET_REG resets the platform. */
-#define MADE_UP_FADT_HW_REDUCED_ACPI (1u << 20u) /**< HW_REDUCED_ACPI: no fixed hardware. */
-#define MADE_UP_FADT_IGNORED_WHEN_REDUCED                                                                              \
-    0x0003618Eu /**< Bits 1, 2, 3, 7, 8, 13, 14, 16 and 17, which a hardware-reduced platform ignores. */
-#define MADE_UP_FADT_KEPT_WHEN_REDUCED                                                                                 \
-    0x00000071u /**< Bits 0, 4, 5 and 6, which a hardware-reduced platform keeps.                                      \
-                 */
+#define MADE_UP_FADT_RESET_REG_SUP        (1u << 10u) /**< RESET_REG_SUP: RESET_REG resets the platform. */
+#define MADE_UP_FADT_HW_REDUCED_ACPI      (1u << 20u) /**< HW_REDUCED_ACPI: no fixed hardware. */
+#define MADE_UP_FADT_IGNORED_WHEN_REDUCED 0x0003618Eu /**< Bits 1, 2, 3, 7, 8, 13, 14, 16, 17: ignored if reduced. */
+#define MADE_UP_FADT_KEPT_WHEN_REDUCED    0x00000071u /**< Bits 0, 4, 5 and 6: kept if reduced. */
 /** @} */
 
 #define MADE_UP_FADT_CAPACITY 512u  /**< Bytes of the buffer a made-up FADT is written in. */
@@ -313,6 +312,9 @@ KERNEL_TEST(a_revision_5_fadt_reads_no_fixed_hardware_when_it_is_hardware_reduce
         made_up_fadt_put_register(MADE_UP_FADT_RESET_REG, MADE_UP_FADT_IO, 8u, 1u, 0xCF9u);
         made_up_fadt_put(MADE_UP_FADT_RESET_VALUE, 1u, 6u);
         made_up_fadt_put_register(MADE_UP_FADT_X_PM1A_CNT_BLK, MADE_UP_FADT_IO, 16u, 2u, 0x1804u);
+        made_up_fadt_put(MADE_UP_FADT_PM1B_EVT_BLK, 4u, 0x440u);
+        made_up_fadt_put_register(MADE_UP_FADT_X_PM1B_EVT_BLK, MADE_UP_FADT_IO, 32u, 2u, 0x1840u);
+        made_up_fadt_put_register(MADE_UP_FADT_X_GPE1_BLK, MADE_UP_FADT_IO, 64u, 1u, 0x18A0u);
         made_up_fadt_put_register(MADE_UP_FADT_SLEEP_CONTROL_REG, MADE_UP_FADT_MEMORY, 8u, 1u, 0xFED80000u);
         made_up_fadt_put_register(MADE_UP_FADT_SLEEP_STATUS_REG, MADE_UP_FADT_MEMORY, 8u, 1u, 0xFED80001u);
         if (!kernel_test_check(test, made_up_fadt_read() && fadt->revision == 5u, "268 bytes are revision 5"))
@@ -335,6 +337,8 @@ KERNEL_TEST(a_revision_5_fadt_reads_no_fixed_hardware_when_it_is_hardware_reduce
                       "SCI_INT, SMI_CMD, ACPI_ENABLE, PSTATE_CNT, CST_CNT and GPE1_BASE read 0");
     kernel_test_check(test,
                       made_up_fadt_register_is_absent(&fadt->power_management_event_blocks[0]) &&
+                          made_up_fadt_register_is_absent(&fadt->power_management_event_blocks[1]) &&
+                          made_up_fadt_register_is_absent(&fadt->general_purpose_event_blocks[1]) &&
                           made_up_fadt_register_is_absent(&fadt->power_management_control_blocks[0]) &&
                           made_up_fadt_register_is_absent(&fadt->power_management_control_blocks[1]) &&
                           made_up_fadt_register_is_absent(&fadt->power_management_timer_block) &&
