@@ -36,6 +36,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_directory, KERNEL_T
 #define MADE_UP_FIRMWARE_FADT_DSDT                      40u            /**< Offset of a FADT's 32-bit DSDT field. */
 #define MADE_UP_FIRMWARE_FADT_EXTENDED_FIRMWARE_CONTROL 132u           /**< Offset of a FADT's X_FIRMWARE_CTRL field. */
 #define MADE_UP_FIRMWARE_FADT_EXTENDED_DSDT             140u           /**< Offset of a FADT's X_DSDT field. */
+#define MADE_UP_FIRMWARE_FADT_PM1A_CONTROL              64u            /**< Offset of a FADT's PM1a_CNT_BLK field. */
+#define MADE_UP_FIRMWARE_FADT_FLAGS                     112u           /**< Offset of a FADT's Flags field. */
+#define MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL     184u           /**< Offset of a FADT's X_PM1b_CNT_BLK field. */
 #define MADE_UP_FIRMWARE_RSDP_VERSION_1                 20u /**< Bytes the first checksum of a root pointer covers. */
 
 /**
@@ -449,5 +452,41 @@ KERNEL_TEST(a_host_without_a_root_pointer_below_4_gib_gives_no_directory)
                       "a root pointer above 4 GiB is not truncated to one below");
     kernel_test_check(test, made_up_firmware_directory.unreachable_count == 1u,
                       "a root pointer above 4 GiB is counted unreachable, not taken for none");
+    made_up_firmware_release(test);
+}
+
+/**
+ * @brief The directory takes the PM1a and PM1b control ports from the FADT, a 32-bit block when it is
+ *        set, else an extended block in the I/O space, and reads the hardware-reduced flag.
+ */
+KERNEL_TEST(the_power_management_control_ports_and_the_hardware_reduced_flag_are_read)
+{
+    static const uint8_t extended_io[12] = {0x01u, 16u, 0u, 2u, 0x05u, 0x08u};
+    static const uint8_t extended_memory[12] = {0x00u, 16u, 0u, 2u, 0x05u, 0x08u};
+    MadeUpFirmware_t firmware;
+    uint8_t *fadt = NULL;
+    const uint32_t pm1a = 0x0604u;
+    const uint32_t reduced = 1u << 20u;
+
+    made_up_firmware_open(&firmware);
+    made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
+    fadt = firmware.page + MADE_UP_FIRMWARE_FADT_OFFSET;
+    memcpy(fadt + MADE_UP_FIRMWARE_FADT_PM1A_CONTROL, &pm1a, sizeof(pm1a));
+    memcpy(fadt + MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL, extended_io, sizeof(extended_io));
+    made_up_firmware_seal_table(&firmware, MADE_UP_FIRMWARE_FADT_OFFSET);
+    kernel_test_check(test,
+                      made_up_firmware_read() &&
+                          made_up_firmware_directory.power_management_control_ports[0] == 0x0604u &&
+                          made_up_firmware_directory.power_management_control_ports[1] == 0x0805u &&
+                          !made_up_firmware_directory.hardware_reduced,
+                      "PM1a from its 32-bit block, PM1b from its extended block in the I/O space");
+    made_up_firmware_release(test);
+    memcpy(fadt + MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL, extended_memory, sizeof(extended_memory));
+    memcpy(fadt + MADE_UP_FIRMWARE_FADT_FLAGS, &reduced, sizeof(reduced));
+    made_up_firmware_seal_table(&firmware, MADE_UP_FIRMWARE_FADT_OFFSET);
+    kernel_test_check(test,
+                      made_up_firmware_read() && made_up_firmware_directory.power_management_control_ports[1] == 0u &&
+                          made_up_firmware_directory.hardware_reduced,
+                      "an extended block in memory gives no port, and HW_REDUCED_ACPI is read");
     made_up_firmware_release(test);
 }

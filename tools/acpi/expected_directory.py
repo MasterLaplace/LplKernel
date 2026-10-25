@@ -53,9 +53,21 @@ def lookup(recorded, signature):
     return next((data for data in matching if checksum_holds(data)), matching[0] if matching else None)
 
 
+def control_port(fadt, length, offset_32, offset_extended):
+    """A PM1 control port of the FADT: its 32-bit block when not 0, else its extended block when it lies in the
+    I/O space; 0 when neither gives a port."""
+    port = field(fadt, length, offset_32, 4)
+    if port != 0:
+        return port if port <= 0xFFFF else 0
+    if length < offset_extended + 12:
+        return 0
+    space, address = field(fadt, length, offset_extended, 1), field(fadt, length, offset_extended + 4, 8)
+    return address if space == 1 and address <= 0xFFFF else 0
+
+
 def read_directory(path):
-    """The tables the directory records for the dump at path, in its order, the count it calls unreachable, and
-    the FACS."""
+    """The tables the directory records for the dump at path, in its order, the count it calls unreachable, the
+    FACS, the PM1a and PM1b control ports, and the hardware-reduced flag."""
     tables = [bytes(entry["bytes"]) for entry in real_firmware_census.read_acpidump(path)]
     dsdt = next((data for data in tables if data[:4] == b"DSDT"), None)
     listed = [data for data in tables if data is not dsdt and not is_left_out(data)]
@@ -67,7 +79,7 @@ def read_directory(path):
         else:
             recorded.append(data)
 
-    facs = 0
+    facs, control, reduced = 0, [0, 0], 0
     fadt_recorded = lookup(recorded, b"FACP")
     if fadt_recorded is not None:
         length = int.from_bytes(fadt_recorded[4:8], "little")
@@ -81,12 +93,15 @@ def read_directory(path):
         facs_32 = field(fadt_recorded, length, 36, 4)
         facs_64 = field(fadt_recorded, length, 132, 8)
         facs = facs_32 if facs_32 != 0 else (facs_64 if facs_64 >> 32 == 0 else 0)
-    return recorded, unreachable, facs
+        control = [control_port(fadt_recorded, length, 64, 172), control_port(fadt_recorded, length, 68, 184)]
+        reduced = (field(fadt_recorded, length, 112, 4) >> 20) & 1
+    return recorded, unreachable, facs, control, reduced
 
 
 def main():
-    recorded, unreachable, facs = read_directory(sys.argv[1])
-    print("tables=%u unreachable=%u facs=0x%08X" % (len(recorded), unreachable, facs))
+    recorded, unreachable, facs, control, reduced = read_directory(sys.argv[1])
+    print("tables=%u unreachable=%u facs=0x%08X pm1_control=0x%04X,0x%04X hardware_reduced=%u" % (
+        len(recorded), unreachable, facs, control[0], control[1], reduced))
     for data in recorded:
         info, _ = real_firmware_census.describe_table({"label": "", "bytes": data, "gaps": 0})
         print("%s length=%u revision=%u checksum=%s" % (
