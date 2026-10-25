@@ -103,7 +103,7 @@ static void references_close(KernelTest_t *test)
                           evaluation->operator_count == 0u && evaluation->block_count == 0u &&
                           references_load.temporary_count == 0u,
                       "every run leaves no frame, value, operator, block or temporary node behind");
-    kernel_test_check(test, references_load.heap.stale_releases == 0u, "no release found nothing to release");
+    kernel_test_check(test, references_load.heap.stale_handles == 0u, "no retain or release met a dead object");
     advanced_configuration_and_power_interface_machine_language_close(&references_load);
     kernel_test_check(test, references_host.outstanding_pages == 0u, "every page goes back to the host");
 }
