@@ -657,7 +657,7 @@ machine_language_source(MachineLanguageWalk_t *walk)
 }
 
 /**
- * @brief Whether the first pass, at table level, has just created node @p index: only then does it
+ * @brief Whether the declaration pass, at table level, has just created node @p index: only then does it
  *        build the node's object, so that a duplicate keeps the first one's.
  */
 static bool machine_language_builds(MachineLanguageWalk_t *walk, uint32_t index)
@@ -957,7 +957,7 @@ static void machine_language_build_scope_object(MachineLanguageWalk_t *walk,
 }
 
 /**
- * @brief Counts, in the second pass, a statement at table level that the interpreter would run: one
+ * @brief Counts, in the decoding pass, a statement at table level that the interpreter would run: one
  *        that is neither a declaration, data, a local, an argument nor Noop. A name there is a call
  *        or a reference to run.
  */
@@ -1052,7 +1052,7 @@ static MachineLanguageStatus_t machine_language_package_element(MachineLanguageW
 }
 
 /**
- * @brief Moves the field list past @p bit_length bits; in the first pass, a list that passes 2^32
+ * @brief Moves the field list past @p bit_length bits; in the declaration pass, a list that passes 2^32
  *        bits, which a unit's offset cannot hold, is refused as index_out_of_range.
  */
 static MachineLanguageStatus_t machine_language_advance_field(MachineLanguageWalk_t *walk, uint32_t bit_length)
