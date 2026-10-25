@@ -514,6 +514,32 @@ KERNEL_TEST(a_name_that_holds_a_reference_is_an_alias)
 }
 
 /**
+ * @brief CopyObject to a Name that refers to a package element replaces the reference, as Windows
+ *        does, where a Name that refers to a named object has its target replaced: the element keeps
+ *        its value, and the Name takes the copied object.
+ */
+KERNEL_TEST(copy_object_replaces_a_name_that_refers_to_a_package_element)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'P',   'K',   'G',   '0',   0x12u, 0x07u, 0x03u, 0x01u, 0x0Au, 0x02u, 0x0Au, 0x03u, 0x08u, 'A',
+        'L',   'S',   '2',   0x00u, 0x08u, 'R',   '0',   '0',   '0',   0x0Au, 0x07u, 0x14u, 0x09u, 'W',   'R',
+        'T',   'E',   0x02u, 0x70u, 0x68u, 0x69u, 'W',   'R',   'T',   'E',   0x88u, 'P',   'K',   'G',   '0',
+        0x01u, 0x00u, 0x71u, 'A',   'L',   'S',   '2',   0x9Du, 0x0Du, 'a',   'b',   0x00u, 'A',   'L',   'S',
+        '2',   0x70u, 0x83u, 0x88u, 'P',   'K',   'G',   '0',   0x01u, 0x00u, 'R',   '0',   '0',   '0',
+    };
+
+    if (!references_run(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, references_integer("R000") == 2u, "PKG0[1] keeps 2");
+    kernel_test_check(
+        test,
+        references_holds("ALS2", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, "ab", 2u),
+        "ALS2 holds the String \"ab\"");
+    kernel_test_check(test, references_load.evaluation.failures == 0u, "nothing fails");
+    references_close(test);
+}
+
+/**
  * @brief The bits a field of @p length bits at bit @p offset reads from a 16-byte Buffer, computed
  *        with two 64-bit words rather than bit by bit.
  */

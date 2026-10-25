@@ -1063,8 +1063,9 @@ static MachineLanguageStatus_t machine_language_store(MachineLanguageLoad_t *loa
  * @brief Runs CopyObject's store, which takes the references the value and the target hold: a local
  *        is overwritten, even one that holds a reference; an argument is overwritten, or what the
  *        reference it holds refers to; a named object takes the value and its type, through the
- *        reference it holds if it holds one; a field is written; a reference is followed and what it
- *        refers to replaced.
+ *        reference it holds if it holds one, but for a reference to a package element, which is
+ *        replaced, as Windows does; a field is written; a reference is followed and what it refers to
+ *        replaced.
  */
 static MachineLanguageStatus_t machine_language_copy_object(MachineLanguageLoad_t *load, MachineLanguageValue_t *value,
                                                             MachineLanguageValue_t *target)
@@ -1082,7 +1083,8 @@ static MachineLanguageStatus_t machine_language_copy_object(MachineLanguageLoad_
     else if (target->auxiliary == MACHINE_LANGUAGE_TARGET_NODE)
     {
         location = machine_language_node_location(load, target->handle);
-        status = machine_language_is_reference(location.slot->kind) ?
+        status = (machine_language_is_reference(location.slot->kind) &&
+                  location.slot->kind != MACHINE_LANGUAGE_VALUE(REFERENCE_ELEMENT)) ?
                      machine_language_store_through(load, location.slot, value, MACHINE_LANGUAGE_STORE_REPLACE) :
                      machine_language_store_at(load, &location, value, MACHINE_LANGUAGE_STORE_REPLACE);
     }
