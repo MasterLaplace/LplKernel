@@ -141,7 +141,7 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
         "$(grep -c ' iasl differs ' <<<"$disassembly") differ, $(grep -c ' iasl missing ' <<<"$disassembly") have none," \
         "of $tables"
     grep ' iasl differs ' <<<"$disassembly" | sed 's/^/#   /' || true
-    echo "# first pass: $(grep -o 'load_errors=[0-9]*' <<<"$faults" | cut -d= -f2 | paste -sd+ | bc) faults on" \
+    echo "# load: $(grep -o 'load_errors=[0-9]*' <<<"$faults" | cut -d= -f2 | paste -sd+ | bc) faults on" \
         "$(grep -c 'load_errors=[1-9]' <<<"$faults") machines; $(grep -o 'unresolved_names=[0-9]*' <<<"$faults" |
             cut -d= -f2 | paste -sd+ | bc) names that resolve to nothing"
     [[ "$(grep -c ' iasl \(agrees\|differs\|missing\) ' <<<"$disassembly")" -eq "$tables" ]] ||

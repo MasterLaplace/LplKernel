@@ -15,11 +15,12 @@
  * @file machine_language.h
  * @brief The AML interpreter's interface: the load of the definition blocks and what it counted.
  *
- * A load reads the DSDT and every SSDT in two passes. The first declares every named object of
- * every table, in order, and skips method bodies by their PkgLength; the second decodes every term
- * of every table, method bodies included, so that a call takes as many arguments as the method it
- * names declares. Nothing runs yet: table-level code is decoded and its declarations made, but no
- * predicate is evaluated (docs/acpi/specification.md, §3.6 and §5.1).
+ * A load reads the DSDT and every SSDT in three passes. The declaration pass declares every named
+ * object of every table, in order, and skips method bodies by their PkgLength; the Externals pass,
+ * which runs only when an External had nowhere to go, places those once every table is declared;
+ * the decoding pass decodes every term of every table, method bodies included, so that a call takes
+ * as many arguments as the method it names declares. Nothing runs yet: table-level code is decoded and its declarations
+ *made, but no predicate is evaluated (docs/acpi/specification.md, §3.6 and §5.1).
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -86,8 +87,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header; /**< Its bytes, header included. */
     uint32_t length;                                                 /**< Its length, header included. */
     bool checksum_valid;                                             /**< Whether its bytes sum to zero. */
-    uint32_t terms;                                                  /**< Opcodes the second pass decoded. */
-    uint32_t decode_errors;                                          /**< Faults the second pass met. */
+    uint32_t terms;                                                  /**< Opcodes the decoding pass decoded. */
+    uint32_t decode_errors;                                          /**< Faults the decoding pass met. */
     uint32_t first_error_offset; /**< Offset of the first fault's term, in the table. */
     uint16_t first_error_opcode; /**< The descriptor of the first fault's term, or the invalid one. */
     uint8_t first_error;         /**< The first fault's status. */
@@ -96,31 +97,33 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
 /**
  * @brief A load: its namespace, its tables, what it counted, and the stacks its passes use.
  *
- * @details The second pass decodes a method body as the method would run: the objects it declares
+ * @details The decoding pass decodes a method body as the method would run: the objects it declares
  *          are temporary nodes, created where the declaration names them and removed when the body
  *          ends, so that a name the body declares hides the same name further up while it lasts.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t space; /**< The namespace it declares into. */
-    uint8_t status;               /**< OK, or why the namespace could not be opened. */
-    uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
-    uint32_t table_count;         /**< Tables declared. */
-    uint32_t bytes;               /**< AML bytes of those tables, headers apart. */
-    uint32_t declarations;        /**< Nodes the tables created. */
-    uint32_t duplicates;          /**< Declarations of a name that already existed, skipped. */
-    uint32_t load_errors;         /**< Faults the first pass met, a name it could not place included. */
+    uint8_t status;              /**< OK, or why the namespace could not be opened. */
+    uint8_t integer_bits;        /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
+    uint32_t table_count;        /**< Tables declared. */
+    uint32_t bytes;              /**< AML bytes of those tables, headers apart. */
+    uint32_t declarations;       /**< Nodes the tables created. */
+    uint32_t duplicates;         /**< Declarations of a name that already existed, skipped. */
+    uint32_t externals_unplaced; /**< Externals the declaration pass had nowhere to place, which the Externals
+                                      pass places once every table is declared. */
+    uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;     /**< The first of them. */
-    uint32_t decode_errors;       /**< Faults the second pass met, over every table. */
+    uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
     uint32_t checksum_bad_loaded; /**< Tables whose checksum fails, loaded all the same. */
-    uint32_t name_references;     /**< NameStrings the second pass read in an operand. */
+    uint32_t name_references;     /**< NameStrings the decoding pass read in an operand. */
     uint32_t method_calls;        /**< Of those, the ones that named a method. */
     uint32_t unresolved_names;    /**< Of those, the ones that named nothing. */
     uint32_t pending_peak;        /**< Most operators pending at once. */
     uint32_t blocks_peak;         /**< Most constructs open at once. */
-    uint32_t opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes the
-                                                                                                    second pass
-                                                                                                    decoded, per
-                                                                                                    descriptor. */
+    uint32_t
+        opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes the decoding
+                                                                                              pass decoded, per
+                                                                                              descriptor. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t
         tables[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES]; /**< In load order. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePendingOperator_t
@@ -156,7 +159,7 @@ extern bool advanced_configuration_and_power_interface_machine_language_open(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes);
 
 /**
- * @brief Runs the first pass over one definition block: every named object it declares is created,
+ * @brief Runs the declaration pass over one definition block: every named object it declares is created,
  *        method bodies are skipped.
  *
  * @details A table whose checksum fails is declared all the same, and counted. A declaration whose
@@ -174,13 +177,14 @@ extern bool advanced_configuration_and_power_interface_machine_language_declare_
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header);
 
 /**
- * @brief Places the Externals the first pass could not, in a pass over every table declared, then runs
- *        the second pass: every term is decoded and counted, method bodies included, and each fault
- *        is recorded in its table and skipped as the first pass skips it.
+ * @brief Places the Externals the declaration pass could not, in a pass over every table declared when
+ *        there is one, then runs the decoding pass: every term is decoded and counted, method bodies
+ *        included, and each fault is recorded in its table and skipped as the declaration pass skips
+ *        it.
  *
  * @details An External whose path does not exist once every table is declared is placed all the
  *          same, its missing segments created as Externals with no object: firmware calls such a
- *          method behind CondRefOf, and the second pass needs its argument count.
+ *          method behind CondRefOf, and the decoding pass needs its argument count.
  *
  * @param load An open load whose tables are declared.
  */

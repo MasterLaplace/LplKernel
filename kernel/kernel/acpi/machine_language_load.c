@@ -26,13 +26,13 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t Machin
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t MachineLanguageNode_t;
 
 /**
- * @brief Which pass a walk is: the first declares and skips method bodies, the second decodes
- *        every term and counts it.
+ * @brief Which pass a walk is, in the order they run: declarations, then the Externals no table
+ *        declared a path for, then the decoding of every term.
  */
 typedef enum MachineLanguagePass {
     MACHINE_LANGUAGE_PASS_DECLARE,   /**< Declares named objects; skips method bodies. */
-    MACHINE_LANGUAGE_PASS_EXTERNALS, /**< Places the Externals whose path the first pass could not find, once every
-                                          table is declared; skips method bodies, declares nothing else, records no
+    MACHINE_LANGUAGE_PASS_EXTERNALS, /**< Places the Externals whose path the declaration pass could not find, once
+                                        every table is declared; skips method bodies, declares nothing else, records no
                                           fault. */
     MACHINE_LANGUAGE_PASS_DECODE,    /**< Decodes and counts every term; declares only the temporary nodes of method
                                           bodies. */
@@ -50,8 +50,8 @@ typedef struct MachineLanguageWalk {
     uint32_t block_count;                                              /**< Constructs open, the table included. */
     uint32_t fault_opcode;                                             /**< The opcode a fault at pc belongs to. */
     MachineLanguagePass_t pass;                                        /**< Which pass it is. */
-    uint32_t last_created;                     /**< The node the last declaration created, 0 when it created none. */
-    uint32_t external_start;                   /**< The External the third pass places, by its opcode's offset, or 0. */
+    uint32_t last_created;   /**< The node the last declaration created, 0 when it created none. */
+    uint32_t external_start; /**< The External the Externals pass places, by its opcode's offset, or 0. */
     MachineLanguageNameString_t external_name; /**< That External's NameString. */
 } MachineLanguageWalk_t;
 
@@ -116,7 +116,7 @@ static bool machine_language_method_arguments(MachineLanguageWalk_t *walk, uint3
 }
 
 /**
- * @brief Counts an opcode in the second pass.
+ * @brief Counts an opcode in the decoding pass.
  */
 static void machine_language_count_opcode(MachineLanguageWalk_t *walk, uint32_t opcode)
 {
@@ -127,7 +127,7 @@ static void machine_language_count_opcode(MachineLanguageWalk_t *walk, uint32_t 
 }
 
 /**
- * @brief Counts a fault of the first pass.
+ * @brief Counts a fault of the declaration pass or of the Externals pass.
  */
 static void machine_language_count_load_error(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                               MachineLanguageStatus_t status)
@@ -137,8 +137,9 @@ static void machine_language_count_load_error(AdvancedConfigurationAndPowerInter
 }
 
 /**
- * @brief Records a fault at the walk's pc: in load_errors for the first pass, in its table and in
- *        decode_errors for the second.
+ * @brief Records a fault at the walk's pc: in load_errors for the declaration pass, in its table and
+ *        in decode_errors for the decoding pass; the Externals pass counts its own faults where it
+ *        meets them.
  */
 static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status)
 {
@@ -237,6 +238,7 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
         advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
             &load->space, machine_language_top_block(walk)->scope, walk->bytes, name, &parent, &segment);
 
+    walk->last_created = 0u;
     if (status != MACHINE_LANGUAGE_OK)
         return status;
 
@@ -270,9 +272,9 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
 }
 
 /**
- * @brief The node a scope-opening declaration at table level names in the second pass, which the
- *        first pass created; the scope the walk is in when it cannot be found, so that its body
- *        still decodes.
+ * @brief The node a scope-opening declaration at table level names past the declaration pass, which
+ *        created it; the scope the walk is in when it cannot be found, so that the decoding pass still
+ *        decodes its body, and the Externals pass knows to skip it.
  */
 static uint32_t machine_language_declared_node(MachineLanguageWalk_t *walk, const MachineLanguageNameString_t *name)
 {
@@ -301,6 +303,7 @@ static MachineLanguageStatus_t machine_language_declare_temporary(MachineLanguag
     uint32_t parent = 0u;
     uint32_t segment = 0u;
 
+    walk->last_created = 0u;
     *out_index = machine_language_top_block(walk)->scope;
     if (advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
             &load->space, *out_index, walk->bytes, name, &parent, &segment) != MACHINE_LANGUAGE_OK)
@@ -309,7 +312,6 @@ static MachineLanguageStatus_t machine_language_declare_temporary(MachineLanguag
     const uint32_t existing =
         advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent, segment);
 
-    walk->last_created = 0u;
     if (existing != 0u)
     {
         *out_index = existing;
@@ -359,7 +361,7 @@ static uint8_t machine_language_declared_type(uint32_t opcode)
 }
 
 /**
- * @brief The node an External's last segment belongs to, in the third pass: every missing segment
+ * @brief The node an External's last segment belongs to, in the Externals pass: every missing segment
  *        before it is created as an External with no object, since no table declares it.
  */
 static MachineLanguageStatus_t machine_language_external_parent(MachineLanguageWalk_t *walk, uint32_t *out_parent)
@@ -399,7 +401,7 @@ static MachineLanguageStatus_t machine_language_external_parent(MachineLanguageW
 }
 
 /**
- * @brief Places, in the third pass, the External whose NameString the walk kept and whose ObjectType
+ * @brief Places, in the Externals pass, the External whose NameString the walk kept and whose ObjectType
  *        and argument count it has just read, where nothing holds its name: a method no table
  *        declares is then still called with the right number of arguments. One whose path still
  *        cannot be placed, climbing above the root, is counted.
@@ -414,6 +416,10 @@ static void machine_language_place_external(MachineLanguageWalk_t *walk, uint8_t
     MachineLanguageStatus_t status = machine_language_external_parent(walk, &parent);
 
     walk->external_start = 0u;
+    if (status == MACHINE_LANGUAGE_OK &&
+        advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent,
+                                                                                         segment) != 0u)
+        return;
     if (status == MACHINE_LANGUAGE_OK)
         status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
             &load->space, parent, segment, MACHINE_LANGUAGE_NODE(EXTERNAL), (uint16_t) (walk->table + 1u), &node);
@@ -428,7 +434,7 @@ static void machine_language_place_external(MachineLanguageWalk_t *walk, uint8_t
 }
 
 /**
- * @brief What an External's NameString means in the third pass: nothing when a node holds the name;
+ * @brief What an External's NameString means in the Externals pass: nothing when a node holds the name;
  *        a NullName is counted; any other is kept until its ObjectType and argument count are read.
  */
 static void machine_language_keep_external(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active,
@@ -454,10 +460,11 @@ static void machine_language_keep_external(MachineLanguageWalk_t *walk, const Ma
 
 /**
  * @brief What a NameString operand of the active operator means: a Scope's target, an Alias's
- *        source then its new name, or the name a declaration creates. The first pass creates
- *        permanent nodes; the third places the Externals the first could not; the second creates
- *        temporary nodes in method bodies. Past the first pass, at table level, a construct only
- *        finds the scope it opens, and a scope that cannot be found is the one the walk is in.
+ *        source then its new name, or the name a declaration creates. The declaration pass creates
+ *        permanent nodes, and leaves an External it cannot place to the Externals pass, which counts
+ *        it; the decoding pass creates temporary nodes in method bodies. Past the declaration pass, at
+ *        table level, a construct only finds the scope it opens: the decoding pass decodes the body of
+ *        one it cannot find in the scope the walk is in, the Externals pass skips it.
  */
 static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *walk,
                                                          MachineLanguagePendingOperator_t *active,
@@ -475,7 +482,8 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
     {
         status = advanced_configuration_and_power_interface_machine_language_namespace_resolve(
             &walk->load->space, block->scope, walk->bytes, name, &active->node);
-        if (status == MACHINE_LANGUAGE_OK || (declaring && active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)))
+        if (status == MACHINE_LANGUAGE_OK ||
+            (walk->pass != MACHINE_LANGUAGE_PASS_DECODE && active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)))
             return status;
         active->node = (active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)) ? block->scope : 0u;
         return MACHINE_LANGUAGE_OK;
@@ -491,7 +499,11 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
     if (!declaring && block->placement == 0u)
     {
         if (opens_scope)
+        {
             active->node = machine_language_declared_node(walk, name);
+            if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->node == block->scope)
+                return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
+        }
         else if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
             machine_language_keep_external(walk, active, name);
         return MACHINE_LANGUAGE_OK;
@@ -500,6 +512,12 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
         return declaring ? MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND) : MACHINE_LANGUAGE_OK;
     status = declaring ? machine_language_declare(walk, name, type, &active->node) :
                          machine_language_declare_temporary(walk, name, type, &active->node);
+    if (status != MACHINE_LANGUAGE_OK && declaring && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
+    {
+        active->node = 0u;
+        ++walk->load->externals_unplaced;
+        return MACHINE_LANGUAGE_OK;
+    }
     if (status == MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND) && !opens_scope)
     {
         active->node = 0u;
@@ -671,7 +689,7 @@ static MachineLanguageStatus_t machine_language_package_element(MachineLanguageW
 
 /**
  * @brief Decodes one element of a FieldList: a reserved field, an AccessAs, a Connection to a name
- *        or a buffer, an ExtendedAccessAs, or a named field unit, which the first pass declares.
+ *        or a buffer, an ExtendedAccessAs, or a named field unit, which the declaration pass declares.
  */
 static MachineLanguageStatus_t machine_language_field_element(MachineLanguageWalk_t *walk)
 {
@@ -725,7 +743,8 @@ static MachineLanguageStatus_t machine_language_field_element(MachineLanguageWal
 
 /**
  * @brief Records a method's flags, table and body in its node, unless the node was declared before:
- *        in the first pass for a permanent method, in the second for one a method body declares.
+ *        in the declaration pass for a permanent method, in the decoding pass for one a method body
+ *        declares.
  */
 static void machine_language_record_method(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
 {
@@ -741,7 +760,7 @@ static void machine_language_record_method(MachineLanguageWalk_t *walk, const Ma
 /**
  * @brief Opens the list that ends the active operator: a TermList, a FieldList or a
  *        PackageElementList, run as a construct up to the operator's end. A method body is skipped
- *        in the first pass.
+ *        but in the decoding pass.
  */
 static MachineLanguageStatus_t
 machine_language_open_list(MachineLanguageWalk_t *walk,
@@ -830,7 +849,7 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
         {
             MachineLanguageNode_t *node = machine_language_node(walk, active->node);
 
-            if (node != NULL && node->type == MACHINE_LANGUAGE_NODE(EXTERNAL))
+            if (node != NULL && node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) && active->node == walk->last_created)
             {
                 node->value.auxiliary = walk->bytes[walk->pc - 2u];
                 node->value.payload = walk->bytes[walk->pc - 1u] & 0x7u;
@@ -966,7 +985,7 @@ bool advanced_configuration_and_power_interface_machine_language_declare_table(
 void advanced_configuration_and_power_interface_machine_language_decode_tables(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
-    for (uint32_t table = 0u; table < load->table_count; ++table)
+    for (uint32_t table = 0u; table < load->table_count && load->externals_unplaced != 0u; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS);
     for (uint32_t table = 0u; table < load->table_count; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE);
