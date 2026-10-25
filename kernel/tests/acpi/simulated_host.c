@@ -358,6 +358,19 @@ static void simulated_host_release_pages(void *context, void *address, uint32_t 
 }
 
 /**
+ * @brief Whether the @p count bytes at @p bytes are all zero.
+ */
+static bool simulated_host_all_zero(const uint8_t *bytes, uint64_t count)
+{
+    for (uint64_t index = 0u; index < count; ++index)
+    {
+        if (bytes[index] != 0u)
+            return false;
+    }
+    return true;
+}
+
+/**
  * @brief Places the @p range_count ranges of an image whose header is read, each served in place.
  *
  * @return NULL when every range is placed and the image ends with the last one's padding, else what
@@ -387,6 +400,8 @@ static const char *simulated_host_place_image_ranges(AdvancedConfigurationAndPow
 
         if (padded > length - offset)
             return "a range runs past the end of the image";
+        if (!simulated_host_all_zero(image + (size_t) (offset + range.length), padded - range.length))
+            return "a range's padding is not zero";
         if (range.physical_address + range.length < range.physical_address)
             return "a range wraps past the last address";
         if (!advanced_configuration_and_power_interface_simulated_host_place(simulated, range.physical_address,

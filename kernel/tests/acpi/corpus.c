@@ -17,6 +17,7 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_corpus, KERNEL_TEST
 #define CORPUS_LOW_ADDRESS    0x000E0000u /**< Where the first range of a made-up image lies. */
 #define CORPUS_HIGH_ADDRESS   0x7FFE0000u /**< Where the second range of a made-up image lies. */
 #define CORPUS_LAST_ADDRESS   0xFFFFFFFFFFFFFFF0ull /**< A range there wraps past the last address. */
+#define CORPUS_HUGE_LENGTH    0xFFFFFFFFFFFFFFF9ull /**< A range length that, padded to eight, wraps to 0. */
 #define CORPUS_TOO_MANY_RANGES                                                                                         \
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES + 1u) /**< One more than a host holds. */
 #define CORPUS_MODULE_SUFFIX ".acpi"     /**< How the boot module holding a recorded machine's image is named. */
@@ -217,8 +218,9 @@ KERNEL_TEST(an_image_serves_each_range_where_it_says)
 }
 
 /**
- * @brief An image cut short, misnamed, holding too many ranges, an empty range, a range that wraps or
- *        overlaps another, or bytes after its last range is refused, with what it does wrong.
+ * @brief An image cut short, misnamed, holding too many ranges, a range longer than the image, a range
+ *        padded with anything but zeros, an empty range, a range that wraps or overlaps another, or bytes
+ *        after its last range is refused, with what it does wrong.
  */
 KERNEL_TEST(a_malformed_image_is_refused_and_says_why)
 {
@@ -246,6 +248,17 @@ KERNEL_TEST(a_malformed_image_is_refused_and_says_why)
     corpus_image_range(CORPUS_LOW_ADDRESS, "RSD PTR AND THE REST", 20u);
     corpus_image_length -= 4u;
     corpus_refuses(test, "a range runs past the end of the image", "an image cut inside a range's padding is refused");
+
+    corpus_image_header(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC, CORPUS_ROOT_ADDRESS, 1u);
+    corpus_image_put(CORPUS_LOW_ADDRESS, 8u);
+    corpus_image_put(CORPUS_HUGE_LENGTH, 8u);
+    corpus_refuses(test, "a range runs past the end of the image",
+                   "a range whose length rounds up past 2^64 is refused, not taken for a padded length of 0");
+
+    corpus_image_header(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC, CORPUS_ROOT_ADDRESS, 1u);
+    corpus_image_range(CORPUS_LOW_ADDRESS, "RSD PTR AND THE REST", 20u);
+    corpus_image[corpus_image_length - 1u] = 0xFFu;
+    corpus_refuses(test, "a range's padding is not zero", "a range padded with anything but zeros is refused");
 
     corpus_image_header(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC, CORPUS_ROOT_ADDRESS, 1u);
     corpus_image_range(CORPUS_LOW_ADDRESS, "", 0u);

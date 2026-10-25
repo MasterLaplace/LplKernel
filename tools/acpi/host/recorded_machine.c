@@ -173,13 +173,14 @@ static bool recorded_machine_read(RecordedMachine_t *machine, const char *path, 
     const char *wrong = NULL;
 
     if (!fits)
-        wrong = "the dump holds more tables than a recorded machine";
+        wrong = printed ? "the log holds more tables than a recorded machine" :
+                          "the dump holds more tables than a recorded machine";
     else if (!begun)
         wrong = "the log holds no tables a kernel printed";
     else if (printed && !ended)
         wrong = "the tables the kernel printed are cut short: the log ends before their end";
     else if (machine->table_count == 0u)
-        wrong = "the dump holds no table";
+        wrong = printed ? "the kernel printed no table" : "the dump holds no table";
     if (wrong != NULL)
         *error = wrong;
     return wrong == NULL;
@@ -436,10 +437,34 @@ static bool recorded_machine_serve(RecordedMachine_t *machine, const char **erro
 }
 
 /**
- * @brief Reads a dump, or the tables a kernel printed, and serves them.
+ * @brief The first table of @p machine whose bytes are not as many as its header says, written in
+ *        @p message, or NULL when each one is whole.
+ */
+static const char *recorded_machine_find_cut_table(const RecordedMachine_t *machine, char *message, size_t capacity)
+{
+    for (uint32_t index = 0u; index < machine->table_count; ++index)
+    {
+        const RecordedTable_t *table = &machine->tables[index];
+        const uint64_t declared = recorded_machine_read_field(table, 4u, 4u);
+
+        if (declared != table->length)
+        {
+            snprintf(message, capacity, "%.4s: %u bytes printed, its header says %llu",
+                     (table->length >= 4u) ? table->signature : "????", table->length, (unsigned long long) declared);
+            return message;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Reads a dump, or the tables a kernel printed, and serves them; a table a kernel printed must
+ *        hold as many bytes as its header says, where a dump's may be cut short.
  */
 static bool recorded_machine_open_file(RecordedMachine_t *machine, const char *path, bool printed, const char **error)
 {
+    static char cut[128];
+
     memset(machine, 0, sizeof(*machine));
     advanced_configuration_and_power_interface_simulated_host_open(&machine->simulated);
     if (!recorded_machine_read(machine, path, printed, error))
@@ -452,6 +477,8 @@ static bool recorded_machine_open_file(RecordedMachine_t *machine, const char *p
         if (table->length >= 4u)
             memcpy(table->signature, table->bytes, sizeof(table->signature));
     }
+    if (printed && (*error = recorded_machine_find_cut_table(machine, cut, sizeof(cut))) != NULL)
+        return false;
     return recorded_machine_serve(machine, error);
 }
 

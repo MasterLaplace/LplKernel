@@ -86,8 +86,8 @@ extern bool recorded_machine_open(RecordedMachine_t *machine, const char *path, 
  * @param machine Filled; released with recorded_machine_close, even when this fails.
  * @param path    The serial log.
  * @param error   Receives what went wrong, when it fails.
- * @return false when the log cannot be read, holds no printed tables, ends before their end, or they
- *         cannot be served.
+ * @return false when the log cannot be read, holds no printed tables, ends before their end, holds a
+ *         table of fewer or more bytes than its header says, or they cannot be served.
  */
 extern bool recorded_machine_open_printed(RecordedMachine_t *machine, const char *path, const char **error);
 

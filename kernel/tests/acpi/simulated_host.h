@@ -299,8 +299,9 @@ extern bool advanced_configuration_and_power_interface_simulated_host_place(
  * @param error     Receives what the image does wrong, when it is refused.
  * @return false when the image is shorter than its header, does not start with
  *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC, holds more ranges than
- *         a simulated host, has a range that is empty, runs past its end or overlaps another, or holds
- *         bytes after its last range; the host then serves nothing.
+ *         a simulated host, has a range that is empty, runs past its end, is padded with anything but
+ *         zeros, wraps past the last address or overlaps another, or holds bytes after its last range;
+ *         the host then serves nothing.
  */
 extern bool advanced_configuration_and_power_interface_simulated_host_open_image(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, const void *image, uint64_t length,

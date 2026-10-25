@@ -905,7 +905,7 @@ same work, not only reach the same result.
 | Made-up AML | each rule of §4 to §6, each limit, each case of §6.3 | ring 0 (`KERNEL_TEST`) and the host harness, from the same sources | the test's own expected values; parity between the two |
 | Real firmware on the host | the corpus (§8.4) | host | ACPICA's `acpiexec`; the census counts; the `iasl` disassembly; the decoded table lines for the static tables |
 | Real firmware in ring 0 | one corpus machine per boot, its tables given as a Multiboot module, run through the simulated host | ring 0, debug kernel | the host harness's records on the same bytes, compared by `tools/parity.sh` |
-| QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the namespace fold, against the host's on the printed bytes (§8.7) |
+| QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the load's folds (namespace, opcodes decoded), against the host's on the printed bytes (§8.7) |
 | QEMU's reference tables | 42 `pc` and `q35` configurations, 5 `microvm` | host | `acpiexec` |
 | uACPI's test cases | Windows behaviours and edge cases | host | each case's `// Expect:` line |
 | Real machines | the full path to `_CST` | ring 0 | the same machine's tables through the host harness and `acpiexec`; Linux's cpuidle states |
@@ -1027,9 +1027,9 @@ The host and ring 0 run the same made-up tables and the same corpus bytes throug
 and print the same records, which `tools/parity.sh` compares (`# <suite>.<test>: key=value`). Each record header
 prints the target parameters both sides used (physical address width, profile caps), so that a region above 4 GiB
 or a probe count that depends on the hash capacity differs only when the parameters do. Of a QEMU live boot,
-only the namespace is folded, which the host computes again from the bytes ring 0 printed (§8.3); its evaluations
-read emulated hardware the simulated host does not model, and are not folded. FNV-1a, 32 bits, offset `0x811C9DC5`, prime
-`0x01000193`, over little-endian bytes:
+only the load is folded, its namespace and the opcodes it decoded, which the host computes again from the bytes
+ring 0 printed (§8.3); its evaluations read emulated hardware the simulated host does not model, and are not
+folded. FNV-1a, 32 bits, offset `0x811C9DC5`, prime `0x01000193`, over little-endian bytes:
 
 | Record | Folds, in order |
 |---|---|

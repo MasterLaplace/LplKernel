@@ -9,7 +9,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
-       tools/acpi-corpus.sh ring0 [quick|corpus|full|qemu] <kernel>
+       tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
 
 The firmware of recorded machines, which the ACPI layer is checked on. linuxhw/ACPI is fetched at a
 pinned commit into build/acpi-corpus/, never committed and never put in an image.
@@ -390,6 +390,7 @@ boot() {
     qemu-system-i386 -machine "$machine" -m 256 -kernel "$short/k" "${initrd[@]}" -append "$line" \
         -serial "file:$log" -display none -no-reboot >/dev/null 2>&1 &
     pid=$!
+    trap 'kill "$pid" 2>/dev/null; rm -rf "$short"; exit 130' INT TERM
     for _ in $(seq "${BOOT_SECONDS:-300}"); do
         grep -qF '# Totals:' "$log" && break
         kill -0 "$pid" 2>/dev/null || break
@@ -397,6 +398,7 @@ boot() {
     done
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
+    trap - INT TERM
     rm -rf "$short"
 }
 
@@ -424,6 +426,7 @@ compare_ring0() {
 ring0() {
     command -v qemu-system-i386 >/dev/null || { echo "ring0: no qemu-system-i386" >&2; exit 1; }
     [[ -f "$2" ]] || { echo "ring0: $2: no kernel" >&2; exit 1; }
+    grep -qaF 'KTAP version 1' "$2" || { echo "ring0: $2: a kernel without tests, build a debug one" >&2; exit 1; }
     (cd "$ROOT" && xmake build -q test-acpi)
     mkdir -p "$RING0_LOGS"
     local number=0 agree=0 subject logs test
