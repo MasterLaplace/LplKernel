@@ -332,7 +332,8 @@ Run once at boot by the bootstrap processor.
    and `_OSC` in ACPI mode.
    1. Skip the switch if SCI_EN is already set, if SMI_CMD is 0, if ACPI_ENABLE is 0, which declares no legacy mode
       ([§5.2.9]), or if the FADT is hardware-reduced, which boots in ACPI mode only ([§3.11.1]). The switch reaches
-      its registers as I/O ports alone: a PM1 or GPE block outside the I/O space skips it too, counted.
+      its registers as I/O ports alone: SMI_CMD or a PM1 or GPE block outside the I/O space, or on a protected port
+      (§5.3), skips it too, counted. A block too short to hold an enable register is absent.
    2. Clear every GPE enable bit and every PM1 fixed-event enable bit, and keep the SCI line (SCI_INT) masked in the
       8259 or the I/O APIC, so that no event raises an SCI that nothing handles.
    3. Write ACPI_ENABLE to SMI_CMD from the bootstrap processor, and wait for SCI_EN ([§5.2.9]): polls 1 ms apart on
