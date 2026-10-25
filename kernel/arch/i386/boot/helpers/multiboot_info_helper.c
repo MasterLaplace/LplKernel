@@ -1,4 +1,5 @@
 #include <kernel/boot/helpers/multiboot_info_helper.h>
+#include <kernel/cpu/paging.h>
 
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #    error "This code assumes little-endian (x86). Update multiboot parsing for big-endian targets."
@@ -37,7 +38,7 @@ static inline void *physical_to_virtual_low(uint32_t phys_addr, uint32_t kernel_
  */
 static inline void *physical_to_virtual_boot_mapped(uint32_t phys_addr, uint32_t kernel_start)
 {
-    return (phys_addr < 0x04000000u) ? (void *) (uintptr_t) (phys_addr + kernel_start) : NULL;
+    return (phys_addr < KERNEL_BOOT_MAPPED_END) ? (void *) (uintptr_t) (phys_addr + kernel_start) : NULL;
 }
 
 /**

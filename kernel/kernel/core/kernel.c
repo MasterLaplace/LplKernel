@@ -207,6 +207,24 @@ static void kernel_report_live_checks(void)
 }
 
 /**
+ * @brief Says on COM1 that the boot line was cut, and how much of it the kernel kept: the options
+ *        past the cut, a test selection among them, are lost.
+ */
+static void kernel_report_cut_boot_line(void)
+{
+    const uint32_t dropped = boot_command_line_dropped();
+    const uint32_t kept = BOOT_COMMAND_LINE_CAPACITY - 1u;
+
+    if (dropped == 0u)
+        return;
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: WARNING: the boot line holds ");
+    serial_write_unsigned(&com1, kept + dropped);
+    serial_write_string(&com1, " characters and the kernel keeps ");
+    serial_write_unsigned(&com1, kept);
+    serial_write_string(&com1, ": the options past them are lost\n");
+}
+
+/**
  * @brief Brings the virtio-gpu scanout up when there is one, and proves it is alive.
  *
  * @details A live display is cleared to a recognisable colour and presented through the GPU,
@@ -288,6 +306,7 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     write_multiboot_info(&com1, KERNEL_VIRTUAL_BASE, multiboot_info);
     boot_command_line_capture();
+    kernel_report_cut_boot_line();
     kernel_splash_update("Parsing Multiboot Structure");
 
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing GDT...\n");
