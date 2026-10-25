@@ -22,8 +22,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
          directory with what tools/acpi/expected_directory.py reads from the same dump, its FADT
          and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
-         from the report's decoded tables, and the
-         opcodes its definition blocks decode with what tools/acpi/aml_census.py counts; then
+         from the report's decoded tables, and the opcodes and method calls its definition blocks
+         decode with what tools/acpi/aml_census.py counts; then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
          the report's iASL disassembly, and lists the tables where they differ
   namespace  loads each machine of a list, or each QEMU configuration, with `test-acpi --namespace`
