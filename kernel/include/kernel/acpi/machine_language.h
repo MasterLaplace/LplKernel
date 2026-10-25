@@ -221,6 +221,35 @@ advanced_configuration_and_power_interface_machine_language_field_write(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value);
 
 /**
+ * @brief Gives a node the OperationRegion object @p shape describes (§5.3), whether a table declares
+ *        it or a method creates it.
+ *
+ * @param load  The load.
+ * @param node  The region's node.
+ * @param shape Its space, its offset and length, whether they were evaluated, and the device it is
+ *              declared in.
+ * @return OK; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_region_build(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *shape);
+
+/**
+ * @brief Gives a node the field unit object @p shape describes (§5.3), whether a table declares it or
+ *        a method creates it.
+ *
+ * @param load  The load.
+ * @param node  The unit's node.
+ * @param shape Its kind, its registers, its access, update and lock rules, its first bit and length.
+ * @return OK; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_field_unit_build(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *shape);
+
+/**
  * @brief Gives the load the global lock of its platform, before any table-level code runs: the
  *        GlobalLock word of the FACS at @p firmware_control, when the FACS is not usable memory, has
  *        its signature and is long enough; none otherwise, and a Lock field is then accessed without

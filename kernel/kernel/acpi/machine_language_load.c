@@ -816,38 +816,27 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
-    MachineLanguageNode_t *node = machine_language_node(walk, active->node);
     const MachineLanguageNode_t *scope = machine_language_node(walk, source.scope);
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t region = {0};
     uint64_t offset = 0u;
     uint64_t length = 0u;
     uint32_t after = 0u;
-    uint32_t handle = 0u;
     bool constant = false;
     MachineLanguageStatus_t status =
         machine_language_operand_integer(walk, &source, walk->pc, active->end, &offset, &after, &constant);
 
     if (status == MACHINE_LANGUAGE_OK && constant)
         status = machine_language_operand_integer(walk, &source, after, active->end, &length, &after, &constant);
-    if (status == MACHINE_LANGUAGE_OK)
-        status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-            &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION,
-            (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t), &handle);
     if (status != MACHINE_LANGUAGE_OK)
         return machine_language_build_fault(walk, status);
-
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region =
-        (AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t
-             *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1);
-
-    region->space = walk->bytes[walk->pc - 1u];
-    region->state = constant ? 1u : 0u;
-    region->offset = constant ? offset : 0u;
-    region->length = constant ? length : 0u;
-    region->owner_device = (scope != NULL && scope->type == MACHINE_LANGUAGE_NODE(DEVICE)) ? source.scope : 0u;
+    region.space = walk->bytes[walk->pc - 1u];
+    region.state = constant ? 1u : 0u;
+    region.offset = constant ? offset : 0u;
+    region.length = constant ? length : 0u;
+    region.owner_device = (scope != NULL && scope->type == MACHINE_LANGUAGE_NODE(DEVICE)) ? source.scope : 0u;
     load->values_deferred += constant ? 0u : 1u;
-    node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION;
-    node->value.handle = handle;
-    return MACHINE_LANGUAGE_OK;
+    return machine_language_build_fault(
+        walk, advanced_configuration_and_power_interface_machine_language_region_build(load, active->node, &region));
 }
 
 /**
@@ -977,40 +966,27 @@ static MachineLanguageStatus_t machine_language_build_field_unit(MachineLanguage
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const MachineLanguageFieldList_t *field = &walk->field;
-    uint32_t handle = 0u;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t unit = {
+        .kind = (field->opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD)) ?
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX :
+                (field->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD)) ?
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK :
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL,
+        .access = field->access,
+        .update = field->update,
+        .lock = field->lock,
+        .region = field->region,
+        .data_or_bank = field->data_or_bank,
+        .bank_value = field->bank_value,
+        .bit_offset = field->bit,
+        .bit_length = bit_length,
+    };
 
     load->values_deferred += field->deferred ? 1u : 0u;
     if (!field->builds)
         return MACHINE_LANGUAGE_OK;
-
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT,
-        (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t), &handle);
-
-    if (status != MACHINE_LANGUAGE_OK)
-        return machine_language_build_fault(walk, status);
-
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *unit =
-        (AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t
-             *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1);
-    MachineLanguageNode_t *node = machine_language_node(walk, index);
-
-    unit->kind = (field->opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD)) ?
-                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX :
-                 (field->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD)) ?
-                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK :
-                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL;
-    unit->access = field->access;
-    unit->update = field->update;
-    unit->lock = field->lock;
-    unit->region = field->region;
-    unit->data_or_bank = field->data_or_bank;
-    unit->bank_value = field->bank_value;
-    unit->bit_offset = field->bit;
-    unit->bit_length = bit_length;
-    node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT;
-    node->value.handle = handle;
-    return MACHINE_LANGUAGE_OK;
+    return machine_language_build_fault(
+        walk, advanced_configuration_and_power_interface_machine_language_field_unit_build(load, index, &unit));
 }
 
 /**

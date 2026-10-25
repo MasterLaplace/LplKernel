@@ -836,6 +836,43 @@ advanced_configuration_and_power_interface_machine_language_field_write(MachineL
     return status;
 }
 
+/**
+ * @brief Gives a node a heap object of @p kind holding the @p bytes of @p shape.
+ */
+static MachineLanguageStatus_t machine_language_build_object(MachineLanguageLoad_t *load, uint32_t node, uint8_t kind,
+                                                             const void *shape, uint32_t bytes)
+{
+    uint32_t handle = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &load->heap, &load->space, kind, bytes, &handle);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    memcpy(advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1, shape, bytes);
+
+    MachineLanguageNode_t *target =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
+
+    target->value.kind = kind;
+    target->value.handle = handle;
+    return MACHINE_LANGUAGE_OK;
+}
+
+MachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_region_build(MachineLanguageLoad_t *load, uint32_t node,
+                                                                         const MachineLanguageRegion_t *shape)
+{
+    return machine_language_build_object(load, node, MACHINE_LANGUAGE_VALUE(REGION), shape, (uint32_t) sizeof(*shape));
+}
+
+MachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_field_unit_build(MachineLanguageLoad_t *load, uint32_t node,
+                                                                             const MachineLanguageFieldUnit_t *shape)
+{
+    return machine_language_build_object(load, node, MACHINE_LANGUAGE_VALUE(FIELD_UNIT), shape,
+                                         (uint32_t) sizeof(*shape));
+}
+
 void advanced_configuration_and_power_interface_machine_language_use_global_lock(MachineLanguageLoad_t *load,
                                                                                  uint32_t firmware_control,
                                                                                  const uint16_t *control_ports)
