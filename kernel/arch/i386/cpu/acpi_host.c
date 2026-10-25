@@ -1,5 +1,7 @@
 #include <kernel/acpi/host.h>
 #include <kernel/cpu/acpi.h>
+#include <kernel/cpu/clock.h>
+#include <kernel/cpu/irq.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
@@ -133,6 +135,22 @@ static void acpi_host_port_write(void *context, uint16_t port, uint8_t width, ui
     }
 }
 
+static uint32_t acpi_host_sleep_milliseconds(void *context, uint32_t milliseconds)
+{
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t start = clock_get_tick_count();
+    InterruptRequestDeadline_t deadline;
+
+    (void) context;
+    if (hertz == 0u)
+        return 0u;
+    interrupt_request_deadline_start(&deadline,
+                                     (milliseconds > UINT32_MAX / 1000u) ? UINT32_MAX : milliseconds * 1000u);
+    while (!interrupt_request_deadline_passed(&deadline))
+        asmutils_halt();
+    return (uint32_t) (((uint64_t) (clock_get_tick_count() - start) * 1000u) / hertz);
+}
+
 static void *acpi_host_allocate_pages(void *context, uint32_t count)
 {
     (void) context;
@@ -160,6 +178,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .compare_exchange = acpi_host_compare_exchange,
     .port_read = acpi_host_port_read,
     .port_write = acpi_host_port_write,
+    .sleep_milliseconds = acpi_host_sleep_milliseconds,
     .allocate_pages = acpi_host_allocate_pages,
     .release_pages = acpi_host_release_pages,
 };

@@ -132,7 +132,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
  *          each of its maps returns an address of its own that is never read, and an access whose
  *          address and physical address disagree with an open map is counted. Physical address 0
  *          cannot be mapped, as in ring 0. Its I/O space reads as 0 but for the ports
- *          given a value, and ignores writes. Every access is logged in order.
+ *          given a value, and ignores writes. Every access is logged in order. Its clock is virtual:
+ *          sleep_milliseconds advances it by what is asked, or, when tick_milliseconds is not 0, by
+ *          the whole ticks a deadline on the kernel tick counts: those the milliseconds round up to,
+ *          and the one the sleep lands in.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */
@@ -151,9 +154,17 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t port_count;                               /**< Ports given a value. */
     uint32_t access_count;                             /**< Accesses made, logged or not. */
     uint64_t firmware_lock_address;                    /**< The global lock word the simulated firmware shares, or 0. */
-    uint32_t firmware_holds_for_reads; /**< Reads of that word the firmware keeps it owned for, then releases it. */
-    bool firmware_wants_lock;          /**< Whether the firmware asks for the lock, setting pending, as soon as the
-                                            OS takes it; asked once. */
+    uint32_t firmware_holds_for_reads;     /**< Reads of that word the firmware keeps it owned for, then releases it. */
+    bool firmware_wants_lock;              /**< Whether the firmware asks for the lock, setting pending, as soon as the
+                                                OS takes it; asked once. */
+    uint64_t clock_milliseconds;           /**< The virtual clock, which sleep_milliseconds alone advances. */
+    uint32_t tick_milliseconds;            /**< The period of the tick a sleep waits whole, or 0 for no tick. */
+    uint16_t firmware_command_port;        /**< The SMI command port the simulated firmware answers, or 0. */
+    uint8_t firmware_enable_command;       /**< The ACPI_ENABLE it answers there by setting SCI_EN. */
+    uint16_t firmware_control_port;        /**< The PM1 control port whose SCI_EN it sets. */
+    uint32_t firmware_enable_milliseconds; /**< Virtual milliseconds from ACPI_ENABLE to SCI_EN reading set;
+                                                UINT32_MAX for never. */
+    uint64_t firmware_enabled_at;          /**< When SCI_EN reads set; UINT64_MAX until ACPI_ENABLE is written. */
     AdvancedConfigurationAndPowerInterfaceSimulatedRange_t
         ranges[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES]; /**< In the order placed. */
     AdvancedConfigurationAndPowerInterfaceSimulatedMap_t

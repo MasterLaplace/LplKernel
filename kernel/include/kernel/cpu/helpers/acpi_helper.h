@@ -42,6 +42,15 @@ extern void write_acpi_madt_info(Serial_t *serial);
 extern void write_acpi_madt_record(Serial_t *serial);
 
 /**
+ * @brief Writes the `[LPLTLM] acpi.mode` record: how the boot's switch to ACPI mode ended, the enable
+ *        registers it cleared, its reads of SCI_EN and the milliseconds it waited, and the FADT
+ *        fields it used.
+ *
+ * @param serial The port the record is written to.
+ */
+extern void write_acpi_mode_record(Serial_t *serial);
+
+/**
  * @brief Writes the `[LPLTLM] acpi.aml` record: what the boot's load of the definition blocks
  *        decoded, declared and built, what waits for the interpreter, its faults, what its namespace
  *        and stacks took, and the namespace fold; then the `[LPLTLM] acpi.regions` record: its field

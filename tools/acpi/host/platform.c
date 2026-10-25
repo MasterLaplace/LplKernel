@@ -95,6 +95,13 @@ static void platform_write_no_port(void *context, uint16_t port, uint8_t width, 
     (void) value;
 }
 
+static uint32_t platform_sleep_without_a_clock(void *context, uint32_t milliseconds)
+{
+    (void) context;
+    (void) milliseconds;
+    return 0u;
+}
+
 static void *platform_allocate_pages(void *context, uint32_t count)
 {
     (void) context;
@@ -122,6 +129,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .compare_exchange = platform_exchange_no_memory,
     .port_read = platform_read_no_port,
     .port_write = platform_write_no_port,
+    .sleep_milliseconds = platform_sleep_without_a_clock,
     .allocate_pages = platform_allocate_pages,
     .release_pages = platform_release_pages,
 };

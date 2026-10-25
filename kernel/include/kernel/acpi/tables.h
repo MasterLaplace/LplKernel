@@ -13,8 +13,8 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file tables.h
- * @brief The firmware's ACPI tables: the directory of every table, and the MADT's processors, NMI
- *        connections, I/O APICs and interrupt overrides.
+ * @brief The firmware's ACPI tables: the directory of every table, the normalised FADT, and the MADT's
+ *        processors, NMI connections, I/O APICs and interrupt overrides.
  *
  * Architecture-free: the tables are mapped, and the root system description pointer found, through
  * the host interface of kernel/acpi/host.h.
@@ -51,6 +51,16 @@
     "RSD PTR " /**< A root pointer's 8 letters. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ROOT_SYSTEM_DESCRIPTION_POINTER_VERSION_1_LENGTH                    \
     20u /**< Bytes a root pointer's first checksum covers. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_FIXED_DESCRIPTION_LENGTH                                            \
+    276u /**< Bytes of a FADT of revision 6, the longest this layer reads: a longer FADT is read that far. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_MEMORY                                                 \
+    0u /**< The address space of a Generic Address Structure in memory. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_INPUT_OUTPUT                                           \
+    1u /**< The address space of a Generic Address Structure in the I/O space. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS                                                  \
+    3000u /**< Reads of SCI_EN the switch to ACPI mode makes at most, 1 ms apart. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS                                           \
+    3000u /**< Milliseconds the switch to ACPI mode waits between them at most, as the host counts them. */
 
 typedef struct __attribute__((packed)) {
     char signature[8];
@@ -90,6 +100,93 @@ typedef struct AdvancedConfigurationAndPowerInterfaceTable {
 } AdvancedConfigurationAndPowerInterfaceTable_t;
 
 /**
+ * @brief A register of the fixed hardware, as a Generic Address Structure: a FADT's legacy block
+ *        becomes one in the I/O space.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceGenericAddress {
+    uint64_t address; /**< Where the register lies in its space; 0 when the FADT gives none. */
+    uint8_t space;    /**< Its address space, such as ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_MEMORY. */
+    uint8_t bit_width;   /**< Its width in bits, at most 255. */
+    uint8_t bit_offset;  /**< Its first bit. */
+    uint8_t access_size; /**< 0 for any access, 1 to 4 for byte, word, double-word and quad-word accesses. */
+} AdvancedConfigurationAndPowerInterfaceGenericAddress_t;
+
+/**
+ * @brief The fields of a FADT this layer reads, normalised once (§3.9).
+ *
+ * @details They are read from a zeroed local copy of at most
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_FIXED_DESCRIPTION_LENGTH bytes, so that a field
+ *          past the firmware's length reads 0. A legacy register block becomes a Generic Address
+ *          Structure in the I/O space, unless its extended block gives an address. The bytes ACPI 1.0
+ *          reserved read 0 in a FADT of revision 2 or less, the reset register is absent unless
+ *          RESET_REG_SUP is set, and a hardware-reduced FADT reads 0 in every field ACPI tells OSPM
+ *          to ignore on such a platform.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceFixedDescription {
+    bool present;           /**< Whether a FADT was read; every other field is 0 when none was. */
+    bool hardware_reduced;  /**< HW_REDUCED_ACPI: the platform has no fixed hardware, nor a global lock. */
+    uint8_t revision;       /**< The earliest revision as long as the FADT: 1, 2, 3, 5 or 6. */
+    uint8_t enable_command; /**< ACPI_ENABLE: what SMI_CMD is written to hand the fixed hardware to the OS, 0 on a
+                                 platform without legacy mode. */
+    uint8_t performance_state_command;              /**< PSTATE_CNT: what SMI_CMD is written to take over the
+                                                         performance states. */
+    uint8_t idle_state_command;                     /**< CST_CNT: what SMI_CMD is written once `_CST` is used. */
+    uint8_t reset_value;                            /**< RESET_VALUE: what the reset register is written. */
+    uint8_t general_purpose_event_1_base;           /**< GPE1_BASE: the number of GPE1's first event. */
+    uint8_t general_purpose_event_block_lengths[2]; /**< GPE0_BLK_LEN and GPE1_BLK_LEN in bytes, which a Generic
+                                                         Address Structure cannot hold past 31; the extended block's
+                                                         width when the legacy length is 0. */
+    uint16_t system_control_interrupt;              /**< SCI_INT: the SCI's 8259 line, or its global system
+                                                         interrupt on a platform without an 8259. */
+    uint32_t length;                                /**< Bytes of the firmware's FADT. */
+    uint32_t flags;                                 /**< Its Flags, without those a hardware-reduced platform
+                                                         ignores. */
+    uint32_t system_management_interrupt_command;   /**< SMI_CMD: the I/O port of the SMI command, 0 without one. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t
+        power_management_event_blocks[2]; /**< PM1a_EVT_BLK and PM1b_EVT_BLK: the status, then the enable register. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t
+        power_management_control_blocks[2]; /**< PM1a_CNT_BLK and PM1b_CNT_BLK. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t power_management_timer_block; /**< PM_TMR_BLK. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t
+        general_purpose_event_blocks[2]; /**< GPE0_BLK and GPE1_BLK: the status, then the enable registers. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t reset_register;         /**< RESET_REG. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t sleep_control_register; /**< SLEEP_CONTROL_REG. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t sleep_status_register;  /**< SLEEP_STATUS_REG. */
+} AdvancedConfigurationAndPowerInterfaceFixedDescription_t;
+
+/**
+ * @brief How the switch to ACPI mode ended (§3.8 step 0).
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceModeOutcome {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN = 0,          /**< No FADT, or no switch yet. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_HARDWARE_REDUCED = 1, /**< A hardware-reduced platform, which
+                                                                               boots in ACPI mode: no access made. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE = 2,      /**< A PM1 control block, SMI_CMD, or a block
+                                                                               whose enables it clears is not wholly
+                                                                               in the I/O space, or reaches a
+                                                                               protected port: nothing written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_ALREADY = 3,          /**< SCI_EN was set: nothing written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_COMMAND_PORT = 4,  /**< SMI_CMD is 0: nothing written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_LEGACY_MODE = 5,   /**< ACPI_ENABLE is 0, which a platform
+                                                                               without legacy mode gives: nothing
+                                                                               written. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED = 6,         /**< ACPI_ENABLE written, and SCI_EN set
+                                                                               within the bound. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED = 7,           /**< ACPI_ENABLE written, and SCI_EN still
+                                                                               clear past the bound: legacy mode. */
+} AdvancedConfigurationAndPowerInterfaceModeOutcome_t;
+
+/**
+ * @brief What one switch to ACPI mode did.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceModeSwitch {
+    uint8_t outcome;                   /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_* outcome. */
+    uint32_t enable_registers_cleared; /**< GPE and PM1 enable registers written before ACPI_ENABLE. */
+    uint32_t polls;                    /**< Reads of SCI_EN once ACPI_ENABLE was written. */
+    uint32_t waited_milliseconds;      /**< Milliseconds the host waited between them, as it counts them. */
+} AdvancedConfigurationAndPowerInterfaceModeSwitch_t;
+
+/**
  * @struct AdvancedConfigurationAndPowerInterfaceDirectory
  * @brief Every table a root system description pointer leads to: the entries of its root table,
  *        then the DSDT the FADT names.
@@ -105,10 +202,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
         unreachable_count; /**< Tables above 4 GiB, the root pointer included, past the capacity, or not mappable. */
     uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
                                                      FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL. */
-    uint16_t power_management_control_ports[2]; /**< The PM1a and PM1b control blocks the FADT gives as I/O ports,
-                                                     each 0 when it gives none. */
-    bool hardware_reduced;                      /**< Whether the FADT says the platform is hardware-reduced, which
-                                                     has no global lock. */
+    AdvancedConfigurationAndPowerInterfaceFixedDescription_t
+        fixed_description; /**< The FADT the directory gives, normalised; not present without one. */
     AdvancedConfigurationAndPowerInterfaceTable_t
         tables[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT]; /**< In the order they were found. */
 } AdvancedConfigurationAndPowerInterfaceDirectory_t;
@@ -303,6 +398,15 @@ typedef struct __attribute__((packed)) {
 extern bool advanced_configuration_and_power_interface_checksum_holds(const void *bytes, size_t length);
 
 /**
+ * @brief Whether an I/O port is one the kernel drives itself, which the ACPI layer never reaches
+ *        (§5.3): the two 8259s, the ELCR and PCI configuration mechanism #1.
+ *
+ * @param port The port.
+ * @return true when @p port lies in one of those ranges.
+ */
+extern bool advanced_configuration_and_power_interface_port_is_protected(uint16_t port);
+
+/**
  * @brief Reads the firmware's MADT into the boot's MADT state.
  *
  * @details The state names the MADT as not found when the directory has none, and otherwise holds
@@ -337,6 +441,86 @@ advanced_configuration_and_power_interface_read_madt(const AdvancedConfiguration
  * @return The state, never NULL.
  */
 extern const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configuration_and_power_interface_madt(void);
+
+/**
+ * @brief Normalises a FADT (§3.9), as the directory reads it.
+ *
+ * @details The revision is the earliest one whose FADT is as long: 116 bytes or fewer is revision
+ *          1, 132 is 2, 244 is 3, 268 is 5, and longer is 6, whatever the header says. The fields
+ *          are read from a zeroed copy of at most
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_FIXED_DESCRIPTION_LENGTH bytes. An extended
+ *          register block wins when its address is not 0, its width taken from the legacy length
+ *          when it gives none; otherwise a legacy block that is not 0 becomes one in the I/O space,
+ *          as wide as its length, capped at 255 bits. PSTATE_CNT and CST_CNT, which ACPI 1.0
+ *          reserved, read 0 up to revision 2. The reset register and its value read 0 unless the
+ *          FADT is of revision 2 or more and sets RESET_REG_SUP. A hardware-reduced FADT reads 0 at
+ *          offsets 46 to 108 and 148 to 243, and in flag bits 1, 2, 3, 7, 8, 13, 14, 16 and 17, which
+ *          ACPI tells OSPM to ignore on such a platform.
+ *
+ * @param fadt            The FADT, every byte of its length readable, or NULL.
+ * @param out_description Emptied, then filled with the FADT's fields.
+ * @return false when @p fadt is NULL or shorter than a table header; @p out_description is then
+ *         not present.
+ */
+extern bool advanced_configuration_and_power_interface_read_fixed_description(
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt,
+    AdvancedConfigurationAndPowerInterfaceFixedDescription_t *out_description);
+
+/**
+ * @brief The first I/O port of a register, when the register lies wholly in the I/O space.
+ *
+ * @param reg   The register.
+ * @param bytes How many bytes from its address an access reaches.
+ * @return Its port, or 0 when it gives no address, lies in another space, or reaches past port
+ *         0xFFFF.
+ */
+extern uint16_t advanced_configuration_and_power_interface_input_output_port(
+    const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *reg, uint32_t bytes);
+
+/**
+ * @brief Puts the platform a normalised FADT describes in ACPI mode, through @p host (§3.8 step 0).
+ *
+ * @details Nothing is written when the platform is hardware-reduced, when SCI_EN, in either PM1
+ *          control register, is already set, when SMI_CMD or ACPI_ENABLE is 0, or when a PM1 control
+ *          block, SMI_CMD or a PM1 event or GPE block is not wholly in the I/O space or reaches a
+ *          protected port. A block too short to hold an enable register is absent. Otherwise every
+ *          GPE enable register is written 0, the fixed-event enable bits of each PM1 enable register
+ *          are cleared, the other bits written back, and then ACPI_ENABLE is written to SMI_CMD. SCI_EN
+ *          is then read up to ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS times, the
+ *          host sleeping 1 ms between two reads, until it reads set or the host has waited
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS. The SCI line is
+ *          neither masked nor unmasked here: the caller keeps it masked.
+ *
+ * @param host       The host whose I/O ports and clock are used.
+ * @param fadt       The platform's normalised FADT.
+ * @param out_switch Emptied, then filled with the outcome and the counts.
+ */
+extern void advanced_configuration_and_power_interface_enter_mode(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+    AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_switch);
+
+/**
+ * @brief Puts this machine in ACPI mode, through advanced_configuration_and_power_interface_machine_host
+ *        and the FADT of the boot's directory, before any AML runs; needs the kernel tick running.
+ */
+extern void advanced_configuration_and_power_interface_mode_initialize(void);
+
+/**
+ * @brief What advanced_configuration_and_power_interface_mode_initialize did.
+ *
+ * @return The boot's switch, never NULL; its outcome is
+ *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN before the boot's switch.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *advanced_configuration_and_power_interface_mode(void);
+
+/**
+ * @brief The name the boot's telemetry gives a switch's outcome.
+ *
+ * @param outcome An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_* outcome.
+ * @return Its name, such as "switched", or "unknown" for a value that names none.
+ */
+extern const char *advanced_configuration_and_power_interface_mode_outcome_name(uint8_t outcome);
 
 /**
  * @brief Walks the tables the root system description pointer of a host leads to, each mapped

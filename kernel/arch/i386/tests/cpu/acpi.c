@@ -1,4 +1,6 @@
 #include <kernel/acpi/tables.h>
+#include <kernel/cpu/clock.h>
+#include <kernel/cpu/ioapic.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
@@ -6,7 +8,56 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define ACPI_TEST_HEADER_BYTES 36u /**< Bytes of a table header, and of a table that is nothing more. */
+#define ACPI_TEST_HEADER_BYTES    36u   /**< Bytes of a table header, and of a table that is nothing more. */
+#define ACPI_TEST_MASTER_PIC_MASK 0x21u /**< The master 8259's interrupt mask register. */
+#define ACPI_TEST_SLAVE_PIC_MASK  0xA1u /**< The slave 8259's interrupt mask register. */
+#define ACPI_TEST_PIC_LINES       16u   /**< Lines the two 8259s hold. */
+#define ACPI_TEST_SCI_EN          0x1u  /**< SCI_EN, bit 0 of a PM1 control register. */
+
+/**
+ * @brief Whether 8259 line @p line is masked.
+ */
+static bool acpi_test_pic_line_is_masked(uint16_t line)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const uint16_t port = (line < 8u) ? ACPI_TEST_MASTER_PIC_MASK : ACPI_TEST_SLAVE_PIC_MASK;
+
+    return ((host->port_read(host->context, port, 1u) >> (line % 8u)) & 1u) != 0u;
+}
+
+/**
+ * @brief Whether every I/O APIC route the kernel programmed for @p global_system_interrupt is masked.
+ */
+static bool acpi_test_io_apic_routes_are_masked(uint32_t global_system_interrupt)
+{
+    for (uint8_t route = 0u;
+         route < input_output_advanced_programmable_interrupt_controller_get_programmed_route_count(); ++route)
+        if (input_output_advanced_programmable_interrupt_controller_get_programmed_route_gsi(route) ==
+                global_system_interrupt &&
+            !input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(route))
+            return false;
+    return true;
+}
+
+/**
+ * @brief SCI_EN, read from the machine's PM1 control registers.
+ */
+static bool
+acpi_test_system_control_interrupt_enabled(const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    uint32_t control = 0u;
+
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        const uint16_t port = advanced_configuration_and_power_interface_input_output_port(
+            &fadt->power_management_control_blocks[index], 2u);
+
+        if (port != 0u)
+            control |= host->port_read(host->context, port, 2u);
+    }
+    return (control & ACPI_TEST_SCI_EN) != 0u;
+}
 
 /**
  * @brief The firmware's own tables are walked, the DSDT included, each through a firmware window.
@@ -93,4 +144,66 @@ KERNEL_TEST(a_firmware_range_past_4_gib_is_refused)
     kernel_test_check(test, starts_past == NULL, "a range that starts past 4 GiB is refused");
     kernel_test_check(test, crosses_on_a_page == NULL, "two pages from 0xFFFFF000 are refused");
     kernel_test_check(test, crosses_inside_a_page == NULL, "36 bytes from 0xFFFFFFF0 are refused");
+}
+
+/**
+ * @brief The boot put the platform in ACPI mode before any AML ran: SCI_EN reads set in the machine's
+ *        PM1 control registers, and the SCI stays masked in the 8259 and in every I/O APIC route.
+ */
+KERNEL_TEST(the_boot_puts_the_platform_in_acpi_mode_with_its_interrupt_masked)
+{
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt =
+        &advanced_configuration_and_power_interface_directory()->fixed_description;
+    const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *mode = advanced_configuration_and_power_interface_mode();
+    const uint16_t interrupt = fadt->system_control_interrupt;
+    uint32_t global_system_interrupt = interrupt;
+    uint16_t flags = 0u;
+
+    if (!fadt->present || fadt->hardware_reduced)
+    {
+        kernel_test_skip(test, "the firmware gives no FADT, or a hardware-reduced one, which boots in ACPI mode");
+        return;
+    }
+    if (interrupt < ACPI_TEST_PIC_LINES)
+        (void) advanced_configuration_and_power_interface_madt_resolve_isa_irq((uint8_t) interrupt,
+                                                                               &global_system_interrupt, &flags);
+
+    kernel_test_check(test,
+                      mode->outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED ||
+                          mode->outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_ALREADY,
+                      "the boot switched the platform to ACPI mode, or found it there");
+    kernel_test_check(test, acpi_test_system_control_interrupt_enabled(fadt),
+                      "SCI_EN reads set in the machine's PM1 control registers");
+    kernel_test_check(test, interrupt >= ACPI_TEST_PIC_LINES || acpi_test_pic_line_is_masked(interrupt),
+                      "the SCI's 8259 line is masked");
+    kernel_test_check(test, acpi_test_io_apic_routes_are_masked(global_system_interrupt),
+                      "no I/O APIC route of the SCI is unmasked");
+    kernel_test_measure(test, "outcome", mode->outcome);
+    kernel_test_measure(test, "polls", mode->polls);
+    kernel_test_measure(test, "waited_ms", mode->waited_milliseconds);
+    kernel_test_measure(test, "sci_int", interrupt);
+}
+
+/**
+ * @brief The machine host's sleep waits at least a whole tick for 1 ms, and says how many
+ *        milliseconds it waited, no more than the ticks that passed around it.
+ */
+KERNEL_TEST(the_machine_host_sleeps_on_the_tick_and_says_how_long)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t before = clock_get_tick_count();
+    const uint32_t waited = host->sleep_milliseconds(host->context, 1u);
+    const uint32_t ticks = clock_get_tick_count() - before;
+
+    if (hertz == 0u)
+    {
+        kernel_test_skip(test, "no tick runs");
+        return;
+    }
+    kernel_test_check(test, ticks >= 2u, "a sleep of 1 ms lets a whole tick pass, the one it lands in not counted");
+    kernel_test_check(test, (uint64_t) waited * hertz >= 1000u,
+                      "it says it waited at least as many milliseconds as a tick lasts");
+    kernel_test_check(test, (uint64_t) waited * hertz <= (uint64_t) ticks * 1000u,
+                      "it says no more than the ticks that passed around it");
 }

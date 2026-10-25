@@ -35,14 +35,6 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t MachineLangu
 typedef AdvancedConfigurationAndPowerInterfaceHost_t MachineLanguageHost_t;
 
 /**
- * @brief A run of I/O ports AML never reaches, since the kernel drives them (§5.3).
- */
-typedef struct MachineLanguagePortRange {
-    uint16_t first; /**< Its first port. */
-    uint16_t last;  /**< Its last port. */
-} MachineLanguagePortRange_t;
-
-/**
  * @brief Where a datum of a field lies: its first bit, and the bits of it the unit covers.
  */
 typedef struct MachineLanguageDatum {
@@ -50,13 +42,6 @@ typedef struct MachineLanguageDatum {
     uint32_t shift;     /**< The first bit of it the unit covers. */
     uint32_t count;     /**< How many bits of it the unit covers. */
 } MachineLanguageDatum_t;
-
-static const MachineLanguagePortRange_t machine_language_protected_ports[] = {
-    {0x0020u, 0x0021u}, /* the master PIC */
-    {0x00A0u, 0x00A1u}, /* the slave PIC */
-    {0x04D0u, 0x04D1u}, /* the ELCR */
-    {0x0CF8u, 0x0CFFu}, /* PCI configuration mechanism #1 */
-};
 
 /**
  * @brief The bytes of one datum of @p access, an AccessType: AnyAcc and BufferAcc access bytes, as
@@ -137,19 +122,6 @@ static uint64_t machine_language_merge(uint8_t update, uint64_t old, uint64_t bi
                                                                         old;
 
     return (around & ~mask) | ((bits << datum->shift) & mask);
-}
-
-/**
- * @brief Whether @p port is one AML never reaches.
- */
-static bool machine_language_port_is_protected(uint16_t port)
-{
-    for (uint32_t index = 0u;
-         index < sizeof(machine_language_protected_ports) / sizeof(machine_language_protected_ports[0]); ++index)
-        if (port >= machine_language_protected_ports[index].first &&
-            port <= machine_language_protected_ports[index].last)
-            return true;
-    return false;
 }
 
 /**
@@ -332,7 +304,7 @@ static MachineLanguageStatus_t machine_language_port(MachineLanguageLoad_t *load
 
     if (port > 0xFFFFu || width - 1u > 0xFFFFu - port)
         return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
-    if (machine_language_port_is_protected((uint16_t) port))
+    if (advanced_configuration_and_power_interface_port_is_protected((uint16_t) port))
     {
         ++load->regions.protected_port_accesses;
         if (!write)
@@ -415,7 +387,7 @@ static bool machine_language_control_port(const MachineLanguageRegions_t *region
 {
     const uint16_t port = regions->power_management_control_ports[index];
 
-    return port != 0u && !machine_language_port_is_protected(port);
+    return port != 0u && !advanced_configuration_and_power_interface_port_is_protected(port);
 }
 
 /**

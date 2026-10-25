@@ -18,8 +18,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit; qemu fetches the
          reference tables of QEMU at a pinned release, its 47 x86 configurations
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
-         directory with what tools/acpi/expected_directory.py reads from the same dump, its MADT
-         with what tools/acpi/expected_madt.py reads from the report's decoded tables, and the
+         directory with what tools/acpi/expected_directory.py reads from the same dump, its FADT
+         and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
+         from the report's decoded tables, and the
          opcodes its definition blocks decode with what tools/acpi/aml_census.py counts; then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
          the report's iASL disassembly, and lists the tables where they differ
@@ -203,8 +204,9 @@ decoded() {
     GIT_NO_LAZY_FETCH=1 git -C "$LINUXHW" cat-file blob "$LINUXHW_COMMIT:$1"
 }
 
-# Compares the directory and the MADT the kernel's code reads from each dump of the list $1 with the expected
-# ones, then says how many CPU slots, I/O APICs, overrides and NMI connections the comparison held.
+# Compares the directory, the FADT and the MADT the kernel's code reads from each dump of the list $1 with the
+# expected ones, then says how many FADTs, registers, CPU slots, I/O APICs, overrides and NMI connections the
+# comparison held.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables
@@ -223,6 +225,7 @@ check() {
         faults+="$(grep '^aml faults ' <<<"$actual")"$'\n' || true
         actual="$(grep -v '^aml faults ' <<<"$actual")" || true
         expected="$(python3 -I "$ROOT/tools/acpi/expected_directory.py" "$dump")
+$(decoded "$machine" | python3 -I "$ROOT/tools/acpi/expected_fadt.py" "$dump" -)
 $(decoded "$machine" | python3 -I "$ROOT/tools/acpi/expected_madt.py" "$dump" -)
 $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
         disassembly+="$(decoded "$machine" | python3 -I "$ROOT/tools/acpi/check_against_iasl.py" "$dump" - |
@@ -236,8 +239,10 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
             diff <(echo "$expected") <(echo "$actual") | sed 's/^/    # /' || true
         fi
     done < <(reports "$1")
-    echo "# directory and MADT: $agree of $number machines agree"
-    echo "# compared: $(grep -c '^processor ' <<<"$compared") CPU slots," \
+    echo "# directory, FADT and MADT: $agree of $number machines agree"
+    echo "# compared: $(grep -c '^fadt present=1 ' <<<"$compared") FADTs," \
+        "$(grep -c '^fadt [a-z0-9_]* space=[0-9]* width=[0-9]* offset=[0-9]* access=[0-9]* address=0x[1-9A-F]' <<<"$compared") registers present," \
+        "$(grep -c '^processor ' <<<"$compared") CPU slots," \
         "$(grep -c '^io_apic ' <<<"$compared") I/O APICs, $(grep -c '^override ' <<<"$compared") overrides," \
         "$(grep -c '^nmi ' <<<"$compared") NMI connections, $(grep -c '^aml opcode ' <<<"$compared") opcode counts"
     tables="$(grep -o '^aml tables=[0-9]*' <<<"$compared" | cut -d= -f2 | paste -sd+ | bc)"
