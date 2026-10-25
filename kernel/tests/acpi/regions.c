@@ -97,8 +97,11 @@ static bool regions_access(uint32_t index, uint8_t kind, uint8_t width, uint64_t
 static void regions_close(KernelTest_t *test)
 {
     advanced_configuration_and_power_interface_machine_language_close(&regions_load);
-    kernel_test_check(test, regions_host.outstanding_maps == 0u && regions_host.mismatched_unmaps == 0u,
-                      "closing the load unmaps every mapping, each as it was mapped");
+    kernel_test_check(test,
+                      regions_host.outstanding_maps == 0u && regions_host.mismatched_unmaps == 0u &&
+                          regions_host.inconsistent_accesses == 0u,
+                      "every access went where its mapping puts it, and closing the load unmaps every mapping, "
+                      "each as it was mapped");
     advanced_configuration_and_power_interface_simulated_host_close(&regions_host);
 }
 
@@ -670,5 +673,237 @@ KERNEL_TEST(a_buffer_written_to_a_unit_is_cut_or_zero_extended)
                       advanced_configuration_and_power_interface_simulated_host_peek(&regions_host, REGIONS_MEMORY + 6u,
                                                                                      4u) == 0x00004241u,
                       "the String \"AB\" gives F32_ 0x41, 0x42, then zeros");
+    regions_close(test);
+}
+
+/**
+ * @brief An index or a BankValue its register cannot hold is refused with index_out_of_range, and
+ *        nothing is written: an IndexField unit at byte 256 behind an index register of 8 bits, a
+ *        BankValue of 0x102 for a bank register of 8 bits.
+ */
+KERNEL_TEST(an_index_or_bank_value_wider_than_its_register_is_refused)
+{
+    static const MadeUpFieldUnit_t registers[] = {
+        {"INDX", 8u},
+        {"DATA", 8u}
+    };
+    static const MadeUpFieldUnit_t far[] = {
+        {NULL,   2048u},
+        {"U256", 8u   }
+    };
+    static const MadeUpFieldUnit_t bank[] = {
+        {"BSEL", 8u}
+    };
+    static const MadeUpFieldUnit_t banked[] = {
+        {"BKX_", 8u}
+    };
+
+    regions_begin();
+    made_up_aml_region(&regions_aml, "IDXR", 0x01u, 0x0B00u, 2u);
+    made_up_aml_field(&regions_aml, "IDXR", REGIONS_BYTE_ACCESS, registers, 2u);
+    made_up_aml_index_field(&regions_aml, "INDX", "DATA", REGIONS_BYTE_ACCESS, far, 2u);
+    made_up_aml_region(&regions_aml, "BNKR", 0x01u, 0x0B10u, 1u);
+    made_up_aml_field(&regions_aml, "BNKR", REGIONS_BYTE_ACCESS, bank, 1u);
+    made_up_aml_region(&regions_aml, "BRAM", 0x00u, REGIONS_MEMORY, 1u);
+    made_up_aml_bank_field(&regions_aml, "BRAM", "BSEL", 0x102u, REGIONS_BYTE_ACCESS, banked, 1u);
+    made_up_aml_store_integer(&regions_aml, 0x77u, "U256");
+    made_up_aml_store_integer(&regions_aml, 0x77u, "BKX_");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test, regions_failed(REGIONS_STATUS(INDEX_OUT_OF_RANGE)) == 2u && regions_host.access_count == 0u,
+                      "both writes fail with index_out_of_range, and nothing is written");
+    regions_close(test);
+}
+
+/**
+ * @brief An IndexField counts its index in bytes at every access width: DWordAcc units at bytes 4 and
+ *        8 write the indices 4 and 8, then read or write the data register whole.
+ */
+KERNEL_TEST(an_index_field_counts_its_index_in_bytes_at_every_width)
+{
+    static const MadeUpFieldUnit_t registers[] = {
+        {"INDX", 8u },
+        {NULL,   24u},
+        {"DATA", 32u}
+    };
+    static const MadeUpFieldUnit_t units[] = {
+        {"D0__", 32u},
+        {"D1__", 32u},
+        {"D2__", 32u}
+    };
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_set_port(&regions_host, 0x0B24u, 0x11223344u);
+    made_up_aml_region(&regions_aml, "IDXR", 0x01u, 0x0B20u, 8u);
+    made_up_aml_field(&regions_aml, "IDXR", REGIONS_DWORD_ACCESS, registers, 3u);
+    made_up_aml_index_field(&regions_aml, "INDX", "DATA", REGIONS_DWORD_ACCESS, units, 3u);
+    made_up_aml_name_integer(&regions_aml, "R2__", 0u);
+    made_up_aml_store_name(&regions_aml, "D2__", "R2__");
+    made_up_aml_store_integer(&regions_aml, 0xCAFEu, "D1__");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_integer("R2__") == 0x11223344u && regions_host.access_count == 6u &&
+                          regions_access(0u, REGIONS_ACCESS(PORT_READ), 4u, 0x0B20u, 0u) &&
+                          regions_access(1u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0B20u, 8u) &&
+                          regions_access(2u, REGIONS_ACCESS(PORT_READ), 4u, 0x0B24u, 0x11223344u) &&
+                          regions_access(4u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0B20u, 4u) &&
+                          regions_access(5u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0B24u, 0xCAFEu),
+                      "index 8, then the data read; index 4, then the data written; the index register keeps "
+                      "the bits of its datum it does not cover");
+    regions_close(test);
+}
+
+/**
+ * @brief An index register of 16 bits read in ByteAcc takes its index in two datums, low then high,
+ *        and the data register is cut to the access width before a partial write merges into it.
+ */
+KERNEL_TEST(registers_are_written_datum_by_datum_and_data_cut_to_the_access_width)
+{
+    static const MadeUpFieldUnit_t registers[] = {
+        {"INDX", 16u},
+        {"DATA", 16u}
+    };
+    static const MadeUpFieldUnit_t units[] = {
+        {NULL,   8u * 0x123u},
+        {"NIB_", 4u         }
+    };
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_set_port(&regions_host, 0x0B32u, 0xCDu);
+    advanced_configuration_and_power_interface_simulated_host_set_port(&regions_host, 0x0B33u, 0xABu);
+    made_up_aml_region(&regions_aml, "IDXR", 0x01u, 0x0B30u, 4u);
+    made_up_aml_field(&regions_aml, "IDXR", REGIONS_BYTE_ACCESS, registers, 2u);
+    made_up_aml_index_field(&regions_aml, "INDX", "DATA", REGIONS_BYTE_ACCESS, units, 2u);
+    made_up_aml_store_integer(&regions_aml, 0x5u, "NIB_");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_access(0u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B30u, 0x23u) &&
+                          regions_access(1u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B31u, 0x01u),
+                      "the index 0x123 goes out low byte first, high byte second");
+    kernel_test_check(test,
+                      regions_access(2u, REGIONS_ACCESS(PORT_READ), 1u, 0x0B32u, 0xCDu) &&
+                          regions_access(3u, REGIONS_ACCESS(PORT_READ), 1u, 0x0B33u, 0xABu) &&
+                          regions_access(6u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B32u, 0xC5u) &&
+                          regions_access(7u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B33u, 0x00u),
+                      "the data register reads 0xABCD and keeps 0xCD, the access width; the merged 0xC5 is "
+                      "written, its high byte 0");
+    regions_close(test);
+}
+
+/**
+ * @brief A register that is not a unit of a Field is refused with type_mismatch.
+ */
+KERNEL_TEST(a_register_that_is_not_a_unit_of_a_field_is_refused)
+{
+    static const MadeUpFieldUnit_t units[] = {
+        {"NU0_", 8u}
+    };
+
+    regions_begin();
+    made_up_aml_name_integer(&regions_aml, "INDX", 0u);
+    made_up_aml_name_integer(&regions_aml, "DATA", 0u);
+    made_up_aml_index_field(&regions_aml, "INDX", "DATA", REGIONS_BYTE_ACCESS, units, 1u);
+    made_up_aml_name_integer(&regions_aml, "RN__", 0xEEu);
+    made_up_aml_store_name(&regions_aml, "NU0_", "RN__");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_integer("RN__") == 0xEEu && regions_failed(REGIONS_STATUS(TYPE_MISMATCH)) == 1u &&
+                          regions_host.access_count == 0u,
+                      "an index register that is a Name fails with type_mismatch, touching nothing");
+    regions_close(test);
+}
+
+/**
+ * @brief The edges of what an access reaches: port 0xFFFF in a byte, but no double word from 0xFFFE;
+ *        no page 0, as in ring 0; a reserved AccessType and a QWordAcc port fail with
+ *        access_width_invalid; a unit of no bits reads 0 and writes nothing.
+ */
+KERNEL_TEST(the_edges_of_what_an_access_reaches)
+{
+    static const MadeUpFieldUnit_t last_port[] = {
+        {"PFF_", 8u}
+    };
+    static const MadeUpFieldUnit_t past_port[] = {
+        {"PFE_", 32u}
+    };
+    static const MadeUpFieldUnit_t page_zero[] = {
+        {"P0__", 8u}
+    };
+    static const MadeUpFieldUnit_t reserved[] = {
+        {"RSV_", 8u}
+    };
+    static const MadeUpFieldUnit_t quad_port[] = {
+        {"QP__", 64u}
+    };
+    static const MadeUpFieldUnit_t empty[] = {
+        {NULL,   3u},
+        {"Z0__", 0u}
+    };
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_set_port(&regions_host, 0xFFFFu, 0x42u);
+    made_up_aml_region(&regions_aml, "PFFR", 0x01u, 0xFFFFu, 1u);
+    made_up_aml_field(&regions_aml, "PFFR", REGIONS_BYTE_ACCESS, last_port, 1u);
+    made_up_aml_region(&regions_aml, "PFER", 0x01u, 0xFFFEu, 4u);
+    made_up_aml_field(&regions_aml, "PFER", REGIONS_DWORD_ACCESS, past_port, 1u);
+    made_up_aml_region(&regions_aml, "P0R_", 0x00u, 0u, 1u);
+    made_up_aml_field(&regions_aml, "P0R_", REGIONS_BYTE_ACCESS, page_zero, 1u);
+    made_up_aml_region(&regions_aml, "RSVR", 0x00u, REGIONS_MEMORY, 1u);
+    made_up_aml_field(&regions_aml, "RSVR", 0x06u, reserved, 1u);
+    made_up_aml_region(&regions_aml, "QPR_", 0x01u, 0x0B50u, 8u);
+    made_up_aml_field(&regions_aml, "QPR_", REGIONS_QWORD_ACCESS, quad_port, 1u);
+    made_up_aml_field(&regions_aml, "RSVR", REGIONS_BYTE_ACCESS, empty, 2u);
+    made_up_aml_name_integer(&regions_aml, "RF__", 0u);
+    made_up_aml_name_integer(&regions_aml, "RZ__", 0xEEu);
+    made_up_aml_store_name(&regions_aml, "PFF_", "RF__");
+    made_up_aml_store_name(&regions_aml, "PFE_", "RF__");
+    made_up_aml_store_name(&regions_aml, "P0__", "RF__");
+    made_up_aml_store_name(&regions_aml, "RSV_", "RF__");
+    made_up_aml_store_name(&regions_aml, "QP__", "RF__");
+    made_up_aml_store_name(&regions_aml, "Z0__", "RZ__");
+    made_up_aml_store_integer(&regions_aml, 1u, "Z0__");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_integer("RF__") == 0x42u && regions_failed(REGIONS_STATUS(ADDRESS_UNREACHABLE)) == 2u,
+                      "port 0xFFFF reads 0x42; a double word from 0xFFFE and page 0 are unreachable");
+    kernel_test_check(test, regions_failed(REGIONS_STATUS(ACCESS_WIDTH_INVALID)) == 2u,
+                      "AccessType 6 and a QWordAcc port fail with access_width_invalid");
+    kernel_test_check(test, regions_integer("RZ__") == 0u && regions_host.access_count == 1u,
+                      "the unit of no bits reads 0 and writes nothing: the only access is port 0xFFFF");
+    regions_close(test);
+}
+
+/**
+ * @brief A datum at an address its width does not divide is made byte by byte, counted, each byte in
+ *        the page that holds it: a double word at the last two bytes of a page and the first two of
+ *        the next.
+ */
+KERNEL_TEST(an_unaligned_datum_is_made_byte_by_byte)
+{
+    static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u};
+    static const MadeUpFieldUnit_t units[] = {
+        {"UNA_", 32u}
+    };
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY + 0xFFEu, memory,
+                                                                    sizeof(memory));
+    made_up_aml_region(&regions_aml, "UNAR", 0x00u, REGIONS_MEMORY + 0xFFEu, 4u);
+    made_up_aml_field(&regions_aml, "UNAR", REGIONS_DWORD_ACCESS, units, 1u);
+    made_up_aml_name_integer(&regions_aml, "RU__", 0u);
+    made_up_aml_store_name(&regions_aml, "UNA_", "RU__");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_integer("RU__") == 0x44332211u && regions_host.access_count == 4u &&
+                          regions_access(0u, REGIONS_ACCESS(MEMORY_READ), 1u, REGIONS_MEMORY + 0xFFEu, 0x11u) &&
+                          regions_access(3u, REGIONS_ACCESS(MEMORY_READ), 1u, REGIONS_MEMORY + 0x1001u, 0x44u),
+                      "four byte reads give 0x44332211");
+    kernel_test_check(test, regions_load.regions.unaligned_accesses == 1u && regions_load.regions.map_calls == 2u,
+                      "one unaligned access, over two pages each mapped once");
     regions_close(test);
 }

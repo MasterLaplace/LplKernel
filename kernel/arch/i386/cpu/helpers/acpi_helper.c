@@ -22,6 +22,7 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("map_calls", regions->map_calls);
     kernel_telemetry_write_unsigned("mapping_cache_hits", regions->mapping_cache_hits);
     kernel_telemetry_write_unsigned("split_qword_accesses", regions->split_qword_accesses);
+    kernel_telemetry_write_unsigned("unaligned_accesses", regions->unaligned_accesses);
     kernel_telemetry_write_unsigned("protected_port_accesses", regions->protected_port_accesses);
     kernel_telemetry_write_unsigned("region_lengths_rounded", regions->region_lengths_rounded);
     kernel_telemetry_write_unsigned("space_unsupported", refused);

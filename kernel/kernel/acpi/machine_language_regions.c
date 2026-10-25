@@ -13,6 +13,7 @@
 #define MACHINE_LANGUAGE_SYSTEM_IO        0x01u         /**< The RegionSpace byte of SystemIO. */
 #define MACHINE_LANGUAGE_UPDATE_ONES      1u            /**< UpdateRule WriteAsOnes. */
 #define MACHINE_LANGUAGE_UPDATE_ZEROS     2u            /**< UpdateRule WriteAsZeros. */
+#define MACHINE_LANGUAGE_ACCESS_LAST      5u            /**< AccessType BufferAcc, the last one not reserved. */
 #define MACHINE_LANGUAGE_REACHABLE_LAST   0xFFFFFFFFull /**< The last physical byte i686 reaches (§5.3). */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
@@ -51,7 +52,7 @@ static const MachineLanguagePortRange_t machine_language_protected_ports[] = {
 
 /**
  * @brief The bytes of one datum of @p access, an AccessType: AnyAcc and BufferAcc access bytes, as
- *        Windows does, and so does a reserved type.
+ *        Windows does; a reserved type is refused before it gets here.
  */
 static uint8_t machine_language_access_bytes(uint8_t access)
 {
@@ -179,7 +180,7 @@ static const MachineLanguageRegion_t *machine_language_region(const MachineLangu
 static void machine_language_unmap(MachineLanguageLoad_t *load, const MachineLanguageMapping_t *mapping)
 {
     const MachineLanguageHost_t *host = load->space.host;
-    const uint64_t length = (uint64_t) mapping->pages * MACHINE_LANGUAGE_PAGE_BYTES;
+    const uint64_t length = MACHINE_LANGUAGE_PAGE_BYTES;
 
     if (mapping->kind == MACHINE_LANGUAGE_MAPPING(CACHED))
         host->unmap_firmware_writable(host->context, mapping->address, length);
@@ -205,25 +206,22 @@ static MachineLanguageMapping_t *machine_language_free_mapping(MachineLanguageLo
 }
 
 /**
- * @brief Where the cache maps the @p width bytes at @p physical_address: an entry that holds their
- *        pages, or a new one, cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere.
+ * @brief Where the cache maps the page that holds @p physical_address: an entry already made, or a
+ *        new one, cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere.
  */
 static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load, uint64_t physical_address,
-                                                    uint8_t width, uint8_t **out_address)
+                                                    uint8_t **out_address)
 {
     MachineLanguageRegions_t *regions = &load->regions;
     const MachineLanguageHost_t *host = load->space.host;
     const uint64_t first_page = physical_address & ~(uint64_t) (MACHINE_LANGUAGE_PAGE_BYTES - 1u);
-    const uint64_t last_page = (physical_address + width - 1u) & ~(uint64_t) (MACHINE_LANGUAGE_PAGE_BYTES - 1u);
-    const uint32_t pages = (uint32_t) ((last_page - first_page) / MACHINE_LANGUAGE_PAGE_BYTES) + 1u;
 
     ++regions->clock;
     for (uint32_t index = 0u; index < regions->mapping_count; ++index)
     {
         MachineLanguageMapping_t *mapping = &regions->mappings[index];
 
-        if (first_page >= mapping->physical_address &&
-            last_page < mapping->physical_address + (uint64_t) mapping->pages * MACHINE_LANGUAGE_PAGE_BYTES)
+        if (first_page == mapping->physical_address)
         {
             mapping->last_use = regions->clock;
             ++regions->mapping_cache_hits;
@@ -232,7 +230,7 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
         }
     }
 
-    const uint64_t length = (uint64_t) pages * MACHINE_LANGUAGE_PAGE_BYTES;
+    const uint64_t length = MACHINE_LANGUAGE_PAGE_BYTES;
     const uint8_t type = host->memory_type(host->context, first_page, length);
     const uint8_t kind = (type == MACHINE_LANGUAGE_MEMORY(RAM) || type == MACHINE_LANGUAGE_MEMORY(ACPI_RECLAIM) ||
                           type == MACHINE_LANGUAGE_MEMORY(ACPI_NVS)) ?
@@ -250,7 +248,6 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
 
     mapping->physical_address = first_page;
     mapping->address = address;
-    mapping->pages = pages;
     mapping->last_use = regions->clock;
     mapping->kind = kind;
     *out_address = (uint8_t *) address + (physical_address - first_page);
@@ -258,19 +255,14 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
 }
 
 /**
- * @brief One access of 1, 2 or 4 bytes to memory, through the mapping cache.
+ * @brief One access of 1, 2 or 4 bytes, aligned on its width, to memory, through the mapping cache.
  */
-static MachineLanguageStatus_t machine_language_memory(MachineLanguageLoad_t *load, uint64_t physical_address,
-                                                       uint8_t width, bool write, uint32_t *value)
+static MachineLanguageStatus_t machine_language_aligned_memory(MachineLanguageLoad_t *load, uint64_t physical_address,
+                                                               uint8_t width, bool write, uint32_t *value)
 {
     const MachineLanguageHost_t *host = load->space.host;
     uint8_t *address = NULL;
-
-    if (physical_address > MACHINE_LANGUAGE_REACHABLE_LAST ||
-        width - 1u > MACHINE_LANGUAGE_REACHABLE_LAST - physical_address)
-        return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
-
-    const MachineLanguageStatus_t status = machine_language_map(load, physical_address, width, &address);
+    const MachineLanguageStatus_t status = machine_language_map(load, physical_address, &address);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
@@ -279,6 +271,35 @@ static MachineLanguageStatus_t machine_language_memory(MachineLanguageLoad_t *lo
     else
         *value = host->read_memory(host->context, address, physical_address, width);
     return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief One access of 1, 2 or 4 bytes to memory: one aligned access, or, at an address its width
+ *        does not divide, one access per byte, counted, so that no access crosses a page or reads
+ *        unaligned.
+ */
+static MachineLanguageStatus_t machine_language_memory(MachineLanguageLoad_t *load, uint64_t physical_address,
+                                                       uint8_t width, bool write, uint32_t *value)
+{
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+    uint32_t assembled = 0u;
+
+    if (physical_address > MACHINE_LANGUAGE_REACHABLE_LAST ||
+        width - 1u > MACHINE_LANGUAGE_REACHABLE_LAST - physical_address)
+        return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
+    if (physical_address % width == 0u)
+        return machine_language_aligned_memory(load, physical_address, width, write, value);
+    ++load->regions.unaligned_accesses;
+    for (uint8_t index = 0u; index < width && status == MACHINE_LANGUAGE_OK; ++index)
+    {
+        uint32_t byte = write ? ((*value >> (8u * index)) & 0xFFu) : 0u;
+
+        status = machine_language_aligned_memory(load, physical_address + index, 1u, write, &byte);
+        assembled |= byte << (8u * index);
+    }
+    if (status == MACHINE_LANGUAGE_OK && !write)
+        *value = assembled;
+    return status;
 }
 
 /**
@@ -323,8 +344,8 @@ static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad
 
 /**
  * @brief One datum of a region, @p byte_offset bytes in: it must fit the region, whose length may be
- *        rounded up to the datum's width, counted; an 8-byte datum is two 4-byte accesses, low then
- *        high (§5.3).
+ *        rounded up to the datum's width, counted; an 8-byte datum of memory is two 4-byte accesses,
+ *        low then high (§5.3), and one of a port is refused, ports being at most 4 bytes wide.
  */
 static MachineLanguageStatus_t machine_language_region_datum(MachineLanguageLoad_t *load, uint32_t region_node,
                                                              uint64_t byte_offset, uint8_t width, bool write,
@@ -337,6 +358,8 @@ static MachineLanguageStatus_t machine_language_region_datum(MachineLanguageLoad
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     if (region->state == 0u)
         return MACHINE_LANGUAGE_STATUS(REGION_UNEVALUATED);
+    if (region->space == MACHINE_LANGUAGE_SYSTEM_IO && width == 8u)
+        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
     if (byte_offset + width > region->length)
     {
         const uint64_t rounded =
@@ -376,6 +399,8 @@ static MachineLanguageStatus_t machine_language_register(MachineLanguageLoad_t *
 
     if (unit == NULL || unit->kind != MACHINE_LANGUAGE_FIELD_UNIT(NORMAL) || unit->bit_length > 64u)
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
+        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
     if (unit->lock != 0u)
         return MACHINE_LANGUAGE_STATUS(GLOBAL_LOCK_UNAVAILABLE);
 
@@ -414,9 +439,21 @@ static MachineLanguageStatus_t machine_language_register(MachineLanguageLoad_t *
 }
 
 /**
+ * @brief Whether @p selector, an index or a BankValue, fits the register at @p node; a register that is
+ *        not a unit of a Field fits anything here, and is refused when it is written.
+ */
+static bool machine_language_selector_fits(const MachineLanguageLoad_t *load, uint32_t node, uint64_t selector)
+{
+    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
+
+    return unit == NULL || unit->bit_length >= 64u || (selector >> unit->bit_length) == 0u;
+}
+
+/**
  * @brief One datum of a unit, at @p byte_offset from the start of its field list: in its region for
  *        a Field; once its BankValue is in its bank register for a BankField; through its data
- *        register, once its index register holds @p byte_offset, for an IndexField.
+ *        register, once its index register holds @p byte_offset, for an IndexField. An index or a
+ *        BankValue its register cannot hold is refused before anything is written.
  */
 static MachineLanguageStatus_t machine_language_unit_datum(MachineLanguageLoad_t *load,
                                                            const MachineLanguageFieldUnit_t *unit, uint64_t byte_offset,
@@ -427,6 +464,9 @@ static MachineLanguageStatus_t machine_language_unit_datum(MachineLanguageLoad_t
 
     if (unit->kind == MACHINE_LANGUAGE_FIELD_UNIT(NORMAL))
         return machine_language_region_datum(load, unit->region, byte_offset, width, write, value);
+    if (!machine_language_selector_fits(
+            load, (unit->kind == MACHINE_LANGUAGE_FIELD_UNIT(BANK)) ? unit->data_or_bank : unit->region, selector))
+        return MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE);
     if (unit->kind == MACHINE_LANGUAGE_FIELD_UNIT(BANK))
     {
         status = machine_language_register(load, unit->data_or_bank, true, &selector);
@@ -523,6 +563,8 @@ advanced_configuration_and_power_interface_machine_language_field_read(MachineLa
 
     if (unit == NULL)
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
+        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
     if (unit->lock != 0u)
         return MACHINE_LANGUAGE_STATUS(GLOBAL_LOCK_UNAVAILABLE);
     ++load->regions.field_reads;
@@ -581,6 +623,8 @@ advanced_configuration_and_power_interface_machine_language_field_write(MachineL
 
     if (unit == NULL)
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
+        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
     if (unit->lock != 0u)
         return MACHINE_LANGUAGE_STATUS(GLOBAL_LOCK_UNAVAILABLE);
     if (((uint64_t) unit->bit_length + 7u) / 8u >
@@ -589,7 +633,7 @@ advanced_configuration_and_power_interface_machine_language_field_write(MachineL
 
     MachineLanguageStatus_t status = machine_language_source_bytes(load, value, integer, &source, &source_length);
 
-    if (status != MACHINE_LANGUAGE_OK)
+    if (status != MACHINE_LANGUAGE_OK || unit->bit_length == 0u)
         return status;
     ++load->regions.field_writes;
 

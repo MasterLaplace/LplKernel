@@ -17,7 +17,7 @@
  *
  * Part of layer L4 of the specification (docs/acpi/specification.md, §4.4 and §5.3). A field unit
  * is read and written one datum of its access width at a time, through its region's space: memory
- * through the pages one access touches, mapped once and kept in a cache, and I/O ports through the
+ * through the page each access touches, mapped once and kept in a cache, and I/O ports through the
  * host, the ports the kernel drives protected.
  *
  * @author @MasterLaplace
@@ -44,12 +44,11 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageMappingKind {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageMappingKind_t;
 
 /**
- * @brief The pages one access touched, mapped once (§5.3).
+ * @brief The page one access touched, mapped once (§5.3).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageMapping {
-    uint64_t physical_address; /**< Its first page's first byte. */
+    uint64_t physical_address; /**< Its first byte. */
     void *address;             /**< Where the host mapped it: the only pointer, never folded. */
-    uint32_t pages;            /**< Pages it covers, 1 or 2. */
     uint32_t last_use;         /**< When it was last used, by the cache's own clock. */
     uint8_t kind;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAPPING_* kind. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageMapping_t;
@@ -67,6 +66,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t map_calls;               /**< Maps the cache asked the host for. */
     uint32_t mapping_cache_hits;      /**< Accesses the cache already mapped. */
     uint32_t split_qword_accesses;    /**< 64-bit data made as two 32-bit accesses, low then high. */
+    uint32_t unaligned_accesses;      /**< Memory accesses at an address their width does not divide, made byte by
+                                           byte. */
     uint32_t protected_port_accesses; /**< Accesses to a protected port: 0 read, writes dropped. */
     uint32_t region_lengths_rounded;  /**< Accesses past a region's length but within it rounded up to the access
                                            width. */

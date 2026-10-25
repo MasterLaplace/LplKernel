@@ -85,9 +85,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            evaluation->runs, evaluation->failures, evaluation->implicit_returns, evaluation->uninitialized_operands,
            evaluation->frames_peak, evaluation->values_peak, load->declared_not_run);
     printf("aml run regions field_reads=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
-           "split_qword_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u\n",
+           "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u\n",
            regions->field_reads, regions->field_writes, regions->map_calls, regions->mapping_cache_hits,
-           regions->split_qword_accesses, regions->protected_port_accesses, regions->region_lengths_rounded);
+           regions->split_qword_accesses, regions->unaligned_accesses, regions->protected_port_accesses,
+           regions->region_lengths_rounded);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);

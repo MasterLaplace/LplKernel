@@ -323,10 +323,14 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_GLOBAL_LOCK_UNAVAILABLE, /**< A Lock field
                                                                                                    before the global
                                                                                                    lock lands. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_REGION_UNEVALUATED, /**< A region whose offset
-                                                                                              and length were never
-                                                                                              evaluated. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,              /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_REGION_UNEVALUATED,   /**< A region whose offset
+                                                                                                and length were never
+                                                                                                evaluated. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_ACCESS_WIDTH_INVALID, /**< A reserved
+                                                                                                AccessType, or a
+                                                                                                datum wider than
+                                                                                                its space allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,                /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**
