@@ -133,6 +133,16 @@ extern void made_up_aml_bank_field(MadeUpAml_t *aml, const char *region, const c
                                    uint8_t flags, const MadeUpFieldUnit_t *units, uint32_t count);
 
 /**
+ * @brief Appends Method (@p name, @p flags) { @p body }.
+ *
+ * @param aml   The builder.
+ * @param name  Four characters.
+ * @param flags The MethodFlags byte: the argument count in bits 0-2.
+ * @param body  The method's TermList, written with another builder.
+ */
+extern void made_up_aml_method(MadeUpAml_t *aml, const char *name, uint8_t flags, const MadeUpAml_t *body);
+
+/**
  * @brief Appends Store (@p source, @p target), both names of one NameSeg.
  *
  * @param aml    The builder.
