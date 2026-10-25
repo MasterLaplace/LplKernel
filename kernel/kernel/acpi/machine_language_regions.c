@@ -858,11 +858,20 @@ static MachineLanguageStatus_t machine_language_build_object(MachineLanguageLoad
     return MACHINE_LANGUAGE_OK;
 }
 
-MachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_region_build(MachineLanguageLoad_t *load, uint32_t node,
-                                                                         const MachineLanguageRegion_t *shape)
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_region_build(
+    MachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset, uint64_t length, bool evaluated,
+    uint32_t owner_device)
 {
-    return machine_language_build_object(load, node, MACHINE_LANGUAGE_VALUE(REGION), shape, (uint32_t) sizeof(*shape));
+    const MachineLanguageRegion_t region = {
+        .space = space,
+        .state = evaluated ? 1u : 0u,
+        .offset = evaluated ? offset : 0u,
+        .length = evaluated ? length : 0u,
+        .owner_device = owner_device,
+    };
+
+    return machine_language_build_object(load, node, MACHINE_LANGUAGE_VALUE(REGION), &region,
+                                         (uint32_t) sizeof(region));
 }
 
 MachineLanguageStatus_t
