@@ -70,6 +70,8 @@ CASES = [
         b"\x08ALI_" + ZERO + method(b"SRC_", 1) + b"\x06SRC_ALI_" + method(b"USE_", 0, b"ALI_" + ONE))]),
     ("declarations load in one pass (§3.6): an Alias of a method declared after it creates nothing", 0,
      [block(b"SSDT", b"\x06SRC_ALI_" + method(b"SRC_", 1) + method(b"USE_", 0, b"ALI_" + ONE))]),
+    ("an Alias of nothing creates nothing (§5.1), so a Method of its name is the first declaration", 1,
+     [block(b"SSDT", b"\x06NOPEALI_" + method(b"ALI_", 1) + method(b"USE_", 0, b"ALI_" + ONE))]),
     ("what a method body declares ends with the body (§3.5, §5.1): a nested root method", 0, [block(b"SSDT",
         method(b"MTHA", 0, method(path(b"INNR", root=True), 0)) + method(b"MTHB", 0, b"INNR"))]),
     ("an External a body's Name replaces comes back after the body (§5.1)", 1, [block(b"SSDT",
@@ -79,6 +81,10 @@ CASES = [
         external(path(b"_SB_", b"DEV_", root=True), DEVICE_OBJECT)
         + scope(path(b"_SB_", b"DEV_", root=True), method(b"MINE", 0))
         + method(b"USE_", 0, path(b"_SB_", b"DEV_", b"MINE", root=True)))]),
+    ("an External whose parent is missing waits for the end (§3.6): a Scope to it before then fails", 0,
+     [block(b"SSDT", external(path(b"_SB_", b"MIS_", b"DEV_", root=True), DEVICE_OBJECT)
+                     + scope(path(b"_SB_", b"MIS_", b"DEV_", root=True), method(b"MINE", 0))
+                     + method(b"USE_", 0, path(b"_SB_", b"MIS_", b"DEV_", b"MINE", root=True)))]),
     ("an External whose parent is missing is placed last, its missing segments as Externals (§5.1)", 1,
      [block(b"SSDT", external(path(b"_SB_", b"XYZ_", b"EXT_", root=True), METHOD_OBJECT, 1)
                      + method(b"USE_", 0, path(b"_SB_", b"XYZ_", b"EXT_", root=True) + ONE))]),
