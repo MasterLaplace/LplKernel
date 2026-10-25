@@ -376,8 +376,8 @@ typedef struct {
     uint8_t function;       /**< PCI function */
     uint16_t device_id;     /**< PCI device id (0x1050 modern / 0x1010 xitnl) */
     uint8_t is_modern;      /**< device_id >= 0x1040 (modern virtio-pci) */
-    uint32_t mmio_base;     /**< decoded MMIO BAR base (0 when none) */
-    uint32_t mmio_size;     /**< MMIO BAR size in bytes (0 when none) */
+    uint32_t mmio_base;     /**< decoded MMIO BAR base (0 when none, or when it lies above 4 GiB) */
+    uint32_t mmio_size;     /**< MMIO BAR size in bytes (0 when none, or when it lies above 4 GiB) */
     uint8_t mmio_bar_index; /**< which BAR slot the MMIO region came from */
 } hardware_abstraction_layer_virtio_gpu_info_t;
 
@@ -385,8 +385,9 @@ typedef struct {
  * @brief Scan the enumerated PCI devices for a virtio-gpu function.
  *
  * Matches Red Hat / virtio vendor id 0x1AF4 with the GPU device ids (modern
- * 0x1050 or transitional 0x1010), and decodes the first MMIO BAR. Requires a
- * prior peripheral_component_interconnect_scan().
+ * 0x1050 or transitional 0x1010), and decodes the first MMIO BAR when it lies
+ * below 4 GiB, where this kernel can reach it. Requires a prior
+ * peripheral_component_interconnect_scan().
  *
  * The function found may answer its memory window and master the bus, and its
  * pin interrupt is turned off: this driver polls its queues, and a line it left
@@ -422,6 +423,7 @@ typedef struct {
  */
 typedef struct {
     uint8_t mapped;                 /**< non-zero when the MMIO window was mapped */
+    uint8_t window_out_of_reach;    /**< non-zero when the BAR lies above 4 GiB, and nothing was mapped */
     uint8_t mmio_bar_index;         /**< BAR slot that was mapped */
     uint32_t mmio_virtual_base;     /**< kernel VA of the mapped BAR window */
     uint32_t mmio_physical_base;    /**< physical base of the mapped BAR window */
@@ -446,7 +448,8 @@ typedef struct {
  *
  * @param info Probe result identifying the virtio-gpu function.
  * @param out_mapping Destination for the decoded + mapped configuration.
- * @return true when the common cfg was found and the BAR was mapped.
+ * @return true when the common cfg was found and the BAR was mapped; false otherwise, with
+ *         @ref window_out_of_reach set when that BAR lies above 4 GiB, which this kernel cannot map.
  */
 bool hardware_abstraction_layer_virtio_gpu_map(const hardware_abstraction_layer_virtio_gpu_info_t *info,
                                                hardware_abstraction_layer_virtio_gpu_mapping_t *out_mapping);
@@ -618,6 +621,17 @@ bool hardware_abstraction_layer_virtio_gpu_display_init(void);
  * @return true if a scanout is live, false otherwise.
  */
 bool hardware_abstraction_layer_virtio_gpu_display_active(void);
+
+/**
+ * @brief Did hardware_abstraction_layer_virtio_gpu_display_init() leave the display off because the
+ *        GPU's register window lies above 4 GiB?
+ *
+ * @details This kernel maps a 32-bit physical space, so such a window is refused and nothing is
+ *          mapped. The boot reports that cause apart from a GPU that is absent or failed its handshake.
+ *
+ * @return true when the last bring-up refused the GPU's register window as out of reach.
+ */
+bool hardware_abstraction_layer_virtio_gpu_display_window_out_of_reach(void);
 
 /**
  * @brief Fill @p out_descriptor from the active scanout surface.

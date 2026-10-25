@@ -775,22 +775,6 @@ static void hda_reset_stream(uint32_t stream)
 }
 
 /**
- * @brief Can this kernel reach the controller's register window?
- *
- * @details The window is 32-bit even where the register pair is 64: this kernel maps into
- *          a 32-bit address space, so a controller placed above four gibibytes is one it
- *          cannot reach and must say so rather than truncate the address and write into
- *          whatever happens to live at the low half.
- *
- * @param bar Base address register 0 of the controller.
- * @return true for a memory window below four gibibytes.
- */
-static bool hda_window_is_reachable(const PeripheralComponentInterconnectBaseAddressRegister_t *bar)
-{
-    return !bar->is_io && (bar->base >> 32) == 0u;
-}
-
-/**
  * @brief Which codec slots announced themselves during the reset.
  *
  * @details Written back to clear it, because these bits are sticky and a later state
@@ -974,7 +958,7 @@ bool intel_high_definition_audio_initialize(IntelHighDefinitionAudioState_t *out
                                                                       &bar))
         return hda_publish_state(out, false);
 
-    if (!hda_window_is_reachable(&bar))
+    if (!peripheral_component_interconnect_memory_window_is_reachable(&bar))
         return hda_publish_state(out, false);
 
     hda_state.bar_virtual =

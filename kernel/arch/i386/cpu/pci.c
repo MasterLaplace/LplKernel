@@ -230,6 +230,12 @@ uint8_t peripheral_component_interconnect_read_base_address_register(
     return (uint8_t) (out_bar->size != 0u);
 }
 
+bool peripheral_component_interconnect_memory_window_is_reachable(
+    const PeripheralComponentInterconnectBaseAddressRegister_t *bar)
+{
+    return !bar->is_io && (bar->base >> 32u) == 0u;
+}
+
 const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect_find_by_class(uint8_t class_code,
                                                                                                uint8_t subclass)
 {
