@@ -625,7 +625,8 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | PCI_Config regions | the address comes from `_SEG`, `_BBN` and `_ADR` through the bridges, resolved once at attach; the header is write-protected (§5.3). Offsets from 0x100 need ECAM (#58) and fail with `address_unreachable`, counted, until then | [§5.5.2.4.1] |
 | EmbeddedControl | no handler: an access fails and is counted; `_REG(3, 1)` is never called (§1.4) | |
 | SystemCMOS, GenericSerialBus, GeneralPurposeIo, IPMI, PlatformRtMechanism, SMBus, PciBarTarget, PCC, FFixedHW, OEM 0x80-0xFF | no handler (§1.4) | |
-| AccessType ByteAcc, WordAcc, DWordAcc, QWordAcc | one access per datum of that width; on i686 a 64-bit SystemMemory datum is two 32-bit accesses, low then high (§5.3) | [§19.6.48] |
+| AccessType ByteAcc, WordAcc, DWordAcc, QWordAcc | one access per datum of that width; on i686 a 64-bit SystemMemory datum is two 32-bit accesses, low then high (§5.3); a QWordAcc datum of SystemIO, wider than any port, fails with `access_width_invalid` | [§19.6.48] |
+| AccessType 6 to 15, reserved | the access fails with `access_width_invalid`, as ACPICA and uACPI refuse the field | [§19.6.48] |
 | AnyAcc | byte access, as Windows does | [§19.6.48] |
 | BufferAcc | byte access on the three spaces; the protocol buffers of GenericSerialBus, SMBus and IPMI wait for their handlers | [§19.6.48] |
 | UpdateRule Preserve, WriteAsZeros, WriteAsOnes | all three | [§19.6.48] |
@@ -708,9 +709,9 @@ Each row is a decision, and has at least one test (§8).
 | Region bounds | An access must fit its region; rounding the region's length up to the access width is allowed and counted. | [§19.6.48] |
 | Region lifetime | Attached at the first access, not at declaration: handler chosen, PCI address resolved, mapping taken from the cache. | |
 | `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates after initialisation. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
-| Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIT, the PIC and PCI itself, and AML must not race it. | |
+| Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIC and PCI itself, and AML must not race it; the PIT, the RTC and CMOS follow once `_OSI` asks, as on Windows, and the other ports the kernel drives, COM1 and the keyboard controller, are not protected. | |
 | PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. | |
-| Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the pages it touches, as one entry of the mapping cache, never the declared region. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is mapped cached read-write, anything else uncached, since an uncached alias of a page mapped cached elsewhere, by the kernel's own map of RAM or by the firmware window, is a memory-type conflict. | [§5.5.2.4.1] |
+| Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is mapped cached read-write, anything else uncached, since an uncached alias of a page mapped cached elsewhere, by the kernel's own map of RAM or by the firmware window, is a memory-type conflict. Below 64 MiB, the boot map covers every page cached, so an uncached window there is such an alias until #590. | [§5.5.2.4.1] |
 | 64-bit data on i686 | A `QWordAcc` datum is two 32-bit host accesses, low then high, which the field engine makes itself; one access on x86-64. The simulated host sees the same order. `split_qword_accesses` counts them. | |
 
 ### 5.4 The Windows identity real firmware expects
@@ -784,11 +785,12 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | `Return` outside a method | | fails, the statement skipped | `invalid_opcode` |
 | Wrong type, impossible conversion | fails ([§19.3.5.4]) | construct skipped | `type_mismatch` |
 | Division by zero | fails | construct skipped | `divide_by_zero` |
-| Index or buffer field out of range | fails | construct skipped | `index_out_of_range` |
+| Index or buffer field out of range, or an index or BankValue its register cannot hold | fails | construct skipped | `index_out_of_range` |
 | Reference cycle | fails | construct skipped | `reference_cycle` |
 | A limit of §6.1 | fails with the limit's name | construct skipped | `limit_<name>` |
 | Region without handler, out of bounds, or unreachable (above 4 GiB on i686, a PCI offset from 0x100 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
-| A field of a region whose offset and length were never evaluated, declared in a branch that did not run | fails | construct skipped | `region_unevaluated` |
+| A field of a region whose offset and length were never evaluated: declared in a branch that did not run, or its operands failed | fails | construct skipped | `region_unevaluated` |
+| A reserved AccessType, or a QWordAcc datum of SystemIO | fails | construct skipped | `access_width_invalid` |
 | `Lock` field or `\_GL` before the global lock lands | fails | construct skipped | `global_lock_unavailable` |
 | A `Load` or `LoadTable` form outside §1.4 | fails | construct skipped | `load_form_unsupported` |
 | Protected port or PCI header | not a fault: zero read, write dropped | same | counted only |
