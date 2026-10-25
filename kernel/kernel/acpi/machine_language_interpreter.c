@@ -989,8 +989,9 @@ static MachineLanguageStatus_t machine_language_store_to_reference(MachineLangua
 
 /**
  * @brief Whether a store to a local that holds a reference replaces the reference rather than going
- *        through it (§5.2): the value is a reference itself, or the reference leads to nothing or to an
- *        object that holds no data, as firmware that stores CondRefOf twice to Local0 expects.
+ *        through it (§5.2): the value is a reference itself, or the reference leads, through the names
+ *        package elements hold, to nothing or to an object that holds no data, as firmware that stores
+ *        CondRefOf twice to Local0 expects.
  */
 static bool machine_language_rebinds(MachineLanguageLoad_t *load, const MachineLanguageValue_t *slot,
                                      const MachineLanguageValue_t *value)
@@ -998,7 +999,7 @@ static bool machine_language_rebinds(MachineLanguageLoad_t *load, const MachineL
     MachineLanguageLocation_t location;
 
     if (machine_language_is_reference(value->kind) ||
-        machine_language_locate(load, slot, false, &location) != MACHINE_LANGUAGE_OK)
+        machine_language_locate(load, slot, true, &location) != MACHINE_LANGUAGE_OK)
         return true;
     return location.kind == MACHINE_LANGUAGE_LOCATION_NODE &&
            machine_language_holds_no_data(

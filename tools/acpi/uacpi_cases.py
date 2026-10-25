@@ -96,6 +96,8 @@ def classify(case, kind, expected, result, listed):
     """The class of a case that ran, and its line."""
     if result is None:
         return "not ok", "not ok %s: iasl refuses it" % case
+    if result["status"] == "harness_timeout":
+        return "not ok", "not ok %s: the harness ran past 120 s" % case
     if matches(kind, expected, result):
         if case in listed:
             return "not ok", "not ok %s: listed, and passes" % case

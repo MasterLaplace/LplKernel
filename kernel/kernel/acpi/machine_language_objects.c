@@ -1099,18 +1099,20 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
 
     if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK || length == 0u || count == 0u)
         return status;
+    uint32_t last = 0u;
+
     if (source->kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
     {
         const uint32_t chunk = (length + 7u) / 8u;
-        const uint32_t last = (count - 1u) / chunk * chunk;
 
+        last = (count - 1u) / chunk * chunk;
         bytes += last;
         count -= last;
     }
 
     uint8_t *target = (uint8_t *) (buffer + 1);
-    const bool backwards =
-        bytes >= target && bytes < target + buffer->length && (uint64_t) (bytes - target) * 8u < offset;
+    const bool backwards = source->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER &&
+                           source->handle == field->handle && (uint64_t) last * 8u < offset;
 
     for (uint32_t step = 0u; step < length; ++step)
     {
