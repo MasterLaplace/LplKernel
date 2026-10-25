@@ -916,3 +916,191 @@ KERNEL_TEST(an_unaligned_datum_is_made_byte_by_byte)
                       "the unaligned datum counts as one field access, its four byte reads included");
     regions_close(test);
 }
+
+/**
+ * @brief The node a declaration in method @p method created, called @p name, or 0 once the method has
+ *        ended and its temporary nodes are gone.
+ */
+static uint32_t regions_method_child(const char *method, const char *name)
+{
+    return advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &regions_load.space, regions_node(method),
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u));
+}
+
+/**
+ * @brief A method creates its OperationRegion, at an offset it computes, and its Field at each call;
+ *        both are temporary, so the second call creates them again and the method's end removes them
+ *        (§5.1, §5.3).
+ */
+KERNEL_TEST(a_method_creates_its_region_and_field_at_each_call)
+{
+    static const uint8_t memory[] = {0x5Au, 0xA5u};
+    static const uint8_t region_at_argument[] = {0x5Bu, 0x80u, 'M', 'R', '_', '_', 0x00u, 0x68u, 0x0Au, 0x02u};
+    static const uint8_t return_sum[] = {0xA4u, 0x72u, 'M', 'F', '0', '_', 'M', 'F', '1', '_', 0x00u};
+    static const uint8_t store_call[] = {0x70u, 'M', 'R', 'E', 'G', 0x0Cu, 0x40u, 0x00u, 0x01u, 0x00u};
+    static const MadeUpFieldUnit_t units[] = {
+        {"MF0_", 8u},
+        {"MF1_", 8u}
+    };
+    MadeUpAml_t body;
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY + 0x40u, memory,
+                                                                    sizeof(memory));
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, region_at_argument, sizeof(region_at_argument));
+    made_up_aml_field(&body, "MR__", REGIONS_BYTE_ACCESS, units, 2u);
+    made_up_aml_raw(&body, return_sum, sizeof(return_sum));
+    made_up_aml_method(&regions_aml, "MREG", 0x01u, &body);
+    made_up_aml_name_integer(&regions_aml, "R1__", 0u);
+    made_up_aml_name_integer(&regions_aml, "R2__", 0u);
+    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
+    made_up_aml_name(&regions_aml, "R1__");
+    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
+    made_up_aml_name(&regions_aml, "R2__");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test, regions_integer("R1__") == 0xFFu && regions_integer("R2__") == 0xFFu,
+                      "each call reads 0x5A and 0xA5 at the offset Arg0 gives, and returns their sum");
+    kernel_test_check(test, regions_load.evaluation.failures == 0u && regions_load.regions.field_reads == 4u,
+                      "both calls run, each reading the two units");
+    kernel_test_check(test, regions_method_child("MREG", "MR__") == 0u && regions_method_child("MREG", "MF0_") == 0u,
+                      "the region and its units are gone once the method ends");
+    regions_close(test);
+}
+
+/**
+ * @brief A method creates an IndexField over the table's index and data registers, and a BankField of
+ *        the table's region behind the table's bank register; their units reach the hardware as the
+ *        table's own would.
+ */
+KERNEL_TEST(a_method_creates_index_and_bank_fields_over_the_table_s_registers)
+{
+    static const uint8_t memory[] = {0x10u, 0x20u, 0x30u, 0x40u};
+    static const MadeUpFieldUnit_t registers[] = {
+        {"INDX", 8u},
+        {"DATA", 8u}
+    };
+    static const MadeUpFieldUnit_t bank[] = {
+        {"BSEL", 8u}
+    };
+    static const MadeUpFieldUnit_t indexed[] = {
+        {NULL,   16u},
+        {"U2__", 8u }
+    };
+    static const MadeUpFieldUnit_t banked[] = {
+        {"BK0_", 8u},
+        {"BK1_", 8u}
+    };
+    static const uint8_t return_indexed[] = {0xA4u, 'U', '2', '_', '_'};
+    static const uint8_t return_banked[] = {0xA4u, 'B', 'K', '1', '_'};
+    static const uint8_t store_calls[] = {0x70u, 'M', 'I', 'D', 'X', 'R', 'I', '_', '_',
+                                          0x70u, 'M', 'B', 'N', 'K', 'R', 'B', '_', '_'};
+    MadeUpAml_t body;
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_set_port(&regions_host, 0x0B01u, 0x5Au);
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY, memory,
+                                                                    sizeof(memory));
+    made_up_aml_region(&regions_aml, "IDXR", 0x01u, 0x0B00u, 2u);
+    made_up_aml_field(&regions_aml, "IDXR", REGIONS_BYTE_ACCESS, registers, 2u);
+    made_up_aml_region(&regions_aml, "BNKR", 0x01u, 0x0B10u, 1u);
+    made_up_aml_field(&regions_aml, "BNKR", REGIONS_BYTE_ACCESS, bank, 1u);
+    made_up_aml_region(&regions_aml, "BRAM", 0x00u, REGIONS_MEMORY, sizeof(memory));
+    made_up_aml_begin(&body);
+    made_up_aml_index_field(&body, "INDX", "DATA", REGIONS_BYTE_ACCESS, indexed, 2u);
+    made_up_aml_raw(&body, return_indexed, sizeof(return_indexed));
+    made_up_aml_method(&regions_aml, "MIDX", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_bank_field(&body, "BRAM", "BSEL", 2u, REGIONS_BYTE_ACCESS, banked, 2u);
+    made_up_aml_raw(&body, return_banked, sizeof(return_banked));
+    made_up_aml_method(&regions_aml, "MBNK", 0x00u, &body);
+    made_up_aml_name_integer(&regions_aml, "RI__", 0u);
+    made_up_aml_name_integer(&regions_aml, "RB__", 0u);
+    made_up_aml_raw(&regions_aml, store_calls, sizeof(store_calls));
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test, regions_integer("RI__") == 0x5Au && regions_integer("RB__") == 0x20u,
+                      "U2__ reads the data port, BK1_ reads 0x20 in bank 2");
+    kernel_test_check(test,
+                      regions_host.access_count == 4u &&
+                          regions_access(0u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B00u, 2u) &&
+                          regions_access(1u, REGIONS_ACCESS(PORT_READ), 1u, 0x0B01u, 0x5Au) &&
+                          regions_access(2u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B10u, 2u) &&
+                          regions_access(3u, REGIONS_ACCESS(MEMORY_READ), 1u, REGIONS_MEMORY + 1u, 0x20u),
+                      "index 2 then a data read; BankValue 2 then the datum");
+    regions_close(test);
+}
+
+/**
+ * @brief A field list in a method whose region resolves to nothing fails with name_not_found and leaves
+ *        no unit behind; a Connection in one is passed over, as at table level, and the unit after it
+ *        reads its byte.
+ */
+KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_connection)
+{
+    static const uint8_t memory[] = {0x77u};
+    static const MadeUpFieldUnit_t units[] = {
+        {"NU__", 8u}
+    };
+    static const uint8_t connection_field[] = {0x5Bu, 0x81u, 0x10u, 'R', 'A', 'M', 'R', 0x01u, 0x02u,
+                                               'R',   'A',   'M',   'R', 'C', 'U', '_', '_',   0x08u};
+    static const uint8_t return_unit[] = {0xA4u, 'C', 'U', '_', '_'};
+    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 0x70u, 'M', 'C', 'O', 'N', 'R', 'C', '_', '_'};
+    MadeUpAml_t body;
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY, memory,
+                                                                    sizeof(memory));
+    made_up_aml_region(&regions_aml, "RAMR", 0x00u, REGIONS_MEMORY, 4u);
+    made_up_aml_begin(&body);
+    made_up_aml_field(&body, "NOPE", REGIONS_BYTE_ACCESS, units, 1u);
+    made_up_aml_method(&regions_aml, "MNOR", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, connection_field, sizeof(connection_field));
+    made_up_aml_raw(&body, return_unit, sizeof(return_unit));
+    made_up_aml_method(&regions_aml, "MCON", 0x00u, &body);
+    made_up_aml_name_integer(&regions_aml, "RC__", 0u);
+    made_up_aml_raw(&regions_aml, calls, sizeof(calls));
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_failed(REGIONS_STATUS(NAME_NOT_FOUND)) == 1u && regions_load.evaluation.failures == 1u,
+                      "the missing region fails with name_not_found, and only it fails");
+    kernel_test_check(test, regions_integer("RC__") == 0x77u, "the unit after the Connection reads 0x77");
+    kernel_test_check(test, regions_load.temporary_count == 0u, "no unit is left behind");
+    regions_close(test);
+}
+
+/**
+ * @brief An AccessAs in a field list a method declares sets the access width of the units after it: a
+ *        32-bit unit after AccessAs (DWordAcc) of a ByteAcc Field is one 4-byte read.
+ */
+KERNEL_TEST(an_access_as_in_a_method_s_field_list_widens_the_units_after_it)
+{
+    static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u};
+    static const uint8_t field[] = {0x5Bu, 0x81u, 0x0Eu, 'R', 'A', 'M', 'R', 0x01u,
+                                    0x01u, 0x03u, 0x00u, 'D', 'W', '_', '_', 0x20u};
+    static const uint8_t return_unit[] = {0xA4u, 'D', 'W', '_', '_'};
+    static const uint8_t store_call[] = {0x70u, 'M', 'A', 'C', 'C', 'R', 'D', '_', '_'};
+    MadeUpAml_t body;
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY, memory,
+                                                                    sizeof(memory));
+    made_up_aml_region(&regions_aml, "RAMR", 0x00u, REGIONS_MEMORY, 4u);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, field, sizeof(field));
+    made_up_aml_raw(&body, return_unit, sizeof(return_unit));
+    made_up_aml_method(&regions_aml, "MACC", 0x00u, &body);
+    made_up_aml_name_integer(&regions_aml, "RD__", 0u);
+    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_integer("RD__") == 0x44332211u && regions_host.access_count == 1u &&
+                          regions_access(0u, REGIONS_ACCESS(MEMORY_READ), 4u, REGIONS_MEMORY, 0x44332211u),
+                      "DW__ is one 4-byte read of 0x44332211");
+    regions_close(test);
+}

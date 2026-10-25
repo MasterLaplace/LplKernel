@@ -1419,7 +1419,11 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(CREATE_WORD_FIELD):
     case MACHINE_LANGUAGE_OPCODE(CREATE_DOUBLE_WORD_FIELD):
     case MACHINE_LANGUAGE_OPCODE(CREATE_QUAD_WORD_FIELD):
-    case MACHINE_LANGUAGE_OPCODE(CREATE_FIELD): return true;
+    case MACHINE_LANGUAGE_OPCODE(CREATE_FIELD):
+    case MACHINE_LANGUAGE_OPCODE(OPERATION_REGION):
+    case MACHINE_LANGUAGE_OPCODE(FIELD):
+    case MACHINE_LANGUAGE_OPCODE(INDEX_FIELD):
+    case MACHINE_LANGUAGE_OPCODE(BANK_FIELD): return true;
     default: return false;
     }
 }
@@ -1705,24 +1709,22 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
 }
 
 /**
- * @brief Creates the temporary node a Name in a method declares; a name that exists already, such
- *        as one the same frame created in an earlier turn of a loop, fails (§5.1).
+ * @brief Creates the temporary node of type @p type that a declaration in a method makes; a name
+ *        that exists already, such as one the same frame created in an earlier turn of a loop, fails
+ *        (§5.1).
  */
-static MachineLanguageStatus_t machine_language_declare_name(MachineLanguageLoad_t *load,
-                                                             MachineLanguagePendingOperator_t *active)
+static MachineLanguageStatus_t machine_language_create_temporary(MachineLanguageLoad_t *load,
+                                                                 const MachineLanguageNameString_t *name, uint8_t type,
+                                                                 uint32_t *out_node)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
-    MachineLanguageNameString_t name;
-    uint32_t after = 0u;
     uint32_t parent = 0u;
     uint32_t segment = 0u;
-    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
-        frame->code, frame->pc, active->end, &name, &after);
+    MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
+            &load->space, machine_language_block(evaluation)->scope, frame->code, name, &parent, &segment);
 
-    if (status == MACHINE_LANGUAGE_OK)
-        status = advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
-            &load->space, machine_language_block(evaluation)->scope, frame->code, &name, &parent, &segment);
     if (status != MACHINE_LANGUAGE_OK)
         return status;
     if (advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent,
@@ -1731,12 +1733,62 @@ static MachineLanguageStatus_t machine_language_declare_name(MachineLanguageLoad
     if (load->temporary_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TEMPORARY_NODES)
         return MACHINE_LANGUAGE_STATUS(LIMIT_TEMPORARY_NODES);
     status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
-        &load->space, parent, segment, MACHINE_LANGUAGE_NODE(UNINITIALIZED), frame->table, &active->node);
+        &load->space, parent, segment, type, frame->table, out_node);
+    if (status == MACHINE_LANGUAGE_OK)
+        load->temporaries[load->temporary_count++] = *out_node;
+    return status;
+}
+
+/**
+ * @brief Creates the temporary node a Name, an OperationRegion or a CreateXField in a method declares.
+ */
+static MachineLanguageStatus_t machine_language_declare_name(MachineLanguageLoad_t *load,
+                                                             MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    MachineLanguageNameString_t name;
+    uint32_t after = 0u;
+    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
+        frame->code, frame->pc, active->end, &name, &after);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_create_temporary(load, &name, MACHINE_LANGUAGE_NODE(UNINITIALIZED), &active->node);
+    if (status == MACHINE_LANGUAGE_OK)
+        frame->pc = after;
+    return status;
+}
+
+/**
+ * @brief Whether an opcode declares a field list: Field, IndexField or BankField.
+ */
+static bool machine_language_declares_field_list(uint32_t opcode)
+{
+    return opcode == MACHINE_LANGUAGE_OPCODE(FIELD) || opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD) ||
+           opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD);
+}
+
+/**
+ * @brief Reads a name a field list in a method gives, its region or a register, and pushes its node as
+ *        an Integer for the field list to take; a name that resolves to nothing fails.
+ */
+static MachineLanguageStatus_t machine_language_field_name(MachineLanguageLoad_t *load,
+                                                           const MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    MachineLanguageNameString_t name;
+    uint32_t after = 0u;
+    uint32_t node = 0u;
+    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
+        frame->code, frame->pc, active->end, &name, &after);
+
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    load->temporaries[load->temporary_count++] = active->node;
+    if (advanced_configuration_and_power_interface_machine_language_namespace_resolve(
+            &load->space, machine_language_block(evaluation)->scope, frame->code, &name, &node) != MACHINE_LANGUAGE_OK)
+        return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
     frame->pc = after;
-    return MACHINE_LANGUAGE_OK;
+    return machine_language_deliver(load, machine_language_integer(node));
 }
 
 /**
@@ -1820,12 +1872,15 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageLoad_t *l
     switch (kind)
     {
     case MACHINE_LANGUAGE_OPERAND(TERM_LIST): return machine_language_branch(load, active);
-    case MACHINE_LANGUAGE_OPERAND(NAME_STRING): return machine_language_declare_name(load, active);
+    case MACHINE_LANGUAGE_OPERAND(NAME_STRING):
+        return machine_language_declares_field_list(active->opcode) ? machine_language_field_name(load, active) :
+                                                                      machine_language_declare_name(load, active);
     case MACHINE_LANGUAGE_OPERAND(BYTE_DATA): return machine_language_fixed_operand(load, active, 1u);
     case MACHINE_LANGUAGE_OPERAND(WORD_DATA): return machine_language_fixed_operand(load, active, 2u);
     case MACHINE_LANGUAGE_OPERAND(DOUBLE_WORD_DATA): return machine_language_fixed_operand(load, active, 4u);
     case MACHINE_LANGUAGE_OPERAND(QUAD_WORD_DATA): return machine_language_fixed_operand(load, active, 8u);
-    case MACHINE_LANGUAGE_OPERAND(BYTE_LIST): return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPERAND(BYTE_LIST):
+    case MACHINE_LANGUAGE_OPERAND(FIELD_LIST): return MACHINE_LANGUAGE_OK;
     default: break;
     }
     return machine_language_term(
@@ -2893,6 +2948,170 @@ static MachineLanguageStatus_t machine_language_create_field(MachineLanguageLoad
 }
 
 /**
+ * @brief The device a region a method creates is declared in: the method's parent when it is a Device,
+ *        or 0.
+ */
+static uint32_t machine_language_owner_device(const MachineLanguageLoad_t *load, uint32_t scope)
+{
+    const MachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, scope);
+
+    if (node != NULL && node->type == MACHINE_LANGUAGE_NODE(METHOD))
+    {
+        scope = node->parent;
+        node = advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, scope);
+    }
+    return (node != NULL && node->type == MACHINE_LANGUAGE_NODE(DEVICE)) ? scope : 0u;
+}
+
+/**
+ * @brief Runs an OperationRegion a method declares: its node, temporary, takes a region of the space,
+ *        offset and length on the stack (§5.3).
+ */
+static MachineLanguageStatus_t machine_language_operation_region(MachineLanguageLoad_t *load,
+                                                                 const MachineLanguagePendingOperator_t *active)
+{
+    uint64_t operands[3];
+    MachineLanguageStatus_t status = machine_language_pop_integers(load, 3u, operands);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+
+    status = advanced_configuration_and_power_interface_machine_language_region_build(
+        load, active->node, (uint8_t) operands[0], operands[1], operands[2],
+        machine_language_owner_device(load, machine_language_block(&load->evaluation)->scope));
+    if (status == MACHINE_LANGUAGE_OK)
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, active->node)->type =
+            MACHINE_LANGUAGE_NODE(OPERATION_REGION);
+    return status;
+}
+
+/**
+ * @brief Reads the PkgLength of a reserved field or a named unit, and moves @p bit past it; a list
+ *        that passes 2^32 bits, which a unit's offset cannot hold, fails as index_out_of_range.
+ */
+static MachineLanguageStatus_t machine_language_field_bits(const MachineLanguageFrame_t *frame, uint32_t start,
+                                                           uint32_t end, uint32_t *bit, uint32_t *out_bits,
+                                                           uint32_t *out_after)
+{
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_read_package_length(frame->code, start, end,
+                                                                                        out_bits, out_after);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    if (*out_bits > 0xFFFFFFFFu - *bit)
+        return MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE);
+    *bit += *out_bits;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Where the operand of a Connection in a field list ends: a NameString, or a Buffer whose
+ *        PkgLength gives its end.
+ */
+static MachineLanguageStatus_t machine_language_connection_end(const MachineLanguageFrame_t *frame, uint32_t start,
+                                                               uint32_t end, uint32_t *out_after)
+{
+    MachineLanguageNameString_t name;
+    uint32_t contents = 0u;
+
+    if (start >= end)
+        return MACHINE_LANGUAGE_STATUS(TRUNCATED);
+    if (frame->code[start] == 0x11u)
+        return advanced_configuration_and_power_interface_machine_language_read_package_end(frame->code, start + 1u,
+                                                                                            end, out_after, &contents);
+    return advanced_configuration_and_power_interface_machine_language_read_name_string(frame->code, start, end, &name,
+                                                                                        out_after);
+}
+
+/**
+ * @brief Creates the temporary unit a named element of a field list in a method declares, at bit
+ *        @p unit->bit_offset, @p unit->bit_length bits long.
+ */
+static MachineLanguageStatus_t
+machine_language_field_unit(MachineLanguageLoad_t *load, uint32_t start, uint32_t end,
+                            const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *unit)
+{
+    const MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    MachineLanguageNameString_t name;
+    uint32_t after = 0u;
+    uint32_t node = 0u;
+    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
+        frame->code, start, end, &name, &after);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_create_temporary(load, &name, MACHINE_LANGUAGE_NODE(FIELD_UNIT), &node);
+    return (status == MACHINE_LANGUAGE_OK) ?
+               advanced_configuration_and_power_interface_machine_language_field_unit_build(load, node, unit) :
+               status;
+}
+
+/**
+ * @brief Runs a Field, an IndexField or a BankField a method declares: each named element becomes a
+ *        temporary unit of the region or registers and the FieldFlags on the stack; AccessAs changes the
+ *        access of the units after it; a Connection, which only GenericSerialBus and GPIO fields use,
+ *        is passed over, as at table level, those spaces having no handler.
+ */
+static MachineLanguageStatus_t machine_language_field_list(MachineLanguageLoad_t *load,
+                                                           const MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    const uint32_t count = (active->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD))  ? 4u :
+                           (active->opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD)) ? 3u :
+                                                                                      2u;
+    uint64_t operands[4];
+    MachineLanguageStatus_t status = machine_language_pop_integers(load, count, operands);
+    const uint8_t flags = (uint8_t) operands[count - 1u];
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t unit = {
+        .kind = (count == 4u) ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK :
+                (count == 3u) ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX :
+                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL,
+        .access = flags & 0x0Fu,
+        .update = (flags >> 5u) & 0x3u,
+        .lock = (flags >> 4u) & 0x1u,
+        .region = (uint32_t) operands[0],
+        .data_or_bank = (count > 2u) ? (uint32_t) operands[1] : 0u,
+        .bank_value = (count == 4u) ? (uint32_t) operands[2] : 0u,
+    };
+    uint32_t bit = 0u;
+    uint32_t pc = frame->pc;
+
+    while (status == MACHINE_LANGUAGE_OK && pc < active->end)
+    {
+        const uint8_t lead = frame->code[pc];
+        uint32_t bits = 0u;
+        uint32_t after = 0u;
+
+        if (lead == 0x00u)
+            status = machine_language_field_bits(frame, pc + 1u, active->end, &bit, &bits, &after);
+        else if (lead == 0x01u || lead == 0x03u)
+        {
+            after = pc + ((lead == 0x01u) ? 3u : 4u);
+            if (after > active->end)
+                status = MACHINE_LANGUAGE_STATUS(TRUNCATED);
+            else
+                unit.access = frame->code[pc + 1u] & 0x0Fu;
+        }
+        else if (lead == 0x02u)
+            status = machine_language_connection_end(frame, pc + 1u, active->end, &after);
+        else if (pc + 4u > active->end)
+            status = MACHINE_LANGUAGE_STATUS(TRUNCATED);
+        else
+        {
+            unit.bit_offset = bit;
+            status = machine_language_field_bits(frame, pc + 4u, active->end, &bit, &bits, &after);
+            unit.bit_length = bits;
+            if (status == MACHINE_LANGUAGE_OK)
+                status = machine_language_field_unit(load, pc, pc + 4u, &unit);
+        }
+        pc = after;
+    }
+    frame->pc = active->end;
+    return status;
+}
+
+/**
  * @brief Runs Store or CopyObject: the target takes the value, and Store gives it as its result.
  */
 static MachineLanguageStatus_t machine_language_transfer(MachineLanguageLoad_t *load, uint32_t opcode)
@@ -2963,6 +3182,10 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     case MACHINE_LANGUAGE_OPCODE(CREATE_DOUBLE_WORD_FIELD):
     case MACHINE_LANGUAGE_OPCODE(CREATE_QUAD_WORD_FIELD):
     case MACHINE_LANGUAGE_OPCODE(CREATE_FIELD): return machine_language_create_field(load, &operator_);
+    case MACHINE_LANGUAGE_OPCODE(OPERATION_REGION): return machine_language_operation_region(load, &operator_);
+    case MACHINE_LANGUAGE_OPCODE(FIELD):
+    case MACHINE_LANGUAGE_OPCODE(INDEX_FIELD):
+    case MACHINE_LANGUAGE_OPCODE(BANK_FIELD): return machine_language_field_list(load, &operator_);
     default: return machine_language_compute(load, operator_.opcode);
     }
 }

@@ -221,6 +221,38 @@ advanced_configuration_and_power_interface_machine_language_field_write(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value);
 
 /**
+ * @brief Gives a node the OperationRegion object an OperationRegion in a method creates (§5.3); a
+ *        table's regions are built in place by its load, which keeps window W1 26,000 instructions
+ *        lower.
+ *
+ * @param load         The load.
+ * @param node         The region's node.
+ * @param space        Its RegionSpace byte.
+ * @param offset       Its offset in its space.
+ * @param length       Its length in bytes.
+ * @param owner_device The device it is declared in, or 0.
+ * @return OK; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_region_build(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset,
+    uint64_t length, uint32_t owner_device);
+
+/**
+ * @brief Gives a node the field unit object @p shape describes (§5.3), whether a table declares it or
+ *        a method creates it.
+ *
+ * @param load  The load.
+ * @param node  The unit's node.
+ * @param shape Its kind, its registers, its access, update and lock rules, its first bit and length.
+ * @return OK; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_field_unit_build(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *shape);
+
+/**
  * @brief Gives the load the global lock of its platform, before any table-level code runs: the
  *        GlobalLock word of the FACS at @p firmware_control, when the FACS is not usable memory, has
  *        its signature and is long enough; none otherwise, and a Lock field is then accessed without

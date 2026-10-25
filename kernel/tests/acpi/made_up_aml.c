@@ -149,6 +149,19 @@ void made_up_aml_bank_field(MadeUpAml_t *aml, const char *region, const char *ba
     made_up_aml_package(aml, lead, sizeof(lead), body.bytes, body.length);
 }
 
+void made_up_aml_method(MadeUpAml_t *aml, const char *name, uint8_t flags, const MadeUpAml_t *body)
+{
+    static const uint8_t lead[] = {0x14u};
+    MadeUpAml_t method;
+
+    made_up_aml_begin(&method);
+    made_up_aml_name(&method, name);
+    made_up_aml_byte(&method, flags);
+    made_up_aml_raw(&method, body->bytes, body->length);
+    aml->overflowed = aml->overflowed || body->overflowed || method.overflowed;
+    made_up_aml_package(aml, lead, sizeof(lead), method.bytes, method.length);
+}
+
 void made_up_aml_store_name(MadeUpAml_t *aml, const char *source, const char *target)
 {
     made_up_aml_byte(aml, 0x70u);

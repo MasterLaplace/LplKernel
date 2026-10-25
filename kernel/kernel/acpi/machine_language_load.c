@@ -977,40 +977,27 @@ static MachineLanguageStatus_t machine_language_build_field_unit(MachineLanguage
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const MachineLanguageFieldList_t *field = &walk->field;
-    uint32_t handle = 0u;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t unit = {
+        .kind = (field->opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD)) ?
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX :
+                (field->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD)) ?
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK :
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL,
+        .access = field->access,
+        .update = field->update,
+        .lock = field->lock,
+        .region = field->region,
+        .data_or_bank = field->data_or_bank,
+        .bank_value = field->bank_value,
+        .bit_offset = field->bit,
+        .bit_length = bit_length,
+    };
 
     load->values_deferred += field->deferred ? 1u : 0u;
     if (!field->builds)
         return MACHINE_LANGUAGE_OK;
-
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT,
-        (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t), &handle);
-
-    if (status != MACHINE_LANGUAGE_OK)
-        return machine_language_build_fault(walk, status);
-
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *unit =
-        (AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t
-             *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1);
-    MachineLanguageNode_t *node = machine_language_node(walk, index);
-
-    unit->kind = (field->opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD)) ?
-                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX :
-                 (field->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD)) ?
-                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK :
-                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_NORMAL;
-    unit->access = field->access;
-    unit->update = field->update;
-    unit->lock = field->lock;
-    unit->region = field->region;
-    unit->data_or_bank = field->data_or_bank;
-    unit->bank_value = field->bank_value;
-    unit->bit_offset = field->bit;
-    unit->bit_length = bit_length;
-    node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT;
-    node->value.handle = handle;
-    return MACHINE_LANGUAGE_OK;
+    return machine_language_build_fault(
+        walk, advanced_configuration_and_power_interface_machine_language_field_unit_build(load, index, &unit));
 }
 
 /**
