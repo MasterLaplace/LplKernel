@@ -376,6 +376,38 @@ static MachineLanguageValue_t machine_language_slot_reference(MachineLanguageEva
 }
 
 /**
+ * @brief The frame index and serial a reference to @p node carries in its payload: those of the frame
+ *        that created it, when it is a temporary node, which dies with that frame; 0 for a node of
+ *        the namespace, which lives as long as the load.
+ */
+static uint64_t machine_language_node_lifetime(const MachineLanguageLoad_t *load, uint32_t node)
+{
+    const MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    uint32_t position = load->temporary_count;
+
+    while (position != 0u && load->temporaries[position - 1u] != node)
+        --position;
+    if (position == 0u)
+        return 0u;
+
+    uint32_t frame = evaluation->frame_count;
+
+    while (frame != 0u && evaluation->frames[frame - 1u].temporary_base >= position)
+        --frame;
+    return (frame == 0u) ? 0u : ((frame - 1u) | ((uint64_t) evaluation->frames[frame - 1u].serial << 32u));
+}
+
+/**
+ * @brief Whether the frame a reference's payload names, by index and serial, still runs.
+ */
+static bool machine_language_frame_runs(const MachineLanguageEvaluation_t *evaluation, uint64_t payload)
+{
+    const uint32_t frame = (uint32_t) payload;
+
+    return frame < evaluation->frame_count && evaluation->frames[frame].serial == (uint32_t) (payload >> 32u);
+}
+
+/**
  * @brief The node a name a package element holds resolves to, from the scope it was read in.
  */
 static MachineLanguageStatus_t machine_language_resolve_element_name(MachineLanguageLoad_t *load,
@@ -413,7 +445,9 @@ static MachineLanguageStatus_t machine_language_refer(MachineLanguageLoad_t *loa
     case MACHINE_LANGUAGE_VALUE(REFERENCE_NODE):
         node =
             advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, reference->handle);
-        if (node == NULL || (node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) != 0u)
+        if (node == NULL ||
+            (node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) != 0u ||
+            (reference->payload != 0u && !machine_language_frame_runs(evaluation, reference->payload)))
             return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
         out_location->kind = MACHINE_LANGUAGE_LOCATION_NODE;
         out_location->node = reference->handle;
@@ -421,8 +455,7 @@ static MachineLanguageStatus_t machine_language_refer(MachineLanguageLoad_t *loa
         return MACHINE_LANGUAGE_OK;
     case MACHINE_LANGUAGE_VALUE(REFERENCE_LOCAL):
     case MACHINE_LANGUAGE_VALUE(REFERENCE_ARGUMENT):
-        if (frame >= evaluation->frame_count ||
-            evaluation->frames[frame].serial != (uint32_t) (reference->payload >> 32u))
+        if (!machine_language_frame_runs(evaluation, reference->payload))
             return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
         out_location->kind = MACHINE_LANGUAGE_LOCATION_FRAME;
         out_location->slot = (reference->kind == MACHINE_LANGUAGE_VALUE(REFERENCE_LOCAL)) ?
@@ -473,6 +506,7 @@ static MachineLanguageStatus_t machine_language_locate(MachineLanguageLoad_t *lo
                 return status;
             current.kind = MACHINE_LANGUAGE_VALUE(REFERENCE_NODE);
             current.handle = node;
+            current.payload = 0u;
             continue;
         }
         status = machine_language_refer(load, &current, out_location);
@@ -1178,9 +1212,9 @@ static void machine_language_drop_frame(MachineLanguageLoad_t *load)
 
 /**
  * @brief Ends the running method and gives its caller the result: @p value, whose reference it
- *        takes, a reference to one of the method's own locals or arguments replaced by what it refers
- *        to, which outlives it (§5.2); or for a method that ended without Return while its caller uses
- *        the result, Integer 0, counted.
+ *        takes, a reference to one of the method's own locals, arguments or temporary nodes replaced
+ *        by what it refers to, which outlives it (§5.2); or for a method that ended without Return
+ *        while its caller uses the result, Integer 0, counted.
  */
 static MachineLanguageStatus_t machine_language_return(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
 {
@@ -1189,7 +1223,8 @@ static MachineLanguageStatus_t machine_language_return(MachineLanguageLoad_t *lo
 
     if (value != NULL &&
         (value->kind == MACHINE_LANGUAGE_VALUE(REFERENCE_LOCAL) ||
-         value->kind == MACHINE_LANGUAGE_VALUE(REFERENCE_ARGUMENT)) &&
+         value->kind == MACHINE_LANGUAGE_VALUE(REFERENCE_ARGUMENT) ||
+         (value->kind == MACHINE_LANGUAGE_VALUE(REFERENCE_NODE) && value->payload != 0u)) &&
         (uint32_t) value->payload == evaluation->frame_count - 1u)
     {
         const MachineLanguageStatus_t status = machine_language_dereference(load, value, &copy);
@@ -2528,6 +2563,7 @@ static MachineLanguageStatus_t machine_language_reference_of(MachineLanguageLoad
     {
         out_reference->kind = MACHINE_LANGUAGE_VALUE(REFERENCE_NODE);
         out_reference->handle = operand->handle;
+        out_reference->payload = machine_language_node_lifetime(load, operand->handle);
         return MACHINE_LANGUAGE_OK;
     }
     machine_language_release(load, operand);

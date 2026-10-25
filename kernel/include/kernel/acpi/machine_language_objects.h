@@ -80,9 +80,9 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageValueKind {
                                                                                              length (high half),
                                                                                              auxiliary its access width
                                                                                              in bytes. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_NODE = 0x84, /**< A reference to a named
-                                                                                               object: handle is its
-                                                                                               node. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_NODE =
+        0x84, /**< A reference to a named object: handle is its node, payload 0, or for a node a method created, its
+                 frame's index and serial, laid out as a LocalX's. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_LOCAL = 0x85,    /**< A reference to a
                                                                                                    LocalX: handle is X,
                                                                                                    payload the frame's
