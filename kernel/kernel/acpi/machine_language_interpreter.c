@@ -1052,6 +1052,8 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     case MACHINE_LANGUAGE_OPCODE(RETURN): {
         const MachineLanguageValue_t value = machine_language_pop(evaluation);
 
+        if (machine_language_frame(evaluation)->method == 0u)
+            return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
         return machine_language_return(load, &value);
     }
     case MACHINE_LANGUAGE_OPCODE(STORE): {
@@ -1096,7 +1098,13 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     if (base == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES ||
         evaluation->operator_count ==
             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES);
+    {
+        status = (base == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES) ?
+                     MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES) :
+                     MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
+        advanced_configuration_and_power_interface_machine_language_count_failure(load, status);
+        return status;
+    }
 
     MachineLanguageFrame_t *frame = &evaluation->frames[evaluation->frame_count++];
 
@@ -1118,7 +1126,6 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     frame->reserved = 0u;
     if (evaluation->frame_count > evaluation->frames_peak)
         evaluation->frames_peak = evaluation->frame_count;
-    evaluation->iterations = 0u;
     ++evaluation->runs;
     status = machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TABLE, start, limit, scope);
     if (status == MACHINE_LANGUAGE_OK && value)
@@ -1152,6 +1159,12 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     if (status != MACHINE_LANGUAGE_OK)
         advanced_configuration_and_power_interface_machine_language_count_failure(load, status);
     return status;
+}
+
+MachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_count_back_edge(MachineLanguageLoad_t *load)
+{
+    return machine_language_count_iteration(&load->evaluation);
 }
 
 void advanced_configuration_and_power_interface_machine_language_count_failure(MachineLanguageLoad_t *load,

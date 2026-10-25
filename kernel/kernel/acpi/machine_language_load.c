@@ -85,7 +85,6 @@ typedef struct MachineLanguageWalk {
                                declaration pass did not declare. */
     uint32_t undeclared_from; /**< The depth of the outermost such TermList open, or 0: faults inside it are
                                    counted apart. */
-    uint32_t iterations;      /**< While back-edges table-level code took in this table. */
 } MachineLanguageWalk_t;
 
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t machine_language_boot_load;
@@ -251,6 +250,8 @@ static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguag
 {
     const MachineLanguageBlock_t *block = machine_language_top_block(walk);
 
+    walk->not_run_next = false;
+    walk->undeclared_next = false;
     if (status != MACHINE_LANGUAGE_STATUS(PACKAGE_LENGTH_OUT_OF_PARENT) &&
         status != MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY))
     {
@@ -325,6 +326,8 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
         &load->space, parent, segment, type, (uint16_t) (walk->table + 1u), out_index);
     if (status == MACHINE_LANGUAGE_OK)
         ++load->declarations;
+    if (status == MACHINE_LANGUAGE_OK && machine_language_top_block(walk)->placement == MACHINE_LANGUAGE_BLOCK_NOT_RUN)
+        ++load->declared_not_run;
     walk->last_created = (status == MACHINE_LANGUAGE_OK) ? *out_index : 0u;
     return status;
 }
@@ -1051,8 +1054,24 @@ static MachineLanguageStatus_t machine_language_skip_construct(MachineLanguageWa
 }
 
 /**
+ * @brief Counts a back-edge of table-level code against the table's budget; past it, counts the
+ *        failure.
+ *
+ * @return Whether the loop may go back to its predicate.
+ */
+static bool machine_language_take_table_back_edge(MachineLanguageWalk_t *walk)
+{
+    if (advanced_configuration_and_power_interface_machine_language_count_back_edge(walk->load) == MACHINE_LANGUAGE_OK)
+        return true;
+    advanced_configuration_and_power_interface_machine_language_count_failure(
+        walk->load, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS));
+    return false;
+}
+
+/**
  * @brief Runs a Break or a Continue of table-level code: leaves the innermost While of table-level
- *        code around it, past its end or back to its predicate; one outside any While is skipped.
+ *        code around it, past its end or back to its predicate, a back-edge counted against the
+ *        table's budget, past its end too once the budget is spent; one outside any While is skipped.
  */
 static void machine_language_leave_table_loop(MachineLanguageWalk_t *walk, bool again)
 {
@@ -1068,7 +1087,7 @@ static void machine_language_leave_table_loop(MachineLanguageWalk_t *walk, bool 
         while (walk->block_count >= index)
             machine_language_close_block(walk);
         walk->pending_count = block.pending_base;
-        walk->pc = again ? block.start : block.end;
+        walk->pc = (again && machine_language_take_table_back_edge(walk)) ? block.start : block.end;
         return;
     }
 }
@@ -1094,13 +1113,8 @@ static void machine_language_after_block(MachineLanguageWalk_t *walk, const Mach
         return;
     if (walk->bytes[closed->start] != MACHINE_LANGUAGE_WHILE_BYTE)
         return;
-    if (++walk->iterations > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS)
-    {
-        advanced_configuration_and_power_interface_machine_language_count_failure(
-            walk->load, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS));
-        return;
-    }
-    walk->pc = closed->start;
+    if (machine_language_take_table_back_edge(walk))
+        walk->pc = closed->start;
 }
 
 /**
@@ -1556,6 +1570,8 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
     };
     MachineLanguageBlock_t *block = &load->blocks[0];
 
+    if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
+        load->evaluation.iterations = 0u;
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
     block->placement = 0u;
     block->pending_base = 0u;

@@ -72,19 +72,17 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 }
 
 /**
- * @brief Loads the DSDT and the SSDTs of @p directory with the server profile's caps, and prints
- *        what the load counted: its tables and faults, then each opcode decoded, in descriptor order.
- */
-/**
  * @brief Prints what running table-level code did: its runs and failures, the failures per status,
  *        and the opcodes that failed as unimplemented.
  */
-static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation)
+static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
     printf("aml run statements=%u failures=%u implicit_returns=%u uninitialized_operands=%u frames_peak=%u "
-           "values_peak=%u\n",
+           "values_peak=%u declared_not_run=%u\n",
            evaluation->runs, evaluation->failures, evaluation->implicit_returns, evaluation->uninitialized_operands,
-           evaluation->frames_peak, evaluation->values_peak);
+           evaluation->frames_peak, evaluation->values_peak, load->declared_not_run);
     for (uint32_t status = 1u; status < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT;
          ++status)
         if (evaluation->statuses[status] != 0u)
@@ -99,6 +97,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
                    evaluation->unimplemented[opcode]);
 }
 
+/**
+ * @brief Loads the DSDT and the SSDTs of @p directory with the server profile's caps, and prints
+ *        what the load counted: its tables and faults, then each opcode decoded, in descriptor order.
+ */
 static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
     static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
@@ -444,7 +446,7 @@ static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLang
            "decode_errors=%u\n",
            load->evaluation.failures, load->table_level_code, load->values_deferred, load->load_errors,
            load->decode_errors);
-    harness_print_runs(&load->evaluation);
+    harness_print_runs(load);
     if (closure)
         harness_print_closure(load);
     else

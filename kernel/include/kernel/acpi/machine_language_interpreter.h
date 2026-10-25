@@ -15,7 +15,7 @@
  * @file machine_language_interpreter.h
  * @brief What running AML holds: frames, the value stack, and what an evaluation counted.
  *
- * Part of layer L4 of the specification (docs/acpi/specification.md, §3.4 and §3.6). One loop runs
+ * Part of layer L3 of the specification (docs/acpi/specification.md, §3.4 and §3.6). One loop runs
  * AML straight from its table, with explicit stacks and no C recursion: every stack is a fixed
  * array sized by the limits of §6.1, and a limit reached fails the evaluation, never the kernel.
  * Integers are values, so an evaluation that only computes integers allocates nothing.
@@ -117,7 +117,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
     uint32_t value_count;            /**< Values in use. */
     uint32_t operator_count;         /**< Operators in use. */
     uint32_t block_count;            /**< Blocks in use. */
-    uint32_t iterations;             /**< Back-edges the current evaluation took. */
+    uint32_t iterations;             /**< Back-edges the current evaluation took: a table's code and the methods it
+                                          calls count as one. */
     uint32_t runs;                   /**< Statements and predicates of table-level code run. */
     uint32_t failures;               /**< Of those, the ones that failed. */
     uint8_t first_failure;           /**< The status of the first failure. */

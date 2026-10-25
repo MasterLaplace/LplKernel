@@ -108,9 +108,12 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;     /**< The first of them. */
     uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
+    uint32_t declared_not_run;    /**< Declarations made in a branch whose predicate failed, without running its
+                                       code (§3.6). */
     uint32_t undeclared_faults;   /**< Faults the decoding pass met inside a construct the declaration pass did not
-                                     declare, in a branch table-level code did not take: its names resolve against objects
-                                     that do not exist. */
+                                       declare: in a branch table-level code did not take, or in a Scope whose
+                                       target does not exist. Its names resolve against objects that do not
+                                       exist. */
     uint32_t checksum_bad_loaded; /**< Tables whose checksum fails, loaded all the same. */
     uint32_t name_references;     /**< NameStrings the decoding pass read in an operand. */
     uint32_t method_calls;        /**< Of those, the ones that named a method. */
@@ -175,6 +178,17 @@ extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_run_table_term(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start,
     uint32_t limit, bool value, uint64_t *out_integer, uint32_t *out_after);
+
+/**
+ * @brief Counts a While back-edge of table-level code against the budget of 2^20 that a table's code
+ *        shares with the methods it calls (§6.1): a table load is one evaluation.
+ *
+ * @param load The load.
+ * @return OK, or LIMIT_LOOP_ITERATIONS once the table's code has taken more back-edges than §6.1 allows.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_count_back_edge(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
  * @brief Counts a failure of table-level code: in load->evaluation, per status, the first one kept.

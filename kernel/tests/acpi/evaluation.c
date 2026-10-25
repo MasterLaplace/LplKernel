@@ -314,3 +314,128 @@ KERNEL_TEST(a_method_the_load_did_not_declare_counts_its_faults_apart)
                       "DEAD's cut Store is counted apart, LIVE's is a decode error");
     evaluation_close(test);
 }
+
+/**
+ * @brief Each integer operator the needs path reaches computes what ACPI says, the values worked out
+ *        by hand: And, Or, Xor, Not with and without a target, LAnd, LOr, LNot, Decrement, ShiftRight,
+ *        Divide's remainder and quotient, Mod, and a Subtract that wraps at 64 bits.
+ */
+KERNEL_TEST(the_integer_operators_compute_what_acpi_says)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'R',   '0',   '0',   '_',   0x00u, 0x08u, 'R',   '0',   '1',   '_',   0x00u, 0x08u, 'R',   '0',   '2',
+        '_',   0x00u, 0x08u, 'R',   '0',   '3',   '_',   0x00u, 0x08u, 'R',   '0',   '4',   '_',   0x00u, 0x08u, 'R',
+        '0',   '5',   '_',   0x00u, 0x08u, 'R',   '0',   '6',   '_',   0x00u, 0x08u, 'R',   '0',   '7',   '_',   0x00u,
+        0x08u, 'R',   '0',   '8',   '_',   0x0Au, 0x05u, 0x08u, 'R',   '0',   '9',   '_',   0x00u, 0x08u, 'R',   '1',
+        '0',   '_',   0x00u, 0x08u, 'R',   '1',   '1',   '_',   0x00u, 0x08u, 'R',   '1',   '2',   '_',   0x00u, 0x08u,
+        'R',   '1',   '3',   '_',   0x00u, 0x70u, 0x7Bu, 0x0Bu, 0x0Fu, 0x0Fu, 0x0Bu, 0xFFu, 0x00u, 0x00u, 'R',   '0',
+        '0',   '_',   0x70u, 0x7Du, 0x0Bu, 0x00u, 0x0Fu, 0x0Au, 0xF0u, 0x00u, 'R',   '0',   '1',   '_',   0x70u, 0x7Fu,
+        0x0Bu, 0xF0u, 0x0Fu, 0x0Au, 0xFFu, 0x00u, 'R',   '0',   '2',   '_',   0x80u, 0x00u, 'R',   '0',   '3',   '_',
+        0x70u, 0x80u, 0x0Bu, 0xF0u, 0xF0u, 0x00u, 'R',   '0',   '4',   '_',   0x70u, 0x90u, 0x01u, 0x00u, 'R',   '0',
+        '5',   '_',   0x70u, 0x91u, 0x00u, 0x01u, 'R',   '0',   '6',   '_',   0x70u, 0x92u, 0x0Au, 0x05u, 'R',   '0',
+        '7',   '_',   0x76u, 'R',   '0',   '8',   '_',   0x70u, 0x7Au, 0x0Au, 0x80u, 0x0Au, 0x03u, 0x00u, 'R',   '0',
+        '9',   '_',   0x78u, 0x0Au, 0x11u, 0x0Au, 0x05u, 'R',   '1',   '0',   '_',   'R',   '1',   '1',   '_',   0x70u,
+        0x85u, 0x0Au, 0x11u, 0x0Au, 0x05u, 0x00u, 'R',   '1',   '2',   '_',   0x70u, 0x74u, 0x0Au, 0x05u, 0x0Au, 0x07u,
+        0x00u, 'R',   '1',   '3',   '_',
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("R00_") == 0x000Fu, "And (0x0F0F, 0xFF) is 0x0F");
+    kernel_test_check(test, evaluation_integer("R01_") == 0x0FF0u, "Or (0x0F00, 0xF0) is 0x0FF0");
+    kernel_test_check(test, evaluation_integer("R02_") == 0x0F0Fu, "Xor (0x0FF0, 0xFF) is 0x0F0F");
+    kernel_test_check(test, evaluation_integer("R03_") == ~0ull, "Not (Zero, R03_) stores Ones");
+    kernel_test_check(test, evaluation_integer("R04_") == 0xFFFFFFFFFFFF0F0Full, "Not (0xF0F0) is 0x...FFFF0F0F");
+    kernel_test_check(test, evaluation_integer("R05_") == 0u, "LAnd (One, Zero) is False");
+    kernel_test_check(test, evaluation_integer("R06_") == ~0ull, "LOr (Zero, One) is True");
+    kernel_test_check(test, evaluation_integer("R07_") == 0u, "LNot (5) is False");
+    kernel_test_check(test, evaluation_integer("R08_") == 4u, "Decrement (R08_) takes 5 to 4");
+    kernel_test_check(test, evaluation_integer("R09_") == 0x10u, "ShiftRight (0x80, 3) is 0x10");
+    kernel_test_check(test, evaluation_integer("R10_") == 2u && evaluation_integer("R11_") == 3u,
+                      "Divide (17, 5) leaves 2 and gives 3");
+    kernel_test_check(test, evaluation_integer("R12_") == 2u, "Mod (17, 5) is 2");
+    kernel_test_check(test, evaluation_integer("R13_") == 0xFFFFFFFFFFFFFFFEull, "Subtract (5, 7) wraps to -2");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A While of table-level code goes back to its predicate until it is false, a Break leaves it,
+ *        and a Continue skips the rest of its body.
+ */
+KERNEL_TEST(table_level_loops_run_until_their_exits)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'C',   'N', 'T', '_',   0x00u, 0xA2u, 0x0Du, 0x95u, 'C', 'N', 'T',   '_',   0x0Au,
+        0x03u, 0x75u, 'C', 'N', 'T',   '_',   0x08u, 'B',   'R',   'K', '_', 0x00u, 0xA2u, 0x08u,
+        0x01u, 0x75u, 'B', 'R', 'K',   '_',   0xA5u, 0x08u, 'C',   'N', 'U', '_',   0x00u, 0x08u,
+        'S',   'K',   'P', '_', 0x00u, 0xA2u, 0x13u, 0x95u, 'C',   'N', 'U', '_',   0x0Au, 0x02u,
+        0x75u, 'C',   'N', 'U', '_',   0x9Fu, 0x75u, 'S',   'K',   'P', '_',
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("CNT_") == 3u, "While (CNT_ < 3) runs three times");
+    kernel_test_check(test, evaluation_integer("BRK_") == 1u, "While (One) { ... Break } runs once");
+    kernel_test_check(test, evaluation_integer("CNU_") == 2u && evaluation_integer("SKP_") == 0u,
+                      "a Continue skips the Increment after it");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A Return at table level, outside any method, fails as invalid_opcode, counted, and the load
+ *        goes on with the next statement.
+ */
+KERNEL_TEST(a_return_at_table_level_fails_and_the_load_goes_on)
+{
+    static const uint8_t aml[] = {0x08u, 'B', 'E', 'F', 'R', 0x01u, 0xA4u, 0x01u, 0x08u, 'A', 'F', 'T', 'R', 0x01u};
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("BEFR") == 1u && evaluation_integer("AFTR") == 1u,
+                      "BEFR and AFTR are both declared");
+    kernel_test_check(
+        test,
+        evaluation_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE) == 1u,
+        "the Return fails as invalid_opcode");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A branch declared without running its code, past a predicate that failed, runs none of it,
+ *        and counts what it declares.
+ */
+KERNEL_TEST(a_branch_declared_without_running_runs_none_of_its_code)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x00u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu,
+        'R',   'E',   'G',   '0',   0x01u, 'F',   'L',   'D',   '0',   0x08u, 0x08u, 'R',   'E',
+        'S',   '_',   0x0Au, 0x05u, 0xA0u, 0x12u, 'F',   'L',   'D',   '0',   0x70u, 0x0Au, 0x2Au,
+        'R',   'E',   'S',   '_',   0x08u, 'N',   'E',   'W',   '_',   0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("RES_") == 5u, "the Store in If (FLD0) does not run");
+    kernel_test_check(test, evaluation_integer("NEW_") == 1u && evaluation_load.declared_not_run == 1u,
+                      "the Name beside it is declared, and counted as declared without running");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A predicate that fails to decode leaves nothing behind: the next If, whose predicate is One,
+ *        runs its body.
+ */
+KERNEL_TEST(a_predicate_that_fails_to_decode_leaves_the_next_body_running)
+{
+    static const uint8_t aml[] = {
+        0xA0u, 0x03u, 0x02u, 0xA3u, 0x08u, 'R',   'E', 'S', '_', 0x00u,
+        0xA0u, 0x09u, 0x01u, 0x70u, 0x0Au, 0x2Au, 'R', 'E', 'S', '_',
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("RES_") == 0x2Au, "If (One) runs its body: RES_ is 0x2A");
+    evaluation_close(test);
+}

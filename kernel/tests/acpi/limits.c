@@ -195,24 +195,26 @@ KERNEL_TEST(an_else_if_ladder_runs_up_to_the_block_limit)
 }
 
 /**
- * @brief An evaluation takes at most 2^20 While back-edges (§6.1): a loop that never ends fails with
- *        limit_loop_iterations, and the load goes on.
+ * @brief A table's code takes at most 2^20 While back-edges, the methods it calls included (§6.1): a
+ *        method that loops forever fails with limit_loop_iterations, then a table-level While whose
+ *        body only continues, and a table-level While that never ends, each fail at their first
+ *        back-edge, since the table's budget is spent; the load goes on.
  */
 KERNEL_TEST(an_endless_loop_is_stopped)
 {
     static const uint8_t aml[] = {
-        0x14u, 0x0Au, 'M', '0', '0',   '9', 0x00u, 0xA2u, 0x03u, 0x01u, 0xA3u,
-        'M',   '0',   '0', '9', 0x08u, 'A', 'F',   'T',   'R',   0x01u,
+        0x14u, 0x0Au, 'M',   '0',   '0',   '9',   0x00u, 0xA2u, 0x03u, 0x01u, 0xA3u, 'M', '0', '0',   '9',
+        0xA2u, 0x03u, 0x01u, 0x9Fu, 0xA2u, 0x03u, 0x01u, 0xA3u, 0x08u, 'A',   'F',   'T', 'R', 0x01u,
     };
 
     if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
         return;
     kernel_test_check(
         test,
-        limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_LOOP_ITERATIONS) == 1u &&
+        limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_LOOP_ITERATIONS) == 3u &&
             limits_load.evaluation.iterations ==
-                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS + 1u,
-        "the loop is stopped past 2^20 back-edges");
-    kernel_test_check(test, limits_integer("AFTR") == 1u, "the Name after it is declared");
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS + 3u,
+        "the method's loop is stopped past 2^20 back-edges, the two table-level loops at their first");
+    kernel_test_check(test, limits_integer("AFTR") == 1u, "the Name after them is declared");
     limits_close(test);
 }
