@@ -1034,34 +1034,41 @@ KERNEL_TEST(a_method_creates_index_and_bank_fields_over_the_table_s_registers)
 }
 
 /**
- * @brief A field list in a method whose region resolves to nothing fails with name_not_found, and one
- *        with a Connection fails as unimplemented; neither leaves a unit behind.
+ * @brief A field list in a method whose region resolves to nothing fails with name_not_found and leaves
+ *        no unit behind; a Connection in one is passed over, as at table level, and the unit after it
+ *        reads its byte.
  */
-KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_a_connection)
+KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_connection)
 {
+    static const uint8_t memory[] = {0x77u};
     static const MadeUpFieldUnit_t units[] = {
         {"NU__", 8u}
     };
     static const uint8_t connection_field[] = {0x5Bu, 0x81u, 0x10u, 'R', 'A', 'M', 'R', 0x01u, 0x02u,
                                                'R',   'A',   'M',   'R', 'C', 'U', '_', '_',   0x08u};
-    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 'M', 'C', 'O', 'N'};
+    static const uint8_t return_unit[] = {0xA4u, 'C', 'U', '_', '_'};
+    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 0x70u, 'M', 'C', 'O', 'N', 'R', 'C', '_', '_'};
     MadeUpAml_t body;
 
     regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY, memory,
+                                                                    sizeof(memory));
     made_up_aml_region(&regions_aml, "RAMR", 0x00u, REGIONS_MEMORY, 4u);
     made_up_aml_begin(&body);
     made_up_aml_field(&body, "NOPE", REGIONS_BYTE_ACCESS, units, 1u);
     made_up_aml_method(&regions_aml, "MNOR", 0x00u, &body);
     made_up_aml_begin(&body);
     made_up_aml_raw(&body, connection_field, sizeof(connection_field));
+    made_up_aml_raw(&body, return_unit, sizeof(return_unit));
     made_up_aml_method(&regions_aml, "MCON", 0x00u, &body);
+    made_up_aml_name_integer(&regions_aml, "RC__", 0u);
     made_up_aml_raw(&regions_aml, calls, sizeof(calls));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
-                      regions_failed(REGIONS_STATUS(NAME_NOT_FOUND)) == 1u &&
-                          regions_failed(REGIONS_STATUS(UNIMPLEMENTED_OPERATOR)) == 1u,
-                      "the missing region fails with name_not_found, the Connection as unimplemented");
+                      regions_failed(REGIONS_STATUS(NAME_NOT_FOUND)) == 1u && regions_load.evaluation.failures == 1u,
+                      "the missing region fails with name_not_found, and only it fails");
+    kernel_test_check(test, regions_integer("RC__") == 0x77u, "the unit after the Connection reads 0x77");
     kernel_test_check(test, regions_load.temporary_count == 0u, "no unit is left behind");
     regions_close(test);
 }

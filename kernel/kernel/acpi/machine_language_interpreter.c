@@ -3013,6 +3013,25 @@ static MachineLanguageStatus_t machine_language_field_bits(const MachineLanguage
 }
 
 /**
+ * @brief Where the operand of a Connection in a field list ends: a NameString, or a Buffer whose
+ *        PkgLength gives its end.
+ */
+static MachineLanguageStatus_t machine_language_connection_end(const MachineLanguageFrame_t *frame, uint32_t start,
+                                                               uint32_t end, uint32_t *out_after)
+{
+    MachineLanguageNameString_t name;
+    uint32_t contents = 0u;
+
+    if (start >= end)
+        return MACHINE_LANGUAGE_STATUS(TRUNCATED);
+    if (frame->code[start] == 0x11u)
+        return advanced_configuration_and_power_interface_machine_language_read_package_end(frame->code, start + 1u,
+                                                                                            end, out_after, &contents);
+    return advanced_configuration_and_power_interface_machine_language_read_name_string(frame->code, start, end, &name,
+                                                                                        out_after);
+}
+
+/**
  * @brief Creates the temporary unit a named element of a field list in a method declares, at bit
  *        @p unit->bit_offset, @p unit->bit_length bits long.
  */
@@ -3038,7 +3057,7 @@ machine_language_field_unit(MachineLanguageLoad_t *load, uint32_t start, uint32_
  * @brief Runs a Field, an IndexField or a BankField a method declares: each named element becomes a
  *        temporary unit of the region or registers and the FieldFlags on the stack; AccessAs changes the
  *        access of the units after it; a Connection, which only GenericSerialBus and GPIO fields use,
- *        fails as unimplemented (§4.5).
+ *        is passed over, as at table level, those spaces having no handler.
  */
 static MachineLanguageStatus_t machine_language_field_list(MachineLanguageLoad_t *load,
                                                            const MachineLanguagePendingOperator_t *active)
@@ -3081,7 +3100,7 @@ static MachineLanguageStatus_t machine_language_field_list(MachineLanguageLoad_t
                 unit.access = frame->code[pc + 1u] & 0x0Fu;
         }
         else if (lead == 0x02u)
-            status = MACHINE_LANGUAGE_STATUS(UNIMPLEMENTED_OPERATOR);
+            status = machine_language_connection_end(frame, pc + 1u, active->end, &after);
         else if (pc + 4u > active->end)
             status = MACHINE_LANGUAGE_STATUS(TRUNCATED);
         else
