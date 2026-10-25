@@ -242,32 +242,46 @@ static void machine_language_close_block(MachineLanguageWalk_t *walk)
 }
 
 /**
+ * @brief Drops the marks a failed predicate or a Scope the walk could not find left for the TermList
+ *        to come, once a recovery leaves the construct that TermList belongs to.
+ */
+static void machine_language_forget_marks(MachineLanguageWalk_t *walk)
+{
+    walk->not_run_next = false;
+    walk->undeclared_next = false;
+}
+
+/**
  * @brief Goes on after a fault: past the innermost construct with a PkgLength around it, else
  *        past the rest of the table, which is also where a PkgLength crossing its parent and an
- *        exhausted arena lead (§6.2).
+ *        exhausted arena lead (§6.2). Stepping over data, a Buffer or a Package, keeps the marks:
+ *        the construct around it still opens its TermList.
  */
 static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status)
 {
     const MachineLanguageBlock_t *block = machine_language_top_block(walk);
 
-    walk->not_run_next = false;
-    walk->undeclared_next = false;
     if (status != MACHINE_LANGUAGE_STATUS(PACKAGE_LENGTH_OUT_OF_PARENT) &&
         status != MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY))
     {
         for (uint32_t index = walk->pending_count; index > block->pending_base; --index)
         {
             const MachineLanguagePendingOperator_t *pending = &walk->load->pending[index - 1u];
+            const uint8_t flags =
+                (pending->opcode == MACHINE_LANGUAGE_CALL) ?
+                    0u :
+                    advanced_configuration_and_power_interface_machine_language_descriptor(pending->opcode)->flags;
 
-            if (pending->opcode != MACHINE_LANGUAGE_CALL &&
-                (advanced_configuration_and_power_interface_machine_language_descriptor(pending->opcode)->flags &
-                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_PACKAGE_LENGTH) != 0u)
+            if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_PACKAGE_LENGTH) != 0u)
             {
+                if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) == 0u)
+                    machine_language_forget_marks(walk);
                 walk->pc = pending->end;
                 walk->pending_count = index - 1u;
                 return;
             }
         }
+        machine_language_forget_marks(walk);
         if (walk->block_count > 1u)
         {
             walk->pc = block->end;
@@ -276,9 +290,20 @@ static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguag
             return;
         }
     }
+    machine_language_forget_marks(walk);
     walk->pending_count = 0u;
     while (walk->block_count != 0u)
         machine_language_close_block(walk);
+}
+
+/**
+ * @brief Counts a declaration made, and, in a branch whose predicate failed, made without running.
+ */
+static void machine_language_count_declaration(MachineLanguageWalk_t *walk)
+{
+    ++walk->load->declarations;
+    if (machine_language_top_block(walk)->placement == MACHINE_LANGUAGE_BLOCK_NOT_RUN)
+        ++walk->load->declared_not_run;
 }
 
 /**
@@ -314,7 +339,7 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
             node->type = type;
             node->owner = (uint16_t) (walk->table + 1u);
             memset(&node->value, 0, sizeof(node->value));
-            ++load->declarations;
+            machine_language_count_declaration(walk);
             walk->last_created = existing;
         }
         else if (type != MACHINE_LANGUAGE_NODE(EXTERNAL))
@@ -325,9 +350,7 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
     status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
         &load->space, parent, segment, type, (uint16_t) (walk->table + 1u), out_index);
     if (status == MACHINE_LANGUAGE_OK)
-        ++load->declarations;
-    if (status == MACHINE_LANGUAGE_OK && machine_language_top_block(walk)->placement == MACHINE_LANGUAGE_BLOCK_NOT_RUN)
-        ++load->declared_not_run;
+        machine_language_count_declaration(walk);
     walk->last_created = (status == MACHINE_LANGUAGE_OK) ? *out_index : 0u;
     return status;
 }

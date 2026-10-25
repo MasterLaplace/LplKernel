@@ -13,6 +13,7 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_limits, KERNEL_TEST
 
 static uint8_t limits_aml[LIMITS_AML_CAPACITY];
 static uint8_t limits_table[MADE_UP_TABLE_HEADER + LIMITS_AML_CAPACITY];
+static uint8_t limits_second_table[MADE_UP_TABLE_HEADER + 64u];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t limits_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t limits_load;
 
@@ -198,13 +199,18 @@ KERNEL_TEST(an_else_if_ladder_runs_up_to_the_block_limit)
  * @brief A table's code takes at most 2^20 While back-edges, the methods it calls included (§6.1): a
  *        method that loops forever fails with limit_loop_iterations, then a table-level While whose
  *        body only continues, and a table-level While that never ends, each fail at their first
- *        back-edge, since the table's budget is spent; the load goes on.
+ *        back-edge, since the table's budget is spent; the load goes on, and the next table, an SSDT,
+ *        starts a budget of its own, in which a While of 32 back-edges completes.
  */
 KERNEL_TEST(an_endless_loop_is_stopped)
 {
     static const uint8_t aml[] = {
         0x14u, 0x0Au, 'M',   '0',   '0',   '9',   0x00u, 0xA2u, 0x03u, 0x01u, 0xA3u, 'M', '0', '0',   '9',
         0xA2u, 0x03u, 0x01u, 0x9Fu, 0xA2u, 0x03u, 0x01u, 0xA3u, 0x08u, 'A',   'F',   'T', 'R', 0x01u,
+    };
+    static const uint8_t second[] = {
+        0x08u, 'C', 'N', 'T',   '2',   0x00u, 0xA2u, 0x0Du, 0x95u, 'C',
+        'N',   'T', '2', 0x0Au, 0x20u, 0x75u, 'C',   'N',   'T',   '2',
     };
 
     if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
@@ -216,6 +222,10 @@ KERNEL_TEST(an_endless_loop_is_stopped)
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS + 3u,
         "the method's loop is stopped past 2^20 back-edges, the two table-level loops at their first");
     kernel_test_check(test, limits_integer("AFTR") == 1u, "the Name after them is declared");
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &limits_load, made_up_definition_block(limits_second_table, "SSDT", 2u, second, sizeof(second)));
+    kernel_test_check(test, limits_integer("CNT2") == 0x20u,
+                      "the SSDT's While (LLess (CNT2, 0x20)) completes in a budget of its own");
     limits_close(test);
 }
 
@@ -245,5 +255,43 @@ KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
     kernel_test_check(test, limits_load.decode_errors == 2u, "the block limit and the byte 0x02 are decode errors");
     kernel_test_check(test, limits_load.undeclared_faults == 0u,
                       "neither is counted as a fault of an undeclared construct");
+    limits_close(test);
+}
+
+/**
+ * @brief A table-level run refuses to start when the evaluation holds 64 frames, or 256 pending
+ *        operators, with limit_frames or limit_pending_operators, counted.
+ */
+KERNEL_TEST(a_table_level_run_refuses_full_stacks)
+{
+    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '_', 0x00u};
+    uint32_t after = 0u;
+
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
+        return;
+    limits_load.evaluation.frame_count =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_run_table_term(
+                          &limits_load, 0u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml), false, NULL,
+                          &after) == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FRAMES,
+                      "64 frames held: limit_frames");
+    limits_load.evaluation.frame_count = 0u;
+    limits_load.evaluation.operator_count =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_run_table_term(
+                          &limits_load, 0u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml), false, NULL, &after) ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PENDING_OPERATORS,
+                      "256 operators held: limit_pending_operators");
+    limits_load.evaluation.operator_count = 0u;
+    kernel_test_check(
+        test,
+        limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FRAMES) == 1u &&
+            limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PENDING_OPERATORS) ==
+                1u,
+        "both refusals are counted");
     limits_close(test);
 }

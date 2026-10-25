@@ -460,3 +460,57 @@ KERNEL_TEST(a_statement_cut_short_at_table_level_fails_and_the_load_goes_on)
         "the Store fails as truncated");
     evaluation_close(test);
 }
+
+/**
+ * @brief A predicate whose Buffer faults while it is decoded keeps its branches from running: the
+ *        recovery steps over the Buffer alone, and the If's body opens declared without running, the
+ *        Else after it declared too, and a While does not loop.
+ */
+KERNEL_TEST(a_fault_inside_a_failed_predicate_keeps_its_branches_from_running)
+{
+    static const uint8_t body[] = {
+        0x08u, 'R', 'E', 'S', '_', 0x00u, 0xA0u, 0x0Bu, 0x11u, 0x02u, 0x02u, 0x70u, 0x0Au, 0x2Au, 'R', 'E', 'S', '_',
+    };
+    static const uint8_t other[] = {0xA0u, 0x04u, 0x11u, 0x02u, 0x02u, 0xA1u, 0x07u, 0x08u, 'E', 'L', 'S', '_', 0x01u};
+    static const uint8_t loop[] = {
+        0x08u, 'C', 'N', 'T', '_', 0x00u, 0xA2u, 0x09u, 0x11u, 0x02u, 0x02u,
+        0x75u, 'C', 'N', 'T', '_', 0x08u, 'A',   'F',   'T',   'R',   0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, body, sizeof(body)))
+        return;
+    kernel_test_check(test, evaluation_integer("RES_") == 0u,
+                      "If (Buffer (<0x02>) {}) { Store (0x2A, RES_) } stores nothing");
+    evaluation_close(test);
+    if (!evaluation_run(test, 2u, other, sizeof(other)))
+        return;
+    kernel_test_check(test, evaluation_integer("ELS_") == 1u, "the Else of such an If is declared");
+    evaluation_close(test);
+    if (!evaluation_run(test, 2u, loop, sizeof(loop)))
+        return;
+    kernel_test_check(
+        test,
+        evaluation_integer("CNT_") == 0u && evaluation_integer("AFTR") == 1u &&
+            evaluation_load.evaluation.statuses
+                    [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_LOOP_ITERATIONS] == 0u,
+        "such a While never runs its body nor loops, and the Name after it is declared");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A Name that replaces an External, in a branch whose predicate failed, counts as a
+ *        declaration made without running, as a new Name beside it does.
+ */
+KERNEL_TEST(a_declaration_replacing_an_external_without_running_is_counted)
+{
+    static const uint8_t aml[] = {
+        0x15u, 'E', 'X', 'T', '0', 0x01u, 0x00u, 0xA0u, 0x10u, 0x11u, 0x02u, 0x01u,
+        0x08u, 'E', 'X', 'T', '0', 0x01u, 0x08u, 'N',   'E',   'W',   '_',   0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("EXT0") == 1u && evaluation_load.declared_not_run == 2u,
+                      "EXT0 and NEW_ are both counted as declared without running");
+    evaluation_close(test);
+}
