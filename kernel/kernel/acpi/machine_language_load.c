@@ -1633,6 +1633,8 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
             machine_language_recover(&walk, status);
         }
     }
+    if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
+        advanced_configuration_and_power_interface_machine_language_release_table_locals(load);
 }
 
 #define MACHINE_LANGUAGE_FOLD_OFFSET 0x811C9DC5u /**< FNV-1a's offset basis. */
