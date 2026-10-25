@@ -47,8 +47,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_fixed_description, 
 #define MADE_UP_FADT_HW_REDUCED_ACPI (1u << 20u) /**< HW_REDUCED_ACPI: no fixed hardware. */
 #define MADE_UP_FADT_IGNORED_WHEN_REDUCED                                                                              \
     0x0003618Eu /**< Bits 1, 2, 3, 7, 8, 13, 14, 16 and 17, which a hardware-reduced platform ignores. */
-#define MADE_UP_FADT_KEPT_WHEN_REDUCED 0x00000071u /**< Bits 0, 4, 5 and 6, which a hardware-reduced platform keeps.   \
-                                                    */
+#define MADE_UP_FADT_KEPT_WHEN_REDUCED                                                                                 \
+    0x00000071u /**< Bits 0, 4, 5 and 6, which a hardware-reduced platform keeps.                                      \
+                 */
 /** @} */
 
 #define MADE_UP_FADT_CAPACITY 512u  /**< Bytes of the buffer a made-up FADT is written in. */
