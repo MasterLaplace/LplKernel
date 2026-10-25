@@ -6,6 +6,7 @@ usage() {
 Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu]
        tools/acpi-corpus.sh check [quick|corpus|full]
        tools/acpi-corpus.sh namespace [quick|corpus|full|qemu]
+       tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
 
 The firmware of recorded machines, which the ACPI layer is checked on. linuxhw/ACPI is fetched at a
 pinned commit into build/acpi-corpus/, never committed and never put in an image.
@@ -26,6 +27,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          and compares its namespace with the one acpiexec loads from the same tables; a machine whose
          tables run code at table level is counted and left out, since that code waits for the
          interpreter
+  closure  loads each machine of a list, or each QEMU configuration, with `test-acpi --closure`, and
+         prints, for each opcode the needs path reaches on some machine, how many machines it reaches
+         it on: the opcodes the interpreter executes (specification §4.1)
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error.
@@ -238,6 +242,34 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
 }
 
+# Prints, for each opcode the needs-path closure of some machine of the list $1, or of some QEMU configuration,
+# reaches, the number of machines it reaches it on.
+closure_table() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local subject
+    local -a tables
+    while IFS= read -r subject; do
+        if [[ "$1" == qemu ]]; then
+            read -ra tables <<<"$subject"
+            "$HARNESS" --closure-tables "${tables[@]}" 2>&1 || true
+        else
+            "$HARNESS" --closure "$LINUXHW/$subject.bin" 2>&1 || true
+        fi
+    done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi) |
+        awk '
+            /^aml closure opcode / { reached[$4]++; if (!($4 in order)) order[$4] = ++count }
+            /^aml closure entries=/ {
+                ++seen
+                for (field = 1; field <= NF; ++field) if ($field ~ /^dropped=/) dropped += substr($field, 9)
+            }
+            END {
+                sorter = "sort -k3,3nr -k2,2"
+                for (opcode in order) printf "closure %s %u of %u\n", opcode, reached[opcode], seen | sorter
+                close(sorter)
+                printf "# closure: %u opcodes reached on some machine of %u; %u observations dropped\n", count, seen, dropped
+            }'
+}
+
 case "${1:-}" in
     fetch)
         mkdir -p "$CORPUS"
@@ -248,6 +280,7 @@ case "${1:-}" in
         esac
         ;;
     namespace) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; namespace_check "${2:-corpus}" ;;
+    closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     -h | --help) usage ;;
     *) usage >&2; exit 2 ;;

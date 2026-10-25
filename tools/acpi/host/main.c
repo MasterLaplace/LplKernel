@@ -1,3 +1,4 @@
+#include "needs_path_closure.h"
 #include "recorded_machine.h"
 
 #include <kernel/acpi/machine_language.h>
@@ -14,7 +15,9 @@
     "                                    MADT, then what loading its definition blocks decoded\n"                      \
     "       test-acpi --namespace <dump> loads the definition blocks of an acpidump text file and prints its\n"        \
     "                                    namespace, one node per line, as acpiexec's namespace command does\n"         \
-    "       test-acpi --namespace-tables <table>...  the same from raw definition blocks, the DSDT first\n"
+    "       test-acpi --namespace-tables <table>...  the same from raw definition blocks, the DSDT first\n"            \
+    "       test-acpi --closure <dump>   prints the opcodes the needs path of an acpidump text file reaches\n"         \
+    "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"
 
 /**
  * @brief Prints the directory of @p directory: its counts and the FACS, then one line per table.
@@ -370,13 +373,62 @@ static void harness_print_namespace(const AdvancedConfigurationAndPowerInterface
     }
 }
 
+static NeedsPathClosure_t harness_closure;
+
+/**
+ * @brief Makes the closure the load's observer when @p closure holds.
+ *
+ * @return false when the closure could not be allocated, which it says.
+ */
+static bool harness_observe(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, bool closure)
+{
+    if (!closure || needs_path_closure_attach(&harness_closure, load))
+        return true;
+    fputs("test-acpi: the closure's arrays could not be allocated\n", stderr);
+    return false;
+}
+
+/**
+ * @brief Walks the needs path of a decoded load and prints its counts, then each opcode it reaches,
+ *        in descriptor order.
+ */
+static void harness_print_closure(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    uint32_t opcodes = 0u;
+
+    needs_path_closure_walk(&harness_closure, load);
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        opcodes += needs_path_closure_reaches_opcode(&harness_closure, opcode) ? 1u : 0u;
+    printf("aml closure entries=%u methods=%u opcodes=%u dropped=%u\n", harness_closure.entries,
+           harness_closure.methods, opcodes, harness_closure.dropped);
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (needs_path_closure_reaches_opcode(&harness_closure, opcode))
+            printf("aml closure opcode %s\n",
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
+}
+
+/**
+ * @brief Prints what a load could not build, then its namespace, or its closure when @p closure holds.
+ */
+static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, bool closure)
+{
+    printf("aml namespace table_level_code=%u values_deferred=%u load_errors=%u decode_errors=%u\n",
+           load->table_level_code, load->values_deferred, load->load_errors, load->decode_errors);
+    if (closure)
+        harness_print_closure(load);
+    else
+        harness_print_namespace(load);
+}
+
 /**
  * @brief Loads the definition blocks of the dump at @p path with the server profile's caps, and
- *        prints what the load could not build, then its namespace.
+ *        prints what the load could not build, then its namespace, or its closure when @p closure holds.
  *
  * @return 0 when the directory was read, 1 otherwise.
  */
-static int harness_dump_namespace(const char *path)
+static int harness_dump_namespace(const char *path, bool closure)
 {
     static RecordedMachine_t machine;
     static AdvancedConfigurationAndPowerInterfaceDirectory_t directory;
@@ -393,15 +445,15 @@ static int harness_dump_namespace(const char *path)
         if (advanced_configuration_and_power_interface_machine_language_open(
                 &load, &machine.simulated.host,
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES) &&
+            harness_observe(&load, closure))
         {
             advanced_configuration_and_power_interface_machine_language_load_directory(&load, &directory);
-            printf("aml namespace table_level_code=%u values_deferred=%u load_errors=%u decode_errors=%u\n",
-                   load.table_level_code, load.values_deferred, load.load_errors, load.decode_errors);
-            harness_print_namespace(&load);
+            harness_print_load(&load, closure);
             status = 0;
         }
         advanced_configuration_and_power_interface_machine_language_close(&load);
+        needs_path_closure_release(&harness_closure);
         advanced_configuration_and_power_interface_release_directory(&directory);
     }
     recorded_machine_close(&machine);
@@ -410,11 +462,11 @@ static int harness_dump_namespace(const char *path)
 
 /**
  * @brief Loads raw definition blocks, the DSDT first, with the server profile's caps, and prints
- *        what the load could not build, then its namespace.
+ *        what the load could not build, then its namespace, or its closure when @p closure holds.
  *
  * @return 0 when every file was read and the namespace opened, 1 otherwise.
  */
-static int harness_dump_tables_namespace(int count, char **paths)
+static int harness_dump_tables_namespace(int count, char **paths, bool closure)
 {
     static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
     static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t simulated;
@@ -427,7 +479,7 @@ static int harness_dump_tables_namespace(int count, char **paths)
             &load, &simulated.host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
     {
-        status = 0;
+        status = harness_observe(&load, closure) ? 0 : 1;
         for (int index = 0; index < count && status == 0; ++index)
         {
             FILE *file = fopen(paths[index], "rb");
@@ -453,12 +505,11 @@ static int harness_dump_tables_namespace(int count, char **paths)
         if (status == 0)
         {
             advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
-            printf("aml namespace table_level_code=%u values_deferred=%u load_errors=%u decode_errors=%u\n",
-                   load.table_level_code, load.values_deferred, load.load_errors, load.decode_errors);
-            harness_print_namespace(&load);
+            harness_print_load(&load, closure);
         }
     }
     advanced_configuration_and_power_interface_machine_language_close(&load);
+    needs_path_closure_release(&harness_closure);
     for (int index = 0;
          index < count && index < (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES; ++index)
         free(tables[index]);
@@ -486,10 +537,10 @@ int main(int argc, char **argv)
         return harness_run_tests();
     if (argc == 3 && strcmp(argv[1], "--machine") == 0)
         return harness_walk_machine(argv[2]);
-    if (argc == 3 && strcmp(argv[1], "--namespace") == 0)
-        return harness_dump_namespace(argv[2]);
-    if (argc >= 3 && strcmp(argv[1], "--namespace-tables") == 0)
-        return harness_dump_tables_namespace(argc - 2, argv + 2);
+    if (argc == 3 && (strcmp(argv[1], "--namespace") == 0 || strcmp(argv[1], "--closure") == 0))
+        return harness_dump_namespace(argv[2], strcmp(argv[1], "--closure") == 0);
+    if (argc >= 3 && (strcmp(argv[1], "--namespace-tables") == 0 || strcmp(argv[1], "--closure-tables") == 0))
+        return harness_dump_tables_namespace(argc - 2, argv + 2, strcmp(argv[1], "--closure-tables") == 0);
     fputs(HARNESS_USAGE, (argc == 2 && strcmp(argv[1], "--help") == 0) ? stdout : stderr);
     return (argc == 2 && strcmp(argv[1], "--help") == 0) ? 0 : 2;
 }
