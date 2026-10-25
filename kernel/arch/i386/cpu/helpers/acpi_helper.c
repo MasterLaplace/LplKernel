@@ -155,8 +155,6 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("pending_peak", load->pending_peak);
     kernel_telemetry_write_unsigned("blocks_peak", load->blocks_peak);
     kernel_telemetry_write_unsigned("objects", load->heap.objects);
-    kernel_telemetry_write_unsigned("objects_freed", load->heap.objects_freed);
-    kernel_telemetry_write_unsigned("object_bytes_peak", load->heap.object_bytes_peak);
     kernel_telemetry_write_unsigned("values_deferred", load->values_deferred);
     kernel_telemetry_write_unsigned("table_level_code", load->table_level_code);
     kernel_telemetry_write_unsigned("table_level_runs", load->evaluation.runs);
@@ -165,12 +163,18 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("declared_not_run", load->declared_not_run);
     kernel_telemetry_write_unsigned("frames_peak", load->evaluation.frames_peak);
     kernel_telemetry_write_unsigned("values_peak", load->evaluation.values_peak);
-    kernel_telemetry_write_unsigned("mixed_type_comparisons", load->evaluation.mixed_type_comparisons);
-    kernel_telemetry_write_unsigned("forbidden_conversions", load->evaluation.forbidden_conversions);
     kernel_telemetry_write_hexadecimal(
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
     acpi_helper_write_regions_record(serial, &load->regions);
+    kernel_telemetry_begin_record(serial, "acpi.values");
+    kernel_telemetry_write_unsigned("objects", load->heap.objects);
+    kernel_telemetry_write_unsigned("objects_freed", load->heap.objects_freed);
+    kernel_telemetry_write_unsigned("stale_releases", load->heap.stale_releases);
+    kernel_telemetry_write_unsigned("object_bytes_peak", load->heap.object_bytes_peak);
+    kernel_telemetry_write_unsigned("mixed_type_comparisons", load->evaluation.mixed_type_comparisons);
+    kernel_telemetry_write_unsigned("forbidden_conversions", load->evaluation.forbidden_conversions);
+    kernel_telemetry_end_record();
 }
 
 void write_acpi_ioapics_info(Serial_t *serial)
