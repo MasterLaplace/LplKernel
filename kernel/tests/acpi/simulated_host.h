@@ -67,9 +67,10 @@ typedef enum AdvancedConfigurationAndPowerInterfaceSimulatedMapKind {
  * @brief A map a simulated host gave and that has not been unmapped.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedMap {
-    const void *address; /**< What the map returned. */
-    uint64_t length;     /**< The length it was given. */
-    uint8_t kind;        /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_* kind. */
+    const void *address;       /**< What the map returned. */
+    uint64_t length;           /**< The length it was given. */
+    uint64_t physical_address; /**< The physical address it was given. */
+    uint8_t kind;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_* kind. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedMap_t;
 
 /**
@@ -126,7 +127,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
  * @details It points at itself through host.context, so it is used where it was opened and never
  *          copied. Memory mapped writable or uncached is reached through read_memory and
  *          write_memory alone: what the ranges hold, or the fill byte, until a write takes the page;
- *          its maps return an address that is never read. Its I/O space reads as 0 but for the ports
+ *          each of its maps returns an address of its own that is never read, and an access whose
+ *          address and physical address disagree with an open map is counted. Physical address 0
+ *          cannot be mapped, as in ring 0. Its I/O space reads as 0 but for the ports
  *          given a value, and ignores writes. Every access is logged in order.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
@@ -137,7 +140,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t range_count;                              /**< Ranges placed. */
     uint32_t outstanding_pages;                        /**< Pages given and not taken back yet. */
     uint8_t memory_fill;                               /**< What memory no range covers reads as. */
-    uint8_t map_marker;                                /**< What a writable or uncached map points at. */
+    uint32_t map_serial;                               /**< Writable or uncached maps made, each a distinct address. */
+    uint32_t inconsistent_accesses;                    /**< Memory accesses whose address is not where a map of their
+                                                            physical address puts it. */
     uint32_t page_count;                               /**< Pages of simulated memory taken. */
     uint32_t writes_dropped;                           /**< Memory writes with no page left to take. */
     uint32_t memory_type_count;                        /**< Ranges of the memory map described. */

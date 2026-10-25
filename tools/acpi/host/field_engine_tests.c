@@ -63,6 +63,8 @@ KERNEL_TEST(every_field_layout_agrees_with_the_bit_model)
     kernel_test_measure(test, "disagreements", disagreements);
     kernel_test_measure(test, "fold", fold);
     kernel_test_check(test, cases == 61440u && disagreements == 0u, "the 61,440 cases agree with the bit model");
+    kernel_test_check(test, field_engine_host.inconsistent_accesses == 0u,
+                      "every access went where its mapping puts it");
     advanced_configuration_and_power_interface_machine_language_close(&field_engine_load);
     advanced_configuration_and_power_interface_simulated_host_close(&field_engine_host);
 }

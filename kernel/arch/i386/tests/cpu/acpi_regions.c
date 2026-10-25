@@ -12,8 +12,13 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_machine_regions, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define MACHINE_REGIONS_SIMULATED 0x40000u    /**< Where the simulated run places the cases' region. */
-#define MACHINE_REGIONS_FNV       0x811C9DC5u /**< The 32-bit FNV-1a offset basis. */
+#define MACHINE_REGIONS_OFFSET                                                                                         \
+    8u /**< Where the cases' region starts in its page, so that the first                                              \
+          access to the page is not at its start. */
+#define MACHINE_REGIONS_SIMULATED                                                                                      \
+    (0x40000u + MACHINE_REGIONS_OFFSET) /**< Where the simulated run places the cases'                                 \
+                                            region. */
+#define MACHINE_REGIONS_FNV 0x811C9DC5u /**< The 32-bit FNV-1a offset basis. */
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t machine_regions_simulated;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t machine_regions_load;
@@ -75,7 +80,8 @@ KERNEL_TEST(the_field_sample_reaches_machine_memory_as_it_reaches_simulated_memo
     const uint32_t frame = physical_memory_manager_page_frame_allocate();
     uint8_t *window =
         (frame != 0u) ? (uint8_t *) (uintptr_t) kernel_vmm_map_firmware_writable_window(frame, 4096u) : NULL;
-    const FieldCasesMemory_t machine = {window, machine_regions_fill, machine_regions_byte};
+    const FieldCasesMemory_t machine = {(window != NULL) ? window + MACHINE_REGIONS_OFFSET : NULL, machine_regions_fill,
+                                        machine_regions_byte};
     const FieldCasesMemory_t simulated = {&machine_regions_simulated, machine_regions_simulated_fill,
                                           machine_regions_simulated_byte};
     uint32_t machine_fold = MACHINE_REGIONS_FNV;
@@ -89,7 +95,7 @@ KERNEL_TEST(the_field_sample_reaches_machine_memory_as_it_reaches_simulated_memo
         return;
     }
     if (field_cases_open(test, &machine_regions_load, &advanced_configuration_and_power_interface_machine_host,
-                         machine_regions_table, frame, &unit))
+                         machine_regions_table, frame + MACHINE_REGIONS_OFFSET, &unit))
     {
         kernel_test_check(test, machine_regions_run(unit, &machine, &machine_fold) == 0u,
                           "the 432 cases agree with the bit model in machine memory");
@@ -104,6 +110,8 @@ KERNEL_TEST(the_field_sample_reaches_machine_memory_as_it_reaches_simulated_memo
                          MACHINE_REGIONS_SIMULATED, &unit))
         machine_regions_run(unit, &simulated, &simulated_fold);
     advanced_configuration_and_power_interface_machine_language_close(&machine_regions_load);
+    kernel_test_check(test, machine_regions_simulated.inconsistent_accesses == 0u,
+                      "every simulated access went where its mapping puts it");
     advanced_configuration_and_power_interface_simulated_host_close(&machine_regions_simulated);
     kernel_test_measure(test, "field_cases_fold", machine_fold);
     kernel_test_check(test, machine_fold == simulated_fold, "machine memory folds as simulated memory does");

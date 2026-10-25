@@ -54,6 +54,7 @@ KERNEL_TEST(a_stratified_sample_of_field_layouts_agrees_with_the_bit_model)
     kernel_test_measure(test, "field_cases_fold", fold);
     kernel_test_check(test, cases == 432u && disagreements == 0u, "the 432 cases agree with the bit model");
     advanced_configuration_and_power_interface_machine_language_close(&fields_load);
-    kernel_test_check(test, fields_host.outstanding_maps == 0u, "closing the load unmaps every mapping");
+    kernel_test_check(test, fields_host.outstanding_maps == 0u && fields_host.inconsistent_accesses == 0u,
+                      "every access went where its mapping puts it, and closing the load unmaps every mapping");
     advanced_configuration_and_power_interface_simulated_host_close(&fields_host);
 }

@@ -112,12 +112,14 @@ static void simulated_host_log(AdvancedConfigurationAndPowerInterfaceSimulatedHo
  * @brief Records a map of @p kind, or returns NULL when the host keeps as many maps as it can.
  */
 static const void *simulated_host_record_map(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
-                                             const void *address, uint64_t length, uint8_t kind)
+                                             const void *address, uint64_t physical_address, uint64_t length,
+                                             uint8_t kind)
 {
     if (simulated->outstanding_maps == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_MAPS)
         return NULL;
     simulated->maps[simulated->outstanding_maps].address = address;
     simulated->maps[simulated->outstanding_maps].length = length;
+    simulated->maps[simulated->outstanding_maps].physical_address = physical_address;
     simulated->maps[simulated->outstanding_maps].kind = kind;
     ++simulated->outstanding_maps;
     return address;
@@ -156,7 +158,8 @@ static const void *simulated_host_map_firmware(void *context, uint64_t physical_
 
     if (range == NULL || length == 0u)
         return NULL;
-    return simulated_host_record_map(simulated, range->bytes + (physical_address - range->physical_address), length,
+    return simulated_host_record_map(simulated, range->bytes + (physical_address - range->physical_address),
+                                     physical_address, length,
                                      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE);
 }
 
@@ -184,9 +187,31 @@ static uint8_t simulated_host_memory_type(void *context, uint64_t physical_addre
 static void *simulated_host_map_memory(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
                                        uint64_t physical_address, uint64_t length, uint8_t kind)
 {
-    if (length == 0u || physical_address + length < physical_address)
+    const uintptr_t token = (uintptr_t) 0x00100000u * ((simulated->map_serial++ % 1024u) + 1u);
+
+    if (physical_address == 0u || length == 0u || physical_address + length < physical_address)
         return NULL;
-    return (void *) simulated_host_record_map(simulated, &simulated->map_marker, length, kind);
+    return (void *) simulated_host_record_map(simulated, (const void *) token, physical_address, length, kind);
+}
+
+/**
+ * @brief Counts an access whose address is not where an open writable or uncached map puts its
+ *        physical address.
+ */
+static void simulated_host_check_address(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                         const void *address, uint64_t physical_address, uint8_t width)
+{
+    for (uint32_t index = 0u; index < simulated->outstanding_maps; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedMap_t *map = &simulated->maps[index];
+        const uintptr_t base = (uintptr_t) map->address;
+
+        if (map->kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MAP_FIRMWARE &&
+            (uintptr_t) address >= base && (uintptr_t) address - base + width <= map->length &&
+            (uintptr_t) address - base == physical_address - map->physical_address)
+            return;
+    }
+    ++simulated->inconsistent_accesses;
 }
 
 static void *simulated_host_map_firmware_writable(void *context, uint64_t physical_address, uint64_t length)
@@ -219,7 +244,7 @@ static uint32_t simulated_host_read_memory(void *context, const void *address, u
     const uint32_t value =
         (uint32_t) advanced_configuration_and_power_interface_simulated_host_peek(simulated, physical_address, width);
 
-    (void) address;
+    simulated_host_check_address(simulated, address, physical_address, width);
     simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_READ, width, 0u,
                        physical_address, value);
     return value;
@@ -230,7 +255,7 @@ static void simulated_host_write_memory(void *context, void *address, uint64_t p
 {
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
 
-    (void) address;
+    simulated_host_check_address(simulated, address, physical_address, width);
     simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_WRITE, width, 0u,
                        physical_address, value);
     for (uint8_t offset = 0u; offset < width; ++offset)
@@ -310,6 +335,8 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->memory_type_count = 0u;
     simulated->port_count = 0u;
     simulated->access_count = 0u;
+    simulated->map_serial = 0u;
+    simulated->inconsistent_accesses = 0u;
 }
 
 void advanced_configuration_and_power_interface_simulated_host_close(
