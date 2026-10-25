@@ -377,6 +377,8 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     advanced_configuration_and_power_interface_madt_initialize();
     write_acpi_tables_info(&com1);
+    if (boot_command_line_holds(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINT_TABLES_OPTION))
+        write_advanced_configuration_and_power_interface_tables(&com1);
     write_acpi_madt_info(&com1);
     write_acpi_madt_record(&com1);
     advanced_configuration_and_power_interface_mode_initialize();

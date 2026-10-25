@@ -1,6 +1,7 @@
 #include "recorded_machine.h"
 
 #include <kernel/acpi/tables.h>
+#include <kernel/cpu/helpers/acpi_helper.h>
 
 #include <ctype.h>
 #include <stdio.h>
@@ -107,40 +108,81 @@ static bool recorded_machine_read_row(RecordedTable_t *table, const char *line)
 }
 
 /**
- * @brief Reads the tables of the dump at @p path.
+ * @brief Whether @p line, its line ending apart, is @p marker.
  */
-static bool recorded_machine_read(RecordedMachine_t *machine, const char *path, const char **error)
+static bool recorded_machine_is_marker(const char *line, const char *marker)
+{
+    const size_t length = strlen(marker);
+
+    return strncmp(line, marker, length) == 0 && (line[length] == '\0' || line[length] == '\n' || line[length] == '\r');
+}
+
+/**
+ * @brief Reads one line of a dump: a header opens a table, a row adds its bytes to the table open.
+ *
+ * @return false when a header opens one table more than a recorded machine holds.
+ */
+static bool recorded_machine_read_line(RecordedMachine_t *machine, const char *line, RecordedTable_t **table)
+{
+    if (recorded_machine_is_header(line))
+    {
+        if (machine->table_count == RECORDED_MACHINE_MAX_TABLES)
+            return false;
+        *table = &machine->tables[machine->table_count++];
+    }
+    else if (*table != NULL)
+    {
+        (void) recorded_machine_read_row(*table, line);
+    }
+    return true;
+}
+
+/**
+ * @brief Reads the tables of the dump at @p path; when @p printed, only those a kernel printed
+ *        between ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_BEGIN and
+ *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_END, the first time it did.
+ */
+static bool recorded_machine_read(RecordedMachine_t *machine, const char *path, bool printed, const char **error)
 {
     FILE *file = fopen(path, "r");
 
     if (file == NULL)
     {
-        *error = "the dump cannot be opened";
+        *error = printed ? "the log cannot be opened" : "the dump cannot be opened";
         return false;
     }
 
     char line[512];
     RecordedTable_t *table = NULL;
     bool fits = true;
+    bool begun = !printed;
+    bool ended = false;
 
-    while (fits && fgets(line, sizeof(line), file) != NULL)
+    while (fits && !ended && fgets(line, sizeof(line), file) != NULL)
     {
-        if (recorded_machine_is_header(line))
-        {
-            fits = machine->table_count < RECORDED_MACHINE_MAX_TABLES;
-            table = fits ? &machine->tables[machine->table_count++] : NULL;
-        }
-        else if (table != NULL)
-        {
-            (void) recorded_machine_read_row(table, line);
-        }
+        if (!begun)
+            begun = recorded_machine_is_marker(line, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_BEGIN);
+        else if (printed &&
+                 recorded_machine_is_marker(line, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_END))
+            ended = true;
+        else
+            fits = recorded_machine_read_line(machine, line, &table);
     }
     fclose(file);
+
+    const char *wrong = NULL;
+
     if (!fits)
-        *error = "the dump holds more tables than a recorded machine";
+        wrong = "the dump holds more tables than a recorded machine";
+    else if (!begun)
+        wrong = "the log holds no tables a kernel printed";
+    else if (printed && !ended)
+        wrong = "the tables the kernel printed are cut short: the log ends before their end";
     else if (machine->table_count == 0u)
-        *error = "the dump holds no table";
-    return fits && machine->table_count != 0u;
+        wrong = "the dump holds no table";
+    if (wrong != NULL)
+        *error = wrong;
+    return wrong == NULL;
 }
 
 /**
@@ -393,11 +435,14 @@ static bool recorded_machine_serve(RecordedMachine_t *machine, const char **erro
     return true;
 }
 
-bool recorded_machine_open(RecordedMachine_t *machine, const char *path, const char **error)
+/**
+ * @brief Reads a dump, or the tables a kernel printed, and serves them.
+ */
+static bool recorded_machine_open_file(RecordedMachine_t *machine, const char *path, bool printed, const char **error)
 {
     memset(machine, 0, sizeof(*machine));
     advanced_configuration_and_power_interface_simulated_host_open(&machine->simulated);
-    if (!recorded_machine_read(machine, path, error))
+    if (!recorded_machine_read(machine, path, printed, error))
         return false;
 
     for (uint32_t index = 0u; index < machine->table_count; ++index)
@@ -408,6 +453,118 @@ bool recorded_machine_open(RecordedMachine_t *machine, const char *path, const c
             memcpy(table->signature, table->bytes, sizeof(table->signature));
     }
     return recorded_machine_serve(machine, error);
+}
+
+/**
+ * @brief @p length rounded up to ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT.
+ */
+static uint64_t recorded_machine_padded(uint64_t length)
+{
+    return (length + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT - 1u) &
+           ~(uint64_t) (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT - 1u);
+}
+
+/**
+ * @brief Writes the image of what @p simulated serves into @p image, zeroed and long enough: the
+ *        header, then each range in the order it was placed, padded.
+ */
+static void recorded_machine_fill_image(const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                        uint8_t *image)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHostImageHeader_t header;
+    uint64_t offset = sizeof(header);
+
+    memcpy(header.magic, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC, sizeof(header.magic));
+    header.root_system_description_pointer = simulated->root_system_description_pointer;
+    header.range_count = simulated->range_count;
+    memcpy(image, &header, sizeof(header));
+    for (uint32_t index = 0u; index < simulated->range_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedHostImageRange_t range = {
+            simulated->ranges[index].physical_address, simulated->ranges[index].length};
+
+        memcpy(image + offset, &range, sizeof(range));
+        offset += sizeof(range);
+        memcpy(image + offset, simulated->ranges[index].bytes, (size_t) range.length);
+        offset += recorded_machine_padded(range.length);
+    }
+}
+
+/**
+ * @brief Reads @p image back into a simulated host of its own, as ring 0 reads it, and compares what
+ *        it serves with what @p simulated serves.
+ *
+ * @return NULL when the root pointer and every range, its address, length and bytes, are the same,
+ *         else what differs.
+ */
+static const char *
+recorded_machine_image_differs(const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                               const uint8_t *image, uint64_t length)
+{
+    static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t read_back;
+    const char *refused = NULL;
+
+    if (!advanced_configuration_and_power_interface_simulated_host_open_image(&read_back, image, length, &refused))
+        return refused;
+    if (read_back.root_system_description_pointer != simulated->root_system_description_pointer ||
+        read_back.range_count != simulated->range_count)
+        return "the image read back gives another root pointer or another number of ranges";
+    for (uint32_t index = 0u; index < simulated->range_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedRange_t *written = &simulated->ranges[index];
+        const AdvancedConfigurationAndPowerInterfaceSimulatedRange_t *read = &read_back.ranges[index];
+
+        if (read->physical_address != written->physical_address || read->length != written->length ||
+            memcmp(read->bytes, written->bytes, (size_t) written->length) != 0)
+            return "a range of the image read back differs from the one written";
+    }
+    return NULL;
+}
+
+bool recorded_machine_open(RecordedMachine_t *machine, const char *path, const char **error)
+{
+    return recorded_machine_open_file(machine, path, false, error);
+}
+
+bool recorded_machine_open_printed(RecordedMachine_t *machine, const char *path, const char **error)
+{
+    return recorded_machine_open_file(machine, path, true, error);
+}
+
+bool recorded_machine_write_image(const RecordedMachine_t *machine, const char *path, const char **error)
+{
+    const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = &machine->simulated;
+    uint64_t length = sizeof(AdvancedConfigurationAndPowerInterfaceSimulatedHostImageHeader_t);
+
+    for (uint32_t index = 0u; index < simulated->range_count; ++index)
+        length += sizeof(AdvancedConfigurationAndPowerInterfaceSimulatedHostImageRange_t) +
+                  recorded_machine_padded(simulated->ranges[index].length);
+
+    uint8_t *image = calloc(1u, (size_t) length);
+
+    if (image == NULL)
+    {
+        *error = "no memory for the image";
+        return false;
+    }
+    recorded_machine_fill_image(simulated, image);
+
+    const char *wrong = recorded_machine_image_differs(simulated, image, length);
+    FILE *file = (wrong == NULL) ? fopen(path, "wb") : NULL;
+
+    if (wrong == NULL && file == NULL)
+        wrong = "the image cannot be created";
+    if (file != NULL)
+    {
+        const bool whole = (fwrite(image, 1u, (size_t) length, file) == (size_t) length);
+
+        if (fclose(file) != 0 || !whole)
+            wrong = "the image cannot be written";
+    }
+    free(image);
+    if (wrong != NULL)
+        *error = wrong;
+    return wrong == NULL;
 }
 
 void recorded_machine_close(RecordedMachine_t *machine)
