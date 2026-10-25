@@ -756,6 +756,7 @@ that reaches it. The corpus runs report the peaks.
 | Temporary nodes per evaluation | 1,024 |
 | Nested internal (host-triggered) evaluations | 2 |
 | Loop iterations per evaluation, every `While` back-edge | 2^20 |
+| Field accesses per evaluation: a datum, each half of a quad-word datum, an index or a bank selected | 2^20 |
 | Time requested per evaluation (`Sleep` milliseconds and `Stall` microseconds) | 30 s |
 | Package elements | 255 for `Package` ([§19.3.5]), 4,096 for `VarPackage` |
 | Buffer, string, field read as a buffer | 64 KiB |

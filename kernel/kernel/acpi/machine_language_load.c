@@ -1613,7 +1613,10 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
     MachineLanguageBlock_t *block = &load->blocks[0];
 
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
+    {
         load->evaluation.iterations = 0u;
+        load->evaluation.field_accesses = 0u;
+    }
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
     block->placement = 0u;
     block->pending_base = 0u;

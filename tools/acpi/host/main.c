@@ -123,10 +123,11 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            evaluation->runs, evaluation->failures, evaluation->implicit_returns, evaluation->uninitialized_operands,
            evaluation->frames_peak, evaluation->values_peak, load->declared_not_run);
     printf("aml run regions field_reads=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
-           "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u\n",
+           "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u "
+           "field_accesses_peak=%u\n",
            regions->field_reads, regions->field_writes, regions->map_calls, regions->mapping_cache_hits,
            regions->split_qword_accesses, regions->unaligned_accesses, regions->protected_port_accesses,
-           regions->region_lengths_rounded);
+           regions->region_lengths_rounded, regions->field_accesses_peak);
     printf("aml run global_lock acquisitions=%u waits=%u releases_signalled=%u timeouts=%u unlocked_accesses=%u "
            "facs_refused=%u\n",
            regions->global_lock_acquisitions, regions->global_lock_waits, regions->global_lock_releases_signalled,

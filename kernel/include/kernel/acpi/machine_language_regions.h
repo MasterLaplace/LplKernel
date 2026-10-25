@@ -72,6 +72,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t unaligned_accesses;      /**< Memory accesses at an address their width does not divide, made byte by
                                            byte. */
     uint32_t protected_port_accesses; /**< Accesses to a protected port: 0 read, writes dropped. */
+    uint32_t field_accesses_peak;     /**< Most accesses to the host one table load's fields made. */
     uint32_t region_lengths_rounded;  /**< Accesses past a region's length but within it rounded up to the access
                                            width. */
     uint32_t space_unsupported[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES]; /**< Accesses
