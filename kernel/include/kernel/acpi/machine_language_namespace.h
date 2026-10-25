@@ -66,6 +66,8 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageNodeType {
         0,                                                                           /**< A Name not evaluated yet. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_INTEGER = 1,    /**< An Integer. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_STRING = 2,     /**< A String. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_BUFFER = 3,     /**< A Buffer. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_PACKAGE = 4,    /**< A Package. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FIELD_UNIT = 5, /**< A unit of a field. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE = 6,     /**< A Device. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_EVENT = 7,      /**< An Event. */
@@ -155,6 +157,27 @@ extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_namespace_open(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes);
+
+/**
+ * @brief Takes pages from the namespace's host for the arena, within its arena cap: the namespace's
+ *        own runs and hash table, and the objects its nodes hold.
+ *
+ * @param space The namespace.
+ * @param count Pages of 4 KiB.
+ * @return The pages, or NULL when the host gives none or the arena cap would be passed.
+ */
+extern void *advanced_configuration_and_power_interface_machine_language_namespace_take_pages(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t count);
+
+/**
+ * @brief Gives back pages advanced_configuration_and_power_interface_machine_language_namespace_take_pages took.
+ *
+ * @param space The namespace.
+ * @param pages The pages.
+ * @param count How many were taken.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, void *pages, uint32_t count);
 
 /**
  * @brief Gives every page of a namespace back to its host, and empties it.

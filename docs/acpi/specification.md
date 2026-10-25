@@ -132,7 +132,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
-| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h` | the decoder's and the namespace's interfaces, for the layers above them and the tests |
+| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h` | the decoder's, the namespace's and the objects' interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
@@ -196,9 +196,9 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Hash slot** | `node u32` (0 is empty) | 4, at a load of at most 1/2, so 8 per node | One open-addressing table for the whole namespace, keyed by (parent, NameSeg): linear probing, backward-shift deletion so no tombstones, a fixed unseeded 32-bit multiplicative mix. |
 | **Object header** | `references u32` (saturating), `kind u8`, `flags u8`, `auxiliary u16`, `length u32`, padding | 16 | One allocation per string, buffer or package: the bytes, or the `length` element values, follow the header. |
 | **Region object** | `space u8`, `state u8`, `pci_device u32` (segment, bus, device and function, packed once attached), `offset u64`, `length u64`, `mapping u32`, `owner_device u32` | 32 | Attached lazily, at the first access. |
-| **Field unit object** | `kind u8` (normal, index, bank), `access u8`, `update u8`, `lock u8`, `region u32` (or the index field's node), `data_or_bank u32`, `bank_value u32`, `bit_offset u32`, `bit_length u32` | 28 | A 4 MiB field still costs 28 bytes. |
+| **Field unit object** | `kind u8` (normal, index, bank), `access u8`, `update u8`, `lock u8`, `region u32` (or the index field's node), `data_or_bank u32`, `bank_value u32`, `bit_offset u32`, `bit_length u32` | 24 | A 4 MiB field still costs 24 bytes. |
 | **Method** | in the node's `value`: `handle` = table, `payload` = body offset u32 and body length u32, `auxiliary` = MethodFlags | 0 extra | Bodies are never copied. |
-| **Buffer field** | in the node's `value`: `handle` = buffer object, `payload` = bit offset u32 and bit length u32 | 0 extra | |
+| **Buffer field** | in the node's `value`: `handle` = the buffer's node, `payload` = bit offset u32 and bit length u32, `auxiliary` = access width in bytes | 0 extra | The node, not the object: `CopyObject` to the buffer replaces its object. |
 | **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 5), `argument_count u8`, `flags u8` | about 272 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
 | **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
@@ -743,6 +743,8 @@ that reaches it. The corpus runs report the peaks.
 | Package elements | 255 for `Package` ([§19.3.5]), 4,096 for `VarPackage` |
 | Buffer, string, field read as a buffer | 64 KiB |
 | Name indirections in packages | 8 |
+| Packages nested in one data object | 32; a deeper one waits for the interpreter |
+| Runs of the object heap | 256: one for each object of 4 KiB or more, the others sharing runs of 64 KiB |
 | Namespace nodes | 65,536 on the server profile, 32,768 on the others |
 | Namespace arena | 8 MiB on the server profile, 4 MiB on the others |
 | Loaded tables; bytes copied by `Load` | 128; 256 KiB |
@@ -874,7 +876,7 @@ same work, not only reach the same result.
 | Made-up AML | each rule of §4 to §6, each limit, each case of §6.3 | ring 0 (`KERNEL_TEST`) and the host harness, from the same sources | the test's own expected values; parity between the two |
 | Real firmware on the host | the corpus (§8.4) | host | ACPICA's `acpiexec`; the census counts; the `iasl` disassembly; the decoded table lines for the static tables |
 | Real firmware in ring 0 | one corpus machine per boot, its tables given as a Multiboot module, run through the simulated host | ring 0, debug kernel | the host harness's records on the same bytes, compared by `tools/parity.sh` |
-| QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters only, not folded (§8.7) |
+| QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the namespace fold, against the host's on the printed bytes (§8.7) |
 | QEMU's reference tables | 42 `pc` and `q35` configurations, 5 `microvm` | host | `acpiexec` |
 | uACPI's test cases | Windows behaviours and edge cases | host | each case's `// Expect:` line |
 | Real machines | the full path to `_CST` | ring 0 | the same machine's tables through the host harness and `acpiexec`; Linux's cpuidle states |
@@ -947,7 +949,7 @@ published image. The made-up ASL is ours, under MIT.
   disassembly is cut short, and each such table is listed.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
-  lines in declaration order and compared, without the nodes ACPICA creates for `External`.
+  lines and compared path by path, without the nodes ACPICA creates for `External`.
 - **`Load` on the corpus.** Dumps hold the dynamic SSDTs but zero every address. The harness finds the packages of
   (OEM table ID, address, length) triples that Intel's `PmRef` code reads, places each matching table at that
   address in simulated memory, and leaves it out of the static load; `acpiexec` gets those tables statically. The
@@ -991,8 +993,9 @@ compared on status only.
 The host and ring 0 run the same made-up tables and the same corpus bytes through the same simulated host (§3.3),
 and print the same records, which `tools/parity.sh` compares (`# <suite>.<test>: key=value`). Each record header
 prints the target parameters both sides used (physical address width, profile caps), so that a region above 4 GiB
-or a probe count that depends on the hash capacity differs only when the parameters do. QEMU live boots are not
-folded: they read emulated hardware the simulated host does not model. FNV-1a, 32 bits, offset `0x811C9DC5`, prime
+or a probe count that depends on the hash capacity differs only when the parameters do. Of a QEMU live boot,
+only the namespace is folded, which the host computes again from the bytes ring 0 printed (§8.3); its evaluations
+read emulated hardware the simulated host does not model, and are not folded. FNV-1a, 32 bits, offset `0x811C9DC5`, prime
 `0x01000193`, over little-endian bytes:
 
 | Record | Folds, in order |

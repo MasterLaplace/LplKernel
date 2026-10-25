@@ -108,6 +108,11 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("probes", load->space.probes);
     kernel_telemetry_write_unsigned("pending_peak", load->pending_peak);
     kernel_telemetry_write_unsigned("blocks_peak", load->blocks_peak);
+    kernel_telemetry_write_unsigned("objects", load->heap.objects);
+    kernel_telemetry_write_unsigned("values_deferred", load->values_deferred);
+    kernel_telemetry_write_unsigned("table_level_code", load->table_level_code);
+    kernel_telemetry_write_hexadecimal(
+        "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
 }
 
