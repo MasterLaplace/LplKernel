@@ -115,8 +115,10 @@ static void references_close(KernelTest_t *test)
  *        is True for a name that exists, \_OSI included, and False for one that does not or that only
  *        an External declares; a reference to a local that a method returns gives its caller the
  *        value (§6.3); a reference to a table's local lives as long as the table's locals do; a store
- *        through a local keeps the type of what it refers to; a reference to a local or to a name of
- *        a method that returned fails, and Return gives the caller what it referred to instead.
+ *        through a local keeps the type of what it refers to, and one to an element that holds a
+ *        reference writes through it; a reference to a local or to a name of a method that returned
+ *        fails, and Return gives the caller what it referred to instead; a package element that names
+ *        the name referring to it fails after 8 names (§5.1).
  */
 KERNEL_TEST(references_follow_names_locals_and_arguments)
 {
@@ -128,38 +130,47 @@ KERNEL_TEST(references_follow_names_locals_and_arguments)
         '0',   '6',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '7',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '8',
         0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '9',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '0',   0x0Au, 0x07u,
         0x08u, 'R',   '0',   '1',   '1',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '2',   0x0Au, 0x07u, 0x08u, 'R',
-        '0',   '1',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '4',   0x0Au, 0x07u, 0x14u, 0x10u, 'M',   'D',
-        'R',   'F',   0x00u, 0x70u, 0x71u, 'I',   'N',   'T',   '0',   0x60u, 0xA4u, 0x83u, 0x60u, 0x14u, 0x14u, 'M',
-        'L',   'O',   'C',   0x00u, 0x70u, 0x0Au, 0x05u, 0x61u, 0x70u, 0x71u, 0x61u, 0x60u, 0x70u, 0x0Au, 0x09u, 0x60u,
-        0xA4u, 0x61u, 0x14u, 0x0Au, 'M',   'S',   'E',   'T',   0x01u, 0x70u, 0x0Au, 0x07u, 0x68u, 0x14u, 0x12u, 'M',
-        'A',   'R',   'G',   0x00u, 0x70u, 0x0Au, 0x01u, 0x60u, 'M',   'S',   'E',   'T',   0x71u, 0x60u, 0xA4u, 0x60u,
-        0x14u, 0x15u, 'M',   'C',   'O',   'N',   0x00u, 0xA0u, 0x0Bu, 0x5Bu, 0x12u, 'I',   'N',   'T',   '0',   0x60u,
-        0xA4u, 0x83u, 0x60u, 0xA4u, 0x0Au, 0x00u, 0x14u, 0x0Du, 'M',   'R',   'E',   'T',   0x00u, 0x70u, 0x0Au, 0x42u,
-        0x60u, 0xA4u, 0x71u, 0x60u, 0x14u, 0x1Bu, 'M',   'C',   'H',   'N',   0x00u, 0x70u, 0x0Au, 0x10u, 0x60u, 0x70u,
-        0x71u, 0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u, 0x70u, 0x71u, 0x62u, 0x63u, 0x75u, 0x63u, 0xA4u, 0x83u, 0x63u,
-        0x14u, 0x12u, 'M',   'S',   'T',   'R',   0x00u, 0x70u, 0x0Du, 0x5Cu, 'I',   'N',   'T',   '0',   0x00u, 0x60u,
-        0xA4u, 0x83u, 0x60u, 0x14u, 0x18u, 'M',   'K',   'I',   'N',   0x00u, 0x70u, 0x0Du, 0x61u, 0x62u, 0x63u, 0x00u,
-        0x61u, 0x70u, 0x71u, 0x61u, 0x60u, 0x70u, 0x0Au, 0x41u, 0x60u, 0xA4u, 0x8Eu, 0x61u, 0x14u, 0x12u, 'M',   'K',
-        'R',   'F',   0x01u, 0x70u, 0x0Au, 0x99u, 0x60u, 0x70u, 0x71u, 0x60u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u,
-        0x12u, 'M',   'R',   'D',   'F',   0x01u, 0x70u, 0x0Au, 0x5Au, 0x60u, 0xA4u, 0x83u, 0x83u, 0x88u, 0x68u, 0x0Au,
-        0x00u, 0x00u, 0x14u, 0x18u, 'M',   'D',   'N',   'G',   0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u,
-        'M',   'K',   'R',   'F',   0x60u, 0xA4u, 'M',   'R',   'D',   'F',   0x60u, 0x14u, 0x13u, 'M',   'T',   'M',
-        'P',   0x08u, 0x08u, 'T',   'M',   'P',   'N',   0x0Au, 0x11u, 0xA4u, 0x71u, 'T',   'M',   'P',   'N',   0x14u,
-        0x18u, 'M',   'K',   'T',   'P',   0x09u, 0x08u, 'T',   'M',   'P',   'N',   0x0Au, 0x33u, 0x70u, 0x71u, 'T',
-        'M',   'P',   'N',   0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x15u, 'M',   'R',   'T',   'P',   0x09u, 0x08u,
-        'O',   'T',   'H',   'R',   0x0Au, 0x22u, 0xA4u, 0x83u, 0x83u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x18u,
-        'M',   'D',   'T',   'P',   0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'T',   'P',
-        0x60u, 0xA4u, 'M',   'R',   'T',   'P',   0x60u, 0x70u, 'M',   'D',   'R',   'F',   'R',   '0',   '0',   '0',
-        0x70u, 'M',   'L',   'O',   'C',   'R',   '0',   '0',   '1',   0x70u, 'M',   'A',   'R',   'G',   'R',   '0',
-        '0',   '2',   0x70u, 'M',   'C',   'O',   'N',   'R',   '0',   '0',   '3',   0x70u, 0x5Bu, 0x12u, 0x5Cu, 'U',
-        'N',   'D',   'F',   0x00u, 'R',   '0',   '0',   '4',   0x70u, 0x5Bu, 0x12u, 0x5Cu, '_',   'O',   'S',   'I',
-        0x00u, 'R',   '0',   '0',   '5',   0x70u, 0x5Bu, 0x12u, 0x5Cu, 'N',   'O',   'P',   'E',   0x00u, 'R',   '0',
-        '0',   '6',   0x70u, 'M',   'R',   'E',   'T',   'R',   '0',   '0',   '7',   0x70u, 'M',   'C',   'H',   'N',
-        'R',   '0',   '0',   '8',   0x70u, 'M',   'S',   'T',   'R',   'R',   '0',   '0',   '9',   0x70u, 0x0Au, 0x77u,
-        0x60u, 0x70u, 0x71u, 0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u, 0x70u, 0x83u, 0x62u, 'R',   '0',   '1',   '0',
-        0x70u, 'M',   'K',   'I',   'N',   'R',   '0',   '1',   '1',   0x70u, 'M',   'D',   'N',   'G',   'R',   '0',
-        '1',   '2',   0x70u, 'M',   'T',   'M',   'P',   'R',   '0',   '1',   '3',   0x70u, 'M',   'D',   'T',   'P',
-        'R',   '0',   '1',   '4',
+        '0',   '1',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '4',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',
+        '5',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '6',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '7',   0x0Au,
+        0x07u, 0x08u, 'P',   'K',   'G',   'L',   0x12u, 0x06u, 0x01u, 'A',   'L',   'S',   'L',   0x08u, 'A',   'L',
+        'S',   'L',   0x0Au, 0x00u, 0x14u, 0x10u, 'M',   'D',   'R',   'F',   0x00u, 0x70u, 0x71u, 'I',   'N',   'T',
+        '0',   0x60u, 0xA4u, 0x83u, 0x60u, 0x14u, 0x14u, 'M',   'L',   'O',   'C',   0x00u, 0x70u, 0x0Au, 0x05u, 0x61u,
+        0x70u, 0x71u, 0x61u, 0x60u, 0x70u, 0x0Au, 0x09u, 0x60u, 0xA4u, 0x61u, 0x14u, 0x0Au, 'M',   'S',   'E',   'T',
+        0x01u, 0x70u, 0x0Au, 0x07u, 0x68u, 0x14u, 0x12u, 'M',   'A',   'R',   'G',   0x00u, 0x70u, 0x0Au, 0x01u, 0x60u,
+        'M',   'S',   'E',   'T',   0x71u, 0x60u, 0xA4u, 0x60u, 0x14u, 0x15u, 'M',   'C',   'O',   'N',   0x00u, 0xA0u,
+        0x0Bu, 0x5Bu, 0x12u, 'I',   'N',   'T',   '0',   0x60u, 0xA4u, 0x83u, 0x60u, 0xA4u, 0x0Au, 0x00u, 0x14u, 0x0Du,
+        'M',   'R',   'E',   'T',   0x00u, 0x70u, 0x0Au, 0x42u, 0x60u, 0xA4u, 0x71u, 0x60u, 0x14u, 0x1Bu, 'M',   'C',
+        'H',   'N',   0x00u, 0x70u, 0x0Au, 0x10u, 0x60u, 0x70u, 0x71u, 0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u, 0x70u,
+        0x71u, 0x62u, 0x63u, 0x75u, 0x63u, 0xA4u, 0x83u, 0x63u, 0x14u, 0x12u, 'M',   'S',   'T',   'R',   0x00u, 0x70u,
+        0x0Du, 0x5Cu, 'I',   'N',   'T',   '0',   0x00u, 0x60u, 0xA4u, 0x83u, 0x60u, 0x14u, 0x18u, 'M',   'K',   'I',
+        'N',   0x00u, 0x70u, 0x0Du, 0x61u, 0x62u, 0x63u, 0x00u, 0x61u, 0x70u, 0x71u, 0x61u, 0x60u, 0x70u, 0x0Au, 0x41u,
+        0x60u, 0xA4u, 0x8Eu, 0x61u, 0x14u, 0x12u, 'M',   'K',   'R',   'F',   0x01u, 0x70u, 0x0Au, 0x99u, 0x60u, 0x70u,
+        0x71u, 0x60u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x12u, 'M',   'R',   'D',   'F',   0x01u, 0x70u, 0x0Au,
+        0x5Au, 0x60u, 0xA4u, 0x83u, 0x83u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x18u, 'M',   'D',   'N',   'G',
+        0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'R',   'F',   0x60u, 0xA4u, 'M',   'R',
+        'D',   'F',   0x60u, 0x14u, 0x13u, 'M',   'T',   'M',   'P',   0x08u, 0x08u, 'T',   'M',   'P',   'N',   0x0Au,
+        0x11u, 0xA4u, 0x71u, 'T',   'M',   'P',   'N',   0x14u, 0x18u, 'M',   'K',   'T',   'P',   0x09u, 0x08u, 'T',
+        'M',   'P',   'N',   0x0Au, 0x33u, 0x70u, 0x71u, 'T',   'M',   'P',   'N',   0x88u, 0x68u, 0x0Au, 0x00u, 0x00u,
+        0x14u, 0x15u, 'M',   'R',   'T',   'P',   0x09u, 0x08u, 'O',   'T',   'H',   'R',   0x0Au, 0x22u, 0xA4u, 0x83u,
+        0x83u, 0x88u, 0x68u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x18u, 'M',   'D',   'T',   'P',   0x00u, 0x70u, 0x12u, 0x04u,
+        0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'T',   'P',   0x60u, 0xA4u, 'M',   'R',   'T',   'P',   0x60u, 0x14u,
+        0x1Au, 'M',   'D',   'N',   'C',   0x00u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 'M',   'K',   'R',
+        'F',   0x60u, 0xA4u, 0x83u, 0x83u, 0x88u, 0x60u, 0x0Au, 0x00u, 0x00u, 0x14u, 0x23u, 'M',   'E',   'L',   'R',
+        0x00u, 0x70u, 0x0Au, 0x05u, 0x61u, 0x70u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x00u, 0x60u, 0x70u, 0x71u, 0x61u, 0x88u,
+        0x60u, 0x0Au, 0x00u, 0x00u, 0x70u, 0x0Au, 0x09u, 0x88u, 0x60u, 0x0Au, 0x00u, 0x00u, 0xA4u, 0x61u, 0x70u, 'M',
+        'D',   'R',   'F',   'R',   '0',   '0',   '0',   0x70u, 'M',   'L',   'O',   'C',   'R',   '0',   '0',   '1',
+        0x70u, 'M',   'A',   'R',   'G',   'R',   '0',   '0',   '2',   0x70u, 'M',   'C',   'O',   'N',   'R',   '0',
+        '0',   '3',   0x70u, 0x5Bu, 0x12u, 0x5Cu, 'U',   'N',   'D',   'F',   0x00u, 'R',   '0',   '0',   '4',   0x70u,
+        0x5Bu, 0x12u, 0x5Cu, '_',   'O',   'S',   'I',   0x00u, 'R',   '0',   '0',   '5',   0x70u, 0x5Bu, 0x12u, 0x5Cu,
+        'N',   'O',   'P',   'E',   0x00u, 'R',   '0',   '0',   '6',   0x70u, 'M',   'R',   'E',   'T',   'R',   '0',
+        '0',   '7',   0x70u, 'M',   'C',   'H',   'N',   'R',   '0',   '0',   '8',   0x70u, 'M',   'S',   'T',   'R',
+        'R',   '0',   '0',   '9',   0x70u, 0x0Au, 0x77u, 0x60u, 0x70u, 0x71u, 0x60u, 0x61u, 0x70u, 0x71u, 0x61u, 0x62u,
+        0x70u, 0x83u, 0x62u, 'R',   '0',   '1',   '0',   0x70u, 'M',   'K',   'I',   'N',   'R',   '0',   '1',   '1',
+        0x70u, 'M',   'D',   'N',   'G',   'R',   '0',   '1',   '2',   0x70u, 'M',   'T',   'M',   'P',   'R',   '0',
+        '1',   '3',   0x70u, 'M',   'D',   'T',   'P',   'R',   '0',   '1',   '4',   0x70u, 'M',   'D',   'N',   'C',
+        'R',   '0',   '1',   '5',   0x70u, 'M',   'E',   'L',   'R',   'R',   '0',   '1',   '6',   0x9Du, 0x88u, 'P',
+        'K',   'G',   'L',   0x0Au, 0x00u, 0x00u, 'A',   'L',   'S',   'L',   0x70u, 0x83u, 0x88u, 'P',   'K',   'G',
+        'L',   0x0Au, 0x00u, 0x00u, 'R',   '0',   '1',   '7',
     };
 
     if (!references_run(test, aml, sizeof(aml)))
@@ -185,13 +196,23 @@ KERNEL_TEST(references_follow_names_locals_and_arguments)
     kernel_test_check(test, references_integer("R013") == 0x11u,
                       "Return (RefOf (TMPN)) of a name the method created gives the caller 0x11");
     kernel_test_check(
-        test,
-        references_integer("R014") == 7u &&
-            references_load.evaluation
-                    .statuses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_NOT_FOUND] == 2u,
+        test, references_integer("R014") == 7u,
         "a reference to a name a method created fails once it returned, though another name took its node");
-    kernel_test_check(test, references_load.evaluation.failures == 2u,
-                      "those two fail with name_not_found, nothing else");
+    kernel_test_check(test, references_integer("R015") == 7u,
+                      "a reference to the Local0 of a method that returned fails, though no frame took its place");
+    kernel_test_check(test, references_integer("R016") == 9u,
+                      "a store to an element that holds a reference writes through it, as Windows does");
+    kernel_test_check(
+        test,
+        references_integer("R017") == 7u &&
+            references_failed(
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_RESOLUTION_LOOP) == 1u,
+        "an element naming the name that refers to it fails after 8 names with name_resolution_loop");
+    kernel_test_check(
+        test,
+        references_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_NOT_FOUND) == 3u,
+        "the three references to a returned method's local or name fail with name_not_found");
+    kernel_test_check(test, references_load.evaluation.failures == 4u, "nothing else fails");
     references_close(test);
 }
 
@@ -302,25 +323,27 @@ KERNEL_TEST(buffer_fields_read_and_write_their_bits)
         '0',   0x0Au, 0x02u, 'W',   'R',   'D',   '0',   0x8Au, 'B',   'U',   'F',   '0',   0x0Au, 0x04u, 'D',   'W',
         'D',   '0',   0x8Fu, 'B',   'U',   'F',   '0',   0x0Au, 0x00u, 'Q',   'W',   'D',   '0',   0x8Du, 'B',   'U',
         'F',   '0',   0x0Au, 0x09u, 'B',   'I',   'T',   '0',   0x5Bu, 0x13u, 'B',   'U',   'F',   '0',   0x0Au, 0x04u,
-        0x0Au, 0x0Cu, 'F',   'L',   'D',   '0',   0x08u, 'B',   'U',   'F',   '1',   0x11u, 0x03u, 0x0Au, 0x04u, 0x08u,
-        'R',   '0',   '0',   '0',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '1',   0x0Au, 0x07u, 0x08u, 'R',   '0',
-        '0',   '2',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '4',
-        0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '5',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '6',   0x0Au, 0x00u,
-        0x08u, 'R',   '0',   '0',   '7',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '8',   0x0Au, 0x07u, 0x08u, 'R',
-        '0',   '0',   '9',   0x0Au, 0x00u, 0x14u, 0x23u, 'M',   'O',   'S',   'C',   0x01u, 0x8Au, 0x68u, 0x0Au, 0x00u,
-        'C',   'D',   'W',   '1',   0x8Au, 0x68u, 0x0Au, 0x04u, 'C',   'D',   'W',   '2',   0x7Du, 'C',   'D',   'W',
-        '1',   0x0Au, 0x10u, 'C',   'D',   'W',   '2',   0xA4u, 0x68u, 0x14u, 0x1Au, 'M',   'B',   'I',   'G',   0x00u,
-        0x5Bu, 0x13u, 'B',   'U',   'F',   '1',   0x0Cu, 0xF0u, 0xFFu, 0xFFu, 0xFFu, 0x0Au, 0x20u, 'F',   'B',   'I',
-        'G',   0xA4u, 0x0Au, 0x00u, 0x14u, 0x20u, 'M',   'E',   'M',   'P',   0x00u, 0x5Bu, 0x13u, 'B',   'U',   'F',
-        '1',   0x0Au, 0x08u, 0x0Au, 0x00u, 'F',   'E',   'M',   'P',   0x70u, 0x0Au, 0xFFu, 'F',   'E',   'M',   'P',
-        0xA4u, 'F',   'E',   'M',   'P',   0x70u, 'B',   'Y',   'T',   '0',   'R',   '0',   '0',   '0',   0x70u, 'W',
-        'R',   'D',   '0',   'R',   '0',   '0',   '1',   0x70u, 'D',   'W',   'D',   '0',   'R',   '0',   '0',   '2',
-        0x70u, 'Q',   'W',   'D',   '0',   'R',   '0',   '0',   '3',   0x70u, 'B',   'I',   'T',   '0',   'R',   '0',
-        '0',   '4',   0x9Du, 'F',   'L',   'D',   '0',   'R',   '0',   '0',   '5',   0x70u, 0x0Au, 0xAAu, 'B',   'Y',
-        'T',   '0',   0x70u, 0x00u, 'B',   'I',   'T',   '0',   0x70u, 0x0Bu, 'Z',   'Z',   'W',   'R',   'D',   '0',
-        0x9Du, 'M',   'O',   'S',   'C',   0x11u, 0x0Bu, 0x0Au, 0x08u, 0x01u, 0x02u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-        0x00u, 'R',   '0',   '0',   '6',   0x9Du, 'B',   'U',   'F',   '0',   'R',   '0',   '0',   '7',   0x70u, 'M',
-        'B',   'I',   'G',   'R',   '0',   '0',   '8',   0x9Du, 'M',   'E',   'M',   'P',   'R',   '0',   '0',   '9',
+        0x0Au, 0x0Cu, 'F',   'L',   'D',   '0',   0x08u, 'B',   'U',   'F',   '1',   0x11u, 0x03u, 0x0Au, 0x04u, 0x8Au,
+        'B',   'U',   'F',   '1',   0x0Au, 0x02u, 'P',   'A',   'S',   'T',   0x08u, 'R',   '0',   '0',   '0',   0x0Au,
+        0x07u, 0x08u, 'R',   '0',   '0',   '1',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '2',   0x0Au, 0x07u, 0x08u,
+        'R',   '0',   '0',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '4',   0x0Au, 0x07u, 0x08u, 'R',   '0',
+        '0',   '5',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '6',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '7',
+        0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '8',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '9',   0x0Au, 0x00u,
+        0x08u, 'R',   '0',   '1',   '0',   0x0Au, 0x07u, 0x14u, 0x23u, 'M',   'O',   'S',   'C',   0x01u, 0x8Au, 0x68u,
+        0x0Au, 0x00u, 'C',   'D',   'W',   '1',   0x8Au, 0x68u, 0x0Au, 0x04u, 'C',   'D',   'W',   '2',   0x7Du, 'C',
+        'D',   'W',   '1',   0x0Au, 0x10u, 'C',   'D',   'W',   '2',   0xA4u, 0x68u, 0x14u, 0x1Au, 'M',   'B',   'I',
+        'G',   0x00u, 0x5Bu, 0x13u, 'B',   'U',   'F',   '1',   0x0Cu, 0xF0u, 0xFFu, 0xFFu, 0xFFu, 0x0Au, 0x20u, 'F',
+        'B',   'I',   'G',   0xA4u, 0x0Au, 0x00u, 0x14u, 0x20u, 'M',   'E',   'M',   'P',   0x00u, 0x5Bu, 0x13u, 'B',
+        'U',   'F',   '1',   0x0Au, 0x08u, 0x0Au, 0x00u, 'F',   'E',   'M',   'P',   0x70u, 0x0Au, 0xFFu, 'F',   'E',
+        'M',   'P',   0xA4u, 'F',   'E',   'M',   'P',   0x70u, 'B',   'Y',   'T',   '0',   'R',   '0',   '0',   '0',
+        0x70u, 'W',   'R',   'D',   '0',   'R',   '0',   '0',   '1',   0x70u, 'D',   'W',   'D',   '0',   'R',   '0',
+        '0',   '2',   0x70u, 'Q',   'W',   'D',   '0',   'R',   '0',   '0',   '3',   0x70u, 'B',   'I',   'T',   '0',
+        'R',   '0',   '0',   '4',   0x9Du, 'F',   'L',   'D',   '0',   'R',   '0',   '0',   '5',   0x70u, 0x0Au, 0xAAu,
+        'B',   'Y',   'T',   '0',   0x70u, 0x00u, 'B',   'I',   'T',   '0',   0x70u, 0x0Bu, 'Z',   'Z',   'W',   'R',
+        'D',   '0',   0x9Du, 'M',   'O',   'S',   'C',   0x11u, 0x0Bu, 0x0Au, 0x08u, 0x01u, 0x02u, 0x00u, 0x00u, 0x00u,
+        0x00u, 0x00u, 0x00u, 'R',   '0',   '0',   '6',   0x9Du, 'B',   'U',   'F',   '0',   'R',   '0',   '0',   '7',
+        0x70u, 'M',   'B',   'I',   'G',   'R',   '0',   '0',   '8',   0x9Du, 'M',   'E',   'M',   'P',   'R',   '0',
+        '0',   '9',   0x70u, 'P',   'A',   'S',   'T',   'R',   '0',   '1',   '0',
     };
     static const uint8_t created[] = {0x30u, 0x02u};
     static const uint8_t answered[] = {0x01u, 0x02u, 0x00u, 0x00u, 0x11u, 0x02u, 0x00u, 0x00u};
@@ -346,12 +369,13 @@ KERNEL_TEST(buffer_fields_read_and_write_their_bits)
                       references_holds("R006", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
                                        answered, sizeof(answered)),
                       "CDW2 over Arg0 takes CDW1 | 0x10, and the method returns the Buffer it wrote");
+    kernel_test_check(test, references_integer("R008") == 7u, "CreateField (BUF1, 0xFFFFFFF0, 0x20, FBIG) fails");
     kernel_test_check(
         test,
-        references_integer("R008") == 7u &&
+        references_integer("R010") == 7u &&
             references_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INDEX_OUT_OF_RANGE) ==
-                1u,
-        "CreateField (BUF1, 0xFFFFFFF0, 0x20, FBIG) fails with index_out_of_range");
+                2u,
+        "PAST, 32 bits from byte 2 of a 4-byte Buffer, fails when read: both with index_out_of_range");
     kernel_test_check(
         test,
         references_holds("R009", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, zeros, 0u) &&
