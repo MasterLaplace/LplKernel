@@ -294,7 +294,26 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_OBJECT_RUNS, /**< The object heap holds
                                                                                               as many runs as it
                                                                                               can. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,             /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_VALUES,      /**< Operands pile up past the
+                                                                                              value stack. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_LOOP_ITERATIONS,  /**< An evaluation takes
+                                                                                                   more While back-edges
+                                                                                                   than §6.1 allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_UNIMPLEMENTED_OPERATOR, /**< An opcode decoded
+                                                                                                   but not executed
+                                                                                                   (§4.5). */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_FIELD_ACCESS_DEFERRED,  /**< A field or buffer
+                                                                                                   field accessed
+                                                                                                   before its slice
+                                                                                                   lands. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH,  /**< An operand of the wrong
+                                                                                           type, or an impossible
+                                                                                           conversion. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_DIVIDE_BY_ZERO, /**< A division or a modulo by
+                                                                                           zero. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_EXISTS,    /**< A method creates a name
+                                                                                           that exists already. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,          /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**

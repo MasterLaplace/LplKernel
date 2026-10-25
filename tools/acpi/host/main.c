@@ -75,6 +75,30 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
  * @brief Loads the DSDT and the SSDTs of @p directory with the server profile's caps, and prints
  *        what the load counted: its tables and faults, then each opcode decoded, in descriptor order.
  */
+/**
+ * @brief Prints what running table-level code did: its runs and failures, the failures per status,
+ *        and the opcodes that failed as unimplemented.
+ */
+static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation)
+{
+    printf("aml run statements=%u failures=%u implicit_returns=%u uninitialized_operands=%u frames_peak=%u "
+           "values_peak=%u\n",
+           evaluation->runs, evaluation->failures, evaluation->implicit_returns, evaluation->uninitialized_operands,
+           evaluation->frames_peak, evaluation->values_peak);
+    for (uint32_t status = 1u; status < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT;
+         ++status)
+        if (evaluation->statuses[status] != 0u)
+            printf("aml run status %s=%u\n",
+                   advanced_configuration_and_power_interface_machine_language_status_name(status),
+                   evaluation->statuses[status]);
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (evaluation->unimplemented[opcode] != 0u)
+            printf("aml run unimplemented %s=%u\n",
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
+                   evaluation->unimplemented[opcode]);
+}
+
 static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
     static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
@@ -89,8 +113,10 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
         return;
     }
     advanced_configuration_and_power_interface_machine_language_load_directory(&load, directory);
+    harness_print_runs(&load.evaluation);
     printf("aml tables=%u bytes=%u decode_errors=%u\n", load.table_count, load.bytes, load.decode_errors);
-    printf("aml faults load_errors=%u unresolved_names=%u\n", load.load_errors, load.unresolved_names);
+    printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u\n", load.load_errors,
+           load.unresolved_names, load.undeclared_faults);
     for (uint32_t index = 0u; index < load.table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load.tables[index];
@@ -414,8 +440,10 @@ static void harness_print_closure(AdvancedConfigurationAndPowerInterfaceMachineL
  */
 static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, bool closure)
 {
-    printf("aml namespace table_level_code=%u values_deferred=%u load_errors=%u decode_errors=%u\n",
-           load->table_level_code, load->values_deferred, load->load_errors, load->decode_errors);
+    printf("aml namespace table_level_failures=%u table_level_code=%u values_deferred=%u load_errors=%u "
+           "decode_errors=%u\n",
+           load->evaluation.failures, load->table_level_code, load->values_deferred, load->load_errors,
+           load->decode_errors);
     if (closure)
         harness_print_closure(load);
     else

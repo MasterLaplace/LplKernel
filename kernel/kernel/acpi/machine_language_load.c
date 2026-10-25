@@ -8,6 +8,12 @@
 #define MACHINE_LANGUAGE_OPCODE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##name
 #define MACHINE_LANGUAGE_NODE(type)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
 #define MACHINE_LANGUAGE_STATUS(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
+#define MACHINE_LANGUAGE_IF_BYTE       0xA0u /**< The byte of If, which opens a block a following Else depends on. */
+#define MACHINE_LANGUAGE_WHILE_BYTE    0xA2u /**< The byte of While, whose block loops. */
+#define MACHINE_LANGUAGE_ELSE_SKIPPED  0u    /**< The Else after an If is stepped over: the If ran its body. */
+#define MACHINE_LANGUAGE_ELSE_RUN      1u    /**< The Else runs: the If's predicate was false. */
+#define MACHINE_LANGUAGE_ELSE_NOT_RUN  2u    /**< The Else is declared, its code not run: the If's predicate failed. */
+#define MACHINE_LANGUAGE_BLOCK_NOT_RUN ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_NOT_RUN
 
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
 #    define MACHINE_LANGUAGE_BOOT_MAX_NODES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_NODES
@@ -72,6 +78,14 @@ typedef struct MachineLanguageWalk {
     uint32_t external_start; /**< The External the Externals pass places, by its opcode's offset, or 0. */
     MachineLanguageNameString_t external_name; /**< That External's NameString. */
     MachineLanguageFieldList_t field;          /**< The field list being read. */
+    uint32_t else_offset; /**< Where an Else would follow the last If of table-level code the declaration pass ran. */
+    uint8_t else_rule;    /**< What that Else does: a MACHINE_LANGUAGE_ELSE_* rule. */
+    bool not_run_next;    /**< Whether the next block the walk opens is declared without running its code. */
+    bool undeclared_next; /**< Whether the next TermList the decoding pass opens belongs to a construct the
+                               declaration pass did not declare. */
+    uint32_t undeclared_from; /**< The depth of the outermost such TermList open, or 0: faults inside it are
+                                   counted apart. */
+    uint32_t iterations;      /**< While back-edges table-level code took in this table. */
 } MachineLanguageWalk_t;
 
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t machine_language_boot_load;
@@ -171,8 +185,9 @@ static void machine_language_count_load_error(AdvancedConfigurationAndPowerInter
 
 /**
  * @brief Records a fault at the walk's pc: in load_errors for the declaration pass, in its table and
- *        in decode_errors for the decoding pass; the Externals pass counts its own faults where it
- *        meets them.
+ *        in decode_errors for the decoding pass, in undeclared_faults for the decoding pass inside a
+ *        construct the declaration pass did not declare; the Externals pass counts its own faults
+ *        where it meets them.
  */
 static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status)
 {
@@ -183,6 +198,12 @@ static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLa
     if (walk->pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
         machine_language_count_load_error(load, status);
+        return;
+    }
+
+    if (walk->undeclared_from != 0u)
+    {
+        ++load->undeclared_faults;
         return;
     }
 
@@ -216,6 +237,8 @@ static void machine_language_close_block(MachineLanguageWalk_t *walk)
             advanced_configuration_and_power_interface_machine_language_namespace_remove(
                 &load->space, load->temporaries[--load->temporary_count]);
     }
+    if (walk->undeclared_from == walk->block_count)
+        walk->undeclared_from = 0u;
     --walk->block_count;
 }
 
@@ -521,6 +544,7 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
             (walk->pass != MACHINE_LANGUAGE_PASS_DECODE && active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)))
             return status;
         active->node = (active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE)) ? block->scope : 0u;
+        walk->undeclared_next = active->opcode == MACHINE_LANGUAGE_OPCODE(SCOPE);
         return MACHINE_LANGUAGE_OK;
     }
 
@@ -538,6 +562,7 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
             active->node = machine_language_declared_node(walk, name);
             if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->node == block->scope)
                 return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
+            walk->undeclared_next = active->node == block->scope;
         }
         else if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
             machine_language_keep_external(walk, active, name);
@@ -678,25 +703,11 @@ machine_language_source(MachineLanguageWalk_t *walk)
  */
 static bool machine_language_builds(MachineLanguageWalk_t *walk, uint32_t index)
 {
-    return walk->pass == MACHINE_LANGUAGE_PASS_DECLARE && machine_language_top_block(walk)->placement == 0u &&
-           index != 0u && index == walk->last_created;
-}
+    const uint8_t placement = machine_language_top_block(walk)->placement;
 
-/**
- * @brief The node type a data object's value gives its Name.
- */
-static uint8_t machine_language_type_of_value(uint8_t kind)
-{
-    switch (kind)
-    {
-    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER:
-        return MACHINE_LANGUAGE_NODE(INTEGER);
-    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING: return MACHINE_LANGUAGE_NODE(STRING);
-    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER: return MACHINE_LANGUAGE_NODE(BUFFER);
-    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE:
-        return MACHINE_LANGUAGE_NODE(PACKAGE);
-    default: return MACHINE_LANGUAGE_NODE(UNINITIALIZED);
-    }
+    return walk->pass == MACHINE_LANGUAGE_PASS_DECLARE &&
+           (placement == 0u || placement == MACHINE_LANGUAGE_BLOCK_NOT_RUN) && index != 0u &&
+           index == walk->last_created;
 }
 
 /**
@@ -736,7 +747,7 @@ static MachineLanguageStatus_t machine_language_build_name(MachineLanguageWalk_t
     else
     {
         node->value = value;
-        node->type = machine_language_type_of_value(value.kind);
+        node->type = advanced_configuration_and_power_interface_machine_language_node_type_of_value(value.kind);
     }
     return MACHINE_LANGUAGE_OK;
 }
@@ -973,11 +984,10 @@ static void machine_language_build_scope_object(MachineLanguageWalk_t *walk,
 }
 
 /**
- * @brief Counts, in the decoding pass, a statement at table level that the interpreter would run: one
- *        that is neither a declaration, data, a local, an argument nor Noop. A name there is a call
- *        or a reference to run.
+ * @brief Whether a statement is code the interpreter runs: one that is neither a declaration, data,
+ *        a local, an argument nor Noop. A name there is a call or a reference to run.
  */
-static void machine_language_count_table_level_code(MachineLanguageWalk_t *walk, bool name, uint32_t opcode)
+static bool machine_language_is_code(bool name, uint32_t opcode)
 {
     const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
     const bool declares = machine_language_declared_type(opcode) != 0xFFu || opcode == MACHINE_LANGUAGE_OPCODE(SCOPE) ||
@@ -988,9 +998,173 @@ static void machine_language_count_table_level_code(MachineLanguageWalk_t *walk,
                        opcode == MACHINE_LANGUAGE_OPCODE(NOOP) ||
                        (opcode >= MACHINE_LANGUAGE_OPCODE(LOCAL0) && opcode <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6));
 
+    return name || (!declares && !inert);
+}
+
+/**
+ * @brief Counts, in the decoding pass, a statement at table level that the interpreter runs.
+ */
+static void machine_language_count_table_level_code(MachineLanguageWalk_t *walk, bool name, uint32_t opcode)
+{
     if (walk->pass == MACHINE_LANGUAGE_PASS_DECODE && machine_language_top_block(walk)->placement == 0u &&
-        (name || (!declares && !inert)))
+        machine_language_is_code(name, opcode))
         ++walk->load->table_level_code;
+}
+
+/**
+ * @brief Whether the walk is the declaration pass at table level, where code runs as it is met.
+ */
+static bool machine_language_runs_code(MachineLanguageWalk_t *walk)
+{
+    return walk->pass == MACHINE_LANGUAGE_PASS_DECLARE && machine_language_top_block(walk)->placement == 0u;
+}
+
+/**
+ * @brief Runs a statement of table-level code in the interpreter: past it when it succeeds; a failed
+ *        one, counted by the interpreter, is then decoded like any other, to step over it.
+ */
+static bool machine_language_run_statement(MachineLanguageWalk_t *walk, uint32_t start)
+{
+    uint32_t after = 0u;
+
+    if (advanced_configuration_and_power_interface_machine_language_run_table_term(
+            walk->load, walk->table, machine_language_top_block(walk)->scope, start, machine_language_limit(walk),
+            false, NULL, &after) != MACHINE_LANGUAGE_OK)
+        return false;
+    walk->pc = after;
+    return true;
+}
+
+/**
+ * @brief Steps over a construct with a PkgLength whose opcode ends at @p after.
+ */
+static MachineLanguageStatus_t machine_language_skip_construct(MachineLanguageWalk_t *walk, uint32_t after)
+{
+    uint32_t end = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_package_end(
+        walk->bytes, after, machine_language_limit(walk), &end, &after);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        walk->pc = end;
+    return status;
+}
+
+/**
+ * @brief Runs a Break or a Continue of table-level code: leaves the innermost While of table-level
+ *        code around it, past its end or back to its predicate; one outside any While is skipped.
+ */
+static void machine_language_leave_table_loop(MachineLanguageWalk_t *walk, bool again)
+{
+    for (uint32_t index = walk->block_count; index > 1u; --index)
+    {
+        const MachineLanguageBlock_t block = walk->load->blocks[index - 1u];
+
+        if (block.placement != 0u)
+            return;
+        if (block.kind != MACHINE_LANGUAGE_OPERAND(TERM_LIST) ||
+            walk->bytes[block.start] != MACHINE_LANGUAGE_WHILE_BYTE)
+            continue;
+        while (walk->block_count >= index)
+            machine_language_close_block(walk);
+        walk->pending_count = block.pending_base;
+        walk->pc = again ? block.start : block.end;
+        return;
+    }
+}
+
+/**
+ * @brief What the end of a construct of table-level code does in the declaration pass: a run If steps over
+ *        the Else after it, an If whose predicate failed declares that Else without running it, a
+ *        While goes back to its predicate until it has looped too often.
+ */
+static void machine_language_after_block(MachineLanguageWalk_t *walk, const MachineLanguageBlock_t *closed)
+{
+    if (walk->block_count == 0u || !machine_language_runs_code(walk) ||
+        closed->kind != MACHINE_LANGUAGE_OPERAND(TERM_LIST))
+        return;
+    if (walk->bytes[closed->start] == MACHINE_LANGUAGE_IF_BYTE)
+    {
+        walk->else_offset = closed->end;
+        walk->else_rule = (closed->placement == MACHINE_LANGUAGE_BLOCK_NOT_RUN) ? MACHINE_LANGUAGE_ELSE_NOT_RUN :
+                                                                                  MACHINE_LANGUAGE_ELSE_SKIPPED;
+        return;
+    }
+    if (closed->placement != 0u)
+        return;
+    if (walk->bytes[closed->start] != MACHINE_LANGUAGE_WHILE_BYTE)
+        return;
+    if (++walk->iterations > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS)
+    {
+        advanced_configuration_and_power_interface_machine_language_count_failure(
+            walk->load, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS));
+        return;
+    }
+    walk->pc = closed->start;
+}
+
+/**
+ * @brief Runs the predicate of an If or a While of table-level code in the interpreter: a true one
+ *        lets the walk open the body; a false one steps over it, and an If's lets the Else after it
+ *        run. A predicate that fails is decoded instead, and its body declared without running its
+ *        code, the Else after an If too, so that the namespace loses nothing the interpreter cannot
+ *        run yet.
+ *
+ * @return false when the predicate failed and the walk should decode it.
+ */
+static bool machine_language_run_predicate(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
+{
+    uint64_t truth = 0u;
+    uint32_t after = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_run_table_term(
+        walk->load, walk->table, machine_language_top_block(walk)->scope, walk->pc, active->end, true, &truth, &after);
+
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        walk->not_run_next = true;
+        return false;
+    }
+    if (truth != 0u)
+    {
+        walk->pc = after;
+        return true;
+    }
+    walk->else_offset = active->end;
+    walk->else_rule =
+        (active->opcode == MACHINE_LANGUAGE_OPCODE(IF)) ? MACHINE_LANGUAGE_ELSE_RUN : MACHINE_LANGUAGE_ELSE_SKIPPED;
+    walk->pc = active->end;
+    --walk->pending_count;
+    return true;
+}
+
+/**
+ * @brief What a statement of table-level code means in the declaration pass, before it is decoded: an Else
+ *        runs only after a false If; Break and Continue leave a While; an If or a While is decoded,
+ *        its predicate run when the walk reaches it; any other code runs in the interpreter.
+ *
+ * @return COUNT when the walk should decode the statement; OK or a fault when it was dealt with.
+ */
+static MachineLanguageStatus_t machine_language_table_level_control(MachineLanguageWalk_t *walk, uint32_t opcode,
+                                                                    uint32_t start, uint32_t after)
+{
+    switch (opcode)
+    {
+    case MACHINE_LANGUAGE_OPCODE(ELSE):
+        if (start != walk->else_offset || walk->else_rule == MACHINE_LANGUAGE_ELSE_SKIPPED)
+            return machine_language_skip_construct(walk, after);
+        walk->not_run_next = walk->else_rule == MACHINE_LANGUAGE_ELSE_NOT_RUN;
+        return MACHINE_LANGUAGE_STATUS(COUNT);
+    case MACHINE_LANGUAGE_OPCODE(BREAK):
+    case MACHINE_LANGUAGE_OPCODE(CONTINUE):
+        walk->pc = after;
+        machine_language_leave_table_loop(walk, opcode == MACHINE_LANGUAGE_OPCODE(CONTINUE));
+        return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPCODE(IF):
+    case MACHINE_LANGUAGE_OPCODE(WHILE): return MACHINE_LANGUAGE_STATUS(COUNT);
+    default:
+        return (machine_language_is_code(false, opcode) && machine_language_run_statement(walk, start)) ?
+                   MACHINE_LANGUAGE_OK :
+                   MACHINE_LANGUAGE_STATUS(COUNT);
+    }
 }
 
 /**
@@ -1022,6 +1196,9 @@ machine_language_term(MachineLanguageWalk_t *walk,
     {
         if (kind == MACHINE_LANGUAGE_OPERAND(NONE))
             machine_language_count_table_level_code(walk, true, MACHINE_LANGUAGE_OPCODE(INVALID));
+        if (kind == MACHINE_LANGUAGE_OPERAND(NONE) && machine_language_runs_code(walk) &&
+            machine_language_run_statement(walk, start))
+            return MACHINE_LANGUAGE_OK;
         return machine_language_name_term(walk, kind != MACHINE_LANGUAGE_OPERAND(SIMPLE_NAME));
     }
 
@@ -1033,6 +1210,13 @@ machine_language_term(MachineLanguageWalk_t *walk,
     walk->fault_opcode = opcode;
     if (kind == MACHINE_LANGUAGE_OPERAND(NONE))
         machine_language_count_table_level_code(walk, false, opcode);
+    if (kind == MACHINE_LANGUAGE_OPERAND(NONE) && machine_language_runs_code(walk))
+    {
+        const MachineLanguageStatus_t control = machine_language_table_level_control(walk, opcode, start, after);
+
+        if (control != MACHINE_LANGUAGE_STATUS(COUNT))
+            return control;
+    }
     if (kind != MACHINE_LANGUAGE_OPERAND(NONE) &&
         (advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags &
          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_STATEMENT) != 0u)
@@ -1175,8 +1359,14 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     const MachineLanguageBlock_t *around = machine_language_top_block(walk);
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     uint32_t scope = around->scope;
-    uint8_t placement =
-        (around->placement != 0u) ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_IN_METHOD : 0u;
+    const bool not_run = around->placement == MACHINE_LANGUAGE_BLOCK_NOT_RUN ||
+                         (walk->not_run_next && kind == MACHINE_LANGUAGE_OPERAND(TERM_LIST));
+    uint8_t placement = not_run ? MACHINE_LANGUAGE_BLOCK_NOT_RUN :
+                        (around->placement != 0u) ?
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_IN_METHOD :
+                                  0u;
+
+    walk->not_run_next = walk->not_run_next && kind != MACHINE_LANGUAGE_OPERAND(TERM_LIST);
 
     if (active.opcode == MACHINE_LANGUAGE_OPCODE(METHOD))
     {
@@ -1210,6 +1400,9 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
 
     MachineLanguageBlock_t *block = &walk->load->blocks[walk->block_count++];
 
+    if (walk->undeclared_next && kind == MACHINE_LANGUAGE_OPERAND(TERM_LIST) && walk->undeclared_from == 0u)
+        walk->undeclared_from = walk->block_count;
+    walk->undeclared_next = walk->undeclared_next && kind != MACHINE_LANGUAGE_OPERAND(TERM_LIST);
     block->kind = (uint8_t) kind;
     block->placement = placement;
     block->pending_base = (uint16_t) walk->pending_count;
@@ -1298,6 +1491,10 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
     case MACHINE_LANGUAGE_OPERAND(FIELD_LIST):
     case MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST): return machine_language_open_list(walk, kind);
     default:
+        if ((active->opcode == MACHINE_LANGUAGE_OPCODE(IF) || active->opcode == MACHINE_LANGUAGE_OPCODE(WHILE)) &&
+            active->operands_done == 1u && machine_language_runs_code(walk) &&
+            machine_language_run_predicate(walk, active))
+            return MACHINE_LANGUAGE_OK;
         if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u &&
             machine_language_builds(walk, active->node))
             status = machine_language_build_name(walk, active);
@@ -1327,7 +1524,10 @@ static MachineLanguageStatus_t machine_language_step(MachineLanguageWalk_t *walk
     }
     if (walk->pc == block->end)
     {
+        const MachineLanguageBlock_t closed = *block;
+
         machine_language_close_block(walk);
+        machine_language_after_block(walk, &closed);
         return MACHINE_LANGUAGE_OK;
     }
     if (block->kind == MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST))

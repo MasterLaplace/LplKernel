@@ -96,7 +96,7 @@ qemu_configurations() {
 }
 
 # Compares the namespace the kernel's code loads with acpiexec's, for each machine of the list $1 or each
-# QEMU configuration; a machine with code at table level is counted apart.
+# QEMU configuration; a machine whose table-level code fails to run is counted apart.
 namespace_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "namespace: no acpiexec, run fetch acpica first" >&2; exit 1; }
@@ -112,7 +112,7 @@ namespace_check() {
             subject="${tables[0]#"$QEMU_TABLES"/}"
         else
             "$HARNESS" --namespace "$LINUXHW/$subject.bin" >"$ours" 2>&1 || true
-            if ! grep -q '^aml namespace table_level_code=0 ' "$ours"; then
+            if ! grep -q '^aml namespace table_level_failures=0 ' "$ours"; then
                 echo "skip $number $subject: $(head -1 "$ours" | cut -d' ' -f3)"
                 deferred=$((deferred + 1))
                 continue
@@ -129,7 +129,7 @@ namespace_check() {
         fi
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$ours" "$theirs"
-    echo "# namespace: $agree of $((number - deferred)) agree with acpiexec; $deferred run code at table level;" \
+    echo "# namespace: $agree of $((number - deferred)) agree with acpiexec; $deferred stop in table-level code;" \
         "$waiting nodes wait for the interpreter"
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
 }
@@ -197,7 +197,7 @@ decoded() {
 # ones, then says how many CPU slots, I/O APICs, overrides and NMI connections the comparison held.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables
+    local number=0 agree=0 compared="" disassembly="" faults="" runs="" machine dump actual expected tables
     while IFS= read -r machine; do
         number=$((number + 1))
         dump="$LINUXHW/$machine.bin"
@@ -211,7 +211,8 @@ check() {
         fi
         actual="$("$HARNESS" --machine "$dump" 2>&1)" || true
         faults+="$(grep '^aml faults ' <<<"$actual")"$'\n' || true
-        actual="$(grep -v '^aml faults ' <<<"$actual")" || true
+        runs+="$(grep '^aml run ' <<<"$actual")"$'\n' || true
+        actual="$(grep -v '^aml \(faults\|run\) ' <<<"$actual")" || true
         expected="$(python3 -I "$ROOT/tools/acpi/expected_directory.py" "$dump")
 $(decoded "$machine" | python3 -I "$ROOT/tools/acpi/expected_madt.py" "$dump" -)
 $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
@@ -238,6 +239,11 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
     echo "# load: $(grep -o 'load_errors=[0-9]*' <<<"$faults" | cut -d= -f2 | paste -sd+ | bc) faults on" \
         "$(grep -c 'load_errors=[1-9]' <<<"$faults") machines; $(grep -o 'unresolved_names=[0-9]*' <<<"$faults" |
             cut -d= -f2 | paste -sd+ | bc) names that resolve to nothing"
+    echo "# table-level code: $(grep -o '^aml run statements=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) runs," \
+        "$(grep -o ' failures=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) failed, on" \
+        "$(grep -c ' failures=[1-9]' <<<"$runs") machines"
+    grep '^aml run \(status\|unimplemented\) ' <<<"$runs" | awk '{ split($4, pair, "="); total[$3 " " pair[1]] += pair[2] }
+        END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k4,4nr || true
     [[ "$(grep -c ' iasl \(agrees\|differs\|missing\) ' <<<"$disassembly")" -eq "$tables" ]] ||
         { echo "# iASL comparison: not every table was compared" >&2; return 1; }
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]]

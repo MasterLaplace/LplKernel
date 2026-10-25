@@ -31,6 +31,7 @@
 #define KERNEL_ACPI_MACHINE_LANGUAGE_H
 
 #include <kernel/acpi/machine_language_decoder.h>
+#include <kernel/acpi/machine_language_interpreter.h>
 #include <kernel/acpi/machine_language_namespace.h>
 #include <kernel/acpi/machine_language_objects.h>
 #include <kernel/acpi/tables.h>
@@ -52,34 +53,9 @@
     1u /**< Block placement: inside a method body. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_METHOD_BODY                                  \
     2u /**< Block placement: a method body itself, whose end removes the nodes it created. */
-
-/**
- * @brief An operator whose operands are being decoded (§3.4).
- */
-typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePendingOperator {
-    uint16_t opcode; /**< Its descriptor index; ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
-                          for a method call. */
-    uint8_t operands_done; /**< Operands decoded or started. */
-    uint8_t operand_count; /**< Operands it takes: its descriptor's, or the called method's arguments. */
-    uint32_t start;        /**< Offset of its opcode or name in its table. */
-    uint32_t end;          /**< Its PkgLength end, or the limit it inherited. */
-    uint32_t node;         /**< The node its NameString declared or named, or 0. */
-} AdvancedConfigurationAndPowerInterfaceMachineLanguagePendingOperator_t;
-
-/**
- * @brief A construct whose terms are being decoded (§3.4).
- */
-typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock {
-    uint8_t kind;          /**< What it holds: an ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_*
-                                list kind, NONE for a whole table. */
-    uint8_t placement;     /**< 0 at table level, else
-                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_IN_METHOD     or
-                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_METHOD_BODY. */
-    uint16_t pending_base; /**< Pending operators below it, which belong to the constructs around it. */
-    uint32_t end;          /**< Its end. */
-    uint32_t scope;        /**< The scope its names are read in. */
-    uint32_t start;        /**< Offset of the opcode that opened it, or of the table's first term. */
-} AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock_t;
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_NOT_RUN                                      \
+    3u /**< Block placement: table-level code the declaration pass declares without running it, past a                 \
+            predicate that failed. */
 
 /**
  * @brief One definition block of a load, and what decoding it found.
@@ -130,6 +106,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;     /**< The first of them. */
     uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
+    uint32_t undeclared_faults;   /**< Faults the decoding pass met inside a construct the declaration pass did not
+                                     declare, in a branch table-level code did not take: its names resolve against objects
+                                     that do not exist. */
     uint32_t checksum_bad_loaded; /**< Tables whose checksum fails, loaded all the same. */
     uint32_t name_references;     /**< NameStrings the decoding pass read in an operand. */
     uint32_t method_calls;        /**< Of those, the ones that named a method. */
@@ -169,7 +148,41 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                                           nodes alive
                                                                                                           when each
                                                                                                           body began. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t evaluation; /**< What running AML holds and
+                                                                                       counted. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;
+
+/**
+ * @brief Runs one term of a table's code at load, in that table's frame, whose locals last from one
+ *        call to the next: a statement, or the predicate of an If or a While.
+ *
+ * @details The declaration pass calls it for each statement of table-level code and each predicate
+ *          it meets (§3.6); a failure is counted in load->evaluation, never as a load error.
+ * @param load        The load, its stacks free.
+ * @param table       The table's index in the load.
+ * @param scope       The node names are resolved from.
+ * @param start       Where the term starts.
+ * @param limit       The first offset it may not reach.
+ * @param value       Whether the term is a predicate, whose integer is wanted.
+ * @param out_integer Receives the predicate's integer when @p value holds and the run succeeds.
+ * @param out_after   Receives where the run stopped: past the term when it succeeds.
+ * @return OK, or why the run failed: every frame it pushed is gone by then, and every temporary
+ *         node it created removed.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_run_table_term(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start,
+    uint32_t limit, bool value, uint64_t *out_integer, uint32_t *out_after);
+
+/**
+ * @brief Counts a failure of table-level code: in load->evaluation, per status, the first one kept.
+ *
+ * @param load   The load.
+ * @param status Why it failed, not OK.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_count_failure(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
 
 /**
  * @brief Opens a load: an empty namespace with its predefined objects, and no table.

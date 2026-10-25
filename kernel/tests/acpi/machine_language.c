@@ -9,11 +9,9 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_machine_language, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define MADE_UP_TABLE_CAPACITY 4096u           /**< Bytes of each buffer a made-up table is written in. */
-#define MADE_UP_TABLE_COUNT    4u              /**< Made-up tables one test may load. */
-#define MADE_UP_MAX_NODES      1024u           /**< The node cap of a made-up load. */
-#define MADE_UP_MAX_ARENA      (1024u * 1024u) /**< The arena cap of a made-up load. */
-#define MADE_UP_MULTI_SEGMENTS 255u            /**< NameSegs of the longest multi path. */
+#define MADE_UP_TABLE_CAPACITY 4096u /**< Bytes of each buffer a made-up table is written in. */
+#define MADE_UP_TABLE_COUNT    4u    /**< Made-up tables one test may load. */
+#define MADE_UP_MULTI_SEGMENTS 255u  /**< NameSegs of the longest multi path. */
 
 static uint8_t made_up_tables[MADE_UP_TABLE_COUNT][MADE_UP_TABLE_CAPACITY];
 static uint8_t made_up_name[2u + MADE_UP_MULTI_SEGMENTS * 4u + 1u];
@@ -29,7 +27,7 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t made_up_load;
 static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *made_up_table(uint32_t index, const char *signature,
                                                                               const uint8_t *aml, uint32_t length)
 {
-    return made_up_definition_block(made_up_tables[index], signature, aml, length);
+    return made_up_definition_block(made_up_tables[index], signature, 2u, aml, length);
 }
 
 /**
@@ -40,7 +38,7 @@ static bool made_up_open(KernelTest_t *test)
     advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
     return kernel_test_check(test,
                              advanced_configuration_and_power_interface_machine_language_open(
-                                 &made_up_load, &made_up_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA),
+                                 &made_up_load, &made_up_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
                              "the namespace opens");
 }
 
@@ -797,7 +795,7 @@ KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
     static uint8_t table[sizeof(aml) + MADE_UP_TABLE_HEADER];
 
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_definition_block(table, "DSDT", aml, length));
+        &made_up_load, made_up_definition_block(table, "DSDT", 2u, aml, length));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(test, made_up_load.load_errors == 0u && made_up_load.decode_errors == 0u,
                       "every External is placed, without a fault");
@@ -995,7 +993,7 @@ KERNEL_TEST(an_external_past_the_node_cap_is_counted_once)
     advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
     if (!kernel_test_check(test,
                            advanced_configuration_and_power_interface_machine_language_open(
-                               &made_up_load, &made_up_host.host, nodes, MADE_UP_MAX_ARENA),
+                               &made_up_load, &made_up_host.host, nodes, MADE_UP_MAX_ARENA_BYTES),
                            "the namespace opens full"))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
@@ -1537,7 +1535,7 @@ KERNEL_TEST(the_object_heap_refuses_a_run_past_its_last)
     advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
     if (!kernel_test_check(test,
                            advanced_configuration_and_power_interface_machine_language_open(
-                               &made_up_load, &made_up_host.host, MADE_UP_MAX_NODES, 4u * MADE_UP_MAX_ARENA),
+                               &made_up_load, &made_up_host.host, MADE_UP_MAX_NODES, 4u * MADE_UP_MAX_ARENA_BYTES),
                            "the namespace opens"))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(&made_up_load,
@@ -1656,7 +1654,7 @@ KERNEL_TEST(a_string_of_the_largest_length_is_built)
     if (!made_up_open(test))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_definition_block(table, "DSDT", aml, length));
+        &made_up_load, made_up_definition_block(table, "DSDT", 2u, aml, length));
     kernel_test_check(test, made_up_object(&made_up_node("SBIG")->value)->length == 65536u,
                       "a String of 65,536 characters is built");
     kernel_test_check(test,

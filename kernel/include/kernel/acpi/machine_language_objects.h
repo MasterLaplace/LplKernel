@@ -230,6 +230,14 @@ advanced_configuration_and_power_interface_machine_language_evaluate_integer(
     uint64_t *out_integer, uint32_t *out_after, bool *out_constant);
 
 /**
+ * @brief The node type a value gives the Name that holds it.
+ *
+ * @param kind An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_* kind.
+ * @return The node type of an Integer, a String, a Buffer or a Package; Uninitialized for any other.
+ */
+extern uint8_t advanced_configuration_and_power_interface_machine_language_node_type_of_value(uint8_t kind);
+
+/**
  * @brief Gives every page of a heap back to the namespace arena, and empties it.
  *
  * @param heap  The heap; its objects must not be used afterwards.
