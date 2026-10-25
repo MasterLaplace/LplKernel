@@ -45,6 +45,10 @@
     255u /**< Elements of a Package (ACPI 6.6 §19.3.5). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS                      \
     4096u /**< Elements of a VarPackage (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BUFFER_FIELD_READS_AS_BUFFER                       \
+    0x01u /**< Value flag of a buffer field CreateField made: it reads as a Buffer at any length (§5.2). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_VISITED                                     \
+    0x40u /**< Header flag the walk that looks for a reference cycle sets on a Package it met, and clears after. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_SIZE_CLASSES                                \
     32u /**< Size classes of small objects, headers included: every 16 bytes up to 256, then four per power of two     \
            up to 4,096. */
@@ -69,11 +73,35 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageValueKind {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION = 0x81,         /**< handle: a region. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT = 0x82,   /**< handle: a field unit. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD = 0x83, /**< A buffer field: handle
-                                                                                             is the node of its buffer,
-                                                                                             payload its bit offset
-                                                                                             (low half) and length
-                                                                                             (high half), auxiliary its
-                                                                                             access width in bytes. */
+                                                                                             is the Buffer it was made
+                                                                                             over, which it holds a
+                                                                                             reference on, payload its
+                                                                                             bit offset (low half) and
+                                                                                             length (high half),
+                                                                                             auxiliary its access width
+                                                                                             in bytes. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_NODE =
+        0x84, /**< A reference to a named object: handle is its node, payload 0, or for a node a method created, its
+                 frame's index and serial, laid out as a LocalX's. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_LOCAL = 0x85,    /**< A reference to a
+                                                                                                   LocalX: handle is X,
+                                                                                                   payload the frame's
+                                                                                                   index (low half) and
+                                                                                                   serial (high half). */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_ARGUMENT = 0x86, /**< A reference to an
+                                                                                                   ArgX, laid out as a
+                                                                                                   LocalX's. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_ELEMENT = 0x87, /**< Index of a Package:
+                                                                                                  handle is the
+                                                                                                  Package, which it
+                                                                                                  holds a reference
+                                                                                                  on, payload the
+                                                                                                  element. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_BYTE = 0x88, /**< Index of a Buffer or a
+                                                                                               String: handle is the
+                                                                                               object, which it holds
+                                                                                               a reference on, payload
+                                                                                               the byte. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageValueKind_t;
 
 /**
@@ -215,7 +243,8 @@ extern void advanced_configuration_and_power_interface_machine_language_object_r
  * @brief Whether a value of @p kind holds a reference on an object of the heap.
  *
  * @param kind An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_* kind.
- * @return true for a String, a Buffer, a Package, a region and a field unit.
+ * @return true for a String, a Buffer, a Package, a region, a field unit, a buffer field, and an Index
+ *         of a Package, a Buffer or a String.
  */
 extern bool advanced_configuration_and_power_interface_machine_language_value_holds_object(uint8_t kind);
 
@@ -475,6 +504,45 @@ advanced_configuration_and_power_interface_machine_language_evaluate_integer(
  * @return The node type of an Integer, a String, a Buffer or a Package; Uninitialized for any other.
  */
 extern uint8_t advanced_configuration_and_power_interface_machine_language_node_type_of_value(uint8_t kind);
+
+/**
+ * @brief Reads a buffer field (§5.2): as an Integer when it is no wider than @p integer_bits and was not
+ *        made by CreateField, as a Buffer of its bytes otherwise; a field of length 0 reads as an empty
+ *        Buffer.
+ *
+ * @param heap         The heap.
+ * @param space        The namespace whose arena gives the pages.
+ * @param field        The buffer field.
+ * @param integer_bits 32 or 64.
+ * @param out_value    Receives the value, which holds a reference of its own.
+ * @return INDEX_OUT_OF_RANGE when the field passes its Buffer's end; what allocating returns; OK
+ *         otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_buffer_field_read(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *field, uint8_t integer_bits,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
+
+/**
+ * @brief Writes a value into a buffer field's bits, zero-extended, the Buffer's other bits kept: an
+ *        Integer whole, a String or a Buffer through its last field-sized chunk, as Windows writes it
+ *        chunk after chunk; a field of length 0 takes nothing. A source that is the field's own Buffer
+ *        is taken as it was before the write.
+ *
+ * @param heap         The heap.
+ * @param field        The buffer field.
+ * @param source       An Integer, a String or a Buffer.
+ * @param integer_bits 32 or 64.
+ * @return INDEX_OUT_OF_RANGE when the field passes its Buffer's end; TYPE_MISMATCH for any other
+ *         source; OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_buffer_field_write(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *field,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *source, uint8_t integer_bits);
 
 /**
  * @brief Gives every page of a heap back to the namespace arena, and empties it.

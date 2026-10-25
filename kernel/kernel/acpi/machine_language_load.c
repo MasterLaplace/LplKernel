@@ -851,10 +851,10 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
 }
 
 /**
- * @brief Builds the buffer field a Create*Field just declared: its buffer, which must be a name of a
- *        Buffer, and its bit offset and length, which must be constants that fit 32 bits; one past
- *        them is counted as index_out_of_range and left without an object. Whether it fits its
- *        buffer is checked at access, since CopyObject may give the buffer another object.
+ * @brief Builds the buffer field a Create*Field just declared: the Buffer a name holds, which the
+ *        field holds a reference on, and its bit offset and length, which must be constants that fit
+ *        32 bits; one past them is counted as index_out_of_range and left without an object. Whether
+ *        it fits its Buffer is checked at access.
  */
 static void machine_language_build_buffer_field(MachineLanguageWalk_t *walk,
                                                 const MachineLanguagePendingOperator_t *active)
@@ -904,9 +904,12 @@ static void machine_language_build_buffer_field(MachineLanguageWalk_t *walk,
     }
 
     node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD;
+    node->value.flags =
+        any_length ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BUFFER_FIELD_READS_AS_BUFFER : 0u;
     node->value.auxiliary = widths[shape];
-    node->value.handle = buffer;
+    node->value.handle = machine_language_node(walk, buffer)->value.handle;
     node->value.payload = (bit_offset & 0xFFFFFFFFull) | ((bit_length & 0xFFFFFFFFull) << 32u);
+    advanced_configuration_and_power_interface_machine_language_value_retain(&load->heap, &node->value);
 }
 
 /**

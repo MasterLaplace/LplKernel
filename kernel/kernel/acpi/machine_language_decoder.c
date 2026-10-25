@@ -97,6 +97,9 @@ static const char
             "access_width_invalid",
         [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FIELD_ACCESSES] =
             "limit_field_accesses",
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_REFERENCE_CYCLE] = "reference_cycle",
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_RESOLUTION_LOOP] =
+            "name_resolution_loop",
 };
 
 /**

@@ -255,6 +255,29 @@ advanced_configuration_and_power_interface_machine_language_count_back_edge(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
+ * @brief Evaluates the object an absolute path names (§3.6): a method runs with the arguments given,
+ *        a named object gives its value.
+ *
+ * @details The load's stacks must be free. The arguments are shared with the method, not copied
+ *          (§5.2); their references stay the caller's.
+ * @param load           A load whose tables are decoded.
+ * @param path           A path from the root, such as `\_SB_.PCI0._STA`, its NameSegs padded with `_` or
+ *                       not.
+ * @param arguments      The method's arguments, or NULL when it takes none.
+ * @param argument_count How many: exactly as many as the method takes (§5.2).
+ * @param out_result     Receives the result, which holds a reference of its own: the caller gives it
+ *                       back with advanced_configuration_and_power_interface_machine_language_value_release.
+ * @return TRUNCATED for a path that does not start at the root or is malformed; NAME_NOT_FOUND for one
+ *         that names nothing; TYPE_MISMATCH for the wrong number of arguments or an object that is no
+ *         data; why the method failed otherwise, every frame it pushed gone by then; OK on success.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_evaluate(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *path,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *arguments, uint32_t argument_count,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_result);
+
+/**
  * @brief Releases what Local0 to Local7 of table-level code hold, once a table's code has run: its
  *        locals do not outlive the table.
  *

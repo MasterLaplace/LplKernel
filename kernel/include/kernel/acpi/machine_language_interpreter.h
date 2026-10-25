@@ -96,6 +96,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame {
     uint16_t table;          /**< Its table, counted from 1. */
     uint8_t argument_count;  /**< Arguments it was called with. */
     uint8_t reserved;        /**< 0. */
+    uint32_t serial; /**< Which frame this is, among all an evaluation context pushed: a reference to one of its locals
+                        or arguments names it, so that one that outlives it refers to nothing. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame_t;
 
 /**
@@ -133,6 +135,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
                                           first's type (§5.2). */
     uint32_t forbidden_conversions;  /**< Implicit conversions to Integer that ACPI forbids: an empty String or
                                           Buffer, a 0x prefix (§5.2). */
+    uint32_t references_built;       /**< Index results that became references: those DerefOf reads at once are not
+                                          (§7.2, O8). */
+    uint32_t frame_serial;           /**< The serial of the last frame pushed. */
+    uint32_t table_locals_serial;    /**< The serial every frame of the table whose locals table_locals holds shares,
+                                          so that a reference to one of them lives from a statement to the next. */
     uint32_t table_locals_owner;     /**< The table, counted from 1, whose Local0 to Local7 table_locals holds. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t
         table_locals[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS]; /**< The locals of that

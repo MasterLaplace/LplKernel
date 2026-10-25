@@ -302,9 +302,10 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_UNIMPLEMENTED_OPERATOR, /**< An opcode decoded
                                                                                                    but not executed
                                                                                                    (§4.5). */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_FIELD_ACCESS_DEFERRED,  /**< A buffer field
-                                                                                                   accessed before
-                                                                                                   its slice lands. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_FIELD_ACCESS_DEFERRED,  /**< A field or buffer
+                                                                                                   field accessed
+                                                                                                   before its slice
+                                                                                                   lands. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH,     /**< An operand of the wrong
                                                                                               type, or an impossible
                                                                                               conversion. */
@@ -333,6 +334,16 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FIELD_ACCESSES, /**< An evaluation's fields
                                                                                                 make more accesses than
                                                                                                 §6.1 allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_REFERENCE_CYCLE, /**< A store that would make an
+                                                                                            object reach itself, or
+                                                                                            a chain of references
+                                                                                            longer than any cycle-free
+                                                                                            one. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_RESOLUTION_LOOP, /**< A name a package
+                                                                                                 element holds that
+                                                                                                 takes more than 8
+                                                                                                 indirections to
+                                                                                                 reach an object. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,                /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
