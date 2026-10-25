@@ -221,14 +221,14 @@ KERNEL_TEST(table_level_code_declares_only_the_branch_it_takes)
 }
 
 /**
- * @brief A field read fails with field_access_deferred until fields land (#541), counted; an If over
- *        such a read declares both its branches without running them, so that the namespace loses
- *        nothing the interpreter cannot run yet.
+ * @brief A read of a field in a space with no handler, EmbeddedControl here, fails with
+ *        space_unsupported, counted; an If over such a read declares both its branches without
+ *        running them, so that the namespace loses nothing the interpreter cannot run.
  */
-KERNEL_TEST(a_field_read_waits_for_fields_and_keeps_both_branches)
+KERNEL_TEST(a_field_read_that_fails_keeps_both_branches)
 {
     static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x00u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',
+        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x03u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',
         'G',   '0',   0x01u, 'F',   'L',   'D',   '0',   0x08u, 0xA0u, 0x0Bu, 'F',   'L',   'D',   '0',   0x08u,
         'E',   'E',   'E',   'E',   0x01u, 0xA1u, 0x07u, 0x08u, 'F',   'F',   'F',   'F',   0x01u, 0x08u, 'R',
         'E',   'S',   '_',   0x0Au, 0x05u, 0x70u, 'F',   'L',   'D',   '0',   'R',   'E',   'S',   '_',
@@ -241,9 +241,9 @@ KERNEL_TEST(a_field_read_waits_for_fields_and_keeps_both_branches)
     kernel_test_check(test, evaluation_integer("RES_") == 5u, "Store (FLD0, RES_) stores nothing");
     kernel_test_check(
         test,
-        evaluation_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_FIELD_ACCESS_DEFERRED) ==
-            2u,
-        "both reads are counted as field_access_deferred");
+        evaluation_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_SPACE_UNSUPPORTED) == 2u &&
+            evaluation_load.regions.space_unsupported[0x03u] == 2u,
+        "both reads are counted as space_unsupported, under EmbeddedControl");
     evaluation_close(test);
 }
 
@@ -404,13 +404,13 @@ KERNEL_TEST(a_return_at_table_level_fails_and_the_load_goes_on)
 }
 
 /**
- * @brief A branch declared without running its code, past a predicate that failed, runs none of it,
- *        and counts what it declares.
+ * @brief A branch declared without running its code, past a predicate that failed on a field of
+ *        EmbeddedControl, runs none of it, and counts what it declares.
  */
 KERNEL_TEST(a_branch_declared_without_running_runs_none_of_its_code)
 {
     static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x00u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu,
+        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x03u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu,
         'R',   'E',   'G',   '0',   0x01u, 'F',   'L',   'D',   '0',   0x08u, 0x08u, 'R',   'E',
         'S',   '_',   0x0Au, 0x05u, 0xA0u, 0x12u, 'F',   'L',   'D',   '0',   0x70u, 0x0Au, 0x2Au,
         'R',   'E',   'S',   '_',   0x08u, 'N',   'E',   'W',   '_',   0x01u,
