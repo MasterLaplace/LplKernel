@@ -17,7 +17,10 @@
     "                                    namespace, one node per line, as acpiexec's namespace command does\n"         \
     "       test-acpi --namespace-tables <table>...  the same from raw definition blocks, the DSDT first\n"            \
     "       test-acpi --closure <dump>   prints the opcodes the needs path of an acpidump text file reaches\n"         \
-    "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"
+    "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"            \
+    "       test-acpi --evaluate <path> <table>...    loads raw definition blocks, the DSDT first, and prints\n"       \
+    "                                    what evaluating the absolute path gives: its status, then the\n"              \
+    "                                    result's type and value, and each opcode run but not executed\n"
 
 /**
  * @brief Prints the directory of @p directory: its counts and the FACS, then one line per table.
@@ -307,6 +310,26 @@ static uint32_t harness_unit_access_bytes(const AdvancedConfigurationAndPowerInt
 }
 
 /**
+ * @brief The name of the node that holds the Buffer object @p handle, the first in index order, as
+ *        ACPICA names the Buffer of a buffer field; "????" when no node holds it.
+ */
+static const char *harness_buffer_name(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                       uint32_t handle)
+{
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         index < load->space.node_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+
+        if (node->value.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER &&
+            node->value.handle == handle)
+            return (const char *) &node->name;
+    }
+    return "????";
+}
+
+/**
  * @brief Prints one node's type and value as ACPICA's namespace dump does, its addresses apart.
  */
 static void harness_print_node_value(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
@@ -367,10 +390,7 @@ static void harness_print_node_value(const AdvancedConfigurationAndPowerInterfac
         return;
     }
     case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD:
-        printf("BufferField Buf [%.4s] Off %.3X Len %.2X Acc %.2X",
-               (const char *) &advanced_configuration_and_power_interface_machine_language_namespace_node(
-                   space, node->value.handle)
-                   ->name,
+        printf("BufferField Buf [%.4s] Off %.3X Len %.2X Acc %.2X", harness_buffer_name(load, node->value.handle),
                (unsigned int) (node->value.payload & 0xFFFFFFFFu), (unsigned int) (node->value.payload >> 32u),
                node->value.auxiliary);
         return;
@@ -547,6 +567,34 @@ static int harness_dump_namespace(const char *path, bool closure)
 }
 
 /**
+ * @brief Reads a whole definition block from @p path into memory the caller frees.
+ *
+ * @return false, said on stderr, when the file cannot be opened or is no whole table.
+ */
+static bool harness_read_table(const char *path, uint8_t **out_table)
+{
+    FILE *file = fopen(path, "rb");
+    long length = -1;
+    bool read = false;
+
+    if (file == NULL)
+    {
+        fprintf(stderr, "test-acpi: %s: cannot be opened\n", path);
+        return false;
+    }
+    if (fseek(file, 0, SEEK_END) == 0)
+        length = ftell(file);
+    if (length >= (long) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t) && fseek(file, 0, SEEK_SET) == 0 &&
+        (*out_table = malloc((size_t) length)) != NULL &&
+        fread(*out_table, 1u, (size_t) length, file) == (size_t) length)
+        read = ((const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) *out_table)->length <= (uint32_t) length;
+    if (!read)
+        fprintf(stderr, "test-acpi: %s: not a whole table\n", path);
+    fclose(file);
+    return read;
+}
+
+/**
  * @brief Loads raw definition blocks, the DSDT first, with the server profile's caps, and prints
  *        what the load could not build, then its namespace, or its closure when @p closure holds.
  *
@@ -568,25 +616,11 @@ static int harness_dump_tables_namespace(int count, char **paths, bool closure)
         status = harness_observe(&load, closure) ? 0 : 1;
         for (int index = 0; index < count && status == 0; ++index)
         {
-            FILE *file = fopen(paths[index], "rb");
-            long length = -1;
-
-            if (file != NULL && fseek(file, 0, SEEK_END) == 0)
-                length = ftell(file);
-            if (length >= (long) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t) &&
-                fseek(file, 0, SEEK_SET) == 0 && (tables[index] = malloc((size_t) length)) != NULL &&
-                fread(tables[index], 1u, (size_t) length, file) == (size_t) length &&
-                ((const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) tables[index])->length <=
-                    (uint32_t) length)
+            if (harness_read_table(paths[index], &tables[index]))
                 advanced_configuration_and_power_interface_machine_language_declare_table(
                     &load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) tables[index]);
             else
-            {
-                fprintf(stderr, "test-acpi: %s: not a whole table\n", paths[index]);
                 status = 1;
-            }
-            if (file != NULL)
-                fclose(file);
         }
         if (status == 0)
         {
@@ -596,6 +630,93 @@ static int harness_dump_tables_namespace(int count, char **paths, bool closure)
     }
     advanced_configuration_and_power_interface_machine_language_close(&load);
     needs_path_closure_release(&harness_closure);
+    for (int index = 0;
+         index < count && index < (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES; ++index)
+        free(tables[index]);
+    return status;
+}
+
+/**
+ * @brief Prints the result of an evaluation: its type, then an Integer in decimal, the characters of a
+ *        String, the bytes of a Buffer in hexadecimal, or a Package's count.
+ */
+static void harness_print_result(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                 const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *result)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *object =
+        advanced_configuration_and_power_interface_machine_language_object(&load->heap, result->handle);
+
+    switch (result->kind)
+    {
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER:
+        printf("aml evaluate type=int value=%llu\n", (unsigned long long) result->payload);
+        return;
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING:
+        printf("aml evaluate type=str value=%.*s\n", (int) object->length, (const char *) (object + 1));
+        return;
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER:
+        fputs("aml evaluate type=buffer value=", stdout);
+        for (uint32_t byte = 0u; byte < object->length; ++byte)
+            printf("%s%02X", (byte != 0u) ? " " : "", ((const uint8_t *) (object + 1))[byte]);
+        putchar('\n');
+        return;
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE:
+        printf("aml evaluate type=package value=%u\n", object->length);
+        return;
+    default: printf("aml evaluate type=other value=%u\n", result->kind); return;
+    }
+}
+
+/**
+ * @brief Loads raw definition blocks, the DSDT first, running their table-level code, then evaluates
+ *        @p path and prints its status, its result, and each opcode the load and the evaluation ran
+ *        but do not execute.
+ *
+ * @return 0 when every file was read and the namespace opened, 1 otherwise; the evaluation's own
+ *         failure is printed, not returned.
+ */
+static int harness_evaluate(const char *path, int count, char **paths)
+{
+    static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+    static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t simulated;
+    uint8_t *tables[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES] = {0};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    int status = 1;
+
+    advanced_configuration_and_power_interface_simulated_host_open(&simulated);
+    if (count <= (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
+        advanced_configuration_and_power_interface_machine_language_open(
+            &load, &simulated.host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+    {
+        status = 0;
+        for (int index = 0; index < count && status == 0; ++index)
+            status = harness_read_table(paths[index], &tables[index]) ? 0 : 1;
+        for (int index = 0; index < count && status == 0; ++index)
+            advanced_configuration_and_power_interface_machine_language_declare_table(
+                &load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) tables[index]);
+        if (status == 0)
+        {
+            advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
+            printf("aml evaluate status=%s\n", advanced_configuration_and_power_interface_machine_language_status_name(
+                                                   advanced_configuration_and_power_interface_machine_language_evaluate(
+                                                       &load, path, NULL, 0u, &result)));
+            harness_print_result(&load, &result);
+            advanced_configuration_and_power_interface_machine_language_value_release(&load.heap, &load.space, &result);
+            for (uint32_t opcode = 1u;
+                 opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT; ++opcode)
+                if (load.evaluation.unimplemented[opcode] != 0u)
+                    printf("aml evaluate unimplemented %s\n",
+                           advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
+            for (uint32_t failure = 1u;
+                 failure < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT; ++failure)
+                if (load.evaluation.statuses[failure] != 0u)
+                    printf("aml evaluate failed %s %u\n",
+                           advanced_configuration_and_power_interface_machine_language_status_name(failure),
+                           load.evaluation.statuses[failure]);
+        }
+    }
+    advanced_configuration_and_power_interface_machine_language_close(&load);
     for (int index = 0;
          index < count && index < (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES; ++index)
         free(tables[index]);
@@ -627,6 +748,8 @@ int main(int argc, char **argv)
         return harness_dump_namespace(argv[2], strcmp(argv[1], "--closure") == 0);
     if (argc >= 3 && (strcmp(argv[1], "--namespace-tables") == 0 || strcmp(argv[1], "--closure-tables") == 0))
         return harness_dump_tables_namespace(argc - 2, argv + 2, strcmp(argv[1], "--closure-tables") == 0);
+    if (argc >= 4 && strcmp(argv[1], "--evaluate") == 0)
+        return harness_evaluate(argv[2], argc - 3, argv + 3);
     fputs(HARNESS_USAGE, (argc == 2 && strcmp(argv[1], "--help") == 0) ? stdout : stderr);
     return (argc == 2 && strcmp(argv[1], "--help") == 0) ? 0 : 2;
 }

@@ -1312,10 +1312,10 @@ KERNEL_TEST(index_and_bank_field_units_name_their_registers)
 }
 
 /**
- * @brief A buffer field names its buffer and its bits: CreateDWordField at byte 2, CreateBitField at
- *        bit 3, CreateField of 12 bits at bit 4.
+ * @brief A buffer field holds its Buffer, with a reference, and its bits: CreateDWordField at byte 2,
+ *        CreateBitField at bit 3, CreateField of 12 bits at bit 4, which alone reads as a Buffer.
  */
-KERNEL_TEST(a_buffer_field_names_its_buffer_and_bits)
+KERNEL_TEST(a_buffer_field_holds_its_buffer_and_bits)
 {
     static const uint8_t aml[] = {
         0x08u, 'B',   'U',   'F', '_', 0x11u, 0x03u, 0x0Au, 0x08u, 0x8Au, 'B',   'U',   'F', '_', 0x0Au,
@@ -1326,7 +1326,7 @@ KERNEL_TEST(a_buffer_field_names_its_buffer_and_bits)
     if (!made_up_load_one(test, aml, sizeof(aml)))
         return;
 
-    const uint32_t buffer = made_up_node_at("BUF_");
+    const uint32_t buffer = made_up_node("BUF_")->value.handle;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *word = &made_up_node("DW__")->value;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *bit = &made_up_node("BIT_")->value;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *any = &made_up_node("CF__")->value;
@@ -1334,11 +1334,20 @@ KERNEL_TEST(a_buffer_field_names_its_buffer_and_bits)
     kernel_test_check(test,
                       word->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD &&
                           word->handle == buffer && word->payload == (16u | (32ull << 32u)) && word->auxiliary == 4u,
-                      "DW__ is 32 bits from bit 16 of BUF_, read 4 bytes at a time");
-    kernel_test_check(test, bit->handle == buffer && bit->payload == (3u | (1ull << 32u)) && bit->auxiliary == 1u,
-                      "BIT_ is bit 3");
-    kernel_test_check(test, any->handle == buffer && any->payload == (4u | (12ull << 32u)) && any->auxiliary == 1u,
-                      "CF__ is 12 bits from bit 4");
+                      "DW__ is 32 bits from bit 16 of BUF_'s Buffer, read 4 bytes at a time");
+    kernel_test_check(
+        test, bit->handle == buffer && bit->payload == (3u | (1ull << 32u)) && bit->auxiliary == 1u && bit->flags == 0u,
+        "BIT_ is bit 3, and reads as an Integer");
+    kernel_test_check(test,
+                      any->handle == buffer && any->payload == (4u | (12ull << 32u)) && any->auxiliary == 1u &&
+                          any->flags ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BUFFER_FIELD_READS_AS_BUFFER,
+                      "CF__ is 12 bits from bit 4, and reads as a Buffer");
+    kernel_test_check(
+        test,
+        advanced_configuration_and_power_interface_machine_language_object(&made_up_load.heap, buffer)->references ==
+            4u,
+        "BUF_ and its three fields hold the Buffer");
     kernel_test_measure_hexadecimal(
         test, "namespace_fold",
         advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load));

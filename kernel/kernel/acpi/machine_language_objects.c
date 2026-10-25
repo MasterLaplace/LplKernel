@@ -422,6 +422,30 @@ static MachineLanguageStatus_t machine_language_abandon(MachineLanguageHeap_t *h
 }
 
 /**
+ * @brief The Buffer a buffer field is made over, when the field's bits lie inside it; NULL otherwise.
+ */
+static MachineLanguageHeader_t *machine_language_field_buffer(const MachineLanguageHeap_t *heap,
+                                                              const MachineLanguageValue_t *field)
+{
+    MachineLanguageHeader_t *buffer =
+        advanced_configuration_and_power_interface_machine_language_object(heap, field->handle);
+    const uint64_t end = (field->payload & 0xFFFFFFFFull) + (field->payload >> 32u);
+
+    if (buffer == NULL || buffer->kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER ||
+        end > (uint64_t) buffer->length * 8u)
+        return NULL;
+    return buffer;
+}
+
+/**
+ * @brief Bit @p index of @p bytes, 0 or 1.
+ */
+static uint32_t machine_language_bit(const uint8_t *bytes, uint64_t index)
+{
+    return (bytes[index / 8u] >> (index % 8u)) & 1u;
+}
+
+/**
  * @brief The value of a hexadecimal digit, either case, or 16 for any other character.
  */
 static uint32_t machine_language_digit_value(uint8_t character)
@@ -828,7 +852,10 @@ bool advanced_configuration_and_power_interface_machine_language_value_holds_obj
     case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER:
     case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE:
     case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION:
-    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT: return true;
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT:
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD:
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_ELEMENT:
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REFERENCE_BYTE: return true;
     default: return false;
     }
 }
@@ -1015,6 +1042,82 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     if (value->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE)
         return machine_language_copy_package(heap, space, value, out_value);
     return machine_language_copy_element(heap, space, value, false, out_value);
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_buffer_field_read(
+    MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, const MachineLanguageValue_t *field,
+    uint8_t integer_bits, MachineLanguageValue_t *out_value)
+{
+    const MachineLanguageHeader_t *buffer = machine_language_field_buffer(heap, field);
+    const uint32_t offset = (uint32_t) (field->payload & 0xFFFFFFFFull);
+    const uint32_t length = (uint32_t) (field->payload >> 32u);
+
+    if (buffer == NULL)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INDEX_OUT_OF_RANGE;
+    if ((field->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BUFFER_FIELD_READS_AS_BUFFER) ==
+            0u &&
+        length != 0u && length <= integer_bits)
+    {
+        memset(out_value, 0, sizeof(*out_value));
+        out_value->kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER;
+        for (uint32_t bit = 0u; bit < length; ++bit)
+            out_value->payload |= (uint64_t) machine_language_bit((const uint8_t *) (buffer + 1), offset + bit) << bit;
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+    }
+
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_allocate(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, (length + 7u) / 8u,
+        out_value);
+
+    if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        return status;
+
+    uint8_t *bytes =
+        advanced_configuration_and_power_interface_machine_language_object_payload(heap, out_value->handle);
+
+    for (uint32_t bit = 0u; bit < length; ++bit)
+        bytes[bit / 8u] |= (uint8_t) (machine_language_bit((const uint8_t *) (buffer + 1), offset + bit) << (bit % 8u));
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_buffer_field_write(
+    MachineLanguageHeap_t *heap, const MachineLanguageValue_t *field, const MachineLanguageValue_t *source,
+    uint8_t integer_bits)
+{
+    MachineLanguageHeader_t *buffer = machine_language_field_buffer(heap, field);
+    const uint32_t offset = (uint32_t) (field->payload & 0xFFFFFFFFull);
+    const uint32_t length = (uint32_t) (field->payload >> 32u);
+    uint8_t scratch[8];
+    const uint8_t *bytes = NULL;
+    uint32_t count = 0u;
+
+    if (buffer == NULL)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INDEX_OUT_OF_RANGE;
+
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_bytes(
+        heap, source, integer_bits, scratch, &bytes, &count);
+
+    if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK || length == 0u || count == 0u)
+        return status;
+    if (source->kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+    {
+        const uint32_t chunk = (length + 7u) / 8u;
+        const uint32_t last = (count - 1u) / chunk * chunk;
+
+        bytes += last;
+        count -= last;
+    }
+
+    uint8_t *target = (uint8_t *) (buffer + 1);
+
+    for (uint32_t bit = 0u; bit < length; ++bit)
+    {
+        const uint64_t index = (uint64_t) offset + bit;
+        const uint32_t value = (bit / 8u < count) ? machine_language_bit(bytes, bit) : 0u;
+
+        target[index / 8u] = (uint8_t) ((target[index / 8u] & ~(1u << (index % 8u))) | (value << (index % 8u)));
+    }
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
 
 void advanced_configuration_and_power_interface_machine_language_heap_close(MachineLanguageHeap_t *heap,
