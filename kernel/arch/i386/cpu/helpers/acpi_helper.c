@@ -98,6 +98,47 @@ static void acpi_helper_write_table(Serial_t *serial, const AdvancedConfiguratio
     serial_write_char(serial, '\n');
 }
 
+/**
+ * @brief A count of 64 bits as the record writes it: saturated to 32 bits.
+ */
+static uint32_t acpi_helper_saturate(uint64_t count) { return (count > UINT32_MAX) ? UINT32_MAX : (uint32_t) count; }
+
+/**
+ * @brief Writes the `[LPLTLM] acpi.services` record: the Windows identity AML asked for, the time it
+ *        requested and the time the host waited, its sleeps and its busy-waits apart (§3.3, §5.5), its
+ *        mutexes and its Notifies.
+ */
+static void
+acpi_helper_write_services_record(Serial_t *serial,
+                                  const AdvancedConfigurationAndPowerInterfaceMachineLanguageServices_t *services)
+{
+    kernel_telemetry_begin_record(serial, "acpi.services");
+    kernel_telemetry_write_unsigned("windows", services->windows_version);
+    kernel_telemetry_write_unsigned("osi_queries", services->operating_system_queries);
+    kernel_telemetry_write_unsigned("osi_denied", services->operating_system_queries_denied);
+    kernel_telemetry_write_unsigned("sleeps", services->sleeps);
+    kernel_telemetry_write_unsigned("sleep_ms", acpi_helper_saturate(services->sleep_milliseconds));
+    kernel_telemetry_write_unsigned("stalls", services->stalls);
+    kernel_telemetry_write_unsigned("stall_us", acpi_helper_saturate(services->stall_microseconds));
+    kernel_telemetry_write_unsigned("long_stalls", services->long_stalls);
+    kernel_telemetry_write_unsigned("stalls_slept", services->stalls_slept);
+    kernel_telemetry_write_unsigned("waited_ms", acpi_helper_saturate(services->waited_milliseconds));
+    kernel_telemetry_write_unsigned("stall_waited_us", acpi_helper_saturate(services->stall_waited_microseconds));
+    kernel_telemetry_write_unsigned("time_requested_peak_us", acpi_helper_saturate(services->time_requested_peak));
+    kernel_telemetry_write_unsigned("timer_reads", services->timer_reads);
+    kernel_telemetry_write_unsigned("acquisitions", services->acquisitions);
+    kernel_telemetry_write_unsigned("acquisitions_ignored", services->acquisitions_ignored);
+    kernel_telemetry_write_unsigned("releases_ignored", services->releases_ignored);
+    kernel_telemetry_write_unsigned("released_at_end", services->released_at_end);
+    kernel_telemetry_write_unsigned("held_peak", services->held_peak);
+    kernel_telemetry_write_unsigned("signals", services->signals);
+    kernel_telemetry_write_unsigned("notifications", services->notifications);
+    kernel_telemetry_write_unsigned("notifications_dropped", services->notifications_dropped);
+    kernel_telemetry_write_unsigned("notifications_delivered", services->notifications_delivered);
+    kernel_telemetry_write_unsigned("notification_peak", services->notification_peak);
+    kernel_telemetry_end_record();
+}
+
 void write_acpi_tables_info(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory =
@@ -233,6 +274,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
     acpi_helper_write_regions_record(serial, &load->regions);
+    acpi_helper_write_services_record(serial, &load->services);
     kernel_telemetry_begin_record(serial, "acpi.values");
     kernel_telemetry_write_unsigned("objects", load->heap.objects);
     kernel_telemetry_write_unsigned("objects_freed", load->heap.objects_freed);

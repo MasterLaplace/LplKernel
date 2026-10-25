@@ -1160,6 +1160,23 @@ static MachineLanguageStatus_t machine_language_open(MachineLanguageEvaluation_t
 }
 
 /**
+ * @brief Runs `\_OSI`, the one method without a body, in C: it takes its argument from the top of the
+ *        value stack and gives its caller the answer as a method's result (§5.4).
+ */
+static MachineLanguageStatus_t machine_language_operating_system_interface(MachineLanguageLoad_t *load)
+{
+    MachineLanguageValue_t argument = machine_language_pop(&load->evaluation);
+    bool supported = false;
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_operating_system_interface(load, &argument,
+                                                                                               &supported);
+
+    machine_language_release(load, &argument);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, machine_language_truth(load, supported)) :
+                                             status;
+}
+
+/**
  * @brief Pushes a frame for a method whose arguments are the top @p argument_count values, which it
  *        takes with their references.
  */
@@ -1172,11 +1189,17 @@ static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad
 
     if (node->type != MACHINE_LANGUAGE_NODE(METHOD))
         return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
-    /* TODO(#540): \_OSI, the one method without a body, runs in C. */
     if (node->value.handle == 0u)
-        return MACHINE_LANGUAGE_STATUS(UNIMPLEMENTED_OPERATOR);
+        return machine_language_operating_system_interface(load);
     if (evaluation->frame_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES)
         return MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES);
+
+    uint8_t saved_sync_level = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_enter_method(
+        load, (uint8_t) node->value.auxiliary, &saved_sync_level);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
 
     const uint32_t body = (uint32_t) node->value.payload;
     MachineLanguageFrame_t *frame = &evaluation->frames[evaluation->frame_count++];
@@ -1197,7 +1220,7 @@ static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad
     frame->temporary_base = (uint16_t) load->temporary_count;
     frame->table = (uint16_t) node->value.handle;
     frame->argument_count = (uint8_t) argument_count;
-    frame->reserved = 0u;
+    frame->saved_sync_level = saved_sync_level;
     frame->serial = ++evaluation->frame_serial;
     if (evaluation->frame_count > evaluation->frames_peak)
         evaluation->frames_peak = evaluation->frame_count;
@@ -1230,6 +1253,7 @@ static void machine_language_drop_frame(MachineLanguageLoad_t *load)
         machine_language_release(load, &frame->arguments[slot]);
     evaluation->operator_count = frame->operator_base;
     evaluation->block_count = frame->block_base;
+    advanced_configuration_and_power_interface_machine_language_leave_method(load, frame->saved_sync_level);
     --evaluation->frame_count;
 }
 
@@ -1365,8 +1389,9 @@ static MachineLanguageStatus_t machine_language_leave_loop(MachineLanguageEvalua
 
 /**
  * @brief Whether the interpreter runs an opcode that pushes an operator: control flow, Store and
- *        CopyObject, Name and the buffer fields in a method, and the operators on integers, strings,
- *        buffers, packages and references the needs-path closure reaches (§4.1).
+ *        CopyObject, Name and the buffer fields in a method, the operators on integers, strings,
+ *        buffers, packages and references, and the operating system services the needs-path closure
+ *        reaches (§4.1): Notify, Sleep, Stall, Timer, Acquire, Release and Signal.
  */
 static bool machine_language_runs(uint32_t opcode)
 {
@@ -1423,7 +1448,14 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(OPERATION_REGION):
     case MACHINE_LANGUAGE_OPCODE(FIELD):
     case MACHINE_LANGUAGE_OPCODE(INDEX_FIELD):
-    case MACHINE_LANGUAGE_OPCODE(BANK_FIELD): return true;
+    case MACHINE_LANGUAGE_OPCODE(BANK_FIELD):
+    case MACHINE_LANGUAGE_OPCODE(NOTIFY):
+    case MACHINE_LANGUAGE_OPCODE(SLEEP):
+    case MACHINE_LANGUAGE_OPCODE(STALL):
+    case MACHINE_LANGUAGE_OPCODE(TIMER):
+    case MACHINE_LANGUAGE_OPCODE(ACQUIRE):
+    case MACHINE_LANGUAGE_OPCODE(RELEASE):
+    case MACHINE_LANGUAGE_OPCODE(SIGNAL): return true;
     default: return false;
     }
 }
@@ -3115,6 +3147,106 @@ static MachineLanguageStatus_t machine_language_field_list(MachineLanguageLoad_t
 }
 
 /**
+ * @brief The node a SuperName names, whose reference it takes: a named object, or the one a local, an
+ *        argument or a reference refers to at the end of its chain (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_named_object(MachineLanguageLoad_t *load,
+                                                             MachineLanguageValue_t *operand, uint32_t *out_node)
+{
+    MachineLanguageValue_t reference;
+    MachineLanguageLocation_t location;
+    MachineLanguageStatus_t status = machine_language_reference_of(load, operand, &reference);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    status = machine_language_locate(load, &reference, true, &location);
+    machine_language_release(load, &reference);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    if (location.kind != MACHINE_LANGUAGE_LOCATION_NODE)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    *out_node = location.node;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Runs Notify: the notification waits in the ring until the evaluation is over (§3.7).
+ */
+static MachineLanguageStatus_t machine_language_notify(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t value = machine_language_pop(evaluation);
+    MachineLanguageValue_t object = machine_language_pop(evaluation);
+    uint64_t integer = 0u;
+    uint32_t node = 0u;
+    MachineLanguageStatus_t status = machine_language_integer_of(load, &value, &integer);
+
+    machine_language_release(load, &value);
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &object);
+        return status;
+    }
+    status = machine_language_named_object(load, &object, &node);
+    return (status == MACHINE_LANGUAGE_OK) ?
+               advanced_configuration_and_power_interface_machine_language_notify(load, node, integer) :
+               status;
+}
+
+/**
+ * @brief Runs Sleep or Stall on the time its operand asks for (§5.5).
+ */
+static MachineLanguageStatus_t machine_language_wait(MachineLanguageLoad_t *load, uint32_t opcode)
+{
+    MachineLanguageValue_t operand = machine_language_pop(&load->evaluation);
+    uint64_t integer = 0u;
+    const MachineLanguageStatus_t status = machine_language_integer_of(load, &operand, &integer);
+
+    machine_language_release(load, &operand);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    return (opcode == MACHINE_LANGUAGE_OPCODE(SLEEP)) ?
+               advanced_configuration_and_power_interface_machine_language_sleep(load, integer) :
+               advanced_configuration_and_power_interface_machine_language_stall(load, integer);
+}
+
+/**
+ * @brief Runs Acquire: 0 when the mutex is held, Ones when the acquisition was ignored (§5.2); the
+ *        timeout is never waited, since nothing else holds an AML mutex.
+ */
+static MachineLanguageStatus_t machine_language_acquire(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t timeout = machine_language_pop(evaluation);
+    MachineLanguageValue_t object = machine_language_pop(evaluation);
+    uint32_t node = 0u;
+    bool acquired = false;
+    MachineLanguageStatus_t status = machine_language_named_object(load, &object, &node);
+
+    machine_language_release(load, &timeout);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_acquire(load, node, &acquired);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, machine_language_truth(load, !acquired)) :
+                                             status;
+}
+
+/**
+ * @brief Runs Release or Signal on the object its SuperName names (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_synchronize(MachineLanguageLoad_t *load, uint32_t opcode)
+{
+    MachineLanguageValue_t object = machine_language_pop(&load->evaluation);
+    uint32_t node = 0u;
+    const MachineLanguageStatus_t status = machine_language_named_object(load, &object, &node);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    return (opcode == MACHINE_LANGUAGE_OPCODE(RELEASE)) ?
+               advanced_configuration_and_power_interface_machine_language_release(load, node) :
+               advanced_configuration_and_power_interface_machine_language_signal(load, node);
+}
+
+/**
  * @brief Runs Store or CopyObject: the target takes the value, and Store gives it as its result.
  */
 static MachineLanguageStatus_t machine_language_transfer(MachineLanguageLoad_t *load, uint32_t opcode)
@@ -3189,6 +3321,15 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     case MACHINE_LANGUAGE_OPCODE(FIELD):
     case MACHINE_LANGUAGE_OPCODE(INDEX_FIELD):
     case MACHINE_LANGUAGE_OPCODE(BANK_FIELD): return machine_language_field_list(load, &operator_);
+    case MACHINE_LANGUAGE_OPCODE(NOTIFY): return machine_language_notify(load);
+    case MACHINE_LANGUAGE_OPCODE(SLEEP):
+    case MACHINE_LANGUAGE_OPCODE(STALL): return machine_language_wait(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(TIMER):
+        return machine_language_deliver(
+            load, machine_language_integer(advanced_configuration_and_power_interface_machine_language_timer(load)));
+    case MACHINE_LANGUAGE_OPCODE(ACQUIRE): return machine_language_acquire(load);
+    case MACHINE_LANGUAGE_OPCODE(RELEASE):
+    case MACHINE_LANGUAGE_OPCODE(SIGNAL): return machine_language_synchronize(load, operator_.opcode);
     default: return machine_language_compute(load, operator_.opcode);
     }
 }
@@ -3250,7 +3391,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     frame->temporary_base = (uint16_t) load->temporary_count;
     frame->table = (uint16_t) (table + 1u);
     frame->argument_count = 0u;
-    frame->reserved = 0u;
+    frame->saved_sync_level = 0u;
     frame->serial = evaluation->table_locals_serial;
     if (evaluation->frame_count > evaluation->frames_peak)
         evaluation->frames_peak = evaluation->frame_count;
@@ -3363,6 +3504,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     frame->table = (uint16_t) node->value.handle;
     frame->serial = ++evaluation->frame_serial;
     evaluation->iterations = 0u;
+    advanced_configuration_and_power_interface_machine_language_begin_services(load);
     status = machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TABLE, 0u, 0u,
                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT);
     if (status == MACHINE_LANGUAGE_OK)
@@ -3390,5 +3532,6 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     while (evaluation->frame_count > base + 1u)
         machine_language_drop_frame(load);
     machine_language_drop_frame(load);
+    advanced_configuration_and_power_interface_machine_language_end_services(load);
     return status;
 }

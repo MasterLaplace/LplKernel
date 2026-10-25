@@ -344,7 +344,17 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
                                                                                                  takes more than 8
                                                                                                  indirections to
                                                                                                  reach an object. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,                /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TIME_REQUESTED, /**< Sleep and Stall ask
+                                                                                                 an evaluation for more
+                                                                                                 time than §6.1
+                                                                                                 allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_HELD_MUTEXES,   /**< An evaluation holds
+                                                                                                 more mutexes than §6.1
+                                                                                                 allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_MUTEX_ORDER, /**< A Serialized method called
+                                                                                        below the current sync level
+                                                                                        (§5.2). */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,       /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**

@@ -1604,6 +1604,7 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
     {
         load->evaluation.iterations = 0u;
         load->evaluation.field_accesses = 0u;
+        advanced_configuration_and_power_interface_machine_language_begin_services(load);
     }
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
     block->placement = 0u;
@@ -1624,7 +1625,10 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
         }
     }
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
+    {
         advanced_configuration_and_power_interface_machine_language_release_table_locals(load);
+        advanced_configuration_and_power_interface_machine_language_end_services(load);
+    }
 }
 
 #define MACHINE_LANGUAGE_FOLD_OFFSET 0x811C9DC5u /**< FNV-1a's offset basis. */
@@ -1871,6 +1875,7 @@ void advanced_configuration_and_power_interface_machine_language_initialize(void
             MACHINE_LANGUAGE_BOOT_MAX_NODES, MACHINE_LANGUAGE_BOOT_MAX_ARENA_BYTES))
         advanced_configuration_and_power_interface_machine_language_load_directory(
             &machine_language_boot_load, advanced_configuration_and_power_interface_directory());
+    advanced_configuration_and_power_interface_machine_language_drop_notifications(&machine_language_boot_load);
 }
 
 const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *
