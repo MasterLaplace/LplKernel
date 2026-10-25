@@ -200,7 +200,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Field unit object** | `kind u8` (normal, index, bank), `access u8`, `update u8`, `lock u8`, `region u32` (or the index field's node), `data_or_bank u32`, `bank_value u32`, `bit_offset u32`, `bit_length u32` | 24 | A 4 MiB field still costs 24 bytes. |
 | **Method** | in the node's `value`: `handle` = table, `payload` = body offset u32 and body length u32, `auxiliary` = MethodFlags | 0 extra | Bodies are never copied. |
 | **Buffer field** | in the node's `value`: `handle` = the buffer's node, `payload` = bit offset u32 and bit length u32, `auxiliary` = access width in bytes | 0 extra | The node, not the object: `CopyObject` to the buffer replaces its object. |
-| **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 5), `argument_count u8`, `flags u8` | about 272 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
+| **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 4), `table u16`, `argument_count u8` | about 272 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
 | **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `physical u64`, `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `length u32`, `checksum u8`, `checksum_valid u8`, `oem_table_id[8]`, `origin u8` (static, `Load`, `LoadTable`), `owner u16` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory. `bytes` is one of the two pointers of §2: printed, never folded. |
@@ -278,6 +278,13 @@ inside it. The error report names the table, the offset, the opcode and the meth
 `Local0` to `Local7` exist. `Load` and `LoadTable` push such a frame on the same stack, so a load from a method
 costs no C stack. Declarations load in one pass and in order: table-level code sees only what was declared before
 it. An `External` whose path no table has declared yet is placed by a pass of its own once every table is declared.
+
+**The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
+predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
+skipped, and declares nothing. A predicate that fails declares both its branches without running their code, so
+that a failure never takes an object out of the namespace. The decoding pass still decodes the body of a construct
+the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its names resolve against
+objects that do not exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
@@ -766,6 +773,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | Truncated operand, bad NameString | fails | the innermost enclosing construct is skipped | `truncated` |
 | Invalid or unimplemented opcode | fails | construct skipped | `invalid_opcode`, `unimplemented_operator` |
 | Name not found when executed | fails | construct skipped | `name_not_found` |
+| A method creates a name that exists, as a `Name` in a loop | fails | | `name_exists` |
 | Wrong type, impossible conversion | fails ([§19.3.5.4]) | construct skipped | `type_mismatch` |
 | Division by zero | fails | construct skipped | `divide_by_zero` |
 | Index or buffer field out of range | fails | construct skipped | `index_out_of_range` |
@@ -944,10 +952,12 @@ published image. The made-up ASL is ours, under MIT.
   records as the host harness; without a module the test is skipped, and the CI job that passes one names it on
   `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so the 64-bit
   integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
-- **The census oracle**: every opcode count of every machine equals that of the census script. Per table, the
-  declaration counts are compared with the `iasl` disassembly shipped with each dump; they differ where `iasl`
-  guessed the argument counts of methods it could not resolve, left an object out, or where the report's
-  disassembly is cut short, and each such table is listed.
+- **The census oracle**: every opcode count of every machine equals that of the census script, the tables loaded
+  declaring every branch of table-level code and running none of it, as the census reads them; running it, which
+  declares only the branches taken, is checked against `acpiexec` instead. Per table, the declaration counts are
+  compared with the `iasl` disassembly shipped with each dump; they differ where `iasl` guessed the argument counts
+  of methods it could not resolve, left an object out, or where the report's disassembly is cut short, and each
+  such table is listed.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
   lines and compared path by path, without the nodes ACPICA creates for `External`.
