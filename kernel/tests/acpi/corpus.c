@@ -79,6 +79,19 @@ static bool corpus_serves(uint64_t physical_address, const char *expected, uint3
 }
 
 /**
+ * @brief Whether the texts @p lhs and @p rhs are the same, read no further than the first one's end.
+ */
+static bool corpus_same_text(const char *lhs, const char *rhs)
+{
+    while (*lhs != '\0' && *lhs == *rhs)
+    {
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == *rhs;
+}
+
+/**
  * @brief Checks that the made-up image is refused for @p reason, and that the host serves nothing.
  */
 static void corpus_refuses(KernelTest_t *test, const char *reason, const char *claim)
@@ -87,7 +100,7 @@ static void corpus_refuses(KernelTest_t *test, const char *reason, const char *c
     const bool opened = advanced_configuration_and_power_interface_simulated_host_open_image(
         &corpus_host, corpus_image, corpus_image_length, &error);
 
-    kernel_test_check(test, !opened && error != NULL && memcmp(error, reason, strlen(reason) + 1u) == 0, claim);
+    kernel_test_check(test, !opened && error != NULL && corpus_same_text(error, reason), claim);
     kernel_test_check(test, corpus_host.range_count == 0u && corpus_host.root_system_description_pointer == 0u,
                       "a refused image serves nothing");
 }
