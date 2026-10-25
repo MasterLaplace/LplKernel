@@ -969,9 +969,9 @@ published image. The made-up ASL is ours, under MIT.
   lines that ship with each dump.
 - **Ring 0**: `tools/acpi-corpus.sh module <machine>` writes that machine's tables as one Multiboot module. A debug
   kernel booted with it runs a `KERNEL_TEST` that loads the tables through the simulated host and prints the same
-  records as the host harness; without a module the test is skipped, and the CI job that passes one names it on
-  `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so the 64-bit
-  integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
+  records as the host harness; without a module the test is skipped, and `tools/acpi-corpus.sh ring0`, which passes
+  one, names it on `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so
+  the 64-bit integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
 - **The census oracle**: every opcode count of every machine equals that of the census script, the tables loaded
   declaring every branch of table-level code and running none of it, as the census reads them; running it, which
   declares only the branches taken, is checked against `acpiexec` instead, on the machines whose table-level code
