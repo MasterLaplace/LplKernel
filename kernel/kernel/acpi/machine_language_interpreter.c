@@ -166,6 +166,15 @@ static const MachineLanguageHeader_t *machine_language_object(const MachineLangu
 }
 
 /**
+ * @brief Releases a value the full value stack cannot take, and says so: LIMIT_VALUES.
+ */
+static MachineLanguageStatus_t machine_language_refuse_value(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
+{
+    advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, value);
+    return MACHINE_LANGUAGE_STATUS(LIMIT_VALUES);
+}
+
+/**
  * @brief Pushes a value on the value stack, which takes its reference; one that does not fit is
  *        released.
  */
@@ -174,10 +183,7 @@ static MachineLanguageStatus_t machine_language_push(MachineLanguageLoad_t *load
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
 
     if (evaluation->value_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES)
-    {
-        machine_language_release(load, value);
-        return MACHINE_LANGUAGE_STATUS(LIMIT_VALUES);
-    }
+        return machine_language_refuse_value(load, value);
     evaluation->values[evaluation->value_count++] = *value;
     if (evaluation->value_count > evaluation->values_peak)
         evaluation->values_peak = evaluation->value_count;
@@ -951,6 +957,19 @@ static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t 
 }
 
 /**
+ * @brief Whether an opcode may stand as an operand: no statement, and a data object where @p data_only
+ *        asks for one.
+ */
+static bool machine_language_fits_operand(uint32_t opcode, bool data_only)
+{
+    const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
+
+    if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_STATEMENT) != 0u)
+        return false;
+    return !data_only || (flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) != 0u;
+}
+
+/**
  * @brief Runs one term of the running frame where @p kind is expected: a statement of a TermList
  *        when @p kind is NONE, where a statement is refused otherwise; a package element or a data
  *        object (MACHINE_LANGUAGE_DATA_OBJECT) must be a data object, and an element may be a name.
@@ -982,14 +1001,10 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
 
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_opcode(
         frame->code, start, limit, &opcode, &after);
-    const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    if (kind != MACHINE_LANGUAGE_OPERAND(NONE) &&
-        (flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_STATEMENT) != 0u)
-        return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
-    if (data_only && (flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) == 0u)
+    if (kind != MACHINE_LANGUAGE_OPERAND(NONE) && !machine_language_fits_operand(opcode, data_only))
         return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
     if (opcode >= MACHINE_LANGUAGE_OPCODE(LOCAL0) && opcode <= MACHINE_LANGUAGE_OPCODE(LOCAL7))
     {
