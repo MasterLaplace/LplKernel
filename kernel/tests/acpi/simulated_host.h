@@ -133,8 +133,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
  *          address and physical address disagree with an open map is counted. Physical address 0
  *          cannot be mapped, as in ring 0. Its I/O space reads as 0 but for the ports
  *          given a value, and ignores writes. Every access is logged in order. Its clock is virtual:
- *          sleep_milliseconds advances it by what is asked, or by whole ticks of tick_milliseconds,
- *          at least one, when that is not 0.
+ *          sleep_milliseconds advances it by what is asked, or, when tick_milliseconds is not 0, by
+ *          the whole ticks a deadline on the kernel tick counts: those the milliseconds round up to,
+ *          and the one the sleep lands in.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */

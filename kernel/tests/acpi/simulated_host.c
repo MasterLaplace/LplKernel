@@ -331,8 +331,8 @@ static uint32_t simulated_host_sleep_milliseconds(void *context, uint32_t millis
 {
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
     const uint32_t tick = simulated->tick_milliseconds;
-    const uint32_t ticks = (tick == 0u) ? 0u : ((milliseconds + tick - 1u) / tick);
-    const uint32_t waited = (tick == 0u) ? milliseconds : ((ticks == 0u) ? 1u : ticks) * tick;
+    const uint32_t ticks = (tick == 0u) ? 0u : ((milliseconds + tick - 1u) / tick) + 1u;
+    const uint32_t waited = (tick == 0u) ? milliseconds : ticks * tick;
 
     simulated->clock_milliseconds += waited;
     return waited;

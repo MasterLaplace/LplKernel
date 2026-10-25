@@ -84,7 +84,7 @@ static void mode_open(uint32_t enable_milliseconds)
  */
 static void mode_enter(void)
 {
-    advanced_configuration_and_power_interface_enter_acpi_mode(&mode_host.host, &mode_fadt, &mode_switch);
+    advanced_configuration_and_power_interface_enter_mode(&mode_host.host, &mode_fadt, &mode_switch);
 }
 
 /**
@@ -252,7 +252,7 @@ KERNEL_TEST(a_hardware_reduced_platform_is_never_touched)
 
 /**
  * @brief Firmware that never sets SCI_EN is given up after 3,000 reads, the platform left in legacy
- *        mode; a tick of 10 ms ends the wait after 3,000 ms instead, 301 reads.
+ *        mode; a tick of 10 ms ends the wait after 3,000 ms instead, 151 reads.
  */
 KERNEL_TEST(firmware_that_never_sets_sci_en_is_given_up_after_the_bound)
 {
@@ -269,8 +269,9 @@ KERNEL_TEST(firmware_that_never_sets_sci_en_is_given_up_after_the_bound)
     mode_enter();
     kernel_test_check(test,
                       mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED &&
-                          mode_switch.polls == 301u && mode_switch.waited_milliseconds == 3000u,
-                      "on a 10 ms tick, 301 reads: the 3,000 ms the host waited end the wait first");
+                          mode_switch.polls == 151u && mode_switch.waited_milliseconds == 3000u,
+                      "on a 10 ms tick, where a 1 ms sleep counts the tick it lands in and the next, 151 reads: the "
+                      "3,000 ms the host waited end the wait first");
     mode_measure(test);
 }
 
@@ -296,6 +297,69 @@ KERNEL_TEST(a_register_outside_the_input_output_space_is_never_written)
                       mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE &&
                           mode_log_is_whole() && mode_port_writes() == 0u,
                       "a GPE block that reaches past port 0xFFFF: nothing is written");
+    mode_measure(test);
+
+    mode_open(0u);
+    mode_fadt.system_management_interrupt_command = 0x100B2u;
+    mode_enter();
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE &&
+                          mode_log_is_whole() && mode_port_writes() == 0u,
+                      "an SMI_CMD past port 0xFFFF: nothing is written, not even to its low 16 bits");
+    mode_measure(test);
+}
+
+/**
+ * @brief A register that reaches a port the kernel drives itself is never written: a GPE block over
+ *        the master 8259 would unmask every line, and the SCI with them.
+ */
+KERNEL_TEST(a_register_on_a_protected_port_is_never_written)
+{
+    mode_open(0u);
+    mode_fadt.general_purpose_event_blocks[0].address = 0x1Cu;
+    mode_enter();
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE &&
+                          mode_log_is_whole() && mode_port_writes() == 0u,
+                      "a GPE block whose enables lie at ports 0x20 to 0x23: nothing is written");
+    mode_measure(test);
+
+    mode_open(0u);
+    mode_fadt.power_management_control_blocks[1].address = 0xA0u;
+    mode_enter();
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE &&
+                          mode_log_is_whole() && mode_host.access_count == 0u,
+                      "a PM1 control block on the slave 8259: not even read");
+    mode_measure(test);
+
+    mode_open(0u);
+    mode_fadt.system_management_interrupt_command = 0xCF9u;
+    mode_enter();
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE &&
+                          mode_log_is_whole() && mode_port_writes() == 0u,
+                      "an SMI_CMD among PCI's configuration ports: nothing is written");
+    mode_measure(test);
+}
+
+/**
+ * @brief A GPE block that gives an address but no length holds no enable register: it is absent, as
+ *        ACPICA has it, and the switch goes on without it.
+ */
+KERNEL_TEST(a_gpe_block_without_a_length_is_absent)
+{
+    mode_open(0u);
+    mode_fadt.general_purpose_event_block_lengths[1] = 0u;
+    mode_enter();
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED &&
+                          mode_switch.enable_registers_cleared == MODE_ENABLE_WRITES - 2u,
+                      "the platform is switched, GPE0's and the PM1 enables cleared");
+    kernel_test_check(test,
+                      mode_log_is_whole() && mode_write_index(0x432u, 1u, 0u) == MODE_NOT_LOGGED &&
+                          mode_write_index(0x433u, 1u, 0u) == MODE_NOT_LOGGED,
+                      "nothing is written to GPE1's block");
     mode_measure(test);
 }
 

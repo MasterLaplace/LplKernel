@@ -161,7 +161,8 @@ typedef enum AdvancedConfigurationAndPowerInterfaceModeOutcome {
                                                                                boots in ACPI mode: no access made. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE = 2,      /**< A PM1 control block, SMI_CMD, or a block
                                                                                whose enables it clears is not wholly
-                                                                               in the I/O space: nothing written. */
+                                                                               in the I/O space, or reaches a
+                                                                               protected port: nothing written. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_ALREADY = 3,          /**< SCI_EN was set: nothing written. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_COMMAND_PORT = 4,  /**< SMI_CMD is 0: nothing written. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NO_LEGACY_MODE = 5,   /**< ACPI_ENABLE is 0, which a platform
@@ -477,7 +478,8 @@ extern uint16_t advanced_configuration_and_power_interface_input_output_port(
  *
  * @details Nothing is written when the platform is hardware-reduced, when SCI_EN, in either PM1
  *          control register, is already set, when SMI_CMD or ACPI_ENABLE is 0, or when a PM1 control
- *          block, SMI_CMD or a PM1 event or GPE block is not wholly in the I/O space. Otherwise every
+ *          block, SMI_CMD or a PM1 event or GPE block is not wholly in the I/O space or reaches a
+ *          protected port. A block too short to hold an enable register is absent. Otherwise every
  *          GPE enable register is written 0, the fixed-event enable bits of each PM1 enable register
  *          are cleared, the other bits written back, and then ACPI_ENABLE is written to SMI_CMD. SCI_EN
  *          is then read up to ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS times, the
@@ -489,7 +491,7 @@ extern uint16_t advanced_configuration_and_power_interface_input_output_port(
  * @param fadt       The platform's normalised FADT.
  * @param out_switch Emptied, then filled with the outcome and the counts.
  */
-extern void advanced_configuration_and_power_interface_enter_acpi_mode(
+extern void advanced_configuration_and_power_interface_enter_mode(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,
     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
     AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_switch);
@@ -503,7 +505,8 @@ extern void advanced_configuration_and_power_interface_mode_initialize(void);
 /**
  * @brief What advanced_configuration_and_power_interface_mode_initialize did.
  *
- * @return The boot's switch, never NULL; its outcome is not run before the boot's switch.
+ * @return The boot's switch, never NULL; its outcome is
+ *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN before the boot's switch.
  */
 extern const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *advanced_configuration_and_power_interface_mode(void);
 

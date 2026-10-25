@@ -456,31 +456,46 @@ static void acpi_fadt_read_fields(const uint8_t *copy, AdvancedConfigurationAndP
 }
 
 /**
- * @brief Locates the enable register of a PM1 event or GPE block @p bytes long: its second half.
+ * @brief Whether one of the @p bytes ports from @p first is a protected port.
+ */
+static bool acpi_mode_reaches_protected_port(uint16_t first, uint32_t bytes)
+{
+    for (uint32_t offset = 0u; offset < bytes; ++offset)
+        if (advanced_configuration_and_power_interface_port_is_protected((uint16_t) (first + offset)))
+            return true;
+    return false;
+}
+
+/**
+ * @brief Locates the enable register of a PM1 event or GPE block @p bytes long: its second half. A
+ *        block too short to hold one, a GPE block of length 0 among them, is absent, as in ACPICA.
  *
- * @return false when the block gives an address but does not lie wholly in the I/O space, or is too
- *         short to hold an enable register; @p out_port is 0 for a block that gives none.
+ * @return false when the block gives an address but does not lie wholly in the I/O space, or its
+ *         enable register reaches a protected port; @p out_port is 0 for an absent block.
  */
 static bool acpi_mode_locate_enables(const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *block,
                                      uint32_t bytes, uint16_t *out_port, uint8_t *out_bytes)
 {
-    const uint16_t first = advanced_configuration_and_power_interface_input_output_port(block, bytes);
+    const uint32_t half = bytes / 2u;
+    uint16_t first = 0u;
 
     *out_port = 0u;
     *out_bytes = 0u;
-    if (block->address == 0u)
+    if (block->address == 0u || half == 0u)
         return true;
-    if (first == 0u || bytes < 2u)
+    first = advanced_configuration_and_power_interface_input_output_port(block, bytes);
+    if (first == 0u || acpi_mode_reaches_protected_port((uint16_t) (first + half), half))
         return false;
-    *out_port = (uint16_t) (first + bytes / 2u);
-    *out_bytes = (uint8_t) (bytes / 2u);
+    *out_port = (uint16_t) (first + half);
+    *out_bytes = (uint8_t) half;
     return true;
 }
 
 /**
  * @brief Locates the PM1 control registers of @p fadt, where SCI_EN is read.
  *
- * @return false when PM1a's is not a port, or PM1b's gives an address that is not one.
+ * @return false when PM1a's is not a port, PM1b's gives an address that is not one, or either
+ *         reaches a protected port.
  */
 static bool acpi_mode_locate_control(const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
                                      AcpiModeRegisters_t *registers)
@@ -492,6 +507,9 @@ static bool acpi_mode_locate_control(const AdvancedConfigurationAndPowerInterfac
 
         registers->control_ports[index] = advanced_configuration_and_power_interface_input_output_port(block, 2u);
         if (registers->control_ports[index] == 0u && (index == 0u || block->address != 0u))
+            return false;
+        if (registers->control_ports[index] != 0u &&
+            acpi_mode_reaches_protected_port(registers->control_ports[index], 2u))
             return false;
     }
     return true;
@@ -856,7 +874,7 @@ uint16_t advanced_configuration_and_power_interface_input_output_port(
     return (uint16_t) reg->address;
 }
 
-void advanced_configuration_and_power_interface_enter_acpi_mode(
+void advanced_configuration_and_power_interface_enter_mode(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,
     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
     AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_switch)
@@ -893,6 +911,7 @@ void advanced_configuration_and_power_interface_enter_acpi_mode(
         return;
     }
     if (fadt->system_management_interrupt_command >= ACPI_INPUT_OUTPUT_PORTS ||
+        acpi_mode_reaches_protected_port((uint16_t) fadt->system_management_interrupt_command, 1u) ||
         !acpi_mode_locate_event_enables(fadt, &registers))
     {
         out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_UNREACHABLE;
@@ -906,7 +925,7 @@ void advanced_configuration_and_power_interface_enter_acpi_mode(
 
 void advanced_configuration_and_power_interface_mode_initialize(void)
 {
-    advanced_configuration_and_power_interface_enter_acpi_mode(
+    advanced_configuration_and_power_interface_enter_mode(
         &advanced_configuration_and_power_interface_machine_host,
         &advanced_configuration_and_power_interface_directory()->fixed_description, &acpi_mode);
 }
