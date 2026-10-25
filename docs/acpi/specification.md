@@ -46,8 +46,7 @@ links to its page in the PDF.
 | N12 `_CST` for every CPU | entry register, type, latency and power, bound to a CPU slot | #57, #298, #135 |
 
 The later needs reuse the same layers, each adding its own entry points to the needs path (§4.1): P-states and
-CPPC (#302), PCI INTx routing (#59), reset and soft-off (#294), events, the embedded controller and the global lock
-(#547), battery, AC, thermal and lid (#548), sleep states (#295).
+CPPC (#302), PCI INTx routing (#59), reset and soft-off (#294), events and the embedded controller (#547), battery, AC, thermal and lid (#548), sleep states (#295).
 
 ### 1.3 The needs path
 
@@ -316,7 +315,7 @@ Consequences:
 - **No lock in the interpreter.** A blocking `Sleep` blocks the worker; no other AML runs meanwhile.
 - **`Serialized` costs a sync-level check, not a mutex object** (§5.2).
 - **`Acquire` of an AML mutex always succeeds or nests,** because the mutexes still held are released when an
-  evaluation ends. Only `\_GL` contends, with firmware.
+  evaluation ends. Only the global lock contends, with firmware, through `\_GL` and `Lock` fields.
 - **Results are published, not shared.** A consumer gets a plain copy: for `_CST`, a per-CPU table of states that
   the idle path reads without ever calling the interpreter.
 - **Notify never runs inside the evaluation that raised it.** It goes to a bounded ring and is delivered after the
@@ -630,7 +629,7 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | AnyAcc | byte access, as Windows does | [§19.6.48] |
 | BufferAcc | byte access on the three spaces; the protocol buffers of GenericSerialBus, SMBus and IPMI wait for their handlers | [§19.6.48] |
 | UpdateRule Preserve, WriteAsZeros, WriteAsOnes | all three | [§19.6.48] |
-| LockRule `Lock` | the access takes the FACS global lock for its whole length, read-modify-write and registers included, and gives it back after: owned when free; pending when the firmware owns it, then up to 65,536 reads waiting for its release; on release, `GBL_RLS` in each PM1 control register when the firmware asked. A wait that runs out fails with `global_lock_unavailable`, counted. Without a usable FACS (absent, in usable memory, or without its signature), or on a hardware-reduced platform, the access takes no lock, counted (`unlocked_lock_accesses`). | [§19.6.48], [§5.2.10.1] |
+| LockRule `Lock` | the access takes the FACS global lock for its whole length, read-modify-write and registers included, and gives it back after: owned when free; pending when the firmware owns it, then up to 65,536 reads waiting for its release. A wait that runs out fails with `global_lock_unavailable`, counted. When the firmware asked for the lock, the release reads the PM1a and PM1b control registers, ORs them, clears their write-only bits, sets `GBL_RLS`, and writes the value to PM1a then PM1b, skipping a protected port. The lock word stays mapped for the whole load. Without a usable FACS (absent, beyond 4 GiB, not aligned on 64 bytes, in usable memory, without its signature, or shorter than 24 bytes), or on a hardware-reduced platform, the access takes no lock, counted (`unlocked_lock_accesses`, and `facs_refused` for a FACS given but refused), as uACPI does. | [§19.6.48], [§5.2.10.1] |
 | `AccessAs` (`0x01`) | changes the width of the units that follow | [§19.6.48] |
 | `Connection` (`0x02`), `ExtendedAccessAs` (`0x03`) | decoded; their accesses fail with `space_unsupported` | [§19.6.48] |
 | IndexField, BankField | the index or bank register is written, then the data accessed, through an internal loop, never C recursion | [§19.6.64], [§19.6.7] |
@@ -721,7 +720,7 @@ Each row is a decision, and has at least one test (§8).
 | `\_OSI` | A native method. TRUE for every Windows string, from "Windows 2000" to the newest Microsoft defines. FALSE for "Linux", "Darwin", "FreeBSD", "HP-UX", "OpenVMS", the vendor `Linux-*` strings and every feature string, "Processor Aggregator Device", "3.0 Thermal Model" and "Extended Address Space Descriptor" included. The newest Windows string asked is recorded: it drives port protection (§5.3). Firmware tests mostly the newest Windows path, and loads less when told "Linux". | [§5.7.2] |
 | `\_OS` | `"Microsoft Windows NT"`: `_OSI` ladders fall back on it. | [§5.7.3] |
 | `\_REV` | 2, as every other implementation answers. | [§5.7.4] |
-| `\_GL` | A predefined mutex. `Acquire (\_GL)` takes the AML mutex, then the global lock as a `Lock` field does (§5.3). Without a FACS, or on a hardware-reduced platform, which has no global lock ([§3.11.1]), acquiring `\_GL` takes only the AML mutex. | [§5.7.1], [§5.2.10.1] |
+| `\_GL` | A predefined mutex. Once the mutexes land (#540), `Acquire (\_GL)` takes the AML mutex, then the global lock as a `Lock` field does (§4.4). Without a FACS, or on a hardware-reduced platform, which has no global lock ([§3.11.1]), acquiring `\_GL` takes only the AML mutex. | [§5.7.1], [§5.2.10.1] |
 | Predefined scopes | `\`, `\_GPE`, `\_PR_`, `\_SB_`, `\_SI_`, `\_TZ_`; `\_PR_` is deprecated, but servers still reference it. | [§5.3.1] |
 
 `\_OSI` exists as a node, never only as a special case in the call path: firmware reaches it through
