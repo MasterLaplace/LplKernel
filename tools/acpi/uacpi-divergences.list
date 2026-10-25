@@ -1,0 +1,9 @@
+# uACPI's test cases this kernel does not pass, read by tools/acpi/uacpi_cases.py, one per line:
+# <case> <why>, where <why> is the section of docs/acpi/specification.md that decides otherwise, or #<issue>
+# for a case that waits for that issue. A listed case that passes fails the run, so that the list stays true.
+duplicate-named #593: the body of a duplicate declaration still runs under the first one
+indices-1 §5.2 mixed-type operands: Concatenate turns an Integer into 16 hexadecimal digits, as ACPICA does, where uACPI writes the shortest lowercase form
+indices-2 §5.2 references: a reference to a local dies with its frame, where uACPI keeps the local alive
+infinite-recursion §6.1 limits: 64 frames, the table's code included, stop the recursion at 63 calls, where the case wants more than 64
+reg-orphan-ec #544: _REG is not run yet
+reg-vs-copy-object #544: _REG is not run yet

@@ -3,10 +3,11 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu]
+Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh check [quick|corpus|full]
        tools/acpi-corpus.sh namespace [quick|corpus|full|qemu]
        tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
+       tools/acpi-corpus.sh uacpi
 
 The firmware of recorded machines, which the ACPI layer is checked on. linuxhw/ACPI is fetched at a
 pinned commit into build/acpi-corpus/, never committed and never put in an image.
@@ -16,7 +17,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          build/acpi-corpus/full.list); each report's decoded tables come too, kept in the clone's
          objects and never checked out
          acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit; qemu fetches the
-         reference tables of QEMU at a pinned release, its 47 x86 configurations
+         reference tables of QEMU at a pinned release, its 47 x86 configurations; uacpi fetches uACPI's
+         test cases at a pinned commit
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
          directory with what tools/acpi/expected_directory.py reads from the same dump, its FADT
          and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
@@ -31,6 +33,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          prints, for each opcode the needs path reaches on some machine, how many machines it reaches
          it on, and which when they are five or fewer: the opcodes the interpreter executes
          (specification §4.1); a machine not read or a decode fault fails it
+  uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
+         `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
+         tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
+         yet; any other result fails
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error.
@@ -51,6 +57,9 @@ readonly QEMU="$CORPUS/qemu"
 readonly QEMU_URL="https://github.com/qemu/qemu.git"
 readonly QEMU_COMMIT="2d3df8abca265c9bcc9e438d691d561592060998"
 readonly QEMU_TABLES="$QEMU/tests/data/acpi/x86"
+readonly UACPI="$CORPUS/uacpi"
+readonly UACPI_URL="https://github.com/uACPI/uACPI.git"
+readonly UACPI_COMMIT="c0edecef62bcac6ce3f783540099190bafadadda"
 
 # Refuses, with the usage, a list that is not quick, corpus or full.
 known_list() {
@@ -80,6 +89,26 @@ fetch_qemu() {
     git -C "$QEMU" fetch -q --depth 1 origin "$QEMU_COMMIT"
     git -C "$QEMU" checkout -q --detach "$QEMU_COMMIT"
     echo "QEMU's reference tables, GPL-2.0-or-later, used as data and never committed."
+}
+
+# Fetches uACPI's test cases at the pinned commit, and nothing else of uACPI.
+fetch_uacpi() {
+    if [[ ! -d "$UACPI/.git" ]]; then
+        git clone -q --filter=blob:none --no-checkout "$UACPI_URL" "$UACPI"
+    fi
+    git -C "$UACPI" sparse-checkout set --no-cone tests/test-cases
+    git -C "$UACPI" fetch -q --depth 1 origin "$UACPI_COMMIT"
+    git -C "$UACPI" checkout -q --detach "$UACPI_COMMIT"
+    echo "uACPI's test cases, MIT, used as data and never committed."
+}
+
+# Runs uACPI's test cases through the harness, as specification §8.5 says.
+uacpi_check() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    [[ -x "$ACPICA_BIN/iasl" ]] || { echo "uacpi: no iasl, run fetch acpica first" >&2; exit 1; }
+    [[ -d "$UACPI/tests/test-cases" ]] || { echo "uacpi: no test cases, run fetch uacpi first" >&2; exit 1; }
+    python3 -I "$ROOT/tools/acpi/uacpi_cases.py" "$ACPICA_BIN/iasl" "$HARNESS" "$UACPI/tests/test-cases" \
+        "$ROOT/tools/acpi/uacpi-divergences.list"
 }
 
 # Prints each QEMU configuration as its DSDT, then its SSDT when the configuration has one, one per line.
@@ -310,12 +339,14 @@ case "${1:-}" in
         case "${2:-corpus}" in
             acpica) fetch_acpica ;;
             qemu) fetch_qemu ;;
+            uacpi) fetch_uacpi ;;
             *) known_list "${2:-corpus}"; fetch "${2:-corpus}" ;;
         esac
         ;;
     namespace) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; namespace_check "${2:-corpus}" ;;
     closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
+    uacpi) uacpi_check ;;
     -h | --help) usage ;;
     *) usage >&2; exit 2 ;;
 esac
