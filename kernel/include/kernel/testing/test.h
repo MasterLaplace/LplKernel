@@ -37,7 +37,9 @@
  * - KERNEL_TEST_MANUAL() tests halt the machine and run only when named in full:
  *   `lpl.test=exceptions.breakpoint`. `lpl.test=heap.*` narrows any run to the other tests.
  * - `lpl.test.require=power_floor.*,cartridge.*` names the tests a boot must run, the libraries'
- *   too: one that is skipped fails, and a pattern that names no test fails the run.
+ *   too: one that is skipped fails, and a pattern that names no test fails the run, as does a
+ *   33rd pattern, which is not read. A kernel test's whole "suite.test" is matched, however long; the
+ *   libraries' runner still cuts a name at 127 characters (LplPlugin#580).
  * - A boot line longer than the kernel keeps fails the run: what it lost may have named a test.
  *
  * @author @MasterLaplace
@@ -192,6 +194,18 @@ extern void kernel_test_measure_hexadecimal(KernelTest_t *test, const char *key,
 extern void kernel_test_note(KernelTest_t *test, const char *text);
 
 /**
+ * @brief Whether a pattern of `lpl.test=` or `lpl.test.require=` names a test.
+ *
+ * @param pattern     The pattern's first character.
+ * @param pattern_end Past its last character: a pattern ends at a comma, a space or the line's end.
+ * @param suite       The test's suite name.
+ * @param name        The test's name.
+ * @return true when the pattern matches "suite.name", read in place however long, a `*` matching any run of
+ *         characters.
+ */
+extern bool kernel_test_name_matches(const char *pattern, const char *pattern_end, const char *suite, const char *name);
+
+/**
  * @brief Runs every test of one stage and reports it in KTAP.
  *
  * @details The first stage to run prints the KTAP header and the plan, which counts the suites
@@ -205,7 +219,7 @@ extern void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial);
 
 /**
  * @brief How many tests have failed so far, counting a pattern of `lpl.test.require=` that named
- *        no test, and a boot line the kernel cut, as one each.
+ *        no test, or that it could not read, and a boot line the kernel cut, as one each.
  *
  * @return The count, which a runner outside the kernel turns into its exit status.
  */
