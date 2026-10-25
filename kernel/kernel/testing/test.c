@@ -125,58 +125,17 @@ static uint32_t kernel_test_count_suite_tests(const KernelTestCase_t *first)
 }
 
 /**
- * @brief The character at @p position of the qualified name "suite.test" of @p test_case, whose suite
- *        name is @p suite_length characters long; NUL at its end.
+ * @brief The character at @p position of "suite.name", the suite name being @p suite_length characters long; NUL
+ *        at its end.
  */
-static char kernel_test_qualified_character(const KernelTestCase_t *test_case, uint32_t suite_length, uint32_t position)
+static char kernel_test_qualified_character(const char *suite, uint32_t suite_length, const char *name,
+                                            uint32_t position)
 {
     if (position < suite_length)
-        return test_case->suite->name[position];
+        return suite[position];
     if (position == suite_length)
         return '.';
-    return test_case->name[position - suite_length - 1u];
-}
-
-/**
- * @brief Matches the qualified name "suite.test" of @p test_case, read in place whatever its length,
- *        against the pattern [@p pattern, @p pattern_end), where `*` matches any run.
- */
-static bool kernel_test_pattern_matches(const char *pattern, const char *pattern_end, const KernelTestCase_t *test_case)
-{
-    uint32_t suite_length = 0u;
-    const char *star = NULL;
-    uint32_t resume = 0u;
-    uint32_t position = 0u;
-
-    while (test_case->suite->name[suite_length] != '\0')
-        ++suite_length;
-    for (char subject = kernel_test_qualified_character(test_case, suite_length, 0u); subject != '\0';
-         subject = kernel_test_qualified_character(test_case, suite_length, position))
-    {
-        if (pattern < pattern_end && *pattern == '*')
-        {
-            star = pattern++;
-            resume = position;
-        }
-        else if (pattern < pattern_end && *pattern == subject)
-        {
-            ++pattern;
-            ++position;
-        }
-        else if (star)
-        {
-            pattern = star + 1;
-            position = ++resume;
-        }
-        else
-        {
-            return false;
-        }
-    }
-
-    while (pattern < pattern_end && *pattern == '*')
-        ++pattern;
-    return pattern == pattern_end;
+    return name[position - suite_length - 1u];
 }
 
 static bool kernel_test_pattern_has_a_star(const char *pattern, const char *pattern_end)
@@ -207,7 +166,7 @@ static bool kernel_test_is_selected_by(const char *selection, const KernelTestCa
         while (*pattern_end != '\0' && *pattern_end != ',' && *pattern_end != ' ')
             ++pattern_end;
         if (pattern_end > pattern && !(named_in_full && kernel_test_pattern_has_a_star(pattern, pattern_end)) &&
-            kernel_test_pattern_matches(pattern, pattern_end, test_case))
+            kernel_test_name_matches(pattern, pattern_end, test_case->suite->name, test_case->name))
             return true;
         if (*pattern_end != ',')
             return false;
@@ -231,7 +190,8 @@ static uint32_t kernel_test_patterns_naming(const char *patterns, const KernelTe
 
         while (*pattern_end != '\0' && *pattern_end != ',' && *pattern_end != ' ')
             ++pattern_end;
-        if (pattern_end > pattern && kernel_test_pattern_matches(pattern, pattern_end, test_case))
+        if (pattern_end > pattern &&
+            kernel_test_name_matches(pattern, pattern_end, test_case->suite->name, test_case->name))
             naming |= 1u << index;
         if (*pattern_end != ',')
             break;
@@ -410,7 +370,9 @@ static void kernel_test_run_libraries(Serial_t *serial, const char *selection, c
  */
 static void kernel_test_write_unread_required(Serial_t *serial, const char *pattern)
 {
-    if (*pattern == '\0' || *pattern == ',' || *pattern == ' ')
+    while (*pattern == ',')
+        ++pattern;
+    if (*pattern == '\0' || *pattern == ' ')
         return;
     serial_write_string(serial, "# " KERNEL_TEST_REQUIRED_OPTION " reads ");
     serial_write_unsigned(serial, KERNEL_TEST_MOST_REQUIRED_PATTERNS);
@@ -552,3 +514,41 @@ void kernel_test_run_stage(KernelTestStage_t stage, Serial_t *serial)
 }
 
 uint32_t kernel_test_failure_count(void) { return kernel_test_failed_count; }
+
+bool kernel_test_name_matches(const char *pattern, const char *pattern_end, const char *suite, const char *name)
+{
+    uint32_t suite_length = 0u;
+    const char *star = NULL;
+    uint32_t resume = 0u;
+    uint32_t position = 0u;
+
+    while (suite[suite_length] != '\0')
+        ++suite_length;
+    for (char subject = kernel_test_qualified_character(suite, suite_length, name, 0u); subject != '\0';
+         subject = kernel_test_qualified_character(suite, suite_length, name, position))
+    {
+        if (pattern < pattern_end && *pattern == '*')
+        {
+            star = pattern++;
+            resume = position;
+        }
+        else if (pattern < pattern_end && *pattern == subject)
+        {
+            ++pattern;
+            ++position;
+        }
+        else if (star)
+        {
+            pattern = star + 1;
+            position = ++resume;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    while (pattern < pattern_end && *pattern == '*')
+        ++pattern;
+    return pattern == pattern_end;
+}

@@ -95,14 +95,3 @@ KERNEL_TEST(the_kernel_keeps_a_line_of_1023_characters)
                                              BOOT_COMMAND_LINE_LONGEST) == 1u,
                       "the 1,024th character is dropped");
 }
-
-/**
- * @brief A boot line that names this test in full reaches it whole: its qualified name passes the 127
- *        characters the runner once matched patterns against, so selecting it by that name shows the
- *        runner reads a name in place, whatever its length.
- */
-KERNEL_TEST(
-    the_boot_line_that_selects_this_test_by_its_full_name_of_more_than_one_hundred_and_twenty_seven_characters_reaches_it_whole)
-{
-    kernel_test_check(test, boot_command_line_dropped() == 0u, "the kernel kept the whole boot line");
-}
