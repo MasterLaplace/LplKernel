@@ -84,8 +84,10 @@ static bool regions_access(uint32_t index, uint8_t kind, uint8_t width, uint64_t
     const AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &regions_host.accesses[index];
     const bool port = kind == REGIONS_ACCESS(PORT_READ) || kind == REGIONS_ACCESS(PORT_WRITE);
 
-    return index < regions_host.access_count && access->kind == kind && access->width == width &&
-           (port ? access->port == where : access->address == where) && access->value == value;
+    return index < regions_host.access_count &&
+           index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES && access->kind == kind &&
+           access->width == width && (port ? access->port == where : access->address == where) &&
+           access->value == value;
 }
 
 /**
