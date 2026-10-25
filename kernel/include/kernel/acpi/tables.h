@@ -33,8 +33,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT 8u
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT    16u
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT                                                    \
+    64u /**< I/O APICs one MADT reading keeps, as many as Linux keeps on 32-bit x86. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT                                                       \
+    16u /**< Interrupt source overrides one MADT reading keeps: one per ISA interrupt. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT                                                 \
     256u /**< CPU slots one MADT reading keeps; the largest server of the corpus enables 224. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT                                    \
@@ -225,10 +227,12 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMadtState {
                                                 0xFFFFFFFF for an x2APIC, or an x2APIC ID below 0xFF when local APIC
                                                 entries name processors. */
     uint32_t non_maskable_interrupt_count; /**< NMI connections kept. */
-    uint32_t non_maskable_interrupts_dropped; /**< NMI connections past the capacity, counted. */
-    uint32_t skipped_count;                   /**< Entries of a type not read, or shorter than their type. */
-    uint8_t io_apic_count;                    /**< I/O APICs kept. */
-    uint8_t interrupt_source_override_count;  /**< Interrupt source overrides kept. */
+    uint32_t non_maskable_interrupts_dropped;    /**< NMI connections past the capacity, counted. */
+    uint32_t skipped_count;                      /**< Entries of a type not read, or shorter than their type. */
+    uint8_t io_apic_count;                       /**< I/O APICs kept. */
+    uint32_t io_apics_dropped;                   /**< I/O APICs past the capacity, counted. */
+    uint8_t interrupt_source_override_count;     /**< Interrupt source overrides kept. */
+    uint32_t interrupt_source_overrides_dropped; /**< Interrupt source overrides past the capacity, counted. */
     AdvancedConfigurationAndPowerInterfaceProcessor_t
         processors[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT]; /**< The CPU slots. */
     AdvancedConfigurationAndPowerInterfaceProcessorNonMaskableInterrupt_t non_maskable_interrupts

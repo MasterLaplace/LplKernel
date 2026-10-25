@@ -383,14 +383,17 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
         const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *io_apic =
             (const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *) entry;
 
-        if (state->io_apic_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT)
+        if (state->io_apic_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT)
         {
-            AdvancedConfigurationAndPowerInterfaceIoApicInfo_t *info = &state->io_apics[state->io_apic_count++];
-
-            info->id = io_apic->io_apic_id;
-            info->physical_base = io_apic->io_apic_address;
-            info->gsi_base = io_apic->global_system_interrupt_base;
+            ++state->io_apics_dropped;
+            return true;
         }
+
+        AdvancedConfigurationAndPowerInterfaceIoApicInfo_t *info = &state->io_apics[state->io_apic_count++];
+
+        info->id = io_apic->io_apic_id;
+        info->physical_base = io_apic->io_apic_address;
+        info->gsi_base = io_apic->global_system_interrupt_base;
         return true;
     }
     if (type == ACPI_MADT_INTERRUPT_SOURCE_OVERRIDE &&
@@ -399,16 +402,19 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
         const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *override =
             (const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *) entry;
 
-        if (state->interrupt_source_override_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT)
+        if (state->interrupt_source_override_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT)
         {
-            AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *info =
-                &state->interrupt_source_overrides[state->interrupt_source_override_count++];
-
-            info->bus = override->bus;
-            info->source_irq = override->source;
-            info->global_system_interrupt = override->global_system_interrupt;
-            info->flags = override->flags;
+            ++state->interrupt_source_overrides_dropped;
+            return true;
         }
+
+        AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *info =
+            &state->interrupt_source_overrides[state->interrupt_source_override_count++];
+
+        info->bus = override->bus;
+        info->source_irq = override->source;
+        info->global_system_interrupt = override->global_system_interrupt;
+        info->flags = override->flags;
         return true;
     }
     return false;

@@ -34,8 +34,8 @@ extern void write_acpi_tables_info(Serial_t *serial);
 extern void write_acpi_madt_info(Serial_t *serial);
 
 /**
- * @brief Writes the `[LPLTLM] acpi.madt` record: the MADT's CPU slots, and the entries counted
- *        without one.
+ * @brief Writes the `[LPLTLM] acpi.madt` record: the CPU slots, I/O APICs and interrupt source
+ *        overrides the MADT keeps, and every entry counted without a place.
  *
  * @param serial The port the record is written to.
  */

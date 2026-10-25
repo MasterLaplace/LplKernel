@@ -379,6 +379,62 @@ KERNEL_TEST(processors_past_the_capacity_are_counted)
 }
 
 /**
+ * @brief Nine I/O APICs, as the Supermicro SYS-4029GP-TRT of the corpus lists, each keep their ID and
+ *        their GSI base.
+ *
+ * @details The reader kept eight and dropped the ninth without a count, which left the interrupts
+ *          from its GSI base up without a controller.
+ */
+KERNEL_TEST(nine_io_apics_keep_their_interrupts)
+{
+    MadeUpMadt_t madt = made_up_madt_begin();
+    uint32_t kept_as_listed = 0u;
+
+    for (uint32_t index = 0u; index < 9u; ++index)
+        made_up_madt_io_apic(&madt, (uint8_t) (10u + index), 0xFEC00000u + index * 0x1000u, index * 24u);
+
+    const bool read =
+        advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
+
+    for (uint32_t index = 0u; index < made_up_madt_state.io_apic_count && index < 9u; ++index)
+        kept_as_listed += (made_up_madt_state.io_apics[index].id == 10u + index &&
+                           made_up_madt_state.io_apics[index].gsi_base == index * 24u) ?
+                              1u :
+                              0u;
+    kernel_test_check(test, read && made_up_madt_state.io_apic_count == 9u, "all nine are kept");
+    kernel_test_check(test, kept_as_listed == 9u, "each with its ID and GSI base, in the table's order");
+    kernel_test_check(test, made_up_madt_state.io_apics_dropped == 0u, "none is counted dropped");
+    kernel_test_measure(test, "io_apics", made_up_madt_state.io_apic_count);
+}
+
+/**
+ * @brief I/O APICs and interrupt source overrides past the capacity are counted, not written past it.
+ */
+KERNEL_TEST(io_apics_and_overrides_past_the_capacity_are_counted)
+{
+    MadeUpMadt_t madt = made_up_madt_begin();
+
+    for (uint32_t index = 0u; index <= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT; ++index)
+        made_up_madt_io_apic(&madt, (uint8_t) index, 0xFEC00000u + index * 0x1000u, index * 24u);
+    for (uint32_t index = 0u; index <= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT; ++index)
+        made_up_madt_override(&madt, (uint8_t) (index % 16u), index, 0u);
+
+    const bool read =
+        advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
+
+    kernel_test_check(
+        test, read && made_up_madt_state.io_apic_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT,
+        "every I/O APIC place is filled");
+    kernel_test_check(test, made_up_madt_state.io_apics_dropped == 1u, "the I/O APIC past them is counted");
+    kernel_test_check(test,
+                      made_up_madt_state.interrupt_source_override_count ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT,
+                      "every override place is filled");
+    kernel_test_check(test, made_up_madt_state.interrupt_source_overrides_dropped == 1u,
+                      "the override past them is counted");
+}
+
+/**
  * @brief A table too short for a MADT header, an entry shorter than two bytes, and an entry that runs
  *        past the table are refused, each with its own state name.
  */
