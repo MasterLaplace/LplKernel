@@ -135,11 +135,17 @@ static MachineLanguageValue_t machine_language_target(MachineLanguageTargetKind_
 }
 
 /**
- * @brief Gives back the reference a value holds, and leaves it Uninitialized.
+ * @brief Gives back the reference a value holds, and leaves it Uninitialized; an Integer, which holds
+ *        none, costs no call.
  */
 static void machine_language_release(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
 {
-    advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, value);
+    if (value->kind == MACHINE_LANGUAGE_VALUE(UNINITIALIZED))
+        return;
+    if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+        value->kind = MACHINE_LANGUAGE_VALUE(UNINITIALIZED);
+    else
+        advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, value);
 }
 
 /**
