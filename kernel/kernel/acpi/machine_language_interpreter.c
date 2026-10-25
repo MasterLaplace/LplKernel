@@ -220,7 +220,7 @@ static MachineLanguageStatus_t machine_language_integer_of(MachineLanguageLoad_t
 
     if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
     {
-        *out_integer = value->payload;
+        *out_integer = machine_language_mask(load, value->payload);
         return MACHINE_LANGUAGE_OK;
     }
 
@@ -1702,8 +1702,12 @@ static MachineLanguageStatus_t machine_language_mid(MachineLanguageLoad_t *load)
     MachineLanguageValue_t result = {0};
 
     if (status == MACHINE_LANGUAGE_OK && source.kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+    {
+        const MachineLanguageValue_t integer = source;
+
         status = advanced_configuration_and_power_interface_machine_language_value_to_buffer(
-            &load->heap, &load->space, &source, machine_language_bits(load), &source);
+            &load->heap, &load->space, &integer, machine_language_bits(load), &source);
+    }
     if (status == MACHINE_LANGUAGE_OK && source.kind != MACHINE_LANGUAGE_VALUE(STRING) &&
         source.kind != MACHINE_LANGUAGE_VALUE(BUFFER))
         status = MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
