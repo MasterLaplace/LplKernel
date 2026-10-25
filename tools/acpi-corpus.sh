@@ -129,7 +129,7 @@ namespace_check() {
         fi
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$ours" "$theirs"
-    echo "# namespace: $agree of $((number - deferred)) agree with acpiexec; $deferred stop in table-level code;" \
+    echo "# namespace: $agree of $((number - deferred)) agree with acpiexec; $deferred fail in table-level code;" \
         "$waiting nodes wait for the interpreter"
     [[ "$1" == qemu ]] || echo "# table-level code: $(grep -o '^aml run statements=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) runs," \
         "$(grep -o ' failures=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) failed, on" \

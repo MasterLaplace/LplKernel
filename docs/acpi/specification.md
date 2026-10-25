@@ -283,7 +283,7 @@ it. An `External` whose path no table has declared yet is placed by a pass of it
 
 **The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
 predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
-skipped, and declares nothing. Until #539 and #541 run what makes predicates fail today, a predicate that fails
+skipped, and declares nothing. Until #539, #540 and #541 run what makes predicates fail today, a predicate that fails
 declares both its branches without running their code, counted (`declared_not_run`), so that a failure never takes
 an object out of the namespace. The decoding pass still decodes the body of a construct the declaration pass did
 not declare, but counts its faults apart (`undeclared_faults`): its names resolve against objects that do not
@@ -764,8 +764,10 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | Region mapping cache | 64 entries, each the pages one access touched |
 
-The node and arena caps depend on the profile, and probe counts follow the hash capacity. A parity run passes the
-target's caps to both sides and prints them in the record header (§8.7).
+A table load is one evaluation: its table-level code and the methods it calls share these limits, and the count of
+back-edges starts again from zero with each table. The node and arena caps depend on the profile, and probe counts
+follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
+(§8.7).
 
 ### 6.2 What happens on bad AML
 
