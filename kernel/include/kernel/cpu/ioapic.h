@@ -50,14 +50,17 @@ typedef struct {
     uint8_t io_apic_id;
     uint8_t masked;
     uint16_t iso_flags;
-    uint8_t destination_apic_id;
 } InputOutputApicRouteInfo_t;
 
 /**
  * @brief Prepare IOAPIC MMIO access and program masked ISA route entries.
  *
  * Current scope programs discovery-backed redirection entries for IRQ0/IRQ1
- * in masked mode only, preserving active interrupt ownership behavior.
+ * in masked mode only, preserving active interrupt ownership behavior. Each
+ * entry names the bootstrap processor's APIC ID, as the topology gives it: a
+ * line is not routed when no entry can name that ID: its entry is written
+ * masked all the same, the refusal is counted, and the state is then
+ * ioapic-init-bootstrap-processor-unnameable.
  */
 extern void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void);
 
@@ -126,7 +129,11 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_iso
 extern uint8_t input_output_advanced_programmable_interrupt_controller_enable_isa_route(uint8_t isa_irq);
 
 /**
- * @brief Return programmed destination APIC ID for route index.
+ * @brief Read back the destination APIC ID a programmed route's redirection entry holds.
+ *
+ * @param route_index The route, below the programmed route count.
+ * @return The 8-bit destination field of the route's entry, as its I/O APIC holds it, or 0 when
+ *         @p route_index names no programmed route.
  */
 extern uint8_t
 input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(uint8_t route_index);
@@ -135,10 +142,39 @@ input_output_advanced_programmable_interrupt_controller_get_programmed_route_des
  * @brief Set the destination APIC ID for a previously programmed ISA route.
  *
  * @param isa_irq The ISA IRQ number.
- * @param apic_id The target CPU's local APIC ID.
- * @return non-zero on success, zero on failure.
+ * @param apic_id The target CPU's local APIC ID or x2APIC ID, kept whole.
+ * @return non-zero on success, zero on failure: the route is missing, or no redirection entry can name
+ *         @p apic_id, and the route stays where it was.
  */
 extern uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(uint8_t isa_irq,
-                                                                                                 uint8_t apic_id);
+                                                                                                 uint32_t apic_id);
+
+/**
+ * @brief Return how many lines the routing scaffold refused to route, at its last run, because no
+ *        redirection entry can name the bootstrap processor.
+ *
+ * @details A physical destination holds 8 bits, and 0xFF in it is a broadcast (Intel SDM 325384-093US,
+ *          §13.6.2.1): a processor whose APIC ID is 0xFF or more is reached only through interrupt
+ *          remapping (#108).
+ *
+ * @return The lines refused. A move that
+ *         input_output_advanced_programmable_interrupt_controller_set_isa_route_destination() refuses is
+ *         not counted: its caller learns of it from the value returned.
+ */
+extern uint32_t input_output_advanced_programmable_interrupt_controller_get_lines_refused(void);
+
+/**
+ * @brief Read back whether the redirection entry an ISA line resolves to is masked, whether the line is
+ *        routed or not.
+ *
+ * @details The tests read with it what a refused line leaves in its entry, which no route records.
+ *
+ * @param isa_irq The ISA IRQ line.
+ * @param masked Receives 1 when the entry's mask bit is set, 0 when it is clear.
+ * @return 1 when the line resolves to an entry of a mapped I/O APIC, 0 when it does not or when @p masked
+ *         is NULL, @p masked then left alone.
+ */
+extern uint8_t input_output_advanced_programmable_interrupt_controller_debug_read_line_mask(uint8_t isa_irq,
+                                                                                            uint8_t *masked);
 
 #endif /* KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

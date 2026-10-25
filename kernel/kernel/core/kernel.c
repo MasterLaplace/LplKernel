@@ -380,7 +380,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     kernel_splash_update("ACPI ISA Routing Scaffold");
     input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold();
     write_ioapic_scaffold_info(&com1);
-    input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(1u, 0u);
+    input_output_advanced_programmable_interrupt_controller_set_isa_route_destination(1u,
+                                                                                      cpu_topology_get_local_apic_id());
 
     write_ioapic_routes_info(&com1);
     kernel_splash_update("IOAPIC Dynamic Routing & Routes");

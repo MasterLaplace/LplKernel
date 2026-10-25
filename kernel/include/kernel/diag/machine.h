@@ -40,6 +40,8 @@ extern "C" {
  *          - `vendor`, `family`, `model`, `stepping`: CPUID leaves 0 and 1;
  *          - `cpus`: the processors online when the record is written;
  *          - `acpi`, `ioapic`, `topology`: the state each of those probes ended in;
+ *          - `ioapic_lines_refused`: the lines the I/O APIC's routing refused because no redirection
+ *            entry can name the bootstrap processor;
  *          - `apic`: `x2apic`, `xapic` or `absent`;
  *          - `audio_controller`: 1 when the bus holds a high-definition audio controller.
  *          A character other than a letter, a digit, '.', '-' or '_' in a value becomes '-', so
