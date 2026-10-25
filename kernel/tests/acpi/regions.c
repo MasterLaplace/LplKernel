@@ -649,11 +649,11 @@ KERNEL_TEST(a_buffer_written_to_a_unit_is_cut_or_zero_extended)
     one.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER;
     string.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING;
     advanced_configuration_and_power_interface_machine_language_object_allocate(&regions_load.heap, &regions_load.space,
-                                                                                buffer.kind, 3u, 3u, &buffer.handle);
+                                                                                buffer.kind, 3u, &buffer.handle);
     advanced_configuration_and_power_interface_machine_language_object_allocate(&regions_load.heap, &regions_load.space,
-                                                                                one.kind, 1u, 1u, &one.handle);
+                                                                                one.kind, 1u, &one.handle);
     advanced_configuration_and_power_interface_machine_language_object_allocate(&regions_load.heap, &regions_load.space,
-                                                                                string.kind, 2u, 3u, &string.handle);
+                                                                                string.kind, 2u, &string.handle);
     memcpy(advanced_configuration_and_power_interface_machine_language_object(&regions_load.heap, buffer.handle) + 1,
            three, 3u);
     memset(advanced_configuration_and_power_interface_machine_language_object(&regions_load.heap, one.handle) + 1, 0xAA,
