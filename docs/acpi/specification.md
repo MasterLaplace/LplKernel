@@ -279,7 +279,8 @@ inside it. The error report names the table, the offset, the opcode and the meth
 **A table load is a frame.** A definition block runs as a pseudo-method whose named objects are permanent and whose
 `Local0` to `Local7` exist. `Load` and `LoadTable` push such a frame on the same stack, so a load from a method
 costs no C stack. Declarations load in one pass and in order: table-level code sees only what was declared before
-it. An `External` whose path no table has declared yet is placed by a pass of its own once every table is declared.
+it. An `External` whose parent no table has declared yet is placed by a pass of its own once every table is
+declared; one whose parent exists is placed where it stands.
 
 **The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
 predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
@@ -673,7 +674,7 @@ Each row is a decision, and has at least one test (§8).
 | Region and field operands | Evaluated when the declaration runs. | [§19.6.100] |
 | The first-method rule | Not implemented: no real table puts a named control method first. | [§5.4.2] |
 | Integer width | Fixed once from the DSDT's revision, for every table: below 2, every integer is 32 bits, results are masked, `Ones` is `0xFFFFFFFF` and Integer to Buffer gives 4 bytes. | [§19.6.29] |
-| `External` | Creates nothing at run time. Its node only gives the decoder a method's argument count, and a declaration of the object replaces it. One whose path does not exist is placed once every table is declared, the missing segments created as Externals: firmware calls such methods behind `CondRefOf`. | [§19.6.46] |
+| `External` | Creates nothing at run time. Its node only gives the decoder a method's argument count, and a declaration of the object replaces it. One whose parent does not exist yet is placed once every table is declared, the missing segments created as Externals: firmware calls such methods behind `CondRefOf`. | [§19.6.46] |
 | Unresolved names | An error only when executed: in methods they sit behind `CondRefOf` or capability bits. | |
 | Names inside packages | Kept as a lazy path with its scope, resolved when the element is read, at most 8 indirections, then `name_resolution_loop`. Resolving at creation would make the result depend on the order tables load in. | [§19.6.102] |
 | Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted. | [§19.6.102] |

@@ -3,8 +3,9 @@
 Usage: python3 -I tools/acpi/expected_machine_language.py <dump>
 
 The table count, the AML bytes, the fault count, the method calls and every opcode count come from aml_census.py,
-a walker of the AML grammar in Python that loads every DSDT and SSDT of the dump into one namespace, as the kernel
-does. The opcodes are printed in the kernel's descriptor order: one-byte opcodes by encoding, then extended ones.
+a walker of the AML grammar in Python that loads every DSDT and SSDT of the dump into one namespace, as
+docs/acpi/specification.md §3.8 says. The opcodes are printed in the kernel's descriptor order: one-byte opcodes by
+encoding, then extended ones.
 """
 import os
 import sys

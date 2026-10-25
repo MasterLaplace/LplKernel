@@ -95,7 +95,7 @@ OPERAND_SHAPES = {
     "LLess": "TT", "ToBuffer": "TR", "ToDecimalString": "TR",
     "ToHexString": "TR", "ToInteger": "TR", "ToString": "TTR",
     "CopyObject": "TM", "Mid": "TTTR", "Return": "T",
-    "CondRefOf": "MR", "LoadTable": "TTTTTT", "Load": "NR", "Stall": "T",
+    "CondRefOf": "MR", "LoadTable": "TTTTTT", "Load": "SR", "Stall": "T",
     "Sleep": "T", "Acquire": "SW", "Signal": "S", "Wait": "ST", "Reset": "S",
     "Release": "S", "FromBCD": "TR", "ToBCD": "TR", "Unload": "S",
     "Fatal": "BDT",
@@ -219,14 +219,13 @@ class Namespace:
 
     def declare(self, path, kind, argument_count=None):
         """Record a declaration: a real definition replaces an External one, and otherwise the first
-        definition of a path stays and a duplicate is skipped (5.1 of the specification)."""
+        definition of a path stays and a duplicate is skipped (docs/acpi/specification.md §5.1)."""
         if path is None:
             return
         existing = self.kinds.get(path)
         if existing is not None and (existing != "External" or kind == "External"):
             return
-        if existing is None:
-            self.created.append(path)
+        self.created.append((path, existing, self.argument_counts.get(path)))
         self.kinds[path] = kind
         self.argument_counts.pop(path, None)
         if argument_count is not None:
@@ -234,7 +233,7 @@ class Namespace:
 
     def declare_external(self, path, argument_count):
         """Record an External: placed now when its parent exists, otherwise once every table is
-        declared (5.1 of the specification)."""
+        declared (docs/acpi/specification.md §5.1)."""
         if path is None:
             return
         if path[:-1] in self.kinds or not path[:-1]:
@@ -251,11 +250,16 @@ class Namespace:
         self.unplaced_externals = []
 
     def forget_since(self, mark):
-        """Remove the paths created since the mark: what a method body declares ends with the body (3.5 of
-        the specification)."""
-        for path in self.created[mark:]:
-            del self.kinds[path]
+        """Undo the declarations made since the mark, the last first: what a method body declares ends with
+        the body, and an External it replaced comes back (docs/acpi/specification.md §3.5, §5.1)."""
+        for path, kind, argument_count in reversed(self.created[mark:]):
             self.argument_counts.pop(path, None)
+            if kind is None:
+                del self.kinds[path]
+                continue
+            self.kinds[path] = kind
+            if argument_count is not None:
+                self.argument_counts[path] = argument_count
         del self.created[mark:]
 
     def is_method(self, path):
@@ -565,7 +569,7 @@ class Walker:
 
     def name_term(self, offset, end, scope, depth):
         """Walk a NameString in a TermArg, SuperName or Target position: a reference or a
-        MethodInvocation (4.2 of the specification)."""
+        MethodInvocation (docs/acpi/specification.md §4.2)."""
         name, after = self.name_string(offset)
         path = self.reference(scope, name)
         if path is not None and self.namespace.is_method(path):
@@ -593,7 +597,7 @@ class Walker:
 
     def super_name(self, offset, end, scope, depth, may_call):
         """Walk a SuperName or Target, where a method is called, or a SimpleName, where it never is
-        (4.2 of the specification)."""
+        (docs/acpi/specification.md §4.2)."""
         value = self.byte(offset)
         if value == 0x00:
             return offset + 1
@@ -688,12 +692,14 @@ class Walker:
         source, offset = self.name_string(offset)
         alias, offset = self.name_string(offset)
         target = self.namespace.resolve(scope, source)
-        kind = self.namespace.kinds.get(target, "Alias")
+        if target is None and (not self.counting or self.method_stack):
+            return offset
+        mark = len(self.namespace.created)
         path = self.declare(scope, alias, "Alias")
-        if target is not None and self.namespace.is_method(target) and path is not None:
-            self.namespace.argument_counts[path] = self.namespace.argument_counts[target]
-        if path is not None and kind != "Alias":
-            self.namespace.kinds[path] = kind
+        if path is not None and len(self.namespace.created) > mark:
+            self.namespace.kinds[path] = self.namespace.kinds.get(target, "Alias")
+            if self.namespace.is_method(target):
+                self.namespace.argument_counts[path] = self.namespace.argument_counts[target]
         return offset
 
     def op_Name(self, offset, end, scope, depth):
@@ -1101,7 +1107,7 @@ def static_call_depth(edges):
 
 def census_of_machine(name, blocks, top):
     """Load every definition block of one machine into one namespace and count its AML: the DSDT, then each
-    SSDT in the dump's order, declared in one pass (3.8 step 1 and 5.1 of the specification), then counted."""
+    SSDT in the dump's order, declared in one pass (docs/acpi/specification.md §3.8 step 1, §5.1), then counted."""
     namespace = Namespace()
     census = Census()
     tables = []
