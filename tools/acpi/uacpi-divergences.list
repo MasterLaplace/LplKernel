@@ -1,6 +1,7 @@
 # uACPI's test cases this kernel does not pass, read by tools/acpi/uacpi_cases.py, one per line:
 # <case> <why>, where <why> is the section of docs/acpi/specification.md that decides otherwise, or #<issue>
 # for a case that waits for that issue. A listed case that passes fails the run, so that the list stays true.
+bogus-pci #542: PCI_Config regions are not reached yet
 duplicate-named #593: the body of a duplicate declaration still runs under the first one
 global-lock-is-shared-with-firmware #540: \_OSI, the one method without a body, does not run yet
 indices-1 §5.2 mixed-type operands: Concatenate turns an Integer into 16 hexadecimal digits, as ACPICA does, where uACPI writes the shortest lowercase form
@@ -11,6 +12,8 @@ osi #540: \_OSI, the one method without a body, does not run yet
 pci-config-write-filter #540: \_OSI, the one method without a body, does not run yet
 pci-devices-below-bridges #540: \_OSI, the one method without a body, does not run yet
 pci-regions-track-bridges #540: \_OSI, the one method without a body, does not run yet
+read-fields-on-deref §6.2 errors: a region on physical page 0 is unreachable, the kernel mapping no window there
 reg-disconnect-access #540: \_OSI, the one method without a body, does not run yet
 reg-orphan-ec #544: _REG is not run yet
 reg-vs-copy-object #544: _REG is not run yet
+string-and-buffer-stores-to-fields §5.3 field units: a String or a Buffer is cut or zero-extended and written once, as ACPICA does, where Windows writes it in unit-sized chunks (#603)

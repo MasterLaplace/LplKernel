@@ -792,7 +792,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | Index or buffer field out of range, or an index or BankValue its register cannot hold | fails | construct skipped | `index_out_of_range` |
 | Reference cycle | fails | construct skipped | `reference_cycle` |
 | A limit of §6.1 | fails with the limit's name | construct skipped | `limit_<name>` |
-| Region without handler, out of bounds, or unreachable (above 4 GiB on i686, a PCI offset from 0x100 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
+| Region without handler, out of bounds, or unreachable (above 4 GiB on i686, on physical page 0, where the kernel maps no window, a PCI offset from 0x100 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
 | A field of a region whose offset and length were never evaluated: declared in a branch that did not run, or its operands failed | fails | construct skipped | `region_unevaluated` |
 | A reserved AccessType, or a QWordAcc datum of SystemIO | fails | construct skipped | `access_width_invalid` |
 | A `Lock` field or `\_GL` whose global lock the firmware does not release in time | fails | construct skipped | `global_lock_unavailable` |
