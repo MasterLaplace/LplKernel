@@ -756,6 +756,7 @@ that reaches it. The corpus runs report the peaks.
 | Temporary nodes per evaluation | 1,024 |
 | Nested internal (host-triggered) evaluations | 2 |
 | Loop iterations per evaluation, every `While` back-edge | 2^20 |
+| Field accesses per evaluation: each access the field engine makes to a region (a datum, each half of a QWordAcc datum, each datum of an index or bank register, the read of a read-modify-write; an unaligned datum counts once), and each read of the global lock word while taking it | 2^20 |
 | Time requested per evaluation (`Sleep` milliseconds and `Stall` microseconds) | 30 s |
 | Package elements | 255 for `Package` ([§19.3.5]), 4,096 for `VarPackage` |
 | Buffer, string, field read as a buffer | 64 KiB |
@@ -769,8 +770,8 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | Region mapping cache | 64 entries, each the pages one access touched |
 
-A table load is one evaluation: its table-level code and the methods it calls share these limits, and the count of
-back-edges starts again from zero with each table. The node and arena caps depend on the profile, and probe counts
+A table load is one evaluation: its table-level code and the methods it calls share these limits, and the counts of
+back-edges and of field accesses start again from zero with each table. The node and arena caps depend on the profile, and probe counts
 follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
 (§8.7).
 

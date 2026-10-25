@@ -140,6 +140,8 @@ namespace_check() {
         "$(grep -o ' failures=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) failed, on" \
         "$(grep -c ' failures=[1-9]' <<<"$runs") machines;" \
         "$(grep -o ' declared_not_run=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) declarations made without running"
+    [[ "$1" == qemu ]] || echo "# field accesses: at most $(grep -o ' field_accesses_peak=[0-9]*' <<<"$runs" | cut -d= -f2 |
+        sort -n | tail -1) in one table load"
     [[ "$1" == qemu ]] || grep '^aml run \(status\|unimplemented\|space\) ' <<<"$runs" | awk '{ split($4, pair, "="); total[$3 " " pair[1]] += pair[2] }
         END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k4,4nr || true
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]

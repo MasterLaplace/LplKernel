@@ -246,6 +246,8 @@ KERNEL_TEST(a_quad_word_datum_is_two_double_word_accesses_low_then_high)
     kernel_test_check(
         test, regions_integer("RQ__") == 0x1122334455667788ull && regions_load.regions.split_qword_accesses == 2u,
         "the value comes back whole, and both accesses are counted as split");
+    kernel_test_check(test, regions_load.evaluation.field_accesses == 4u,
+                      "each half counts as a field access: two written, two read");
     regions_close(test);
 }
 
@@ -283,6 +285,8 @@ KERNEL_TEST(an_index_field_writes_its_index_before_its_data)
                           regions_access(2u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B00u, 3u) &&
                           regions_access(3u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B01u, 0x77u),
                       "index 2 then a data read, index 3 then a data write");
+    kernel_test_check(test, regions_load.evaluation.field_accesses == 4u,
+                      "each index write and each data access counts as a field access");
     regions_close(test);
 }
 
@@ -316,6 +320,8 @@ KERNEL_TEST(a_bank_field_selects_its_bank_before_its_datum)
                           regions_access(0u, REGIONS_ACCESS(PORT_WRITE), 1u, 0x0B10u, 2u) &&
                           regions_access(1u, REGIONS_ACCESS(MEMORY_READ), 1u, REGIONS_MEMORY + 1u, 0x20u),
                       "BankValue 2 goes to the bank port, then BK1_ reads 0x20");
+    kernel_test_check(test, regions_load.evaluation.field_accesses == 2u,
+                      "the bank selection and the datum count as two field accesses");
     regions_close(test);
 }
 
@@ -906,5 +912,7 @@ KERNEL_TEST(an_unaligned_datum_is_made_byte_by_byte)
                       "four byte reads give 0x44332211");
     kernel_test_check(test, regions_load.regions.unaligned_accesses == 1u && regions_load.regions.map_calls == 2u,
                       "one unaligned access, over two pages each mapped once");
+    kernel_test_check(test, regions_load.evaluation.field_accesses == 1u,
+                      "the unaligned datum counts as one field access, its four byte reads included");
     regions_close(test);
 }

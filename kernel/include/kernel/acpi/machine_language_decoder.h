@@ -330,6 +330,9 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
                                                                                                 AccessType, or a
                                                                                                 datum wider than
                                                                                                 its space allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FIELD_ACCESSES, /**< An evaluation's fields
+                                                                                                make more accesses than
+                                                                                                §6.1 allows. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,                /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
