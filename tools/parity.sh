@@ -61,11 +61,12 @@ compare() {
     LC_ALL=C join -a 1 -e missing -o 0,1.2,1.3,2.2,2.3 \
         <(summarize "${hosts[@]}" | LC_ALL=C sort -k1,1) <(summarize "$ring0" | LC_ALL=C sort -k1,1) |
         awk '
-            $2 == "skipped" || index($1, "host_") == 1 { next }
+            $2 == "skipped" { next }
             {
                 ++compared
                 if ($2 == "failed") { print "not ok " $1 ": fails on the host"; ++differences; next }
                 if ($2 == "repeated") { print "not ok " $1 ": ran more than once on the host"; ++differences; next }
+                if (index($1, "host_") == 1 && $4 == "missing") { --compared; next }
                 if ($4 == "missing") { print "not ok " $1 ": did not run in ring 0"; ++differences; next }
                 if ($4 == "repeated") { print "not ok " $1 ": ran more than once in ring 0"; ++differences; next }
                 if ($4 != "ok") { print "not ok " $1 ": " $4 " in ring 0"; ++differences; next }
@@ -126,6 +127,7 @@ EOF
     cat "$directory/host" "$directory/second" >"$directory/both"
     sed 's/Subtest: other/Subtest: host_tool/; s/other\.fold/host_tool.fold/; s/^ok 1 other/ok 1 host_tool/' "$directory/second" >"$directory/tool"
     cat "$directory/host" "$directory/tool" >"$directory/with_tool"
+    sed 's/^    ok 1 fold/    not ok 1 fold/' "$directory/tool" | cat "$directory/host" - >"$directory/with_failing_tool"
 
     local failures=0
     compare "$directory/host" "$directory/host" >/dev/null || { echo "self-test: a log differs from itself"; failures=$((failures + 1)); }
@@ -139,6 +141,7 @@ EOF
     ! compare "$directory/host" "$directory/second" "$directory/host" >/dev/null || { echo "self-test: a test of the second host log that ring 0 did not run passed"; failures=$((failures + 1)); }
     ! compare "$directory/host" "$directory/host" "$directory/host" >/dev/null || { echo "self-test: one test name in two host logs passed"; failures=$((failures + 1)); }
     compare "$directory/with_tool" "$directory/host" >/dev/null || { echo "self-test: a host_ suite ring 0 does not run was compared"; failures=$((failures + 1)); }
+    ! compare "$directory/with_failing_tool" "$directory/host" >/dev/null || { echo "self-test: a host_ suite that fails on the host passed"; failures=$((failures + 1)); }
     [ "$failures" -eq 0 ] || return 1
     echo "self-test: ok"
 }
