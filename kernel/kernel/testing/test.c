@@ -436,8 +436,25 @@ static void kernel_test_write_unnamed_required(Serial_t *serial, const char *req
     }
 }
 
+/**
+ * @brief Counts a cut boot line as a failed test: what was cut may be a test the run was asked
+ *        for, or one it was asked to require, and a run that lost it must not pass.
+ */
+static void kernel_test_write_cut_boot_line(Serial_t *serial)
+{
+    const uint32_t dropped = boot_command_line_dropped();
+
+    if (dropped == 0u)
+        return;
+    serial_write_string(serial, "# the boot line lost its last ");
+    serial_write_unsigned(serial, dropped);
+    serial_write_string(serial, " characters, and the tests they named with them\n");
+    ++kernel_test_failed_count;
+}
+
 static void kernel_test_write_totals(Serial_t *serial, const char *selection, const char *required)
 {
+    kernel_test_write_cut_boot_line(serial);
     if (selection && kernel_test_selected_count == 0u)
         serial_write_string(serial, "# " KERNEL_TEST_SELECTION_OPTION " selected no test\n");
     kernel_test_write_unnamed_required(serial, required);

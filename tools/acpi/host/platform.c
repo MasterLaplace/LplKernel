@@ -62,3 +62,5 @@ const char *boot_command_line_option(const char *option)
     (void) option;
     return NULL;
 }
+
+uint32_t boot_command_line_dropped(void) { return 0u; }
