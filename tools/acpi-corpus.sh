@@ -29,7 +29,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          interpreter
   closure  loads each machine of a list, or each QEMU configuration, with `test-acpi --closure`, and
          prints, for each opcode the needs path reaches on some machine, how many machines it reaches
-         it on: the opcodes the interpreter executes (specification §4.1)
+         it on, and which when they are five or fewer: the opcodes the interpreter executes
+         (specification §4.1); a machine not read or a decode fault fails it
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error.
@@ -243,7 +244,8 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
 }
 
 # Prints, for each opcode the needs-path closure of some machine of the list $1, or of some QEMU configuration,
-# reaches, the number of machines it reaches it on.
+# reaches, the number of machines it reaches it on, and their names when they are five or fewer; fails when a machine
+# could not be read, or when decoding met a fault, which cuts a body and the closure with it.
 closure_table() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local subject
@@ -251,22 +253,37 @@ closure_table() {
     while IFS= read -r subject; do
         if [[ "$1" == qemu ]]; then
             read -ra tables <<<"$subject"
-            "$HARNESS" --closure-tables "${tables[@]}" 2>&1 || true
+            echo "subject ${tables[0]#"$QEMU_TABLES"/}"
+            "$HARNESS" --closure-tables "${tables[@]}" 2>&1 || echo "harness failed"
         else
-            "$HARNESS" --closure "$LINUXHW/$subject.bin" 2>&1 || true
+            echo "subject $subject"
+            "$HARNESS" --closure "$LINUXHW/$subject.bin" 2>&1 || echo "harness failed"
         fi
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi) |
         awk '
-            /^aml closure opcode / { reached[$4]++; if (!($4 in order)) order[$4] = ++count }
+            /^subject / { ++subjects; current = substr($0, 9); next }
+            /^harness failed/ { unread[++failures] = current; next }
+            /^aml namespace / {
+                for (field = 1; field <= NF; ++field) if ($field ~ /^decode_errors=/) faults += substr($field, 15)
+            }
+            /^aml closure opcode / {
+                if (!($4 in reached)) ++count
+                machines[$4] = machines[$4] ((reached[$4]++ == 0) ? "" : "; ") current
+            }
             /^aml closure entries=/ {
                 ++seen
                 for (field = 1; field <= NF; ++field) if ($field ~ /^dropped=/) dropped += substr($field, 9)
             }
             END {
                 sorter = "sort -k3,3nr -k2,2"
-                for (opcode in order) printf "closure %s %u of %u\n", opcode, reached[opcode], seen | sorter
+                for (opcode in reached)
+                    printf "closure %s %u of %u%s\n", opcode, reached[opcode], subjects,
+                        (reached[opcode] <= 5) ? ": " machines[opcode] : "" | sorter
                 close(sorter)
-                printf "# closure: %u opcodes reached on some machine of %u; %u observations dropped\n", count, seen, dropped
+                printf "# closure: %u opcodes reached on some machine of %u; %u observations dropped; %u decode faults\n",
+                    count, subjects, dropped, faults
+                for (index_ = 1; index_ <= failures; ++index_) printf "# not read: %s\n", unread[index_]
+                exit (seen != subjects || faults != 0) ? 1 : 0
             }'
 }
 
