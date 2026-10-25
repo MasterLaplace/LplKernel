@@ -501,9 +501,12 @@ KERNEL_TEST(the_power_management_control_ports_and_the_hardware_reduced_flag_are
                       "an extended block in memory gives no port, and HW_REDUCED_ACPI is read");
     made_up_firmware_release(test);
     memcpy(fadt + MADE_UP_FIRMWARE_FADT_PM1A_CONTROL, &beyond_ports, sizeof(beyond_ports));
+    memset(fadt + MADE_UP_FIRMWARE_FADT_FLAGS, 0, sizeof(reduced));
     made_up_firmware_seal_table(&firmware, MADE_UP_FIRMWARE_FADT_OFFSET);
     kernel_test_check(test,
-                      made_up_firmware_read() && made_up_firmware_directory.power_management_control_ports[0] == 0u,
+                      made_up_firmware_read() && made_up_firmware_control_port(0u) == 0u &&
+                          made_up_firmware_directory.fixed_description.power_management_control_blocks[0].address ==
+                              beyond_ports,
                       "a 32-bit block past port 0xFFFF gives no port, never a truncated one");
     made_up_firmware_release(test);
 }
