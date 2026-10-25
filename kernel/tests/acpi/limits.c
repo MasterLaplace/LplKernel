@@ -218,3 +218,32 @@ KERNEL_TEST(an_endless_loop_is_stopped)
     kernel_test_check(test, limits_integer("AFTR") == 1u, "the Name after them is declared");
     limits_close(test);
 }
+
+/**
+ * @brief A Device the decoding pass meets in a branch the declaration pass did not take, 511 If deep,
+ *        fails with limit_blocks before its TermList opens, and leaves no mark behind: a fault in the
+ *        body of the method after it is a decode error of a declared construct, not an undeclared one.
+ */
+KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
+{
+    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u, 'D', 'E', 'V', 'X'};
+    static const uint8_t method[] = {0x14u, 0x07u, 'M', '0', '0', '0', 0x00u, 0x02u};
+    uint32_t start = LIMITS_AML_CAPACITY - (uint32_t) sizeof(device);
+
+    memcpy(limits_aml + start, device, sizeof(device));
+    for (uint32_t level = 0u; level < 511u; ++level)
+    {
+        limits_aml[--start] = 0x00u;
+        start = limits_package_length(start, LIMITS_AML_CAPACITY - start);
+        limits_aml[--start] = 0xA0u;
+    }
+    memmove(limits_aml, limits_aml + start, LIMITS_AML_CAPACITY - start);
+    memcpy(limits_aml + (LIMITS_AML_CAPACITY - start), method, sizeof(method));
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_aml,
+                            LIMITS_AML_CAPACITY - start + (uint32_t) sizeof(method)))
+        return;
+    kernel_test_check(test, limits_load.decode_errors == 2u, "the block limit and the byte 0x02 are decode errors");
+    kernel_test_check(test, limits_load.undeclared_faults == 0u,
+                      "neither is counted as a fault of an undeclared construct");
+    limits_close(test);
+}

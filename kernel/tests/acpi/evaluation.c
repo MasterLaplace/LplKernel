@@ -366,17 +366,18 @@ KERNEL_TEST(the_integer_operators_compute_what_acpi_says)
 KERNEL_TEST(table_level_loops_run_until_their_exits)
 {
     static const uint8_t aml[] = {
-        0x08u, 'C',   'N', 'T', '_',   0x00u, 0xA2u, 0x0Du, 0x95u, 'C', 'N', 'T',   '_',   0x0Au,
-        0x03u, 0x75u, 'C', 'N', 'T',   '_',   0x08u, 'B',   'R',   'K', '_', 0x00u, 0xA2u, 0x08u,
-        0x01u, 0x75u, 'B', 'R', 'K',   '_',   0xA5u, 0x08u, 'C',   'N', 'U', '_',   0x00u, 0x08u,
-        'S',   'K',   'P', '_', 0x00u, 0xA2u, 0x13u, 0x95u, 'C',   'N', 'U', '_',   0x0Au, 0x02u,
-        0x75u, 'C',   'N', 'U', '_',   0x9Fu, 0x75u, 'S',   'K',   'P', '_',
+        0x08u, 'C',   'N', 'T', '_',   0x00u, 0xA2u, 0x0Du, 0x95u, 'C',   'N',   'T',   '_',   0x0Au, 0x03u,
+        0x75u, 'C',   'N', 'T', '_',   0x08u, 'B',   'R',   'K',   '_',   0x00u, 0xA2u, 0x0Du, 0x01u, 0x75u,
+        'B',   'R',   'K', '_', 0xA5u, 0x75u, 'B',   'R',   'K',   '_',   0x08u, 'C',   'N',   'U',   '_',
+        0x00u, 0x08u, 'S', 'K', 'P',   '_',   0x00u, 0xA2u, 0x13u, 0x95u, 'C',   'N',   'U',   '_',   0x0Au,
+        0x02u, 0x75u, 'C', 'N', 'U',   '_',   0x9Fu, 0x75u, 'S',   'K',   'P',   '_',
     };
 
     if (!evaluation_run(test, 2u, aml, sizeof(aml)))
         return;
     kernel_test_check(test, evaluation_integer("CNT_") == 3u, "While (CNT_ < 3) runs three times");
-    kernel_test_check(test, evaluation_integer("BRK_") == 1u, "While (One) { ... Break } runs once");
+    kernel_test_check(test, evaluation_integer("BRK_") == 1u,
+                      "While (One) { Increment (BRK_) Break Increment (BRK_) } increments once");
     kernel_test_check(test, evaluation_integer("CNU_") == 2u && evaluation_integer("SKP_") == 0u,
                       "a Continue skips the Increment after it");
     kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails");
