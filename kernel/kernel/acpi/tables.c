@@ -10,17 +10,82 @@
 
 #define ACPI_TABLE_MAXIMUM_LENGTH 0x01000000u /**< A longer table is taken for a corrupt length. */
 
-#define ACPI_FADT_FIRMWARE_CONTROL_OFFSET          36u         /**< FIRMWARE_CTRL: the FACS, 32 bits. */
-#define ACPI_FADT_DSDT_OFFSET                      40u         /**< DSDT: the DSDT, 32 bits. */
-#define ACPI_FADT_EXTENDED_FIRMWARE_CONTROL_OFFSET 132u        /**< X_FIRMWARE_CTRL: the FACS, 64 bits. */
-#define ACPI_FADT_EXTENDED_DSDT_OFFSET             140u        /**< X_DSDT: the DSDT, 64 bits. */
-#define ACPI_FADT_PM1A_CONTROL_OFFSET              64u         /**< PM1a_CNT_BLK: a port, 32 bits. */
-#define ACPI_FADT_PM1B_CONTROL_OFFSET              68u         /**< PM1b_CNT_BLK: a port, 32 bits. */
-#define ACPI_FADT_FLAGS_OFFSET                     112u        /**< Flags, 32 bits. */
-#define ACPI_FADT_EXTENDED_PM1A_CONTROL_OFFSET     172u        /**< X_PM1a_CNT_BLK: a Generic Address Structure. */
-#define ACPI_FADT_EXTENDED_PM1B_CONTROL_OFFSET     184u        /**< X_PM1b_CNT_BLK: a Generic Address Structure. */
-#define ACPI_FADT_HARDWARE_REDUCED                 (1u << 20u) /**< Flags bit HW_REDUCED_ACPI. */
-#define ACPI_GENERIC_ADDRESS_SYSTEM_IO             1u          /**< A Generic Address Structure in the I/O space. */
+#define ACPI_FADT_FIRMWARE_CONTROL_OFFSET          36u  /**< FIRMWARE_CTRL: the FACS, 32 bits. */
+#define ACPI_FADT_DSDT_OFFSET                      40u  /**< DSDT: the DSDT, 32 bits. */
+#define ACPI_FADT_EXTENDED_FIRMWARE_CONTROL_OFFSET 132u /**< X_FIRMWARE_CTRL: the FACS, 64 bits. */
+#define ACPI_FADT_EXTENDED_DSDT_OFFSET             140u /**< X_DSDT: the DSDT, 64 bits. */
+
+/**
+ * @name Where the fields of a FADT the normalisation reads lie
+ * @{
+ */
+#define ACPI_FADT_SYSTEM_CONTROL_INTERRUPT_OFFSET  46u  /**< SCI_INT, 16 bits. */
+#define ACPI_FADT_SYSTEM_MANAGEMENT_COMMAND_OFFSET 48u  /**< SMI_CMD, 32 bits. */
+#define ACPI_FADT_ENABLE_COMMAND_OFFSET            52u  /**< ACPI_ENABLE, 8 bits. */
+#define ACPI_FADT_PERFORMANCE_STATE_COMMAND_OFFSET 55u  /**< PSTATE_CNT, 8 bits, reserved in ACPI 1.0. */
+#define ACPI_FADT_GENERAL_PURPOSE_EVENT_1_BASE     94u  /**< GPE1_BASE, 8 bits. */
+#define ACPI_FADT_IDLE_STATE_COMMAND_OFFSET        95u  /**< CST_CNT, 8 bits, reserved in ACPI 1.0. */
+#define ACPI_FADT_FLAGS_OFFSET                     112u /**< Flags, 32 bits. */
+#define ACPI_FADT_RESET_REGISTER_OFFSET            116u /**< RESET_REG, a Generic Address Structure. */
+#define ACPI_FADT_RESET_VALUE_OFFSET               128u /**< RESET_VALUE, 8 bits. */
+#define ACPI_FADT_SLEEP_CONTROL_OFFSET             244u /**< SLEEP_CONTROL_REG, a Generic Address Structure. */
+#define ACPI_FADT_SLEEP_STATUS_OFFSET              256u /**< SLEEP_STATUS_REG, a Generic Address Structure. */
+#define ACPI_FADT_FIXED_HARDWARE_FIRST             46u  /**< The first byte a hardware-reduced platform ignores. */
+#define ACPI_FADT_FIXED_HARDWARE_END               109u /**< The byte past the last of them before the flags. */
+#define ACPI_FADT_EXTENDED_FIXED_HARDWARE_FIRST    148u /**< The first extended block it ignores, X_PM1a_EVT_BLK. */
+#define ACPI_FADT_EXTENDED_FIXED_HARDWARE_END      244u /**< The byte past the last one, X_GPE1_BLK. */
+/** @} */
+
+/**
+ * @name The longest FADT of each revision
+ * @{
+ */
+#define ACPI_FADT_REVISION_1_LENGTH 116u /**< ACPI 1.0. */
+#define ACPI_FADT_REVISION_2_LENGTH 132u /**< ACPI 1.0 with the reset register. */
+#define ACPI_FADT_REVISION_3_LENGTH 244u /**< ACPI 2.0 to 4.0. */
+#define ACPI_FADT_REVISION_5_LENGTH 268u /**< ACPI 5.0 and 5.1, with the sleep registers. */
+/** @} */
+
+/**
+ * @brief Where a register block of a FADT lies: its 32-bit address, the byte that gives its length,
+ *        and its Generic Address Structure.
+ */
+typedef struct AcpiFadtBlock {
+    uint8_t legacy_offset;   /**< Its 32-bit address in the I/O space. */
+    uint8_t length_offset;   /**< The byte that gives its length. */
+    uint8_t extended_offset; /**< Its Generic Address Structure. */
+} AcpiFadtBlock_t;
+
+/**
+ * @brief The register blocks of a FADT, in the order of acpi_fadt_blocks.
+ */
+typedef enum AcpiFadtBlockIndex {
+    ACPI_FADT_PM1A_EVENT = 0,   /**< PM1a_EVT_BLK. */
+    ACPI_FADT_PM1B_EVENT = 1,   /**< PM1b_EVT_BLK. */
+    ACPI_FADT_PM1A_CONTROL = 2, /**< PM1a_CNT_BLK. */
+    ACPI_FADT_PM1B_CONTROL = 3, /**< PM1b_CNT_BLK. */
+    ACPI_FADT_PM_TIMER = 4,     /**< PM_TMR_BLK. */
+    ACPI_FADT_GPE0 = 5,         /**< GPE0_BLK. */
+    ACPI_FADT_GPE1 = 6,         /**< GPE1_BLK. */
+    ACPI_FADT_BLOCKS = 7,       /**< How many there are. */
+} AcpiFadtBlockIndex_t;
+
+static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
+    {56u, 88u, 148u}, /* PM1a_EVT_BLK, PM1_EVT_LEN, X_PM1a_EVT_BLK */
+    {60u, 88u, 160u}, /* PM1b_EVT_BLK, PM1_EVT_LEN, X_PM1b_EVT_BLK */
+    {64u, 89u, 172u}, /* PM1a_CNT_BLK, PM1_CNT_LEN, X_PM1a_CNT_BLK */
+    {68u, 89u, 184u}, /* PM1b_CNT_BLK, PM1_CNT_LEN, X_PM1b_CNT_BLK */
+    {76u, 91u, 208u}, /* PM_TMR_BLK, PM_TMR_LEN, X_PM_TMR_BLK */
+    {80u, 92u, 220u}, /* GPE0_BLK, GPE0_BLK_LEN, X_GPE0_BLK */
+    {84u, 93u, 232u}, /* GPE1_BLK, GPE1_BLK_LEN, X_GPE1_BLK */
+};
+
+#define ACPI_FADT_HARDWARE_REDUCED         (1u << 20u) /**< Flags bit HW_REDUCED_ACPI. */
+#define ACPI_FADT_RESET_REGISTER_SUPPORTED (1u << 10u) /**< Flags bit RESET_REG_SUP. */
+#define ACPI_FADT_FLAGS_IGNORED_WHEN_REDUCED                                                                           \
+    0x0003618Eu /**< Flags bits 1, 2, 3, 7, 8, 13, 14, 16 and 17, which a hardware-reduced platform ignores. */
+#define ACPI_GENERIC_ADDRESS_MAXIMUM_WIDTH 255u     /**< The widest register a Generic Address Structure holds. */
+#define ACPI_INPUT_OUTPUT_PORTS            0x10000u /**< Ports in the I/O space. */
 
 /**
  * @name The MADT entry types this reader reads
@@ -229,35 +294,129 @@ static uint32_t acpi_fadt_facs_address(const AdvancedConfigurationAndPowerInterf
 }
 
 /**
- * @brief The port of a PM1 control block a FADT gives: the 32-bit block when it is not 0, else the
- *        extended block's address when it lies in the I/O space; 0 when the FADT gives neither.
+ * @brief The earliest revision of a FADT @p length bytes long.
  */
-static uint16_t acpi_fadt_control_port(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt,
-                                       uint32_t offset_32, uint32_t offset_extended)
+static uint8_t acpi_fadt_revision(uint32_t length)
 {
-    uint32_t port_32;
-    uint64_t address_64;
-    uint8_t space = 0u;
-
-    acpi_fadt_read_addresses(fadt, offset_32, offset_extended + 4u, &port_32, &address_64);
-    if (port_32 != 0u)
-        return (port_32 <= 0xFFFFu) ? (uint16_t) port_32 : 0u;
-    if (fadt->length >= offset_extended + 12u)
-        space = ((const uint8_t *) fadt)[offset_extended];
-    return (space == ACPI_GENERIC_ADDRESS_SYSTEM_IO && address_64 <= 0xFFFFu) ? (uint16_t) address_64 : 0u;
+    if (length <= ACPI_FADT_REVISION_1_LENGTH)
+        return 1u;
+    if (length <= ACPI_FADT_REVISION_2_LENGTH)
+        return 2u;
+    if (length <= ACPI_FADT_REVISION_3_LENGTH)
+        return 3u;
+    if (length <= ACPI_FADT_REVISION_5_LENGTH)
+        return 5u;
+    return 6u;
 }
 
 /**
- * @brief Whether a FADT's flags say the platform is hardware-reduced; a FADT too short to hold its
- *        flags says it is not.
+ * @brief Reads the Generic Address Structure at @p offset of a FADT's copy; one whose address is 0
+ *        reads absent, every field 0.
  */
-static bool acpi_fadt_hardware_reduced(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt)
+static void acpi_fadt_read_register(const uint8_t *copy, uint32_t offset,
+                                    AdvancedConfigurationAndPowerInterfaceGenericAddress_t *out_register)
 {
-    uint32_t flags = 0u;
+    memset(out_register, 0, sizeof(*out_register));
+    memcpy(&out_register->address, copy + offset + 4u, sizeof(out_register->address));
+    if (out_register->address == 0u)
+        return;
+    out_register->space = copy[offset];
+    out_register->bit_width = copy[offset + 1u];
+    out_register->bit_offset = copy[offset + 2u];
+    out_register->access_size = copy[offset + 3u];
+}
 
-    if (fadt->length >= ACPI_FADT_FLAGS_OFFSET + sizeof(flags))
-        memcpy(&flags, (const uint8_t *) fadt + ACPI_FADT_FLAGS_OFFSET, sizeof(flags));
-    return (flags & ACPI_FADT_HARDWARE_REDUCED) != 0u;
+/**
+ * @brief Reads register block @p index of a FADT's copy: its extended block when that gives an
+ *        address, as wide as the legacy length when it gives no width; else its legacy block, in the
+ *        I/O space.
+ *
+ * @return The legacy length, in bytes.
+ */
+static uint8_t acpi_fadt_read_block(const uint8_t *copy, AcpiFadtBlockIndex_t index,
+                                    AdvancedConfigurationAndPowerInterfaceGenericAddress_t *out_block)
+{
+    const AcpiFadtBlock_t *block = &acpi_fadt_blocks[index];
+    const uint8_t length = copy[block->length_offset];
+    const uint32_t bits = 8u * length;
+    const uint8_t width =
+        (bits > ACPI_GENERIC_ADDRESS_MAXIMUM_WIDTH) ? ACPI_GENERIC_ADDRESS_MAXIMUM_WIDTH : (uint8_t) bits;
+    uint32_t legacy_address = 0u;
+
+    acpi_fadt_read_register(copy, block->extended_offset, out_block);
+    if (out_block->address != 0u)
+    {
+        if (out_block->bit_width == 0u)
+            out_block->bit_width = width;
+        return length;
+    }
+    memcpy(&legacy_address, copy + block->legacy_offset, sizeof(legacy_address));
+    if (legacy_address == 0u)
+        return length;
+    out_block->address = legacy_address;
+    out_block->space = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_INPUT_OUTPUT;
+    out_block->bit_width = width;
+    return length;
+}
+
+/**
+ * @brief Reads GPE block @p index of a FADT's copy, and its length in bytes: the legacy length, else
+ *        the block's own width; 0 when the block is absent.
+ */
+static void acpi_fadt_read_event_block(const uint8_t *copy, AcpiFadtBlockIndex_t index,
+                                       AdvancedConfigurationAndPowerInterfaceGenericAddress_t *out_block,
+                                       uint8_t *out_length)
+{
+    const uint8_t length = acpi_fadt_read_block(copy, index, out_block);
+
+    if (out_block->address == 0u)
+        *out_length = 0u;
+    else
+        *out_length = (length != 0u) ? length : (uint8_t) (out_block->bit_width / 8u);
+}
+
+/**
+ * @brief Reads every register block of a FADT's copy: PM1 event and control, PM timer and GPE.
+ */
+static void acpi_fadt_read_blocks(const uint8_t *copy, AdvancedConfigurationAndPowerInterfaceFixedDescription_t *out)
+{
+    (void) acpi_fadt_read_block(copy, ACPI_FADT_PM1A_EVENT, &out->power_management_event_blocks[0]);
+    (void) acpi_fadt_read_block(copy, ACPI_FADT_PM1B_EVENT, &out->power_management_event_blocks[1]);
+    (void) acpi_fadt_read_block(copy, ACPI_FADT_PM1A_CONTROL, &out->power_management_control_blocks[0]);
+    (void) acpi_fadt_read_block(copy, ACPI_FADT_PM1B_CONTROL, &out->power_management_control_blocks[1]);
+    (void) acpi_fadt_read_block(copy, ACPI_FADT_PM_TIMER, &out->power_management_timer_block);
+    acpi_fadt_read_event_block(copy, ACPI_FADT_GPE0, &out->general_purpose_event_blocks[0],
+                               &out->general_purpose_event_block_lengths[0]);
+    acpi_fadt_read_event_block(copy, ACPI_FADT_GPE1, &out->general_purpose_event_blocks[1],
+                               &out->general_purpose_event_block_lengths[1]);
+}
+
+/**
+ * @brief Clears, in a FADT's copy and its flags, every field and flag ACPI tells OSPM to ignore on a
+ *        hardware-reduced platform.
+ */
+static void acpi_fadt_forget_fixed_hardware(uint8_t *copy, uint32_t *flags)
+{
+    memset(copy + ACPI_FADT_FIXED_HARDWARE_FIRST, 0, ACPI_FADT_FIXED_HARDWARE_END - ACPI_FADT_FIXED_HARDWARE_FIRST);
+    memset(copy + ACPI_FADT_EXTENDED_FIXED_HARDWARE_FIRST, 0,
+           ACPI_FADT_EXTENDED_FIXED_HARDWARE_END - ACPI_FADT_EXTENDED_FIXED_HARDWARE_FIRST);
+    *flags &= ~ACPI_FADT_FLAGS_IGNORED_WHEN_REDUCED;
+}
+
+/**
+ * @brief Reads the fields of a FADT's copy that are not registers: SCI_INT, SMI_CMD, the commands
+ *        written to it, and GPE1_BASE.
+ */
+static void acpi_fadt_read_fields(const uint8_t *copy, AdvancedConfigurationAndPowerInterfaceFixedDescription_t *out)
+{
+    memcpy(&out->system_control_interrupt, copy + ACPI_FADT_SYSTEM_CONTROL_INTERRUPT_OFFSET,
+           sizeof(out->system_control_interrupt));
+    memcpy(&out->system_management_interrupt_command, copy + ACPI_FADT_SYSTEM_MANAGEMENT_COMMAND_OFFSET,
+           sizeof(out->system_management_interrupt_command));
+    out->enable_command = copy[ACPI_FADT_ENABLE_COMMAND_OFFSET];
+    out->performance_state_command = copy[ACPI_FADT_PERFORMANCE_STATE_COMMAND_OFFSET];
+    out->idle_state_command = copy[ACPI_FADT_IDLE_STATE_COMMAND_OFFSET];
+    out->general_purpose_event_1_base = copy[ACPI_FADT_GENERAL_PURPOSE_EVENT_1_BASE];
 }
 
 /**
@@ -466,6 +625,51 @@ bool advanced_configuration_and_power_interface_checksum_holds(const void *bytes
     return sum == 0u;
 }
 
+bool advanced_configuration_and_power_interface_read_fixed_description(
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt,
+    AdvancedConfigurationAndPowerInterfaceFixedDescription_t *out_description)
+{
+    uint8_t copy[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_FIXED_DESCRIPTION_LENGTH] = {0};
+
+    memset(out_description, 0, sizeof(*out_description));
+    if (fadt == NULL || fadt->length < sizeof(*fadt))
+        return false;
+
+    memcpy(copy, fadt, (fadt->length < sizeof(copy)) ? fadt->length : sizeof(copy));
+    out_description->present = true;
+    out_description->length = fadt->length;
+    out_description->revision = acpi_fadt_revision(fadt->length);
+    memcpy(&out_description->flags, copy + ACPI_FADT_FLAGS_OFFSET, sizeof(out_description->flags));
+    out_description->hardware_reduced = (out_description->flags & ACPI_FADT_HARDWARE_REDUCED) != 0u;
+    if (out_description->hardware_reduced)
+        acpi_fadt_forget_fixed_hardware(copy, &out_description->flags);
+    if (out_description->revision <= 2u)
+    {
+        copy[ACPI_FADT_PERFORMANCE_STATE_COMMAND_OFFSET] = 0u;
+        copy[ACPI_FADT_IDLE_STATE_COMMAND_OFFSET] = 0u;
+    }
+    acpi_fadt_read_fields(copy, out_description);
+    acpi_fadt_read_blocks(copy, out_description);
+    if (out_description->revision >= 2u && (out_description->flags & ACPI_FADT_RESET_REGISTER_SUPPORTED) != 0u)
+    {
+        acpi_fadt_read_register(copy, ACPI_FADT_RESET_REGISTER_OFFSET, &out_description->reset_register);
+        out_description->reset_value = copy[ACPI_FADT_RESET_VALUE_OFFSET];
+    }
+    acpi_fadt_read_register(copy, ACPI_FADT_SLEEP_CONTROL_OFFSET, &out_description->sleep_control_register);
+    acpi_fadt_read_register(copy, ACPI_FADT_SLEEP_STATUS_OFFSET, &out_description->sleep_status_register);
+    return true;
+}
+
+uint16_t advanced_configuration_and_power_interface_input_output_port(
+    const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *reg, uint32_t bytes)
+{
+    if (reg == NULL || reg->space != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_INPUT_OUTPUT ||
+        reg->address == 0u || bytes == 0u || bytes > ACPI_INPUT_OUTPUT_PORTS ||
+        reg->address > ACPI_INPUT_OUTPUT_PORTS - bytes)
+        return 0u;
+    return (uint16_t) reg->address;
+}
+
 bool advanced_configuration_and_power_interface_read_directory(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,
     AdvancedConfigurationAndPowerInterfaceDirectory_t *out_directory)
@@ -538,11 +742,8 @@ bool advanced_configuration_and_power_interface_read_directory(
         if (dsdt != 0u)
             acpi_record_table(out_directory, dsdt);
         out_directory->firmware_control_physical_address = acpi_fadt_facs_address(fadt);
-        out_directory->power_management_control_ports[0] =
-            acpi_fadt_control_port(fadt, ACPI_FADT_PM1A_CONTROL_OFFSET, ACPI_FADT_EXTENDED_PM1A_CONTROL_OFFSET);
-        out_directory->power_management_control_ports[1] =
-            acpi_fadt_control_port(fadt, ACPI_FADT_PM1B_CONTROL_OFFSET, ACPI_FADT_EXTENDED_PM1B_CONTROL_OFFSET);
-        out_directory->hardware_reduced = acpi_fadt_hardware_reduced(fadt);
+        (void) advanced_configuration_and_power_interface_read_fixed_description(fadt,
+                                                                                 &out_directory->fixed_description);
     }
 
     out_directory->walked = true;

@@ -267,6 +267,15 @@ static bool made_up_firmware_checksum_fails(const AdvancedConfigurationAndPowerI
 }
 
 /**
+ * @brief The I/O port of the PM1 control block @p index of the directory's FADT, or 0.
+ */
+static uint16_t made_up_firmware_control_port(uint32_t index)
+{
+    return advanced_configuration_and_power_interface_input_output_port(
+        &made_up_firmware_directory.fixed_description.power_management_control_blocks[index], 2u);
+}
+
+/**
  * @brief A root pointer of revision 2 that names an XSDT has the XSDT walked: its 64-bit entries,
  *        and X_DSDT for the DSDT.
  */
@@ -478,18 +487,17 @@ KERNEL_TEST(the_power_management_control_ports_and_the_hardware_reduced_flag_are
     memcpy(fadt + MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL, extended_io, sizeof(extended_io));
     made_up_firmware_seal_table(&firmware, MADE_UP_FIRMWARE_FADT_OFFSET);
     kernel_test_check(test,
-                      made_up_firmware_read() &&
-                          made_up_firmware_directory.power_management_control_ports[0] == 0x0604u &&
-                          made_up_firmware_directory.power_management_control_ports[1] == 0x0805u &&
-                          !made_up_firmware_directory.hardware_reduced,
+                      made_up_firmware_read() && made_up_firmware_control_port(0u) == 0x0604u &&
+                          made_up_firmware_control_port(1u) == 0x0805u &&
+                          !made_up_firmware_directory.fixed_description.hardware_reduced,
                       "PM1a from its 32-bit block, PM1b from its extended block in the I/O space");
     made_up_firmware_release(test);
     memcpy(fadt + MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL, extended_memory, sizeof(extended_memory));
     memcpy(fadt + MADE_UP_FIRMWARE_FADT_FLAGS, &reduced, sizeof(reduced));
     made_up_firmware_seal_table(&firmware, MADE_UP_FIRMWARE_FADT_OFFSET);
     kernel_test_check(test,
-                      made_up_firmware_read() && made_up_firmware_directory.power_management_control_ports[1] == 0u &&
-                          made_up_firmware_directory.hardware_reduced,
+                      made_up_firmware_read() && made_up_firmware_control_port(1u) == 0u &&
+                          made_up_firmware_directory.fixed_description.hardware_reduced,
                       "an extended block in memory gives no port, and HW_REDUCED_ACPI is read");
     made_up_firmware_release(test);
     memcpy(fadt + MADE_UP_FIRMWARE_FADT_PM1A_CONTROL, &beyond_ports, sizeof(beyond_ports));

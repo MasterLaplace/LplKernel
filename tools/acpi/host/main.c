@@ -20,15 +20,12 @@
     "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"
 
 /**
- * @brief Prints the directory of @p directory: its counts, the FACS, the PM1 control ports and the
- *        hardware-reduced flag, then one line per table.
+ * @brief Prints the directory of @p directory: its counts and the FACS, then one line per table.
  */
 static void harness_print_directory(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
-    printf("tables=%u unreachable=%u facs=0x%08X pm1_control=0x%04X,0x%04X hardware_reduced=%u\n",
-           directory->table_count, directory->unreachable_count, directory->firmware_control_physical_address,
-           directory->power_management_control_ports[0], directory->power_management_control_ports[1],
-           directory->hardware_reduced ? 1u : 0u);
+    printf("tables=%u unreachable=%u facs=0x%08X\n", directory->table_count, directory->unreachable_count,
+           directory->firmware_control_physical_address);
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceTable_t *table = &directory->tables[index];
@@ -36,6 +33,44 @@ static void harness_print_directory(const AdvancedConfigurationAndPowerInterface
         printf("%.4s length=%u revision=%u checksum=%s\n", table->signature, table->length, table->revision,
                table->checksum_valid ? "ok" : "bad");
     }
+}
+
+/**
+ * @brief Prints one register of the normalised FADT, named @p name.
+ */
+static void harness_print_register(const char *name, const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *reg)
+{
+    printf("fadt %s space=%u width=%u offset=%u access=%u address=0x%llX\n", name, reg->space, reg->bit_width,
+           reg->bit_offset, reg->access_size, (unsigned long long) reg->address);
+}
+
+/**
+ * @brief Prints the FADT the directory gives as the kernel normalises it: its fields, then one line
+ *        per register, absent ones included.
+ */
+static void harness_print_fixed_description(const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
+{
+    if (!fadt->present)
+    {
+        printf("fadt present=0\n");
+        return;
+    }
+    printf("fadt present=1 length=%u revision=%u hardware_reduced=%u flags=0x%08X sci=%u smi_command=0x%X "
+           "enable=0x%02X pstate=0x%02X cst=0x%02X reset_value=0x%02X gpe0_length=%u gpe1_length=%u gpe1_base=%u\n",
+           fadt->length, fadt->revision, fadt->hardware_reduced ? 1u : 0u, fadt->flags, fadt->system_control_interrupt,
+           fadt->system_management_interrupt_command, fadt->enable_command, fadt->performance_state_command,
+           fadt->idle_state_command, fadt->reset_value, fadt->general_purpose_event_block_lengths[0],
+           fadt->general_purpose_event_block_lengths[1], fadt->general_purpose_event_1_base);
+    harness_print_register("pm1a_event", &fadt->power_management_event_blocks[0]);
+    harness_print_register("pm1b_event", &fadt->power_management_event_blocks[1]);
+    harness_print_register("pm1a_control", &fadt->power_management_control_blocks[0]);
+    harness_print_register("pm1b_control", &fadt->power_management_control_blocks[1]);
+    harness_print_register("pm_timer", &fadt->power_management_timer_block);
+    harness_print_register("gpe0", &fadt->general_purpose_event_blocks[0]);
+    harness_print_register("gpe1", &fadt->general_purpose_event_blocks[1]);
+    harness_print_register("reset", &fadt->reset_register);
+    harness_print_register("sleep_control", &fadt->sleep_control_register);
+    harness_print_register("sleep_status", &fadt->sleep_status_register);
 }
 
 /**
@@ -157,7 +192,7 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
 
 /**
  * @brief Walks the tables of the dump at @p path as the kernel walks a live machine's, and prints
- *        the directory, its MADT, then what loading its definition blocks decoded.
+ *        the directory, its FADT, its MADT, then what loading its definition blocks decoded.
  *
  * @return 0 when the directory was read and every window it mapped was unmapped by its address and
  *         length, 1 otherwise.
@@ -176,6 +211,7 @@ static int harness_walk_machine(const char *path)
     else
     {
         harness_print_directory(&directory);
+        harness_print_fixed_description(&directory.fixed_description);
         harness_print_madt(&directory);
         harness_print_machine_language(&directory);
         advanced_configuration_and_power_interface_release_directory(&directory);

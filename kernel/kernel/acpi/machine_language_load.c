@@ -1844,9 +1844,14 @@ void advanced_configuration_and_power_interface_machine_language_load_directory(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt = &directory->fixed_description;
+    const uint16_t control_ports[2] = {
+        advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_control_blocks[0], 2u),
+        advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_control_blocks[1], 2u),
+    };
+
     advanced_configuration_and_power_interface_machine_language_use_global_lock(
-        load, directory->hardware_reduced ? 0u : directory->firmware_control_physical_address,
-        directory->power_management_control_ports);
+        load, fadt->hardware_reduced ? 0u : directory->firmware_control_physical_address, control_ports);
     (void) advanced_configuration_and_power_interface_machine_language_declare_table(
         load, advanced_configuration_and_power_interface_find_in_directory(directory, "DSDT"));
     for (uint32_t index = 0u; index < directory->table_count; ++index)
