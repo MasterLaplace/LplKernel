@@ -69,6 +69,16 @@ static void platform_write_no_memory(void *context, void *address, uint64_t phys
     (void) value;
 }
 
+static uint32_t platform_exchange_no_memory(void *context, void *address, uint64_t physical_address, uint32_t expected,
+                                            uint32_t desired)
+{
+    (void) context;
+    (void) address;
+    (void) physical_address;
+    (void) desired;
+    return expected;
+}
+
 static uint32_t platform_read_no_port(void *context, uint16_t port, uint8_t width)
 {
     (void) context;
@@ -109,6 +119,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .unmap_device = platform_unmap_no_memory,
     .read_memory = platform_read_no_memory,
     .write_memory = platform_write_no_memory,
+    .compare_exchange = platform_exchange_no_memory,
     .port_read = platform_read_no_port,
     .port_write = platform_write_no_port,
     .allocate_pages = platform_allocate_pages,

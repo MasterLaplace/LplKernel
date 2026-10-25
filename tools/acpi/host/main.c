@@ -20,12 +20,15 @@
     "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"
 
 /**
- * @brief Prints the directory of @p directory: its counts and the FACS, then one line per table.
+ * @brief Prints the directory of @p directory: its counts, the FACS, the PM1 control ports and the
+ *        hardware-reduced flag, then one line per table.
  */
 static void harness_print_directory(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
-    printf("tables=%u unreachable=%u facs=0x%08X\n", directory->table_count, directory->unreachable_count,
-           directory->firmware_control_physical_address);
+    printf("tables=%u unreachable=%u facs=0x%08X pm1_control=0x%04X,0x%04X hardware_reduced=%u\n",
+           directory->table_count, directory->unreachable_count, directory->firmware_control_physical_address,
+           directory->power_management_control_ports[0], directory->power_management_control_ports[1],
+           directory->hardware_reduced ? 1u : 0u);
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceTable_t *table = &directory->tables[index];
@@ -89,6 +92,9 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            regions->field_reads, regions->field_writes, regions->map_calls, regions->mapping_cache_hits,
            regions->split_qword_accesses, regions->unaligned_accesses, regions->protected_port_accesses,
            regions->region_lengths_rounded);
+    printf("aml run global_lock acquisitions=%u waits=%u releases_signalled=%u timeouts=%u unlocked_accesses=%u\n",
+           regions->global_lock_acquisitions, regions->global_lock_waits, regions->global_lock_releases_signalled,
+           regions->global_lock_timeouts, regions->unlocked_lock_accesses);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);

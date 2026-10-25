@@ -99,6 +99,18 @@ static void acpi_host_write_memory(void *context, void *address, uint64_t physic
     }
 }
 
+static uint32_t acpi_host_compare_exchange(void *context, void *address, uint64_t physical_address, uint32_t expected,
+                                           uint32_t desired)
+{
+    uint32_t held = expected;
+
+    (void) context;
+    (void) physical_address;
+    __atomic_compare_exchange_n((volatile uint32_t *) address, &held, desired, false, __ATOMIC_SEQ_CST,
+                                __ATOMIC_SEQ_CST);
+    return held;
+}
+
 static uint32_t acpi_host_port_read(void *context, uint16_t port, uint8_t width)
 {
     (void) context;
@@ -145,6 +157,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .unmap_device = acpi_host_unmap_device,
     .read_memory = acpi_host_read_memory,
     .write_memory = acpi_host_write_memory,
+    .compare_exchange = acpi_host_compare_exchange,
     .port_read = acpi_host_port_read,
     .port_write = acpi_host_port_write,
     .allocate_pages = acpi_host_allocate_pages,

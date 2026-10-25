@@ -357,28 +357,29 @@ KERNEL_TEST(a_protected_port_reads_zero_and_drops_writes)
 }
 
 /**
- * @brief A Lock field fails with global_lock_unavailable until the global lock lands, and nothing is
- *        accessed (§5.3).
+ * @brief Without a global lock, as in a made-up load that names no FACS, a Lock field is accessed
+ *        unlocked, counted, and nothing touches a lock word.
  */
-KERNEL_TEST(a_lock_field_fails_until_the_global_lock_lands)
+KERNEL_TEST(without_a_global_lock_a_lock_field_is_accessed_unlocked)
 {
+    static const uint8_t memory[] = {0x5Au};
     static const MadeUpFieldUnit_t units[] = {
         {"LK__", 8u}
     };
 
     regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY, memory,
+                                                                    sizeof(memory));
     made_up_aml_region(&regions_aml, "LCKR", 0x00u, REGIONS_MEMORY, 1u);
     made_up_aml_field(&regions_aml, "LCKR", REGIONS_BYTE_ACCESS | REGIONS_LOCK, units, 1u);
     made_up_aml_name_integer(&regions_aml, "RL__", 0x55u);
     made_up_aml_store_name(&regions_aml, "LK__", "RL__");
-    made_up_aml_store_integer(&regions_aml, 1u, "LK__");
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
-                      regions_integer("RL__") == 0x55u &&
-                          regions_failed(REGIONS_STATUS(GLOBAL_LOCK_UNAVAILABLE)) == 2u &&
-                          regions_host.access_count == 0u,
-                      "the read and the write fail with global_lock_unavailable, and touch nothing");
+                      regions_integer("RL__") == 0x5Au && regions_load.regions.unlocked_lock_accesses == 1u &&
+                          regions_host.access_count == 1u,
+                      "LK__ reads 0x5A unlocked, counted, in one access");
     regions_close(test);
 }
 

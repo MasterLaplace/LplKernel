@@ -247,7 +247,35 @@ static uint32_t simulated_host_read_memory(void *context, const void *address, u
     simulated_host_check_address(simulated, address, physical_address, width);
     simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_READ, width, 0u,
                        physical_address, value);
+    if (physical_address == simulated->firmware_lock_address && simulated->firmware_holds_for_reads != 0u &&
+        --simulated->firmware_holds_for_reads == 0u)
+    {
+        const uint32_t released = value & ~0x3u;
+
+        advanced_configuration_and_power_interface_simulated_host_poke(simulated, physical_address, &released, 4u);
+    }
     return value;
+}
+
+static uint32_t simulated_host_compare_exchange(void *context, void *address, uint64_t physical_address,
+                                                uint32_t expected, uint32_t desired)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+    const uint32_t held =
+        (uint32_t) advanced_configuration_and_power_interface_simulated_host_peek(simulated, physical_address, 4u);
+    uint32_t left = (held == expected) ? desired : held;
+
+    simulated_host_check_address(simulated, address, physical_address, 4u);
+    if (held == expected && physical_address == simulated->firmware_lock_address && simulated->firmware_wants_lock &&
+        (expected & 0x2u) == 0u && (desired & 0x2u) != 0u)
+    {
+        left |= 0x1u;
+        simulated->firmware_wants_lock = false;
+    }
+    advanced_configuration_and_power_interface_simulated_host_poke(simulated, physical_address, &left, 4u);
+    simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_EXCHANGE, 4u, 0u,
+                       physical_address, left);
+    return held;
 }
 
 static void simulated_host_write_memory(void *context, void *address, uint64_t physical_address, uint8_t width,
@@ -320,6 +348,7 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.unmap_device = simulated_host_unmap_device;
     simulated->host.read_memory = simulated_host_read_memory;
     simulated->host.write_memory = simulated_host_write_memory;
+    simulated->host.compare_exchange = simulated_host_compare_exchange;
     simulated->host.port_read = simulated_host_port_read;
     simulated->host.port_write = simulated_host_port_write;
     simulated->host.allocate_pages = simulated_host_allocate_pages;
@@ -337,6 +366,9 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->access_count = 0u;
     simulated->map_serial = 0u;
     simulated->inconsistent_accesses = 0u;
+    simulated->firmware_lock_address = 0u;
+    simulated->firmware_holds_for_reads = 0u;
+    simulated->firmware_wants_lock = false;
 }
 
 void advanced_configuration_and_power_interface_simulated_host_close(

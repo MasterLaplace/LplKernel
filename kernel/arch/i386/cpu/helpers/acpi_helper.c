@@ -26,6 +26,10 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("protected_port_accesses", regions->protected_port_accesses);
     kernel_telemetry_write_unsigned("region_lengths_rounded", regions->region_lengths_rounded);
     kernel_telemetry_write_unsigned("space_unsupported", refused);
+    kernel_telemetry_write_unsigned("global_lock_acquisitions", regions->global_lock_acquisitions);
+    kernel_telemetry_write_unsigned("global_lock_waits", regions->global_lock_waits);
+    kernel_telemetry_write_unsigned("global_lock_timeouts", regions->global_lock_timeouts);
+    kernel_telemetry_write_unsigned("unlocked_lock_accesses", regions->unlocked_lock_accesses);
     kernel_telemetry_end_record();
 }
 

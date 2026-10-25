@@ -99,6 +99,8 @@ typedef enum AdvancedConfigurationAndPowerInterfaceSimulatedAccessKind {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_MEMORY_WRITE = 2, /**< write_memory. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_READ = 3,    /**< port_read. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE = 4,   /**< port_write. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_EXCHANGE = 5,     /**< compare_exchange: value is the
+                                                                               word it left. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedAccessKind_t;
 
 /**
@@ -148,6 +150,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t memory_type_count;                        /**< Ranges of the memory map described. */
     uint32_t port_count;                               /**< Ports given a value. */
     uint32_t access_count;                             /**< Accesses made, logged or not. */
+    uint64_t firmware_lock_address;                    /**< The global lock word the simulated firmware shares, or 0. */
+    uint32_t firmware_holds_for_reads; /**< Reads of that word the firmware keeps it owned for, then releases it. */
+    bool firmware_wants_lock;          /**< Whether the firmware asks for the lock, setting pending, as soon as the
+                                            OS takes it; asked once. */
     AdvancedConfigurationAndPowerInterfaceSimulatedRange_t
         ranges[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES]; /**< In the order placed. */
     AdvancedConfigurationAndPowerInterfaceSimulatedMap_t
