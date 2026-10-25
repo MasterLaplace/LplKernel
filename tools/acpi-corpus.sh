@@ -25,8 +25,7 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          the report's iASL disassembly, and lists the tables where they differ
   namespace  loads each machine of a list, or each QEMU configuration, with `test-acpi --namespace`
          and compares its namespace with the one acpiexec loads from the same tables; a machine whose
-         tables run code at table level is counted and left out, since that code waits for the
-         interpreter
+         table-level code fails is counted and left out, until the interpreter runs what failed
   closure  loads each machine of a list, or each QEMU configuration, with `test-acpi --closure`, and
          prints, for each opcode the needs path reaches on some machine, how many machines it reaches
          it on, and which when they are five or fewer: the opcodes the interpreter executes
@@ -134,7 +133,8 @@ namespace_check() {
         "$waiting nodes wait for the interpreter"
     [[ "$1" == qemu ]] || echo "# table-level code: $(grep -o '^aml run statements=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) runs," \
         "$(grep -o ' failures=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) failed, on" \
-        "$(grep -c ' failures=[1-9]' <<<"$runs") machines"
+        "$(grep -c ' failures=[1-9]' <<<"$runs") machines;" \
+        "$(grep -o ' declared_not_run=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) declarations made without running"
     [[ "$1" == qemu ]] || grep '^aml run \(status\|unimplemented\) ' <<<"$runs" | awk '{ split($4, pair, "="); total[$3 " " pair[1]] += pair[2] }
         END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k4,4nr || true
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
