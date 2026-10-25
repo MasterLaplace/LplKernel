@@ -20,6 +20,7 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
                   (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line
+  --machine NAME  QEMU's machine, such as q35 (default: QEMU's own, pc)
   --cdrom ISO     boot ISO through GRUB instead of <kernel> alone: a client gets its display and its
                   cartridge only that way. <kernel> is still the image the ISO holds, which names
                   the functions; GRUB passes no --append
@@ -27,8 +28,8 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --keep DIR      keep the serial log and the raw counts in DIR
   --budget FILE   check the counts against FILE, which records a window and the counts it held
 
-A budget FILE holds key=value lines: from, to, inside and times give the window, unless the
-command line does; instructions and accesses (loads and stores) record the counts; tolerance is
+A budget FILE holds key=value lines: from, to, inside, times and machine give the window, unless
+the command line does; instructions and accesses (loads and stores) record the counts; tolerance is
 how far above them, in percent, the counts may go. Below them by more than the tolerance, the run
 says to record the new counts.
 
@@ -50,6 +51,7 @@ inside_symbol=""
 until_text="# Totals:"
 top=25
 append=""
+machine=""
 timeout_seconds=1800
 times=""
 keep=""
@@ -67,6 +69,7 @@ while [ $# -gt 0 ]; do
         --top) top="${2:?}"; shift 2 ;;
         --test) from_symbol="lplTestBody_${2:?}"; to_symbol="lpl::testing::(anonymous namespace)::writeResult"; shift 2 ;;
         --append) append="${2:?}"; shift 2 ;;
+        --machine) machine="${2:?}"; shift 2 ;;
         --cdrom) cdrom="${2:?}"; shift 2 ;;
         --timeout) timeout_seconds="${2:?}"; shift 2 ;;
         --keep) keep="${2:?}"; shift 2 ;;
@@ -91,6 +94,7 @@ if [ -n "$budget" ]; then
             to) [ -n "$to_symbol" ] || to_symbol="$value" ;;
             inside) [ -n "$inside_symbol" ] || inside_symbol="$value" ;;
             times) [ -n "$times" ] || times="$value" ;;
+            machine) [ -n "$machine" ] || machine="$value" ;;
             instructions) recorded_instructions="$value" ;;
             accesses) recorded_accesses="$value" ;;
             tolerance) tolerance="$value" ;;
@@ -169,6 +173,7 @@ boot=(-kernel "$kernel")
 qemu_command=(qemu-system-i386 "${boot[@]}" -smp 1 -m 512 -display none -no-reboot -monitor none
               -serial "file:$serial" -icount shift=0,sleep=off -plugin "$plugin,$plugin_args")
 [ -z "$append" ] || qemu_command+=(-append "$append")
+[ -z "$machine" ] || qemu_command+=(-machine "$machine")
 "${qemu_command[@]}" &
 qemu_pid=$!
 
