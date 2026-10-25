@@ -967,6 +967,33 @@ KERNEL_TEST(a_method_creates_its_region_and_field_at_each_call)
                       "both calls run, each reading the two units");
     kernel_test_check(test, regions_method_child("MREG", "MR__") == 0u && regions_method_child("MREG", "MF0_") == 0u,
                       "the region and its units are gone once the method ends");
+
+    const uint32_t alive = regions_load.heap.objects - regions_load.heap.objects_freed;
+    const uint32_t nodes = regions_load.space.live_nodes;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t base = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = REGIONS_MEMORY + 0x40u,
+    };
+    uint32_t sums = 0u;
+
+    for (uint32_t call = 0u; call < 3u; ++call)
+    {
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+        if (advanced_configuration_and_power_interface_machine_language_evaluate(&regions_load, "\\MREG", &base, 1u,
+                                                                                 &result) ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+            result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
+            result.payload == 0xFFu)
+            ++sums;
+        advanced_configuration_and_power_interface_machine_language_value_release(&regions_load.heap,
+                                                                                  &regions_load.space, &result);
+    }
+    kernel_test_check(test, sums == 3u, "three more calls by path each return 0xFF");
+    kernel_test_check(test,
+                      regions_load.heap.objects - regions_load.heap.objects_freed == alive &&
+                          regions_load.space.live_nodes == nodes && regions_load.heap.stale_handles == 0u,
+                      "they leave as many objects alive and nodes in the namespace as before, and no stale handle");
     regions_close(test);
 }
 
@@ -1034,20 +1061,26 @@ KERNEL_TEST(a_method_creates_index_and_bank_fields_over_the_table_s_registers)
 }
 
 /**
- * @brief A field list in a method whose region resolves to nothing fails with name_not_found and leaves
- *        no unit behind; a Connection in one is passed over, as at table level, and the unit after it
- *        reads its byte.
+ * @brief A field list in a method whose region resolves to nothing fails with name_not_found, and one
+ *        whose named element is `\` and NullName rather than a NameSeg fails with truncated, as at table
+ *        level; a Connection to a name or to a Buffer is passed over, and the unit after each reads its
+ *        byte.
  */
 KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_connection)
 {
-    static const uint8_t memory[] = {0x77u};
+    static const uint8_t memory[] = {0x77u, 0x88u};
     static const MadeUpFieldUnit_t units[] = {
         {"NU__", 8u}
     };
-    static const uint8_t connection_field[] = {0x5Bu, 0x81u, 0x10u, 'R', 'A', 'M', 'R', 0x01u, 0x02u,
-                                               'R',   'A',   'M',   'R', 'C', 'U', '_', '_',   0x08u};
-    static const uint8_t return_unit[] = {0xA4u, 'C', 'U', '_', '_'};
-    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 0x70u, 'M', 'C', 'O', 'N', 'R', 'C', '_', '_'};
+    static const uint8_t connection_field[] = {
+        0x5Bu, 0x81u, 0x1Du, 'R',   'A',   'M',   'R',   0x01u, 0x02u, 'R',   'A', 'M', 'R', 'C', 'U',   '_',
+        '_',   0x08u, 0x02u, 0x11u, 0x06u, 0x0Au, 0x03u, 0x01u, 0x02u, 0x03u, 'C', 'B', '_', '_', 0x08u,
+    };
+    static const uint8_t store_units[] = {0x70u, 'C', 'U', '_', '_', 'R', 'C', '_', '_',
+                                          0x70u, 'C', 'B', '_', '_', 'R', 'B', '_', '_'};
+    static const uint8_t prefixed_field[] = {0x5Bu, 0x81u, 0x0Bu, 'R', 'A', 'M',  'R',
+                                             0x01u, 0x5Cu, 0x00u, 'A', 'B', 0x08u};
+    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 'M', 'C', 'O', 'N', 'M', 'P', 'F', 'X'};
     MadeUpAml_t body;
 
     regions_begin();
@@ -1059,17 +1092,22 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
     made_up_aml_method(&regions_aml, "MNOR", 0x00u, &body);
     made_up_aml_begin(&body);
     made_up_aml_raw(&body, connection_field, sizeof(connection_field));
-    made_up_aml_raw(&body, return_unit, sizeof(return_unit));
+    made_up_aml_raw(&body, store_units, sizeof(store_units));
     made_up_aml_method(&regions_aml, "MCON", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, prefixed_field, sizeof(prefixed_field));
+    made_up_aml_method(&regions_aml, "MPFX", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RC__", 0u);
+    made_up_aml_name_integer(&regions_aml, "RB__", 0u);
     made_up_aml_raw(&regions_aml, calls, sizeof(calls));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
-                      regions_failed(REGIONS_STATUS(NAME_NOT_FOUND)) == 1u && regions_load.evaluation.failures == 1u,
-                      "the missing region fails with name_not_found, and only it fails");
-    kernel_test_check(test, regions_integer("RC__") == 0x77u, "the unit after the Connection reads 0x77");
-    kernel_test_check(test, regions_load.temporary_count == 0u, "no unit is left behind");
+                      regions_failed(REGIONS_STATUS(NAME_NOT_FOUND)) == 1u &&
+                          regions_failed(REGIONS_STATUS(TRUNCATED)) == 1u && regions_load.evaluation.failures == 2u,
+                      "the missing region fails with name_not_found, the prefixed element with truncated");
+    kernel_test_check(test, regions_integer("RC__") == 0x77u && regions_integer("RB__") == 0x88u,
+                      "the unit after the Connection to a name reads 0x77, the one after the Buffer 0x88");
     regions_close(test);
 }
 
@@ -1102,5 +1140,92 @@ KERNEL_TEST(an_access_as_in_a_method_s_field_list_widens_the_units_after_it)
                       regions_integer("RD__") == 0x44332211u && regions_host.access_count == 1u &&
                           regions_access(0u, REGIONS_ACCESS(MEMORY_READ), 4u, REGIONS_MEMORY, 0x44332211u),
                       "DW__ is one 4-byte read of 0x44332211");
+    regions_close(test);
+}
+
+/**
+ * @brief An ExtendedAccessAs in a method's field list widens the unit after it, and the LockRule and
+ *        UpdateRule of its FieldFlags hold: a WriteAsOnes unit of 4 bits written 0 is one byte written
+ *        0xF0, with no read, and its Lock, without a FACS, is counted as an unlocked access.
+ */
+KERNEL_TEST(a_method_s_field_list_keeps_extended_access_and_its_lock_and_update_rules)
+{
+    static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u, 0x0Fu};
+    static const uint8_t extended_field[] = {0x5Bu, 0x81u, 0x0Fu, 'R', 'A', 'M', 'R', 0x01u, 0x03u,
+                                             0x03u, 0x0Bu, 0x04u, 'D', 'X', '_', '_', 0x20u};
+    static const uint8_t locked_field[] = {0x5Bu, 0x81u, 0x0Du, 'R', 'A', 'M', 'R',  0x31u,
+                                           0x00u, 0x20u, 'L',   'W', '_', '_', 0x04u};
+    static const uint8_t stores[] = {0x70u, 'D', 'X', '_', '_', 'R', 'X', '_', '_', 0x70u, 0x00u, 'L', 'W', '_', '_'};
+    static const uint8_t call[] = {'M', 'E', 'X', 'T'};
+    MadeUpAml_t body;
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY, memory,
+                                                                    sizeof(memory));
+    made_up_aml_region(&regions_aml, "RAMR", 0x00u, REGIONS_MEMORY, 8u);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, extended_field, sizeof(extended_field));
+    made_up_aml_raw(&body, locked_field, sizeof(locked_field));
+    made_up_aml_raw(&body, stores, sizeof(stores));
+    made_up_aml_method(&regions_aml, "MEXT", 0x00u, &body);
+    made_up_aml_name_integer(&regions_aml, "RX__", 0u);
+    made_up_aml_raw(&regions_aml, call, sizeof(call));
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test,
+                      regions_integer("RX__") == 0x44332211u && regions_host.access_count == 2u &&
+                          regions_access(0u, REGIONS_ACCESS(MEMORY_READ), 4u, REGIONS_MEMORY, 0x44332211u) &&
+                          regions_access(1u, REGIONS_ACCESS(MEMORY_WRITE), 1u, REGIONS_MEMORY + 4u, 0xF0u),
+                      "DX__ is one 4-byte read, and LW__ = 0 one byte written 0xF0");
+    kernel_test_check(test, regions_load.regions.unlocked_lock_accesses == 1u,
+                      "the Lock of LW__ is counted as an unlocked access");
+    regions_close(test);
+}
+
+/**
+ * @brief The node an OperationRegion in a method creates is an OperationRegion, as ObjectType reads it.
+ */
+KERNEL_TEST(a_method_s_region_is_an_operation_region)
+{
+    static const uint8_t body_bytes[] = {0x5Bu, 0x80u, 'M',   'T',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u,
+                                         0x01u, 0x00u, 0x0Au, 0x04u, 0xA4u, 0x8Eu, 'M',   'T',   '_',   '_'};
+    static const uint8_t store_call[] = {0x70u, 'M', 'T', 'Y', 'P', 'R', 'T', '_', '_'};
+    MadeUpAml_t body;
+
+    regions_begin();
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, body_bytes, sizeof(body_bytes));
+    made_up_aml_method(&regions_aml, "MTYP", 0x00u, &body);
+    made_up_aml_name_integer(&regions_aml, "RT__", 0u);
+    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test, regions_integer("RT__") == 10u, "ObjectType (MT__) is 10, an OperationRegion");
+    regions_close(test);
+}
+
+/**
+ * @brief A field list in a method whose units pass 2^32 bits, which a unit's offset cannot hold, fails
+ *        with index_out_of_range, as at table level: 17 reserved fields of 2^28 - 1 bits.
+ */
+KERNEL_TEST(a_method_s_field_list_past_two_to_the_thirty_two_bits_is_refused)
+{
+    static MadeUpFieldUnit_t units[18];
+    static const uint8_t call[] = {'M', 'O', 'V', 'F'};
+    MadeUpAml_t body;
+
+    for (uint32_t index = 0u; index < 17u; ++index)
+        units[index] = (MadeUpFieldUnit_t){NULL, 0x0FFFFFFFu};
+    units[17] = (MadeUpFieldUnit_t){"OVF_", 8u};
+    regions_begin();
+    made_up_aml_region(&regions_aml, "RAMR", 0x00u, REGIONS_MEMORY, 4u);
+    made_up_aml_begin(&body);
+    made_up_aml_field(&body, "RAMR", REGIONS_BYTE_ACCESS, units, 18u);
+    made_up_aml_method(&regions_aml, "MOVF", 0x00u, &body);
+    made_up_aml_raw(&regions_aml, call, sizeof(call));
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test, regions_failed(REGIONS_STATUS(INDEX_OUT_OF_RANGE)) == 1u,
+                      "the 17th reserved field passes 2^32 bits and fails with index_out_of_range");
     regions_close(test);
 }

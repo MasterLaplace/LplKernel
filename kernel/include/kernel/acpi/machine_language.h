@@ -222,8 +222,7 @@ advanced_configuration_and_power_interface_machine_language_field_write(
 
 /**
  * @brief Gives a node the OperationRegion object an OperationRegion in a method creates (§5.3); a
- *        table's regions are built in place by its load, which keeps window W1 26,000 instructions
- *        lower.
+ *        table's regions are built in place by its load, which keeps window W1 within its budget.
  *
  * @param load         The load.
  * @param node         The region's node.
