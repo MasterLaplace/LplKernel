@@ -84,18 +84,18 @@ SPECIFICATION_STATUS = {
 }
 
 OPERAND_SHAPES = {
-    "Store": "TS", "RefOf": "S", "Add": "TTR", "Concat": "TTR",
+    "Store": "TS", "RefOf": "M", "Add": "TTR", "Concat": "TTR",
     "Subtract": "TTR", "Increment": "S", "Decrement": "S", "Multiply": "TTR",
     "Divide": "TTRR", "ShiftLeft": "TTR", "ShiftRight": "TTR", "And": "TTR",
     "Nand": "TTR", "Or": "TTR", "Nor": "TTR", "Xor": "TTR", "Not": "TR",
     "FindSetLeftBit": "TR", "FindSetRightBit": "TR", "DerefOf": "T",
     "ConcatRes": "TTR", "Mod": "TTR", "Notify": "ST", "SizeOf": "S",
-    "Index": "TTR", "Match": "TBTBTT", "ObjectType": "S", "LAnd": "TT",
+    "Index": "TTR", "Match": "TBTBTT", "ObjectType": "M", "LAnd": "TT",
     "LOr": "TT", "LNot": "T", "LEqual": "TT", "LGreater": "TT",
     "LLess": "TT", "ToBuffer": "TR", "ToDecimalString": "TR",
     "ToHexString": "TR", "ToInteger": "TR", "ToString": "TTR",
-    "CopyObject": "TS", "Mid": "TTTR", "Return": "T",
-    "CondRefOf": "SR", "LoadTable": "TTTTTT", "Load": "NR", "Stall": "T",
+    "CopyObject": "TM", "Mid": "TTTR", "Return": "T",
+    "CondRefOf": "MR", "LoadTable": "TTTTTT", "Load": "NR", "Stall": "T",
     "Sleep": "T", "Acquire": "SW", "Signal": "S", "Wait": "ST", "Reset": "S",
     "Release": "S", "FromBCD": "TR", "ToBCD": "TR", "Unload": "S",
     "Fatal": "BDT",
@@ -191,6 +191,7 @@ class Namespace:
     def __init__(self):
         self.kinds = dict(PREDEFINED_ROOT)
         self.argument_counts = {("_OSI",): 1}
+        self.created = []
 
     def creation_path(self, scope, name):
         """Return where a declaration of name in scope creates its object (5.3)."""
@@ -216,14 +217,27 @@ class Namespace:
         return None
 
     def declare(self, path, kind, argument_count=None):
-        """Record a declaration; a real definition replaces an External one."""
+        """Record a declaration: a real definition replaces an External one, and otherwise the first
+        definition of a path stays and a duplicate is skipped (5.1 of the specification)."""
         if path is None:
             return
-        if self.kinds.get(path) not in (None, "External") and kind == "External":
+        existing = self.kinds.get(path)
+        if existing is not None and (existing != "External" or kind == "External"):
             return
+        if existing is None:
+            self.created.append(path)
         self.kinds[path] = kind
+        self.argument_counts.pop(path, None)
         if argument_count is not None:
             self.argument_counts[path] = argument_count
+
+    def forget_since(self, mark):
+        """Remove the paths created since the mark: what a method body declares ends with the body (3.5 of
+        the specification)."""
+        for path in self.created[mark:]:
+            del self.kinds[path]
+            self.argument_counts.pop(path, None)
+        del self.created[mark:]
 
     def is_method(self, path):
         """Tell whether path names a control method (declared or External MethodObj)."""
@@ -529,7 +543,8 @@ class Walker:
         raise AmlError(f"no grammar for {name} at 0x{offset:x}")
 
     def name_term(self, offset, end, scope, depth):
-        """Walk a NameString in a TermArg position: a reference or a MethodInvocation."""
+        """Walk a NameString in a TermArg, SuperName or Target position: a reference or a
+        MethodInvocation (4.2 of the specification)."""
         name, after = self.name_string(offset)
         path = self.reference(scope, name)
         if path is not None and self.namespace.is_method(path):
@@ -555,12 +570,15 @@ class Walker:
             return
         self.census.osi_strings[self.data[offset + 1:stop].decode("ascii", "replace")] += 1
 
-    def super_name(self, offset, end, scope, depth):
-        """Walk a SuperName, Target or SimpleName: a name here is never invoked."""
+    def super_name(self, offset, end, scope, depth, may_call):
+        """Walk a SuperName or Target, where a method is called, or a SimpleName, where it never is
+        (4.2 of the specification)."""
         value = self.byte(offset)
         if value == 0x00:
             return offset + 1
         if self.is_name_lead(value):
+            if may_call:
+                return self.name_term(offset, end, scope, depth + 1)
             name, after = self.name_string(offset)
             self.reference(scope, name)
             return after
@@ -574,8 +592,8 @@ class Walker:
                 offset = self.term(offset, end, scope, depth + 1)
                 if self.counting:
                     self.observe_constant_operand(opcode_name, start)
-            elif kind in "SR":
-                offset = self.super_name(offset, end, scope, depth)
+            elif kind in "SRM":
+                offset = self.super_name(offset, end, scope, depth, kind != "M")
             elif kind == "N":
                 name, offset = self.name_string(offset)
                 self.reference(scope, name)
@@ -732,9 +750,11 @@ class Walker:
         census.method_bytes_total += block_end - offset
         census.method_bytes_max = max(census.method_bytes_max, block_end - offset)
         before_returns = census.opcodes_method["Return"]
+        mark = len(self.namespace.created)
         self.method_stack.append(path)
         last_term = self.last_statement(offset, block_end, path, depth + 1)
         self.method_stack.pop()
+        self.namespace.forget_since(mark)
         if census.opcodes_method["Return"] == before_returns:
             census.methods_without_return += 1
         if last_term != "Return":

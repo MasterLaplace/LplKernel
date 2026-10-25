@@ -2,9 +2,9 @@
 
 Usage: python3 -I tools/acpi/expected_machine_language.py <dump>
 
-The table count, the AML bytes, the fault count and every opcode count come from aml_census.py, a walker of the AML
-grammar in Python that loads every DSDT and SSDT of the dump into one namespace, as the kernel does. The opcodes are
-printed in the kernel's descriptor order: one-byte opcodes by encoding, then extended ones.
+The table count, the AML bytes, the fault count, the method calls and every opcode count come from aml_census.py,
+a walker of the AML grammar in Python that loads every DSDT and SSDT of the dump into one namespace, as the kernel
+does. The opcodes are printed in the kernel's descriptor order: one-byte opcodes by encoding, then extended ones.
 """
 import os
 import sys
@@ -24,8 +24,8 @@ def expected(dump):
     """The lines for a dump."""
     census = aml_census.census_of_machine(dump, aml_census.load_inputs(dump), 5)
     opcodes = census["opcodes"]
-    lines = ["aml tables=%u bytes=%u decode_errors=%u" % (len(census["tables"]), census["aml_bytes"],
-                                                          census["parse_errors"])]
+    lines = ["aml tables=%u bytes=%u decode_errors=%u calls=%u" % (
+        len(census["tables"]), census["aml_bytes"], census["parse_errors"], census["methods"]["calls_resolved"])]
     lines += ["aml opcode %s %u" % (name, opcodes[name]) for name in descriptor_order() if opcodes.get(name)]
     return lines
 
