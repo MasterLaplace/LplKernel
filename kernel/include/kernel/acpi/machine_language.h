@@ -96,6 +96,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t space; /**< The namespace it declares into. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t heap;       /**< The objects its nodes hold. */
     uint8_t status;              /**< OK, or why the namespace could not be opened. */
+    bool declares_every_branch;  /**< Whether the declaration pass declares every branch of table-level code and
+                                      runs none of it, as the census oracle reads AML (§8.4); false at boot. */
     uint8_t integer_bits;        /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
     uint32_t table_count;        /**< Tables declared. */
     uint32_t bytes;              /**< AML bytes of those tables, headers apart. */

@@ -107,6 +107,9 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("objects", load->heap.objects);
     kernel_telemetry_write_unsigned("values_deferred", load->values_deferred);
     kernel_telemetry_write_unsigned("table_level_code", load->table_level_code);
+    kernel_telemetry_write_unsigned("table_level_runs", load->evaluation.runs);
+    kernel_telemetry_write_unsigned("table_level_failures", load->evaluation.failures);
+    kernel_telemetry_write_unsigned("undeclared_faults", load->undeclared_faults);
     kernel_telemetry_write_hexadecimal(
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();

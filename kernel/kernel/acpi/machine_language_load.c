@@ -1016,7 +1016,8 @@ static void machine_language_count_table_level_code(MachineLanguageWalk_t *walk,
  */
 static bool machine_language_runs_code(MachineLanguageWalk_t *walk)
 {
-    return walk->pass == MACHINE_LANGUAGE_PASS_DECLARE && machine_language_top_block(walk)->placement == 0u;
+    return walk->pass == MACHINE_LANGUAGE_PASS_DECLARE && !walk->load->declares_every_branch &&
+           machine_language_top_block(walk)->placement == 0u;
 }
 
 /**

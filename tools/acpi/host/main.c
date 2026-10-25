@@ -112,8 +112,8 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
         advanced_configuration_and_power_interface_machine_language_close(&load);
         return;
     }
+    load.declares_every_branch = true;
     advanced_configuration_and_power_interface_machine_language_load_directory(&load, directory);
-    harness_print_runs(&load.evaluation);
     printf("aml tables=%u bytes=%u decode_errors=%u\n", load.table_count, load.bytes, load.decode_errors);
     printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u\n", load.load_errors,
            load.unresolved_names, load.undeclared_faults);
@@ -444,6 +444,7 @@ static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLang
            "decode_errors=%u\n",
            load->evaluation.failures, load->table_level_code, load->values_deferred, load->load_errors,
            load->decode_errors);
+    harness_print_runs(&load->evaluation);
     if (closure)
         harness_print_closure(load);
     else
