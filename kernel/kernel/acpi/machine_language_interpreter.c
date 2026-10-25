@@ -2464,8 +2464,8 @@ static MachineLanguageStatus_t machine_language_object_type(MachineLanguageLoad_
  * @brief Writes the NameString a path String spells, such as `\_SB_.PCI0` or `^FOO`, into @p out: a
  *        root or parent prefixes, then its NameSegs, each padded with `_` to 4 characters.
  *
- * @return TRUNCATED for a path with no segment, a segment longer than 4 characters, more than
- *         MACHINE_LANGUAGE_PATH_SEGMENTS segments or 16 parent prefixes; OK otherwise.
+ * @return TRUNCATED for a path with no segment, an empty segment, one longer than 4 characters, or
+ *         more than MACHINE_LANGUAGE_PATH_SEGMENTS of them; OK otherwise.
  */
 static MachineLanguageStatus_t machine_language_spell_path(const uint8_t *text, uint32_t length, uint8_t *out,
                                                            uint32_t *out_length)
@@ -2492,7 +2492,7 @@ static MachineLanguageStatus_t machine_language_spell_path(const uint8_t *text, 
         ++segments;
         read += (read < length) ? 1u : 0u;
     }
-    if (segments == 0u || read < length)
+    if (segments == 0u || read < length || text[length - 1u] == '.')
         return MACHINE_LANGUAGE_STATUS(TRUNCATED);
     if (segments == 2u)
         out[written++] = 0x2Eu;

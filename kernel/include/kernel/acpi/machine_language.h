@@ -255,8 +255,8 @@ advanced_configuration_and_power_interface_machine_language_count_back_edge(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
- * @brief Evaluates the object an absolute path names, as the kernel does at boot and after (§3.6): a
- *        method runs with the arguments given, a named object gives its value.
+ * @brief Evaluates the object an absolute path names (§3.6): a method runs with the arguments given,
+ *        a named object gives its value.
  *
  * @details The load's stacks must be free. The arguments are shared with the method, not copied
  *          (§5.2); their references stay the caller's.

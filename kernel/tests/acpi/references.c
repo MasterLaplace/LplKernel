@@ -666,6 +666,11 @@ KERNEL_TEST(an_evaluation_by_path_runs_its_method_or_reads_its_object)
                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED,
                       "a path that does not start at the root is malformed");
     kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(&references_load, "\\STR0.",
+                                                                                           NULL, 0u, &result) ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED,
+                      "a path that ends with a dot is malformed");
+    kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_evaluate(
                           &references_load, "\\_SB_.MCAT", arguments, 1u, &result) ==
                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH,
