@@ -255,6 +255,15 @@ advanced_configuration_and_power_interface_machine_language_count_back_edge(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
+ * @brief Releases what Local0 to Local7 of table-level code hold, once a table's code has run: its
+ *        locals do not outlive the table.
+ *
+ * @param load The load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_release_table_locals(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
  * @brief Counts a failure of table-level code: in load->evaluation, per status, the first one kept.
  *
  * @param load   The load.

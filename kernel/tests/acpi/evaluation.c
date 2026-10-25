@@ -54,6 +54,7 @@ static void evaluation_close(KernelTest_t *test)
                           evaluation->operator_count == 0u && evaluation->block_count == 0u &&
                           evaluation_load.temporary_count == 0u,
                       "every run leaves no frame, value, operator, block or temporary node behind");
+    kernel_test_check(test, evaluation_load.heap.stale_handles == 0u, "no retain or release met a dead object");
     advanced_configuration_and_power_interface_machine_language_close(&evaluation_load);
 }
 
@@ -501,12 +502,13 @@ KERNEL_TEST(a_fault_inside_a_failed_predicate_keeps_its_branches_from_running)
 
 /**
  * @brief A Name that replaces an External, in a branch whose predicate failed, counts as a
- *        declaration made without running, as a new Name beside it does.
+ *        declaration made without running, as a new Name beside it does: the predicate, Mod (One,
+ *        Zero), always fails.
  */
 KERNEL_TEST(a_declaration_replacing_an_external_without_running_is_counted)
 {
     static const uint8_t aml[] = {
-        0x15u, 'E', 'X', 'T', '0', 0x01u, 0x00u, 0xA0u, 0x10u, 0x11u, 0x02u, 0x01u,
+        0x15u, 'E', 'X', 'T', '0', 0x01u, 0x00u, 0xA0u, 0x11u, 0x85u, 0x01u, 0x00u, 0x00u,
         0x08u, 'E', 'X', 'T', '0', 0x01u, 0x08u, 'N',   'E',   'W',   '_',   0x01u,
     };
 

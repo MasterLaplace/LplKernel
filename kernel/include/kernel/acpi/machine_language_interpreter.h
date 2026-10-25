@@ -129,6 +129,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
     uint32_t implicit_returns;       /**< Methods that ended without Return while their caller used the result. */
     uint32_t uninitialized_operands; /**< Uninitialized locals and arguments read as Integer 0. */
     uint32_t debug_stores;           /**< Stores to Debug. */
+    uint32_t mixed_type_comparisons; /**< Comparisons and Concatenates whose second operand was converted to the
+                                          first's type (§5.2). */
+    uint32_t forbidden_conversions;  /**< Implicit conversions to Integer that ACPI forbids: an empty String or
+                                          Buffer, a 0x prefix (§5.2). */
     uint32_t table_locals_owner;     /**< The table, counted from 1, whose Local0 to Local7 table_locals holds. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t
         table_locals[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS]; /**< The locals of that

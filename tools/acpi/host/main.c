@@ -121,9 +121,11 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t *regions = &load->regions;
 
     printf("aml run statements=%u failures=%u implicit_returns=%u uninitialized_operands=%u frames_peak=%u "
-           "values_peak=%u declared_not_run=%u\n",
+           "values_peak=%u declared_not_run=%u mixed_type_comparisons=%u forbidden_conversions=%u objects=%u "
+           "objects_freed=%u\n",
            evaluation->runs, evaluation->failures, evaluation->implicit_returns, evaluation->uninitialized_operands,
-           evaluation->frames_peak, evaluation->values_peak, load->declared_not_run);
+           evaluation->frames_peak, evaluation->values_peak, load->declared_not_run, evaluation->mixed_type_comparisons,
+           evaluation->forbidden_conversions, load->heap.objects, load->heap.objects_freed);
     printf("aml run regions field_reads=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
            "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u "
            "field_accesses_peak=%u\n",

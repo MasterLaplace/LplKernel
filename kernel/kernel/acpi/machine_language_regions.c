@@ -731,7 +731,7 @@ static MachineLanguageStatus_t machine_language_read_unit(MachineLanguageLoad_t 
 
         const MachineLanguageStatus_t status =
             advanced_configuration_and_power_interface_machine_language_object_allocate(
-                &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(BUFFER), length, length, &handle);
+                &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(BUFFER), length, &handle);
 
         if (status != MACHINE_LANGUAGE_OK)
             return status;

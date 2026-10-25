@@ -10,11 +10,15 @@
 #define MACHINE_LANGUAGE_NODE(type)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
 #define MACHINE_LANGUAGE_STATUS(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
 #define MACHINE_LANGUAGE_VALUE(kind)   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_##kind
+#define MACHINE_LANGUAGE_FORM(name)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_##name
 #define MACHINE_LANGUAGE_TARGET        0x90u /**< A value that says where a result goes; auxiliary is its kind. */
 #define MACHINE_LANGUAGE_ELSE_BYTE     0xA1u /**< The byte of Else, which only an If reads. */
+#define MACHINE_LANGUAGE_DATA_OBJECT                                                                                   \
+    0x20u /**< Where a term must be a data object, as a Name's object: past every operand kind of a descriptor. */
+#define MACHINE_LANGUAGE_DEBUG_OBJECT_TYPE 16u /**< What ObjectType gives for Debug (ACPI 6.6 §19.6.97). */
+#define MACHINE_LANGUAGE_LOGICAL_BYTES     4u  /**< The bytes of a Buffer LAnd and LOr read, as Windows does (§5.2). */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
-typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t MachineLanguageOperandKind_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t MachineLanguageLoad_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t MachineLanguageEvaluation_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame_t MachineLanguageFrame_t;
@@ -23,6 +27,7 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguagePendingOperator_t M
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t MachineLanguageValue_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t MachineLanguageNode_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t MachineLanguageNameString_t;
+typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t MachineLanguageHeader_t;
 
 /**
  * @brief Where a target value sends a result.
@@ -84,6 +89,14 @@ static uint32_t machine_language_limit(MachineLanguageEvaluation_t *evaluation)
 }
 
 /**
+ * @brief The load's integer width: 32 or 64 bits.
+ */
+static uint8_t machine_language_bits(const MachineLanguageLoad_t *load)
+{
+    return (load->integer_bits == 32u) ? 32u : 64u;
+}
+
+/**
  * @brief An integer masked to the load's integer width.
  */
 static uint64_t machine_language_mask(const MachineLanguageLoad_t *load, uint64_t integer)
@@ -96,11 +109,8 @@ static uint64_t machine_language_mask(const MachineLanguageLoad_t *load, uint64_
  */
 static MachineLanguageValue_t machine_language_integer(uint64_t integer)
 {
-    MachineLanguageValue_t value;
+    const MachineLanguageValue_t value = {.kind = MACHINE_LANGUAGE_VALUE(INTEGER), .payload = integer};
 
-    memset(&value, 0, sizeof(value));
-    value.kind = MACHINE_LANGUAGE_VALUE(INTEGER);
-    value.payload = integer;
     return value;
 }
 
@@ -117,23 +127,63 @@ static MachineLanguageValue_t machine_language_truth(const MachineLanguageLoad_t
  */
 static MachineLanguageValue_t machine_language_target(MachineLanguageTargetKind_t kind, uint32_t handle)
 {
-    MachineLanguageValue_t value;
+    const MachineLanguageValue_t value = {.kind = MACHINE_LANGUAGE_TARGET,
+                                          .auxiliary = (uint16_t) kind,
+                                          .handle = handle};
 
-    memset(&value, 0, sizeof(value));
-    value.kind = MACHINE_LANGUAGE_TARGET;
-    value.auxiliary = (uint16_t) kind;
-    value.handle = handle;
     return value;
 }
 
 /**
- * @brief Pushes a value on the value stack.
+ * @brief Gives back the reference a value holds, and leaves it Uninitialized; an Integer, which holds
+ *        none, costs no call.
  */
-static MachineLanguageStatus_t machine_language_push(MachineLanguageEvaluation_t *evaluation,
-                                                     const MachineLanguageValue_t *value)
+static void machine_language_release(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
 {
+    if (value->kind == MACHINE_LANGUAGE_VALUE(UNINITIALIZED))
+        return;
+    if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+        value->kind = MACHINE_LANGUAGE_VALUE(UNINITIALIZED);
+    else
+        advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, value);
+}
+
+/**
+ * @brief Takes one more reference on what a value names.
+ */
+static void machine_language_retain(MachineLanguageLoad_t *load, const MachineLanguageValue_t *value)
+{
+    advanced_configuration_and_power_interface_machine_language_value_retain(&load->heap, value);
+}
+
+/**
+ * @brief The header of the object a value names.
+ */
+static const MachineLanguageHeader_t *machine_language_object(const MachineLanguageLoad_t *load,
+                                                              const MachineLanguageValue_t *value)
+{
+    return advanced_configuration_and_power_interface_machine_language_object(&load->heap, value->handle);
+}
+
+/**
+ * @brief Releases a value the full value stack cannot take, and says so: LIMIT_VALUES.
+ */
+static MachineLanguageStatus_t machine_language_refuse_value(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
+{
+    advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, value);
+    return MACHINE_LANGUAGE_STATUS(LIMIT_VALUES);
+}
+
+/**
+ * @brief Pushes a value on the value stack, which takes its reference; one that does not fit is
+ *        released.
+ */
+static MachineLanguageStatus_t machine_language_push(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
     if (evaluation->value_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_VALUES);
+        return machine_language_refuse_value(load, value);
     evaluation->values[evaluation->value_count++] = *value;
     if (evaluation->value_count > evaluation->values_peak)
         evaluation->values_peak = evaluation->value_count;
@@ -141,7 +191,7 @@ static MachineLanguageStatus_t machine_language_push(MachineLanguageEvaluation_t
 }
 
 /**
- * @brief Pops the value on top of the value stack.
+ * @brief Pops the value on top of the value stack; its reference goes to the caller.
  */
 static MachineLanguageValue_t machine_language_pop(MachineLanguageEvaluation_t *evaluation)
 {
@@ -149,43 +199,57 @@ static MachineLanguageValue_t machine_language_pop(MachineLanguageEvaluation_t *
 }
 
 /**
- * @brief Hands a value to the operator waiting for it, or drops it when its term was a statement.
+ * @brief Hands a value, and its reference, to the operator waiting for it, or releases it when its
+ *        term was a statement.
  */
-static MachineLanguageStatus_t machine_language_deliver(MachineLanguageEvaluation_t *evaluation,
-                                                        MachineLanguageValue_t value)
+static MachineLanguageStatus_t machine_language_deliver(MachineLanguageLoad_t *load, MachineLanguageValue_t value)
 {
-    return (machine_language_active(evaluation) != NULL) ? machine_language_push(evaluation, &value) :
-                                                           MACHINE_LANGUAGE_OK;
-}
-
-/**
- * @brief The integer an operand holds.
- */
-static MachineLanguageStatus_t machine_language_integer_of(const MachineLanguageValue_t *value, uint64_t *out_integer)
-{
-    /* TODO(#539): a String or a Buffer converts to an Integer (§5.2). */
-    if (value->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
-        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
-    *out_integer = value->payload;
+    if (machine_language_active(&load->evaluation) != NULL)
+        return machine_language_push(load, &value);
+    machine_language_release(load, &value);
     return MACHINE_LANGUAGE_OK;
 }
 
 /**
- * @brief A local or an argument read as an operand: an uninitialized one reads as Integer 0, counted
- *        (§5.2).
+ * @brief The Integer an operand converts to (§5.2), the conversions ACPI forbids counted.
  */
-static MachineLanguageValue_t machine_language_read_slot(MachineLanguageEvaluation_t *evaluation,
+static MachineLanguageStatus_t machine_language_integer_of(MachineLanguageLoad_t *load,
+                                                           const MachineLanguageValue_t *value, uint64_t *out_integer)
+{
+    bool forbidden = false;
+
+    if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+    {
+        *out_integer = machine_language_mask(load, value->payload);
+        return MACHINE_LANGUAGE_OK;
+    }
+
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
+        &load->heap, value, machine_language_bits(load), out_integer, &forbidden);
+
+    load->evaluation.forbidden_conversions += forbidden ? 1u : 0u;
+    return status;
+}
+
+/**
+ * @brief A local or an argument read as an operand, its reference retained: an uninitialized one
+ *        reads as Integer 0, counted (§5.2).
+ */
+static MachineLanguageValue_t machine_language_read_slot(MachineLanguageLoad_t *load,
                                                          const MachineLanguageValue_t *slot)
 {
     if (slot->kind != MACHINE_LANGUAGE_VALUE(UNINITIALIZED))
+    {
+        machine_language_retain(load, slot);
         return *slot;
-    ++evaluation->uninitialized_operands;
+    }
+    ++load->evaluation.uninitialized_operands;
     return machine_language_integer(0u);
 }
 
 /**
- * @brief The value a named object gives where a value is read: its data object, or what its field
- *        unit reads; a buffer field waits for its slice.
+ * @brief The value a named object gives where a value is read, its reference retained: its data
+ *        object, or what its field unit reads; a buffer field waits for its slice.
  */
 static MachineLanguageStatus_t machine_language_read_node(MachineLanguageLoad_t *load, uint32_t index,
                                                           MachineLanguageValue_t *out_value)
@@ -198,7 +262,10 @@ static MachineLanguageStatus_t machine_language_read_node(MachineLanguageLoad_t 
     case MACHINE_LANGUAGE_VALUE(INTEGER):
     case MACHINE_LANGUAGE_VALUE(STRING):
     case MACHINE_LANGUAGE_VALUE(BUFFER):
-    case MACHINE_LANGUAGE_VALUE(PACKAGE): *out_value = node->value; return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_VALUE(PACKAGE):
+        *out_value = node->value;
+        machine_language_retain(load, out_value);
+        return MACHINE_LANGUAGE_OK;
     case MACHINE_LANGUAGE_VALUE(FIELD_UNIT):
         return advanced_configuration_and_power_interface_machine_language_field_read(load, index, out_value);
     case MACHINE_LANGUAGE_VALUE(BUFFER_FIELD): return MACHINE_LANGUAGE_STATUS(FIELD_ACCESS_DEFERRED);
@@ -209,24 +276,36 @@ static MachineLanguageStatus_t machine_language_read_node(MachineLanguageLoad_t 
 }
 
 /**
- * @brief The value a target holds, for an operator that updates it in place.
+ * @brief The slot a local or argument target names in the running frame.
+ */
+static MachineLanguageValue_t *machine_language_slot(MachineLanguageEvaluation_t *evaluation,
+                                                     const MachineLanguageValue_t *target)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+
+    return (target->auxiliary == MACHINE_LANGUAGE_TARGET_LOCAL) ? &frame->locals[target->handle] :
+                                                                  &frame->arguments[target->handle];
+}
+
+/**
+ * @brief The value an operand holds, its reference retained: a target gives what it names, any other
+ *        value gives itself.
  */
 static MachineLanguageStatus_t machine_language_read_target(MachineLanguageLoad_t *load,
                                                             const MachineLanguageValue_t *target,
                                                             MachineLanguageValue_t *out_value)
 {
-    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
-
     if (target->kind != MACHINE_LANGUAGE_TARGET)
-        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    {
+        *out_value = *target;
+        machine_language_retain(load, out_value);
+        return MACHINE_LANGUAGE_OK;
+    }
     switch (target->auxiliary)
     {
     case MACHINE_LANGUAGE_TARGET_LOCAL:
-        *out_value = machine_language_read_slot(evaluation, &frame->locals[target->handle]);
-        return MACHINE_LANGUAGE_OK;
     case MACHINE_LANGUAGE_TARGET_ARGUMENT:
-        *out_value = machine_language_read_slot(evaluation, &frame->arguments[target->handle]);
+        *out_value = machine_language_read_slot(load, machine_language_slot(&load->evaluation, target));
         return MACHINE_LANGUAGE_OK;
     case MACHINE_LANGUAGE_TARGET_NODE: return machine_language_read_node(load, target->handle, out_value);
     default: return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
@@ -234,59 +313,222 @@ static MachineLanguageStatus_t machine_language_read_target(MachineLanguageLoad_
 }
 
 /**
- * @brief Stores a value to a named object: an Integer takes the integer, masked; a Name not built
- *        yet takes the value and its type; a field unit is written; a buffer field waits for its
- *        slice.
+ * @brief Makes a value fit to be stored: a String, a Buffer or a Package another holder shares is
+ *        copied, the shared one released (§5.2); one held by @p value alone is stored as it is.
  */
-static MachineLanguageStatus_t machine_language_store_node(MachineLanguageLoad_t *load, uint32_t index,
-                                                           const MachineLanguageValue_t *value)
+static MachineLanguageStatus_t machine_language_own(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
 {
-    MachineLanguageNode_t *node =
-        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
-    uint64_t integer = 0u;
+    MachineLanguageValue_t copy;
 
-    if (node->value.kind == MACHINE_LANGUAGE_VALUE(FIELD_UNIT))
-        return advanced_configuration_and_power_interface_machine_language_field_write(load, index, value);
-    if (node->value.kind == MACHINE_LANGUAGE_VALUE(BUFFER_FIELD))
-        return MACHINE_LANGUAGE_STATUS(FIELD_ACCESS_DEFERRED);
-    if (node->type == MACHINE_LANGUAGE_NODE(UNINITIALIZED))
-    {
-        node->value = *value;
-        node->type = advanced_configuration_and_power_interface_machine_language_node_type_of_value(value->kind);
+    if (value->kind != MACHINE_LANGUAGE_VALUE(STRING) && value->kind != MACHINE_LANGUAGE_VALUE(BUFFER) &&
+        value->kind != MACHINE_LANGUAGE_VALUE(PACKAGE))
         return MACHINE_LANGUAGE_OK;
-    }
-    /* TODO(#539): a store to a String, a Buffer or a Package converts to its type (§5.2). */
-    if (node->type != MACHINE_LANGUAGE_NODE(INTEGER))
-        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (machine_language_object(load, value)->references == 1u)
+        return MACHINE_LANGUAGE_OK;
 
-    const MachineLanguageStatus_t status = machine_language_integer_of(value, &integer);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_value_copy(&load->heap, &load->space, value, &copy);
 
+    machine_language_release(load, value);
     if (status == MACHINE_LANGUAGE_OK)
-        node->value.payload = machine_language_mask(load, integer);
+        *value = copy;
     return status;
 }
 
 /**
- * @brief Stores a result where a target says: NullName drops it, a local or an argument is
- *        overwritten, Debug counts it, a named object takes it; a value that is no target, such
- *        as a constant, takes nothing (§5.2).
+ * @brief Puts a value in a slot of variable type, a local, an argument or a Name that holds none:
+ *        what the slot held is released, the value is owned first, and the slot takes its reference.
  */
-static MachineLanguageStatus_t machine_language_store(MachineLanguageLoad_t *load, const MachineLanguageValue_t *value,
-                                                      const MachineLanguageValue_t *target)
+static MachineLanguageStatus_t machine_language_overwrite(MachineLanguageLoad_t *load, MachineLanguageValue_t *slot,
+                                                          MachineLanguageValue_t *value)
+{
+    const MachineLanguageStatus_t status = machine_language_own(load, value);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    machine_language_release(load, slot);
+    *slot = *value;
+    value->kind = MACHINE_LANGUAGE_VALUE(UNINITIALIZED);
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Gives a named object a value, whose reference it takes, and the value's type.
+ */
+static MachineLanguageStatus_t machine_language_overwrite_node(MachineLanguageLoad_t *load, MachineLanguageNode_t *node,
+                                                               MachineLanguageValue_t *value)
+{
+    const uint8_t type = advanced_configuration_and_power_interface_machine_language_node_type_of_value(value->kind);
+    const MachineLanguageStatus_t status = machine_language_overwrite(load, &node->value, value);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        node->type = type;
+    return status;
+}
+
+/**
+ * @brief Copies a value's bytes into a String or a Buffer object, keeping its length: the rest is
+ *        zero, and what does not fit is dropped, as Windows does (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_copy_into(MachineLanguageLoad_t *load, uint32_t handle,
+                                                          const MachineLanguageValue_t *value)
+{
+    uint8_t scratch[8];
+    const uint8_t *bytes = NULL;
+    uint32_t length = 0u;
+    MachineLanguageHeader_t *object =
+        advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle);
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_bytes(
+        &load->heap, value, machine_language_bits(load), scratch, &bytes, &length);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+
+    const uint32_t copied = (length < object->length) ? length : object->length;
+
+    memmove(object + 1, bytes, copied);
+    memset((uint8_t *) (object + 1) + copied, 0, object->length - copied);
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief The Integer a value's first bytes make, as a Store to a named Integer reads them (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_integer_from_bytes(MachineLanguageLoad_t *load,
+                                                                   const MachineLanguageValue_t *value,
+                                                                   uint64_t *out_integer)
+{
+    uint8_t scratch[8];
+    const uint8_t *bytes = NULL;
+    uint32_t length = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_bytes(
+        &load->heap, value, machine_language_bits(load), scratch, &bytes, &length);
+
+    *out_integer = 0u;
+    for (uint32_t byte = 0u; status == MACHINE_LANGUAGE_OK && byte < length && byte < 8u; ++byte)
+        *out_integer |= (uint64_t) bytes[byte] << (8u * byte);
+    *out_integer = machine_language_mask(load, *out_integer);
+    return status;
+}
+
+/**
+ * @brief Stores a value, whose reference it takes, to a named object (§5.2): an Integer, a String or a
+ *        Buffer takes its bytes and keeps its size, a Package takes a copy of a Package, a Name not
+ *        built yet takes the value and its type; a field unit is written, a buffer field waits for its
+ *        slice; anything else refuses it.
+ */
+static MachineLanguageStatus_t machine_language_store_node(MachineLanguageLoad_t *load, uint32_t index,
+                                                           MachineLanguageValue_t *value)
+{
+    MachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    uint64_t integer = 0u;
+
+    if (node->value.kind == MACHINE_LANGUAGE_VALUE(FIELD_UNIT))
+        status = advanced_configuration_and_power_interface_machine_language_field_write(load, index, value);
+    else if (node->value.kind == MACHINE_LANGUAGE_VALUE(BUFFER_FIELD))
+        status = MACHINE_LANGUAGE_STATUS(FIELD_ACCESS_DEFERRED);
+    else if (node->type == MACHINE_LANGUAGE_NODE(UNINITIALIZED) ||
+             (node->type == MACHINE_LANGUAGE_NODE(PACKAGE) && value->kind == MACHINE_LANGUAGE_VALUE(PACKAGE)))
+        return machine_language_overwrite_node(load, node, value);
+    else if (node->type == MACHINE_LANGUAGE_NODE(INTEGER))
+    {
+        status = machine_language_integer_from_bytes(load, value, &integer);
+        if (status == MACHINE_LANGUAGE_OK)
+            node->value.payload = integer;
+    }
+    else if (node->type == MACHINE_LANGUAGE_NODE(STRING) || node->type == MACHINE_LANGUAGE_NODE(BUFFER))
+        status = machine_language_copy_into(load, node->value.handle, value);
+    else if (node->type == MACHINE_LANGUAGE_NODE(EXTERNAL))
+        status = MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
+    machine_language_release(load, value);
+    return status;
+}
+
+/**
+ * @brief Stores a value where a target says, and takes the references both hold: NullName drops it, a
+ *        local or an argument is overwritten, Debug counts it, a named object takes it; a value that
+ *        is no target, such as a constant, takes nothing (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_store(MachineLanguageLoad_t *load, MachineLanguageValue_t *value,
+                                                      MachineLanguageValue_t *target)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
     if (target->kind != MACHINE_LANGUAGE_TARGET)
-        return MACHINE_LANGUAGE_OK;
-    switch (target->auxiliary)
+        machine_language_release(load, value);
+    else if (target->auxiliary == MACHINE_LANGUAGE_TARGET_LOCAL ||
+             target->auxiliary == MACHINE_LANGUAGE_TARGET_ARGUMENT)
+        status = machine_language_overwrite(load, machine_language_slot(evaluation, target), value);
+    else if (target->auxiliary == MACHINE_LANGUAGE_TARGET_NODE)
+        status = machine_language_store_node(load, target->handle, value);
+    else
     {
-    case MACHINE_LANGUAGE_TARGET_LOCAL: frame->locals[target->handle] = *value; return MACHINE_LANGUAGE_OK;
-    case MACHINE_LANGUAGE_TARGET_ARGUMENT: frame->arguments[target->handle] = *value; return MACHINE_LANGUAGE_OK;
-    case MACHINE_LANGUAGE_TARGET_DEBUG: ++evaluation->debug_stores; return MACHINE_LANGUAGE_OK;
-    case MACHINE_LANGUAGE_TARGET_NODE: return machine_language_store_node(load, target->handle, value);
-    default: return MACHINE_LANGUAGE_OK;
+        evaluation->debug_stores += (target->auxiliary == MACHINE_LANGUAGE_TARGET_DEBUG) ? 1u : 0u;
+        machine_language_release(load, value);
     }
+    machine_language_release(load, target);
+    return status;
+}
+
+/**
+ * @brief Runs CopyObject's store, which takes the references the value and the target hold: a local
+ *        or an argument is overwritten, a named object takes the value and its type, a field is
+ *        written through.
+ */
+static MachineLanguageStatus_t machine_language_copy_object(MachineLanguageLoad_t *load, MachineLanguageValue_t *value,
+                                                            MachineLanguageValue_t *target)
+{
+    MachineLanguageNode_t *node = NULL;
+
+    if (target->kind != MACHINE_LANGUAGE_TARGET || target->auxiliary != MACHINE_LANGUAGE_TARGET_NODE)
+        return machine_language_store(load, value, target);
+    node = advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, target->handle);
+    if (node->value.kind == MACHINE_LANGUAGE_VALUE(FIELD_UNIT) ||
+        node->value.kind == MACHINE_LANGUAGE_VALUE(BUFFER_FIELD))
+        return machine_language_store(load, value, target);
+    return machine_language_overwrite_node(load, node, value);
+}
+
+/**
+ * @brief Stores a result to its target, and hands it to the operator waiting for it, or releases it
+ *        when none is; it takes the references the result and the target hold.
+ */
+static MachineLanguageStatus_t machine_language_store_and_deliver(MachineLanguageLoad_t *load,
+                                                                  MachineLanguageValue_t result,
+                                                                  MachineLanguageValue_t *target)
+{
+    const bool used = machine_language_active(&load->evaluation) != NULL;
+    MachineLanguageValue_t stored = result;
+
+    if (used)
+        machine_language_retain(load, &result);
+
+    const MachineLanguageStatus_t status = machine_language_store(load, &stored, target);
+
+    if (!used)
+        return status;
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &result);
+        return status;
+    }
+    return machine_language_push(load, &result);
+}
+
+/**
+ * @brief Ends an operator that stores its result: on success, the result goes to its target and to the
+ *        operator waiting for it; on failure, the target is released. Takes both references.
+ */
+static MachineLanguageStatus_t machine_language_finish(MachineLanguageLoad_t *load, MachineLanguageStatus_t status,
+                                                       MachineLanguageValue_t result, MachineLanguageValue_t *target)
+{
+    if (status == MACHINE_LANGUAGE_OK)
+        return machine_language_store_and_deliver(load, result, target);
+    machine_language_release(load, target);
+    return status;
 }
 
 /**
@@ -310,7 +552,8 @@ static MachineLanguageStatus_t machine_language_open(MachineLanguageEvaluation_t
 }
 
 /**
- * @brief Pushes a frame for a method whose arguments are the top @p argument_count values.
+ * @brief Pushes a frame for a method whose arguments are the top @p argument_count values, which it
+ *        takes with their references.
  */
 static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad_t *load, uint32_t method,
                                                              uint32_t argument_count)
@@ -353,38 +596,50 @@ static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad
 }
 
 /**
- * @brief Pops the running frame: removes the nodes it created, the last first, and drops what its
- *        stacks hold.
+ * @brief Pops the running frame: removes the nodes it created, the last first, and releases what
+ *        they, its stacks, its locals and its arguments hold.
  */
 static void machine_language_drop_frame(MachineLanguageLoad_t *load)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    const MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
 
     while (load->temporary_count > frame->temporary_base)
-        advanced_configuration_and_power_interface_machine_language_namespace_remove(
-            &load->space, load->temporaries[--load->temporary_count]);
-    evaluation->value_count = frame->value_base;
+    {
+        const uint32_t temporary = load->temporaries[--load->temporary_count];
+
+        machine_language_release(
+            load, &advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, temporary)
+                       ->value);
+        advanced_configuration_and_power_interface_machine_language_namespace_remove(&load->space, temporary);
+    }
+    while (evaluation->value_count > frame->value_base)
+        machine_language_release(load, &evaluation->values[--evaluation->value_count]);
+    for (uint32_t slot = 0u; slot < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS; ++slot)
+        machine_language_release(load, &frame->locals[slot]);
+    for (uint32_t slot = 0u; slot < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ARGUMENTS; ++slot)
+        machine_language_release(load, &frame->arguments[slot]);
     evaluation->operator_count = frame->operator_base;
     evaluation->block_count = frame->block_base;
     --evaluation->frame_count;
 }
 
 /**
- * @brief Ends the running method and gives its caller the result: @p value, or for a method that
- *        ended without Return while its caller uses the result, Integer 0, counted (§5.2).
+ * @brief Ends the running method and gives its caller the result: @p value, whose reference it
+ *        takes, or for a method that ended without Return while its caller uses the result, Integer
+ *        0, counted (§5.2).
  */
-static MachineLanguageStatus_t machine_language_return(MachineLanguageLoad_t *load, const MachineLanguageValue_t *value)
+static MachineLanguageStatus_t machine_language_return(MachineLanguageLoad_t *load, MachineLanguageValue_t *value)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
 
     machine_language_drop_frame(load);
+    if (value != NULL)
+        return machine_language_deliver(load, *value);
     if (machine_language_active(evaluation) == NULL)
         return MACHINE_LANGUAGE_OK;
-    if (value != NULL)
-        return machine_language_push(evaluation, value);
     ++evaluation->implicit_returns;
-    return machine_language_deliver(evaluation, machine_language_integer(0u));
+    return machine_language_deliver(load, machine_language_integer(0u));
 }
 
 /**
@@ -486,8 +741,9 @@ static MachineLanguageStatus_t machine_language_leave_loop(MachineLanguageEvalua
 }
 
 /**
- * @brief Whether the interpreter runs an opcode that pushes an operator: control flow, Store, the
- *        integer operators the needs-path closure reaches (§4.1), and Name in a method.
+ * @brief Whether the interpreter runs an opcode that pushes an operator: control flow, Store and
+ *        CopyObject, Name in a method, and the operators on integers, strings, buffers and packages
+ *        the needs-path closure reaches (§4.1).
  */
 static bool machine_language_runs(uint32_t opcode)
 {
@@ -498,6 +754,10 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(RETURN):
     case MACHINE_LANGUAGE_OPCODE(NAME):
     case MACHINE_LANGUAGE_OPCODE(STORE):
+    case MACHINE_LANGUAGE_OPCODE(COPY_OBJECT):
+    case MACHINE_LANGUAGE_OPCODE(BUFFER):
+    case MACHINE_LANGUAGE_OPCODE(PACKAGE):
+    case MACHINE_LANGUAGE_OPCODE(VARIABLE_PACKAGE):
     case MACHINE_LANGUAGE_OPCODE(ADD):
     case MACHINE_LANGUAGE_OPCODE(SUBTRACT):
     case MACHINE_LANGUAGE_OPCODE(MULTIPLY):
@@ -516,7 +776,16 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT):
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_EQUAL):
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_GREATER):
-    case MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS): return true;
+    case MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS):
+    case MACHINE_LANGUAGE_OPCODE(CONCATENATE):
+    case MACHINE_LANGUAGE_OPCODE(SIZE_OF):
+    case MACHINE_LANGUAGE_OPCODE(OBJECT_TYPE):
+    case MACHINE_LANGUAGE_OPCODE(TO_BUFFER):
+    case MACHINE_LANGUAGE_OPCODE(TO_DECIMAL_STRING):
+    case MACHINE_LANGUAGE_OPCODE(TO_HEX_STRING):
+    case MACHINE_LANGUAGE_OPCODE(TO_INTEGER):
+    case MACHINE_LANGUAGE_OPCODE(TO_STRING):
+    case MACHINE_LANGUAGE_OPCODE(MID): return true;
     default: return false;
     }
 }
@@ -563,8 +832,7 @@ static MachineLanguageStatus_t machine_language_push_operator(MachineLanguageEva
 static MachineLanguageStatus_t machine_language_constant(MachineLanguageLoad_t *load, uint32_t opcode, uint32_t after,
                                                          uint32_t limit)
 {
-    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
     const uint32_t width = (opcode == MACHINE_LANGUAGE_OPCODE(BYTE_PREFIX))        ? 1u :
                            (opcode == MACHINE_LANGUAGE_OPCODE(WORD_PREFIX))        ? 2u :
                            (opcode == MACHINE_LANGUAGE_OPCODE(DOUBLE_WORD_PREFIX)) ? 4u :
@@ -579,15 +847,65 @@ static MachineLanguageStatus_t machine_language_constant(MachineLanguageLoad_t *
     if (opcode == MACHINE_LANGUAGE_OPCODE(ONES))
         integer = ~0ull;
     frame->pc = after + width;
-    return machine_language_deliver(evaluation, machine_language_integer(machine_language_mask(load, integer)));
+    return machine_language_deliver(load, machine_language_integer(machine_language_mask(load, integer)));
+}
+
+/**
+ * @brief Builds the String whose characters start at @p after, up to their NUL.
+ */
+static MachineLanguageStatus_t machine_language_string_literal(MachineLanguageLoad_t *load, uint32_t after,
+                                                               uint32_t limit)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    uint32_t end = after;
+    MachineLanguageValue_t value;
+
+    while (end < limit && frame->code[end] != 0x00u)
+        ++end;
+    if (end == limit)
+        return MACHINE_LANGUAGE_STATUS(TRUNCATED);
+
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_allocate(
+        &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(STRING), end - after, &value);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    memcpy(advanced_configuration_and_power_interface_machine_language_object_payload(&load->heap, value.handle),
+           frame->code + after, end - after);
+    frame->pc = end + 1u;
+    return machine_language_deliver(load, value);
+}
+
+/**
+ * @brief Reads a name that stands as a package element: it stays a name, resolved when the element is
+ *        read (§5.1).
+ */
+static MachineLanguageStatus_t machine_language_name_element(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    MachineLanguageNameString_t name;
+    MachineLanguageValue_t value;
+    uint32_t after = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
+        frame->code, frame->pc, machine_language_limit(evaluation), &name, &after);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    value.kind = MACHINE_LANGUAGE_VALUE(NAME_REFERENCE);
+    value.flags = 0u;
+    value.auxiliary = frame->table;
+    value.handle = machine_language_block(evaluation)->scope;
+    value.payload = frame->pc;
+    frame->pc = after;
+    return machine_language_deliver(load, value);
 }
 
 /**
  * @brief Runs a NameString read where @p kind is expected: a method is called, unless the operand is
  *        a SimpleName; a target position names the object; anywhere else the object gives its value.
  */
-static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t *load,
-                                                          MachineLanguageOperandKind_t kind)
+static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t *load, uint32_t kind)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
@@ -633,16 +951,30 @@ static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t 
         return MACHINE_LANGUAGE_OK;
     }
     if (target)
-        return machine_language_deliver(evaluation, machine_language_target(MACHINE_LANGUAGE_TARGET_NODE, index));
+        return machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_NODE, index));
     status = machine_language_read_node(load, index, &value);
-    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(evaluation, value) : status;
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, value) : status;
+}
+
+/**
+ * @brief Whether an opcode may stand as an operand: no statement, and a data object where @p data_only
+ *        asks for one.
+ */
+static bool machine_language_fits_operand(uint32_t opcode, bool data_only)
+{
+    const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
+
+    if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_STATEMENT) != 0u)
+        return false;
+    return !data_only || (flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) != 0u;
 }
 
 /**
  * @brief Runs one term of the running frame where @p kind is expected: a statement of a TermList
- *        when @p kind is NONE, where a statement is refused otherwise.
+ *        when @p kind is NONE, where a statement is refused otherwise; a package element or a data
+ *        object (MACHINE_LANGUAGE_DATA_OBJECT) must be a data object, and an element may be a name.
  */
-static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load, MachineLanguageOperandKind_t kind)
+static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load, uint32_t kind)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
@@ -650,6 +982,8 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
     const uint32_t limit = machine_language_limit(evaluation);
     const bool target = kind == MACHINE_LANGUAGE_OPERAND(SUPER_NAME) || kind == MACHINE_LANGUAGE_OPERAND(TARGET) ||
                         kind == MACHINE_LANGUAGE_OPERAND(SIMPLE_NAME);
+    const bool element = kind == MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST);
+    const bool data_only = element || kind == MACHINE_LANGUAGE_DATA_OBJECT;
     uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
     uint32_t after = 0u;
 
@@ -658,37 +992,35 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
     if (frame->code[start] == 0x00u && target)
     {
         frame->pc = start + 1u;
-        return machine_language_deliver(evaluation, machine_language_target(MACHINE_LANGUAGE_TARGET_NONE, 0u));
+        return machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_NONE, 0u));
     }
     if (advanced_configuration_and_power_interface_machine_language_starts_name(frame->code[start]))
-        return machine_language_name_term(load, kind);
+        return element   ? machine_language_name_element(load) :
+               data_only ? MACHINE_LANGUAGE_STATUS(INVALID_OPCODE) :
+                           machine_language_name_term(load, kind);
 
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_opcode(
         frame->code, start, limit, &opcode, &after);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    if (kind != MACHINE_LANGUAGE_OPERAND(NONE) &&
-        (advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags &
-         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_STATEMENT) != 0u)
+    if (kind != MACHINE_LANGUAGE_OPERAND(NONE) && !machine_language_fits_operand(opcode, data_only))
         return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
     if (opcode >= MACHINE_LANGUAGE_OPCODE(LOCAL0) && opcode <= MACHINE_LANGUAGE_OPCODE(LOCAL7))
     {
         const uint32_t slot = opcode - MACHINE_LANGUAGE_OPCODE(LOCAL0);
 
         frame->pc = after;
-        return machine_language_deliver(evaluation, target ?
-                                                        machine_language_target(MACHINE_LANGUAGE_TARGET_LOCAL, slot) :
-                                                        machine_language_read_slot(evaluation, &frame->locals[slot]));
+        return machine_language_deliver(load, target ? machine_language_target(MACHINE_LANGUAGE_TARGET_LOCAL, slot) :
+                                                       machine_language_read_slot(load, &frame->locals[slot]));
     }
     if (opcode >= MACHINE_LANGUAGE_OPCODE(ARGUMENT0) && opcode <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6))
     {
         const uint32_t slot = opcode - MACHINE_LANGUAGE_OPCODE(ARGUMENT0);
 
         frame->pc = after;
-        return machine_language_deliver(evaluation,
-                                        target ? machine_language_target(MACHINE_LANGUAGE_TARGET_ARGUMENT, slot) :
-                                                 machine_language_read_slot(evaluation, &frame->arguments[slot]));
+        return machine_language_deliver(load, target ? machine_language_target(MACHINE_LANGUAGE_TARGET_ARGUMENT, slot) :
+                                                       machine_language_read_slot(load, &frame->arguments[slot]));
     }
     switch (opcode)
     {
@@ -699,11 +1031,11 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
     case MACHINE_LANGUAGE_OPCODE(WORD_PREFIX):
     case MACHINE_LANGUAGE_OPCODE(DOUBLE_WORD_PREFIX):
     case MACHINE_LANGUAGE_OPCODE(QUAD_WORD_PREFIX): return machine_language_constant(load, opcode, after, limit);
+    case MACHINE_LANGUAGE_OPCODE(STRING_PREFIX): return machine_language_string_literal(load, after, limit);
     case MACHINE_LANGUAGE_OPCODE(DEBUG):
         frame->pc = after;
-        return target ?
-                   machine_language_deliver(evaluation, machine_language_target(MACHINE_LANGUAGE_TARGET_DEBUG, 0u)) :
-                   MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+        return target ? machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_DEBUG, 0u)) :
+                        MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     case MACHINE_LANGUAGE_OPCODE(NOOP): frame->pc = after; return MACHINE_LANGUAGE_OK;
     case MACHINE_LANGUAGE_OPCODE(BREAK):
     case MACHINE_LANGUAGE_OPCODE(CONTINUE):
@@ -718,50 +1050,6 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
         return MACHINE_LANGUAGE_STATUS(UNIMPLEMENTED_OPERATOR);
     }
     return machine_language_push_operator(evaluation, opcode, start, after);
-}
-
-/**
- * @brief Where a data object that starts at @p start ends: a constant's last byte, a String's NUL,
- *        a Buffer's or Package's PkgLength end.
- */
-static MachineLanguageStatus_t machine_language_data_object_end(const uint8_t *code, uint32_t start, uint32_t limit,
-                                                                uint32_t *out_end)
-{
-    uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
-    uint32_t after = 0u;
-    MachineLanguageStatus_t status =
-        advanced_configuration_and_power_interface_machine_language_read_opcode(code, start, limit, &opcode, &after);
-
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
-    switch (opcode)
-    {
-    case MACHINE_LANGUAGE_OPCODE(ZERO):
-    case MACHINE_LANGUAGE_OPCODE(ONE):
-    case MACHINE_LANGUAGE_OPCODE(ONES): *out_end = after; return MACHINE_LANGUAGE_OK;
-    case MACHINE_LANGUAGE_OPCODE(BYTE_PREFIX): *out_end = after + 1u; break;
-    case MACHINE_LANGUAGE_OPCODE(WORD_PREFIX): *out_end = after + 2u; break;
-    case MACHINE_LANGUAGE_OPCODE(DOUBLE_WORD_PREFIX): *out_end = after + 4u; break;
-    case MACHINE_LANGUAGE_OPCODE(QUAD_WORD_PREFIX): *out_end = after + 8u; break;
-    case MACHINE_LANGUAGE_OPCODE(STRING_PREFIX):
-        for (uint32_t offset = after; offset < limit; ++offset)
-        {
-            if (code[offset] == 0x00u)
-            {
-                *out_end = offset + 1u;
-                return MACHINE_LANGUAGE_OK;
-            }
-        }
-        return MACHINE_LANGUAGE_STATUS(TRUNCATED);
-    case MACHINE_LANGUAGE_OPCODE(BUFFER):
-    case MACHINE_LANGUAGE_OPCODE(PACKAGE):
-    case MACHINE_LANGUAGE_OPCODE(VARIABLE_PACKAGE):
-        status = advanced_configuration_and_power_interface_machine_language_read_package_end(code, after, limit,
-                                                                                              out_end, &after);
-        return status;
-    default: return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
-    }
-    return (*out_end <= limit) ? MACHINE_LANGUAGE_OK : MACHINE_LANGUAGE_STATUS(TRUNCATED);
 }
 
 /**
@@ -800,43 +1088,6 @@ static MachineLanguageStatus_t machine_language_declare_name(MachineLanguageLoad
 }
 
 /**
- * @brief Gives the node a Name in a method declared its data object, which needs no interpreter.
- */
-static MachineLanguageStatus_t machine_language_name_object(MachineLanguageLoad_t *load,
-                                                            const MachineLanguagePendingOperator_t *active)
-{
-    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = {
-        .bytes = frame->code,
-        .scope = machine_language_block(evaluation)->scope,
-        .table = frame->table,
-        .integer_bits = (load->integer_bits != 0u) ? load->integer_bits : 64u,
-    };
-    MachineLanguageValue_t value;
-    uint32_t end = 0u;
-    bool constant = false;
-    MachineLanguageStatus_t status = machine_language_data_object_end(frame->code, frame->pc, active->end, &end);
-
-    if (status == MACHINE_LANGUAGE_OK)
-        status = advanced_configuration_and_power_interface_machine_language_evaluate_data(
-            &load->heap, &load->space, &source, frame->pc, end, &value, &constant);
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
-    /* TODO(#539): a Buffer or a Package sized at run time. */
-    if (!constant)
-        return MACHINE_LANGUAGE_STATUS(UNIMPLEMENTED_OPERATOR);
-
-    MachineLanguageNode_t *node =
-        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, active->node);
-
-    node->value = value;
-    node->type = advanced_configuration_and_power_interface_machine_language_node_type_of_value(value.kind);
-    frame->pc = end;
-    return MACHINE_LANGUAGE_OK;
-}
-
-/**
  * @brief Runs the TermList of an If or a While once its predicate is on the stack: a true predicate
  *        opens the body; a false one skips it, and an If then enters the Else that follows.
  */
@@ -845,10 +1096,11 @@ static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *lo
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const MachineLanguagePendingOperator_t branch = *active;
-    const MachineLanguageValue_t predicate = machine_language_pop(evaluation);
+    MachineLanguageValue_t predicate = machine_language_pop(evaluation);
     uint64_t truth = 0u;
-    const MachineLanguageStatus_t status = machine_language_integer_of(&predicate, &truth);
+    const MachineLanguageStatus_t status = machine_language_integer_of(load, &predicate, &truth);
 
+    machine_language_release(load, &predicate);
     --evaluation->operator_count;
     if (status != MACHINE_LANGUAGE_OK)
         return status;
@@ -863,26 +1115,69 @@ static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *lo
 }
 
 /**
+ * @brief Reads a ByteData, WordData, DWordData or QWordData operand as an Integer.
+ */
+static MachineLanguageStatus_t machine_language_fixed_operand(MachineLanguageLoad_t *load,
+                                                              const MachineLanguagePendingOperator_t *active,
+                                                              uint32_t width)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    uint64_t integer = 0u;
+
+    if (active->end - frame->pc < width)
+        return MACHINE_LANGUAGE_STATUS(TRUNCATED);
+    for (uint32_t byte = 0u; byte < width; ++byte)
+        integer |= (uint64_t) frame->code[frame->pc + byte] << (8u * byte);
+    frame->pc += width;
+    return machine_language_deliver(load, machine_language_integer(integer));
+}
+
+/**
+ * @brief Runs the next element of a PackageElementList, the values gathering on the stack above the
+ *        count; the list is done when its end is reached.
+ */
+static MachineLanguageStatus_t machine_language_package_elements(MachineLanguageLoad_t *load,
+                                                                 MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
+    if (active->node == 0u)
+        active->node = evaluation->value_count + 1u;
+    if (machine_language_frame(evaluation)->pc < active->end)
+        return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST));
+    ++active->operands_done;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Runs the next operand of the active operator.
  */
 static MachineLanguageStatus_t machine_language_operand(MachineLanguageLoad_t *load,
                                                         MachineLanguagePendingOperator_t *active)
 {
-    const MachineLanguageOperandKind_t kind =
+    const uint32_t kind =
         (active->opcode >= MACHINE_LANGUAGE_CALL) ?
             MACHINE_LANGUAGE_OPERAND(TERM_ARGUMENT) :
             advanced_configuration_and_power_interface_machine_language_operand_kind(
                 advanced_configuration_and_power_interface_machine_language_descriptor(active->opcode),
                 active->operands_done);
 
+    if (kind == MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST))
+        return machine_language_package_elements(load, active);
     ++active->operands_done;
-    if (kind == MACHINE_LANGUAGE_OPERAND(TERM_LIST))
-        return machine_language_branch(load, active);
-    if (kind == MACHINE_LANGUAGE_OPERAND(NAME_STRING))
-        return machine_language_declare_name(load, active);
-    if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME))
-        return machine_language_name_object(load, active);
-    return machine_language_term(load, kind);
+    switch (kind)
+    {
+    case MACHINE_LANGUAGE_OPERAND(TERM_LIST): return machine_language_branch(load, active);
+    case MACHINE_LANGUAGE_OPERAND(NAME_STRING): return machine_language_declare_name(load, active);
+    case MACHINE_LANGUAGE_OPERAND(BYTE_DATA): return machine_language_fixed_operand(load, active, 1u);
+    case MACHINE_LANGUAGE_OPERAND(WORD_DATA): return machine_language_fixed_operand(load, active, 2u);
+    case MACHINE_LANGUAGE_OPERAND(DOUBLE_WORD_DATA): return machine_language_fixed_operand(load, active, 4u);
+    case MACHINE_LANGUAGE_OPERAND(QUAD_WORD_DATA): return machine_language_fixed_operand(load, active, 8u);
+    case MACHINE_LANGUAGE_OPERAND(BYTE_LIST): return MACHINE_LANGUAGE_OK;
+    default: break;
+    }
+    return machine_language_term(
+        load, (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME)) ? MACHINE_LANGUAGE_DATA_OBJECT : kind);
 }
 
 /**
@@ -892,7 +1187,7 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageLoad_t *l
 static MachineLanguageStatus_t machine_language_binary(const MachineLanguageLoad_t *load, uint32_t opcode,
                                                        uint64_t left, uint64_t right, uint64_t *out_result)
 {
-    const uint64_t width = (load->integer_bits == 32u) ? 32u : 64u;
+    const uint64_t width = machine_language_bits(load);
 
     left = machine_language_mask(load, left);
     right = machine_language_mask(load, right);
@@ -917,19 +1212,20 @@ static MachineLanguageStatus_t machine_language_binary(const MachineLanguageLoad
 }
 
 /**
- * @brief Pops the top @p count values as integers, the deepest first.
+ * @brief Pops the top @p count values as integers, the deepest first, and releases them.
  */
-static MachineLanguageStatus_t machine_language_pop_integers(MachineLanguageEvaluation_t *evaluation, uint32_t count,
+static MachineLanguageStatus_t machine_language_pop_integers(MachineLanguageLoad_t *load, uint32_t count,
                                                              uint64_t *out_integers)
 {
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
     for (uint32_t index = count; index > 0u; --index)
     {
-        const MachineLanguageValue_t value = machine_language_pop(evaluation);
+        MachineLanguageValue_t value = machine_language_pop(&load->evaluation);
 
         if (status == MACHINE_LANGUAGE_OK)
-            status = machine_language_integer_of(&value, &out_integers[index - 1u]);
+            status = machine_language_integer_of(load, &value, &out_integers[index - 1u]);
+        machine_language_release(load, &value);
     }
     return status;
 }
@@ -941,27 +1237,31 @@ static MachineLanguageStatus_t machine_language_pop_integers(MachineLanguageEval
 static MachineLanguageStatus_t machine_language_divide(MachineLanguageLoad_t *load)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    const MachineLanguageValue_t quotient_target = machine_language_pop(evaluation);
-    const MachineLanguageValue_t remainder_target = machine_language_pop(evaluation);
+    MachineLanguageValue_t quotient_target = machine_language_pop(evaluation);
+    MachineLanguageValue_t remainder_target = machine_language_pop(evaluation);
     uint64_t operands[2];
-    MachineLanguageStatus_t status = machine_language_pop_integers(evaluation, 2u, operands);
-
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
-
-    const uint64_t dividend = machine_language_mask(load, operands[0]);
+    MachineLanguageStatus_t status = machine_language_pop_integers(load, 2u, operands);
     const uint64_t divisor = machine_language_mask(load, operands[1]);
 
-    if (divisor == 0u)
-        return MACHINE_LANGUAGE_STATUS(DIVIDE_BY_ZERO);
+    if (status == MACHINE_LANGUAGE_OK && divisor == 0u)
+        status = MACHINE_LANGUAGE_STATUS(DIVIDE_BY_ZERO);
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &remainder_target);
+        machine_language_release(load, &quotient_target);
+        return status;
+    }
 
-    const MachineLanguageValue_t remainder = machine_language_integer(dividend % divisor);
-    const MachineLanguageValue_t quotient = machine_language_integer(dividend / divisor);
+    const uint64_t dividend = machine_language_mask(load, operands[0]);
+    MachineLanguageValue_t remainder = machine_language_integer(dividend % divisor);
 
     status = machine_language_store(load, &remainder, &remainder_target);
-    if (status == MACHINE_LANGUAGE_OK)
-        status = machine_language_store(load, &quotient, &quotient_target);
-    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(evaluation, quotient) : status;
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &quotient_target);
+        return status;
+    }
+    return machine_language_store_and_deliver(load, machine_language_integer(dividend / divisor), &quotient_target);
 }
 
 /**
@@ -970,26 +1270,140 @@ static MachineLanguageStatus_t machine_language_divide(MachineLanguageLoad_t *lo
 static MachineLanguageStatus_t machine_language_step_target(MachineLanguageLoad_t *load, bool up)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    const MachineLanguageValue_t target = machine_language_pop(evaluation);
+    MachineLanguageValue_t target = machine_language_pop(evaluation);
     MachineLanguageValue_t current;
     uint64_t integer = 0u;
-    MachineLanguageStatus_t status = machine_language_read_target(load, &target, &current);
+    MachineLanguageStatus_t status = (target.kind == MACHINE_LANGUAGE_TARGET) ?
+                                         machine_language_read_target(load, &target, &current) :
+                                         MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
 
     if (status == MACHINE_LANGUAGE_OK)
-        status = machine_language_integer_of(&current, &integer);
+    {
+        status = machine_language_integer_of(load, &current, &integer);
+        machine_language_release(load, &current);
+    }
     if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &target);
         return status;
-
-    const MachineLanguageValue_t result =
-        machine_language_integer(machine_language_mask(load, up ? integer + 1u : integer - 1u));
-
-    status = machine_language_store(load, &result, &target);
-    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(evaluation, result) : status;
+    }
+    return machine_language_store_and_deliver(
+        load, machine_language_integer(machine_language_mask(load, up ? integer + 1u : integer - 1u)), &target);
 }
 
 /**
- * @brief Runs an operator that computes an integer, the logical ones included, and stores it to its
- *        target when it has one.
+ * @brief Compares two values (§5.2): a String or a Buffer by its bytes, then its length, an Integer by
+ *        its value; the second converts to the first's type, which is counted when it is another.
+ *
+ * @return OK, and in @p out_order below, at or above zero as the first is less, equal or greater.
+ */
+static MachineLanguageStatus_t machine_language_order(MachineLanguageLoad_t *load, const MachineLanguageValue_t *first,
+                                                      const MachineLanguageValue_t *second, int32_t *out_order)
+{
+    MachineLanguageValue_t converted;
+    uint64_t left = 0u;
+    uint64_t right = 0u;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    load->evaluation.mixed_type_comparisons += (first->kind != second->kind) ? 1u : 0u;
+    if (first->kind == MACHINE_LANGUAGE_VALUE(STRING) || first->kind == MACHINE_LANGUAGE_VALUE(BUFFER))
+    {
+        status = (first->kind == MACHINE_LANGUAGE_VALUE(STRING)) ?
+                     advanced_configuration_and_power_interface_machine_language_value_to_string(
+                         &load->heap, &load->space, second, MACHINE_LANGUAGE_FORM(IMPLICIT),
+                         machine_language_bits(load), &converted) :
+                     advanced_configuration_and_power_interface_machine_language_value_to_buffer(
+                         &load->heap, &load->space, second, machine_language_bits(load), &converted);
+        if (status != MACHINE_LANGUAGE_OK)
+            return status;
+
+        const MachineLanguageHeader_t *left_object = machine_language_object(load, first);
+        const MachineLanguageHeader_t *right_object = machine_language_object(load, &converted);
+        const uint32_t common =
+            (left_object->length < right_object->length) ? left_object->length : right_object->length;
+        const int compared = memcmp(left_object + 1, right_object + 1, common);
+
+        *out_order = (compared != 0)                              ? compared :
+                     (left_object->length < right_object->length) ? -1 :
+                     (left_object->length > right_object->length) ? 1 :
+                                                                    0;
+        machine_language_release(load, &converted);
+        return MACHINE_LANGUAGE_OK;
+    }
+    status = machine_language_integer_of(load, first, &left);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_integer_of(load, second, &right);
+    *out_order = (left < right) ? -1 : (left > right) ? 1 : 0;
+    return status;
+}
+
+/**
+ * @brief Runs LEqual, LGreater or LLess on two values of any computational type.
+ */
+static MachineLanguageStatus_t machine_language_compare(MachineLanguageLoad_t *load, uint32_t opcode)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t second = machine_language_pop(evaluation);
+    MachineLanguageValue_t first = machine_language_pop(evaluation);
+    int32_t order = 0;
+    const MachineLanguageStatus_t status = machine_language_order(load, &first, &second, &order);
+
+    machine_language_release(load, &first);
+    machine_language_release(load, &second);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    return machine_language_deliver(
+        load, machine_language_truth(load, (opcode == MACHINE_LANGUAGE_OPCODE(LOGICAL_EQUAL)) ? order == 0 :
+                                           (opcode == MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS))  ? order < 0 :
+                                                                                                order > 0));
+}
+
+/**
+ * @brief The Integer an operand of LAnd or LOr gives: a Buffer's first 4 bytes, as Windows reads them
+ *        (§5.2), or the Integer it converts to.
+ */
+static MachineLanguageStatus_t machine_language_logical_operand(MachineLanguageLoad_t *load,
+                                                                const MachineLanguageValue_t *value,
+                                                                uint64_t *out_integer)
+{
+    if (value->kind != MACHINE_LANGUAGE_VALUE(BUFFER))
+        return machine_language_integer_of(load, value, out_integer);
+
+    const MachineLanguageHeader_t *buffer = machine_language_object(load, value);
+
+    *out_integer = 0u;
+    for (uint32_t byte = 0u; byte < buffer->length && byte < MACHINE_LANGUAGE_LOGICAL_BYTES; ++byte)
+        *out_integer |= (uint64_t) ((const uint8_t *) (buffer + 1))[byte] << (8u * byte);
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Runs LAnd or LOr.
+ */
+static MachineLanguageStatus_t machine_language_logical(MachineLanguageLoad_t *load, uint32_t opcode)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t second = machine_language_pop(evaluation);
+    MachineLanguageValue_t first = machine_language_pop(evaluation);
+    uint64_t left = 0u;
+    uint64_t right = 0u;
+    MachineLanguageStatus_t status = machine_language_logical_operand(load, &first, &left);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_logical_operand(load, &second, &right);
+    machine_language_release(load, &first);
+    machine_language_release(load, &second);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    return machine_language_deliver(load,
+                                    machine_language_truth(load, (opcode == MACHINE_LANGUAGE_OPCODE(LOGICAL_AND)) ?
+                                                                     (left != 0u && right != 0u) :
+                                                                     (left != 0u || right != 0u)));
+}
+
+/**
+ * @brief Runs an operator that computes an integer from integers, and stores it to its target when it
+ *        has one.
  */
 static MachineLanguageStatus_t machine_language_compute(MachineLanguageLoad_t *load, uint32_t opcode)
 {
@@ -999,43 +1413,393 @@ static MachineLanguageStatus_t machine_language_compute(MachineLanguageLoad_t *l
     const bool stores = advanced_configuration_and_power_interface_machine_language_operand_kind(
                             advanced_configuration_and_power_interface_machine_language_descriptor(opcode),
                             operand_count - 1u) == MACHINE_LANGUAGE_OPERAND(TARGET);
-    const MachineLanguageValue_t target =
+    MachineLanguageValue_t target =
         stores ? machine_language_pop(evaluation) : machine_language_target(MACHINE_LANGUAGE_TARGET_NONE, 0u);
     uint64_t operands[2] = {0u, 0u};
     uint64_t integer = 0u;
     MachineLanguageValue_t result;
-    MachineLanguageStatus_t status =
-        machine_language_pop_integers(evaluation, operand_count - (stores ? 1u : 0u), operands);
+    MachineLanguageStatus_t status = machine_language_pop_integers(load, operand_count - (stores ? 1u : 0u), operands);
 
     if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &target);
         return status;
+    }
     switch (opcode)
     {
     case MACHINE_LANGUAGE_OPCODE(NOT):
         result = machine_language_integer(machine_language_mask(load, ~operands[0]));
         break;
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT): result = machine_language_truth(load, operands[0] == 0u); break;
-    case MACHINE_LANGUAGE_OPCODE(LOGICAL_AND):
-        result = machine_language_truth(load, operands[0] != 0u && operands[1] != 0u);
-        break;
-    case MACHINE_LANGUAGE_OPCODE(LOGICAL_OR):
-        result = machine_language_truth(load, operands[0] != 0u || operands[1] != 0u);
-        break;
-    case MACHINE_LANGUAGE_OPCODE(LOGICAL_EQUAL):
-        result = machine_language_truth(load, operands[0] == operands[1]);
-        break;
-    case MACHINE_LANGUAGE_OPCODE(LOGICAL_GREATER):
-        result = machine_language_truth(load, operands[0] > operands[1]);
-        break;
-    case MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS): result = machine_language_truth(load, operands[0] < operands[1]); break;
     default:
         status = machine_language_binary(load, opcode, operands[0], operands[1], &integer);
         result = machine_language_integer(integer);
         break;
     }
+    return machine_language_finish(load, status, result, &target);
+}
+
+/**
+ * @brief Runs Buffer once its size is on the stack: as many bytes as the size or the initialiser
+ *        that follows, the larger, the rest zero.
+ */
+static MachineLanguageStatus_t machine_language_buffer(MachineLanguageLoad_t *load,
+                                                       const MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    MachineLanguageValue_t size_value = machine_language_pop(&load->evaluation);
+    MachineLanguageValue_t buffer;
+    uint64_t size = 0u;
+    MachineLanguageStatus_t status = machine_language_integer_of(load, &size_value, &size);
+
+    machine_language_release(load, &size_value);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+
+    const uint32_t initialiser = active->end - frame->pc;
+    const uint64_t length = (size > initialiser) ? size : initialiser;
+
+    if (length > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES);
+    status = advanced_configuration_and_power_interface_machine_language_value_allocate(
+        &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(BUFFER), (uint32_t) length, &buffer);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    memcpy(advanced_configuration_and_power_interface_machine_language_object_payload(&load->heap, buffer.handle),
+           frame->code + frame->pc, initialiser);
+    frame->pc = active->end;
+    return machine_language_deliver(load, buffer);
+}
+
+/**
+ * @brief Runs Package or VarPackage once its elements are on the stack above its count: fewer
+ *        initialisers than elements are padded with Uninitialized, more are dropped, both counted.
+ */
+static MachineLanguageStatus_t machine_language_package(MachineLanguageLoad_t *load,
+                                                        const MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const uint32_t first = active->node - 1u;
+    const uint32_t initialisers = evaluation->value_count - first;
+    const uint32_t cap = (active->opcode == MACHINE_LANGUAGE_OPCODE(PACKAGE)) ?
+                             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PACKAGE_ELEMENTS :
+                             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS;
+    MachineLanguageValue_t package;
+    uint64_t count = 0u;
+    MachineLanguageStatus_t status = machine_language_integer_of(load, &evaluation->values[first - 1u], &count);
+
+    if (status == MACHINE_LANGUAGE_OK && count > cap)
+        status = MACHINE_LANGUAGE_STATUS(LIMIT_PACKAGE_ELEMENTS);
     if (status == MACHINE_LANGUAGE_OK)
-        status = machine_language_store(load, &result, &target);
-    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(evaluation, result) : status;
+        status = advanced_configuration_and_power_interface_machine_language_value_allocate(
+            &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(PACKAGE), (uint32_t) count, &package);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+
+    MachineLanguageValue_t *elements =
+        (MachineLanguageValue_t *) advanced_configuration_and_power_interface_machine_language_object_payload(
+            &load->heap, package.handle);
+
+    for (uint32_t index = 0u; index < initialisers; ++index)
+    {
+        if (index < count)
+            elements[index] = evaluation->values[first + index];
+        else
+            machine_language_release(load, &evaluation->values[first + index]);
+    }
+    load->heap.packages_padded += (initialisers < count) ? 1u : 0u;
+    load->heap.packages_truncated += (initialisers > count) ? 1u : 0u;
+    evaluation->value_count = first - 1u;
+    machine_language_release(load, &evaluation->values[first - 1u]);
+    return machine_language_deliver(load, package);
+}
+
+/**
+ * @brief Gives the node a Name in a method declared the data object on the stack, and its type.
+ */
+static MachineLanguageStatus_t machine_language_name(MachineLanguageLoad_t *load,
+                                                     const MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, active->node);
+    MachineLanguageValue_t value = machine_language_pop(&load->evaluation);
+
+    return machine_language_overwrite_node(load, node, &value);
+}
+
+/**
+ * @brief Joins two runs of bytes into a new String or Buffer.
+ */
+static MachineLanguageStatus_t machine_language_join(MachineLanguageLoad_t *load, uint8_t kind,
+                                                     const uint8_t *first_bytes, uint32_t first_length,
+                                                     const uint8_t *second_bytes, uint32_t second_length,
+                                                     MachineLanguageValue_t *out_value)
+{
+    const uint64_t length = (uint64_t) first_length + second_length;
+
+    if (length > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES);
+
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_allocate(
+        &load->heap, &load->space, kind, (uint32_t) length, out_value);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+
+    uint8_t *bytes =
+        advanced_configuration_and_power_interface_machine_language_object_payload(&load->heap, out_value->handle);
+
+    memcpy(bytes, first_bytes, first_length);
+    if (second_length != 0u)
+        memcpy(bytes + first_length, second_bytes, second_length);
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Converts Concatenate's second operand to what its first one dictates (§5.2): an Integer to
+ *        an Integer, a String to a String, a Buffer to a Buffer.
+ */
+static MachineLanguageStatus_t machine_language_concatenation_operand(MachineLanguageLoad_t *load, uint8_t kind,
+                                                                      const MachineLanguageValue_t *value,
+                                                                      MachineLanguageValue_t *out_value)
+{
+    uint64_t integer = 0u;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    if (kind == MACHINE_LANGUAGE_VALUE(STRING))
+        return advanced_configuration_and_power_interface_machine_language_value_to_string(
+            &load->heap, &load->space, value, MACHINE_LANGUAGE_FORM(IMPLICIT), machine_language_bits(load), out_value);
+    if (kind == MACHINE_LANGUAGE_VALUE(BUFFER))
+        return advanced_configuration_and_power_interface_machine_language_value_to_buffer(
+            &load->heap, &load->space, value, machine_language_bits(load), out_value);
+    status = machine_language_integer_of(load, value, &integer);
+    *out_value = machine_language_integer(integer);
+    return status;
+}
+
+/**
+ * @brief Runs Concatenate: the result takes the type of the first operand, a Buffer for an Integer.
+ */
+static MachineLanguageStatus_t machine_language_concatenate(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t target = machine_language_pop(evaluation);
+    MachineLanguageValue_t second = machine_language_pop(evaluation);
+    MachineLanguageValue_t first = machine_language_pop(evaluation);
+    MachineLanguageValue_t converted = {0};
+    MachineLanguageValue_t result = {0};
+    uint8_t first_scratch[8];
+    uint8_t second_scratch[8];
+    const uint8_t *first_bytes = NULL;
+    const uint8_t *second_bytes = NULL;
+    uint32_t first_length = 0u;
+    uint32_t second_length = 0u;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+
+    if (first.kind == MACHINE_LANGUAGE_VALUE(INTEGER) || first.kind == MACHINE_LANGUAGE_VALUE(STRING) ||
+        first.kind == MACHINE_LANGUAGE_VALUE(BUFFER))
+    {
+        evaluation->mixed_type_comparisons += (first.kind != second.kind) ? 1u : 0u;
+        status = machine_language_concatenation_operand(load, first.kind, &second, &converted);
+    }
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_value_bytes(
+            &load->heap, &first, machine_language_bits(load), first_scratch, &first_bytes, &first_length);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_value_bytes(
+            &load->heap, &converted, machine_language_bits(load), second_scratch, &second_bytes, &second_length);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_join(load,
+                                       (first.kind == MACHINE_LANGUAGE_VALUE(STRING)) ? MACHINE_LANGUAGE_VALUE(STRING) :
+                                                                                        MACHINE_LANGUAGE_VALUE(BUFFER),
+                                       first_bytes, first_length, second_bytes, second_length, &result);
+    machine_language_release(load, &first);
+    machine_language_release(load, &second);
+    machine_language_release(load, &converted);
+    return machine_language_finish(load, status, result, &target);
+}
+
+/**
+ * @brief Runs ToInteger, ToBuffer, ToHexString or ToDecimalString, and stores the result to its
+ *        target.
+ */
+static MachineLanguageStatus_t machine_language_convert(MachineLanguageLoad_t *load, uint32_t opcode)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t target = machine_language_pop(evaluation);
+    MachineLanguageValue_t source = machine_language_pop(evaluation);
+    MachineLanguageValue_t result = {0};
+    uint64_t integer = 0u;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    switch (opcode)
+    {
+    case MACHINE_LANGUAGE_OPCODE(TO_INTEGER):
+        status = advanced_configuration_and_power_interface_machine_language_value_to_integer_explicitly(
+            &load->heap, &source, machine_language_bits(load), &integer);
+        result = machine_language_integer(integer);
+        break;
+    case MACHINE_LANGUAGE_OPCODE(TO_BUFFER):
+        status = advanced_configuration_and_power_interface_machine_language_value_to_buffer(
+            &load->heap, &load->space, &source, machine_language_bits(load), &result);
+        break;
+    default:
+        status = advanced_configuration_and_power_interface_machine_language_value_to_string(
+            &load->heap, &load->space, &source,
+            (opcode == MACHINE_LANGUAGE_OPCODE(TO_HEX_STRING)) ? MACHINE_LANGUAGE_FORM(HEXADECIMAL) :
+                                                                 MACHINE_LANGUAGE_FORM(DECIMAL),
+            machine_language_bits(load), &result);
+        break;
+    }
+    machine_language_release(load, &source);
+    return machine_language_finish(load, status, result, &target);
+}
+
+/**
+ * @brief Runs ToString: the characters of a Buffer up to its first NUL or the length asked, Ones for
+ *        no limit.
+ */
+static MachineLanguageStatus_t machine_language_to_string(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t target = machine_language_pop(evaluation);
+    MachineLanguageValue_t limit = machine_language_pop(evaluation);
+    MachineLanguageValue_t source = machine_language_pop(evaluation);
+    MachineLanguageValue_t result = {0};
+    uint8_t scratch[8];
+    const uint8_t *bytes = NULL;
+    uint32_t length = 0u;
+    uint64_t wanted = 0u;
+    MachineLanguageStatus_t status = machine_language_integer_of(load, &limit, &wanted);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_value_bytes(
+            &load->heap, &source, machine_language_bits(load), scratch, &bytes, &length);
+    if (status == MACHINE_LANGUAGE_OK)
+    {
+        uint32_t characters = 0u;
+
+        while (characters < length && characters < wanted && bytes[characters] != 0x00u)
+            ++characters;
+        status = machine_language_join(load, MACHINE_LANGUAGE_VALUE(STRING), bytes, characters, NULL, 0u, &result);
+    }
+    machine_language_release(load, &source);
+    machine_language_release(load, &limit);
+    return machine_language_finish(load, status, result, &target);
+}
+
+/**
+ * @brief Runs Mid: the slice of a String or a Buffer that starts at the index and runs the length
+ *        asked, cut at its end; past its end, an empty one. An Integer is read as a Buffer (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_mid(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t target = machine_language_pop(evaluation);
+    uint64_t slice[2] = {0u, 0u};
+    MachineLanguageStatus_t status = machine_language_pop_integers(load, 2u, slice);
+    MachineLanguageValue_t source = machine_language_pop(evaluation);
+    MachineLanguageValue_t result = {0};
+
+    if (status == MACHINE_LANGUAGE_OK && source.kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+    {
+        const MachineLanguageValue_t integer = source;
+
+        status = advanced_configuration_and_power_interface_machine_language_value_to_buffer(
+            &load->heap, &load->space, &integer, machine_language_bits(load), &source);
+    }
+    if (status == MACHINE_LANGUAGE_OK && source.kind != MACHINE_LANGUAGE_VALUE(STRING) &&
+        source.kind != MACHINE_LANGUAGE_VALUE(BUFFER))
+        status = MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (status == MACHINE_LANGUAGE_OK)
+    {
+        const MachineLanguageHeader_t *object = machine_language_object(load, &source);
+        const uint64_t start = (slice[0] < object->length) ? slice[0] : object->length;
+        const uint64_t left = object->length - start;
+        const uint64_t length = (slice[1] < left) ? slice[1] : left;
+
+        status = machine_language_join(load, source.kind, (const uint8_t *) (object + 1) + start, (uint32_t) length,
+                                       NULL, 0u, &result);
+    }
+    machine_language_release(load, &source);
+    return machine_language_finish(load, status, result, &target);
+}
+
+/**
+ * @brief Runs SizeOf: a String's characters, a Buffer's bytes, a Package's elements.
+ */
+static MachineLanguageStatus_t machine_language_size_of(MachineLanguageLoad_t *load)
+{
+    MachineLanguageValue_t operand = machine_language_pop(&load->evaluation);
+    MachineLanguageValue_t value;
+    MachineLanguageStatus_t status = machine_language_read_target(load, &operand, &value);
+    uint64_t size = 0u;
+
+    machine_language_release(load, &operand);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    if (value.kind == MACHINE_LANGUAGE_VALUE(STRING) || value.kind == MACHINE_LANGUAGE_VALUE(BUFFER) ||
+        value.kind == MACHINE_LANGUAGE_VALUE(PACKAGE))
+        size = machine_language_object(load, &value)->length;
+    else
+        status = MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    machine_language_release(load, &value);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, machine_language_integer(size)) : status;
+}
+
+/**
+ * @brief The ObjectType number of a value's kind: its own for the data objects, 0 for anything else.
+ */
+static uint64_t machine_language_value_type(uint8_t kind)
+{
+    return (kind <= MACHINE_LANGUAGE_VALUE(PACKAGE)) ? kind : 0u;
+}
+
+/**
+ * @brief Runs ObjectType: the ACPI number of what a SimpleName names (ACPI 6.6 §19.6.97), 0 for an
+ *        uninitialized local and for the scopes and Externals that are no object.
+ */
+static MachineLanguageStatus_t machine_language_object_type(MachineLanguageLoad_t *load)
+{
+    MachineLanguageValue_t operand = machine_language_pop(&load->evaluation);
+    uint64_t type = machine_language_value_type(operand.kind);
+
+    if (operand.kind == MACHINE_LANGUAGE_TARGET)
+    {
+        switch (operand.auxiliary)
+        {
+        case MACHINE_LANGUAGE_TARGET_LOCAL:
+        case MACHINE_LANGUAGE_TARGET_ARGUMENT:
+            type = machine_language_value_type(machine_language_slot(&load->evaluation, &operand)->kind);
+            break;
+        case MACHINE_LANGUAGE_TARGET_NODE: {
+            const uint8_t node_type =
+                advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, operand.handle)
+                    ->type;
+
+            type = (node_type <= MACHINE_LANGUAGE_NODE(BUFFER_FIELD)) ? node_type : 0u;
+            break;
+        }
+        case MACHINE_LANGUAGE_TARGET_DEBUG: type = MACHINE_LANGUAGE_DEBUG_OBJECT_TYPE; break;
+        default: type = 0u; break;
+        }
+    }
+    machine_language_release(load, &operand);
+    return machine_language_deliver(load, machine_language_integer(type));
+}
+
+/**
+ * @brief Runs Store or CopyObject: the target takes the value, and Store gives it as its result.
+ */
+static MachineLanguageStatus_t machine_language_transfer(MachineLanguageLoad_t *load, uint32_t opcode)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t target = machine_language_pop(evaluation);
+    MachineLanguageValue_t value = machine_language_pop(evaluation);
+
+    if (opcode == MACHINE_LANGUAGE_OPCODE(STORE))
+        return machine_language_store_and_deliver(load, value, &target);
+    return machine_language_copy_object(load, &value, &target);
 }
 
 /**
@@ -1051,24 +1815,39 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     switch (operator_.opcode)
     {
     case MACHINE_LANGUAGE_CALL: return machine_language_enter_method(load, operator_.node, operator_.operand_count);
-    case MACHINE_LANGUAGE_OPCODE(NAME): return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPCODE(NAME): return machine_language_name(load, &operator_);
     case MACHINE_LANGUAGE_OPCODE(RETURN): {
-        const MachineLanguageValue_t value = machine_language_pop(evaluation);
+        MachineLanguageValue_t value = machine_language_pop(evaluation);
 
         if (machine_language_frame(evaluation)->method == 0u)
+        {
+            machine_language_release(load, &value);
             return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
+        }
         return machine_language_return(load, &value);
     }
-    case MACHINE_LANGUAGE_OPCODE(STORE): {
-        const MachineLanguageValue_t target = machine_language_pop(evaluation);
-        const MachineLanguageValue_t value = machine_language_pop(evaluation);
-        const MachineLanguageStatus_t status = machine_language_store(load, &value, &target);
-
-        return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(evaluation, value) : status;
-    }
+    case MACHINE_LANGUAGE_OPCODE(STORE):
+    case MACHINE_LANGUAGE_OPCODE(COPY_OBJECT): return machine_language_transfer(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(BUFFER): return machine_language_buffer(load, &operator_);
+    case MACHINE_LANGUAGE_OPCODE(PACKAGE):
+    case MACHINE_LANGUAGE_OPCODE(VARIABLE_PACKAGE): return machine_language_package(load, &operator_);
     case MACHINE_LANGUAGE_OPCODE(INCREMENT): return machine_language_step_target(load, true);
     case MACHINE_LANGUAGE_OPCODE(DECREMENT): return machine_language_step_target(load, false);
     case MACHINE_LANGUAGE_OPCODE(DIVIDE): return machine_language_divide(load);
+    case MACHINE_LANGUAGE_OPCODE(LOGICAL_EQUAL):
+    case MACHINE_LANGUAGE_OPCODE(LOGICAL_GREATER):
+    case MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS): return machine_language_compare(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(LOGICAL_AND):
+    case MACHINE_LANGUAGE_OPCODE(LOGICAL_OR): return machine_language_logical(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(CONCATENATE): return machine_language_concatenate(load);
+    case MACHINE_LANGUAGE_OPCODE(TO_INTEGER):
+    case MACHINE_LANGUAGE_OPCODE(TO_BUFFER):
+    case MACHINE_LANGUAGE_OPCODE(TO_HEX_STRING):
+    case MACHINE_LANGUAGE_OPCODE(TO_DECIMAL_STRING): return machine_language_convert(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(TO_STRING): return machine_language_to_string(load);
+    case MACHINE_LANGUAGE_OPCODE(MID): return machine_language_mid(load);
+    case MACHINE_LANGUAGE_OPCODE(SIZE_OF): return machine_language_size_of(load);
+    case MACHINE_LANGUAGE_OPCODE(OBJECT_TYPE): return machine_language_object_type(load);
     default: return machine_language_compute(load, operator_.opcode);
     }
 }
@@ -1108,11 +1887,11 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         advanced_configuration_and_power_interface_machine_language_count_failure(load, status);
         return status;
     }
+    if (evaluation->table_locals_owner != table + 1u)
+        advanced_configuration_and_power_interface_machine_language_release_table_locals(load);
 
     MachineLanguageFrame_t *frame = &evaluation->frames[evaluation->frame_count++];
 
-    if (evaluation->table_locals_owner != table + 1u)
-        memset(evaluation->table_locals, 0, sizeof(evaluation->table_locals));
     frame->code = (const uint8_t *) load->tables[table].header;
     frame->pc = start;
     frame->end = limit;
@@ -1120,6 +1899,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     frame->scope = scope;
     memset(frame->arguments, 0, sizeof(frame->arguments));
     memcpy(frame->locals, evaluation->table_locals, sizeof(frame->locals));
+    memset(evaluation->table_locals, 0, sizeof(evaluation->table_locals));
     frame->value_base = (uint16_t) evaluation->value_count;
     frame->operator_base = (uint16_t) evaluation->operator_count;
     frame->block_base = (uint16_t) evaluation->block_count;
@@ -1151,17 +1931,27 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         status = machine_language_step(load);
     if (status == MACHINE_LANGUAGE_OK && value)
         status = (evaluation->value_count > frame->value_base) ?
-                     machine_language_integer_of(&evaluation->values[evaluation->value_count - 1u], out_integer) :
+                     machine_language_integer_of(load, &evaluation->values[evaluation->value_count - 1u], out_integer) :
                      MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     *out_after = frame->pc;
     while (evaluation->frame_count > base + 1u)
         machine_language_drop_frame(load);
     memcpy(evaluation->table_locals, frame->locals, sizeof(evaluation->table_locals));
+    memset(frame->locals, 0, sizeof(frame->locals));
     evaluation->table_locals_owner = table + 1u;
     machine_language_drop_frame(load);
     if (status != MACHINE_LANGUAGE_OK)
         advanced_configuration_and_power_interface_machine_language_count_failure(load, status);
     return status;
+}
+
+void advanced_configuration_and_power_interface_machine_language_release_table_locals(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
+    for (uint32_t slot = 0u; slot < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS; ++slot)
+        machine_language_release(load, &evaluation->table_locals[slot]);
+    evaluation->table_locals_owner = 0u;
 }
 
 MachineLanguageStatus_t

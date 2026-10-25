@@ -45,6 +45,9 @@
     255u /**< Elements of a Package (ACPI 6.6 §19.3.5). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS                      \
     4096u /**< Elements of a VarPackage (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_SIZE_CLASSES                                \
+    32u /**< Size classes of small objects, headers included: every 16 bytes up to 256, then four per power of two     \
+           up to 4,096. */
 
 /**
  * @brief What a value is: the ACPI ObjectType numbers (ACPI 6.6 §19.6.97) for the data objects,
@@ -129,38 +132,274 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t;
 
 /**
- * @brief The object heap: runs of small objects, bump-allocated, and one run per large object.
+ * @brief The object heap (§3.5): runs of small objects cut into blocks, each of the size class its
+ *        object rounds up to, a freed block kept for the next object of its class, and one run per
+ *        large object, whose pages go back when it is freed.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap {
-    void *runs[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OBJECT_RUNS]; /**< Each run's pages. */
+    void *runs[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OBJECT_RUNS]; /**< Each run's pages,
+                                                                                                 NULL once a large
+                                                                                                 object gave them
+                                                                                                 back. */
     uint16_t run_pages[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OBJECT_RUNS]; /**< And their
                                                                                                          count. */
-    uint32_t run_count;                                                                              /**< Runs taken. */
-    uint32_t small_run;          /**< The run small objects are taken from, counted from 1; 0 before the first. */
-    uint32_t small_used;         /**< Bytes of that run already taken. */
+    uint32_t run_count;  /**< Runs taken, those given back included: the next new one's index. */
+    uint32_t small_run;  /**< The run new blocks are cut from, counted from 1; 0 before the first. */
+    uint32_t small_used; /**< Bytes of that run already cut. */
+    uint32_t free_blocks[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_SIZE_CLASSES]; /**< Per size
+                                                                                                               class,
+                                                                                                               the
+                                                                                                               handle
+                                                                                                               of the
+                                                                                                               block
+                                                                                                               freed
+                                                                                                               last, 0
+                                                                                                               when
+                                                                                                               none. */
     uint32_t objects;            /**< Objects allocated. */
-    uint32_t object_bytes;       /**< Bytes they take, headers included. */
+    uint32_t objects_freed;      /**< Of those, the ones freed: objects - objects_freed are alive. */
+    uint32_t stale_handles;      /**< Retains and releases of an object already freed, dying or left with no
+                                      reference: each is a defect, and changes nothing. A release whose block
+                                      another object took meanwhile is not seen. */
+    uint32_t object_bytes;       /**< Bytes the live objects' blocks take, headers included. */
+    uint32_t object_bytes_peak;  /**< The most object_bytes reached. */
     uint32_t packages_padded;    /**< Packages with fewer initialisers than elements, padded with Uninitialized. */
     uint32_t packages_truncated; /**< Packages with more initialisers than elements, the extra ones dropped. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t;
 
 /**
- * @brief Allocates an object of @p kind with @p payload_bytes after its header, all zero.
+ * @brief Allocates an object of @p kind, all zero after its header, with one reference: its
+ *        caller's.
  *
- * @param heap          The heap.
- * @param space         The namespace whose arena gives the pages.
- * @param kind          An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_* kind.
- * @param length        What the header's length holds.
- * @param payload_bytes Bytes after the header.
- * @param out_handle    Receives the object's handle, never 0.
- * @return OUT_OF_MEMORY when the arena cap is reached, the host gives no pages, or the heap holds
- *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OBJECT_RUNS runs; OK otherwise.
+ * @details The bytes after the header follow from @p kind and @p length: a String's characters and
+ *          its NUL, a Buffer's bytes, a Package's element values, Uninitialized, and @p length bytes
+ *          for any other kind.
+ * @param heap       The heap.
+ * @param space      The namespace whose arena gives the pages.
+ * @param kind       An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_* kind.
+ * @param length     What the header's length holds: characters, bytes or elements.
+ * @param out_handle Receives the object's handle, never 0.
+ * @return LIMIT_BUFFER_BYTES when the object would pass the largest one (§6.1); OUT_OF_MEMORY when the
+ *         arena cap is reached or the host gives no pages; LIMIT_OBJECT_RUNS when a new run would
+ *         pass ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OBJECT_RUNS; OK otherwise.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_object_allocate(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint8_t kind, uint32_t length,
-    uint32_t payload_bytes, uint32_t *out_handle);
+    uint32_t *out_handle);
+
+/**
+ * @brief Takes one more reference on an object; a count that reaches 0xFFFFFFFF stays there (§3.5).
+ *
+ * @param heap   The heap.
+ * @param handle A live object's handle.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_object_retain(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap, uint32_t handle);
+
+/**
+ * @brief Gives back one reference on an object, and frees it when none is left: the objects a
+ *        Package holds lose its references in turn, without C recursion. A saturated count never
+ *        moves, and its object is never freed.
+ *
+ * @param heap   The heap.
+ * @param space  The namespace whose arena gave the pages.
+ * @param handle A live object's handle.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_object_release(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t handle);
+
+/**
+ * @brief Whether a value of @p kind holds a reference on an object of the heap.
+ *
+ * @param kind An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_* kind.
+ * @return true for a String, a Buffer, a Package, a region and a field unit.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_value_holds_object(uint8_t kind);
+
+/**
+ * @brief Takes one more reference on the object a value names, if it names one.
+ *
+ * @param heap  The heap.
+ * @param value The value.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_value_retain(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value);
+
+/**
+ * @brief Gives back the reference a value holds, if it holds one, and leaves it Uninitialized.
+ *
+ * @param heap  The heap.
+ * @param space The namespace whose arena gave the pages.
+ * @param value The value.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_value_release(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value);
+
+/**
+ * @brief Allocates a String, a Buffer or a Package, zero-filled, and gives the value that names it.
+ *
+ * @param heap      The heap.
+ * @param space     The namespace whose arena gives the pages.
+ * @param kind      STRING, BUFFER or PACKAGE.
+ * @param length    Its characters, bytes or elements.
+ * @param out_value Receives the value, which holds the object's only reference.
+ * @return What advanced_configuration_and_power_interface_machine_language_object_allocate returns.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_allocate(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint8_t kind, uint32_t length,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
+
+/**
+ * @brief The bytes that follow an object's header: a String's characters, a Buffer's bytes, a
+ *        Package's element values.
+ *
+ * @param heap   The heap.
+ * @param handle A live object's handle.
+ * @return The first byte, or NULL for a handle the heap did not give.
+ */
+extern uint8_t *advanced_configuration_and_power_interface_machine_language_object_payload(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap, uint32_t handle);
+
+/**
+ * @brief The bytes a computational value holds: an Integer's 4 or 8 little-endian bytes, a String's
+ *        characters without their NUL, a Buffer's bytes.
+ *
+ * @param heap         The heap.
+ * @param value        The value.
+ * @param integer_bits 32 or 64.
+ * @param scratch      8 bytes an Integer's bytes are written in; @p out_bytes may point into it.
+ * @param out_bytes    Receives the first byte.
+ * @param out_length   Receives how many.
+ * @return TYPE_MISMATCH for any other kind of value; OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_bytes(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value, uint8_t integer_bits, uint8_t scratch[8],
+    const uint8_t **out_bytes, uint32_t *out_length);
+
+/**
+ * @brief Converts an operand to the Integer an operator needs (§5.2): a Buffer gives its first 4 or 8
+ *        bytes, little-endian; a String is read as hexadecimal up to its first non-hexadecimal
+ *        character, a 0x prefix accepted; an empty String or Buffer gives 0.
+ *
+ * @param heap          The heap.
+ * @param value         The operand.
+ * @param integer_bits  32 or 64: the result is masked to it.
+ * @param out_integer   Receives the Integer.
+ * @param out_forbidden Receives whether ACPI forbids the conversion: an empty String or Buffer, a 0x
+ *                      prefix.
+ * @return TYPE_MISMATCH for a value that is no Integer, String or Buffer; OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_to_integer(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value, uint8_t integer_bits,
+    uint64_t *out_integer, bool *out_forbidden);
+
+/**
+ * @brief Converts a value as ToInteger does: a String is read past leading white space and a sign, in
+ *        hexadecimal after 0x, in octal after a leading 0, in decimal otherwise, up to its first
+ *        character that is no digit of its base, and saturates at Ones; a Buffer gives its first 4
+ *        or 8 bytes.
+ *
+ * @param heap         The heap.
+ * @param value        The value.
+ * @param integer_bits 32 or 64: the result is masked to it.
+ * @param out_integer  Receives the Integer.
+ * @return TYPE_MISMATCH for a value that is no Integer, String or Buffer; OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_to_integer_explicitly(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value, uint8_t integer_bits,
+    uint64_t *out_integer);
+
+/**
+ * @brief How an Integer or a Buffer is written as a String.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStringForm {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_IMPLICIT = 0, /**< The implicit conversion, as
+                                                                                         ACPICA writes it: an
+                                                                                         Integer as 8 or 16
+                                                                                         uppercase hexadecimal
+                                                                                         digits, a Buffer as 0x and
+                                                                                         two digits per byte,
+                                                                                         separated by spaces. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_HEXADECIMAL,  /**< ToHexString: an Integer as 0x
+                                                                                         and its digits, a Buffer as
+                                                                                         0x and two digits per byte,
+                                                                                         separated by commas. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_DECIMAL,      /**< ToDecimalString: an Integer
+                                                                                         in decimal, a Buffer as its
+                                                                                         bytes in decimal separated by
+                                                                                         commas. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageStringForm_t;
+
+/**
+ * @brief Converts a value to a String in @p form; a String gives itself.
+ *
+ * @param heap         The heap.
+ * @param space        The namespace whose arena gives the pages.
+ * @param value        The value.
+ * @param form         How an Integer or a Buffer is written.
+ * @param integer_bits 32 or 64.
+ * @param out_value    Receives the String, which holds a reference of its own.
+ * @return TYPE_MISMATCH for a value that is no Integer, String or Buffer; what allocating returns;
+ *         OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_to_string(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStringForm_t form, uint8_t integer_bits,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
+
+/**
+ * @brief Converts a value to a Buffer: an Integer gives its 4 or 8 little-endian bytes, a String its
+ *        characters and their NUL; a Buffer gives itself.
+ *
+ * @param heap         The heap.
+ * @param space        The namespace whose arena gives the pages.
+ * @param value        The value.
+ * @param integer_bits 32 or 64.
+ * @param out_value    Receives the Buffer, which holds a reference of its own.
+ * @return TYPE_MISMATCH for a value that is no Integer, String or Buffer; what allocating returns;
+ *         OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_to_buffer(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value, uint8_t integer_bits,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
+
+/**
+ * @brief Copies a value as a Store copies its source: a String or a Buffer into an object of its
+ *        own, a Package with every String, Buffer and Package it nests up to 32 deep, the deeper ones
+ *        shared; any other value as it is, its reference retained.
+ *
+ * @param heap      The heap.
+ * @param space     The namespace whose arena gives the pages.
+ * @param value     The value.
+ * @param out_value Receives the copy, which holds references of its own.
+ * @return What allocating returns, nothing copied then; OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_copy(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
 
 /**
  * @brief The header of the object a handle names.

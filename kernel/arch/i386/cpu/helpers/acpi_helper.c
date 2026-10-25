@@ -171,6 +171,14 @@ void write_acpi_machine_language_record(Serial_t *serial)
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
     acpi_helper_write_regions_record(serial, &load->regions);
+    kernel_telemetry_begin_record(serial, "acpi.values");
+    kernel_telemetry_write_unsigned("objects", load->heap.objects);
+    kernel_telemetry_write_unsigned("objects_freed", load->heap.objects_freed);
+    kernel_telemetry_write_unsigned("stale_handles", load->heap.stale_handles);
+    kernel_telemetry_write_unsigned("object_bytes_peak", load->heap.object_bytes_peak);
+    kernel_telemetry_write_unsigned("mixed_type_comparisons", load->evaluation.mixed_type_comparisons);
+    kernel_telemetry_write_unsigned("forbidden_conversions", load->evaluation.forbidden_conversions);
+    kernel_telemetry_end_record();
 }
 
 void write_acpi_ioapics_info(Serial_t *serial)
