@@ -1,5 +1,7 @@
 #include "simulated_host.h"
 
+#include <kernel/acpi/machine_language.h>
+
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
@@ -489,4 +491,45 @@ KERNEL_TEST(the_power_management_control_ports_and_the_hardware_reduced_flag_are
                           made_up_firmware_directory.hardware_reduced,
                       "an extended block in memory gives no port, and HW_REDUCED_ACPI is read");
     made_up_firmware_release(test);
+}
+
+/**
+ * @brief A load of the directory takes its global lock from the FACS the FADT names, unless the FADT
+ *        says the platform is hardware-reduced, which has none.
+ */
+KERNEL_TEST(a_load_takes_its_global_lock_from_the_facs_unless_the_platform_is_hardware_reduced)
+{
+    static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+    MadeUpFirmware_t firmware;
+    const uint32_t length = 64u;
+    const uint32_t reduced = 1u << 20u;
+    uint32_t facs = 0u;
+
+    made_up_firmware_open(&firmware);
+    made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
+    facs = firmware.physical + MADE_UP_FIRMWARE_FACS_32_OFFSET;
+    memcpy(firmware.page + MADE_UP_FIRMWARE_FACS_32_OFFSET, "FACS", 4u);
+    memcpy(firmware.page + MADE_UP_FIRMWARE_FACS_32_OFFSET + 4u, &length, sizeof(length));
+    made_up_firmware_name_facs(&firmware, facs, 0u);
+    for (uint32_t pass = 0u; pass < 2u; ++pass)
+    {
+        if (pass == 1u)
+        {
+            memcpy(firmware.page + MADE_UP_FIRMWARE_FADT_OFFSET + MADE_UP_FIRMWARE_FADT_FLAGS, &reduced,
+                   sizeof(reduced));
+            made_up_firmware_seal_table(&firmware, MADE_UP_FIRMWARE_FADT_OFFSET);
+        }
+        if (!kernel_test_check(test, made_up_firmware_read(), "the directory is read") ||
+            !kernel_test_check(test,
+                               advanced_configuration_and_power_interface_machine_language_open(
+                                   &load, &made_up_firmware_host.host, 1024u, 1024u * 1024u),
+                               "the namespace opens"))
+            return;
+        advanced_configuration_and_power_interface_machine_language_load_directory(&load, &made_up_firmware_directory);
+        kernel_test_check(test, load.regions.global_lock_address == ((pass == 0u) ? (uint64_t) facs + 16u : 0u),
+                          (pass == 0u) ? "the FACS's GlobalLock word is the load's global lock" :
+                                         "a hardware-reduced platform gives the load no global lock");
+        advanced_configuration_and_power_interface_machine_language_close(&load);
+        made_up_firmware_release(test);
+    }
 }
