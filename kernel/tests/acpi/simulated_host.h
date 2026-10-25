@@ -44,6 +44,8 @@
     32u /**< I/O ports one simulated host gives a value to read. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES                                         \
     256u /**< Accesses the log keeps: the first ones, the others only counted. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_TIMER_QUANTUM                                        \
+    1000u /**< What a read of the virtual clock adds to it, in units of 100 ns: 100 µs (§2). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC                                          \
     "LPLACPIM" /**< The first eight bytes of an image. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT                                      \
@@ -160,10 +162,12 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
  *          each of its maps returns an address of its own that is never read, and an access whose
  *          address and physical address disagree with an open map is counted. Physical address 0
  *          cannot be mapped, as in ring 0. Its I/O space reads as 0 but for the ports
- *          given a value, and ignores writes. Every access is logged in order. Its clock is virtual:
- *          sleep_milliseconds advances it by what is asked, or, when tick_milliseconds is not 0, by
- *          the whole ticks a deadline on the kernel tick counts: those the milliseconds round up to,
- *          and the one the sleep lands in.
+ *          given a value, and ignores writes. Every access is logged in order. Its clock is virtual, in
+ *          units of 100 ns: sleep_milliseconds and stall_microseconds advance it by what is asked, or,
+ *          when tick_milliseconds is not 0, by the whole ticks a deadline on the kernel tick counts:
+ *          those the wait rounds up to, and the one it lands in. Each read of clock_100ns gives the
+ *          clock, then advances it by timer_quantum, so that a loop that polls it ends the same way
+ *          wherever it runs (docs/acpi/specification.md, §2).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */
@@ -185,14 +189,19 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t firmware_holds_for_reads;     /**< Reads of that word the firmware keeps it owned for, then releases it. */
     bool firmware_wants_lock;              /**< Whether the firmware asks for the lock, setting pending, as soon as the
                                                 OS takes it; asked once. */
-    uint64_t clock_milliseconds;           /**< The virtual clock, which sleep_milliseconds alone advances. */
-    uint32_t tick_milliseconds;            /**< The period of the tick a sleep waits whole, or 0 for no tick. */
+    uint64_t clock_100ns;                  /**< The virtual clock, in units of 100 ns. */
+    uint32_t timer_quantum;                /**< What each read of the clock adds to it, in units of 100 ns:
+                                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_TIMER_QUANTUM
+                                                once opened. */
+    uint32_t tick_milliseconds;            /**< The period of the tick a wait lasts whole ticks of, or 0 for no
+                                                tick. */
     uint16_t firmware_command_port;        /**< The SMI command port the simulated firmware answers, or 0. */
     uint8_t firmware_enable_command;       /**< The ACPI_ENABLE it answers there by setting SCI_EN. */
     uint16_t firmware_control_port;        /**< The PM1 control port whose SCI_EN it sets. */
     uint32_t firmware_enable_milliseconds; /**< Virtual milliseconds from ACPI_ENABLE to SCI_EN reading set;
                                                 UINT32_MAX for never. */
-    uint64_t firmware_enabled_at;          /**< When SCI_EN reads set; UINT64_MAX until ACPI_ENABLE is written. */
+    uint64_t firmware_enabled_at;          /**< When SCI_EN reads set, on the virtual clock; UINT64_MAX until
+                                                ACPI_ENABLE is written. */
     AdvancedConfigurationAndPowerInterfaceSimulatedRange_t
         ranges[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES]; /**< In the order placed. */
     AdvancedConfigurationAndPowerInterfaceSimulatedMap_t

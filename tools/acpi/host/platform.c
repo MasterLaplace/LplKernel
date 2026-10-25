@@ -112,6 +112,19 @@ static uint32_t platform_sleep_without_a_clock(void *context, uint32_t milliseco
     return 0u;
 }
 
+static uint32_t platform_stall_without_a_clock(void *context, uint32_t microseconds)
+{
+    (void) context;
+    (void) microseconds;
+    return 0u;
+}
+
+static uint64_t platform_no_clock(void *context)
+{
+    (void) context;
+    return 0u;
+}
+
 static void *platform_allocate_pages(void *context, uint32_t count)
 {
     (void) context;
@@ -140,6 +153,8 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .port_read = platform_read_no_port,
     .port_write = platform_write_no_port,
     .sleep_milliseconds = platform_sleep_without_a_clock,
+    .stall_microseconds = platform_stall_without_a_clock,
+    .clock_100ns = platform_no_clock,
     .allocate_pages = platform_allocate_pages,
     .release_pages = platform_release_pages,
 };

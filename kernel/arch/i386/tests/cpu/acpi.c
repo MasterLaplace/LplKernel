@@ -207,3 +207,55 @@ KERNEL_TEST(the_machine_host_sleeps_on_the_tick_and_says_how_long)
     kernel_test_check(test, (uint64_t) waited * hertz <= (uint64_t) ticks * 1000u,
                       "it says no more than the ticks that passed around it");
 }
+
+/**
+ * @brief The machine host's clock counts in units of 100 ns on the tick: across a sleep of 1 ms it
+ *        moves forward by at least a tick, and by no more than the ticks that passed around it.
+ */
+KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t ticks_before = clock_get_tick_count();
+    const uint64_t before = host->clock_100ns(host->context);
+
+    if (hertz == 0u)
+    {
+        kernel_test_skip(test, "no tick runs");
+        return;
+    }
+    (void) host->sleep_milliseconds(host->context, 1u);
+
+    const uint64_t after = host->clock_100ns(host->context);
+    const uint32_t ticks = clock_get_tick_count() - ticks_before;
+
+    kernel_test_check(test, (after - before) * hertz >= 10000000u, "the clock moved by at least a tick");
+    kernel_test_check(test, (after - before) * hertz <= (uint64_t) ticks * 10000000u,
+                      "and by no more than the ticks that passed around the sleep");
+}
+
+/**
+ * @brief The machine host's stall spins at least the microseconds asked, and says how many it waited:
+ *        for 50 µs a whole tick passes, the one it lands in not counted.
+ */
+KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t before = clock_get_tick_count();
+
+    if (hertz == 0u)
+    {
+        kernel_test_skip(test, "no tick runs");
+        return;
+    }
+
+    const uint32_t waited = host->stall_microseconds(host->context, 50u);
+    const uint32_t ticks = clock_get_tick_count() - before;
+
+    kernel_test_check(test, ticks >= 2u, "a stall of 50 µs lets a whole tick pass");
+    kernel_test_check(test, (uint64_t) waited * hertz >= 1000000u,
+                      "it says it waited at least as many microseconds as a tick lasts");
+    kernel_test_check(test, (uint64_t) waited * hertz <= (uint64_t) ticks * 1000000u,
+                      "and no more than the ticks that passed around it");
+}
