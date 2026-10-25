@@ -831,7 +831,6 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
     if (status == MACHINE_LANGUAGE_OK)
         status = advanced_configuration_and_power_interface_machine_language_object_allocate(
             &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION,
-            (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t),
             (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t), &handle);
     if (status != MACHINE_LANGUAGE_OK)
         return machine_language_build_fault(walk, status);
@@ -983,7 +982,6 @@ static MachineLanguageStatus_t machine_language_build_field_unit(MachineLanguage
 
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
         &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT,
-        (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t),
         (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t), &handle);
 
     if (status != MACHINE_LANGUAGE_OK)
@@ -1787,7 +1785,7 @@ machine_language_answer_identity(AdvancedConfigurationAndPowerInterfaceMachineLa
     uint32_t handle = 0u;
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
         &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING,
-        (uint32_t) sizeof(operating_system) - 1u, (uint32_t) sizeof(operating_system), &handle);
+        (uint32_t) sizeof(operating_system) - 1u, &handle);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
