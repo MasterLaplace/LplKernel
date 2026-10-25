@@ -84,18 +84,18 @@ SPECIFICATION_STATUS = {
 }
 
 OPERAND_SHAPES = {
-    "Store": "TS", "RefOf": "S", "Add": "TTR", "Concat": "TTR",
+    "Store": "TS", "RefOf": "M", "Add": "TTR", "Concat": "TTR",
     "Subtract": "TTR", "Increment": "S", "Decrement": "S", "Multiply": "TTR",
     "Divide": "TTRR", "ShiftLeft": "TTR", "ShiftRight": "TTR", "And": "TTR",
     "Nand": "TTR", "Or": "TTR", "Nor": "TTR", "Xor": "TTR", "Not": "TR",
     "FindSetLeftBit": "TR", "FindSetRightBit": "TR", "DerefOf": "T",
     "ConcatRes": "TTR", "Mod": "TTR", "Notify": "ST", "SizeOf": "S",
-    "Index": "TTR", "Match": "TBTBTT", "ObjectType": "S", "LAnd": "TT",
+    "Index": "TTR", "Match": "TBTBTT", "ObjectType": "M", "LAnd": "TT",
     "LOr": "TT", "LNot": "T", "LEqual": "TT", "LGreater": "TT",
     "LLess": "TT", "ToBuffer": "TR", "ToDecimalString": "TR",
     "ToHexString": "TR", "ToInteger": "TR", "ToString": "TTR",
-    "CopyObject": "TS", "Mid": "TTTR", "Return": "T",
-    "CondRefOf": "SR", "LoadTable": "TTTTTT", "Load": "NR", "Stall": "T",
+    "CopyObject": "TM", "Mid": "TTTR", "Return": "T",
+    "CondRefOf": "MR", "LoadTable": "TTTTTT", "Load": "SR", "Stall": "T",
     "Sleep": "T", "Acquire": "SW", "Signal": "S", "Wait": "ST", "Reset": "S",
     "Release": "S", "FromBCD": "TR", "ToBCD": "TR", "Unload": "S",
     "Fatal": "BDT",
@@ -191,6 +191,8 @@ class Namespace:
     def __init__(self):
         self.kinds = dict(PREDEFINED_ROOT)
         self.argument_counts = {("_OSI",): 1}
+        self.created = []
+        self.unplaced_externals = []
 
     def creation_path(self, scope, name):
         """Return where a declaration of name in scope creates its object (5.3)."""
@@ -216,14 +218,49 @@ class Namespace:
         return None
 
     def declare(self, path, kind, argument_count=None):
-        """Record a declaration; a real definition replaces an External one."""
+        """Record a declaration: a real definition replaces an External one, and otherwise the first
+        definition of a path stays and a duplicate is skipped (docs/acpi/specification.md §5.1)."""
         if path is None:
             return
-        if self.kinds.get(path) not in (None, "External") and kind == "External":
+        existing = self.kinds.get(path)
+        if existing is not None and (existing != "External" or kind == "External"):
             return
+        self.created.append((path, existing, self.argument_counts.get(path)))
         self.kinds[path] = kind
+        self.argument_counts.pop(path, None)
         if argument_count is not None:
             self.argument_counts[path] = argument_count
+
+    def declare_external(self, path, argument_count):
+        """Record an External: placed now when its parent exists, otherwise once every table is
+        declared (docs/acpi/specification.md §5.1)."""
+        if path is None:
+            return
+        if path[:-1] in self.kinds or not path[:-1]:
+            self.declare(path, "External", argument_count)
+        else:
+            self.unplaced_externals.append((path, argument_count))
+
+    def place_externals(self):
+        """Place the Externals whose parent was missing, the missing segments created as Externals."""
+        for path, argument_count in self.unplaced_externals:
+            for depth in range(1, len(path)):
+                self.declare(path[:depth], "External")
+            self.declare(path, "External", argument_count)
+        self.unplaced_externals = []
+
+    def forget_since(self, mark):
+        """Undo the declarations made since the mark, the last first: what a method body declares ends with
+        the body, and an External it replaced comes back (docs/acpi/specification.md §3.5, §5.1)."""
+        for path, kind, argument_count in reversed(self.created[mark:]):
+            self.argument_counts.pop(path, None)
+            if kind is None:
+                del self.kinds[path]
+                continue
+            self.kinds[path] = kind
+            if argument_count is not None:
+                self.argument_counts[path] = argument_count
+        del self.created[mark:]
 
     def is_method(self, path):
         """Tell whether path names a control method (declared or External MethodObj)."""
@@ -477,9 +514,11 @@ class Walker:
             self.census.errors.append(f"{self.label}+0x{offset:x}: {error}")
 
     def declare(self, scope, name, kind, argument_count=None):
-        """Declare a named object and count it."""
+        """Declare a named object and count it: the declaration pass declares what lies outside method
+        bodies, and the counting pass what a method body declares, which ends with the body."""
         path = self.namespace.creation_path(scope, name)
-        self.namespace.declare(path, kind, argument_count)
+        if self.method_stack or not self.counting:
+            self.namespace.declare(path, kind, argument_count)
         if self.counting and path:
             self.census.named_objects[kind] += 1
             if self.method_stack:
@@ -529,7 +568,8 @@ class Walker:
         raise AmlError(f"no grammar for {name} at 0x{offset:x}")
 
     def name_term(self, offset, end, scope, depth):
-        """Walk a NameString in a TermArg position: a reference or a MethodInvocation."""
+        """Walk a NameString in a TermArg, SuperName or Target position: a reference or a
+        MethodInvocation (docs/acpi/specification.md §4.2)."""
         name, after = self.name_string(offset)
         path = self.reference(scope, name)
         if path is not None and self.namespace.is_method(path):
@@ -555,12 +595,15 @@ class Walker:
             return
         self.census.osi_strings[self.data[offset + 1:stop].decode("ascii", "replace")] += 1
 
-    def super_name(self, offset, end, scope, depth):
-        """Walk a SuperName, Target or SimpleName: a name here is never invoked."""
+    def super_name(self, offset, end, scope, depth, may_call):
+        """Walk a SuperName or Target, where a method is called, or a SimpleName, where it never is
+        (docs/acpi/specification.md §4.2)."""
         value = self.byte(offset)
         if value == 0x00:
             return offset + 1
         if self.is_name_lead(value):
+            if may_call:
+                return self.name_term(offset, end, scope, depth + 1)
             name, after = self.name_string(offset)
             self.reference(scope, name)
             return after
@@ -574,8 +617,8 @@ class Walker:
                 offset = self.term(offset, end, scope, depth + 1)
                 if self.counting:
                     self.observe_constant_operand(opcode_name, start)
-            elif kind in "SR":
-                offset = self.super_name(offset, end, scope, depth)
+            elif kind in "SRM":
+                offset = self.super_name(offset, end, scope, depth, kind != "M")
             elif kind == "N":
                 name, offset = self.name_string(offset)
                 self.reference(scope, name)
@@ -649,12 +692,14 @@ class Walker:
         source, offset = self.name_string(offset)
         alias, offset = self.name_string(offset)
         target = self.namespace.resolve(scope, source)
-        kind = self.namespace.kinds.get(target, "Alias")
+        if target is None and (not self.counting or self.method_stack):
+            return offset
+        mark = len(self.namespace.created)
         path = self.declare(scope, alias, "Alias")
-        if target is not None and self.namespace.is_method(target) and path is not None:
-            self.namespace.argument_counts[path] = self.namespace.argument_counts[target]
-        if path is not None and kind != "Alias":
-            self.namespace.kinds[path] = kind
+        if path is not None and len(self.namespace.created) > mark:
+            self.namespace.kinds[path] = self.namespace.kinds.get(target, "Alias")
+            if self.namespace.is_method(target):
+                self.namespace.argument_counts[path] = self.namespace.argument_counts[target]
         return offset
 
     def op_Name(self, offset, end, scope, depth):
@@ -675,9 +720,9 @@ class Walker:
         name, offset = self.name_string(offset)
         object_type = self.byte(offset)
         argument_count = self.byte(offset + 1) & 0x07
-        path = self.namespace.creation_path(scope, name)
-        if self.namespace.kinds.get(path) in (None, "External"):
-            self.namespace.declare(path, "External", argument_count if object_type == 8 else None)
+        if not self.counting or self.method_stack:
+            self.namespace.declare_external(self.namespace.creation_path(scope, name),
+                                            argument_count if object_type == 8 else None)
         if self.counting:
             self.census.named_objects["External"] += 1
         return offset + 2
@@ -687,8 +732,11 @@ class Walker:
         block_end, offset = self.package_length(offset, end)
         name, offset = self.name_string(offset)
         if kind == "Scope":
-            path = self.namespace.resolve(scope, name) or self.namespace.creation_path(scope, name)
-            if self.counting and path:
+            path = self.namespace.resolve(scope, name) if name.segments else self.namespace.creation_path(scope, name)
+            if path is None and not self.counting:
+                return block_end
+            path = scope if path is None else path
+            if self.counting:
                 self.census.named_objects["Scope"] += 1
         else:
             path = self.declare(scope, name, kind)
@@ -732,9 +780,11 @@ class Walker:
         census.method_bytes_total += block_end - offset
         census.method_bytes_max = max(census.method_bytes_max, block_end - offset)
         before_returns = census.opcodes_method["Return"]
+        mark = len(self.namespace.created)
         self.method_stack.append(path)
         last_term = self.last_statement(offset, block_end, path, depth + 1)
         self.method_stack.pop()
+        self.namespace.forget_since(mark)
         if census.opcodes_method["Return"] == before_returns:
             census.methods_without_return += 1
         if last_term != "Return":
@@ -1056,7 +1106,8 @@ def static_call_depth(edges):
 
 
 def census_of_machine(name, blocks, top):
-    """Load every definition block of one machine into one namespace and count its AML."""
+    """Load every definition block of one machine into one namespace and count its AML: the DSDT, then each
+    SSDT in the dump's order, declared in one pass (docs/acpi/specification.md §3.8 step 1, §5.1), then counted."""
     namespace = Namespace()
     census = Census()
     tables = []
@@ -1072,10 +1123,12 @@ def census_of_machine(name, blocks, top):
         header["truncated"] = header["length"] > len(data)
         tables.append(header)
         parsed.append((label, data[:length], header))
-    for counting in (False, False, True):
+    parsed.sort(key=lambda table: table[2]["signature"] != "DSDT")
+    for counting in (False, True):
         for label, data, _ in parsed:
             walker = Walker(data, TABLE_HEADER_SIZE, namespace, census, label, counting)
             walker.term_list(TABLE_HEADER_SIZE, len(data), (), 0)
+        namespace.place_externals()
     dsdt = [table for table in tables if table["signature"] == "DSDT"]
     integer_bits = None
     if dsdt:

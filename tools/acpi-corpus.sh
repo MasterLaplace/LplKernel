@@ -22,8 +22,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
          directory with what tools/acpi/expected_directory.py reads from the same dump, its FADT
          and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
-         from the report's decoded tables, and the
-         opcodes its definition blocks decode with what tools/acpi/aml_census.py counts; then
+         from the report's decoded tables, and the opcodes and method calls its definition blocks
+         decode with what tools/acpi/aml_census.py counts, once tools/acpi/check_census.py has
+         checked that census against hand-made tables; then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
          the report's iASL disassembly, and lists the tables where they differ
   namespace  loads each machine of a list, or each QEMU configuration, with `test-acpi --namespace`
@@ -240,7 +241,12 @@ decoded() {
 # comparison held.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables
+    local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables census
+    if ! census="$(python3 -I "$ROOT/tools/acpi/check_census.py")"; then
+        grep -v '^ok ' <<<"$census"
+        return 1
+    fi
+    tail -1 <<<"$census"
     while IFS= read -r machine; do
         number=$((number + 1))
         dump="$LINUXHW/$machine.bin"
@@ -275,7 +281,8 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
         "$(grep -c '^fadt [a-z0-9_]* space=[0-9]* width=[0-9]* offset=[0-9]* access=[0-9]* address=0x[1-9A-F]' <<<"$compared") registers present," \
         "$(grep -c '^processor ' <<<"$compared") CPU slots," \
         "$(grep -c '^io_apic ' <<<"$compared") I/O APICs, $(grep -c '^override ' <<<"$compared") overrides," \
-        "$(grep -c '^nmi ' <<<"$compared") NMI connections, $(grep -c '^aml opcode ' <<<"$compared") opcode counts"
+        "$(grep -c '^nmi ' <<<"$compared") NMI connections, $(grep -c '^aml opcode ' <<<"$compared") opcode counts," \
+        "$(grep -o ' calls=[0-9]*' <<<"$compared" | cut -d= -f2 | paste -sd+ | bc) method calls"
     tables="$(grep -o '^aml tables=[0-9]*' <<<"$compared" | cut -d= -f2 | paste -sd+ | bc)"
     echo "# iASL disassembly: $(grep -c ' iasl agrees ' <<<"$disassembly") tables declare as many objects," \
         "$(grep -c ' iasl differs ' <<<"$disassembly") differ, $(grep -c ' iasl missing ' <<<"$disassembly") have none," \
