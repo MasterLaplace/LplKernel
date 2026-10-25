@@ -94,7 +94,8 @@ static bool global_lock_access(uint32_t index, uint8_t kind, uint64_t address, u
     const AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &global_lock_host.accesses[index];
     const bool port = kind == GLOBAL_LOCK_ACCESS(PORT_READ) || kind == GLOBAL_LOCK_ACCESS(PORT_WRITE);
 
-    return index < global_lock_host.access_count && access->kind == kind &&
+    return index < global_lock_host.access_count &&
+           index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES && access->kind == kind &&
            (port ? access->port == address : access->address == address) && access->value == value;
 }
 
@@ -264,7 +265,9 @@ KERNEL_TEST(an_index_field_takes_the_lock_once_for_its_registers)
     made_up_aml_store_name(&global_lock_aml, "IU0_", "RI__");
     if (!global_lock_run(test, GLOBAL_LOCK_FACS))
         return;
-    for (uint32_t index = 0u; index < global_lock_host.access_count; ++index)
+    for (uint32_t index = 0u; index < global_lock_host.access_count &&
+                              index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES;
+         ++index)
         exchanges += (global_lock_host.accesses[index].kind == GLOBAL_LOCK_ACCESS(EXCHANGE)) ? 1u : 0u;
     kernel_test_check(
         test, exchanges == 4u && global_lock_load.regions.global_lock_acquisitions == 2u && global_lock_word() == 0u,
