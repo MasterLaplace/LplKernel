@@ -244,6 +244,8 @@ KERNEL_TEST(a_field_read_that_fails_keeps_both_branches)
         evaluation_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_SPACE_UNSUPPORTED) == 2u &&
             evaluation_load.regions.space_unsupported[0x03u] == 2u,
         "both reads are counted as space_unsupported, under EmbeddedControl");
+    kernel_test_check(test, evaluation_load.evaluation.field_accesses == 2u,
+                      "each refused read counts as a field access");
     evaluation_close(test);
 }
 

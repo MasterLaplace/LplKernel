@@ -240,6 +240,10 @@ KERNEL_TEST(a_lock_the_firmware_never_releases_times_out)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_GLOBAL_LOCK_POLLS + 1u &&
                           global_lock_word() == 3u,
                       "every poll reads the lock, one exchange marks it pending, and the datum is never read");
+    kernel_test_check(test,
+                      global_lock_load.evaluation.field_accesses ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_GLOBAL_LOCK_POLLS,
+                      "each read of the lock word counts as a field access");
     global_lock_close(test);
 }
 

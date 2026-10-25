@@ -319,19 +319,31 @@ static MachineLanguageStatus_t machine_language_port(MachineLanguageLoad_t *load
 }
 
 /**
- * @brief One access of up to 4 bytes in a space: memory, a port, or a space with no handler; it
- *        counts against the evaluation's field accesses, and fails once they reach their limit.
+ * @brief Counts one field access against the evaluation's budget (§6.1), and fails once it is spent.
+ */
+static MachineLanguageStatus_t machine_language_count_field_access(MachineLanguageLoad_t *load)
+{
+    uint32_t *accesses = &load->evaluation.field_accesses;
+
+    if (*accesses >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FIELD_ACCESSES)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_FIELD_ACCESSES);
+    if (++*accesses > load->regions.field_accesses_peak)
+        load->regions.field_accesses_peak = *accesses;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief One access of up to 4 bytes in a space: memory, a port, or a space with no handler. It is
+ *        one field access, an unaligned one included, which fails once the budget is spent.
  */
 static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad_t *load, uint8_t space,
                                                              uint64_t address, uint8_t width, bool write,
                                                              uint32_t *value)
 {
-    uint32_t *accesses = &load->evaluation.field_accesses;
+    const MachineLanguageStatus_t status = machine_language_count_field_access(load);
 
-    if (*accesses == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FIELD_ACCESSES)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_FIELD_ACCESSES);
-    if (++*accesses > load->regions.field_accesses_peak)
-        load->regions.field_accesses_peak = *accesses;
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
     if (space == MACHINE_LANGUAGE_SYSTEM_MEMORY)
         return machine_language_memory(load, address, width, write, value);
     if (space == MACHINE_LANGUAGE_SYSTEM_IO)
@@ -449,6 +461,11 @@ static MachineLanguageStatus_t machine_language_take_global_lock(MachineLanguage
     for (uint32_t poll = 0u; poll < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_GLOBAL_LOCK_POLLS;
          ++poll)
     {
+        const MachineLanguageStatus_t status = machine_language_count_field_access(load);
+
+        if (status != MACHINE_LANGUAGE_OK)
+            return status;
+
         const uint32_t held =
             host->read_memory(host->context, regions->global_lock_word, regions->global_lock_address, 4u);
         const bool owned = (held & MACHINE_LANGUAGE_LOCK_OWNED) != 0u;

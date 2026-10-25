@@ -44,7 +44,7 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS                                \
     (1u << 20u) /**< While back-edges one evaluation takes (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FIELD_ACCESSES                                 \
-    (1u << 20u) /**< Accesses one evaluation's fields make to the host (§6.1). */
+    (1u << 20u) /**< Field accesses one evaluation makes (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ARGUMENTS 7u /**< Arg0 to Arg6. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS    8u /**< Local0 to Local7. */
 
@@ -121,8 +121,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
     uint32_t block_count;            /**< Blocks in use. */
     uint32_t iterations;             /**< Back-edges the current evaluation took: a table's code and the methods it
                                           calls count as one. */
-    uint32_t field_accesses;         /**< Accesses to the host the current evaluation's fields made: a datum, each
-                                          half of a quad-word datum, an index or a bank selected. */
+    uint32_t field_accesses;         /**< Field accesses the current evaluation made (§6.1): each access to a
+                                          region, and each read of the global lock word while taking it. */
     uint32_t runs;                   /**< Statements and predicates of table-level code run. */
     uint32_t failures;               /**< Of those, the ones that failed. */
     uint8_t first_failure;           /**< The status of the first failure. */

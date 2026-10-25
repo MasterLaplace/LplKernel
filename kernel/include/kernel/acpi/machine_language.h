@@ -193,8 +193,10 @@ advanced_configuration_and_power_interface_machine_language_run_table_term(
  * @return OK; TYPE_MISMATCH when the node holds no unit or a register is not a unit of a Field;
  *         GLOBAL_LOCK_UNAVAILABLE when a Lock field cannot take the global lock, the firmware never
  *         releasing it; REGION_UNEVALUATED, REGION_BOUNDS,
- *         ADDRESS_UNREACHABLE or SPACE_UNSUPPORTED when a datum cannot be reached; LIMIT_BUFFER_BYTES
- *         or OUT_OF_MEMORY when its Buffer cannot be built.
+ *         ADDRESS_UNREACHABLE or SPACE_UNSUPPORTED when a datum cannot be reached; ACCESS_WIDTH_INVALID
+ *         for a reserved AccessType or a datum wider than its space; INDEX_OUT_OF_RANGE for an index
+ *         or a BankValue its register cannot hold; LIMIT_FIELD_ACCESSES once the evaluation's field
+ *         accesses are spent; LIMIT_BUFFER_BYTES or OUT_OF_MEMORY when its Buffer cannot be built.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_field_read(
