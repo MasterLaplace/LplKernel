@@ -10,10 +10,17 @@
 
 #define ACPI_TABLE_MAXIMUM_LENGTH 0x01000000u /**< A longer table is taken for a corrupt length. */
 
-#define ACPI_FADT_FIRMWARE_CONTROL_OFFSET          36u  /**< FIRMWARE_CTRL: the FACS, 32 bits. */
-#define ACPI_FADT_DSDT_OFFSET                      40u  /**< DSDT: the DSDT, 32 bits. */
-#define ACPI_FADT_EXTENDED_FIRMWARE_CONTROL_OFFSET 132u /**< X_FIRMWARE_CTRL: the FACS, 64 bits. */
-#define ACPI_FADT_EXTENDED_DSDT_OFFSET             140u /**< X_DSDT: the DSDT, 64 bits. */
+#define ACPI_FADT_FIRMWARE_CONTROL_OFFSET          36u         /**< FIRMWARE_CTRL: the FACS, 32 bits. */
+#define ACPI_FADT_DSDT_OFFSET                      40u         /**< DSDT: the DSDT, 32 bits. */
+#define ACPI_FADT_EXTENDED_FIRMWARE_CONTROL_OFFSET 132u        /**< X_FIRMWARE_CTRL: the FACS, 64 bits. */
+#define ACPI_FADT_EXTENDED_DSDT_OFFSET             140u        /**< X_DSDT: the DSDT, 64 bits. */
+#define ACPI_FADT_PM1A_CONTROL_OFFSET              64u         /**< PM1a_CNT_BLK: a port, 32 bits. */
+#define ACPI_FADT_PM1B_CONTROL_OFFSET              68u         /**< PM1b_CNT_BLK: a port, 32 bits. */
+#define ACPI_FADT_FLAGS_OFFSET                     112u        /**< Flags, 32 bits. */
+#define ACPI_FADT_EXTENDED_PM1A_CONTROL_OFFSET     172u        /**< X_PM1a_CNT_BLK: a Generic Address Structure. */
+#define ACPI_FADT_EXTENDED_PM1B_CONTROL_OFFSET     184u        /**< X_PM1b_CNT_BLK: a Generic Address Structure. */
+#define ACPI_FADT_HARDWARE_REDUCED                 (1u << 20u) /**< Flags bit HW_REDUCED_ACPI. */
+#define ACPI_GENERIC_ADDRESS_SYSTEM_IO             1u          /**< A Generic Address Structure in the I/O space. */
 
 /**
  * @name The MADT entry types this reader reads
@@ -219,6 +226,38 @@ static uint32_t acpi_fadt_facs_address(const AdvancedConfigurationAndPowerInterf
     if ((address_64 >> 32u) == 0u)
         return (uint32_t) address_64;
     return 0u;
+}
+
+/**
+ * @brief The port of a PM1 control block a FADT gives: the 32-bit block when it is not 0, else the
+ *        extended block's address when it lies in the I/O space; 0 when the FADT gives neither.
+ */
+static uint16_t acpi_fadt_control_port(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt,
+                                       uint32_t offset_32, uint32_t offset_extended)
+{
+    uint32_t port_32;
+    uint64_t address_64;
+    uint8_t space = 0u;
+
+    acpi_fadt_read_addresses(fadt, offset_32, offset_extended + 4u, &port_32, &address_64);
+    if (port_32 != 0u)
+        return (port_32 <= 0xFFFFu) ? (uint16_t) port_32 : 0u;
+    if (fadt->length >= offset_extended + 12u)
+        space = ((const uint8_t *) fadt)[offset_extended];
+    return (space == ACPI_GENERIC_ADDRESS_SYSTEM_IO && address_64 <= 0xFFFFu) ? (uint16_t) address_64 : 0u;
+}
+
+/**
+ * @brief Whether a FADT's flags say the platform is hardware-reduced; a FADT too short to hold its
+ *        flags says it is not.
+ */
+static bool acpi_fadt_hardware_reduced(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt)
+{
+    uint32_t flags = 0u;
+
+    if (fadt->length >= ACPI_FADT_FLAGS_OFFSET + sizeof(flags))
+        memcpy(&flags, (const uint8_t *) fadt + ACPI_FADT_FLAGS_OFFSET, sizeof(flags));
+    return (flags & ACPI_FADT_HARDWARE_REDUCED) != 0u;
 }
 
 /**
@@ -505,6 +544,11 @@ bool advanced_configuration_and_power_interface_read_directory(
         if (dsdt != 0u)
             acpi_record_table(out_directory, dsdt);
         out_directory->firmware_control_physical_address = acpi_fadt_facs_address(fadt);
+        out_directory->power_management_control_ports[0] =
+            acpi_fadt_control_port(fadt, ACPI_FADT_PM1A_CONTROL_OFFSET, ACPI_FADT_EXTENDED_PM1A_CONTROL_OFFSET);
+        out_directory->power_management_control_ports[1] =
+            acpi_fadt_control_port(fadt, ACPI_FADT_PM1B_CONTROL_OFFSET, ACPI_FADT_EXTENDED_PM1B_CONTROL_OFFSET);
+        out_directory->hardware_reduced = acpi_fadt_hardware_reduced(fadt);
     }
 
     out_directory->walked = true;

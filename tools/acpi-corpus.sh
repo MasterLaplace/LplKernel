@@ -110,7 +110,11 @@ namespace_check() {
             python3 -I "$ROOT/tools/acpi/acpiexec_namespace.py" "$ACPICA_BIN" --tables "${tables[@]}" >"$theirs"
             subject="${tables[0]#"$QEMU_TABLES"/}"
         else
-            "$HARNESS" --namespace "$LINUXHW/$subject.bin" >"$ours" 2>&1 || true
+            if ! "$HARNESS" --namespace "$LINUXHW/$subject.bin" >"$ours" 2>&1; then
+                echo "not ok $number $subject: the harness failed"
+                sed 's/^/    # /' "$ours" | tail -5
+                continue
+            fi
             runs+="$(grep '^aml run ' "$ours")"$'\n' || true
             if ! grep -q '^aml namespace table_level_failures=0 ' "$ours"; then
                 echo "skip $number $subject: $(head -1 "$ours" | cut -d' ' -f3)"

@@ -105,6 +105,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
         unreachable_count; /**< Tables above 4 GiB, the root pointer included, past the capacity, or not mappable. */
     uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
                                                      FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL. */
+    uint16_t power_management_control_ports[2]; /**< The PM1a and PM1b control blocks the FADT gives as I/O ports,
+                                                     each 0 when it gives none. */
+    bool hardware_reduced;                      /**< Whether the FADT says the platform is hardware-reduced, which
+                                                     has no global lock. */
     AdvancedConfigurationAndPowerInterfaceTable_t
         tables[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT]; /**< In the order they were found. */
 } AdvancedConfigurationAndPowerInterfaceDirectory_t;

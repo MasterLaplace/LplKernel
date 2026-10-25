@@ -49,9 +49,11 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
  *          given the same length. map_firmware_writable maps memory cached and writable, map_device
  *          maps it uncached, and each has its own unmap. read_memory and write_memory make one
  *          access of 1, 2 or 4 bytes to what one of those two mapped, given both the address it
- *          returned and the physical address beneath. port_read and port_write make one access of
- *          1, 2 or 4 bytes to an I/O port. allocate_pages gives count pages of 4 KiB, contiguous
- *          and writable, or NULL; release_pages takes them back, given the same count.
+ *          returned and the physical address beneath; compare_exchange swaps a 4-byte word there
+ *          atomically when it holds the expected value, and returns what it held. port_read and
+ *          port_write make one access of 1, 2 or 4 bytes to an I/O port. allocate_pages gives count
+ *          pages of 4 KiB, contiguous and writable, or NULL; release_pages takes them back, given the
+ *          same count.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     void *context;                                              /**< The host's own state, or NULL. */
@@ -68,8 +70,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     uint32_t (*read_memory)(void *context, const void *address, uint64_t physical_address,
                             uint8_t width); /**< Reads mapped memory. */
     void (*write_memory)(void *context, void *address, uint64_t physical_address, uint8_t width,
-                         uint32_t value);                                            /**< Writes it. */
-    uint32_t (*port_read)(void *context, uint16_t port, uint8_t width);              /**< Reads an I/O port. */
+                         uint32_t value); /**< Writes it. */
+    uint32_t (*compare_exchange)(void *context, void *address, uint64_t physical_address, uint32_t expected,
+                                 uint32_t desired);                     /**< Swaps a word of it atomically. */
+    uint32_t (*port_read)(void *context, uint16_t port, uint8_t width); /**< Reads an I/O port. */
     void (*port_write)(void *context, uint16_t port, uint8_t width, uint32_t value); /**< Writes one. */
     void *(*allocate_pages)(void *context, uint32_t count);                          /**< Gives pages of memory. */
     void (*release_pages)(void *context, void *address, uint32_t count);             /**< Takes them back. */

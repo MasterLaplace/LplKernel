@@ -46,8 +46,7 @@ links to its page in the PDF.
 | N12 `_CST` for every CPU | entry register, type, latency and power, bound to a CPU slot | #57, #298, #135 |
 
 The later needs reuse the same layers, each adding its own entry points to the needs path (§4.1): P-states and
-CPPC (#302), PCI INTx routing (#59), reset and soft-off (#294), events, the embedded controller and the global lock
-(#547), battery, AC, thermal and lid (#548), sleep states (#295).
+CPPC (#302), PCI INTx routing (#59), reset and soft-off (#294), events and the embedded controller (#547), battery, AC, thermal and lid (#548), sleep states (#295).
 
 ### 1.3 The needs path
 
@@ -72,8 +71,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | `DataTableRegion`, `Nor` and `Revision` execution | no corpus machine uses them | a needs path that runs one; each is decoded already |
 | `Unload` execution | reserved by ACPI, and absent from modern firmware | a target that relies on it; decoded and refused meanwhile (§4.5) |
 | The event core: SCI, fixed events, GPE `_Lxx` and `_Exx` | no need asks for it yet. Two costs follow: once §3.8 step 0 puts the platform in ACPI mode, only the four-second power button override remains ([§4.8.2.2.1.3]); and the published `_CST` is the one for the power source present at boot | #547; `Notify` is queued, drained once at boot (§3.8 step 9) and counted meanwhile |
-| The embedded controller handler and `_Qxx` | `_REG(EmbeddedControl, 1)` is never called, so firmware keeps the guard flag its `_REG` sets and skips its own EC accesses, as it does before any OS driver starts | #547 and #548; or EC accesses on the needs path, under the rule of the global lock below |
-| The global lock | a `Lock` field access and `Acquire (\_GL)` fail loudly with `global_lock_unavailable`, never silently unlocked | lands with the EC (#547), or earlier if a needs-path run on the corpus counts one `global_lock_unavailable` |
+| The embedded controller handler and `_Qxx` | `_REG(EmbeddedControl, 1)` is never called, so firmware keeps the guard flag its `_REG` sets and skips its own EC accesses, as it does before any OS driver starts | #547 and #548; or a run on the corpus that counts EC accesses, as the count of `Lock` fields brought in the global lock (#589) |
 | Region spaces other than SystemMemory, SystemIO and PCI_Config | each needs the driver of the device behind the space | that driver: the EC first, CMOS for RTC wake, GenericSerialBus and GPIO for I2C input |
 | `BufferAcc` protocols and `Connection()` execution | same | the same drivers; the field-list elements are decoded so the parser never loses its place |
 | Repair of return values | results stay raw, so they compare with `acpiexec -dr` | a consumer that meets a broken object repairs it itself |
@@ -97,7 +95,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | No wall clock on a compared path | Loop and sleep budgets count work: iterations, and the milliseconds `Sleep` and `Stall` *request*, never elapsed time. In parity runs `Timer` is a virtual clock, advanced by those requests and by a fixed quantum on every read, so a loop that polls `Timer` ends the same way on both targets. A wait on hardware (the switch to ACPI mode, §3.8 step 0) is bounded in time and its polls counted; it is never on a compared path. |
 | Fixed-width folds | Folds see `uint32_t` and `uint64_t` fields and node indices only: never a pointer, a `size_t` or an occupancy. |
 | Integers | Every AML integer is a `uint64_t` on both targets, masked to 32 bits when the DSDT's revision is below 2 ([§19.6.29]). 64-bit division on i686 goes through libgcc. |
-| No inline assembly | Port I/O and the global lock's compare-exchange are `asmutils` routines; a 64-bit memory-mapped datum of i686 is two 32-bit accesses the field engine makes (§5.3). |
+| No inline assembly | Port I/O is an `asmutils` routine; the global lock's compare-exchange is the compiler's atomic builtin, which the shared rules prefer to assembly; a 64-bit memory-mapped datum of i686 is two 32-bit accesses the field engine makes (§5.3). |
 | Naming | Externs `advanced_configuration_and_power_interface_…` for the tables and `advanced_configuration_and_power_interface_machine_language_…` for the interpreter, types `AdvancedConfigurationAndPowerInterface…_t`, static helpers `acpi_…`. |
 | Tests | `KERNEL_TEST`s in `kernel/tests/acpi/` for architecture-free code, in `kernel/arch/i386/tests/acpi/` otherwise. A host tool's own tests, such as the needs-path closure's, are `host_*` suites in `tools/acpi/host/`: ring 0 never runs them, and `tools/parity.sh` leaves them out. |
 | Unbuilt branches | The host harness and every compile-time switch of the interpreter have a gate profile that builds them, or a line in `tools/unbuilt-branches.declared`. `kernel/kernel/acpi/` builds only where `KERNEL_ARCH_HAS_FIRMWARE_TABLES` is 1. |
@@ -164,6 +162,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `map_firmware(physical u64, length u64)` → address or NULL: cached, read-only | `kernel_vmm_map_firmware_window` | a sparse byte store keyed by physical address |
 | `map_firmware_writable(...)`, `map_device(...)`: cached read-write, uncached | a cached read-write firmware window, `kernel_vmm_map_device_window` | an address that is never read: the store is reached through `read_memory` and `write_memory` |
 | `read_memory(address, physical u64, width u8)`, `write_memory(...)`: one access of 1, 2 or 4 bytes to what one of those two mapped | a volatile access through the window | the store: what the placed bytes hold, or the fill byte, until a write takes the page; every access logged in order |
+| `compare_exchange(address, physical u64, expected u32, desired u32)` → what the word held: swaps it atomically when it holds `expected` | the compiler's atomic compare-exchange on the window | the store, logged; a simulated firmware may own the word for a number of reads, or ask for the lock once the OS takes it |
 | `memory_type(physical u64, length u64)` → RAM, ACPI reclaim, ACPI NVS, reserved, or unknown | the boot memory map the PMM keeps | `reserved`, unless the machine's description says otherwise |
 | `unmap_firmware(address, length)`, and one unmap for each map | the matching unmap | matched to its map by address and length, so that a test sees every map unmapped as it was mapped |
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
@@ -316,7 +315,7 @@ Consequences:
 - **No lock in the interpreter.** A blocking `Sleep` blocks the worker; no other AML runs meanwhile.
 - **`Serialized` costs a sync-level check, not a mutex object** (§5.2).
 - **`Acquire` of an AML mutex always succeeds or nests,** because the mutexes still held are released when an
-  evaluation ends. Only `\_GL` contends, with firmware.
+  evaluation ends. Only the global lock contends, with firmware, through `\_GL` and `Lock` fields.
 - **Results are published, not shared.** A consumer gets a plain copy: for `_CST`, a per-CPU table of states that
   the idle path reads without ever calling the interpreter.
 - **Notify never runs inside the evaluation that raised it.** It goes to a bounded ring and is delivered after the
@@ -630,7 +629,7 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | AnyAcc | byte access, as Windows does | [§19.6.48] |
 | BufferAcc | byte access on the three spaces; the protocol buffers of GenericSerialBus, SMBus and IPMI wait for their handlers | [§19.6.48] |
 | UpdateRule Preserve, WriteAsZeros, WriteAsOnes | all three | [§19.6.48] |
-| LockRule `Lock` | until the global lock lands, an access fails with `global_lock_unavailable`, counted: it is never made without the lock, since firmware in SMM may hold it at that moment (§1.4) | [§19.6.48] |
+| LockRule `Lock` | the access takes the FACS global lock for its whole length, read-modify-write and registers included, and gives it back after: owned when free; pending when the firmware owns it, then up to 65,536 reads waiting for its release. A wait that runs out fails with `global_lock_unavailable`, counted. When the firmware asked for the lock, the release reads the PM1a and PM1b control registers, ORs them, clears their write-only bits, sets `GBL_RLS`, and writes the value to PM1a then PM1b, skipping a protected port. The lock word stays mapped for the whole load. Without a usable FACS (absent, beyond 4 GiB, not aligned on 64 bytes, in usable memory, without its signature, or shorter than 24 bytes), or on a hardware-reduced platform, the access takes no lock, counted (`unlocked_lock_accesses`, and `facs_refused` for a FACS given but refused), as uACPI does. | [§19.6.48], [§5.2.10.1] |
 | `AccessAs` (`0x01`) | changes the width of the units that follow | [§19.6.48] |
 | `Connection` (`0x02`), `ExtendedAccessAs` (`0x03`) | decoded; their accesses fail with `space_unsupported` | [§19.6.48] |
 | IndexField, BankField | the index or bank register is written, then the data accessed, through an internal loop, never C recursion | [§19.6.64], [§19.6.7] |
@@ -643,7 +642,7 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 |---|---|---|
 | An opcode decoded but not executed: outside the needs path, `DataTableRegion`, `Nor`, `Revision` | in a method, the evaluation fails with `unimplemented_operator`; at definition-block level, the statement or predicate that holds it fails as in §6.2 and the load goes on | `unimplemented_operator[opcode]` |
 | `Load` from a Buffer; `LoadTable` with a non-empty RootPath, ParameterPath or ParameterData | fails as above | `load_form_unsupported` |
-| A `Lock` field access or `Acquire (\_GL)` before the global lock lands | fails as above | `global_lock_unavailable` |
+| `Acquire (\_GL)` before the mutexes of §5.2 land (#540) | fails as above | `global_lock_unavailable` |
 | A byte that is not an opcode | fails as above, with `invalid_opcode`; at table level without an enclosing construct, the rest of the table is abandoned and the next table loads | `invalid_opcode` |
 | `Unload` | its operand is evaluated, and nothing else happens | `unload_refused` |
 | A region space without a handler | the field access fails with `space_unsupported`; `_REG` is never called for that space | `space_unsupported[space]` |
@@ -721,7 +720,7 @@ Each row is a decision, and has at least one test (§8).
 | `\_OSI` | A native method. TRUE for every Windows string, from "Windows 2000" to the newest Microsoft defines. FALSE for "Linux", "Darwin", "FreeBSD", "HP-UX", "OpenVMS", the vendor `Linux-*` strings and every feature string, "Processor Aggregator Device", "3.0 Thermal Model" and "Extended Address Space Descriptor" included. The newest Windows string asked is recorded: it drives port protection (§5.3). Firmware tests mostly the newest Windows path, and loads less when told "Linux". | [§5.7.2] |
 | `\_OS` | `"Microsoft Windows NT"`: `_OSI` ladders fall back on it. | [§5.7.3] |
 | `\_REV` | 2, as every other implementation answers. | [§5.7.4] |
-| `\_GL` | A predefined mutex. Until the global lock lands, `Acquire (\_GL)` fails with `global_lock_unavailable`, counted. Without a FACS, or on a hardware-reduced platform, which has no global lock ([§3.11.1]), acquiring `\_GL` takes only the AML mutex. | [§5.7.1], [§5.2.10.1] |
+| `\_GL` | A predefined mutex. Once the mutexes land (#540), `Acquire (\_GL)` takes the AML mutex, then the global lock as a `Lock` field does (§4.4). Without a FACS, or on a hardware-reduced platform, which has no global lock ([§3.11.1]), acquiring `\_GL` takes only the AML mutex. | [§5.7.1], [§5.2.10.1] |
 | Predefined scopes | `\`, `\_GPE`, `\_PR_`, `\_SB_`, `\_SI_`, `\_TZ_`; `\_PR_` is deprecated, but servers still reference it. | [§5.3.1] |
 
 `\_OSI` exists as a node, never only as a special case in the call path: firmware reaches it through
@@ -791,7 +790,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | Region without handler, out of bounds, or unreachable (above 4 GiB on i686, a PCI offset from 0x100 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
 | A field of a region whose offset and length were never evaluated: declared in a branch that did not run, or its operands failed | fails | construct skipped | `region_unevaluated` |
 | A reserved AccessType, or a QWordAcc datum of SystemIO | fails | construct skipped | `access_width_invalid` |
-| `Lock` field or `\_GL` before the global lock lands | fails | construct skipped | `global_lock_unavailable` |
+| A `Lock` field or `\_GL` whose global lock the firmware does not release in time | fails | construct skipped | `global_lock_unavailable` |
 | A `Load` or `LoadTable` form outside §1.4 | fails | construct skipped | `load_form_unsupported` |
 | Protected port or PCI header | not a fault: zero read, write dropped | same | counted only |
 | Arena exhausted | fails | the table load stops | `out_of_memory` |
@@ -953,8 +952,8 @@ published image. The made-up ASL is ours, under MIT.
   distinct machines, desktops, notebooks, tablets and servers of every FADT revision from 1.0 to 6.5, runs to close
   an issue. *Full*, every report with a binary dump, runs on demand. No list names a machine the project works on.
 - **A dump holds neither the root pointer nor the root tables**, and every address it prints is 0, but the FADT
-  keeps the addresses it names. The harness serves the DSDT at each of them, every other table but the FACS at an
-  address of its own, and writes a root pointer and an XSDT that list them in the dump's order, but for the SSDTs
+  keeps the addresses it names. The harness serves the DSDT at each of them, the FACS where the FADT names it, every
+  other table at an address of its own, and writes a root pointer and an XSDT that list them in the dump's order, but for the SSDTs
   that `Load` places (below). The directory read from it is compared with one `tools/acpi/expected_directory.py`
   reads from the same dump, apart from the kernel's code.
 - **For each machine** the harness prints the decode errors, the namespace dump and its fold, the census counts,

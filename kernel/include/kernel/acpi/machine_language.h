@@ -191,7 +191,8 @@ advanced_configuration_and_power_interface_machine_language_run_table_term(
  * @param out_value Receives an Integer when the unit is no wider than the load's integers, a Buffer
  *                  of its bytes otherwise.
  * @return OK; TYPE_MISMATCH when the node holds no unit or a register is not a unit of a Field;
- *         GLOBAL_LOCK_UNAVAILABLE for a Lock field; REGION_UNEVALUATED, REGION_BOUNDS,
+ *         GLOBAL_LOCK_UNAVAILABLE when a Lock field cannot take the global lock, the firmware never
+ *         releasing it; REGION_UNEVALUATED, REGION_BOUNDS,
  *         ADDRESS_UNREACHABLE or SPACE_UNSUPPORTED when a datum cannot be reached; LIMIT_BUFFER_BYTES
  *         or OUT_OF_MEMORY when its Buffer cannot be built.
  */
@@ -216,6 +217,21 @@ extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_field_write(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value);
+
+/**
+ * @brief Gives the load the global lock of its platform, before any table-level code runs: the
+ *        GlobalLock word of the FACS at @p firmware_control, when the FACS is not usable memory, has
+ *        its signature and is long enough; none otherwise, and a Lock field is then accessed without
+ *        a lock, counted.
+ *
+ * @param load             The load.
+ * @param firmware_control The FACS, or 0 for a platform without a global lock, hardware-reduced ones
+ *                         included.
+ * @param control_ports    The PM1a and PM1b control ports GBL_RLS is written to, each 0 when absent.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_use_global_lock(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t firmware_control,
+    const uint16_t *control_ports);
 
 /**
  * @brief Gives every mapping of the load's cache back to its host.

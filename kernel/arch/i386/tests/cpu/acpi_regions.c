@@ -118,3 +118,36 @@ KERNEL_TEST(the_field_sample_reaches_machine_memory_as_it_reaches_simulated_memo
     kernel_vmm_unmap_firmware_window((uint32_t) (uintptr_t) window, 4096u);
     physical_memory_manager_page_frame_free(frame);
 }
+
+/**
+ * @brief The machine host's compare-exchange swaps a word of a frame the test owns only when it holds
+ *        the expected value, and returns what it held either way: the global lock's one atomic step.
+ */
+KERNEL_TEST(the_machine_host_compare_exchange_swaps_only_the_expected_word)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const uint32_t frame = physical_memory_manager_page_frame_allocate();
+    uint8_t *window =
+        (frame != 0u) ? (uint8_t *) (uintptr_t) kernel_vmm_map_firmware_writable_window(frame, 4096u) : NULL;
+    volatile uint32_t *word = (volatile uint32_t *) (window + 16u);
+
+    if (!kernel_test_check(test, window != NULL, "a frame is taken and mapped for the test"))
+    {
+        if (frame != 0u)
+            physical_memory_manager_page_frame_free(frame);
+        return;
+    }
+    *word = 0x80000000u;
+    kernel_test_check(test,
+                      host->compare_exchange(host->context, window + 16u, frame + 16u, 0x80000000u, 0x80000002u) ==
+                              0x80000000u &&
+                          *word == 0x80000002u,
+                      "the expected word is swapped, and the old value returned");
+    kernel_test_check(test,
+                      host->compare_exchange(host->context, window + 16u, frame + 16u, 0x80000000u, 0x80000003u) ==
+                              0x80000002u &&
+                          *word == 0x80000002u,
+                      "another word is left as it is, and returned");
+    kernel_vmm_unmap_firmware_window((uint32_t) (uintptr_t) window, 4096u);
+    physical_memory_manager_page_frame_free(frame);
+}

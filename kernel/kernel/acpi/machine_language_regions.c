@@ -15,6 +15,14 @@
 #define MACHINE_LANGUAGE_UPDATE_ZEROS     2u            /**< UpdateRule WriteAsZeros. */
 #define MACHINE_LANGUAGE_ACCESS_LAST      5u            /**< AccessType BufferAcc, the last one not reserved. */
 #define MACHINE_LANGUAGE_REACHABLE_LAST   0xFFFFFFFFull /**< The last physical byte i686 reaches (§5.3). */
+#define MACHINE_LANGUAGE_LOCK_PENDING     0x1u          /**< GlobalLock bit Pending: the other side wants the lock. */
+#define MACHINE_LANGUAGE_LOCK_OWNED       0x2u          /**< GlobalLock bit Owned. */
+#define MACHINE_LANGUAGE_LOCK_RELEASE     0x4u          /**< GBL_RLS, bit 2 of a PM1 control register. */
+#define MACHINE_LANGUAGE_FACS_LOCK_OFFSET 16u           /**< Where the GlobalLock word lies in the FACS. */
+#define MACHINE_LANGUAGE_FACS_MINIMUM     24u           /**< The shortest FACS that holds a GlobalLock word. */
+#define MACHINE_LANGUAGE_FACS_ALIGNMENT                                                                                \
+    64u /**< The alignment ACPI gives a FACS, which keeps its lock word in one page. */
+#define MACHINE_LANGUAGE_CONTROL_WRITE_ONLY 0x2004u /**< SLP_EN and GBL_RLS: the write-only bits of PM1 control. */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t MachineLanguageLoad_t;
@@ -206,6 +214,25 @@ static MachineLanguageMapping_t *machine_language_free_mapping(MachineLanguageLo
 }
 
 /**
+ * @brief Maps one page: cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere.
+ *
+ * @return Where it is mapped, or NULL when the host refuses; @p out_kind receives how.
+ */
+static void *machine_language_map_page(MachineLanguageLoad_t *load, uint64_t page, uint8_t *out_kind)
+{
+    const MachineLanguageHost_t *host = load->space.host;
+    const uint8_t type = host->memory_type(host->context, page, MACHINE_LANGUAGE_PAGE_BYTES);
+
+    *out_kind = (type == MACHINE_LANGUAGE_MEMORY(RAM) || type == MACHINE_LANGUAGE_MEMORY(ACPI_RECLAIM) ||
+                 type == MACHINE_LANGUAGE_MEMORY(ACPI_NVS)) ?
+                    MACHINE_LANGUAGE_MAPPING(CACHED) :
+                    MACHINE_LANGUAGE_MAPPING(DEVICE);
+    return (*out_kind == MACHINE_LANGUAGE_MAPPING(CACHED)) ?
+               host->map_firmware_writable(host->context, page, MACHINE_LANGUAGE_PAGE_BYTES) :
+               host->map_device(host->context, page, MACHINE_LANGUAGE_PAGE_BYTES);
+}
+
+/**
  * @brief Where the cache maps the page that holds @p physical_address: an entry already made, or a
  *        new one, cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere.
  */
@@ -213,7 +240,6 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
                                                     uint8_t **out_address)
 {
     MachineLanguageRegions_t *regions = &load->regions;
-    const MachineLanguageHost_t *host = load->space.host;
     const uint64_t first_page = physical_address & ~(uint64_t) (MACHINE_LANGUAGE_PAGE_BYTES - 1u);
 
     ++regions->clock;
@@ -230,15 +256,8 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
         }
     }
 
-    const uint64_t length = MACHINE_LANGUAGE_PAGE_BYTES;
-    const uint8_t type = host->memory_type(host->context, first_page, length);
-    const uint8_t kind = (type == MACHINE_LANGUAGE_MEMORY(RAM) || type == MACHINE_LANGUAGE_MEMORY(ACPI_RECLAIM) ||
-                          type == MACHINE_LANGUAGE_MEMORY(ACPI_NVS)) ?
-                             MACHINE_LANGUAGE_MAPPING(CACHED) :
-                             MACHINE_LANGUAGE_MAPPING(DEVICE);
-    void *address = (kind == MACHINE_LANGUAGE_MAPPING(CACHED)) ?
-                        host->map_firmware_writable(host->context, first_page, length) :
-                        host->map_device(host->context, first_page, length);
+    uint8_t kind = 0u;
+    void *address = machine_language_map_page(load, first_page, &kind);
 
     ++regions->map_calls;
     if (address == NULL)
@@ -389,21 +408,124 @@ static MachineLanguageStatus_t machine_language_region_datum(MachineLanguageLoad
 }
 
 /**
- * @brief Reads or writes a register of an IndexField or a BankField: a unit of a Field, no wider
- *        than 64 bits, accessed datum by datum in its region.
+ * @brief Whether the PM1 control register @p index is one GBL_RLS may be written to: given, and not a
+ *        port the kernel protects.
  */
-static MachineLanguageStatus_t machine_language_register(MachineLanguageLoad_t *load, uint32_t node, bool write,
-                                                         uint64_t *value)
+static bool machine_language_control_port(const MachineLanguageRegions_t *regions, uint32_t index)
 {
-    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
+    const uint16_t port = regions->power_management_control_ports[index];
 
-    if (unit == NULL || unit->kind != MACHINE_LANGUAGE_FIELD_UNIT(NORMAL) || unit->bit_length > 64u)
-        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
-    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
-        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
-    if (unit->lock != 0u)
-        return MACHINE_LANGUAGE_STATUS(GLOBAL_LOCK_UNAVAILABLE);
+    return port != 0u && !machine_language_port_is_protected(port);
+}
 
+/**
+ * @brief Tells the firmware waiting for the global lock that it is free: reads PM1a and PM1b control,
+ *        ORs them, clears the write-only bits, sets GBL_RLS, and writes the value to PM1a, then to
+ *        PM1b, as ACPI reads and writes a register grouping (the ACPI Register Model); counted when a
+ *        register was written.
+ */
+static void machine_language_signal_global_lock(MachineLanguageLoad_t *load)
+{
+    MachineLanguageRegions_t *regions = &load->regions;
+    const MachineLanguageHost_t *host = load->space.host;
+    uint32_t value = 0u;
+    bool written = false;
+
+    for (uint32_t index = 0u; index < 2u; ++index)
+        if (machine_language_control_port(regions, index))
+            value |= host->port_read(host->context, regions->power_management_control_ports[index], 2u);
+    value = (value & ~MACHINE_LANGUAGE_CONTROL_WRITE_ONLY) | MACHINE_LANGUAGE_LOCK_RELEASE;
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        if (!machine_language_control_port(regions, index))
+            continue;
+        host->port_write(host->context, regions->power_management_control_ports[index], 2u, value);
+        written = true;
+    }
+    regions->global_lock_releases_signalled += written ? 1u : 0u;
+}
+
+/**
+ * @brief Takes the global lock for a Lock field (§4.4): marks it owned, or, while the firmware owns
+ *        it, pending, then waits for the firmware to release it; an access already holding it nests.
+ *        A platform without a global lock takes nothing, counted.
+ */
+static MachineLanguageStatus_t machine_language_take_global_lock(MachineLanguageLoad_t *load)
+{
+    MachineLanguageRegions_t *regions = &load->regions;
+    const MachineLanguageHost_t *host = load->space.host;
+    bool waited = false;
+
+    if (regions->global_lock_word == NULL)
+    {
+        ++regions->unlocked_lock_accesses;
+        return MACHINE_LANGUAGE_OK;
+    }
+    if (regions->global_lock_depth != 0u)
+    {
+        ++regions->global_lock_depth;
+        return MACHINE_LANGUAGE_OK;
+    }
+
+    for (uint32_t poll = 0u; poll < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_GLOBAL_LOCK_POLLS;
+         ++poll)
+    {
+        const uint32_t held =
+            host->read_memory(host->context, regions->global_lock_word, regions->global_lock_address, 4u);
+        const bool owned = (held & MACHINE_LANGUAGE_LOCK_OWNED) != 0u;
+        const uint32_t wanted = (held & ~(MACHINE_LANGUAGE_LOCK_OWNED | MACHINE_LANGUAGE_LOCK_PENDING)) |
+                                MACHINE_LANGUAGE_LOCK_OWNED | (owned ? MACHINE_LANGUAGE_LOCK_PENDING : 0u);
+
+        if ((owned && waited) || host->compare_exchange(host->context, regions->global_lock_word,
+                                                        regions->global_lock_address, held, wanted) != held)
+            continue;
+        if (owned)
+        {
+            waited = true;
+            continue;
+        }
+        ++regions->global_lock_acquisitions;
+        regions->global_lock_waits += waited ? 1u : 0u;
+        regions->global_lock_depth = 1u;
+        return MACHINE_LANGUAGE_OK;
+    }
+    ++regions->global_lock_timeouts;
+    return MACHINE_LANGUAGE_STATUS(GLOBAL_LOCK_UNAVAILABLE);
+}
+
+/**
+ * @brief Gives back the global lock the last access holding it took: clears owned and pending, and
+ *        signals the firmware when it had set pending.
+ */
+static void machine_language_release_global_lock(MachineLanguageLoad_t *load)
+{
+    MachineLanguageRegions_t *regions = &load->regions;
+    const MachineLanguageHost_t *host = load->space.host;
+
+    if (regions->global_lock_word == NULL || --regions->global_lock_depth != 0u)
+        return;
+    for (uint32_t poll = 0u; poll < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_GLOBAL_LOCK_POLLS;
+         ++poll)
+    {
+        const uint32_t held =
+            host->read_memory(host->context, regions->global_lock_word, regions->global_lock_address, 4u);
+
+        if (host->compare_exchange(host->context, regions->global_lock_word, regions->global_lock_address, held,
+                                   held & ~(MACHINE_LANGUAGE_LOCK_OWNED | MACHINE_LANGUAGE_LOCK_PENDING)) != held)
+            continue;
+        if ((held & MACHINE_LANGUAGE_LOCK_PENDING) != 0u)
+            machine_language_signal_global_lock(load);
+        return;
+    }
+}
+
+/**
+ * @brief Reads or writes the datums of a register of an IndexField or a BankField, in its region.
+ */
+static MachineLanguageStatus_t machine_language_access_register(MachineLanguageLoad_t *load,
+                                                                const MachineLanguageFieldUnit_t *unit, bool write,
+                                                                uint64_t *value)
+{
     const uint8_t width = machine_language_access_bytes(unit->access);
     const uint32_t datum_bits = 8u * width;
     const uint64_t end = (uint64_t) unit->bit_offset + unit->bit_length;
@@ -436,6 +558,30 @@ static MachineLanguageStatus_t machine_language_register(MachineLanguageLoad_t *
     if (!write)
         *value = result;
     return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Reads or writes a register of an IndexField or a BankField: a unit of a Field, no wider
+ *        than 64 bits, accessed datum by datum in its region.
+ */
+static MachineLanguageStatus_t machine_language_register(MachineLanguageLoad_t *load, uint32_t node, bool write,
+                                                         uint64_t *value)
+{
+    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
+
+    if (unit == NULL || unit->kind != MACHINE_LANGUAGE_FIELD_UNIT(NORMAL) || unit->bit_length > 64u)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
+        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
+
+    MachineLanguageStatus_t status = (unit->lock != 0u) ? machine_language_take_global_lock(load) : MACHINE_LANGUAGE_OK;
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    status = machine_language_access_register(load, unit, write, value);
+    if (unit->lock != 0u)
+        machine_language_release_global_lock(load);
+    return status;
 }
 
 /**
@@ -551,22 +697,18 @@ static MachineLanguageStatus_t machine_language_source_bytes(const MachineLangua
     return MACHINE_LANGUAGE_OK;
 }
 
-MachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_field_read(MachineLanguageLoad_t *load, uint32_t node,
-                                                                       MachineLanguageValue_t *out_value)
+/**
+ * @brief Reads a unit, the global lock already taken when it needs it.
+ */
+static MachineLanguageStatus_t machine_language_read_unit(MachineLanguageLoad_t *load,
+                                                          const MachineLanguageFieldUnit_t *unit,
+                                                          MachineLanguageValue_t *out_value)
 {
-    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
     const uint32_t integer_bits = (load->integer_bits == 32u) ? 32u : 64u;
     uint8_t integer[8] = {0};
     uint32_t handle = 0u;
     uint8_t *bytes = integer;
 
-    if (unit == NULL)
-        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
-    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
-        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
-    if (unit->lock != 0u)
-        return MACHINE_LANGUAGE_STATUS(GLOBAL_LOCK_UNAVAILABLE);
     ++load->regions.field_reads;
 
     const uint8_t width = machine_language_access_bytes(unit->access);
@@ -612,21 +754,17 @@ advanced_configuration_and_power_interface_machine_language_field_read(MachineLa
     return MACHINE_LANGUAGE_OK;
 }
 
-MachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_field_write(MachineLanguageLoad_t *load, uint32_t node,
-                                                                        const MachineLanguageValue_t *value)
+/**
+ * @brief Writes a unit, the global lock already taken when it needs it.
+ */
+static MachineLanguageStatus_t machine_language_write_unit(MachineLanguageLoad_t *load,
+                                                           const MachineLanguageFieldUnit_t *unit,
+                                                           const MachineLanguageValue_t *value)
 {
-    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
     uint8_t integer[8] = {0};
     const uint8_t *source = NULL;
     uint32_t source_length = 0u;
 
-    if (unit == NULL)
-        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
-    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
-        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
-    if (unit->lock != 0u)
-        return MACHINE_LANGUAGE_STATUS(GLOBAL_LOCK_UNAVAILABLE);
     if (((uint64_t) unit->bit_length + 7u) / 8u >
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
         return MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES);
@@ -660,9 +798,99 @@ advanced_configuration_and_power_interface_machine_language_field_write(MachineL
     return MACHINE_LANGUAGE_OK;
 }
 
+MachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_field_read(MachineLanguageLoad_t *load, uint32_t node,
+                                                                       MachineLanguageValue_t *out_value)
+{
+    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
+
+    if (unit == NULL)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
+        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
+
+    MachineLanguageStatus_t status = (unit->lock != 0u) ? machine_language_take_global_lock(load) : MACHINE_LANGUAGE_OK;
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    status = machine_language_read_unit(load, unit, out_value);
+    if (unit->lock != 0u)
+        machine_language_release_global_lock(load);
+    return status;
+}
+
+MachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_field_write(MachineLanguageLoad_t *load, uint32_t node,
+                                                                        const MachineLanguageValue_t *value)
+{
+    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
+
+    if (unit == NULL)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
+        return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
+
+    MachineLanguageStatus_t status = (unit->lock != 0u) ? machine_language_take_global_lock(load) : MACHINE_LANGUAGE_OK;
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    status = machine_language_write_unit(load, unit, value);
+    if (unit->lock != 0u)
+        machine_language_release_global_lock(load);
+    return status;
+}
+
+void advanced_configuration_and_power_interface_machine_language_use_global_lock(MachineLanguageLoad_t *load,
+                                                                                 uint32_t firmware_control,
+                                                                                 const uint16_t *control_ports)
+{
+    MachineLanguageRegions_t *regions = &load->regions;
+    const MachineLanguageHost_t *host = load->space.host;
+    const uint8_t *facs = NULL;
+    uint32_t length = 0u;
+    bool usable = false;
+
+    regions->power_management_control_ports[0] = control_ports[0];
+    regions->power_management_control_ports[1] = control_ports[1];
+    regions->facs_refused = firmware_control != 0u;
+    if (firmware_control == 0u || firmware_control % MACHINE_LANGUAGE_FACS_ALIGNMENT != 0u ||
+        host->memory_type(host->context, firmware_control, MACHINE_LANGUAGE_FACS_MINIMUM) ==
+            MACHINE_LANGUAGE_MEMORY(RAM))
+        return;
+    facs = host->map_firmware(host->context, firmware_control, MACHINE_LANGUAGE_FACS_MINIMUM);
+    if (facs == NULL)
+        return;
+    memcpy(&length, facs + 4u, sizeof(length));
+    usable = memcmp(facs, "FACS", 4u) == 0 && length >= MACHINE_LANGUAGE_FACS_MINIMUM;
+    host->unmap_firmware(host->context, facs, MACHINE_LANGUAGE_FACS_MINIMUM);
+
+    const uint64_t address = (uint64_t) firmware_control + MACHINE_LANGUAGE_FACS_LOCK_OFFSET;
+    const uint64_t page = address & ~(uint64_t) (MACHINE_LANGUAGE_PAGE_BYTES - 1u);
+    uint8_t *mapped = usable ? machine_language_map_page(load, page, &regions->global_lock_mapping_kind) : NULL;
+
+    if (mapped == NULL)
+        return;
+    regions->global_lock_address = address;
+    regions->global_lock_word = mapped + (address - page);
+    regions->facs_refused = false;
+}
+
 void advanced_configuration_and_power_interface_machine_language_regions_close(MachineLanguageLoad_t *load)
 {
     MachineLanguageRegions_t *regions = &load->regions;
+    const MachineLanguageHost_t *host = load->space.host;
+
+    if (regions->global_lock_word != NULL)
+    {
+        void *page =
+            regions->global_lock_word - (regions->global_lock_address & (uint64_t) (MACHINE_LANGUAGE_PAGE_BYTES - 1u));
+
+        if (regions->global_lock_mapping_kind == MACHINE_LANGUAGE_MAPPING(CACHED))
+            host->unmap_firmware_writable(host->context, page, MACHINE_LANGUAGE_PAGE_BYTES);
+        else
+            host->unmap_device(host->context, page, MACHINE_LANGUAGE_PAGE_BYTES);
+        regions->global_lock_word = NULL;
+    }
 
     while (regions->mapping_count > 0u)
         machine_language_unmap(load, &regions->mappings[--regions->mapping_count]);

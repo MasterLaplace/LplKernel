@@ -13,6 +13,8 @@
 #define RECORDED_MACHINE_ROOT_POINTER_BYTES 48u         /**< Bytes kept for the root pointer, before the XSDT. */
 #define RECORDED_MACHINE_FADT_DSDT          40u         /**< Offset of a FADT's 32-bit DSDT field. */
 #define RECORDED_MACHINE_FADT_EXTENDED_DSDT 140u        /**< Offset of a FADT's X_DSDT field. */
+#define RECORDED_MACHINE_FADT_FACS          36u         /**< Offset of a FADT's FIRMWARE_CTRL field. */
+#define RECORDED_MACHINE_FADT_EXTENDED_FACS 132u        /**< Offset of a FADT's X_FIRMWARE_CTRL field. */
 
 /**
  * @brief The value of the hexadecimal digit @p c, or -1.
@@ -170,7 +172,7 @@ static RecordedTable_t *recorded_machine_find(RecordedMachine_t *machine, const 
 
 /**
  * @brief Whether the harness writes @p table's place itself: the root pointer and the root tables of
- *        the dump, and the FACS, which nothing reads yet.
+ *        the dump, and the FACS, which no root table lists.
  */
 static bool recorded_machine_is_left_out(const RecordedTable_t *table)
 {
@@ -299,8 +301,39 @@ static bool recorded_machine_serve_dsdt(RecordedMachine_t *machine, const Record
 }
 
 /**
- * @brief Serves the tables of @p machine: the DSDT where each FADT names it, every other one from
- *        RECORDED_MACHINE_FIRST_ADDRESS, then the root pointer and the XSDT that list them.
+ * @brief Serves the FACS where the first FADT of @p machine names it, as the directory chooses: the
+ *        32-bit field when it is not 0, else X_FIRMWARE_CTRL below 4 GiB; and adds that address to
+ *        @p reserved. A dump without a FACS, or a FADT that names none, serves nothing.
+ */
+static bool recorded_machine_serve_facs(RecordedMachine_t *machine, uint64_t *reserved, uint32_t *reserved_count,
+                                        const char **error)
+{
+    const RecordedTable_t *facs = recorded_machine_find(machine, "FACS");
+    const RecordedTable_t *fadt = recorded_machine_find(machine, "FACP");
+
+    if (facs == NULL || fadt == NULL)
+        return true;
+
+    const uint64_t named_32 = recorded_machine_read_field(fadt, RECORDED_MACHINE_FADT_FACS, 4u);
+    const uint64_t named_64 = recorded_machine_read_field(fadt, RECORDED_MACHINE_FADT_EXTENDED_FACS, 8u);
+    const uint64_t address = (named_32 != 0u) ? named_32 : ((named_64 >> 32u) == 0u) ? named_64 : 0u;
+
+    if (address == 0u || recorded_machine_holds(reserved, *reserved_count, address))
+        return true;
+    if (!advanced_configuration_and_power_interface_simulated_host_place(&machine->simulated, address, facs->bytes,
+                                                                         facs->length))
+    {
+        *error = "the FACS cannot be served where the FADT names it";
+        return false;
+    }
+    reserved[(*reserved_count)++] = address;
+    return true;
+}
+
+/**
+ * @brief Serves the tables of @p machine: the DSDT where each FADT names it, the FACS where the FADT
+ *        names it, every other one from RECORDED_MACHINE_FIRST_ADDRESS, then the root pointer and the
+ *        XSDT that list them.
  */
 static bool recorded_machine_serve(RecordedMachine_t *machine, const char **error)
 {
@@ -308,7 +341,8 @@ static bool recorded_machine_serve(RecordedMachine_t *machine, const char **erro
     uint64_t reserved[2u * RECORDED_MACHINE_MAX_TABLES];
     uint32_t reserved_count = 0u;
 
-    if (!recorded_machine_serve_dsdt(machine, dsdt, reserved, &reserved_count, error))
+    if (!recorded_machine_serve_dsdt(machine, dsdt, reserved, &reserved_count, error) ||
+        !recorded_machine_serve_facs(machine, reserved, &reserved_count, error))
         return false;
 
     uint64_t entries[RECORDED_MACHINE_MAX_TABLES];
@@ -378,6 +412,7 @@ bool recorded_machine_open(RecordedMachine_t *machine, const char *path, const c
 
 void recorded_machine_close(RecordedMachine_t *machine)
 {
+    advanced_configuration_and_power_interface_simulated_host_close(&machine->simulated);
     for (uint32_t index = 0u; index < machine->table_count; ++index)
         free(machine->tables[index].bytes);
     free(machine->root);

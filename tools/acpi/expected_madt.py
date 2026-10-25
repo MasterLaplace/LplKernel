@@ -157,7 +157,7 @@ def read(header, entries, data):
 
 def expected(dump, report):
     """The MADT lines for a dump and the text of its decoded report."""
-    recorded, _, _ = expected_directory.read_directory(dump)
+    recorded = expected_directory.read_directory(dump)[0]
     table = expected_directory.lookup(recorded, b"APIC")
     if table is None:
         return ["madt read=0 state=acpi-madt-not-found"]
