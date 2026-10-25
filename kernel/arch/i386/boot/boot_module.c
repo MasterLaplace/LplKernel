@@ -102,9 +102,13 @@ bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *o
     return false;
 }
 
-uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text)
+uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text, uint32_t longest)
 {
-    const uint32_t length = boot_module_string_length(text, BOOT_COMMAND_LINE_LONGEST);
+    const uint32_t length = boot_module_string_length(text, longest);
+
+    if (capacity == 0u)
+        return length;
+
     const uint32_t kept = (length < capacity) ? length : capacity - 1u;
 
     for (uint32_t index = 0u; index < kept; ++index)
@@ -115,12 +119,16 @@ uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text)
 
 void boot_command_line_capture(void)
 {
-    if (!multiboot_info || !(multiboot_info->flags & MULTIBOOT_FLAG_COMMAND_LINE) || !multiboot_info->cmdline)
+    if (!multiboot_info || !(multiboot_info->flags & MULTIBOOT_FLAG_COMMAND_LINE) || !multiboot_info->cmdline ||
+        multiboot_info->cmdline >= KERNEL_BOOT_MAPPED_END)
         return;
 
     const char *const text = (const char *) boot_module_phys_to_virt(multiboot_info->cmdline);
+    const uint32_t mapped = KERNEL_BOOT_MAPPED_END - multiboot_info->cmdline;
 
-    boot_command_line_dropped_count = boot_command_line_copy(boot_command_line_text, BOOT_COMMAND_LINE_CAPACITY, text);
+    boot_command_line_dropped_count =
+        boot_command_line_copy(boot_command_line_text, BOOT_COMMAND_LINE_CAPACITY, text,
+                               (mapped < BOOT_COMMAND_LINE_LONGEST) ? mapped : BOOT_COMMAND_LINE_LONGEST);
     boot_command_line_captured = true;
 }
 

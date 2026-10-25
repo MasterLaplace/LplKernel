@@ -356,5 +356,7 @@ extern const uint32_t global_kernel_end;
 #define KERNEL_VIRTUAL_END  ((uint32_t) (uintptr_t) & global_kernel_end)   /**< End of kernel virtual address space */
 #define PAGE_SIZE           4096                                           /**< 4KB pages */
 #define ENTRIES_PER_TABLE   1024                                           /**< 1024 entries per page table/directory */
+#define KERNEL_BOOT_MAPPED_END                                                                                         \
+    0x04000000u /**< First physical byte past what boot.S maps at KERNEL_VIRTUAL_BASE: 16 page tables, 64 MiB. */
 
 #endif /* KERNEL_CPU_PAGING_H */

@@ -212,13 +212,10 @@ static void kernel_report_live_checks(void)
 static void kernel_report_cut_boot_line(void)
 {
     const uint32_t dropped = boot_command_line_dropped();
-    const char *line = boot_command_line();
-    uint32_t kept = 0u;
+    const uint32_t kept = BOOT_COMMAND_LINE_CAPACITY - 1u;
 
-    if (dropped == 0u || line == NULL)
+    if (dropped == 0u)
         return;
-    while (line[kept] != '\0')
-        ++kept;
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: WARNING: the boot line holds ");
     serial_write_unsigned(&com1, kept + dropped);
     serial_write_string(&com1, " characters and the kernel keeps ");

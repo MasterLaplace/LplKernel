@@ -448,7 +448,7 @@ static void kernel_test_write_cut_boot_line(Serial_t *serial)
         return;
     serial_write_string(serial, "# the boot line lost its last ");
     serial_write_unsigned(serial, dropped);
-    serial_write_string(serial, " characters, and the tests they named with them\n");
+    serial_write_string(serial, " characters, and any test they named\n");
     ++kernel_test_failed_count;
 }
 

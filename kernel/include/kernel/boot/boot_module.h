@@ -41,10 +41,8 @@
 extern "C" {
 #endif
 
-/** Bytes kept of the kernel's command line, its terminating NUL included. */
-#define BOOT_COMMAND_LINE_CAPACITY 1024u
-/** Characters of a command line read at most, so that one without its NUL cannot hang the reader. */
-#define BOOT_COMMAND_LINE_LONGEST 65535u
+#define BOOT_COMMAND_LINE_CAPACITY 1024u  /**< Bytes kept of the kernel's command line, its NUL included. */
+#define BOOT_COMMAND_LINE_LONGEST  65535u /**< Most characters read of a command line that lacks its NUL. */
 
 /**
  * @brief Locates a boot module whose command line ends with @p suffix.
@@ -73,12 +71,14 @@ uint32_t boot_module_count(void);
 /**
  * @brief Copies @p text into @p copy, cut to @p capacity - 1 characters and NUL-terminated.
  *
- * @param copy     Where the text goes: @p capacity bytes.
- * @param capacity Bytes of @p copy, its NUL included: at least 1.
- * @param text     The NUL-terminated text, read up to BOOT_COMMAND_LINE_LONGEST characters.
+ * @param copy     Where the text goes: @p capacity bytes, of which none is written when @p capacity is 0.
+ * @param capacity Bytes of @p copy, its NUL included.
+ * @param text     The NUL-terminated text.
+ * @param longest  The most characters of @p text read: a text without a NUL within them counts as
+ *                 that long.
  * @return How many characters of @p text the copy dropped: 0 when it holds all of them.
  */
-uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text);
+uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text, uint32_t longest);
 
 /**
  * @brief Copies the kernel's command line out of the memory the bootloader left it in.
@@ -86,7 +86,9 @@ uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text)
  * @details The physical memory manager reserves the modules' pages but not the command line's, so
  *          the text is overwritten once those pages are handed out. Called once, before the physical
  *          memory manager starts; the copy is cut at BOOT_COMMAND_LINE_CAPACITY - 1 characters, and
- *          boot_command_line_dropped() says how many it left out.
+ *          boot_command_line_dropped() says how many it left out. The line is read up to
+ *          BOOT_COMMAND_LINE_LONGEST characters and never past KERNEL_BOOT_MAPPED_END; a line that
+ *          starts past it is not captured.
  */
 void boot_command_line_capture(void);
 
@@ -96,8 +98,8 @@ void boot_command_line_capture(void);
  * @details QEMU's `-kernel` puts the kernel's path in front of the `-append` text, so a kernel booted
  *          from a deep directory loses the end of its line, which is where `lpl.test=` usually is.
  *
- * @return 0 when the copy holds the whole line; otherwise the characters past the copy, counted up
- *         to BOOT_COMMAND_LINE_LONGEST characters of line.
+ * @return 0 when the copy holds the whole line; otherwise the characters past the copy, the line
+ *         counted as boot_command_line_capture() read it.
  */
 uint32_t boot_command_line_dropped(void);
 
