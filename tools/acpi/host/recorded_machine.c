@@ -412,6 +412,7 @@ bool recorded_machine_open(RecordedMachine_t *machine, const char *path, const c
 
 void recorded_machine_close(RecordedMachine_t *machine)
 {
+    advanced_configuration_and_power_interface_simulated_host_close(&machine->simulated);
     for (uint32_t index = 0u; index < machine->table_count; ++index)
         free(machine->tables[index].bytes);
     free(machine->root);

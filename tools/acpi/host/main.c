@@ -92,9 +92,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            regions->field_reads, regions->field_writes, regions->map_calls, regions->mapping_cache_hits,
            regions->split_qword_accesses, regions->unaligned_accesses, regions->protected_port_accesses,
            regions->region_lengths_rounded);
-    printf("aml run global_lock acquisitions=%u waits=%u releases_signalled=%u timeouts=%u unlocked_accesses=%u\n",
+    printf("aml run global_lock acquisitions=%u waits=%u releases_signalled=%u timeouts=%u unlocked_accesses=%u "
+           "facs_refused=%u\n",
            regions->global_lock_acquisitions, regions->global_lock_waits, regions->global_lock_releases_signalled,
-           regions->global_lock_timeouts, regions->unlocked_lock_accesses);
+           regions->global_lock_timeouts, regions->unlocked_lock_accesses, regions->facs_refused ? 1u : 0u);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);

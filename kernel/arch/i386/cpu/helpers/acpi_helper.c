@@ -29,7 +29,9 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("global_lock_acquisitions", regions->global_lock_acquisitions);
     kernel_telemetry_write_unsigned("global_lock_waits", regions->global_lock_waits);
     kernel_telemetry_write_unsigned("global_lock_timeouts", regions->global_lock_timeouts);
+    kernel_telemetry_write_unsigned("global_lock_releases_signalled", regions->global_lock_releases_signalled);
     kernel_telemetry_write_unsigned("unlocked_lock_accesses", regions->unlocked_lock_accesses);
+    kernel_telemetry_write_unsigned("facs_refused", regions->facs_refused ? 1u : 0u);
     kernel_telemetry_end_record();
 }
 

@@ -14,6 +14,7 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_global_lock, KERNEL
 #define GLOBAL_LOCK_WORD         0x30010u /**< Its GlobalLock word. */
 #define GLOBAL_LOCK_MEMORY       0x10000u /**< The byte the Lock field reads. */
 #define GLOBAL_LOCK_CONTROL      0x0604u  /**< The PM1a control port. */
+#define GLOBAL_LOCK_CONTROL_B    0x0640u  /**< The PM1b control port. */
 #define GLOBAL_LOCK_ACCESS(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_##kind
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t global_lock_host;
@@ -23,26 +24,34 @@ static uint8_t global_lock_facs[64];
 static MadeUpAml_t global_lock_aml;
 
 /**
- * @brief Opens the simulated host with a FACS whose GlobalLock word holds @p word, a byte 0x5A to
- *        read, and a PM1a control port that reads 0x0001.
+ * @brief Opens the simulated host with a FACS at @p facs, of @p length bytes, whose GlobalLock word
+ *        holds @p word, a byte 0x5A to read, and a PM1a control port that reads 0x0001.
  */
-static void global_lock_begin(const char *signature, uint32_t word)
+static void global_lock_begin_at(uint32_t facs, const char *signature, uint32_t length, uint32_t word)
 {
     static const uint8_t memory[] = {0x5Au};
-    const uint32_t length = sizeof(global_lock_facs);
 
     memset(global_lock_facs, 0, sizeof(global_lock_facs));
     memcpy(global_lock_facs, signature, 4u);
     memcpy(global_lock_facs + 4u, &length, sizeof(length));
     memcpy(global_lock_facs + 16u, &word, sizeof(word));
     advanced_configuration_and_power_interface_simulated_host_open(&global_lock_host);
-    advanced_configuration_and_power_interface_simulated_host_place(&global_lock_host, GLOBAL_LOCK_FACS,
-                                                                    global_lock_facs, sizeof(global_lock_facs));
+    advanced_configuration_and_power_interface_simulated_host_place(&global_lock_host, facs, global_lock_facs,
+                                                                    sizeof(global_lock_facs));
     advanced_configuration_and_power_interface_simulated_host_place(&global_lock_host, GLOBAL_LOCK_MEMORY, memory,
                                                                     sizeof(memory));
     advanced_configuration_and_power_interface_simulated_host_set_port(&global_lock_host, GLOBAL_LOCK_CONTROL, 0x0001u);
-    global_lock_host.firmware_lock_address = GLOBAL_LOCK_WORD;
+    global_lock_host.firmware_lock_address = facs + 16u;
     made_up_aml_begin(&global_lock_aml);
+}
+
+/**
+ * @brief Opens the simulated host with a FACS of 64 bytes at GLOBAL_LOCK_FACS, as
+ *        global_lock_begin_at does.
+ */
+static void global_lock_begin(const char *signature, uint32_t word)
+{
+    global_lock_begin_at(GLOBAL_LOCK_FACS, signature, sizeof(global_lock_facs), word);
 }
 
 /**
@@ -54,7 +63,7 @@ static bool global_lock_run(KernelTest_t *test, uint32_t firmware_control)
     static const MadeUpFieldUnit_t units[] = {
         {"LK__", 8u}
     };
-    static const uint16_t ports[2] = {GLOBAL_LOCK_CONTROL, 0u};
+    static const uint16_t ports[2] = {GLOBAL_LOCK_CONTROL, GLOBAL_LOCK_CONTROL_B};
 
     made_up_aml_region(&global_lock_aml, "LCKR", 0x00u, GLOBAL_LOCK_MEMORY, 1u);
     made_up_aml_field(&global_lock_aml, "LCKR", 0x11u, units, 1u);
@@ -174,21 +183,28 @@ KERNEL_TEST(a_lock_the_firmware_owns_is_waited_for)
 
 /**
  * @brief When the firmware asks for the lock while the field owns it, the release clears pending
- *        and writes GBL_RLS to the PM1 control port.
+ *        and writes GBL_RLS to both PM1 control registers: what they read ORed, SLP_EN and GBL_RLS
+ *        masked out, then GBL_RLS set, as ACPI writes a register grouping.
  */
 KERNEL_TEST(a_firmware_waiting_for_the_lock_is_signalled_on_release)
 {
     global_lock_begin("FACS", 0u);
     global_lock_host.firmware_wants_lock = true;
+    advanced_configuration_and_power_interface_simulated_host_set_port(&global_lock_host, GLOBAL_LOCK_CONTROL, 0x2001u);
+    advanced_configuration_and_power_interface_simulated_host_set_port(&global_lock_host, GLOBAL_LOCK_CONTROL_B,
+                                                                       0x0002u);
     if (!global_lock_run(test, GLOBAL_LOCK_FACS))
         return;
     kernel_test_check(test,
                       global_lock_access(3u, GLOBAL_LOCK_ACCESS(MEMORY_READ), GLOBAL_LOCK_WORD, 3u) &&
                           global_lock_access(4u, GLOBAL_LOCK_ACCESS(EXCHANGE), GLOBAL_LOCK_WORD, 0u) &&
-                          global_lock_access(5u, GLOBAL_LOCK_ACCESS(PORT_READ), GLOBAL_LOCK_CONTROL, 0x0001u) &&
-                          global_lock_access(6u, GLOBAL_LOCK_ACCESS(PORT_WRITE), GLOBAL_LOCK_CONTROL, 0x0005u) &&
-                          global_lock_host.access_count == 7u,
-                      "the release finds pending, clears the lock, then sets GBL_RLS in PM1a control");
+                          global_lock_access(5u, GLOBAL_LOCK_ACCESS(PORT_READ), GLOBAL_LOCK_CONTROL, 0x2001u) &&
+                          global_lock_access(6u, GLOBAL_LOCK_ACCESS(PORT_READ), GLOBAL_LOCK_CONTROL_B, 0x0002u) &&
+                          global_lock_access(7u, GLOBAL_LOCK_ACCESS(PORT_WRITE), GLOBAL_LOCK_CONTROL, 0x0007u) &&
+                          global_lock_access(8u, GLOBAL_LOCK_ACCESS(PORT_WRITE), GLOBAL_LOCK_CONTROL_B, 0x0007u) &&
+                          global_lock_host.access_count == 9u,
+                      "the release finds pending, clears the lock, then writes PM1a | PM1b without SLP_EN, with "
+                      "GBL_RLS, to PM1a then PM1b");
     kernel_test_check(test, global_lock_load.regions.global_lock_releases_signalled == 1u, "the signal is counted");
     global_lock_close(test);
 }
@@ -219,28 +235,70 @@ KERNEL_TEST(a_lock_the_firmware_never_releases_times_out)
 }
 
 /**
- * @brief A FACS that is not one, by its signature, or that lies in usable memory gives no global
- *        lock: the Lock field is accessed unlocked, counted.
+ * @brief A FACS that cannot be used gives no global lock, the FACS counted as refused, and the Lock
+ *        field is accessed unlocked, counted: a wrong signature, usable memory, 20 bytes, an address
+ *        not aligned on 64 bytes. Without a FACS, nothing is refused.
  */
 KERNEL_TEST(a_facs_that_cannot_be_used_gives_no_global_lock)
 {
-    global_lock_begin("FACX", 0u);
-    if (!global_lock_run(test, GLOBAL_LOCK_FACS))
-        return;
-    kernel_test_check(test,
-                      global_lock_result() == 0x5Au && global_lock_load.regions.global_lock_address == 0u &&
-                          global_lock_load.regions.unlocked_lock_accesses == 1u,
-                      "a wrong signature: read unlocked");
-    global_lock_close(test);
+    static const struct {
+        uint32_t facs;
+        const char *signature;
+        uint32_t length;
+        bool usable_memory;
+        const char *claim;
+    } refusals[] = {
+        {GLOBAL_LOCK_FACS,         "FACX", 64u, false, "a wrong signature: read unlocked, the FACS counted as refused"},
+        {GLOBAL_LOCK_FACS,         "FACS", 64u, true,  "a FACS in usable memory: refused"                             },
+        {GLOBAL_LOCK_FACS,         "FACS", 20u, false, "a FACS of 20 bytes, too short for the lock word: refused"     },
+        {GLOBAL_LOCK_FACS + 0x20u, "FACS", 64u, false, "a FACS not aligned on 64 bytes: refused"                      },
+    };
+
+    for (uint32_t index = 0u; index < sizeof(refusals) / sizeof(refusals[0]); ++index)
+    {
+        global_lock_begin_at(refusals[index].facs, refusals[index].signature, refusals[index].length, 0u);
+        if (refusals[index].usable_memory)
+            advanced_configuration_and_power_interface_simulated_host_describe(
+                &global_lock_host, refusals[index].facs, 4096u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_RAM);
+        if (!global_lock_run(test, refusals[index].facs))
+            return;
+        kernel_test_check(test,
+                          global_lock_result() == 0x5Au && global_lock_load.regions.global_lock_address == 0u &&
+                              global_lock_load.regions.unlocked_lock_accesses == 1u &&
+                              global_lock_load.regions.facs_refused,
+                          refusals[index].claim);
+        global_lock_close(test);
+    }
     global_lock_begin("FACS", 0u);
-    advanced_configuration_and_power_interface_simulated_host_describe(
-        &global_lock_host, GLOBAL_LOCK_FACS, 4096u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_RAM);
+    if (!global_lock_run(test, 0u))
+        return;
+    kernel_test_check(test,
+                      global_lock_load.regions.unlocked_lock_accesses == 1u && !global_lock_load.regions.facs_refused,
+                      "no FACS at all: read unlocked, nothing refused");
+    global_lock_close(test);
+}
+
+/**
+ * @brief The lock keeps the bits of its word it does not own, and a pending bit left without an owner
+ *        is cleared when the field takes the lock.
+ */
+KERNEL_TEST(the_lock_word_keeps_its_other_bits)
+{
+    global_lock_begin("FACS", 0x80000000u);
     if (!global_lock_run(test, GLOBAL_LOCK_FACS))
         return;
     kernel_test_check(test,
-                      global_lock_result() == 0x5Au && global_lock_load.regions.global_lock_address == 0u &&
-                          global_lock_load.regions.unlocked_lock_accesses == 1u,
-                      "a FACS in usable memory: read unlocked");
+                      global_lock_access(1u, GLOBAL_LOCK_ACCESS(EXCHANGE), GLOBAL_LOCK_WORD, 0x80000002u) &&
+                          global_lock_access(4u, GLOBAL_LOCK_ACCESS(EXCHANGE), GLOBAL_LOCK_WORD, 0x80000000u),
+                      "bit 31 survives the take and the release");
+    global_lock_close(test);
+    global_lock_begin("FACS", 0x1u);
+    if (!global_lock_run(test, GLOBAL_LOCK_FACS))
+        return;
+    kernel_test_check(test,
+                      global_lock_access(1u, GLOBAL_LOCK_ACCESS(EXCHANGE), GLOBAL_LOCK_WORD, 0x2u) &&
+                          global_lock_load.regions.global_lock_waits == 0u && global_lock_word() == 0u,
+                      "pending alone is cleared as the field takes the free lock, without a wait");
     global_lock_close(test);
 }
 

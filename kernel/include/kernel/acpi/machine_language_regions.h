@@ -28,6 +28,7 @@
 #ifndef KERNEL_ACPI_MACHINE_LANGUAGE_REGIONS_H
 #define KERNEL_ACPI_MACHINE_LANGUAGE_REGIONS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_MAPPINGS                                       \
@@ -76,15 +77,24 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t space_unsupported[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES]; /**< Accesses
                                                                                                         refused, per
                                                                                                         space. */
-    uint64_t global_lock_address;               /**< The FACS's GlobalLock word, or 0 without a global lock. */
+    uint64_t global_lock_address; /**< The physical address of the FACS's GlobalLock word, or 0 without a global
+                                       lock. */
+    uint8_t *global_lock_word;    /**< Where the lock word is mapped, for the whole load, or NULL: a pointer, never
+                                       folded. */
+    uint8_t
+        global_lock_mapping_kind; /**< How its page is mapped: an
+                                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAPPING_* kind. */
+    bool facs_refused;            /**< Whether a FACS was given but could not be used: misaligned, in usable memory,
+                                       without its signature, too short, or not mapped. */
     uint16_t power_management_control_ports[2]; /**< The PM1a and PM1b control ports GBL_RLS is written to, or 0. */
     uint32_t global_lock_depth;                 /**< Accesses in progress that hold the global lock. */
     uint32_t global_lock_acquisitions;          /**< Times the global lock was taken from the firmware's side. */
     uint32_t global_lock_waits;                 /**< Of those, the ones that found the firmware owning it and waited. */
-    uint32_t global_lock_releases_signalled;    /**< Releases that wrote GBL_RLS, the firmware waiting for the lock. */
+    uint32_t global_lock_releases_signalled;    /**< Releases that wrote GBL_RLS to a PM1 control register, the
+                                                     firmware waiting for the lock. */
     uint32_t global_lock_timeouts;              /**< Acquisitions given up, the firmware never releasing the lock. */
-    uint32_t unlocked_lock_accesses;            /**< Lock fields accessed without a global lock, the platform having
-                                                     none. */
+    uint32_t unlocked_lock_accesses; /**< Lock fields accessed without a global lock: the platform has none, or
+                                          its FACS was refused (facs_refused). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t;
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_REGIONS_H */
