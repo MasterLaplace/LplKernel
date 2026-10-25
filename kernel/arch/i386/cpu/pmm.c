@@ -38,6 +38,9 @@
 /** @brief Minimum e820 entry payload size (bytes). */
 #define MMAP_MIN_ENTRY_SIZE 20
 
+/** @brief Entries of the boot memory map the PMM keeps a copy of. */
+#define PMM_MAX_MEMORY_MAP_ENTRIES 64u
+
 /**
  * @brief Translate a physical address to its higher-half virtual alias.
  */
@@ -59,6 +62,19 @@ static uint32_t free_page_count_watermark_low = 0xFFFFFFFFu;
 
 /** @brief Track whether watermarks have been seeded after first population. */
 static bool watermarks_seeded = false;
+
+/** @brief A range of the boot memory map, kept past the boot. */
+typedef struct PmmMemoryMapRange {
+    uint64_t base;   /**< Its first byte. */
+    uint64_t length; /**< Its length in bytes. */
+    uint32_t type;   /**< Its Multiboot type. */
+} PmmMemoryMapRange_t;
+
+/** @brief The boot memory map as initialisation read it, so that nothing reads the loader's copy later. */
+static PmmMemoryMapRange_t pmm_memory_map[PMM_MAX_MEMORY_MAP_ENTRIES];
+
+/** @brief Ranges kept in pmm_memory_map. */
+static uint32_t pmm_memory_map_count = 0u;
 
 static uint32_t pmm_local_hits = 0;
 static uint32_t pmm_remote_hits = 0;
@@ -741,20 +757,15 @@ uint32_t physical_memory_manager_get_free_page_count(void) { return free_page_co
 
 uint32_t physical_memory_manager_memory_type(uint64_t physical_address, uint64_t length)
 {
-    uint8_t *mmap_base = NULL;
-    uint32_t mmap_length = 0u;
-    uint32_t offset = 0u;
-    MemoryMapEntry_t *entry = NULL;
-
-    if (length == 0u || physical_address + length < physical_address ||
-        !pmm_get_multiboot_mmap(&mmap_base, &mmap_length))
+    if (length == 0u || physical_address + length < physical_address)
         return 0u;
-    while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
+    for (uint32_t index = 0u; index < pmm_memory_map_count; ++index)
     {
-        if (physical_address >= entry->base_addr && physical_address - entry->base_addr < entry->length &&
-            length <= entry->length - (physical_address - entry->base_addr))
-            return entry->type;
-        offset += sizeof(uint32_t) + entry->size;
+        const PmmMemoryMapRange_t *range = &pmm_memory_map[index];
+
+        if (physical_address >= range->base && physical_address - range->base < range->length &&
+            length <= range->length - (physical_address - range->base))
+            return range->type;
     }
     return 0u;
 }
@@ -887,8 +898,12 @@ void physical_memory_manager_initialize(void)
     buddy_population_in_progress = true;
 #endif
 
+    pmm_memory_map_count = 0u;
     while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
     {
+        if (pmm_memory_map_count < PMM_MAX_MEMORY_MAP_ENTRIES)
+            pmm_memory_map[pmm_memory_map_count++] =
+                (PmmMemoryMapRange_t){.base = entry->base_addr, .length = entry->length, .type = entry->type};
         if (entry->type == MMAP_TYPE_AVAILABLE)
         {
             uint32_t region_start, region_end;
