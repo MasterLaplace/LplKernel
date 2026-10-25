@@ -56,14 +56,13 @@ static void global_lock_begin(const char *signature, uint32_t word)
 
 /**
  * @brief Loads a table whose Lock field LK__ reads into RL__, the load given the FACS at
- *        @p firmware_control before its table-level code runs.
+ *        @p firmware_control and the PM1 control @p ports before its table-level code runs.
  */
-static bool global_lock_run(KernelTest_t *test, uint32_t firmware_control)
+static bool global_lock_run_with(KernelTest_t *test, uint32_t firmware_control, const uint16_t *ports)
 {
     static const MadeUpFieldUnit_t units[] = {
         {"LK__", 8u}
     };
-    static const uint16_t ports[2] = {GLOBAL_LOCK_CONTROL, GLOBAL_LOCK_CONTROL_B};
 
     made_up_aml_region(&global_lock_aml, "LCKR", 0x00u, GLOBAL_LOCK_MEMORY, 1u);
     made_up_aml_field(&global_lock_aml, "LCKR", 0x11u, units, 1u);
@@ -80,6 +79,16 @@ static bool global_lock_run(KernelTest_t *test, uint32_t firmware_control)
         &global_lock_load,
         made_up_definition_block(global_lock_table, "DSDT", 2u, global_lock_aml.bytes, global_lock_aml.length));
     return true;
+}
+
+/**
+ * @brief Loads the table global_lock_run_with loads, with the PM1a and PM1b control ports of the tests.
+ */
+static bool global_lock_run(KernelTest_t *test, uint32_t firmware_control)
+{
+    static const uint16_t ports[2] = {GLOBAL_LOCK_CONTROL, GLOBAL_LOCK_CONTROL_B};
+
+    return global_lock_run_with(test, firmware_control, ports);
 }
 
 /**
@@ -275,6 +284,25 @@ KERNEL_TEST(a_facs_that_cannot_be_used_gives_no_global_lock)
     kernel_test_check(test,
                       global_lock_load.regions.unlocked_lock_accesses == 1u && !global_lock_load.regions.facs_refused,
                       "no FACS at all: read unlocked, nothing refused");
+    global_lock_close(test);
+}
+
+/**
+ * @brief The release never writes GBL_RLS to a port the kernel protects, even when the FADT names it
+ *        as a PM1 control register, and counts no signal when it wrote nothing.
+ */
+KERNEL_TEST(the_release_never_writes_a_protected_port)
+{
+    static const uint16_t protected_ports[2] = {0x0CF8u, 0u};
+
+    global_lock_begin("FACS", 0u);
+    global_lock_host.firmware_wants_lock = true;
+    if (!global_lock_run_with(test, GLOBAL_LOCK_FACS, protected_ports))
+        return;
+    kernel_test_check(test,
+                      global_lock_host.access_count == 5u &&
+                          global_lock_load.regions.global_lock_releases_signalled == 0u && global_lock_word() == 0u,
+                      "the lock is released, and no port is read or written");
     global_lock_close(test);
 }
 
