@@ -192,6 +192,7 @@ class Namespace:
         self.kinds = dict(PREDEFINED_ROOT)
         self.argument_counts = {("_OSI",): 1}
         self.created = []
+        self.unplaced_externals = []
 
     def creation_path(self, scope, name):
         """Return where a declaration of name in scope creates its object (5.3)."""
@@ -230,6 +231,24 @@ class Namespace:
         self.argument_counts.pop(path, None)
         if argument_count is not None:
             self.argument_counts[path] = argument_count
+
+    def declare_external(self, path, argument_count):
+        """Record an External: placed now when its parent exists, otherwise once every table is
+        declared (5.1 of the specification)."""
+        if path is None:
+            return
+        if path[:-1] in self.kinds or not path[:-1]:
+            self.declare(path, "External", argument_count)
+        else:
+            self.unplaced_externals.append((path, argument_count))
+
+    def place_externals(self):
+        """Place the Externals whose parent was missing, the missing segments created as Externals."""
+        for path, argument_count in self.unplaced_externals:
+            for depth in range(1, len(path)):
+                self.declare(path[:depth], "External")
+            self.declare(path, "External", argument_count)
+        self.unplaced_externals = []
 
     def forget_since(self, mark):
         """Remove the paths created since the mark: what a method body declares ends with the body (3.5 of
@@ -491,9 +510,11 @@ class Walker:
             self.census.errors.append(f"{self.label}+0x{offset:x}: {error}")
 
     def declare(self, scope, name, kind, argument_count=None):
-        """Declare a named object and count it."""
+        """Declare a named object and count it: the declaration pass declares what lies outside method
+        bodies, and the counting pass what a method body declares, which ends with the body."""
         path = self.namespace.creation_path(scope, name)
-        self.namespace.declare(path, kind, argument_count)
+        if self.method_stack or not self.counting:
+            self.namespace.declare(path, kind, argument_count)
         if self.counting and path:
             self.census.named_objects[kind] += 1
             if self.method_stack:
@@ -693,9 +714,9 @@ class Walker:
         name, offset = self.name_string(offset)
         object_type = self.byte(offset)
         argument_count = self.byte(offset + 1) & 0x07
-        path = self.namespace.creation_path(scope, name)
-        if self.namespace.kinds.get(path) in (None, "External"):
-            self.namespace.declare(path, "External", argument_count if object_type == 8 else None)
+        if not self.counting or self.method_stack:
+            self.namespace.declare_external(self.namespace.creation_path(scope, name),
+                                            argument_count if object_type == 8 else None)
         if self.counting:
             self.census.named_objects["External"] += 1
         return offset + 2
@@ -705,8 +726,11 @@ class Walker:
         block_end, offset = self.package_length(offset, end)
         name, offset = self.name_string(offset)
         if kind == "Scope":
-            path = self.namespace.resolve(scope, name) or self.namespace.creation_path(scope, name)
-            if self.counting and path:
+            path = self.namespace.resolve(scope, name) if name.segments else self.namespace.creation_path(scope, name)
+            if path is None and not self.counting:
+                return block_end
+            path = scope if path is None else path
+            if self.counting:
                 self.census.named_objects["Scope"] += 1
         else:
             path = self.declare(scope, name, kind)
@@ -1076,7 +1100,8 @@ def static_call_depth(edges):
 
 
 def census_of_machine(name, blocks, top):
-    """Load every definition block of one machine into one namespace and count its AML."""
+    """Load every definition block of one machine into one namespace and count its AML: the DSDT, then each
+    SSDT in the dump's order, declared in one pass (3.8 step 1 and 5.1 of the specification), then counted."""
     namespace = Namespace()
     census = Census()
     tables = []
@@ -1092,10 +1117,12 @@ def census_of_machine(name, blocks, top):
         header["truncated"] = header["length"] > len(data)
         tables.append(header)
         parsed.append((label, data[:length], header))
-    for counting in (False, False, True):
+    parsed.sort(key=lambda table: table[2]["signature"] != "DSDT")
+    for counting in (False, True):
         for label, data, _ in parsed:
             walker = Walker(data, TABLE_HEADER_SIZE, namespace, census, label, counting)
             walker.term_list(TABLE_HEADER_SIZE, len(data), (), 0)
+        namespace.place_externals()
     dsdt = [table for table in tables if table["signature"] == "DSDT"]
     integer_bits = None
     if dsdt:
