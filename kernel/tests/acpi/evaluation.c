@@ -501,12 +501,13 @@ KERNEL_TEST(a_fault_inside_a_failed_predicate_keeps_its_branches_from_running)
 
 /**
  * @brief A Name that replaces an External, in a branch whose predicate failed, counts as a
- *        declaration made without running, as a new Name beside it does.
+ *        declaration made without running, as a new Name beside it does: the predicate is
+ *        FindSetLeftBit, which the needs path does not reach.
  */
 KERNEL_TEST(a_declaration_replacing_an_external_without_running_is_counted)
 {
     static const uint8_t aml[] = {
-        0x15u, 'E', 'X', 'T', '0', 0x01u, 0x00u, 0xA0u, 0x10u, 0x11u, 0x02u, 0x01u,
+        0x15u, 'E', 'X', 'T', '0', 0x01u, 0x00u, 0xA0u, 0x10u, 0x81u, 0x01u, 0x00u,
         0x08u, 'E', 'X', 'T', '0', 0x01u, 0x08u, 'N',   'E',   'W',   '_',   0x01u,
     };
 
