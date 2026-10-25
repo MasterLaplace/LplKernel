@@ -72,7 +72,9 @@ static bool needs_path_closure_is_processor(AdvancedConfigurationAndPowerInterfa
 
 /**
  * @brief Whether a method is an entry of the needs path: `_INI`, `_REG`, `_STA` and `_CST`
- *        anywhere, `_OSC` of `\_SB_` or of a processor, `_PDC` of a processor.
+ *        anywhere, `_OSC` of `\_SB_` or of a processor, `_PDC` and `_UID` of a processor, and the
+ *        evaluations a PCI_Config region needs as it attaches, `_ADR`, `_SEG`, `_BBN`, `_HID` and
+ *        `_CID`, anywhere: the static closure cannot tell which device holds such a region.
  */
 static bool needs_path_closure_is_entry(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                         const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node)
@@ -81,9 +83,10 @@ static bool needs_path_closure_is_entry(AdvancedConfigurationAndPowerInterfaceMa
 
     memcpy(name, &node->name, sizeof(name));
     if (memcmp(name, "_INI", 4u) == 0 || memcmp(name, "_REG", 4u) == 0 || memcmp(name, "_STA", 4u) == 0 ||
-        memcmp(name, "_CST", 4u) == 0)
+        memcmp(name, "_CST", 4u) == 0 || memcmp(name, "_ADR", 4u) == 0 || memcmp(name, "_SEG", 4u) == 0 ||
+        memcmp(name, "_BBN", 4u) == 0 || memcmp(name, "_HID", 4u) == 0 || memcmp(name, "_CID", 4u) == 0)
         return true;
-    if (memcmp(name, "_PDC", 4u) == 0)
+    if (memcmp(name, "_PDC", 4u) == 0 || memcmp(name, "_UID", 4u) == 0)
         return needs_path_closure_is_processor(load, node->parent);
     if (memcmp(name, "_OSC", 4u) != 0)
         return false;

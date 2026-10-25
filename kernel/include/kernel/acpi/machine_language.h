@@ -100,7 +100,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
  *        method whose body holds it, 0 at table level.
  *
  * @param context The observer's own state.
- * @param method  The node of the method being decoded, or 0 for table-level code.
+ * @param method  The node of the method being decoded, the scope around it when its declaration was not
+ *                found, or 0 for table-level code.
  * @param opcode  The descriptor decoded, or ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
  *                for a call.
  * @param callee  The node a call names, 0 for an opcode.

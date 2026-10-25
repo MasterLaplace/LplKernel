@@ -17,7 +17,8 @@
  *
  * The needs path (specification §1.3) starts from the table-level code of every definition block
  * and from the methods the kernel evaluates: `_INI`, `_REG`, `_STA` and `_CST` anywhere, `_OSC` of
- * `\_SB_` or of a processor, `_PDC` of a processor. The closure follows every call through every
+ * `\_SB_` or of a processor, `_PDC` and `_UID` of a processor, and `_ADR`, `_SEG`, `_BBN`, `_HID`
+ * and `_CID`, which a PCI_Config region evaluates as it attaches. The closure follows every call through every
  * branch, as the decode pass of a load sees them, and gathers the opcodes the bodies it reaches
  * hold. Any other opcode fails with `unimplemented_operator` (§4.1). It is a host tool: the
  * interpreter is written to the closure of the corpus, never computed at boot.
