@@ -8,7 +8,7 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_machine_language, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define MADE_UP_TABLE_CAPACITY 2048u           /**< Bytes of each buffer a made-up table is written in. */
+#define MADE_UP_TABLE_CAPACITY 4096u           /**< Bytes of each buffer a made-up table is written in. */
 #define MADE_UP_TABLE_COUNT    4u              /**< Made-up tables one test may load. */
 #define MADE_UP_MAX_NODES      1024u           /**< The node cap of a made-up load. */
 #define MADE_UP_MAX_ARENA      (1024u * 1024u) /**< The arena cap of a made-up load. */
@@ -1294,6 +1294,9 @@ KERNEL_TEST(a_region_and_its_field_units_take_their_layout)
                       "F1__ starts past the 8 reserved bits");
     kernel_test_check(test, third->bit_offset == 32u && third->bit_length == 32u && third->access == 3u,
                       "F2__ takes the DWordAcc an AccessAs gives");
+    kernel_test_measure_hexadecimal(
+        test, "namespace_fold",
+        advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load));
     made_up_close(test);
 }
 
@@ -1318,15 +1321,18 @@ KERNEL_TEST(index_and_bank_field_units_name_their_registers)
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *banked = made_up_unit("B0__");
 
     kernel_test_check(test,
-                      indexed->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INDEX_FIELD &&
+                      indexed->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_INDEX &&
                           indexed->region == made_up_node_at("IDX_") &&
                           indexed->data_or_bank == made_up_node_at("DAT_"),
                       "R0__ goes through IDX_ and DAT_");
     kernel_test_check(test,
-                      banked->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_BANK_FIELD &&
+                      banked->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_BANK &&
                           banked->region == made_up_node_at("REG0") &&
                           banked->data_or_bank == made_up_node_at("BNK_") && banked->bank_value == 2u,
                       "B0__ is in REG0 when BNK_ holds 2");
+    kernel_test_measure_hexadecimal(
+        test, "namespace_fold",
+        advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load));
     made_up_close(test);
 }
 
@@ -1358,6 +1364,9 @@ KERNEL_TEST(a_buffer_field_names_its_buffer_and_bits)
                       "BIT_ is bit 3");
     kernel_test_check(test, any->handle == buffer && any->payload == (4u | (12ull << 32u)) && any->auxiliary == 1u,
                       "CF__ is 12 bits from bit 4");
+    kernel_test_measure_hexadecimal(
+        test, "namespace_fold",
+        advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load));
     made_up_close(test);
 }
 
@@ -1387,6 +1396,9 @@ KERNEL_TEST(processors_mutexes_and_identity_keep_their_fields)
     kernel_test_check(test, name->length == 20u && memcmp(name + 1, "Microsoft Windows NT", 20u) == 0,
                       "\\_OS_ is \"Microsoft Windows NT\"");
     kernel_test_check(test, made_up_node("_REV")->value.payload == 2u, "\\_REV is 2");
+    kernel_test_measure_hexadecimal(
+        test, "namespace_fold",
+        advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load));
     made_up_close(test);
 }
 
@@ -1404,5 +1416,282 @@ KERNEL_TEST(table_level_code_is_counted)
         return;
     kernel_test_measure(test, "table_level_code", made_up_load.table_level_code);
     kernel_test_check(test, made_up_load.table_level_code == 2u, "the If and the Store are counted, nothing else");
+    made_up_close(test);
+}
+
+/**
+ * @brief A Package keeps a name as a name even when the name exists already: it is resolved when the
+ *        element is read, never when the package is built (§5.1).
+ */
+KERNEL_TEST(a_package_keeps_a_name_that_exists_as_a_name)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'T', 'G', 'T', '_', 0x0Au, 0x05u, 0x08u, 'P', 'K', 'N', '_', 0x12u, 0x06u, 0x01u, 'T', 'G', 'T', '_',
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
+        made_up_object(&made_up_node("PKN_")->value);
+
+    kernel_test_check(
+        test,
+        package->length == 1u &&
+            ((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (package + 1))[0].kind ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_NAME_REFERENCE,
+        "PKN_ holds TGT_ as a name, though TGT_ is the Integer 5 already");
+    made_up_close(test);
+}
+
+/**
+ * @brief The objects take the sizes §3.4 gives them on both targets: a 16-byte header, a 32-byte
+ *        region, a 24-byte field unit.
+ */
+KERNEL_TEST(objects_take_the_sizes_the_specification_gives)
+{
+    kernel_test_measure(test, "header_bytes",
+                        (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t));
+    kernel_test_measure(test, "region_bytes",
+                        (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t));
+    kernel_test_measure(test, "field_unit_bytes",
+                        (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t));
+    kernel_test_check(test, sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t) == 16u,
+                      "an object header is 16 bytes");
+    kernel_test_check(test, sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t) == 32u,
+                      "a region is 32 bytes");
+    kernel_test_check(test, sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t) == 24u,
+                      "a field unit is 24 bytes");
+}
+
+/**
+ * @brief Writes @p count Names of zeroed buffers of @p size bytes, named @p letter then three digits,
+ *        at @p aml.
+ *
+ * @return The bytes written.
+ */
+static uint32_t made_up_buffers(uint8_t *aml, char letter, uint32_t count, uint16_t size)
+{
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        const uint8_t name[] = {
+            0x08u,
+            (uint8_t) letter,
+            (uint8_t) ('0' + index / 100u),
+            (uint8_t) ('0' + index / 10u % 10u),
+            (uint8_t) ('0' + index % 10u),
+            0x11u,
+            0x04u,
+            0x0Bu,
+            (uint8_t) size,
+            (uint8_t) (size >> 8u),
+        };
+
+        memcpy(aml + index * sizeof(name), name, sizeof(name));
+    }
+    return count * 10u;
+}
+
+/**
+ * @brief An arena exhausted while a table builds its objects stops that table (§6.2), and spoils
+ *        nothing: with room for the first run of objects only, the 17th buffer of 3,840 bytes in a
+ *        Scope does not fit, the Name after the Scope is never declared, and a String a second table
+ *        builds afterwards lands past the buffers, never over them.
+ */
+KERNEL_TEST(an_exhausted_arena_stops_the_table_and_spoils_nothing)
+{
+    static uint8_t aml[5u + 17u * 10u + 6u];
+    static const uint8_t scope[] = {0x10u, 0x4Eu, 0x0Au, '\\', 0x00u};
+    static const uint8_t string[] = {0x08u, 'S', 'T', 'R', '1', 0x0Du, 'a', 'b', 'c', 0x00u};
+    static const uint8_t last[] = {0x08u, 'L', 'A', 'S', 'T', 0x01u};
+    const uint32_t length = (uint32_t) sizeof(scope) + made_up_buffers(aml + sizeof(scope), 'B', 17u, 0x0F00u);
+    uint32_t arena = 0u;
+    bool untouched = true;
+
+    memcpy(aml, scope, sizeof(scope));
+    memcpy(aml + length, last, sizeof(last));
+    if (!made_up_open(test))
+        return;
+    arena = made_up_load.space.arena_bytes;
+    advanced_configuration_and_power_interface_machine_language_close(&made_up_load);
+    advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &made_up_load, &made_up_host.host, MADE_UP_MAX_NODES, arena),
+                           "the namespace opens with no room past its first run of objects"))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", aml, length + (uint32_t) sizeof(last)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", string, sizeof(string)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *first =
+        made_up_object(&made_up_node("B000")->value);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *text =
+        made_up_object(&made_up_node("STR1")->value);
+
+    for (uint32_t byte = 0u; byte < first->length; ++byte)
+        untouched = untouched && ((const uint8_t *) (first + 1))[byte] == 0u;
+    kernel_test_check(test,
+                      made_up_load.first_load_error ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY,
+                      "the 17th buffer runs out of memory");
+    kernel_test_check(test,
+                      made_up_object(&made_up_node("B015")->value)->length == 0x0F00u &&
+                          made_up_node("B016")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                      "16 buffers are built, the 17th is not");
+    kernel_test_check(test, made_up_node_at("LAST") == 0u, "the table stops there: LAST is never declared");
+    kernel_test_check(test, first->length == 0x0F00u && untouched, "B000 still holds 3,840 zeros");
+    kernel_test_check(test, text->length == 3u && memcmp(text + 1, "abc", 4u) == 0,
+                      "the next table's String is built where it fits");
+    made_up_close(test);
+}
+
+/**
+ * @brief The object heap holds 256 runs: a Buffer of 4,096 bytes takes a run of its own, and the one
+ *        that would take the 257th is refused as limit_object_runs, not as out_of_memory.
+ */
+KERNEL_TEST(the_object_heap_refuses_a_run_past_its_last)
+{
+    static uint8_t aml[256u * 10u];
+    const uint32_t length = made_up_buffers(aml, 'L', 256u, 0x1000u);
+
+    advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &made_up_load, &made_up_host.host, MADE_UP_MAX_NODES, 4u * MADE_UP_MAX_ARENA),
+                           "the namespace opens"))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(&made_up_load,
+                                                                              made_up_table(0u, "DSDT", aml, length));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test,
+                      made_up_load.load_errors == 1u &&
+                          made_up_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_OBJECT_RUNS,
+                      "one buffer is refused, as limit_object_runs");
+    kernel_test_check(test,
+                      made_up_object(&made_up_node("L254")->value)->length == 0x1000u &&
+                          made_up_node("L255")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                      "the first run holds the small objects, 255 hold a buffer each, the 256th buffer has none");
+    made_up_close(test);
+}
+
+/**
+ * @brief An offset past 32 bits is refused as index_out_of_range and builds nothing: a DWord field at
+ *        byte 2^29, a CreateField at bit 2^32, a field list whose reserved bits pass 2^32 before its
+ *        unit.
+ */
+KERNEL_TEST(an_offset_past_32_bits_is_refused)
+{
+    static uint8_t aml[160];
+    static const uint8_t head[] = {
+        0x08u, 'B',   'U',   'F',   '_',   0x11u, 0x03u, 0x0Au, 0x08u, 0x8Au, 'B', 'U', 'F',   '_',   0x0Cu, 0x00u,
+        0x00u, 0x00u, 0x20u, 'D',   'W',   'X',   '_',   0x5Bu, 0x13u, 'B',   'U', 'F', '_',   0x0Eu, 0x00u, 0x00u,
+        0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x08u, 'C',   'F',   'X', '_', 0x5Bu, 0x80u, 'R',   'E',
+        'G',   '0',   0x00u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x41u, 0x06u, 'R', 'E', 'G',   '0',   0x01u,
+    };
+    static const uint8_t reserved[] = {0x00u, 0xCFu, 0xFFu, 0xFFu, 0xFFu};
+    static const uint8_t unit[] = {'F', '9', '_', '_', 0x08u};
+    uint32_t length = (uint32_t) sizeof(head);
+
+    memcpy(aml, head, sizeof(head));
+    for (uint32_t index = 0u; index < 17u; ++index, length += (uint32_t) sizeof(reserved))
+        memcpy(aml + length, reserved, sizeof(reserved));
+    memcpy(aml + length, unit, sizeof(unit));
+    length += (uint32_t) sizeof(unit);
+    if (!made_up_load_one(test, aml, length))
+        return;
+    kernel_test_check(test,
+                      made_up_node("DWX_")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD &&
+                          made_up_node("CFX_")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD,
+                      "neither buffer field is built");
+    kernel_test_check(test, made_up_node_at("F9__") == 0u, "the field list is refused before its unit");
+    kernel_test_check(test,
+                      made_up_load.load_errors == 3u &&
+                          made_up_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INDEX_OUT_OF_RANGE &&
+                          made_up_load.decode_errors == 0u,
+                      "three faults, the first index_out_of_range, and nothing the decoder refuses");
+    made_up_close(test);
+}
+
+/**
+ * @brief A field list builds no unit when a name it needs is missing, counted once as name_not_found;
+ *        a BankField whose BankValue is an expression leaves its units waiting for the interpreter,
+ *        each counted.
+ */
+KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x80u, 'R', 'E',   'G',   '0',   0x00u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',   'G',
+        '0',   0x01u, 'B', 'N',   'K',   '_',   0x08u, 0x5Bu, 0x81u, 0x10u, 'N',   'O',   'P',   'E',   0x01u, 'F',
+        '8',   '_',   '_', 0x08u, 'F',   '7',   '_',   '_',   0x08u, 0x5Bu, 0x87u, 0x13u, 'R',   'E',   'G',   '0',
+        'B',   'N',   'K', '_',   0x72u, 0x01u, 0x01u, 0x00u, 0x01u, 'B',   '1',   '_',   '_',   0x08u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      made_up_node("F8__")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT &&
+                          made_up_node("F7__")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT &&
+                          made_up_load.load_errors == 1u &&
+                          made_up_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_NOT_FOUND,
+                      "the units of a field in the missing NOPE get no object, and NOPE is counted once");
+    kernel_test_check(test,
+                      made_up_node("B1__")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT &&
+                          made_up_load.values_deferred == 1u,
+                      "B1__, banked on Add (One, One), waits for the interpreter, counted");
+    made_up_close(test);
+}
+
+/**
+ * @brief A String of 65,536 characters, the cap of §6.1, is built with its NUL; one of 65,537 is
+ *        refused as limit_buffer_bytes.
+ */
+KERNEL_TEST(a_string_of_the_largest_length_is_built)
+{
+    static uint8_t table[MADE_UP_HEADER + 2u * (6u + 65537u + 1u)];
+    static const uint8_t names[2][5] = {
+        {0x08u, 'S', 'B', 'I', 'G'},
+        {0x08u, 'S', 'O', 'V', 'R'}
+    };
+    const uint32_t lengths[2] = {65536u, 65537u};
+    uint32_t end = MADE_UP_HEADER;
+
+    for (uint32_t name = 0u; name < 2u; ++name)
+    {
+        memcpy(table + end, names[name], 5u);
+        table[end + 5u] = 0x0Du;
+        memset(table + end + 6u, 'x', lengths[name]);
+        table[end + 6u + lengths[name]] = 0x00u;
+        end += 6u + lengths[name] + 1u;
+    }
+    memcpy(table, "DSDT", 4u);
+    for (uint32_t byte = 0u; byte < 4u; ++byte)
+        table[4u + byte] = (uint8_t) (end >> (8u * byte));
+    table[8] = 2u;
+    if (!made_up_open(test))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) table);
+    kernel_test_check(test, made_up_object(&made_up_node("SBIG")->value)->length == 65536u,
+                      "a String of 65,536 characters is built");
+    kernel_test_check(test,
+                      made_up_node("SOVR")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING &&
+                          made_up_load.load_errors == 1u &&
+                          made_up_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES,
+                      "one of 65,537 is refused as limit_buffer_bytes");
     made_up_close(test);
 }
