@@ -393,6 +393,15 @@ typedef struct __attribute__((packed)) {
 extern bool advanced_configuration_and_power_interface_checksum_holds(const void *bytes, size_t length);
 
 /**
+ * @brief Whether an I/O port is one the kernel drives itself, which the ACPI layer never reaches
+ *        (§5.3): the two 8259s, the ELCR and PCI configuration mechanism #1.
+ *
+ * @param port The port.
+ * @return true when @p port lies in one of those ranges.
+ */
+extern bool advanced_configuration_and_power_interface_port_is_protected(uint16_t port);
+
+/**
  * @brief Reads the firmware's MADT into the boot's MADT state.
  *
  * @details The state names the MADT as not found when the directory has none, and otherwise holds

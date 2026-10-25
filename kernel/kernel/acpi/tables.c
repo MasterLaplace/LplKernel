@@ -92,6 +92,21 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_MODE_POLL_MILLISECONDS 1u /**< What the switch to ACPI mode sleeps between two reads of SCI_EN. */
 
 /**
+ * @brief A run of I/O ports the ACPI layer never reaches, since the kernel drives them (§5.3).
+ */
+typedef struct AcpiPortRange {
+    uint16_t first; /**< Its first port. */
+    uint16_t last;  /**< Its last port. */
+} AcpiPortRange_t;
+
+static const AcpiPortRange_t acpi_protected_ports[] = {
+    {0x0020u, 0x0021u}, /* the master PIC */
+    {0x00A0u, 0x00A1u}, /* the slave PIC */
+    {0x04D0u, 0x04D1u}, /* the ELCR */
+    {0x0CF8u, 0x0CFFu}, /* PCI configuration mechanism #1 */
+};
+
+/**
  * @brief The ports the switch to ACPI mode reads and writes, each 0 for a block the FADT does not give.
  */
 typedef struct AcpiModeRegisters {
@@ -772,6 +787,14 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
         }
         return true;
     }
+    return false;
+}
+
+bool advanced_configuration_and_power_interface_port_is_protected(uint16_t port)
+{
+    for (uint32_t index = 0u; index < sizeof(acpi_protected_ports) / sizeof(acpi_protected_ports[0]); ++index)
+        if (port >= acpi_protected_ports[index].first && port <= acpi_protected_ports[index].last)
+            return true;
     return false;
 }
 
