@@ -1,5 +1,6 @@
 #include "recorded_machine.h"
 
+#include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
@@ -8,8 +9,8 @@
 
 #define HARNESS_USAGE                                                                                                  \
     "Usage: test-acpi                    runs the kernel's ACPI tests, reported in KTAP\n"                             \
-    "       test-acpi --machine <dump>   walks the tables of an acpidump text file and prints its directory, then\n"   \
-    "                                    its MADT\n"
+    "       test-acpi --machine <dump>   walks the tables of an acpidump text file and prints its directory, its\n"    \
+    "                                    MADT, then what loading its definition blocks decoded\n"
 
 /**
  * @brief Prints the directory of @p directory: its counts and the FACS, then one line per table.
@@ -66,8 +67,48 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 }
 
 /**
+ * @brief Loads the DSDT and the SSDTs of @p directory with the server profile's caps, and prints
+ *        what the load counted: its tables and faults, then each opcode decoded, in descriptor order.
+ */
+static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
+{
+    static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+
+    if (!advanced_configuration_and_power_interface_machine_language_open(
+            &load, directory->host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+    {
+        printf("aml read=0 status=%s\n",
+               advanced_configuration_and_power_interface_machine_language_status_name(load.status));
+        advanced_configuration_and_power_interface_machine_language_close(&load);
+        return;
+    }
+    advanced_configuration_and_power_interface_machine_language_load_directory(&load, directory);
+    printf("aml tables=%u bytes=%u decode_errors=%u\n", load.table_count, load.bytes, load.decode_errors);
+    printf("aml faults load_errors=%u unresolved_names=%u\n", load.load_errors, load.unresolved_names);
+    for (uint32_t index = 0u; index < load.table_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load.tables[index];
+
+        if (table->decode_errors != 0u)
+            printf("aml error %.4s/%.8s offset=0x%X status=%s opcode=%s faults=%u\n", table->header->signature,
+                   table->header->oem_table_id, table->first_error_offset,
+                   advanced_configuration_and_power_interface_machine_language_status_name(table->first_error),
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(table->first_error_opcode),
+                   table->decode_errors);
+    }
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (load.opcodes[opcode] != 0u)
+            printf("aml opcode %s %u\n",
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
+                   load.opcodes[opcode]);
+    advanced_configuration_and_power_interface_machine_language_close(&load);
+}
+
+/**
  * @brief Walks the tables of the dump at @p path as the kernel walks a live machine's, and prints
- *        the directory, then its MADT.
+ *        the directory, its MADT, then what loading its definition blocks decoded.
  *
  * @return 0 when the directory was read and every window it mapped was unmapped by its address and
  *         length, 1 otherwise.
@@ -87,6 +128,7 @@ static int harness_walk_machine(const char *path)
     {
         harness_print_directory(&directory);
         harness_print_madt(&directory);
+        harness_print_machine_language(&directory);
         advanced_configuration_and_power_interface_release_directory(&directory);
         status = (machine.simulated.outstanding_maps == 0u && machine.simulated.mismatched_unmaps == 0u) ? 0 : 1;
         if (status != 0)

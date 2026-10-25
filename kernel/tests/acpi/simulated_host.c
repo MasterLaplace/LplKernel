@@ -1,5 +1,7 @@
 #include "simulated_host.h"
 
+#include <kernel/memory/vmm.h>
+
 #include <stddef.h>
 
 /**
@@ -62,6 +64,24 @@ static void simulated_host_unmap_firmware(void *context, const void *address, ui
     ++simulated->mismatched_unmaps;
 }
 
+static void *simulated_host_allocate_pages(void *context, uint32_t count)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+    void *pages = kernel_vmm_alloc_pages(count);
+
+    if (pages != NULL)
+        simulated->outstanding_pages += count;
+    return pages;
+}
+
+static void simulated_host_release_pages(void *context, void *address, uint32_t count)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+
+    kernel_vmm_free_pages(address, count);
+    simulated->outstanding_pages -= count;
+}
+
 void advanced_configuration_and_power_interface_simulated_host_open(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated)
 {
@@ -69,10 +89,13 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.root_system_description_pointer = simulated_host_root_system_description_pointer;
     simulated->host.map_firmware = simulated_host_map_firmware;
     simulated->host.unmap_firmware = simulated_host_unmap_firmware;
+    simulated->host.allocate_pages = simulated_host_allocate_pages;
+    simulated->host.release_pages = simulated_host_release_pages;
     simulated->root_system_description_pointer = 0u;
     simulated->outstanding_maps = 0u;
     simulated->mismatched_unmaps = 0u;
     simulated->range_count = 0u;
+    simulated->outstanding_pages = 0u;
 }
 
 bool advanced_configuration_and_power_interface_simulated_host_place(

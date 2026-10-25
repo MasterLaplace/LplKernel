@@ -40,6 +40,14 @@ extern void write_acpi_madt_info(Serial_t *serial);
  * @param serial The port the record is written to.
  */
 extern void write_acpi_madt_record(Serial_t *serial);
+
+/**
+ * @brief Writes the `[LPLTLM] acpi.aml` record: what the boot's load of the definition blocks
+ *        decoded and declared, its faults, and what its namespace and stacks took.
+ *
+ * @param serial The port the record is written to.
+ */
+extern void write_acpi_machine_language_record(Serial_t *serial);
 extern void write_acpi_ioapics_info(Serial_t *serial);
 extern void write_acpi_isos_info(Serial_t *serial);
 extern void write_acpi_isa_routing_info(Serial_t *serial);

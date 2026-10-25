@@ -4,6 +4,7 @@
 #include <kernel/core/identity.h>
 #include <kernel/cpu/stack_guard.h>
 
+#include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/helpers/multiboot_info_helper.h>
 #include <kernel/boot/init_array.h>
@@ -359,6 +360,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_acpi_tables_info(&com1);
     write_acpi_madt_info(&com1);
     write_acpi_madt_record(&com1);
+    advanced_configuration_and_power_interface_machine_language_initialize();
+    write_acpi_machine_language_record(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())
     {

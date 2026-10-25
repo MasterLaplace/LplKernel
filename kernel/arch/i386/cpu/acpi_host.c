@@ -24,9 +24,23 @@ static void acpi_host_unmap_firmware(void *context, const void *address, uint64_
     kernel_vmm_unmap_firmware_window((uint32_t) (uintptr_t) address, (uint32_t) length);
 }
 
+static void *acpi_host_allocate_pages(void *context, uint32_t count)
+{
+    (void) context;
+    return kernel_vmm_alloc_pages(count);
+}
+
+static void acpi_host_release_pages(void *context, void *address, uint32_t count)
+{
+    (void) context;
+    kernel_vmm_free_pages(address, count);
+}
+
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
     .root_system_description_pointer = acpi_host_root_system_description_pointer,
     .map_firmware = acpi_host_map_firmware,
     .unmap_firmware = acpi_host_unmap_firmware,
+    .allocate_pages = acpi_host_allocate_pages,
+    .release_pages = acpi_host_release_pages,
 };

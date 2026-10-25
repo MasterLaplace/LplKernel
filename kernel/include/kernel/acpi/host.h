@@ -35,13 +35,16 @@
  * @details Each call is given back the context first. map_firmware maps the length bytes the
  *          firmware wrote at a physical address, cached and read-only, and returns their address,
  *          or NULL when the range cannot be mapped; unmap_firmware takes back what it returned,
- *          given the same length.
+ *          given the same length. allocate_pages gives count pages of 4 KiB, contiguous and
+ *          writable, or NULL; release_pages takes them back, given the same count.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     void *context;                                              /**< The host's own state, or NULL. */
     uint64_t (*root_system_description_pointer)(void *context); /**< The root pointer's physical address, or 0. */
     const void *(*map_firmware)(void *context, uint64_t physical_address, uint64_t length); /**< Maps firmware bytes. */
     void (*unmap_firmware)(void *context, const void *address, uint64_t length);            /**< Unmaps them. */
+    void *(*allocate_pages)(void *context, uint32_t count);              /**< Gives pages of memory. */
+    void (*release_pages)(void *context, void *address, uint32_t count); /**< Takes them back. */
 } AdvancedConfigurationAndPowerInterfaceHost_t;
 
 /**
