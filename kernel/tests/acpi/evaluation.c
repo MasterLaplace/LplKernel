@@ -440,3 +440,23 @@ KERNEL_TEST(a_predicate_that_fails_to_decode_leaves_the_next_body_running)
     kernel_test_check(test, evaluation_integer("RES_") == 0x2Au, "If (One) runs its body: RES_ is 0x2A");
     evaluation_close(test);
 }
+
+/**
+ * @brief A statement cut short by the end of the If body that holds it fails as truncated when it
+ *        runs, and the load goes on after that If.
+ */
+KERNEL_TEST(a_statement_cut_short_at_table_level_fails_and_the_load_goes_on)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'B', 'E', 'F', 'R', 0x01u, 0xA0u, 0x04u, 0x01u, 0x70u, 0x01u, 0x08u, 'A', 'F', 'T', 'R', 0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("BEFR") == 1u && evaluation_integer("AFTR") == 1u,
+                      "BEFR and AFTR are both declared");
+    kernel_test_check(
+        test, evaluation_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED) == 1u,
+        "the Store fails as truncated");
+    evaluation_close(test);
+}
