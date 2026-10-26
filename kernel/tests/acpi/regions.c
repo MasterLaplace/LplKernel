@@ -622,9 +622,10 @@ KERNEL_TEST(a_unit_wider_than_an_integer_reads_as_a_buffer)
 }
 
 /**
- * @brief A Buffer or a String written to a unit gives its bytes, cut to the unit or zero-extended.
+ * @brief A Buffer or a String written to a unit goes in chunks of the unit's size, the last one
+ *        zero-extended, so that a memory unit keeps the last chunk (§5.3).
  */
-KERNEL_TEST(a_buffer_written_to_a_unit_is_cut_or_zero_extended)
+KERNEL_TEST(a_buffer_written_to_a_unit_goes_in_chunks_of_its_size)
 {
     static const uint8_t memory[] = {0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu};
     static const uint8_t three[] = {0x01u, 0x02u, 0x03u};
@@ -670,8 +671,8 @@ KERNEL_TEST(a_buffer_written_to_a_unit_is_cut_or_zero_extended)
                       "the three writes succeed");
     kernel_test_check(
         test,
-        advanced_configuration_and_power_interface_simulated_host_peek(&regions_host, REGIONS_MEMORY, 3u) == 0xEE0201u,
-        "a Buffer of three bytes gives F16_ its first two, and the byte after keeps 0xEE");
+        advanced_configuration_and_power_interface_simulated_host_peek(&regions_host, REGIONS_MEMORY, 3u) == 0xEE0003u,
+        "a Buffer of three bytes goes to F16_ as 0x0201, then 0x0003, which stays, and the byte after keeps 0xEE");
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_simulated_host_peek(&regions_host, REGIONS_MEMORY + 3u,
                                                                                      3u) == 0x0000AAu,
@@ -680,6 +681,49 @@ KERNEL_TEST(a_buffer_written_to_a_unit_is_cut_or_zero_extended)
                       advanced_configuration_and_power_interface_simulated_host_peek(&regions_host, REGIONS_MEMORY + 6u,
                                                                                      4u) == 0x00004241u,
                       "the String \"AB\" gives F32_ 0x41, 0x42, then zeros");
+    regions_close(test);
+}
+
+/**
+ * @brief A port unit sees every chunk of a Buffer written to it, one port write each, and an empty
+ *        String writes nothing (§5.3).
+ */
+KERNEL_TEST(a_port_unit_sees_each_chunk_and_an_empty_string_writes_nothing)
+{
+    static const uint8_t thirteen[] = {0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u, 0x07u,
+                                       0x08u, 0x09u, 0x0Au, 0x0Bu, 0x0Cu, 0x0Du};
+    static const MadeUpFieldUnit_t units[] = {
+        {"P32_", 32u},
+    };
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t buffer = {0};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t empty = {0};
+
+    regions_begin();
+    made_up_aml_region(&regions_aml, "PRTS", 0x01u, 0x0C00u, 4u);
+    made_up_aml_field(&regions_aml, "PRTS", REGIONS_DWORD_ACCESS, units, 1u);
+    if (!regions_run(test, 2u))
+        return;
+    buffer.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER;
+    empty.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING;
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &regions_load.heap, &regions_load.space, buffer.kind, sizeof(thirteen), &buffer.handle);
+    advanced_configuration_and_power_interface_machine_language_object_allocate(&regions_load.heap, &regions_load.space,
+                                                                                empty.kind, 0u, &empty.handle);
+    memcpy(advanced_configuration_and_power_interface_machine_language_object(&regions_load.heap, buffer.handle) + 1,
+           thirteen, sizeof(thirteen));
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_field_write(
+                          &regions_load, regions_node("P32_"), &buffer) == REGIONS_STATUS(OK) &&
+                          advanced_configuration_and_power_interface_machine_language_field_write(
+                              &regions_load, regions_node("P32_"), &empty) == REGIONS_STATUS(OK),
+                      "both writes succeed");
+    kernel_test_check(test,
+                      regions_host.access_count == 4u &&
+                          regions_access(0u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0C00u, 0x04030201u) &&
+                          regions_access(1u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0C00u, 0x08070605u) &&
+                          regions_access(2u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0C00u, 0x0C0B0A09u) &&
+                          regions_access(3u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0C00u, 0x0000000Du),
+                      "the 13 bytes are four port writes, the last zero-extended, and the empty String none");
     regions_close(test);
 }
 

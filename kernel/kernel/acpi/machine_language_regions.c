@@ -773,35 +773,22 @@ static MachineLanguageStatus_t machine_language_build_object(MachineLanguageLoad
 }
 
 /**
- * @brief Writes a unit, the global lock already taken when it needs it.
+ * @brief Writes @p length bytes of @p source to a unit, cut to it or zero-extended, datum by datum.
  */
-static MachineLanguageStatus_t machine_language_write_unit(MachineLanguageLoad_t *load,
-                                                           const MachineLanguageFieldUnit_t *unit,
-                                                           const MachineLanguageValue_t *value)
+static MachineLanguageStatus_t machine_language_write_bytes(MachineLanguageLoad_t *load,
+                                                            const MachineLanguageFieldUnit_t *unit,
+                                                            const uint8_t *source, uint32_t length)
 {
-    uint8_t integer[8] = {0};
-    const uint8_t *source = NULL;
-    uint32_t source_length = 0u;
-
-    if (((uint64_t) unit->bit_length + 7u) / 8u >
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES);
-
-    MachineLanguageStatus_t status = machine_language_source_bytes(load, value, integer, &source, &source_length);
-
-    if (status != MACHINE_LANGUAGE_OK || unit->bit_length == 0u)
-        return status;
-    ++load->regions.field_writes;
-
     const uint8_t width = machine_language_access_bytes(unit->access);
     const uint32_t datum_bits = 8u * width;
     const uint64_t end = (uint64_t) unit->bit_offset + unit->bit_length;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
     for (uint64_t first = (unit->bit_offset / datum_bits) * datum_bits; first < end; first += datum_bits)
     {
         const MachineLanguageDatum_t datum = machine_language_datum(first, datum_bits, unit->bit_offset, end);
-        const uint64_t bits = machine_language_get_bits(source, source_length,
-                                                        datum.first_bit + datum.shift - unit->bit_offset, datum.count);
+        const uint64_t bits =
+            machine_language_get_bits(source, length, datum.first_bit + datum.shift - unit->bit_offset, datum.count);
         uint64_t raw = 0u;
 
         if (datum.count < datum_bits && unit->update != MACHINE_LANGUAGE_UPDATE_ONES &&
@@ -814,6 +801,36 @@ static MachineLanguageStatus_t machine_language_write_unit(MachineLanguageLoad_t
             return status;
     }
     return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Writes a unit, the global lock already taken when it needs it: an Integer once, a String or a
+ *        Buffer in chunks of the unit's size, one after the other, as Windows does (§5.3), so that a
+ *        memory unit keeps the last chunk, a port sees each, and an empty one writes nothing.
+ */
+static MachineLanguageStatus_t machine_language_write_unit(MachineLanguageLoad_t *load,
+                                                           const MachineLanguageFieldUnit_t *unit,
+                                                           const MachineLanguageValue_t *value)
+{
+    uint8_t integer[8] = {0};
+    const uint8_t *source = NULL;
+    uint32_t source_length = 0u;
+    const uint32_t chunk = (uint32_t) (((uint64_t) unit->bit_length + 7u) / 8u);
+
+    if (chunk > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES);
+
+    MachineLanguageStatus_t status = machine_language_source_bytes(load, value, integer, &source, &source_length);
+
+    if (status != MACHINE_LANGUAGE_OK || unit->bit_length == 0u)
+        return status;
+    ++load->regions.field_writes;
+    if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+        return machine_language_write_bytes(load, unit, source, source_length);
+    for (uint32_t offset = 0u; offset < source_length && status == MACHINE_LANGUAGE_OK; offset += chunk)
+        status = machine_language_write_bytes(load, unit, source + offset,
+                                              (source_length - offset < chunk) ? source_length - offset : chunk);
+    return status;
 }
 
 MachineLanguageStatus_t
