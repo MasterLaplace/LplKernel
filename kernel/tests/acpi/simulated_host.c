@@ -376,8 +376,9 @@ static uint32_t simulated_host_pci_read(void *context, uint16_t segment, uint8_t
 
     for (uint8_t byte = 0u; byte < width; ++byte)
         value |= (uint32_t) ((bytes != NULL) ? bytes[byte] : simulated->configuration_fill) << (8u * byte);
-    simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_READ, width, offset,
-                       simulated_host_function_address(segment, bus, device, function), value);
+    simulated_host_log(simulated,
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_READ,
+                       width, offset, simulated_host_function_address(segment, bus, device, function), value);
     return value;
 }
 
@@ -387,8 +388,9 @@ static void simulated_host_pci_write(void *context, uint16_t segment, uint8_t bu
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
     uint8_t *bytes = simulated_host_configuration(simulated, segment, bus, device, function, offset, width);
 
-    simulated_host_log(simulated, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_WRITE, width, offset,
-                       simulated_host_function_address(segment, bus, device, function), value);
+    simulated_host_log(simulated,
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_WRITE,
+                       width, offset, simulated_host_function_address(segment, bus, device, function), value);
     for (uint8_t byte = 0u; bytes != NULL && byte < width; ++byte)
         bytes[byte] = (uint8_t) (value >> (8u * byte));
 }
