@@ -685,8 +685,69 @@ KERNEL_TEST(a_buffer_written_to_a_unit_goes_in_chunks_of_its_size)
 }
 
 /**
- * @brief A port unit sees every chunk of a Buffer written to it, one port write each, and an empty
- *        String writes nothing (§5.3).
+ * @brief A unit whose length is not a whole number of bytes takes chunks of its size rounded up to
+ *        whole bytes: four bytes to a 12-bit unit are two chunks of two bytes, the last cut to 12
+ *        bits; ten bytes to a 72-bit unit are a chunk of nine, then one zero-extended to nine.
+ */
+KERNEL_TEST(a_chunk_is_the_unit_rounded_up_to_whole_bytes)
+{
+    static const uint8_t memory[] = {0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu,
+                                     0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu, 0xEEu};
+    static const uint8_t four[] = {0x11u, 0x22u, 0x33u, 0x44u};
+    static const uint8_t ten[] = {0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u, 0x07u, 0x08u, 0x09u, 0x0Au};
+    static const MadeUpFieldUnit_t units[] = {
+        {"F12_", 12u},
+        {NULL,   4u },
+        {"W72_", 72u},
+    };
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t short_buffer = {0};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t long_buffer = {0};
+
+    regions_begin();
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY, memory,
+                                                                    sizeof(memory));
+    made_up_aml_region(&regions_aml, "ODDR", 0x00u, REGIONS_MEMORY, sizeof(memory));
+    made_up_aml_field(&regions_aml, "ODDR", REGIONS_BYTE_ACCESS, units, 3u);
+    if (!regions_run(test, 2u))
+        return;
+    short_buffer.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER;
+    long_buffer.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER;
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &regions_load.heap, &regions_load.space, short_buffer.kind, sizeof(four), &short_buffer.handle);
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &regions_load.heap, &regions_load.space, long_buffer.kind, sizeof(ten), &long_buffer.handle);
+    memcpy(advanced_configuration_and_power_interface_machine_language_object(&regions_load.heap, short_buffer.handle) +
+               1,
+           four, sizeof(four));
+    memcpy(advanced_configuration_and_power_interface_machine_language_object(&regions_load.heap, long_buffer.handle) +
+               1,
+           ten, sizeof(ten));
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_field_write(
+                          &regions_load, regions_node("F12_"), &short_buffer) == REGIONS_STATUS(OK) &&
+                          advanced_configuration_and_power_interface_machine_language_field_write(
+                              &regions_load, regions_node("W72_"), &long_buffer) == REGIONS_STATUS(OK),
+                      "both writes succeed");
+    kernel_test_check(
+        test,
+        advanced_configuration_and_power_interface_simulated_host_peek(&regions_host, REGIONS_MEMORY, 2u) == 0xE433u,
+        "0x2211 then 0x4433, cut to 12 bits, leave 0x433 under the 0xE above it");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_simulated_host_peek(&regions_host, REGIONS_MEMORY + 2u,
+                                                                                     4u) == 0x0000000Au &&
+                          advanced_configuration_and_power_interface_simulated_host_peek(
+                              &regions_host, REGIONS_MEMORY + 6u, 4u) == 0u &&
+                          advanced_configuration_and_power_interface_simulated_host_peek(
+                              &regions_host, REGIONS_MEMORY + 10u, 2u) == 0xEE00u,
+                      "W72_ keeps its second chunk, 0x0A then eight zeros, and the byte after it keeps 0xEE");
+    regions_close(test);
+}
+
+/**
+ * @brief A port unit sees every chunk of a Buffer written to it, one port write each counted against
+ *        the field-access budget (§6.1), the last zero-extended rather than read past the Buffer,
+ *        whose block holds 0xFF after it; an empty String writes nothing; a budget that runs out on
+ *        the second chunk fails the store after the first went out.
  */
 KERNEL_TEST(a_port_unit_sees_each_chunk_and_an_empty_string_writes_nothing)
 {
@@ -711,6 +772,14 @@ KERNEL_TEST(a_port_unit_sees_each_chunk_and_an_empty_string_writes_nothing)
                                                                                 empty.kind, 0u, &empty.handle);
     memcpy(advanced_configuration_and_power_interface_machine_language_object(&regions_load.heap, buffer.handle) + 1,
            thirteen, sizeof(thirteen));
+    memset((uint8_t *) (advanced_configuration_and_power_interface_machine_language_object(&regions_load.heap,
+                                                                                           buffer.handle) +
+                        1) +
+               sizeof(thirteen),
+           0xFF, 3u);
+
+    const uint32_t accesses_before = regions_load.evaluation.field_accesses;
+
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_field_write(
                           &regions_load, regions_node("P32_"), &buffer) == REGIONS_STATUS(OK) &&
@@ -724,6 +793,15 @@ KERNEL_TEST(a_port_unit_sees_each_chunk_and_an_empty_string_writes_nothing)
                           regions_access(2u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0C00u, 0x0C0B0A09u) &&
                           regions_access(3u, REGIONS_ACCESS(PORT_WRITE), 4u, 0x0C00u, 0x0000000Du),
                       "the 13 bytes are four port writes, the last zero-extended, and the empty String none");
+    kernel_test_check(test, regions_load.evaluation.field_accesses - accesses_before == 4u,
+                      "the four writes count against the field-access budget");
+    regions_load.evaluation.field_accesses =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FIELD_ACCESSES - 1u;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_field_write(
+                          &regions_load, regions_node("P32_"), &buffer) == REGIONS_STATUS(LIMIT_FIELD_ACCESSES) &&
+                          regions_host.access_count == 5u,
+                      "with one access left, the first chunk goes out and the store fails on the second");
     regions_close(test);
 }
 

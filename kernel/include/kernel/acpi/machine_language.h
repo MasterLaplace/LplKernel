@@ -208,9 +208,9 @@ advanced_configuration_and_power_interface_machine_language_field_read(
 
 /**
  * @brief Writes a value to a field unit (§5.3): an Integer's bits, cut or zero-extended to the unit,
- *        or a String's or a Buffer's bytes in chunks of the unit's size, one after the other, the last
- *        one zero-extended and an empty value writing nothing; a datum the unit covers in part keeps
- *        its other bits by the unit's UpdateRule.
+ *        or a String's or a Buffer's bytes in chunks of the unit's size rounded up to whole bytes, one
+ *        after the other, the last one zero-extended and an empty value writing nothing; a datum the
+ *        unit covers in part keeps its other bits by the unit's UpdateRule.
  *
  * @param load  The load.
  * @param node  The unit's node.

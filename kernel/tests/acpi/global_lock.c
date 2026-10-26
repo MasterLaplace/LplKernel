@@ -529,3 +529,38 @@ KERNEL_TEST(a_global_lock_the_firmware_never_releases_fails_the_acquire)
         "TAKE fails with global_lock_unavailable, and \\_GL is not held");
     global_lock_close(test);
 }
+
+/**
+ * @brief A Buffer stored to a Lock unit takes the global lock once for all its chunks, as ACPICA and
+ *        uACPI hold it for the whole store, and the unit keeps the last chunk.
+ */
+KERNEL_TEST(a_buffer_stored_to_a_lock_unit_takes_the_lock_once_for_every_chunk)
+{
+    static const uint8_t three[] = {0x01u, 0x02u, 0x03u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t buffer = {0};
+
+    global_lock_begin("FACS", 0u);
+    if (!global_lock_run(test, GLOBAL_LOCK_FACS))
+        return;
+    buffer.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER;
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &global_lock_load.heap, &global_lock_load.space, buffer.kind, 3u, &buffer.handle);
+    memcpy(advanced_configuration_and_power_interface_machine_language_object(&global_lock_load.heap, buffer.handle) +
+               1,
+           three, 3u);
+    const uint32_t before = global_lock_load.regions.global_lock_acquisitions;
+    const uint32_t node = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &global_lock_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "LK__", 0u));
+    kernel_test_check(
+        test,
+        advanced_configuration_and_power_interface_machine_language_field_write(&global_lock_load, node, &buffer) ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK,
+        "the store succeeds");
+    kernel_test_check(test,
+                      global_lock_load.regions.global_lock_acquisitions - before == 1u &&
+                          advanced_configuration_and_power_interface_simulated_host_peek(&global_lock_host,
+                                                                                         GLOBAL_LOCK_MEMORY, 1u) == 3u,
+                      "one acquisition for the three chunks, and the last chunk stays");
+    global_lock_close(test);
+}

@@ -805,8 +805,9 @@ static MachineLanguageStatus_t machine_language_write_bytes(MachineLanguageLoad_
 
 /**
  * @brief Writes a unit, the global lock already taken when it needs it: an Integer once, a String or a
- *        Buffer in chunks of the unit's size, one after the other, as Windows does (§5.3), so that a
- *        memory unit keeps the last chunk, a port sees each, and an empty one writes nothing.
+ *        Buffer in chunks of the unit's size rounded up to whole bytes, one after the other, as Windows
+ *        does (§5.3), so that a memory unit keeps the last chunk, a port sees each, and an empty one
+ *        writes nothing.
  */
 static MachineLanguageStatus_t machine_language_write_unit(MachineLanguageLoad_t *load,
                                                            const MachineLanguageFieldUnit_t *unit,
