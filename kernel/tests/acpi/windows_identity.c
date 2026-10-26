@@ -139,6 +139,37 @@ static const uint8_t identity_ladder_aml[] = {
 };
 
 /**
+ * @brief The same ladder with the condition of its "Linux" line made true, as `\_OSI` answering True
+ *        for "Linux" would make it: the control of §8.7, which must read another year.
+ */
+static const uint8_t identity_ladder_linux_aml[] = {
+    0x08u, 'O',   'S',   'Y',   'S',   0x0Au, 0x00u, 0x10u, 0x4Bu, 0x16u, 0x5Cu, '_',   'S',   'B',   '_',   0x14u,
+    0x43u, 0x16u, '_',   'I',   'N',   'I',   0x00u, 0x70u, 0x0Bu, 0xD0u, 0x07u, 'O',   'S',   'Y',   'S',   0xA0u,
+    0x4Bu, 0x12u, 0x5Bu, 0x12u, 0x5Cu, '_',   'O',   'S',   'I',   0x00u, 0xA0u, 0x1Cu, 0x5Cu, '_',   'O',   'S',
+    'I',   0x0Du, 0x57u, 0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',   '0',   '0',   '1',   0x00u, 0x70u,
+    0x0Bu, 0xD1u, 0x07u, 'O',   'S',   'Y',   'S',   0xA0u, 0x20u, 0x5Cu, '_',   'O',   'S',   'I',   0x0Du, 0x57u,
+    0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',   '0',   '0',   '1',   0x20u, 'S',   'P',   '1',   0x00u,
+    0x70u, 0x0Bu, 0xD2u, 0x07u, 'O',   'S',   'Y',   'S',   0xA0u, 0x1Cu, 0x5Cu, '_',   'O',   'S',   'I',   0x0Du,
+    0x57u, 0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',   '0',   '0',   '6',   0x00u, 0x70u, 0x0Bu, 0xD6u,
+    0x07u, 'O',   'S',   'Y',   'S',   0xA0u, 0x1Cu, 0x5Cu, '_',   'O',   'S',   'I',   0x0Du, 0x57u, 0x69u, 0x6Eu,
+    0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',   '0',   '0',   '9',   0x00u, 0x70u, 0x0Bu, 0xD9u, 0x07u, 'O',   'S',
+    'Y',   'S',   0xA0u, 0x1Cu, 0x5Cu, '_',   'O',   'S',   'I',   0x0Du, 0x57u, 0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u,
+    0x73u, 0x20u, '2',   '0',   '1',   '2',   0x00u, 0x70u, 0x0Bu, 0xDCu, 0x07u, 'O',   'S',   'Y',   'S',   0xA0u,
+    0x1Cu, 0x5Cu, '_',   'O',   'S',   'I',   0x0Du, 0x57u, 0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',
+    '0',   '1',   '3',   0x00u, 0x70u, 0x0Bu, 0xDDu, 0x07u, 'O',   'S',   'Y',   'S',   0xA0u, 0x1Cu, 0x5Cu, '_',
+    'O',   'S',   'I',   0x0Du, 0x57u, 0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',   '0',   '1',   '5',
+    0x00u, 0x70u, 0x0Bu, 0xDFu, 0x07u, 'O',   'S',   'Y',   'S',   0xA0u, 0x1Cu, 0x5Cu, '_',   'O',   'S',   'I',
+    0x0Du, 0x57u, 0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',   '0',   '2',   '2',   0x00u, 0x70u, 0x0Bu,
+    0xE6u, 0x07u, 'O',   'S',   'Y',   'S',   0xA0u, 0x1Cu, 0x5Cu, '_',   'O',   'S',   'I',   0x0Du, 0x57u, 0x69u,
+    0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, '2',   '0',   '2',   '2',   0x00u, 0x70u, 0x0Bu, 0xE8u, 0x03u, 'O',
+    'S',   'Y',   'S',   0xA0u, 0x17u, 0x5Cu, '_',   'O',   'S',   'I',   0x0Du, 0x46u, 0x72u, 0x65u, 0x65u, 'B',
+    'S',   'D',   0x00u, 0x70u, 0x0Bu, 0xE9u, 0x03u, 'O',   'S',   'Y',   'S',   0xA1u, 0x27u, 0xA0u, 0x25u, 0x93u,
+    0x5Cu, '_',   'O',   'S',   '_',   0x0Du, 0x4Du, 0x69u, 0x63u, 0x72u, 0x6Fu, 0x73u, 0x6Fu, 0x66u, 0x74u, 0x20u,
+    0x57u, 0x69u, 0x6Eu, 0x64u, 0x6Fu, 0x77u, 0x73u, 0x20u, 'N',   'T',   0x00u, 0x70u, 0x0Bu, 0xCFu, 0x07u, 'O',
+    'S',   'Y',   'S',
+};
+
+/**
  * @brief SystemIO fields over the PIC (0x20), the RTC and its neighbours (0x6E to 0x73, by byte and as
  *        a double word from 0x6E) and the last DMA port (a word from 0x0F); methods read and write them,
  *        and ask `\_OSI` for "Windows 2000" (A200) and "Windows 2001" (A201).
@@ -290,6 +321,23 @@ KERNEL_TEST(a_firmware_ladder_reads_the_newest_windows)
                           identity_load.services.operating_system_queries == 10u &&
                           identity_load.services.operating_system_queries_denied == 2u,
                       "ten queries, the two non-Windows ones denied, Windows 2022 the newest asked");
+    kernel_test_measure(test, "osys", (uint32_t) identity_integer("OSYS"));
+    identity_close();
+}
+
+/**
+ * @brief The control of §8.7: the ladder whose "Linux" line is taken reads 1000, not 2022, so OSYS, the
+ *        record the ladder test measures, tells a Linux answer from a Windows one.
+ */
+KERNEL_TEST(a_ladder_that_takes_its_linux_line_reads_another_year)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status = IDENTITY_STATUS(OK);
+
+    if (!identity_run(test, 2u, identity_ladder_linux_aml, sizeof(identity_ladder_linux_aml)))
+        return;
+    (void) identity_evaluate("\\_SB_._INI", &status);
+    kernel_test_check(test, status == IDENTITY_STATUS(OK) && identity_integer("OSYS") == 1000u,
+                      "OSYS reads 1000, the Linux year, where the ladder reads 2022");
     kernel_test_measure(test, "osys", (uint32_t) identity_integer("OSYS"));
     identity_close();
 }

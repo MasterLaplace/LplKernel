@@ -20,11 +20,10 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t synchronizati
  * @brief Mutexes MTX0 (SyncLevel 0), MTA1 and MTB1 (1), MTX2 (2), MTX3 (3), M000 to M032 (0), an Event
  *        EVT0 and an Integer INT0, and methods that acquire and release them: NEST nests MTX0, KEEP
  *        keeps MTA1, LOWR acquires MTA1 under MTX2, UNHD releases MTX3 unheld, SAME and DIFF release out
- *        of order at the same level and at another, NOTM acquires INT0, VIAR acquires MTX0 through a
- *        reference in Local0, SIGN signals EVT0 twice, SIGI signals INT0, SERL calls the Serialized
- *        SER0 (level 0) while holding MTA1, SR3_ calls SER3 (Serialized, level 3), which calls itself
- *        twice then acquires MTX2, AFTR acquires MTX2 once SER3 has returned, EWAI waits on EVT0, and
- *        MANY acquires the 33 M0xx.
+ *        of order at the same level and at another, SAME then acquiring MTX0, NOTM acquires INT0, VIAR acquires MTX0
+ * through a reference in Local0, SIGN signals EVT0 twice, SIGI signals INT0, SERL calls the Serialized SER0 (level 0)
+ * while holding MTA1, SR3_ calls SER3 (Serialized, level 3), which calls itself twice then acquires MTX2, AFTR acquires
+ * MTX2 once SER3 has returned, EWAI waits on EVT0, and MANY acquires the 33 M0xx.
  */
 static const uint8_t synchronization_aml[] = {
     0x5Bu, 0x01u, 'M',   'T',   'X',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   'T',   'A',   '1',   0x01u, 0x5Bu, 0x01u,
@@ -37,54 +36,55 @@ static const uint8_t synchronization_aml[] = {
     'W',   'R',   0x00u, 0x5Bu, 0x23u, 'M',   'T',   'X',   '2',   0xFFu, 0xFFu, 0x70u, 0x5Bu, 0x23u, 'M',   'T',
     'A',   '1',   0xFFu, 0xFFu, 0x60u, 0x5Bu, 0x27u, 'M',   'T',   'A',   '1',   0x5Bu, 0x27u, 'M',   'T',   'X',
     '2',   0xA4u, 0x60u, 0x14u, 0x0Cu, 'U',   'N',   'H',   'D',   0x00u, 0x5Bu, 0x27u, 'M',   'T',   'X',   '3',
-    0x14u, 0x22u, 'S',   'A',   'M',   'E',   0x00u, 0x5Bu, 0x23u, 'M',   'T',   'A',   '1',   0xFFu, 0xFFu, 0x5Bu,
+    0x14u, '4',   'S',   'A',   'M',   'E',   0x00u, 0x5Bu, 0x23u, 'M',   'T',   'A',   '1',   0xFFu, 0xFFu, 0x5Bu,
     0x23u, 'M',   'T',   'B',   '1',   0xFFu, 0xFFu, 0x5Bu, 0x27u, 'M',   'T',   'A',   '1',   0x5Bu, 0x27u, 'M',
-    'T',   'B',   '1',   0x14u, 0x1Cu, 'D',   'I',   'F',   'F',   0x00u, 0x5Bu, 0x23u, 'M',   'T',   'A',   '1',
-    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   'T',   'X',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x27u, 'M',   'T',   'A',   '1',
-    0x14u, 0x0Fu, 'N',   'O',   'T',   'M',   0x00u, 0xA4u, 0x5Bu, 0x23u, 'I',   'N',   'T',   '0',   0xFFu, 0xFFu,
-    0x14u, 0x19u, 'V',   'I',   'A',   'R',   0x00u, 0x70u, 0x71u, 'M',   'T',   'X',   '0',   0x60u, 0x70u, 0x5Bu,
-    0x23u, 0x60u, 0xFFu, 0xFFu, 0x61u, 0x5Bu, 0x27u, 0x60u, 0xA4u, 0x61u, 0x14u, 0x12u, 'S',   'I',   'G',   'N',
-    0x00u, 0x5Bu, 0x24u, 'E',   'V',   'T',   '0',   0x5Bu, 0x24u, 'E',   'V',   'T',   '0',   0x14u, 0x0Cu, 'S',
-    'I',   'G',   'I',   0x00u, 0x5Bu, 0x24u, 'I',   'N',   'T',   '0',   0x14u, 0x08u, 'S',   'E',   'R',   '0',
-    0x08u, 0xA4u, 0x01u, 0x14u, 0x13u, 'S',   'E',   'R',   'L',   0x00u, 0x5Bu, 0x23u, 'M',   'T',   'A',   '1',
-    0xFFu, 0xFFu, 0xA4u, 'S',   'E',   'R',   '0',   0x14u, 0x1Cu, 'S',   'E',   'R',   '3',   '9',   0xA0u, 0x0Cu,
-    0x68u, 0xA4u, 'S',   'E',   'R',   '3',   0x74u, 0x68u, 0x0Au, 0x01u, 0x00u, 0xA4u, 0x5Bu, 0x23u, 'M',   'T',
-    'X',   '2',   0xFFu, 0xFFu, 0x14u, 0x0Du, 'S',   'R',   '3',   '_',   0x00u, 0xA4u, 'S',   'E',   'R',   '3',
-    0x0Au, 0x02u, 0x14u, 0x1Eu, 'A',   'F',   'T',   'R',   0x00u, 'S',   'E',   'R',   '3',   0x0Au, 0x00u, 0x70u,
-    0x5Bu, 0x23u, 'M',   'T',   'X',   '2',   0xFFu, 0xFFu, 0x60u, 0x5Bu, 0x27u, 'M',   'T',   'X',   '2',   0xA4u,
-    0x60u, 0x14u, 0x0Fu, 'E',   'W',   'A',   'I',   0x00u, 0xA4u, 0x5Bu, 0x25u, 'E',   'V',   'T',   '0',   0x0Au,
-    0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '1',   0x00u, 0x5Bu,
-    0x01u, 'M',   '0',   '0',   '2',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '3',   0x00u, 0x5Bu, 0x01u, 'M',
-    '0',   '0',   '4',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '5',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',
-    '6',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '7',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '8',   0x00u,
-    0x5Bu, 0x01u, 'M',   '0',   '0',   '9',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '0',   0x00u, 0x5Bu, 0x01u,
-    'M',   '0',   '1',   '1',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '2',   0x00u, 0x5Bu, 0x01u, 'M',   '0',
-    '1',   '3',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '4',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '5',
-    0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '6',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '7',   0x00u, 0x5Bu,
-    0x01u, 'M',   '0',   '1',   '8',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '9',   0x00u, 0x5Bu, 0x01u, 'M',
-    '0',   '2',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '1',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',
-    '2',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '3',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '4',   0x00u,
-    0x5Bu, 0x01u, 'M',   '0',   '2',   '5',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '6',   0x00u, 0x5Bu, 0x01u,
-    'M',   '0',   '2',   '7',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '8',   0x00u, 0x5Bu, 0x01u, 'M',   '0',
-    '2',   '9',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '3',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '3',   '1',
-    0x00u, 0x5Bu, 0x01u, 'M',   '0',   '3',   '2',   0x00u, 0x14u, 0x4Fu, 0x10u, 'M',   'A',   'N',   'Y',   0x00u,
-    0x5Bu, 0x23u, 'M',   '0',   '0',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '1',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '0',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '3',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '0',   '4',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '5',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '0',   '6',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '7',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '0',   '8',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '9',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '1',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '1',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '1',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '3',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '1',   '4',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '5',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '1',   '6',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '7',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '1',   '8',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '9',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '2',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '1',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '2',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '3',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '2',   '4',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '5',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '2',   '6',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '7',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '2',   '8',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '9',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '3',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '3',   '1',   0xFFu, 0xFFu,
-    0x5Bu, 0x23u, 'M',   '0',   '3',   '2',   0xFFu, 0xFFu,
+    'T',   'B',   '1',   0x70u, 0x5Bu, 0x23u, 'M',   'T',   'X',   '0',   0xFFu, 0xFFu, 0x60u, 0x5Bu, 0x27u, 'M',
+    'T',   'X',   '0',   0xA4u, 0x60u, 0x14u, 0x1Cu, 'D',   'I',   'F',   'F',   0x00u, 0x5Bu, 0x23u, 'M',   'T',
+    'A',   '1',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   'T',   'X',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x27u, 'M',   'T',
+    'A',   '1',   0x14u, 0x0Fu, 'N',   'O',   'T',   'M',   0x00u, 0xA4u, 0x5Bu, 0x23u, 'I',   'N',   'T',   '0',
+    0xFFu, 0xFFu, 0x14u, 0x19u, 'V',   'I',   'A',   'R',   0x00u, 0x70u, 0x71u, 'M',   'T',   'X',   '0',   0x60u,
+    0x70u, 0x5Bu, 0x23u, 0x60u, 0xFFu, 0xFFu, 0x61u, 0x5Bu, 0x27u, 0x60u, 0xA4u, 0x61u, 0x14u, 0x12u, 'S',   'I',
+    'G',   'N',   0x00u, 0x5Bu, 0x24u, 'E',   'V',   'T',   '0',   0x5Bu, 0x24u, 'E',   'V',   'T',   '0',   0x14u,
+    0x0Cu, 'S',   'I',   'G',   'I',   0x00u, 0x5Bu, 0x24u, 'I',   'N',   'T',   '0',   0x14u, 0x08u, 'S',   'E',
+    'R',   '0',   0x08u, 0xA4u, 0x01u, 0x14u, 0x13u, 'S',   'E',   'R',   'L',   0x00u, 0x5Bu, 0x23u, 'M',   'T',
+    'A',   '1',   0xFFu, 0xFFu, 0xA4u, 'S',   'E',   'R',   '0',   0x14u, 0x1Cu, 'S',   'E',   'R',   '3',   '9',
+    0xA0u, 0x0Cu, 0x68u, 0xA4u, 'S',   'E',   'R',   '3',   0x74u, 0x68u, 0x0Au, 0x01u, 0x00u, 0xA4u, 0x5Bu, 0x23u,
+    'M',   'T',   'X',   '2',   0xFFu, 0xFFu, 0x14u, 0x0Du, 'S',   'R',   '3',   '_',   0x00u, 0xA4u, 'S',   'E',
+    'R',   '3',   0x0Au, 0x02u, 0x14u, 0x1Eu, 'A',   'F',   'T',   'R',   0x00u, 'S',   'E',   'R',   '3',   0x0Au,
+    0x00u, 0x70u, 0x5Bu, 0x23u, 'M',   'T',   'X',   '2',   0xFFu, 0xFFu, 0x60u, 0x5Bu, 0x27u, 'M',   'T',   'X',
+    '2',   0xA4u, 0x60u, 0x14u, 0x0Fu, 'E',   'W',   'A',   'I',   0x00u, 0xA4u, 0x5Bu, 0x25u, 'E',   'V',   'T',
+    '0',   0x0Au, 0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '1',
+    0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '2',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '3',   0x00u, 0x5Bu,
+    0x01u, 'M',   '0',   '0',   '4',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '5',   0x00u, 0x5Bu, 0x01u, 'M',
+    '0',   '0',   '6',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '7',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',
+    '8',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '0',   '9',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '0',   0x00u,
+    0x5Bu, 0x01u, 'M',   '0',   '1',   '1',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '2',   0x00u, 0x5Bu, 0x01u,
+    'M',   '0',   '1',   '3',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '4',   0x00u, 0x5Bu, 0x01u, 'M',   '0',
+    '1',   '5',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '6',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '7',
+    0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '8',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '1',   '9',   0x00u, 0x5Bu,
+    0x01u, 'M',   '0',   '2',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '1',   0x00u, 0x5Bu, 0x01u, 'M',
+    '0',   '2',   '2',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '3',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',
+    '4',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '5',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '6',   0x00u,
+    0x5Bu, 0x01u, 'M',   '0',   '2',   '7',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '2',   '8',   0x00u, 0x5Bu, 0x01u,
+    'M',   '0',   '2',   '9',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '3',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   '0',
+    '3',   '1',   0x00u, 0x5Bu, 0x01u, 'M',   '0',   '3',   '2',   0x00u, 0x14u, 0x4Fu, 0x10u, 'M',   'A',   'N',
+    'Y',   0x00u, 0x5Bu, 0x23u, 'M',   '0',   '0',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '1',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '3',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '4',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '5',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '6',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '7',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '8',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '0',   '9',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '1',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '3',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '4',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '5',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '6',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '7',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '8',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '1',   '9',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '1',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '2',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '3',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '4',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '5',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '6',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '7',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '8',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '2',   '9',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '3',   '0',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '3',   '1',
+    0xFFu, 0xFFu, 0x5Bu, 0x23u, 'M',   '0',   '3',   '2',   0xFFu, 0xFFu,
 };
 
 /**
@@ -142,11 +142,11 @@ KERNEL_TEST(a_mutex_is_acquired_and_nested_by_its_owner)
         return;
     kernel_test_check(test, synchronization_evaluate("\\NEST", &status) == 0u && status == SYNCHRONIZATION_STATUS(OK),
                       "both acquisitions give 0");
-    kernel_test_check(test,
-                      synchronization_load.services.acquisitions == 2u &&
-                          synchronization_load.services.held_peak == 1u &&
-                          synchronization_load.services.released_at_end == 0u,
-                      "two acquisitions of one mutex, both released by the method");
+    kernel_test_check(
+        test,
+        synchronization_load.services.acquisitions == 2u && synchronization_load.services.held_peak == 1u &&
+            synchronization_load.services.released_at_end == 0u && synchronization_load.services.releases_ignored == 0u,
+        "two acquisitions of one mutex, both released by the method, neither release ignored");
     synchronization_close(test);
 }
 
@@ -200,11 +200,12 @@ KERNEL_TEST(a_release_out_of_order_is_accepted_only_at_the_current_level)
     kernel_test_check(test,
                       status == SYNCHRONIZATION_STATUS(OK) && synchronization_load.services.releases_ignored == 1u,
                       "a mutex never acquired: its release is ignored");
-    (void) synchronization_evaluate("\\SAME", &status);
-    kernel_test_check(test,
-                      status == SYNCHRONIZATION_STATUS(OK) && synchronization_load.services.releases_ignored == 1u &&
-                          synchronization_load.services.released_at_end == 0u,
-                      "MTA1 released before MTB1, both at level 1: accepted, nothing left held");
+    kernel_test_check(
+        test,
+        synchronization_evaluate("\\SAME", &status) == 0u && status == SYNCHRONIZATION_STATUS(OK) &&
+            synchronization_load.services.releases_ignored == 1u && synchronization_load.services.released_at_end == 0u,
+        "MTA1 released before MTB1, both at level 1: accepted, the level back to 0 for MTX0, nothing left "
+        "held");
     (void) synchronization_evaluate("\\DIFF", &status);
     kernel_test_check(test,
                       status == SYNCHRONIZATION_STATUS(OK) && synchronization_load.services.releases_ignored == 2u &&
