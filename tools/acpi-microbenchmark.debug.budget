@@ -1,0 +1,14 @@
+# Window W4 of the ACPI specification (§7.4): the test the_window_w4_loop_of_a_thousand_turns, which loads a table
+# whose method runs `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`, evaluates it under a revision-2 DSDT, then
+# under a revision-1 DSDT; on a debug server kernel (./build.sh --server), the test alone selected so that no other
+# test changes the page allocator it starts from. Checked by
+# tools/instructions.sh --budget tools/acpi-microbenchmark.debug.budget kernel/lpl.kernel; a change that moves the
+# interpreter's loop records the new counts. The two evaluations alone count 5,711,688 instructions, 2,852,340 under
+# revision 2 (the same command with --inside advanced_configuration_and_power_interface_machine_language_evaluate
+# --times 1, then 2): 2,852 per turn, against the 200 of §7.4 (#584).
+inside=kernel_test_body_the_window_w4_loop_of_a_thousand_turns
+times=1
+append=lpl.test=advanced_configuration_and_power_interface_microbenchmarks.the_window_w4_loop_of_a_thousand_turns
+instructions=7535934
+accesses=3576110
+tolerance=1

@@ -304,7 +304,7 @@ static MachineLanguageStatus_t machine_language_port(MachineLanguageLoad_t *load
 
     if (port > 0xFFFFu || width - 1u > 0xFFFFu - port)
         return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
-    if (advanced_configuration_and_power_interface_port_is_protected((uint16_t) port))
+    if (advanced_configuration_and_power_interface_machine_language_port_is_protected(load, (uint16_t) port))
     {
         ++load->regions.protected_port_accesses;
         if (!write)
@@ -935,4 +935,15 @@ void advanced_configuration_and_power_interface_machine_language_regions_close(M
 
     while (regions->mapping_count > 0u)
         machine_language_unmap(load, &regions->mappings[--regions->mapping_count]);
+}
+
+MachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_take_global_lock(MachineLanguageLoad_t *load)
+{
+    return machine_language_take_global_lock(load);
+}
+
+void advanced_configuration_and_power_interface_machine_language_release_global_lock(MachineLanguageLoad_t *load)
+{
+    machine_language_release_global_lock(load);
 }

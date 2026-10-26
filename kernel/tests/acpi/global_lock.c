@@ -92,6 +92,61 @@ static bool global_lock_run(KernelTest_t *test, uint32_t firmware_control)
 }
 
 /**
+ * @brief Methods that acquire `\_GL`: TAKE acquires then releases it and returns what Acquire gave,
+ *        HOLD acquires it and keeps it, NEST acquires it twice and releases it twice.
+ */
+static const uint8_t global_lock_acquire_aml[] = {
+    0x14u, 0x1Au, 'T',   'A',   'K', 'E', 0x00u, 0x70u, 0x5Bu, 0x23u, 0x5Cu, '_',   'G', 'L', '_', 0xFFu, 0xFFu,
+    0x60u, 0x5Bu, 0x27u, 0x5Cu, '_', 'G', 'L',   '_',   0xA4u, 0x60u, 0x14u, 0x10u, 'H', 'O', 'L', 'D',   0x00u,
+    0xA4u, 0x5Bu, 0x23u, 0x5Cu, '_', 'G', 'L',   '_',   0xFFu, 0xFFu, 0x14u, 0x26u, 'N', 'E', 'S', 'T',   0x00u,
+    0x5Bu, 0x23u, 0x5Cu, '_',   'G', 'L', '_',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 0x5Cu, '_', 'G', 'L', '_',   0xFFu,
+    0xFFu, 0x5Bu, 0x27u, 0x5Cu, '_', 'G', 'L',   '_',   0x5Bu, 0x27u, 0x5Cu, '_',   'G', 'L', '_',
+};
+
+/**
+ * @brief Loads the methods that acquire `\_GL`, the load given the FACS at @p firmware_control and the
+ *        PM1 control ports of the tests.
+ */
+static bool global_lock_load_methods(KernelTest_t *test, uint32_t firmware_control)
+{
+    static const uint16_t ports[2] = {GLOBAL_LOCK_CONTROL, GLOBAL_LOCK_CONTROL_B};
+
+    made_up_aml_raw(&global_lock_aml, global_lock_acquire_aml, sizeof(global_lock_acquire_aml));
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &global_lock_load, &global_lock_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+                           "the namespace opens"))
+        return false;
+    advanced_configuration_and_power_interface_machine_language_use_global_lock(&global_lock_load, firmware_control,
+                                                                                ports);
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &global_lock_load,
+        made_up_definition_block(global_lock_table, "DSDT", 2u, global_lock_aml.bytes, global_lock_aml.length));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&global_lock_load);
+    return true;
+}
+
+/**
+ * @brief Evaluates the method at @p path, which takes no argument, and gives its Integer, or 0xDEAD;
+ *        its status goes to @p out_status.
+ */
+static uint64_t global_lock_evaluate(const char *path,
+                                     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t *out_status)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    uint64_t integer = 0xDEADu;
+
+    *out_status = advanced_configuration_and_power_interface_machine_language_evaluate(&global_lock_load, path, NULL,
+                                                                                       0u, &result);
+    if (*out_status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+        result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+        integer = result.payload;
+    advanced_configuration_and_power_interface_machine_language_value_release(&global_lock_load.heap,
+                                                                              &global_lock_load.space, &result);
+    return integer;
+}
+
+/**
  * @brief The integer RL__ holds, or 0xDEAD.
  */
 static uint64_t global_lock_result(void)
@@ -364,5 +419,113 @@ KERNEL_TEST(an_index_field_takes_the_lock_once_for_its_registers)
     kernel_test_check(
         test, exchanges == 4u && global_lock_load.regions.global_lock_acquisitions == 2u && global_lock_word() == 0u,
         "IU0_ and LK__ each take the lock once, their registers nesting: four exchanges in all");
+    global_lock_close(test);
+}
+
+/**
+ * @brief `Acquire (\_GL)` takes the AML mutex, then the global lock as a Lock field does, and gives 0;
+ *        `Release (\_GL)` gives the lock back. A `\_GL` still held when its evaluation ends is
+ *        released then, its lock with it (§5.4).
+ */
+KERNEL_TEST(acquiring_the_global_lock_mutex_takes_the_firmware_lock)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+
+    global_lock_begin("FACS", 0u);
+    if (!global_lock_load_methods(test, GLOBAL_LOCK_FACS))
+        return;
+    kernel_test_check(test, global_lock_evaluate("\\TAKE", &status) == 0u, "Acquire (\\_GL) gives 0");
+    kernel_test_check(test,
+                      global_lock_access(0u, GLOBAL_LOCK_ACCESS(MEMORY_READ), GLOBAL_LOCK_WORD, 0u) &&
+                          global_lock_access(1u, GLOBAL_LOCK_ACCESS(EXCHANGE), GLOBAL_LOCK_WORD, 2u) &&
+                          global_lock_access(2u, GLOBAL_LOCK_ACCESS(MEMORY_READ), GLOBAL_LOCK_WORD, 2u) &&
+                          global_lock_access(3u, GLOBAL_LOCK_ACCESS(EXCHANGE), GLOBAL_LOCK_WORD, 0u) &&
+                          global_lock_host.access_count == 4u,
+                      "the lock is read free, marked owned, then read and cleared by the Release");
+    kernel_test_check(test, global_lock_evaluate("\\HOLD", &status) == 0u && global_lock_word() == 0u,
+                      "HOLD keeps \\_GL, and the end of its evaluation gives the lock back");
+    kernel_test_check(test,
+                      global_lock_load.regions.global_lock_acquisitions == 2u &&
+                          global_lock_load.services.released_at_end == 1u && global_lock_load.services.held_count == 0u,
+                      "two acquisitions of the lock; the one HOLD kept is released at the end, counted");
+    global_lock_close(test);
+}
+
+/**
+ * @brief Nested acquisitions of `\_GL` take the global lock once, and the last Release gives it back.
+ */
+KERNEL_TEST(nested_acquisitions_of_the_global_lock_mutex_take_the_lock_once)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+
+    global_lock_begin("FACS", 0u);
+    if (!global_lock_load_methods(test, GLOBAL_LOCK_FACS))
+        return;
+    (void) global_lock_evaluate("\\NEST", &status);
+    kernel_test_check(test,
+                      status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          global_lock_load.regions.global_lock_acquisitions == 1u &&
+                          global_lock_host.access_count == 4u && global_lock_word() == 0u,
+                      "one take and one release of the lock word for two acquisitions");
+    global_lock_close(test);
+}
+
+/**
+ * @brief When the firmware asks for the lock while `\_GL` holds it, the Release signals GBL_RLS.
+ */
+KERNEL_TEST(releasing_the_global_lock_mutex_signals_a_waiting_firmware)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+
+    global_lock_begin("FACS", 0u);
+    global_lock_host.firmware_wants_lock = true;
+    if (!global_lock_load_methods(test, GLOBAL_LOCK_FACS))
+        return;
+    kernel_test_check(test, global_lock_evaluate("\\TAKE", &status) == 0u, "TAKE gives 0");
+    kernel_test_check(test, global_lock_load.regions.global_lock_releases_signalled == 1u && global_lock_word() == 0u,
+                      "the Release found pending, cleared the lock and signalled GBL_RLS");
+    global_lock_close(test);
+}
+
+/**
+ * @brief Without a FACS, `Acquire (\_GL)` takes the AML mutex alone, counted, and touches no memory.
+ */
+KERNEL_TEST(without_a_facs_the_global_lock_mutex_takes_only_the_aml_mutex)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+
+    global_lock_begin("FACS", 0u);
+    if (!global_lock_load_methods(test, 0u))
+        return;
+    kernel_test_check(test,
+                      global_lock_evaluate("\\TAKE", &status) == 0u && global_lock_host.access_count == 0u &&
+                          global_lock_load.regions.unlocked_lock_accesses == 1u,
+                      "TAKE gives 0 without reading the lock word, counted as unlocked");
+    global_lock_close(test);
+}
+
+/**
+ * @brief A global lock the firmware never releases fails `Acquire (\_GL)` with
+ *        global_lock_unavailable, and leaves the AML mutex free.
+ */
+KERNEL_TEST(a_global_lock_the_firmware_never_releases_fails_the_acquire)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+
+    global_lock_begin("FACS", 2u);
+    if (!global_lock_load_methods(test, GLOBAL_LOCK_FACS))
+        return;
+    (void) global_lock_evaluate("\\TAKE", &status);
+    kernel_test_check(
+        test,
+        status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_GLOBAL_LOCK_UNAVAILABLE &&
+            global_lock_load.regions.global_lock_timeouts == 1u && global_lock_load.services.held_count == 0u &&
+            global_lock_load.services.acquisitions == 0u,
+        "TAKE fails with global_lock_unavailable, and \\_GL is not held");
     global_lock_close(test);
 }

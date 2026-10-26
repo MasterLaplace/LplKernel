@@ -92,10 +92,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame {
     uint16_t value_base;                                                            /**< Values its callers hold. */
     uint16_t operator_base;                                                         /**< Operators its callers hold. */
     uint16_t block_base;                                                            /**< Blocks its callers hold. */
-    uint16_t temporary_base; /**< Temporary nodes alive when it began, removed down to this when it ends. */
-    uint16_t table;          /**< Its table, counted from 1. */
-    uint8_t argument_count;  /**< Arguments it was called with. */
-    uint8_t reserved;        /**< 0. */
+    uint16_t temporary_base;  /**< Temporary nodes alive when it began, removed down to this when it ends. */
+    uint16_t table;           /**< Its table, counted from 1. */
+    uint8_t argument_count;   /**< Arguments it was called with. */
+    uint8_t saved_sync_level; /**< For a Serialized method, the sync level it found, plus 1; 0 for any other frame
+                                   (§5.2). */
     uint32_t serial; /**< Which frame this is, among all an evaluation context pushed: a reference to one of its locals
                         or arguments names it, so that one that outlives it refers to nothing. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame_t;

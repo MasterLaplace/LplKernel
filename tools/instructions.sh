@@ -28,10 +28,11 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --keep DIR      keep the serial log and the raw counts in DIR
   --budget FILE   check the counts against FILE, which records a window and the counts it held
 
-A budget FILE holds key=value lines: from, to, inside, times and machine give the window, unless
-the command line does; instructions and accesses (loads and stores) record the counts; tolerance is
-how far above them, in percent, the counts may go. Below them by more than the tolerance, the run
-says to record the new counts.
+A budget FILE holds key=value lines: from, to, inside, times, machine and append give the window,
+unless the command line does, append being the boot line, such as the lpl.test= that picks the tests
+run before a window inside one; instructions and accesses (loads and stores) record the counts;
+tolerance is how far above them, in percent, the counts may go. Below them by more than the
+tolerance, the run says to record the new counts.
 
 A SYMBOL is a function's name as the symbol table spells it, or its demangled name up to the
 parenthesis of its parameters. One processor only: QEMU 10.2 crashes when -icount, a plugin and
@@ -81,7 +82,6 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$kernel" ] && [ -f "$kernel" ] || { usage >&2; exit 2; }
 [ -z "$cdrom" ] || [ -f "$cdrom" ] || { echo "no ISO $cdrom" >&2; exit 2; }
-[ -z "$cdrom" ] || [ -z "$append" ] || { echo "--append reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 recorded_instructions=""
 recorded_accesses=""
 tolerance=0
@@ -95,6 +95,7 @@ if [ -n "$budget" ]; then
             inside) [ -n "$inside_symbol" ] || inside_symbol="$value" ;;
             times) [ -n "$times" ] || times="$value" ;;
             machine) [ -n "$machine" ] || machine="$value" ;;
+            append) [ -n "$append" ] || append="$value" ;;
             instructions) recorded_instructions="$value" ;;
             accesses) recorded_accesses="$value" ;;
             tolerance) tolerance="$value" ;;
@@ -105,6 +106,7 @@ if [ -n "$budget" ]; then
         { echo "$budget needs instructions and accesses above 0, and tolerance, as integers" >&2; exit 2; }
 fi
 times="${times:-1}"
+[ -z "$cdrom" ] || [ -z "$append" ] || { echo "--append reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 if [ -n "$from_symbol" ] && [ -z "$to_symbol" ] || [ -z "$from_symbol" ] && [ -n "$to_symbol" ]; then
     echo "--from and --to go together" >&2
     exit 2

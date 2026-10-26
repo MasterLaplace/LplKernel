@@ -35,6 +35,7 @@
 #include <kernel/acpi/machine_language_namespace.h>
 #include <kernel/acpi/machine_language_objects.h>
 #include <kernel/acpi/machine_language_regions.h>
+#include <kernel/acpi/machine_language_services.h>
 #include <kernel/acpi/tables.h>
 
 #include <stdbool.h>
@@ -158,6 +159,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                        counted. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t regions;       /**< The mapping cache, and what field
                                                                                        accesses counted. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageServices_t services;     /**< What the operating system
+                                                                                       services hold and counted. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;
 
 /**
@@ -265,6 +268,206 @@ advanced_configuration_and_power_interface_machine_language_field_unit_build(
 extern void advanced_configuration_and_power_interface_machine_language_use_global_lock(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t firmware_control,
     const uint16_t *control_ports);
+
+/**
+ * @brief Takes the global lock for `Acquire (\_GL)` as a Lock field takes it (§4.4, §5.4): owned
+ *        when free, pending while the firmware owns it, then a bounded wait; an acquisition already
+ *        holding it nests, and a platform without a global lock takes nothing, counted.
+ *
+ * @param load The load.
+ * @return OK; GLOBAL_LOCK_UNAVAILABLE when the firmware never releases it; LIMIT_FIELD_ACCESSES once
+ *         the evaluation's field accesses are spent by the reads of the lock word.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_take_global_lock(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Gives back the global lock the last acquisition holding it took, signalling the firmware
+ *        when it asked for the lock meanwhile.
+ *
+ * @param load The load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_release_global_lock(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Answers `\_OSI` as Windows does (§5.4): True for every Windows string from "Windows 2000"
+ *        to "Windows 2022", False for any other, "Linux", the vendor strings and every feature
+ *        string included. The newest Windows string asked is recorded, and protects more ports from
+ *        "Windows 2001" on (§5.3).
+ *
+ * @param load          The load.
+ * @param argument      The method's argument.
+ * @param out_supported Receives whether the string names an interface the kernel answers True.
+ * @return OK; TYPE_MISMATCH when the argument is no String.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_operating_system_interface(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *argument, bool *out_supported);
+
+/**
+ * @brief Whether AML may not reach an I/O port (§5.3): always the 8259s, the ELCR and PCI mechanism
+ *        #1; once \_OSI was asked for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page,
+ *        arbitration and board ports Windows' ACPI driver protects.
+ *
+ * @param load The load.
+ * @param port The first port of the access.
+ * @return true when the access is to be refused: a read gives 0, a write is dropped.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_port_is_protected(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint16_t port);
+
+/**
+ * @brief Starts an evaluation's budget of requested time (§6.1): a table's load, or an evaluation
+ *        the host asked for.
+ *
+ * @param load The load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_begin_services(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Ends an evaluation: every mutex it still holds is released, `\_GL`'s global lock with it,
+ *        counted, and the sync level drops to 0 (§5.2).
+ *
+ * @param load The load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_end_services(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Runs Sleep (§5.5): the milliseconds are charged to the evaluation's budget first, then the
+ *        host gives up the processor that long; Sleep (0) waits nothing.
+ *
+ * @param load         The load.
+ * @param milliseconds What AML asked for.
+ * @return OK; LIMIT_TIME_REQUESTED, before any wait, when the request would take the evaluation past
+ *         30 s.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_sleep(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint64_t milliseconds);
+
+/**
+ * @brief Runs Stall (§5.5): the microseconds are charged to the evaluation's budget first; up to
+ *        255 µs the host busy-waits, beyond it sleeps the milliseconds they round up to; both are
+ *        counted beyond 100 µs.
+ *
+ * @param load         The load.
+ * @param microseconds What AML asked for.
+ * @return OK; LIMIT_TIME_REQUESTED, before any wait, when the request would take the evaluation past
+ *         30 s.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_stall(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint64_t microseconds);
+
+/**
+ * @brief Runs Timer (§5.5): the host's monotonic clock, in units of 100 ns.
+ *
+ * @param load The load.
+ * @return The clock, masked to the load's integer width.
+ */
+extern uint64_t advanced_configuration_and_power_interface_machine_language_timer(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Queues a Notify, delivered once the evaluation that raised it is over (§3.7); a full ring
+ *        drops it, counted.
+ *
+ * @param load  The load.
+ * @param node  The object notified.
+ * @param value The notification value.
+ * @return OK; TYPE_MISMATCH when the object is no device, processor or thermal zone.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_notify(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, uint64_t value);
+
+/**
+ * @brief Takes the oldest Notify from the ring, counted as taken.
+ *
+ * @param load             The load.
+ * @param out_notification Receives it.
+ * @return false when the ring is empty.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_take_notification(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNotification_t *out_notification);
+
+/**
+ * @brief Takes every Notify from the ring and acts on none, each counted as taken: what the boot
+ *        does with the Notifies its tables' code raised, until #547 acts on a Notify 0x81 on a
+ *        processor (§3.8 step 9).
+ *
+ * @param load The load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_drop_notifications(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Runs Acquire (§5.2): the mutex is taken, or nested when the evaluation holds it; one whose
+ *        SyncLevel is below the current level is ignored, counted, and not held, as uACPI ignores it.
+ *        `\_GL` takes the global lock too.
+ *
+ * @param load         The load.
+ * @param node         The object named.
+ * @param out_acquired Receives whether the mutex is held: Acquire gives 0 then, Ones otherwise.
+ * @return OK; TYPE_MISMATCH when the object is no mutex; LIMIT_HELD_MUTEXES when the evaluation holds
+ *         as many as §6.1 allows; why the global lock could not be taken.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_acquire(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, bool *out_acquired);
+
+/**
+ * @brief Runs Release (§5.2): one acquisition is given back, out of order when the mutex has the
+ *        SyncLevel of the one acquired last; a mutex not held, or of another level, is ignored,
+ *        counted, as uACPI ignores it.
+ *
+ * @param load The load.
+ * @param node The object named.
+ * @return OK; TYPE_MISMATCH when the object is no mutex.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_release(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
+ * @brief Runs Signal (§5.2): the Event's count of pending signals goes up by one, saturating.
+ *
+ * @param load The load.
+ * @param node The object named.
+ * @return OK; TYPE_MISMATCH when the object is no Event.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_signal(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
+ * @brief Enters a method whose MethodFlags are @p flags: a Serialized one raises the sync level to
+ *        its SyncLevel, and is refused below the current level (§5.2).
+ *
+ * @param load      The load.
+ * @param flags     The method's MethodFlags.
+ * @param out_saved Receives what advanced_configuration_and_power_interface_machine_language_leave_method
+ *                  restores: 0 for a method that is not Serialized.
+ * @return OK; MUTEX_ORDER when the method's SyncLevel is below the current level.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_enter_method(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint8_t flags, uint8_t *out_saved);
+
+/**
+ * @brief Leaves a method: a Serialized one gives back the sync level it found.
+ *
+ * @param load  The load.
+ * @param saved What advanced_configuration_and_power_interface_machine_language_enter_method gave.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_leave_method(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint8_t saved);
 
 /**
  * @brief Gives every mapping of the load's cache back to its host.
@@ -409,7 +612,7 @@ extern void advanced_configuration_and_power_interface_machine_language_close(
 
 /**
  * @brief Loads this machine's definition blocks at boot, into the boot's load, with the caps of the
- *        build's profile.
+ *        build's profile, then drops the Notifies their code raised (§3.8 step 9).
  */
 extern void advanced_configuration_and_power_interface_machine_language_initialize(void);
 

@@ -176,7 +176,7 @@ KERNEL_TEST(a_platform_whose_sci_en_starts_clear_is_switched_once_the_firmware_s
                       "nothing else is written: no status register, no control register");
     kernel_test_check(test, mode_switch.polls == 6u && mode_switch.waited_milliseconds == 5u,
                       "SCI_EN is read 6 times, 1 ms apart, and reads set at the sixth");
-    kernel_test_check(test, mode_host.clock_milliseconds == 5u, "the host waited 5 ms");
+    kernel_test_check(test, mode_host.clock_100ns == 5u * 10000u, "the host waited 5 ms");
     mode_measure(test);
 }
 

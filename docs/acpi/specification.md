@@ -92,7 +92,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | Rule | What it means here |
 |---|---|
 | Determinism | AML is integer-only and fixed-width, so an evaluation is a pure function of the AML bytes, the simulated regions, the `_OSI` answers, the clock source and the target's parameters (physical address width, profile caps). Its results fold equal on the host and on i686 when both run through the same simulated host (§8.7). Nothing ACPI reads is authoritative: a platform reading that ever steers the World enters as a journaled input. |
-| No wall clock on a compared path | Loop and sleep budgets count work: iterations, and the milliseconds `Sleep` and `Stall` *request*, never elapsed time. In parity runs `Timer` is a virtual clock, advanced by those requests and by a fixed quantum on every read, so a loop that polls `Timer` ends the same way on both targets. A wait on hardware (the switch to ACPI mode, §3.8 step 0) is bounded in time and its polls counted; it is never on a compared path. |
+| No wall clock on a compared path | Loop and sleep budgets count work: iterations, and the milliseconds `Sleep` and `Stall` *request*, never elapsed time. In parity runs `Timer` is a virtual clock, advanced by those requests and by a fixed quantum of 100 µs on every read, so a loop that polls `Timer` ends the same way on both targets. A wait on hardware (the switch to ACPI mode, §3.8 step 0) is bounded in time and its polls counted; it is never on a compared path. |
 | Fixed-width folds | Folds see `uint32_t` and `uint64_t` fields and node indices only: never a pointer, a `size_t` or an occupancy. |
 | Integers | Every AML integer is a `uint64_t` on both targets, masked to 32 bits when the DSDT's revision is below 2 ([§19.6.29]). 64-bit division on i686 goes through libgcc. |
 | No inline assembly | Port I/O is an `asmutils` routine; the global lock's compare-exchange is the compiler's atomic builtin, which the shared rules prefer to assembly; a 64-bit memory-mapped datum of i686 is two 32-bit accesses the field engine makes (§5.3). |
@@ -131,15 +131,15 @@ architecture supplies the host interface.
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode (§3.9), all behind the host interface |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
-| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h`, `kernel/include/kernel/acpi/machine_language_regions.h` | the decoder's, the namespace's, the objects', the interpreter's and the regions' interfaces, for the layers above them and the tests |
+| `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h`, `kernel/include/kernel/acpi/machine_language_regions.h`, `kernel/include/kernel/acpi/machine_language_services.h` | the decoder's, the namespace's, the objects', the interpreter's, the regions' and the services' interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
-| `kernel/kernel/acpi/machine_language_load.c` | definition-block load, the loaded-table registry, `Load`, `LoadTable` |
+| `kernel/kernel/acpi/machine_language_load.c` | definition-block load, the loaded-table registry, `Load`, `LoadTable`, the answers of `\_OS` and `\_REV` |
 | `kernel/kernel/acpi/machine_language_objects.c` | values, object heap, reference counts, conversions |
 | `kernel/kernel/acpi/machine_language_interpreter.c` | the execution loop, frames, control flow, operator handlers |
 | `kernel/kernel/acpi/machine_language_regions.c` | region attach, mapping cache, field engine, port and PCI-header protection |
-| `kernel/kernel/acpi/machine_language_services.c` | `_OSI`, `_OS`, `_REV`, the Notify queue, sleep and loop budgets |
+| `kernel/kernel/acpi/machine_language_services.c` | `_OSI`, the Windows version it records and the ports that version protects; `Sleep`, `Stall`, `Timer` and the time budget; the Notify ring; the mutexes, `Signal` and the sync level |
 | `kernel/kernel/acpi/initialization.c` | the initialisation sequence of §3.8 |
 | `kernel/kernel/acpi/resources.c` | the zero-copy resource-template iterator |
 | `kernel/kernel/acpi/processor_idle.c` | `_CST` per processor, its binding to CPU slots, the published table (§3.10) |
@@ -168,7 +168,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor; offsets from 0x100 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
-| `sleep_milliseconds(u32)` → the milliseconds waited, `stall_microseconds(u32)` | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick, which a sleep returns; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
+| `sleep_milliseconds(u32)` → the milliseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick, which each returns; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
 | `log(level, text)` | serial, compiled out below the build's level | stdout |
@@ -178,9 +178,9 @@ function pointer per call, each given the host's context first. The tables and t
 they read through. Ring 0's is `advanced_configuration_and_power_interface_machine_host`; a test opens a simulated
 host beside it.
 
-AML runs at boot only once `clock_initialize` has started the tick. The `[LPLTLM] acpi` line reports the
-milliseconds `Sleep` and `Stall` request at boot and the ticks actually waited, since `instructions.sh` does not
-see that time.
+AML runs at boot only once `clock_initialize` has started the tick. The `[LPLTLM] acpi.services` record reports
+the milliseconds `Sleep` and the microseconds `Stall` request at boot, and the time the tick says each waited, since
+`instructions.sh` does not see that time.
 
 No callback re-enters the interpreter. The evaluations a region access needs (`_ADR`, `_SEG`, `_BBN`, `_REG`) are
 pushed on the same explicit stack (§3.6).
@@ -284,11 +284,10 @@ declared; one whose parent exists is placed where it stands.
 
 **The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
 predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
-skipped, and declares nothing. Until #539, #540 and #541 run what makes predicates fail today, a predicate that fails
-declares both its branches without running their code, counted (`declared_not_run`), so that a failure never takes
-an object out of the namespace. The decoding pass still decodes the body of a construct the declaration pass did
-not declare, but counts its faults apart (`undeclared_faults`): its names resolve against objects that do not
-exist.
+skipped, and declares nothing. A predicate that fails declares both its branches without running their code, counted
+(`declared_not_run`), so that a failure never takes an object out of the namespace. The decoding pass still decodes
+the body of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its
+names resolve against objects that do not exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
@@ -315,8 +314,9 @@ Consequences:
 
 - **No lock in the interpreter.** A blocking `Sleep` blocks the worker; no other AML runs meanwhile.
 - **`Serialized` costs a sync-level check, not a mutex object** (§5.2).
-- **`Acquire` of an AML mutex always succeeds or nests,** because the mutexes still held are released when an
-  evaluation ends. Only the global lock contends, with firmware, through `\_GL` and `Lock` fields.
+- **`Acquire` of an AML mutex never waits:** it succeeds or nests, because the mutexes still held are released when
+  an evaluation ends, unless the sync level has it ignored (§5.2). Only the global lock contends, with firmware,
+  through `\_GL` and `Lock` fields.
 - **Results are published, not shared.** A consumer gets a plain copy: for `_CST`, a per-CPU table of states that
   the idle path reads without ever calling the interpreter.
 - **Notify never runs inside the evaluation that raised it.** It goes to a bounded ring and is delivered after the
@@ -647,7 +647,6 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 |---|---|---|
 | An opcode decoded but not executed: outside the needs path, `DataTableRegion`, `Nor`, `Revision` | in a method, the evaluation fails with `unimplemented_operator`; at definition-block level, the statement or predicate that holds it fails as in §6.2 and the load goes on | `unimplemented_operator[opcode]` |
 | `Load` from a Buffer; `LoadTable` with a non-empty RootPath, ParameterPath or ParameterData | fails as above | `load_form_unsupported` |
-| `Acquire (\_GL)` before the mutexes of §5.2 land (#540) | fails as above | `global_lock_unavailable` |
 | A byte that is not an opcode | fails as above, with `invalid_opcode`; at table level without an enclosing construct, the rest of the table is abandoned and the next table loads | `invalid_opcode` |
 | `Unload` | its operand is evaluated, and nothing else happens | `unload_refused` |
 | A region space without a handler | the field access fails with `space_unsupported`; `_REG` is never called for that space | `space_unsupported[space]` |
@@ -691,7 +690,7 @@ Each row is a decision, and has at least one test (§8).
 | Implicit return | A method that ends without `Return`, whose caller uses the result, returns Integer 0, counted. ACPI leaves the result undefined; firmware tested on Windows expects 0. | [§19.6.120] |
 | Uninitialized operands | Reading an uninitialized `LocalX` or `ArgX` as an operand gives Integer 0, counted. An uninitialized package element is an error. | |
 | `Serialized` | A sync-level check: calling a Serialized method whose SyncLevel is below the current level fails with `mutex_order`, and the same evaluation may re-enter it. No mutex object exists, because one owner runs AML (§3.7). | [§19.6.85] |
-| Mutexes | `Acquire` returns 0 on success and Ones on timeout; the owner may nest; an `Acquire` below the current sync level is ignored and counted; a `Release` out of order at the same level is accepted; everything held is released when the evaluation ends. | [§19.6.2], [§19.6.89] |
+| Mutexes | `Acquire` returns 0 when the evaluation holds the mutex; the owner may nest; an `Acquire` below the current sync level is ignored, counted, and gives Ones, as uACPI answers it, while an `Acquire (\_GL)` whose global lock the firmware never releases fails (§6.2); a `Release` is accepted out of order when the mutex has the SyncLevel of the one acquired last, and a `Release` of a mutex not held, or of another level, is ignored and counted, as uACPI does; everything held is released when the evaluation ends. | [§19.6.2], [§19.6.89] |
 | Events | `Signal` counts up, `Reset` clears, and `Wait` consumes a pending signal or reports a timeout at once, since nothing else can signal while the only AML owner waits. | [§19.6.125], [§19.6.149] |
 | Implicit source conversion | Operands are converted to the type the operator needs: Buffer to Integer from its first 4 or 8 bytes, String to Integer as hexadecimal up to the first non-hex character, a `0x` prefix accepted and an empty string giving 0; an Integer that `Mid` takes becomes a Buffer of 4 or 8 bytes, as ACPICA converts it; `SizeOf` refuses an Integer, as uACPI does, where ACPICA gives 4 or 8. An impossible conversion fails the evaluation. The cases ACPI forbids are counted (`forbidden_conversions`). | [§19.3.5.4], [§19.3.5.7] |
 | Mixed-type comparisons and `Concatenate` | The second operand is converted to the first's type, as ACPICA converts it: an Integer to a String of 8 or 16 hexadecimal digits, a Buffer to a String of `0x` and two digits per byte separated by spaces, a String to a Buffer with its NUL; `mixed_type_comparisons` counts it. | [§19.3.5.4] |
@@ -725,7 +724,7 @@ Each row is a decision, and has at least one test (§8).
 | `\_OSI` | A native method. TRUE for every Windows string, from "Windows 2000" to the newest Microsoft defines. FALSE for "Linux", "Darwin", "FreeBSD", "HP-UX", "OpenVMS", the vendor `Linux-*` strings and every feature string, "Processor Aggregator Device", "3.0 Thermal Model" and "Extended Address Space Descriptor" included. The newest Windows string asked is recorded: it drives port protection (§5.3). Firmware tests mostly the newest Windows path, and loads less when told "Linux". | [§5.7.2] |
 | `\_OS` | `"Microsoft Windows NT"`: `_OSI` ladders fall back on it. | [§5.7.3] |
 | `\_REV` | 2, as every other implementation answers. | [§5.7.4] |
-| `\_GL` | A predefined mutex. Once the mutexes land (#540), `Acquire (\_GL)` takes the AML mutex, then the global lock as a `Lock` field does (§4.4). Without a FACS, or on a hardware-reduced platform, which has no global lock ([§3.11.1]), acquiring `\_GL` takes only the AML mutex. | [§5.7.1], [§5.2.10.1] |
+| `\_GL` | A predefined mutex. `Acquire (\_GL)` takes the AML mutex, then the global lock as a `Lock` field does (§4.4). Without a FACS, or on a hardware-reduced platform, which has no global lock ([§3.11.1]), acquiring `\_GL` takes only the AML mutex. | [§5.7.1], [§5.2.10.1] |
 | Predefined scopes | `\`, `\_GPE`, `\_PR_`, `\_SB_`, `\_SI_`, `\_TZ_`; `\_PR_` is deprecated, but servers still reference it. | [§5.3.1] |
 
 `\_OSI` exists as a node, never only as a special case in the call path: firmware reaches it through
@@ -737,7 +736,7 @@ Each row is a decision, and has at least one test (§8).
 |---|---|---|
 | `Sleep` | Gives up the processor for the requested milliseconds (at boot, a halt until a tick deadline, §3.3), with no 2 s cap. The request is charged to the evaluation's time budget first (§6.1), and a request that would exceed it fails the evaluation before sleeping. Real firmware asks for 3 s. | [§19.6.127] |
 | `Stall` | Busy-waits up to 255 µs; above, it becomes a sleep of the rounded-up milliseconds; both counted beyond 100 µs. The ticks waited are counted next to the microseconds asked, so the boot time lost shows. | [§19.6.129] |
-| `Timer` | 100 ns units, monotonic: the kernel tick in ring 0; in parity runs the virtual clock, which also advances by a fixed quantum on each read (§2). | [§19.6.136] |
+| `Timer` | 100 ns units, monotonic: the kernel tick in ring 0; in parity runs the virtual clock, which also advances by 100 µs on each read (§2). | [§19.6.136] |
 
 ---
 

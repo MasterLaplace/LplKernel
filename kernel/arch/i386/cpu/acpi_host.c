@@ -151,6 +151,34 @@ static uint32_t acpi_host_sleep_milliseconds(void *context, uint32_t millisecond
     return (uint32_t) (((uint64_t) (clock_get_tick_count() - start) * 1000u) / hertz);
 }
 
+static uint32_t acpi_host_stall_microseconds(void *context, uint32_t microseconds)
+{
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t start = clock_get_tick_count();
+
+    (void) context;
+    if (hertz == 0u)
+        return 0u;
+    interrupt_request_spin_microseconds(microseconds);
+    return (uint32_t) (((uint64_t) (clock_get_tick_count() - start) * 1000000u) / hertz);
+}
+
+static uint64_t acpi_host_clock_100ns(void *context)
+{
+    static uint32_t last_ticks;
+    static uint64_t wrapped_ticks;
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t ticks = clock_get_tick_count();
+
+    (void) context;
+    if (hertz == 0u)
+        return 0u;
+    if (ticks < last_ticks)
+        wrapped_ticks += 1ull << 32u;
+    last_ticks = ticks;
+    return ((wrapped_ticks + ticks) * 10000000u) / hertz;
+}
+
 static void *acpi_host_allocate_pages(void *context, uint32_t count)
 {
     (void) context;
@@ -179,6 +207,8 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .port_read = acpi_host_port_read,
     .port_write = acpi_host_port_write,
     .sleep_milliseconds = acpi_host_sleep_milliseconds,
+    .stall_microseconds = acpi_host_stall_microseconds,
+    .clock_100ns = acpi_host_clock_100ns,
     .allocate_pages = acpi_host_allocate_pages,
     .release_pages = acpi_host_release_pages,
 };
