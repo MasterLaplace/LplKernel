@@ -10,4 +10,3 @@ osi §5.4 the Windows identity: no runner string ("TestRunner", "AnotherTestStri
 read-fields-on-deref §6.2 errors: a region on physical page 0 is unreachable, the kernel mapping no window there
 reg-orphan-ec #544: _REG is not run yet
 reg-vs-copy-object #544: _REG is not run yet
-string-and-buffer-stores-to-fields §5.3 field units: a String or a Buffer is cut or zero-extended and written once, as ACPICA does, where Windows writes it in unit-sized chunks (#603)
