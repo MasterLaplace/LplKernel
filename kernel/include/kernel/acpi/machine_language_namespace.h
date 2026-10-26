@@ -54,6 +54,9 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT 1u /**< The root's node index. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE                                          \
     0x01u /**< Node flag: the node was removed, and its index waits on the free list. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_INITIALIZATION                          \
+    0x02u /**< Node flag: the node, or one below it, is the device, processor or thermal zone of an _INI, as the       \
+               initialisation's pre-pass marks it (§3.8 step 4). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS                                     \
     8u /**< Aliases one resolution follows before it gives up. */
 
@@ -208,6 +211,34 @@ advanced_configuration_and_power_interface_machine_language_namespace_node(
  */
 extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_child(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name);
+
+/**
+ * @brief Finds the object the child of @p parent named @p name holds: an alias is followed to what
+ *        it names.
+ *
+ * @param space  The namespace.
+ * @param parent The parent's index.
+ * @param name   The NameSeg, as an integer.
+ * @return The index of the node that holds the object, or 0 when @p parent has no such child, when it
+ *         is an External that no table declared, or when its aliases do not end within
+ *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_object(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name);
+
+/**
+ * @brief Writes the absolute path of a node, such as `\_SB_.PCI0._STA`, its NameSegs four characters
+ *        each, ended by a NUL.
+ *
+ * @param space    The namespace.
+ * @param index    The node.
+ * @param out      Receives the path.
+ * @param capacity The bytes @p out holds.
+ * @return The path's length without its NUL; 0, @p out untouched, when it does not fit.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_path(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t index, char *out,
+    uint32_t capacity);
 
 /**
  * @brief Creates a child of @p parent, last in declaration order.

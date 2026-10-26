@@ -1,6 +1,6 @@
 #include "simulated_host.h"
 
-#include <kernel/acpi/machine_language.h>
+#include <kernel/acpi/initialization.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/boot_module.h>
 #include <kernel/testing/test.h>
@@ -158,10 +158,33 @@ static void corpus_measure_load(KernelTest_t *test)
 }
 
 /**
- * @brief Loads the definition blocks of the directory read, with the server profile's caps as the
- *        host harness does, prints the records of the load, then closes it and releases the directory.
+ * @brief Initialises the namespace of the load as the boot does, and prints what it ran and counted.
  */
-static void corpus_load_directory(KernelTest_t *test)
+static void corpus_initialize(KernelTest_t *test)
+{
+    static AdvancedConfigurationAndPowerInterfaceInitialization_t initialization;
+
+    advanced_configuration_and_power_interface_initialize_namespace(&corpus_load, &initialization);
+    kernel_test_measure(test, "initializations", initialization.initializations);
+    kernel_test_measure(test, "initialization_failed", initialization.initialization_failed);
+    kernel_test_measure(test, "registrations", initialization.registrations);
+    kernel_test_measure(test, "region_registration_failed", initialization.region_registration_failed);
+    kernel_test_measure(test, "devices", initialization.devices);
+    kernel_test_measure(test, "status_evaluations", initialization.status_evaluations);
+    kernel_test_measure(test, "status_failed", initialization.status_failed);
+    kernel_test_measure(test, "status_invalid", initialization.status_invalid);
+    kernel_test_measure(test, "pic_mode_deferred", initialization.pic_mode_deferred);
+    kernel_test_measure(test, "first_failure", initialization.first_failure);
+    kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
+                      "the initialisation leaves no frame and no temporary node behind");
+}
+
+/**
+ * @brief Loads the definition blocks of the directory read, with the server profile's caps as the
+ *        host harness does, prints the records of the load, initialises its namespace when
+ *        @p initialize holds, then closes it and releases the directory.
+ */
+static void corpus_load_directory(KernelTest_t *test, bool initialize)
 {
     if (kernel_test_check(test,
                           advanced_configuration_and_power_interface_machine_language_open(
@@ -173,6 +196,8 @@ static void corpus_load_directory(KernelTest_t *test)
         advanced_configuration_and_power_interface_machine_language_load_directory(&corpus_load, &corpus_directory);
         kernel_test_check(test, corpus_load.declarations != 0u, "the machine's definition blocks declare objects");
         corpus_measure_load(test);
+        if (initialize)
+            corpus_initialize(test);
     }
     advanced_configuration_and_power_interface_machine_language_close(&corpus_load);
     advanced_configuration_and_power_interface_release_directory(&corpus_directory);
@@ -280,9 +305,10 @@ KERNEL_TEST(a_malformed_image_is_refused_and_says_why)
 }
 
 /**
- * @brief The recorded machine a boot module holds, as an image, loads through a simulated host: its
- *        records, compared with the host harness's on the same module, show that its tables build the
- *        same namespace in ring 0 as on the build machine.
+ * @brief The recorded machine a boot module holds, as an image, loads and initialises through a
+ *        simulated host: its records, compared with the host harness's on the same module, show that
+ *        its tables build the same namespace, and initialise it the same way, in ring 0 as on the build
+ *        machine.
  */
 KERNEL_TEST(the_boot_module_machine_loads)
 {
@@ -310,7 +336,7 @@ KERNEL_TEST(the_boot_module_machine_loads)
         advanced_configuration_and_power_interface_release_directory(&corpus_directory);
         return;
     }
-    corpus_load_directory(test);
+    corpus_load_directory(test, true);
     kernel_test_check(test, corpus_host.outstanding_maps == 0u && corpus_host.mismatched_unmaps == 0u,
                       "every window is unmapped as it was mapped");
     kernel_test_check(test, corpus_host.outstanding_pages == 0u, "every page goes back to the host");
@@ -319,7 +345,8 @@ KERNEL_TEST(the_boot_module_machine_loads)
 /**
  * @brief The tables of the machine the kernel boots on load: in ring 0 they are the firmware's, on the
  *        host harness those a debug kernel printed, so that the two records compare the namespace of
- *        the same bytes.
+ *        the same bytes. Their initialisation is not run again: in ring 0 it reads the machine, on the
+ *        host a simulated one (§8.7).
  */
 KERNEL_TEST(the_booted_machine_loads)
 {
@@ -330,5 +357,5 @@ KERNEL_TEST(the_booted_machine_loads)
         kernel_test_skip(test, "the machine gives no ACPI directory");
         return;
     }
-    corpus_load_directory(test);
+    corpus_load_directory(test, false);
 }

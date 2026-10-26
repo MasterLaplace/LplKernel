@@ -6,7 +6,8 @@
 #define MACHINE_LANGUAGE_NODE(type)       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
 #define MACHINE_LANGUAGE_FIELD_UNIT(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_##kind
 #define MACHINE_LANGUAGE_ROOT             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT
-#define MACHINE_LANGUAGE_PCI_CONFIG       0x02u  /**< The RegionSpace byte of PCI_Config. */
+#define MACHINE_LANGUAGE_PCI_CONFIG                                                                                    \
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION
 #define MACHINE_LANGUAGE_PCI_REACHABLE    0x100u /**< Configuration bytes reachable before ECAM (#58). */
 #define MACHINE_LANGUAGE_PCI_HEADER_TYPE  0x0Eu  /**< The header type register. */
 #define MACHINE_LANGUAGE_PCI_LAYOUT       0x7Fu  /**< The header type's layout, without the multi-function bit. */
@@ -194,16 +195,12 @@ static MachineLanguageFound_t machine_language_pci_read_step(MachineLanguageLoad
     }
     if (at == NULL || (region->attach == MACHINE_LANGUAGE_ATTACH_ADDRESS && at->type != MACHINE_LANGUAGE_NODE(DEVICE)))
         return MACHINE_LANGUAGE_FOUND_NOTHING;
-    child = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+    child = advanced_configuration_and_power_interface_machine_language_namespace_find_object(
         &load->space, region->attach_node, machine_language_pci_step_name(region->attach));
-    for (uint32_t hop = 0u; hop < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS &&
-                            child != 0u && machine_language_pci_node(load, child)->type == MACHINE_LANGUAGE_NODE(ALIAS);
-         ++hop)
-        child = machine_language_pci_node(load, child)->value.handle;
 
     const MachineLanguageNode_t *node = machine_language_pci_node(load, child);
 
-    if (node == NULL || node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) || node->type == MACHINE_LANGUAGE_NODE(ALIAS))
+    if (node == NULL)
         return MACHINE_LANGUAGE_FOUND_NOTHING;
     if (node->type == MACHINE_LANGUAGE_NODE(METHOD))
     {
@@ -591,4 +588,27 @@ advanced_configuration_and_power_interface_machine_language_peripheral_component
     if (!write)
         *value = result;
     return MACHINE_LANGUAGE_OK;
+}
+
+uint32_t advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
+    MachineLanguageLoad_t *load, uint32_t region_node)
+{
+    const MachineLanguageRegion_t *region =
+        machine_language_pci_object(load, region_node, MACHINE_LANGUAGE_VALUE(REGION));
+
+    if (region == NULL || region->space != MACHINE_LANGUAGE_PCI_CONFIG)
+        return 0u;
+
+    const uint32_t method = advanced_configuration_and_power_interface_machine_language_namespace_find_object(
+        &load->space, machine_language_pci_parent(load, region_node),
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "_REG", 0u));
+    const MachineLanguageNode_t *node = machine_language_pci_node(load, method);
+
+    return (node != NULL && node->type == MACHINE_LANGUAGE_NODE(METHOD)) ? method : 0u;
+}
+
+void advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registered(
+    MachineLanguageLoad_t *load)
+{
+    load->regions.registers_at_creation = true;
 }

@@ -15,16 +15,6 @@
 #define MACHINE_LANGUAGE_ELSE_NOT_RUN  2u    /**< The Else is declared, its code not run: the If's predicate failed. */
 #define MACHINE_LANGUAGE_BLOCK_NOT_RUN ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_NOT_RUN
 
-#if defined(LPL_KERNEL_REAL_TIME_MODE)
-#    define MACHINE_LANGUAGE_BOOT_MAX_NODES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_NODES
-#    define MACHINE_LANGUAGE_BOOT_MAX_ARENA_BYTES                                                                      \
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_ARENA_BYTES
-#else
-#    define MACHINE_LANGUAGE_BOOT_MAX_NODES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES
-#    define MACHINE_LANGUAGE_BOOT_MAX_ARENA_BYTES                                                                      \
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES
-#endif
-
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguagePendingOperator_t MachineLanguagePendingOperator_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock_t MachineLanguageBlock_t;
@@ -86,8 +76,6 @@ typedef struct MachineLanguageWalk {
     uint32_t undeclared_from; /**< The depth of the outermost such TermList open, or 0: faults inside it are
                                    counted apart. */
 } MachineLanguageWalk_t;
-
-static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t machine_language_boot_load;
 
 /**
  * @brief The construct the walk is in.
@@ -1600,9 +1588,7 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
 
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
-        load->evaluation.iterations = 0u;
-        load->evaluation.field_accesses = 0u;
-        advanced_configuration_and_power_interface_machine_language_begin_services(load);
+        advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
     }
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
     block->placement = 0u;
@@ -1625,7 +1611,7 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
         advanced_configuration_and_power_interface_machine_language_release_table_locals(load);
-        advanced_configuration_and_power_interface_machine_language_end_services(load);
+        advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
     }
 }
 
@@ -1864,22 +1850,6 @@ void advanced_configuration_and_power_interface_machine_language_close(
     advanced_configuration_and_power_interface_machine_language_regions_close(load);
     advanced_configuration_and_power_interface_machine_language_heap_close(&load->heap, &load->space);
     advanced_configuration_and_power_interface_machine_language_namespace_close(&load->space);
-}
-
-void advanced_configuration_and_power_interface_machine_language_initialize(void)
-{
-    if (advanced_configuration_and_power_interface_machine_language_open(
-            &machine_language_boot_load, &advanced_configuration_and_power_interface_machine_host,
-            MACHINE_LANGUAGE_BOOT_MAX_NODES, MACHINE_LANGUAGE_BOOT_MAX_ARENA_BYTES))
-        advanced_configuration_and_power_interface_machine_language_load_directory(
-            &machine_language_boot_load, advanced_configuration_and_power_interface_directory());
-    advanced_configuration_and_power_interface_machine_language_drop_notifications(&machine_language_boot_load);
-}
-
-const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *
-advanced_configuration_and_power_interface_machine_language(void)
-{
-    return &machine_language_boot_load;
 }
 
 uint32_t advanced_configuration_and_power_interface_machine_language_namespace_fold(

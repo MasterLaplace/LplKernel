@@ -152,6 +152,37 @@ extern void made_up_aml_method(MadeUpAml_t *aml, const char *name, uint8_t flags
 extern void made_up_aml_device(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body);
 
 /**
+ * @brief Appends Scope (@p name) { @p body }.
+ *
+ * @param aml  The AML.
+ * @param name Four characters: a NameSeg the scope around it, or one above, holds.
+ * @param body The TermList of the scope.
+ */
+extern void made_up_aml_scope(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body);
+
+/**
+ * @brief Appends ThermalZone (@p name) { @p body }.
+ *
+ * @param aml  The AML.
+ * @param name Four characters.
+ * @param body The TermList of the thermal zone.
+ */
+extern void made_up_aml_thermal_zone(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body);
+
+/**
+ * @brief Appends Processor (@p name, @p processor_id, @p block_address, @p block_length) { @p body }.
+ *
+ * @param aml           The AML.
+ * @param name          Four characters.
+ * @param processor_id  The ProcID byte.
+ * @param block_address The PblkAddr DWord.
+ * @param block_length  The PblkLen byte.
+ * @param body          The TermList of the processor.
+ */
+extern void made_up_aml_processor(MadeUpAml_t *aml, const char *name, uint8_t processor_id, uint32_t block_address,
+                                  uint8_t block_length, const MadeUpAml_t *body);
+
+/**
  * @brief Appends Store (@p source, @p target), both names of one NameSeg.
  *
  * @param aml    The builder.

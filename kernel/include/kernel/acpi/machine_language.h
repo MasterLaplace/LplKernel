@@ -276,6 +276,27 @@ advanced_configuration_and_power_interface_machine_language_peripheral_component
     bool write, uint32_t *value);
 
 /**
+ * @brief The _REG a PCI_Config region is registered through (§5.3): the method named _REG in the
+ *        region's own scope, never one above it, whatever arguments it takes.
+ *
+ * @param load        The load.
+ * @param region_node The region's node.
+ * @return The method's node; 0 when the node holds no PCI_Config region or its scope no such method.
+ */
+extern uint32_t
+advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t region_node);
+
+/**
+ * @brief Says that the initialisation has run the _REG of every scope that declares a PCI_Config
+ *        region (§3.8 step 3): from now on, a PCI_Config region a method creates gets its _REG at once.
+ *
+ * @param load The load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registered(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
  * @brief Gives a node the OperationRegion object an OperationRegion in a method creates (§5.3); a
  *        table's regions are built in place by its load, which keeps window W1 within its budget.
  *
@@ -371,12 +392,12 @@ extern bool advanced_configuration_and_power_interface_machine_language_port_is_
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint16_t port);
 
 /**
- * @brief Starts an evaluation's budget of requested time (§6.1): a table's load, or an evaluation
- *        the host asked for.
+ * @brief Starts an evaluation, a table's load or one the host asked for: its budgets of §6.1, While
+ *        back-edges, field accesses and requested time, start from zero.
  *
  * @param load The load.
  */
-extern void advanced_configuration_and_power_interface_machine_language_begin_services(
+extern void advanced_configuration_and_power_interface_machine_language_begin_evaluation(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
@@ -385,7 +406,7 @@ extern void advanced_configuration_and_power_interface_machine_language_begin_se
  *
  * @param load The load.
  */
-extern void advanced_configuration_and_power_interface_machine_language_end_services(
+extern void advanced_configuration_and_power_interface_machine_language_end_evaluation(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
@@ -563,6 +584,26 @@ advanced_configuration_and_power_interface_machine_language_evaluate(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_result);
 
 /**
+ * @brief Evaluates the object a node holds, as
+ *        advanced_configuration_and_power_interface_machine_language_evaluate evaluates the one a path
+ *        names.
+ *
+ * @param load           A load whose tables are decoded, its stacks free.
+ * @param node           The node, which holds the object.
+ * @param arguments      The method's arguments, or NULL when it takes none.
+ * @param argument_count How many: exactly as many as the method takes (§5.2).
+ * @param out_result     Receives the result, which the caller gives back with
+ *                       advanced_configuration_and_power_interface_machine_language_value_release.
+ * @return TYPE_MISMATCH for the wrong number of arguments or an object that is no data; why the method
+ *         failed otherwise, every frame it pushed gone by then; OK on success.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_evaluate_node(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *arguments, uint32_t argument_count,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_result);
+
+/**
  * @brief Releases what Local0 to Local7 of table-level code hold, once a table's code has run: its
  *        locals do not outlive the table.
  *
@@ -660,19 +701,5 @@ extern uint32_t advanced_configuration_and_power_interface_machine_language_name
  */
 extern void advanced_configuration_and_power_interface_machine_language_close(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
-
-/**
- * @brief Loads this machine's definition blocks at boot, into the boot's load, with the caps of the
- *        build's profile, then drops the Notifies their code raised (§3.8 step 9).
- */
-extern void advanced_configuration_and_power_interface_machine_language_initialize(void);
-
-/**
- * @brief The boot's load, which advanced_configuration_and_power_interface_machine_language_initialize fills.
- *
- * @return The load, never NULL.
- */
-extern const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *
-advanced_configuration_and_power_interface_machine_language(void);
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_H */

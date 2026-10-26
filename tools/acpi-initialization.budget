@@ -1,0 +1,10 @@
+# Window W2 of the ACPI specification (§7.4): the initialisation of q35's namespace, steps 2 to 5 of §3.8 so far, on
+# a release server kernel (SMOKE_TESTS=0 ./build.sh --server). Checked by
+# tools/instructions.sh --budget tools/acpi-initialization.budget kernel/lpl.kernel; a change that moves the
+# initialisation records the new counts.
+inside=advanced_configuration_and_power_interface_initialize_namespace
+times=1
+machine=q35
+instructions=114025
+accesses=53432
+tolerance=1

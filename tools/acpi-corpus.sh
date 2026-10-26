@@ -7,6 +7,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh check [quick|corpus|full]
        tools/acpi-corpus.sh namespace [quick|corpus|full|qemu]
        tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
+       tools/acpi-corpus.sh initialize [quick|corpus|full|qemu]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
        tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
@@ -36,6 +37,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          prints, for each opcode the needs path reaches on some machine, how many machines it reaches
          it on, and which when they are five or fewer: the opcodes the interpreter executes
          (specification §4.1); a machine not read or a decode fault fails it
+  initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
+         `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, then
+         the statuses their failures ended with; a machine the harness fails on fails it
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -193,6 +197,46 @@ namespace_check() {
     [[ "$1" == qemu ]] || grep '^aml run \(status\|unimplemented\|space\) ' <<<"$runs" | awk '{ split($4, pair, "="); total[$3 " " pair[1]] += pair[2] }
         END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k4,4nr || true
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
+}
+
+# Initialises the namespace of each machine of the list $1, or each QEMU configuration, with
+# `test-acpi --initialize`, and sums what the initialisations ran and counted; a machine the harness fails
+# on fails the run.
+initialize_check() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local number=0 failed=0 subject output counts="" key
+    local -a tables
+    output="$(mktemp)"
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        if [[ "$1" == qemu ]]; then
+            read -ra tables <<<"$subject"
+            subject="${tables[0]#"$QEMU_TABLES"/}"
+            "$HARNESS" --initialize-tables "${tables[@]}" >"$output" 2>&1 || true
+        else
+            "$HARNESS" --initialize "$LINUXHW/$subject.bin" >"$output" 2>&1 || true
+        fi
+        if ! grep -q '^aml init initializations=' "$output"; then
+            echo "not ok $number $subject: the harness failed"
+            sed 's/^/    # /' "$output" | tail -5
+            failed=$((failed + 1))
+            continue
+        fi
+        echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
+        counts+="$(grep '^aml init ' "$output")"$'\n'
+    done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
+    rm -f "$output"
+    echo -n "# initialization of $((number - failed)) of $number:"
+    for key in initializations initialization_failed registrations region_registration_failed devices \
+        status_evaluations status_failed status_invalid pic_mode_deferred; do
+        echo -n " $key=$(grep '^aml init initializations=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 |
+            paste -sd+ | bc)"
+    done
+    echo
+    echo "# machines with a failure: $(grep -c '^aml init first_failure ' <<<"$counts")"
+    grep '^aml init failed ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
+        END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k3,3nr || true
+    [[ "$number" -gt 0 && "$failed" -eq 0 ]]
 }
 
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
@@ -477,6 +521,7 @@ case "${1:-}" in
         ;;
     namespace) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; namespace_check "${2:-corpus}" ;;
     closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
+    initialize) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; initialize_check "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
     module) shift; modules "$@" ;;

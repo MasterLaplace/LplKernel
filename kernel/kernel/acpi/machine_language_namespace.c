@@ -374,6 +374,53 @@ uint32_t advanced_configuration_and_power_interface_machine_language_namespace_f
     }
 }
 
+uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_object(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name)
+{
+    const uint32_t child =
+        advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, parent, name);
+    uint32_t index = 0u;
+
+    if (child == 0u || machine_language_namespace_follow_aliases(space, child, &index) !=
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        return 0u;
+    return (advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->type ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_EXTERNAL) ?
+               0u :
+               index;
+}
+
+uint32_t advanced_configuration_and_power_interface_machine_language_namespace_path(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t index, char *out,
+    uint32_t capacity)
+{
+    uint32_t depth = 0u;
+
+    for (uint32_t at = index; at != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         at = advanced_configuration_and_power_interface_machine_language_namespace_node(space, at)->parent)
+        ++depth;
+
+    const uint32_t length = (depth == 0u) ? 1u : 5u * depth;
+
+    if (length >= capacity)
+        return 0u;
+    out[0] = '\\';
+    out[length] = '\0';
+    for (uint32_t at = index, end = length; at != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         at = advanced_configuration_and_power_interface_machine_language_namespace_node(space, at)->parent)
+    {
+        const uint32_t name =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(space, at)->name;
+
+        end -= 4u;
+        for (uint32_t character = 0u; character < 4u; ++character)
+            out[end + character] = (char) (name >> (8u * character));
+        if (end > 1u)
+            out[--end] = '.';
+    }
+    return length;
+}
+
 AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_namespace_add_child(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name,

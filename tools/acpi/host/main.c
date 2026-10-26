@@ -2,7 +2,7 @@
 #include "platform.h"
 #include "recorded_machine.h"
 
-#include <kernel/acpi/machine_language.h>
+#include <kernel/acpi/initialization.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
@@ -12,6 +12,7 @@
 #include <string.h>
 
 #define HARNESS_PAGE_BYTES 4096u /**< What a bootloader aligns a module to, and the harness too. */
+#define HARNESS_PATH_BYTES 256u  /**< Bytes of a node's path the harness prints: fifty-one levels deep. */
 
 #define HARNESS_USAGE                                                                                                  \
     "Usage: test-acpi [--boot-module <image>] [--firmware-log <log>]\n"                                                \
@@ -26,9 +27,14 @@
     "       test-acpi --namespace-tables <table>...  the same from raw definition blocks, the DSDT first\n"            \
     "       test-acpi --closure <dump>   prints the opcodes the needs path of an acpidump text file reaches\n"         \
     "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"            \
-    "       test-acpi --evaluate <path> <table>...    loads raw definition blocks, the DSDT first, and prints\n"       \
-    "                                    what evaluating the absolute path gives: its status, then the\n"              \
-    "                                    result's type and value, and each opcode run but not executed\n"              \
+    "       test-acpi --initialize <dump>  loads the definition blocks of an acpidump text file, initialises\n"        \
+    "                                    their namespace as the boot does, and prints what it ran and counted,\n"      \
+    "                                    each status a failure ended with, and the first object that failed\n"         \
+    "       test-acpi --initialize-tables <table>...  the same from raw definition blocks, the DSDT first\n"           \
+    "       test-acpi --evaluate <path> <table>...    loads raw definition blocks, the DSDT first, initialises\n"      \
+    "                                    their namespace, and prints what evaluating the absolute path gives: its\n"   \
+    "                                    status, then the result's type and value, and each opcode run but not\n"      \
+    "                                    executed\n"                                                                   \
     "       test-acpi --write-module <dump> <image>  writes the firmware an acpidump text file gives, as this\n"       \
     "                                    harness serves it, as an image: the Multiboot module of a debug kernel\n"
 
@@ -163,9 +169,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            (unsigned long long) load->services.time_requested_peak, load->services.signals,
            load->services.notifications, load->services.notifications_dropped, load->services.notification_peak);
     printf("aml run pci attachments=%u internal_evaluations=%u internal_failures=%u protected_writes=%u "
-           "lost_accesses=%u ecam_accesses=%u\n",
+           "lost_accesses=%u ecam_accesses=%u registrations=%u registration_failures=%u\n",
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
-           regions->pci_protected_writes, regions->pci_lost_accesses, regions->pci_ecam_accesses);
+           regions->pci_protected_writes, regions->pci_lost_accesses, regions->pci_ecam_accesses,
+           regions->pci_registrations, regions->pci_registration_failures);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);
@@ -506,16 +513,26 @@ static void harness_print_namespace(const AdvancedConfigurationAndPowerInterface
     }
 }
 
+/**
+ * @brief What the harness prints of a load once its tables are decoded.
+ */
+typedef enum HarnessView {
+    HARNESS_VIEW_NAMESPACE = 0,      /**< Its namespace, one node per line. */
+    HARNESS_VIEW_CLOSURE = 1,        /**< The opcodes its needs path reaches. */
+    HARNESS_VIEW_INITIALIZATION = 2, /**< What initialising its namespace ran and counted. */
+} HarnessView_t;
+
 static NeedsPathClosure_t harness_closure;
+static AdvancedConfigurationAndPowerInterfaceInitialization_t harness_initialization;
 
 /**
- * @brief Makes the closure the load's observer when @p closure holds.
+ * @brief Makes the closure the load's observer when @p view is the closure.
  *
  * @return false when the closure could not be allocated, which it says.
  */
-static bool harness_observe(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, bool closure)
+static bool harness_observe(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, HarnessView_t view)
 {
-    if (!closure || needs_path_closure_attach(&harness_closure, load))
+    if (view != HARNESS_VIEW_CLOSURE || needs_path_closure_attach(&harness_closure, load))
         return true;
     fputs("test-acpi: the closure's arrays could not be allocated\n", stderr);
     return false;
@@ -543,28 +560,61 @@ static void harness_print_closure(AdvancedConfigurationAndPowerInterfaceMachineL
 }
 
 /**
- * @brief Prints what a load could not build, then its namespace, or its closure when @p closure holds.
+ * @brief Initialises a decoded load's namespace as the boot does, and prints what it ran and counted,
+ *        each status a failure ended with, and the first object whose evaluation failed.
  */
-static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, bool closure)
+static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    const AdvancedConfigurationAndPowerInterfaceInitialization_t *counts = &harness_initialization;
+    char path[HARNESS_PATH_BYTES] = "none";
+
+    advanced_configuration_and_power_interface_initialize_namespace(load, &harness_initialization);
+    printf("aml init initializations=%u initialization_failed=%u registrations=%u region_registration_failed=%u "
+           "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u\n",
+           counts->initializations, counts->initialization_failed, counts->registrations,
+           counts->region_registration_failed, counts->devices, counts->status_evaluations, counts->status_failed,
+           counts->status_invalid, counts->pic_mode_deferred);
+    for (uint32_t status = 1u; status < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT;
+         ++status)
+        if (counts->statuses[status] != 0u)
+            printf("aml init failed %s=%u\n",
+                   advanced_configuration_and_power_interface_machine_language_status_name(status),
+                   counts->statuses[status]);
+    if (counts->first_failure_node != 0u)
+    {
+        (void) advanced_configuration_and_power_interface_machine_language_namespace_path(
+            &load->space, counts->first_failure_node, path, sizeof(path));
+        printf("aml init first_failure %s %s\n", path,
+               advanced_configuration_and_power_interface_machine_language_status_name(counts->first_failure));
+    }
+}
+
+/**
+ * @brief Prints what a load could not build, then the view of it asked for: its namespace, its closure,
+ *        or what initialising its namespace ran, which the runs printed after it include.
+ */
+static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, HarnessView_t view)
 {
     printf("aml namespace table_level_failures=%u table_level_code=%u values_deferred=%u load_errors=%u "
            "decode_errors=%u\n",
            load->evaluation.failures, load->table_level_code, load->values_deferred, load->load_errors,
            load->decode_errors);
+    if (view == HARNESS_VIEW_INITIALIZATION)
+        harness_print_initialization(load);
     harness_print_runs(load);
-    if (closure)
+    if (view == HARNESS_VIEW_CLOSURE)
         harness_print_closure(load);
-    else
+    else if (view == HARNESS_VIEW_NAMESPACE)
         harness_print_namespace(load);
 }
 
 /**
  * @brief Loads the definition blocks of the dump at @p path with the server profile's caps, and
- *        prints what the load could not build, then its namespace, or its closure when @p closure holds.
+ *        prints what the load could not build, then the view of it asked for.
  *
  * @return 0 when the directory was read, 1 otherwise.
  */
-static int harness_dump_namespace(const char *path, bool closure)
+static int harness_dump_namespace(const char *path, HarnessView_t view)
 {
     static RecordedMachine_t machine;
     static AdvancedConfigurationAndPowerInterfaceDirectory_t directory;
@@ -582,10 +632,10 @@ static int harness_dump_namespace(const char *path, bool closure)
                 &load, &machine.simulated.host,
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES) &&
-            harness_observe(&load, closure))
+            harness_observe(&load, view))
         {
             advanced_configuration_and_power_interface_machine_language_load_directory(&load, &directory);
-            harness_print_load(&load, closure);
+            harness_print_load(&load, view);
             status = 0;
         }
         advanced_configuration_and_power_interface_machine_language_close(&load);
@@ -626,11 +676,11 @@ static bool harness_read_table(const char *path, uint8_t **out_table)
 
 /**
  * @brief Loads raw definition blocks, the DSDT first, with the server profile's caps, and prints
- *        what the load could not build, then its namespace, or its closure when @p closure holds.
+ *        what the load could not build, then the view of it asked for.
  *
  * @return 0 when every file was read and the namespace opened, 1 otherwise.
  */
-static int harness_dump_tables_namespace(int count, char **paths, bool closure)
+static int harness_dump_tables_namespace(int count, char **paths, HarnessView_t view)
 {
     static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
     static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t simulated;
@@ -643,7 +693,7 @@ static int harness_dump_tables_namespace(int count, char **paths, bool closure)
             &load, &simulated.host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
     {
-        status = harness_observe(&load, closure) ? 0 : 1;
+        status = harness_observe(&load, view) ? 0 : 1;
         for (int index = 0; index < count && status == 0; ++index)
         {
             if (harness_read_table(paths[index], &tables[index]))
@@ -655,7 +705,7 @@ static int harness_dump_tables_namespace(int count, char **paths, bool closure)
         if (status == 0)
         {
             advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
-            harness_print_load(&load, closure);
+            harness_print_load(&load, view);
         }
     }
     advanced_configuration_and_power_interface_machine_language_close(&load);
@@ -698,9 +748,10 @@ static void harness_print_result(const AdvancedConfigurationAndPowerInterfaceMac
 }
 
 /**
- * @brief Loads raw definition blocks, the DSDT first, running their table-level code, then evaluates
- *        @p path and prints its status, its result, and each opcode the load and the evaluation ran
- *        but do not execute.
+ * @brief Loads raw definition blocks, the DSDT first, running their table-level code, initialises their
+ *        namespace as uACPI's test runner does before it evaluates \MAIN, then evaluates @p path and
+ *        prints its status, its result, and each opcode the load, the initialisation and the evaluation
+ *        ran but do not execute.
  *
  * @return 0 when every file was read and the namespace opened, 1 otherwise; the evaluation's own
  *         failure is printed, not returned.
@@ -728,6 +779,7 @@ static int harness_evaluate(const char *path, int count, char **paths)
         if (status == 0)
         {
             advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
+            advanced_configuration_and_power_interface_initialize_namespace(&load, &harness_initialization);
             printf("aml evaluate status=%s\n", advanced_configuration_and_power_interface_machine_language_status_name(
                                                    advanced_configuration_and_power_interface_machine_language_evaluate(
                                                        &load, path, NULL, 0u, &result)));
@@ -878,17 +930,42 @@ static bool harness_read_test_options(int count, char **options, const char **mo
     return true;
 }
 
+/**
+ * @brief Reads which view an option of a dump asks for: --namespace, --closure or --initialize, each
+ *        followed by @p suffix.
+ *
+ * @return false when @p option is none of them.
+ */
+static bool harness_view(const char *option, const char *suffix, HarnessView_t *out_view)
+{
+    static const char *const views[] = {"--namespace", "--closure", "--initialize"};
+    const size_t suffix_length = strlen(suffix);
+
+    for (uint32_t view = 0u; view < sizeof(views) / sizeof(views[0]); ++view)
+    {
+        const size_t length = strlen(views[view]);
+
+        if (strncmp(option, views[view], length) == 0 && strncmp(option + length, suffix, suffix_length + 1u) == 0)
+        {
+            *out_view = (HarnessView_t) view;
+            return true;
+        }
+    }
+    return false;
+}
+
 int main(int argc, char **argv)
 {
     const char *module_path = NULL;
     const char *log_path = NULL;
+    HarnessView_t view = HARNESS_VIEW_NAMESPACE;
 
     if (argc == 3 && strcmp(argv[1], "--machine") == 0)
         return harness_walk_machine(argv[2]);
-    if (argc == 3 && (strcmp(argv[1], "--namespace") == 0 || strcmp(argv[1], "--closure") == 0))
-        return harness_dump_namespace(argv[2], strcmp(argv[1], "--closure") == 0);
-    if (argc >= 3 && (strcmp(argv[1], "--namespace-tables") == 0 || strcmp(argv[1], "--closure-tables") == 0))
-        return harness_dump_tables_namespace(argc - 2, argv + 2, strcmp(argv[1], "--closure-tables") == 0);
+    if (argc == 3 && harness_view(argv[1], "", &view))
+        return harness_dump_namespace(argv[2], view);
+    if (argc >= 3 && harness_view(argv[1], "-tables", &view))
+        return harness_dump_tables_namespace(argc - 2, argv + 2, view);
     if (argc >= 4 && strcmp(argv[1], "--evaluate") == 0)
         return harness_evaluate(argv[2], argc - 3, argv + 3);
     if (argc == 4 && strcmp(argv[1], "--write-module") == 0)
