@@ -5,6 +5,6 @@
 inside=advanced_configuration_and_power_interface_initialize_namespace
 times=1
 machine=q35
-instructions=121871
-accesses=58142
+instructions=114025
+accesses=53432
 tolerance=1
