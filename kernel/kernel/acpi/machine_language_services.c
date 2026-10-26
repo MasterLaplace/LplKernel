@@ -301,7 +301,7 @@ bool advanced_configuration_and_power_interface_machine_language_take_notificati
     *out_notification = services->ring[services->notification_first];
     services->notification_first = (services->notification_first + 1u) % MACHINE_LANGUAGE_RING;
     --services->notification_count;
-    ++services->notifications_delivered;
+    ++services->notifications_taken;
     return true;
 }
 

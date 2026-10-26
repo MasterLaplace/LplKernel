@@ -115,9 +115,9 @@ KERNEL_TEST(a_notify_waits_in_the_ring_and_comes_out_in_order)
                       "the ring gives DEV0, CPU0, TZ00, then DEV0 again through Local0, and nothing more");
     kernel_test_check(test,
                       notifications_load.services.notifications == 5u &&
-                          notifications_load.services.notifications_delivered == 5u &&
+                          notifications_load.services.notifications_taken == 5u &&
                           notifications_load.services.notifications_dropped == 0u,
-                      "five queued, five delivered, none dropped");
+                      "five queued, five taken, none dropped");
     notifications_close();
 }
 
@@ -164,7 +164,7 @@ KERNEL_TEST(a_notify_of_another_object_is_refused)
 }
 
 /**
- * @brief Dropping the ring takes every Notify it holds and acts on none, each counted as delivered, as
+ * @brief Dropping the ring takes every Notify it holds and acts on none, each counted as taken, as
  *        the boot does with what the tables' code raised (§3.8 step 9).
  */
 KERNEL_TEST(dropping_the_ring_takes_every_notify)
@@ -173,7 +173,7 @@ KERNEL_TEST(dropping_the_ring_takes_every_notify)
         return;
     kernel_test_check(test, notifications_evaluate("\\NTFM") == NOTIFICATIONS_STATUS(OK), "NTFM runs");
     advanced_configuration_and_power_interface_machine_language_drop_notifications(&notifications_load);
-    kernel_test_check(test, notifications_ring_is_empty() && notifications_load.services.notifications_delivered == 64u,
+    kernel_test_check(test, notifications_ring_is_empty() && notifications_load.services.notifications_taken == 64u,
                       "the 64 the ring held, the table's own among them, are taken");
     notifications_close();
 }

@@ -134,7 +134,7 @@ acpi_helper_write_services_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("signals", services->signals);
     kernel_telemetry_write_unsigned("notifications", services->notifications);
     kernel_telemetry_write_unsigned("notifications_dropped", services->notifications_dropped);
-    kernel_telemetry_write_unsigned("notifications_delivered", services->notifications_delivered);
+    kernel_telemetry_write_unsigned("notifications_taken", services->notifications_taken);
     kernel_telemetry_write_unsigned("notification_peak", services->notification_peak);
     kernel_telemetry_end_record();
 }

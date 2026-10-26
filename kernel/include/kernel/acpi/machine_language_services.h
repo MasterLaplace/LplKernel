@@ -92,7 +92,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageServices {
     uint32_t signals;                         /**< Signals of an Event. */
     uint32_t notifications;                   /**< Notifies raised, those the full ring dropped included. */
     uint32_t notifications_dropped;           /**< Notifies the full ring could not take. */
-    uint32_t notifications_delivered;         /**< Notifies taken from the ring. */
+    uint32_t notifications_taken;             /**< Notifies taken from the ring: by a consumer, or by the boot,
+                                                   which drops them (§3.8 step 9). */
     uint32_t notification_first;              /**< The ring's oldest entry. */
     uint32_t notification_count;              /**< Entries the ring holds. */
     uint32_t notification_peak;               /**< The most it held at once. */

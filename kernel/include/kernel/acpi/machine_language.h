@@ -387,7 +387,7 @@ advanced_configuration_and_power_interface_machine_language_notify(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, uint64_t value);
 
 /**
- * @brief Takes the oldest Notify from the ring, counted as delivered.
+ * @brief Takes the oldest Notify from the ring, counted as taken.
  *
  * @param load             The load.
  * @param out_notification Receives it.
@@ -398,7 +398,7 @@ extern bool advanced_configuration_and_power_interface_machine_language_take_not
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNotification_t *out_notification);
 
 /**
- * @brief Takes every Notify from the ring and acts on none, each counted as delivered: what the boot
+ * @brief Takes every Notify from the ring and acts on none, each counted as taken: what the boot
  *        does with the Notifies its tables' code raised, until #547 acts on a Notify 0x81 on a
  *        processor (§3.8 step 9).
  *
