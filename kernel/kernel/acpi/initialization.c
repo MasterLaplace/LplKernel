@@ -189,16 +189,13 @@ static void initialization_mark(InitializationLoad_t *load, uint32_t index)
 
 /**
  * @brief The pre-pass of step 4, as ACPICA's AcpiNsFindIniMethods: marks every device, processor and
- *        thermal zone that holds an _INI, and every node above it, and counts them. A node's old mark
- *        is cleared when the walk reaches it, before any node below it can mark it again.
+ *        thermal zone that holds an _INI, and every node above it, and counts them.
  */
 static void initialization_find_initializations(InitializationLoad_t *load, Initialization_t *initialization)
 {
-    initialization_node(load, INITIALIZATION_ROOT)->flags &= (uint8_t) ~INITIALIZATION_HOLDS;
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
          index = initialization_next(load, index, true))
     {
-        initialization_node(load, index)->flags &= (uint8_t) ~INITIALIZATION_HOLDS;
         if (!initialization_is_device(initialization_node(load, index)))
             continue;
         ++initialization->devices;
@@ -219,10 +216,10 @@ static bool initialization_status_invalid(uint64_t status)
 }
 
 /**
- * @brief Reads a device's _STA into @p out_status: 0x0F without one, 0 for a result ACPI declares
- *        invalid, counted.
+ * @brief Reads a device's _STA into @p out_status: 0x0F without one, a String or a Buffer converted as
+ *        an operand is (§5.2), 0 for a result ACPI declares invalid, counted.
  *
- * @return false when its evaluation failed or gave no Integer, counted.
+ * @return false when its evaluation failed or gave no Integer, String or Buffer, counted.
  */
 static bool initialization_read_status(InitializationLoad_t *load, Initialization_t *initialization, uint32_t device,
                                        uint64_t *out_status)
@@ -242,6 +239,7 @@ static bool initialization_read_status(InitializationLoad_t *load, Initializatio
     if (status == INITIALIZATION_OK)
         status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
             &load->heap, &result, (load->integer_bits == 32u) ? 32u : 64u, out_status, &forbidden);
+    load->evaluation.forbidden_conversions += forbidden ? 1u : 0u;
     advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, &result);
     if (status != INITIALIZATION_OK)
     {
@@ -317,6 +315,7 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     initialization_register(load, out_initialization);
     initialization_walk(load, out_initialization);
     out_initialization->pic_mode_deferred = (initialization_object(load, INITIALIZATION_ROOT, "_PIC") != 0u) ? 1u : 0u;
+    advanced_configuration_and_power_interface_machine_language_drop_notifications(load);
 }
 
 void advanced_configuration_and_power_interface_machine_language_initialize(void)
@@ -330,7 +329,6 @@ void advanced_configuration_and_power_interface_machine_language_initialize(void
         advanced_configuration_and_power_interface_initialize_namespace(&initialization_boot_load,
                                                                         &initialization_boot);
     }
-    advanced_configuration_and_power_interface_machine_language_drop_notifications(&initialization_boot_load);
 }
 
 const InitializationLoad_t *advanced_configuration_and_power_interface_machine_language(void)

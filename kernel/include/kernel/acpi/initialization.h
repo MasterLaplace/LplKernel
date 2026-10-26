@@ -42,7 +42,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
     uint32_t region_registration_failed; /**< Of those, the ones that failed. */
     uint32_t devices;                    /**< Devices, processors and thermal zones in the namespace. */
     uint32_t status_evaluations;         /**< _STA objects evaluated: only in subtrees that hold an _INI. */
-    uint32_t status_failed;              /**< Of those, the ones whose evaluation failed or gave no Integer. */
+    uint32_t status_failed;              /**< Of those, the ones whose evaluation failed or gave no Integer, String
+                                              or Buffer. */
     uint32_t status_invalid;             /**< Of those, the results ACPI declares invalid. */
     uint32_t pic_mode_deferred;          /**< 1 when \_PIC exists and was not called: PCI interrupts go through the
                                               8259 until #59. */
@@ -53,11 +54,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
 } AdvancedConfigurationAndPowerInterfaceInitialization_t;
 
 /**
- * @brief Initialises a loaded namespace as firmware expects (§3.8 steps 2 to 5): runs \_INI then
+ * @brief Initialises a loaded namespace as firmware expects (§3.8 steps 2 to 5, and 9): runs \_INI then
  *        \_SB._INI; runs _REG (PCI_Config, 1) once in every scope that declares a PCI_Config region,
  *        after which a region a method creates gets its _REG at once; walks the devices, processors and
- *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; and
- *        leaves \_PIC uncalled.
+ *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; leaves
+ *        \_PIC uncalled; then drops the Notifies the load and the sequence raised.
  *
  * @param load               A load whose tables are decoded, its stacks free.
  * @param out_initialization Receives what the sequence ran and counted; zeroed first.
@@ -68,8 +69,7 @@ extern void advanced_configuration_and_power_interface_initialize_namespace(
 
 /**
  * @brief Loads this machine's definition blocks at boot, into the boot's load, with the caps of the
- *        build's profile, initialises the namespace they build (§3.8 steps 1 to 5), then drops the
- *        Notifies their code raised (§3.8 step 9).
+ *        build's profile, and initialises the namespace they build (§3.8 steps 1 to 5, and 9).
  */
 extern void advanced_configuration_and_power_interface_machine_language_initialize(void);
 

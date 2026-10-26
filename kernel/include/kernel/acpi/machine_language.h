@@ -277,7 +277,7 @@ advanced_configuration_and_power_interface_machine_language_peripheral_component
 
 /**
  * @brief The _REG a PCI_Config region is registered through (§5.3): the method named _REG in the
- *        region's own scope, never one above it, when it takes the two arguments _REG takes.
+ *        region's own scope, never one above it, whatever arguments it takes.
  *
  * @param load        The load.
  * @param region_node The region's node.

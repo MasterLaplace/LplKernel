@@ -291,13 +291,14 @@ names resolve against objects that do not exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on
-the same stacks, and the access resumes when they return: the name that reached it runs again. A field unit starts
+the same stacks. When an attach's frame returns, the access resumes: the name that reached it runs again; when a
+`_REG`'s returns, the method that created the region goes on at its next statement. A field unit starts
 the attach of its regions when code first names it, whatever the operator, so that a reference made to it reads it
 later. They count against the same depth limit. A failure inside an internal frame, a limit of §6.1 apart, makes the
 object it evaluates absent, counted, as ACPICA and uACPI take a failed `_ADR`, `_SEG` or `_BBN`: an attach that needs
-a field of its own region reads `region_unevaluated` there, and goes on without that object. An attach that a name
-inside a package (§5.1) or a String path (§4.2) reaches, where no frame can wait, fails as `region_unevaluated` when
-it needs a method. A `_REG` that fails there is dropped, counted, and the method that created the region goes on.
+a field of its own region reads `region_unevaluated` there, and goes on without that object; a `_REG` that fails is
+dropped, counted. An attach that a name inside a package (§5.1) or a String path (§4.2) reaches, where no frame can
+wait, fails as `region_unevaluated` when it needs a method.
 
 **Errors** carry a typed status (§6.2). In a method, an error unwinds every frame of the evaluation: temporaries
 removed, mutexes released, values dropped. At table level, a statement that fails to run is skipped, a predicate
@@ -376,7 +377,8 @@ Run once at boot by the bootstrap processor.
 Steps 5 to 8 follow the order firmware depends on: Intel's `GCAP` reads the platform `_OSC` result, and on Intel
 clients `_CST` exists only after step 7.
 
-**When a step fails,** the sequence goes on; each failure is counted and named in the log.
+**When a step fails,** the sequence goes on; each failure is counted per status, and the first one is named in the
+`[LPLTLM] acpi.init` record.
 
 | Step | On failure or absence | Then | Counter |
 |---|---|---|---|
@@ -718,7 +720,7 @@ Each row is a decision, and has at least one test (§8).
 | Strings and buffers stored to a field | Written in field-sized chunks, as Windows does. | |
 | Region bounds | An access must fit its region; rounding the region's length up to the access width is allowed and counted. | [§19.6.48] |
 | Region lifetime | Attached at the first access, not at declaration: handler chosen, PCI address resolved, mapping taken from the cache. | |
-| `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates once step 3 has run, unless that scope's `_REG` is already running. Only the `_REG` of the region's own scope is called, never one above it, as ACPICA and uACPI find it. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
+| `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates once step 3 has run, unless that `_REG` is already running, however it was called (ACPICA and uACPI call it again, and the second creation fails). Only the `_REG` of the region's own scope is called, never one above it, as ACPICA and uACPI find it; one that does not take two arguments is not called, and counted as failed. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
 | Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIC and PCI itself, and AML must not race it; the PIT, the RTC and CMOS follow once `_OSI` asks, as on Windows, and the other ports the kernel drives, COM1 and the keyboard controller, are not protected. | |
 | PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. The header type is read once, at attach, and only the first byte of an access is checked, as Windows does. | |
 | Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is mapped cached read-write, anything else uncached, since an uncached alias of a page mapped cached elsewhere, by the kernel's own map of RAM or by the firmware window, is a memory-type conflict. Below 64 MiB, the boot map covers every page cached, so an uncached window there is such an alias until #590. | [§5.5.2.4.1] |
@@ -779,7 +781,7 @@ that reaches it. The corpus runs report the peaks.
 
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
 back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the
-kernel asks for (§3.8). The node and arena caps depend on the profile, and probe counts
+kernel asks for (§3.8); a `Load` that a method runs belongs to that method's evaluation, and resets nothing. The node and arena caps depend on the profile, and probe counts
 follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
 (§8.7).
 

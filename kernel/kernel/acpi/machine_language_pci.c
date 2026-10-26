@@ -604,9 +604,7 @@ uint32_t advanced_configuration_and_power_interface_machine_language_peripheral_
         advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "_REG", 0u));
     const MachineLanguageNode_t *node = machine_language_pci_node(load, method);
 
-    return (node != NULL && node->type == MACHINE_LANGUAGE_NODE(METHOD) && (node->value.auxiliary & 0x7u) == 2u) ?
-               method :
-               0u;
+    return (node != NULL && node->type == MACHINE_LANGUAGE_NODE(METHOD)) ? method : 0u;
 }
 
 void advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registered(

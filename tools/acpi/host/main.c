@@ -12,7 +12,7 @@
 #include <string.h>
 
 #define HARNESS_PAGE_BYTES 4096u /**< What a bootloader aligns a module to, and the harness too. */
-#define HARNESS_PATH_BYTES 256u  /**< Bytes of a node's path the harness prints: fifty levels deep. */
+#define HARNESS_PATH_BYTES 256u  /**< Bytes of a node's path the harness prints: fifty-one levels deep. */
 
 #define HARNESS_USAGE                                                                                                  \
     "Usage: test-acpi [--boot-module <image>] [--firmware-log <log>]\n"                                                \
@@ -169,10 +169,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            (unsigned long long) load->services.time_requested_peak, load->services.signals,
            load->services.notifications, load->services.notifications_dropped, load->services.notification_peak);
     printf("aml run pci attachments=%u internal_evaluations=%u internal_failures=%u protected_writes=%u "
-           "lost_accesses=%u ecam_accesses=%u registrations=%u\n",
+           "lost_accesses=%u ecam_accesses=%u registrations=%u registration_failures=%u\n",
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
            regions->pci_protected_writes, regions->pci_lost_accesses, regions->pci_ecam_accesses,
-           regions->pci_registrations);
+           regions->pci_registrations, regions->pci_registration_failures);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);

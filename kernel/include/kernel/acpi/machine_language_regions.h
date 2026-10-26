@@ -96,20 +96,22 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t global_lock_releases_signalled;    /**< Releases that wrote GBL_RLS to a PM1 control register, the
                                                      firmware waiting for the lock. */
     uint32_t global_lock_timeouts;              /**< Acquisitions given up, the firmware never releasing the lock. */
-    uint32_t unlocked_lock_accesses; /**< Lock fields accessed without a global lock: the platform has none, or
-                                          its FACS was refused (facs_refused). */
-    uint32_t pci_attachments;        /**< PCI_Config regions attached: their address resolved (§4.4). */
-    uint32_t internal_evaluations;   /**< Methods evaluated in internal frames: for those attaches (O13), and the
-                                          _REG of the regions methods create (§3.6). */
-    uint32_t internal_failures;      /**< Of those, the ones that failed, their object taken as absent. */
-    uint32_t pci_protected_writes;   /**< Writes to the predefined header of a PCI function, dropped. */
-    uint32_t pci_lost_accesses;      /**< Accesses to a function the attach could not reach: all ones read,
-                                          writes dropped. */
-    uint32_t pci_ecam_accesses;      /**< Accesses past offset 0xFF or in a segment other than 0, which need ECAM
-                                          (#58) and fail with address_unreachable. */
-    bool registers_at_creation;      /**< Whether a PCI_Config region a method creates gets its _REG at once: true
-                                          once the initialisation has run the _REG of every scope (§3.8 step 3). */
-    uint32_t pci_registrations;      /**< _REG (PCI_Config, 1) run at once for a region a method created (§5.3). */
+    uint32_t unlocked_lock_accesses;    /**< Lock fields accessed without a global lock: the platform has none, or
+                                             its FACS was refused (facs_refused). */
+    uint32_t pci_attachments;           /**< PCI_Config regions attached: their address resolved (§4.4). */
+    uint32_t internal_evaluations;      /**< Methods evaluated in internal frames for those attaches (§3.6, O13). */
+    uint32_t internal_failures;         /**< Of those, the ones that failed, their object taken as absent. */
+    uint32_t pci_protected_writes;      /**< Writes to the predefined header of a PCI function, dropped. */
+    uint32_t pci_lost_accesses;         /**< Accesses to a function the attach could not reach: all ones read,
+                                             writes dropped. */
+    uint32_t pci_ecam_accesses;         /**< Accesses past offset 0xFF or in a segment other than 0, which need ECAM
+                                             (#58) and fail with address_unreachable. */
+    bool registers_at_creation;         /**< Whether a PCI_Config region a method creates gets its _REG at once: true
+                                             once the initialisation has run the _REG of every scope (§3.8 step 3). */
+    uint32_t pci_registrations;         /**< _REG (PCI_Config, 1) run at once, in an internal frame, for a region a
+                                             method created (§5.3). */
+    uint32_t pci_registration_failures; /**< Of those, the ones that failed and were dropped, and the _REG that
+                                             were not called because they do not take two arguments. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t;
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_REGIONS_H */

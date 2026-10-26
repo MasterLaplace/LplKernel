@@ -44,6 +44,7 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("pci_lost_accesses", regions->pci_lost_accesses);
     kernel_telemetry_write_unsigned("pci_ecam_accesses", regions->pci_ecam_accesses);
     kernel_telemetry_write_unsigned("pci_registrations", regions->pci_registrations);
+    kernel_telemetry_write_unsigned("pci_registration_failures", regions->pci_registration_failures);
     kernel_telemetry_end_record();
 }
 

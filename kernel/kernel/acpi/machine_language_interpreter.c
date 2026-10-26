@@ -1657,21 +1657,21 @@ static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_
 }
 
 /**
- * @brief Whether an internal frame already runs the _REG of @p scope for a region a method created.
+ * @brief Whether a frame of the evaluation runs @p method, however it was called.
  */
-static bool machine_language_registering(const MachineLanguageEvaluation_t *evaluation, uint32_t scope)
+static bool machine_language_running(const MachineLanguageEvaluation_t *evaluation, uint32_t method)
 {
-    for (uint32_t index = 0u; index < evaluation->operator_count; ++index)
-        if (evaluation->operators[index].opcode == MACHINE_LANGUAGE_REGISTER &&
-            evaluation->operators[index].node == scope)
+    for (uint32_t index = 0u; index < evaluation->frame_count; ++index)
+        if (evaluation->frames[index].method == method)
             return true;
     return false;
 }
 
 /**
  * @brief Pushes the internal frame that runs _REG (PCI_Config, 1) for a PCI_Config region a method has
- *        just created (§5.3), once the initialisation has registered, unless its scope's _REG already
- *        runs: a _REG that creates such a region in its own scope is not called again.
+ *        just created (§5.3), once the initialisation has registered, unless that _REG already runs: a
+ *        _REG that creates such a region in its own scope is not called again. A _REG that does not
+ *        take two arguments is not called, and counted as failed.
  */
 static MachineLanguageStatus_t machine_language_register_at_creation(MachineLanguageLoad_t *load, uint32_t region)
 {
@@ -1681,11 +1681,16 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
             advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
                 load, region) :
             0u;
-    const uint32_t scope =
-        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, region)->parent;
+    const MachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, method);
 
-    if (method == 0u || machine_language_registering(evaluation, scope))
+    if (method == 0u || machine_language_running(evaluation, method))
         return MACHINE_LANGUAGE_OK;
+    if ((node->value.auxiliary & 0x7u) != 2u)
+    {
+        ++load->regions.pci_registration_failures;
+        return MACHINE_LANGUAGE_OK;
+    }
     if (evaluation->operator_count ==
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
@@ -1697,8 +1702,7 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
     registration->operand_count = 1u;
     registration->start = 0u;
     registration->end = 0u;
-    registration->node = scope;
-    ++load->regions.internal_evaluations;
+    registration->node = node->parent;
     ++load->regions.pci_registrations;
 
     MachineLanguageValue_t space = machine_language_integer(
@@ -3565,7 +3569,10 @@ static MachineLanguageStatus_t machine_language_step_above(MachineLanguageLoad_t
     while (machine_language_frame(evaluation)->operator_base >= slot)
         machine_language_drop_frame(load);
     evaluation->operator_count = slot;
-    ++load->regions.internal_failures;
+    if (evaluation->operators[slot - 1u].opcode == MACHINE_LANGUAGE_REGISTER)
+        ++load->regions.pci_registration_failures;
+    else
+        ++load->regions.internal_failures;
 
     MachineLanguageValue_t absent = {0};
 

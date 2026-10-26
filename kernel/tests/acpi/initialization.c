@@ -304,12 +304,13 @@ KERNEL_TEST(a_status_acpi_declares_invalid_skips_the_subtree)
 
 /**
  * @brief A _STA that divides by zero gives its device no _INI, still walks its children, and is counted
- *        under its status and named as the first failure; one that gives no Integer fails too (§3.8, the
- *        failure table).
+ *        under its status and named as the first failure; one that gives a Package fails too, and an
+ *        empty Buffer reads as 0, the conversion ACPI forbids counted (§3.8, the failure table, §5.2).
  */
 KERNEL_TEST(a_status_that_fails_skips_the_initialization_but_not_the_children)
 {
     static const uint8_t package_status[] = {0x08u, '_', 'S', 'T', 'A', 0x12u, 0x02u, 0x00u};
+    static const uint8_t empty_status[] = {0x08u, '_', 'S', 'T', 'A', 0x11u, 0x02u, 0x00u};
 
     initialization_begin();
     made_up_aml_begin(&initialization_inner);
@@ -324,10 +325,16 @@ KERNEL_TEST(a_status_that_fails_skips_the_initialization_but_not_the_children)
     made_up_aml_raw(&initialization_outer, package_status, sizeof(package_status));
     initialization_ini(&initialization_outer, 4u);
     initialization_device(&initialization_aml, "DPKG", 0u, &initialization_outer);
+    made_up_aml_begin(&initialization_outer);
+    made_up_aml_raw(&initialization_outer, empty_status, sizeof(empty_status));
+    initialization_ini(&initialization_outer, 5u);
+    initialization_device(&initialization_aml, "DBUF", 0u, &initialization_outer);
     if (!initialization_run(test, true))
         return;
     kernel_test_check(test, initialization_integer("TRAC") == 0x23u,
-                      "DDIV's child (2) and NEXT (3) run, not DDIV (1), nor DPKG (4)");
+                      "DDIV's child (2) and NEXT (3) run, not DDIV (1), DPKG (4) or DBUF (5)");
+    kernel_test_check(test, initialization_load.evaluation.forbidden_conversions == 1u,
+                      "DBUF's empty Buffer reads as 0, a conversion ACPI forbids, counted");
     kernel_test_check(test,
                       initialization_counts.status_failed == 2u &&
                           initialization_counts.statuses[INITIALIZATION_STATUS(DIVIDE_BY_ZERO)] == 1u &&
@@ -466,8 +473,9 @@ KERNEL_TEST(a_registration_runs_once_per_scope_of_pci_config_regions)
 /**
  * @brief Once the initialisation has registered, a PCI_Config region a method creates in a scope
  *        with a _REG gets _REG (PCI_Config, 1) at once, before the method's next statement, and a _REG
- *        that fails there is dropped; one created before, one in the method's own scope, one of
- *        SystemMemory, or one whose scope's _REG does not take two arguments gets none (§5.3).
+ *        that fails there is dropped, counted; one created before, one in the method's own scope or one
+ *        of SystemMemory gets none, and a _REG that does not take two arguments is not called, counted
+ *        as failed (§5.3).
  */
 KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
 {
@@ -505,6 +513,7 @@ KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
     advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_counts);
     kernel_test_check(test, initialization_integer("TRAC") == 0u && initialization_counts.registrations == 0u,
                       "the initialisation registers nothing: no table declares a PCI_Config region");
+
     const uint32_t implicit_returns = initialization_load.evaluation.implicit_returns;
 
     kernel_test_check(test,
@@ -522,18 +531,25 @@ KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
                       initialization_call("\\YDEV.MKRG") == INITIALIZATION_STATUS(OK) &&
                           initialization_integer("SNAP") == 1u && initialization_integer("TRAC") == 0x21u,
                       "a _REG of one argument is not called, and the method goes on");
+    kernel_test_check(test, initialization_load.regions.pci_registration_failures == 1u,
+                      "the _REG not called is counted as failed");
     kernel_test_check(test,
                       initialization_call("\\WDEV.MKRG") == INITIALIZATION_STATUS(OK) &&
-                          initialization_integer("SNAP") == 1u && initialization_load.regions.internal_failures == 1u,
+                          initialization_integer("SNAP") == 1u &&
+                          initialization_load.regions.pci_registration_failures == 2u,
                       "a _REG that fails is dropped, counted, and the method that created the region goes on");
-    kernel_test_check(test, initialization_load.regions.pci_registrations == 2u,
-                      "two _REG ran at a region's creation, XDEV's and WDEV's");
+    kernel_test_check(test,
+                      initialization_load.regions.pci_registrations == 2u &&
+                          initialization_load.regions.internal_evaluations == 0u &&
+                          initialization_load.regions.internal_failures == 0u,
+                      "two _REG ran at a region's creation, XDEV's and WDEV's, counted apart from the attaches");
     initialization_close(test);
 }
 
 /**
- * @brief A _REG that creates a PCI_Config region in its own scope is not called again for it: the
- *        method that created the first region still succeeds, and the trace holds one _REG.
+ * @brief A _REG that creates a PCI_Config region in its own scope is not called again for it, whether
+ *        a region's creation or AML called it: the method that called it still succeeds, and the trace
+ *        holds one _REG per call.
  */
 KERNEL_TEST(a_registration_that_creates_a_region_in_its_scope_runs_once)
 {
@@ -542,17 +558,24 @@ KERNEL_TEST(a_registration_that_creates_a_region_in_its_scope_runs_once)
                                         0x69u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0x5Bu, 0x80u,
                                         '^',   'D',   'Y',   'N',   'Z',   0x02u, 0x00u, 0x0Au, 0x10u};
     static const uint8_t creates[] = {0x5Bu, 0x80u, '^', 'D', 'Y', 'N', 'R', 0x02u, 0x00u, 0x0Au, 0x10u};
+    static const uint8_t calls[] = {'_', 'R', 'E', 'G', 0x0Au, 0x02u, 0x01u};
 
     initialization_begin();
     made_up_aml_begin(&initialization_inner);
     initialization_method(&initialization_inner, "_REG", 0x02u, registers, sizeof(registers));
     initialization_method(&initialization_inner, "MKRG", 0x00u, creates, sizeof(creates));
+    initialization_method(&initialization_inner, "CALR", 0x00u, calls, sizeof(calls));
     initialization_device(&initialization_aml, "ZDEV", 0u, &initialization_inner);
     if (!initialization_run(test, true))
         return;
     kernel_test_check(test, initialization_call("\\ZDEV.MKRG") == INITIALIZATION_STATUS(OK),
                       "the method that creates the first region succeeds");
     kernel_test_check(test, initialization_integer("TRAC") == 0x21u, "_REG runs once");
+    kernel_test_check(test,
+                      initialization_call("\\ZDEV.CALR") == INITIALIZATION_STATUS(OK) &&
+                          initialization_integer("TRAC") == 0x2121u,
+                      "a _REG AML calls itself, which creates such a region, runs once too");
+    kernel_test_check(test, initialization_load.regions.pci_registration_failures == 0u, "no _REG failed");
     initialization_close(test);
 }
 
@@ -577,6 +600,28 @@ KERNEL_TEST(the_interrupt_model_method_is_not_called)
     if (!initialization_run(test, true))
         return;
     kernel_test_check(test, initialization_counts.pic_mode_deferred == 0u, "without \\_PIC nothing is deferred");
+    initialization_close(test);
+}
+
+/**
+ * @brief The Notifies the sequence raises are dropped once it ends (§3.8 step 9): none waits in the
+ *        ring for a consumer that does not exist yet.
+ */
+KERNEL_TEST(the_notifies_the_sequence_raises_are_dropped_at_its_end)
+{
+    static const uint8_t notifies[] = {0x86u, '\\', 'N', 'O', 'T', 'E', 0x0Au, 0x80u};
+
+    initialization_begin();
+    made_up_aml_begin(&initialization_inner);
+    initialization_method(&initialization_inner, "_INI", 0x00u, notifies, sizeof(notifies));
+    initialization_device(&initialization_aml, "NOTE", 0u, &initialization_inner);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_load.services.notifications == 1u &&
+                          initialization_load.services.notification_count == 0u &&
+                          initialization_counts.initialization_failed == 0u,
+                      "NOTE's _INI raised one Notify, and the ring is empty");
     initialization_close(test);
 }
 
