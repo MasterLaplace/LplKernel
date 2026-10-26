@@ -11,6 +11,7 @@
 #define MACHINE_LANGUAGE_PAGE_BYTES       4096u
 #define MACHINE_LANGUAGE_SYSTEM_MEMORY    0x00u         /**< The RegionSpace byte of SystemMemory. */
 #define MACHINE_LANGUAGE_SYSTEM_IO        0x01u         /**< The RegionSpace byte of SystemIO. */
+#define MACHINE_LANGUAGE_PCI_CONFIG       0x02u         /**< The RegionSpace byte of PCI_Config. */
 #define MACHINE_LANGUAGE_UPDATE_ONES      1u            /**< UpdateRule WriteAsOnes. */
 #define MACHINE_LANGUAGE_UPDATE_ZEROS     2u            /**< UpdateRule WriteAsZeros. */
 #define MACHINE_LANGUAGE_ACCESS_LAST      5u            /**< AccessType BufferAcc, the last one not reserved. */
@@ -333,11 +334,12 @@ static MachineLanguageStatus_t machine_language_count_field_access(MachineLangua
 }
 
 /**
- * @brief One access of up to 4 bytes in a space: memory, a port, or a space with no handler. It is
- *        one field access, an unaligned one included, which fails once the budget is spent.
+ * @brief One access of up to 4 bytes in a space: memory, a port, a PCI function's configuration
+ *        space, or a space with no handler. It is one field access, an unaligned one included, which
+ *        fails once the budget is spent.
  */
-static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad_t *load, uint8_t space,
-                                                             uint64_t address, uint8_t width, bool write,
+static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad_t *load, uint32_t region_node,
+                                                             uint8_t space, uint64_t address, uint8_t width, bool write,
                                                              uint32_t *value)
 {
     const MachineLanguageStatus_t status = machine_language_count_field_access(load);
@@ -348,6 +350,9 @@ static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad
         return machine_language_memory(load, address, width, write, value);
     if (space == MACHINE_LANGUAGE_SYSTEM_IO)
         return machine_language_port(load, address, width, write, value);
+    if (space == MACHINE_LANGUAGE_PCI_CONFIG)
+        return advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_access(
+            load, region_node, address, width, write, value);
     ++load->regions.space_unsupported[space];
     return MACHINE_LANGUAGE_STATUS(SPACE_UNSUPPORTED);
 }
@@ -355,7 +360,8 @@ static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad
 /**
  * @brief One datum of a region, @p byte_offset bytes in: it must fit the region, whose length may be
  *        rounded up to the datum's width, counted; an 8-byte datum of memory is two 4-byte accesses,
- *        low then high (§5.3), and one of a port is refused, ports being at most 4 bytes wide.
+ *        low then high (§5.3), and one of a port or of a PCI function is refused, ports and
+ *        configuration accesses being at most 4 bytes wide.
  */
 static MachineLanguageStatus_t machine_language_region_datum(MachineLanguageLoad_t *load, uint32_t region_node,
                                                              uint64_t byte_offset, uint8_t width, bool write,
@@ -368,7 +374,7 @@ static MachineLanguageStatus_t machine_language_region_datum(MachineLanguageLoad
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     if (region->state == 0u)
         return MACHINE_LANGUAGE_STATUS(REGION_UNEVALUATED);
-    if (region->space == MACHINE_LANGUAGE_SYSTEM_IO && width == 8u)
+    if ((region->space == MACHINE_LANGUAGE_SYSTEM_IO || region->space == MACHINE_LANGUAGE_PCI_CONFIG) && width == 8u)
         return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
     if (byte_offset + width > region->length)
     {
@@ -386,12 +392,13 @@ static MachineLanguageStatus_t machine_language_region_datum(MachineLanguageLoad
     const uint8_t part = (width == 8u) ? 4u : width;
     uint32_t low = (uint32_t) *value;
     uint32_t high = (uint32_t) (*value >> 32u);
-    MachineLanguageStatus_t status = machine_language_space_access(load, region->space, address, part, write, &low);
+    MachineLanguageStatus_t status =
+        machine_language_space_access(load, region_node, region->space, address, part, write, &low);
 
     if (status == MACHINE_LANGUAGE_OK && width == 8u)
     {
         ++regions->split_qword_accesses;
-        status = machine_language_space_access(load, region->space, address + 4u, part, write, &high);
+        status = machine_language_space_access(load, region_node, region->space, address + 4u, part, write, &high);
     }
     if (status == MACHINE_LANGUAGE_OK && !write)
         *value = (width == 8u) ? ((uint64_t) high << 32u) | low : low;
@@ -859,14 +866,13 @@ advanced_configuration_and_power_interface_machine_language_field_write(MachineL
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_region_build(
-    MachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset, uint64_t length, uint32_t owner_device)
+    MachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset, uint64_t length)
 {
     const MachineLanguageRegion_t region = {
         .space = space,
         .state = 1u,
         .offset = offset,
         .length = length,
-        .owner_device = owner_device,
     };
 
     return machine_language_build_object(load, node, MACHINE_LANGUAGE_VALUE(REGION), &region,

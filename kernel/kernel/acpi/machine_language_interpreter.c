@@ -4,6 +4,7 @@
 
 #define MACHINE_LANGUAGE_CALL          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
 #define MACHINE_LANGUAGE_RESULT        (MACHINE_LANGUAGE_CALL + 1u)
+#define MACHINE_LANGUAGE_ATTACH        (MACHINE_LANGUAGE_CALL + 2u) /**< Waits for what an internal frame returns. */
 #define MACHINE_LANGUAGE_OK            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK
 #define MACHINE_LANGUAGE_OPERAND(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_##kind
 #define MACHINE_LANGUAGE_OPCODE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##name
@@ -1584,9 +1585,94 @@ static bool machine_language_asks_existence(MachineLanguageEvaluation_t *evaluat
 }
 
 /**
+ * @brief Whether an internal frame already evaluates an object the attach of @p region needs: that
+ *        attach then needs itself.
+ */
+static bool machine_language_attaching(const MachineLanguageEvaluation_t *evaluation, uint32_t region)
+{
+    for (uint32_t index = 0u; index < evaluation->operator_count; ++index)
+        if (evaluation->operators[index].opcode == MACHINE_LANGUAGE_ATTACH &&
+            evaluation->operators[index].node == region)
+            return true;
+    return false;
+}
+
+/**
+ * @brief Takes the attach of each PCI_Config region a unit's accesses reach as far as data takes it,
+ *        and names the first method one of them waits for, with its region; a region whose attach
+ *        an internal frame already serves fails as region_unevaluated.
+ */
+static MachineLanguageStatus_t machine_language_attach_step(MachineLanguageLoad_t *load, uint32_t unit,
+                                                            uint32_t *out_region, uint32_t *out_method)
+{
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    *out_method = 0u;
+    for (*out_region =
+             advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_unattached_region(
+                 load, unit);
+         *out_region != 0u && status == MACHINE_LANGUAGE_OK && *out_method == 0u;
+         *out_region =
+             advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_unattached_region(
+                 load, unit))
+    {
+        if (machine_language_attaching(&load->evaluation, *out_region))
+            return MACHINE_LANGUAGE_STATUS(REGION_UNEVALUATED);
+        status = advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_attach(
+            load, *out_region, NULL, out_method);
+        if (*out_method != 0u)
+            return status;
+    }
+    return status;
+}
+
+/**
+ * @brief Pushes an internal frame (§3.6): @p method, called without arguments, whose result an attach
+ *        operator hands to the attach of @p region.
+ */
+static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_t *load, uint32_t region,
+                                                            uint32_t method, uint32_t start, uint32_t end)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
+    if (evaluation->operator_count ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
+
+    MachineLanguagePendingOperator_t *attach = &evaluation->operators[evaluation->operator_count++];
+
+    attach->opcode = MACHINE_LANGUAGE_ATTACH;
+    attach->operands_done = 1u;
+    attach->operand_count = 1u;
+    attach->start = start;
+    attach->end = end;
+    attach->node = region;
+    ++load->regions.internal_evaluations;
+    return machine_language_enter_method(load, method, 0u);
+}
+
+/**
+ * @brief Puts the name read at @p start back, so that it runs again once the internal frame for
+ *        @p region has returned, and pushes that frame.
+ */
+static MachineLanguageStatus_t machine_language_wait_for_attach(MachineLanguageLoad_t *load, uint32_t region,
+                                                                uint32_t method, uint32_t start, uint32_t limit)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguagePendingOperator_t *active = machine_language_active(evaluation);
+
+    machine_language_frame(evaluation)->pc = start;
+    if (active != NULL)
+        --active->operands_done;
+    return machine_language_push_attach(load, region, method, start, limit);
+}
+
+/**
  * @brief Runs a NameString read where @p kind is expected: a method is called, unless the operand is
  *        a SimpleName; a target position names the object; anywhere else the object gives its value.
  *        The SimpleName of a CondRefOf that names nothing, or only an External, gives a missing target.
+ *        A field unit attaches its PCI_Config regions first: when that needs a method, the name waits
+ *        for its internal frame and runs again after it.
  */
 static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t *load, uint32_t kind)
 {
@@ -1617,6 +1703,17 @@ static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t 
 
     if (node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) && machine_language_asks_existence(evaluation))
         return machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_MISSING, 0u));
+    if (node->type == MACHINE_LANGUAGE_NODE(FIELD_UNIT))
+    {
+        uint32_t region = 0u;
+        uint32_t method = 0u;
+
+        status = machine_language_attach_step(load, index, &region, &method);
+        if (status != MACHINE_LANGUAGE_OK)
+            return status;
+        if (method != 0u)
+            return machine_language_wait_for_attach(load, region, method, start, limit);
+    }
 
     if (node->type == MACHINE_LANGUAGE_NODE(METHOD) && kind != MACHINE_LANGUAGE_OPERAND(SIMPLE_NAME))
     {
@@ -2980,23 +3077,6 @@ static MachineLanguageStatus_t machine_language_create_field(MachineLanguageLoad
 }
 
 /**
- * @brief The device a region a method creates is declared in: the method's parent when it is a Device,
- *        or 0.
- */
-static uint32_t machine_language_owner_device(const MachineLanguageLoad_t *load, uint32_t scope)
-{
-    const MachineLanguageNode_t *node =
-        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, scope);
-
-    if (node != NULL && node->type == MACHINE_LANGUAGE_NODE(METHOD))
-    {
-        scope = node->parent;
-        node = advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, scope);
-    }
-    return (node != NULL && node->type == MACHINE_LANGUAGE_NODE(DEVICE)) ? scope : 0u;
-}
-
-/**
  * @brief Runs an OperationRegion a method declares: its node, temporary, takes a region of the space,
  *        offset and length on the stack (§5.3).
  */
@@ -3010,8 +3090,7 @@ static MachineLanguageStatus_t machine_language_operation_region(MachineLanguage
         return status;
 
     status = advanced_configuration_and_power_interface_machine_language_region_build(
-        load, active->node, (uint8_t) operands[0], operands[1], operands[2],
-        machine_language_owner_device(load, machine_language_block(&load->evaluation)->scope));
+        load, active->node, (uint8_t) operands[0], operands[1], operands[2]);
     if (status == MACHINE_LANGUAGE_OK)
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, active->node)->type =
             MACHINE_LANGUAGE_NODE(OPERATION_REGION);
@@ -3261,6 +3340,25 @@ static MachineLanguageStatus_t machine_language_transfer(MachineLanguageLoad_t *
 }
 
 /**
+ * @brief Hands what an internal frame returned to the attach that waited for it, and pushes the next
+ *        internal frame that attach needs, if any.
+ */
+static MachineLanguageStatus_t machine_language_attach_result(MachineLanguageLoad_t *load,
+                                                              const MachineLanguagePendingOperator_t *attach)
+{
+    MachineLanguageValue_t value = machine_language_pop(&load->evaluation);
+    uint32_t method = 0u;
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_attach(
+            load, attach->node, &value, &method);
+
+    machine_language_release(load, &value);
+    if (status != MACHINE_LANGUAGE_OK || method == 0u)
+        return status;
+    return machine_language_push_attach(load, attach->node, method, attach->start, attach->end);
+}
+
+/**
  * @brief Runs the active operator once its operands are on the stack.
  */
 static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *load,
@@ -3273,6 +3371,7 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     switch (operator_.opcode)
     {
     case MACHINE_LANGUAGE_CALL: return machine_language_enter_method(load, operator_.node, operator_.operand_count);
+    case MACHINE_LANGUAGE_ATTACH: return machine_language_attach_result(load, &operator_);
     case MACHINE_LANGUAGE_OPCODE(NAME): return machine_language_name(load, &operator_);
     case MACHINE_LANGUAGE_OPCODE(RETURN): {
         MachineLanguageValue_t value = machine_language_pop(evaluation);
@@ -3351,6 +3450,117 @@ static MachineLanguageStatus_t machine_language_step(MachineLanguageLoad_t *load
     return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
 }
 
+/**
+ * @brief Whether a status says the evaluation ran out of something (§6.1), which no attach may hide.
+ */
+static bool machine_language_exhausted(MachineLanguageStatus_t status)
+{
+    switch (status)
+    {
+    case MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_NAMESPACE_NODES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_BLOCKS):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_TEMPORARY_NODES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_PACKAGE_ELEMENTS):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_OBJECT_RUNS):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_VALUES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_FIELD_ACCESSES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_TIME_REQUESTED):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_HELD_MUTEXES): return true;
+    default: return false;
+    }
+}
+
+/**
+ * @brief Takes one step of the frames above @p base; a failure inside an internal frame, unless it is
+ *        a limit, drops the frames above its attach operator and hands it an Uninitialized value, so
+ *        that the object it evaluates is absent, as ACPICA and uACPI take a failed _ADR, _SEG or _BBN
+ *        (§3.6), counted.
+ */
+static MachineLanguageStatus_t machine_language_step_above(MachineLanguageLoad_t *load, uint32_t base)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const MachineLanguageStatus_t status = machine_language_step(load);
+    uint32_t slot = evaluation->operator_count;
+
+    if (status == MACHINE_LANGUAGE_OK || machine_language_exhausted(status))
+        return status;
+    while (slot > evaluation->frames[base].operator_base &&
+           evaluation->operators[slot - 1u].opcode != MACHINE_LANGUAGE_ATTACH)
+        --slot;
+    if (slot == evaluation->frames[base].operator_base)
+        return status;
+    while (machine_language_frame(evaluation)->operator_base >= slot)
+        machine_language_drop_frame(load);
+    evaluation->operator_count = slot;
+    ++load->regions.internal_failures;
+
+    MachineLanguageValue_t absent = {0};
+
+    return machine_language_push(load, &absent);
+}
+
+/**
+ * @brief Pushes the frame a host-initiated evaluation runs from: no code of its own, in the scope of
+ *        the root, given the table of the method it calls.
+ */
+static MachineLanguageStatus_t machine_language_push_host_frame(MachineLanguageLoad_t *load, uint16_t table)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
+    if (evaluation->frame_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES);
+
+    MachineLanguageFrame_t *frame = &evaluation->frames[evaluation->frame_count++];
+
+    memset(frame, 0, sizeof(*frame));
+    frame->code = (const uint8_t *) load->tables[table - 1u].header;
+    frame->scope = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+    frame->value_base = (uint16_t) evaluation->value_count;
+    frame->operator_base = (uint16_t) evaluation->operator_count;
+    frame->block_base = (uint16_t) evaluation->block_count;
+    frame->temporary_base = (uint16_t) load->temporary_count;
+    frame->table = table;
+    frame->serial = ++evaluation->frame_serial;
+    return machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TABLE, 0u, 0u,
+                                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT);
+}
+
+/**
+ * @brief Attaches the PCI_Config regions a unit the host reads reaches: each method an attach waits
+ *        for runs in an internal frame above a host frame, until the attach needs no more.
+ */
+static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageLoad_t *load, uint32_t unit)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const uint32_t base = evaluation->frame_count;
+    uint32_t region = 0u;
+    uint32_t method = 0u;
+    MachineLanguageStatus_t status = machine_language_attach_step(load, unit, &region, &method);
+
+    while (status == MACHINE_LANGUAGE_OK && method != 0u)
+    {
+        const uint32_t slot = evaluation->operator_count;
+
+        status = machine_language_push_host_frame(
+            load, advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, method)
+                      ->value.handle);
+        if (status == MACHINE_LANGUAGE_OK)
+            status = machine_language_push_attach(load, region, method, 0u, 0u);
+        while (status == MACHINE_LANGUAGE_OK && evaluation->operator_count > slot)
+            status = machine_language_step_above(load, base);
+        while (evaluation->frame_count > base)
+            machine_language_drop_frame(load);
+        if (status == MACHINE_LANGUAGE_OK)
+            status = machine_language_attach_step(load, unit, &region, &method);
+    }
+    return status;
+}
+
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_run_table_term(
     MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit, bool value,
     uint64_t *out_integer, uint32_t *out_after)
@@ -3414,7 +3624,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     while (status == MACHINE_LANGUAGE_OK &&
            !(evaluation->frame_count == base + 1u && evaluation->block_count == frame->block_base + 1u &&
              evaluation->operator_count == settled_operators && frame->pc != start))
-        status = machine_language_step(load);
+        status = machine_language_step_above(load, base);
     if (status == MACHINE_LANGUAGE_OK && value)
         status = (evaluation->value_count > frame->value_base) ?
                      machine_language_integer_of(load, &evaluation->values[evaluation->value_count - 1u], out_integer) :
@@ -3479,6 +3689,15 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     const MachineLanguageNode_t *node =
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
 
+    if (node->type == MACHINE_LANGUAGE_NODE(FIELD_UNIT))
+    {
+        evaluation->iterations = 0u;
+        advanced_configuration_and_power_interface_machine_language_begin_services(load);
+        status = machine_language_attach_for_host(load, index);
+        advanced_configuration_and_power_interface_machine_language_end_services(load);
+        if (status != MACHINE_LANGUAGE_OK)
+            return status;
+    }
     if (node->type != MACHINE_LANGUAGE_NODE(METHOD))
         return machine_language_read_node(load, index, out_result);
     if (argument_count != (node->value.auxiliary & 0x7u))
@@ -3492,21 +3711,9 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         argument_count + 1u)
         return MACHINE_LANGUAGE_STATUS(LIMIT_VALUES);
 
-    MachineLanguageFrame_t *frame = &evaluation->frames[evaluation->frame_count++];
-
-    memset(frame, 0, sizeof(*frame));
-    frame->code = (const uint8_t *) load->tables[node->value.handle - 1u].header;
-    frame->scope = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
-    frame->value_base = (uint16_t) evaluation->value_count;
-    frame->operator_base = (uint16_t) evaluation->operator_count;
-    frame->block_base = (uint16_t) evaluation->block_count;
-    frame->temporary_base = (uint16_t) load->temporary_count;
-    frame->table = (uint16_t) node->value.handle;
-    frame->serial = ++evaluation->frame_serial;
     evaluation->iterations = 0u;
     advanced_configuration_and_power_interface_machine_language_begin_services(load);
-    status = machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TABLE, 0u, 0u,
-                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT);
+    status = machine_language_push_host_frame(load, node->value.handle);
     if (status == MACHINE_LANGUAGE_OK)
     {
         MachineLanguagePendingOperator_t *result = &evaluation->operators[evaluation->operator_count++];
@@ -3526,7 +3733,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     if (status == MACHINE_LANGUAGE_OK)
         status = machine_language_enter_method(load, index, argument_count);
     while (status == MACHINE_LANGUAGE_OK && evaluation->frame_count > base + 1u)
-        status = machine_language_step(load);
+        status = machine_language_step_above(load, base);
     if (status == MACHINE_LANGUAGE_OK)
         *out_result = machine_language_pop(evaluation);
     while (evaluation->frame_count > base + 1u)

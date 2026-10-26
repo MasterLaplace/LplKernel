@@ -162,6 +162,18 @@ void made_up_aml_method(MadeUpAml_t *aml, const char *name, uint8_t flags, const
     made_up_aml_package(aml, lead, sizeof(lead), method.bytes, method.length);
 }
 
+void made_up_aml_device(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body)
+{
+    static const uint8_t lead[] = {0x5Bu, 0x82u};
+    MadeUpAml_t device;
+
+    made_up_aml_begin(&device);
+    made_up_aml_name(&device, name);
+    made_up_aml_raw(&device, body->bytes, body->length);
+    aml->overflowed = aml->overflowed || body->overflowed || device.overflowed;
+    made_up_aml_package(aml, lead, sizeof(lead), device.bytes, device.length);
+}
+
 void made_up_aml_store_name(MadeUpAml_t *aml, const char *source, const char *target)
 {
     made_up_aml_byte(aml, 0x70u);

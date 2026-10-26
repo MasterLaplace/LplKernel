@@ -143,6 +143,15 @@ extern void made_up_aml_bank_field(MadeUpAml_t *aml, const char *region, const c
 extern void made_up_aml_method(MadeUpAml_t *aml, const char *name, uint8_t flags, const MadeUpAml_t *body);
 
 /**
+ * @brief Appends Device (@p name) { @p body }.
+ *
+ * @param aml  The AML.
+ * @param name Four characters.
+ * @param body The TermList of the device.
+ */
+extern void made_up_aml_device(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body);
+
+/**
  * @brief Appends Store (@p source, @p target), both names of one NameSeg.
  *
  * @param aml    The builder.

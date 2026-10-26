@@ -33,6 +33,12 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("global_lock_releases_signalled", regions->global_lock_releases_signalled);
     kernel_telemetry_write_unsigned("unlocked_lock_accesses", regions->unlocked_lock_accesses);
     kernel_telemetry_write_unsigned("facs_refused", regions->facs_refused ? 1u : 0u);
+    kernel_telemetry_write_unsigned("pci_attachments", regions->pci_attachments);
+    kernel_telemetry_write_unsigned("internal_evaluations", regions->internal_evaluations);
+    kernel_telemetry_write_unsigned("internal_failures", regions->internal_failures);
+    kernel_telemetry_write_unsigned("pci_protected_writes", regions->pci_protected_writes);
+    kernel_telemetry_write_unsigned("pci_lost_accesses", regions->pci_lost_accesses);
+    kernel_telemetry_write_unsigned("pci_ecam_accesses", regions->pci_ecam_accesses);
     kernel_telemetry_end_record();
 }
 

@@ -63,7 +63,8 @@ typedef struct RecordedMachine {
 } RecordedMachine_t;
 
 /**
- * @brief Reads an acpidump text file and serves its tables.
+ * @brief Reads an acpidump text file and serves its tables. Its memory and the configuration space of
+ *        its PCI functions read as the same fill, as acpiexec's regions do (§8.4).
  *
  * @param machine Filled; released with recorded_machine_close, even when this fails.
  * @param path    The dump.

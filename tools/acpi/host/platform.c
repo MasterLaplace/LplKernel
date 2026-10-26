@@ -105,6 +105,31 @@ static void platform_write_no_port(void *context, uint16_t port, uint8_t width, 
     (void) value;
 }
 
+static uint32_t platform_read_no_function(void *context, uint16_t segment, uint8_t bus, uint8_t device,
+                                          uint8_t function, uint16_t offset, uint8_t width)
+{
+    (void) context;
+    (void) segment;
+    (void) bus;
+    (void) device;
+    (void) function;
+    (void) offset;
+    return (width >= 4u) ? 0xFFFFFFFFu : ((1u << (8u * width)) - 1u);
+}
+
+static void platform_write_no_function(void *context, uint16_t segment, uint8_t bus, uint8_t device, uint8_t function,
+                                       uint16_t offset, uint8_t width, uint32_t value)
+{
+    (void) context;
+    (void) segment;
+    (void) bus;
+    (void) device;
+    (void) function;
+    (void) offset;
+    (void) width;
+    (void) value;
+}
+
 static uint32_t platform_sleep_without_a_clock(void *context, uint32_t milliseconds)
 {
     (void) context;
@@ -152,6 +177,8 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .compare_exchange = platform_exchange_no_memory,
     .port_read = platform_read_no_port,
     .port_write = platform_write_no_port,
+    .pci_read = platform_read_no_function,
+    .pci_write = platform_write_no_function,
     .sleep_milliseconds = platform_sleep_without_a_clock,
     .stall_microseconds = platform_stall_without_a_clock,
     .clock_100ns = platform_no_clock,

@@ -817,7 +817,6 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
     MachineLanguageNode_t *node = machine_language_node(walk, active->node);
-    const MachineLanguageNode_t *scope = machine_language_node(walk, source.scope);
     uint64_t offset = 0u;
     uint64_t length = 0u;
     uint32_t after = 0u;
@@ -843,7 +842,6 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
     region->state = constant ? 1u : 0u;
     region->offset = constant ? offset : 0u;
     region->length = constant ? length : 0u;
-    region->owner_device = (scope != NULL && scope->type == MACHINE_LANGUAGE_NODE(DEVICE)) ? source.scope : 0u;
     load->values_deferred += constant ? 0u : 1u;
     node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION;
     node->value.handle = handle;

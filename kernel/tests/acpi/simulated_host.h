@@ -46,6 +46,10 @@
     256u /**< Accesses the log keeps: the first ones, the others only counted. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_TIMER_QUANTUM                                        \
     1000u /**< What a read of the virtual clock adds to it, in units of 100 ns: 100 µs (§2). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_FUNCTIONS                                        \
+    16u /**< PCI functions one simulated host gives a configuration space. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_CONFIGURATION_BYTES                                       \
+    256u /**< Bytes of a simulated function's configuration space. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC                                          \
     "LPLACPIM" /**< The first eight bytes of an image. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT                                      \
@@ -131,6 +135,8 @@ typedef enum AdvancedConfigurationAndPowerInterfaceSimulatedAccessKind {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE = 4,   /**< port_write. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_EXCHANGE = 5,     /**< compare_exchange: value is the
                                                                                word it left. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_READ = 6,  /**< pci_read. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_WRITE = 7, /**< pci_write. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedAccessKind_t;
 
 /**
@@ -139,9 +145,11 @@ typedef enum AdvancedConfigurationAndPowerInterfaceSimulatedAccessKind {
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedAccess {
     uint8_t kind;     /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_* access kind. */
     uint8_t width;    /**< Its width in bytes. */
-    uint16_t port;    /**< The port, for a port access. */
+    uint16_t port;    /**< The port, for a port access; the offset, for a PCI one. */
     uint32_t value;   /**< The value read or written. */
-    uint64_t address; /**< The physical address, for a memory access. */
+    uint64_t address; /**< The physical address, for a memory access; for a PCI one, the function: its segment
+                           in bits 16 to 31, its bus in bits 8 to 15, its device in bits 3 to 7, its function
+                           in bits 0 to 2. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t;
 
 /**
@@ -153,6 +161,18 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
 } AdvancedConfigurationAndPowerInterfaceSimulatedPort_t;
 
 /**
+ * @brief A PCI function a simulated host gives a configuration space.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedFunction {
+    uint16_t segment;       /**< Its segment. */
+    uint8_t bus;            /**< Its bus. */
+    uint8_t device;         /**< Its device. */
+    uint8_t function;       /**< Its function. */
+    uint8_t *configuration; /**< Its ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_CONFIGURATION_BYTES bytes,
+                                 which the caller owns, and which writes change. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedFunction_t;
+
+/**
  * @brief A host whose physical memory is the ranges placed in it: a map succeeds when one range
  *        holds every byte asked for, and an unmap must name an open map by its address and length.
  *
@@ -161,13 +181,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
  *          write_memory alone: what the ranges hold, or the fill byte, until a write takes the page;
  *          each of its maps returns an address of its own that is never read, and an access whose
  *          address and physical address disagree with an open map is counted. Physical address 0
- *          cannot be mapped, as in ring 0. Its I/O space reads as 0 but for the ports
- *          given a value, and ignores writes. Every access is logged in order. Its clock is virtual, in
- *          units of 100 ns: sleep_milliseconds and stall_microseconds advance it by what is asked, or,
- *          when tick_milliseconds is not 0, by the whole ticks a deadline on the kernel tick counts:
- *          those the wait rounds up to, and the one it lands in. Each read of clock_100ns gives the
- *          clock, then advances it by timer_quantum, so that a loop that polls it ends the same way
- *          wherever it runs (docs/acpi/specification.md, §2).
+ *          cannot be mapped, as in ring 0. Its I/O space reads as 0 but for the ports given a value,
+ *          and ignores writes. Its PCI functions are those given a configuration space, and any other
+ *          reads as configuration_fill and ignores writes. Every access is logged in order. Its clock
+ *          is virtual, in units of 100 ns: sleep_milliseconds and stall_microseconds advance it by
+ *          what is asked, or, when tick_milliseconds is not 0, by the whole ticks a deadline on the
+ *          kernel tick counts: those the wait rounds up to, and the one it lands in. Each read of
+ *          clock_100ns gives the clock, then advances it by timer_quantum, so that a loop that polls it
+ *          ends the same way wherever it runs (docs/acpi/specification.md, §2).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */
@@ -177,15 +198,19 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t range_count;                              /**< Ranges placed. */
     uint32_t outstanding_pages;                        /**< Pages given and not taken back yet. */
     uint8_t memory_fill;                               /**< What memory no range covers reads as. */
-    uint32_t map_serial;                               /**< Writable or uncached maps made, each a distinct address. */
-    uint32_t inconsistent_accesses;                    /**< Memory accesses whose address is not where a map of their
-                                                            physical address puts it. */
-    uint32_t page_count;                               /**< Pages of simulated memory taken. */
-    uint32_t writes_dropped;                           /**< Memory writes with no page left to take. */
-    uint32_t memory_type_count;                        /**< Ranges of the memory map described. */
-    uint32_t port_count;                               /**< Ports given a value. */
-    uint32_t access_count;                             /**< Accesses made, logged or not. */
-    uint64_t firmware_lock_address;                    /**< The global lock word the simulated firmware shares, or 0. */
+    uint8_t configuration_fill;            /**< What each byte of a PCI function given no configuration space
+                                                reads as: 0xFF, as an absent function, unless a host sets
+                                                another. */
+    uint32_t map_serial;                   /**< Writable or uncached maps made, each a distinct address. */
+    uint32_t inconsistent_accesses;        /**< Memory accesses whose address is not where a map of their
+                                                physical address puts it. */
+    uint32_t page_count;                   /**< Pages of simulated memory taken. */
+    uint32_t writes_dropped;               /**< Memory writes with no page left to take. */
+    uint32_t memory_type_count;            /**< Ranges of the memory map described. */
+    uint32_t port_count;                   /**< Ports given a value. */
+    uint32_t function_count;               /**< PCI functions given a configuration space. */
+    uint32_t access_count;                 /**< Accesses made, logged or not. */
+    uint64_t firmware_lock_address;        /**< The global lock word the simulated firmware shares, or 0. */
     uint32_t firmware_holds_for_reads;     /**< Reads of that word the firmware keeps it owned for, then releases it. */
     bool firmware_wants_lock;              /**< Whether the firmware asks for the lock, setting pending, as soon as the
                                                 OS takes it; asked once. */
@@ -214,6 +239,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
                                                                                                       elsewhere. */
     AdvancedConfigurationAndPowerInterfaceSimulatedPort_t
         ports[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_PORTS]; /**< The ports given a value. */
+    AdvancedConfigurationAndPowerInterfaceSimulatedFunction_t
+        functions[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_FUNCTIONS]; /**< The PCI functions
+                                                                                                given a
+                                                                                                configuration
+                                                                                                space. */
     AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t
         accesses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES]; /**< The first accesses. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedHost_t;
@@ -248,6 +278,22 @@ extern void advanced_configuration_and_power_interface_simulated_host_close(
 extern bool advanced_configuration_and_power_interface_simulated_host_describe(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, uint64_t length,
     uint8_t type);
+
+/**
+ * @brief Gives a PCI function a configuration space.
+ *
+ * @param simulated     The host.
+ * @param segment       Its segment.
+ * @param bus           Its bus.
+ * @param device        Its device.
+ * @param function      Its function.
+ * @param configuration Its ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_CONFIGURATION_BYTES bytes, which the
+ *                      caller keeps, and which writes change.
+ * @return false when the host gives as many functions a configuration space as it can.
+ */
+extern bool advanced_configuration_and_power_interface_simulated_host_add_function(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint16_t segment, uint8_t bus, uint8_t device,
+    uint8_t function, uint8_t *configuration);
 
 /**
  * @brief Gives an I/O port the value its reads give.
@@ -299,7 +345,8 @@ extern bool advanced_configuration_and_power_interface_simulated_host_place(
 
 /**
  * @brief Opens a simulated host that serves the firmware an image holds: each of its ranges where it
- *        says, and its root pointer.
+ *        says, and its root pointer. Its PCI functions read as its memory fill, as a recorded machine's
+ *        do.
  *
  * @param simulated The host, which must stay where it is from now on.
  * @param image     The image, kept by the caller as long as the host is used: its bytes are served in

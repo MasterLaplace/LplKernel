@@ -96,6 +96,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t global_lock_timeouts;              /**< Acquisitions given up, the firmware never releasing the lock. */
     uint32_t unlocked_lock_accesses; /**< Lock fields accessed without a global lock: the platform has none, or
                                           its FACS was refused (facs_refused). */
+    uint32_t pci_attachments;        /**< PCI_Config regions attached: their address resolved (§4.4). */
+    uint32_t internal_evaluations;   /**< Methods evaluated in internal frames for those attaches (§3.6, O13). */
+    uint32_t internal_failures;      /**< Of those, the ones that failed, their object taken as absent. */
+    uint32_t pci_protected_writes;   /**< Writes to the predefined header of a PCI function, dropped. */
+    uint32_t pci_lost_accesses;      /**< Accesses to a function the attach could not reach: all ones read,
+                                          writes dropped. */
+    uint32_t pci_ecam_accesses;      /**< Accesses past offset 0xFF or in a segment other than 0, which need ECAM
+                                          (#58) and fail with address_unreachable. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t;
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_REGIONS_H */
