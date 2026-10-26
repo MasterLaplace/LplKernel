@@ -3027,7 +3027,8 @@ static MachineLanguageStatus_t machine_language_connection_end(const MachineLang
 
 /**
  * @brief Creates the temporary unit a named element of a field list in a method declares, at bit
- *        @p unit->bit_offset, @p unit->bit_length bits long.
+ *        @p unit->bit_offset, @p unit->bit_length bits long; an element named otherwise than by one
+ *        NameSeg is a bad NameString, truncated, as at table level.
  */
 static MachineLanguageStatus_t
 machine_language_field_unit(MachineLanguageLoad_t *load, uint32_t start, uint32_t end,
@@ -3040,6 +3041,8 @@ machine_language_field_unit(MachineLanguageLoad_t *load, uint32_t start, uint32_
     MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
         frame->code, start, end, &name, &after);
 
+    if (status == MACHINE_LANGUAGE_OK && (name.root || name.parent_prefixes != 0u || name.segment_count != 1u))
+        status = MACHINE_LANGUAGE_STATUS(TRUNCATED);
     if (status == MACHINE_LANGUAGE_OK)
         status = machine_language_create_temporary(load, &name, MACHINE_LANGUAGE_NODE(FIELD_UNIT), &node);
     return (status == MACHINE_LANGUAGE_OK) ?
@@ -3060,7 +3063,7 @@ static MachineLanguageStatus_t machine_language_field_list(MachineLanguageLoad_t
     const uint32_t count = (active->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD))  ? 4u :
                            (active->opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD)) ? 3u :
                                                                                       2u;
-    uint64_t operands[4];
+    uint64_t operands[4] = {0u};
     MachineLanguageStatus_t status = machine_language_pop_integers(load, count, operands);
     const uint8_t flags = (uint8_t) operands[count - 1u];
     AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t unit = {

@@ -751,6 +751,28 @@ static MachineLanguageStatus_t machine_language_read_unit(MachineLanguageLoad_t 
 }
 
 /**
+ * @brief Gives a node a heap object of @p kind holding the @p bytes of @p shape.
+ */
+static MachineLanguageStatus_t machine_language_build_object(MachineLanguageLoad_t *load, uint32_t node, uint8_t kind,
+                                                             const void *shape, uint32_t bytes)
+{
+    uint32_t handle = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &load->heap, &load->space, kind, bytes, &handle);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    memcpy(advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1, shape, bytes);
+
+    MachineLanguageNode_t *target =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
+
+    target->value.kind = kind;
+    target->value.handle = handle;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Writes a unit, the global lock already taken when it needs it.
  */
 static MachineLanguageStatus_t machine_language_write_unit(MachineLanguageLoad_t *load,
@@ -834,28 +856,6 @@ advanced_configuration_and_power_interface_machine_language_field_write(MachineL
     if (unit->lock != 0u)
         machine_language_release_global_lock(load);
     return status;
-}
-
-/**
- * @brief Gives a node a heap object of @p kind holding the @p bytes of @p shape.
- */
-static MachineLanguageStatus_t machine_language_build_object(MachineLanguageLoad_t *load, uint32_t node, uint8_t kind,
-                                                             const void *shape, uint32_t bytes)
-{
-    uint32_t handle = 0u;
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        &load->heap, &load->space, kind, bytes, &handle);
-
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1, shape, bytes);
-
-    MachineLanguageNode_t *target =
-        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
-
-    target->value.kind = kind;
-    target->value.handle = handle;
-    return MACHINE_LANGUAGE_OK;
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_region_build(
