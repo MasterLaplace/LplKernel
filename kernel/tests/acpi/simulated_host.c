@@ -3,6 +3,7 @@
 #include <kernel/memory/vmm.h>
 
 #include <stddef.h>
+#include <string.h>
 
 #define SIMULATED_HOST_SYSTEM_CONTROL_INTERRUPT_ENABLE 0x1u /**< SCI_EN, bit 0 of a PM1 control register. */
 
@@ -356,6 +357,83 @@ static void simulated_host_release_pages(void *context, void *address, uint32_t 
     simulated->outstanding_pages -= count;
 }
 
+/**
+ * @brief Whether the @p count bytes at @p bytes are all zero.
+ */
+static bool simulated_host_all_zero(const uint8_t *bytes, uint64_t count)
+{
+    for (uint64_t index = 0u; index < count; ++index)
+    {
+        if (bytes[index] != 0u)
+            return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Places the @p range_count ranges of an image whose header is read, each served in place.
+ *
+ * @return NULL when every range is placed and the image ends with the last one's padding, else what
+ *         the image does wrong.
+ */
+static const char *simulated_host_place_image_ranges(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                                     const uint8_t *image, uint64_t length, uint64_t range_count)
+{
+    uint64_t offset = sizeof(AdvancedConfigurationAndPowerInterfaceSimulatedHostImageHeader_t);
+
+    for (uint64_t index = 0u; index < range_count; ++index)
+    {
+        AdvancedConfigurationAndPowerInterfaceSimulatedHostImageRange_t range;
+
+        if (length - offset < sizeof(range))
+            return "a range runs past the end of the image";
+        memcpy(&range, image + (size_t) offset, sizeof(range));
+        offset += sizeof(range);
+        if (range.length == 0u)
+            return "a range is empty";
+        if (range.length > length - offset)
+            return "a range runs past the end of the image";
+
+        const uint64_t padded =
+            (range.length + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT - 1u) &
+            ~(uint64_t) (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT - 1u);
+
+        if (padded > length - offset)
+            return "a range runs past the end of the image";
+        if (!simulated_host_all_zero(image + (size_t) (offset + range.length), padded - range.length))
+            return "a range's padding is not zero";
+        if (range.physical_address + range.length < range.physical_address)
+            return "a range wraps past the last address";
+        if (!advanced_configuration_and_power_interface_simulated_host_place(simulated, range.physical_address,
+                                                                             image + (size_t) offset, range.length))
+            return "a range overlaps another";
+        offset += padded;
+    }
+    return (offset == length) ? NULL : "the image holds bytes after its last range";
+}
+
+/**
+ * @brief Reads an image's header, then places its ranges.
+ *
+ * @return NULL when the image is whole, its root pointer then in @p out_root, else what it does wrong.
+ */
+static const char *simulated_host_read_image(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                             const uint8_t *image, uint64_t length, uint64_t *out_root)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHostImageHeader_t header;
+
+    if (length < sizeof(header))
+        return "the image is shorter than its header";
+    memcpy(&header, image, sizeof(header));
+    if (memcmp(header.magic, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC,
+               sizeof(header.magic)) != 0)
+        return "the image does not start with " ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_MAGIC;
+    if (header.range_count > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_RANGES)
+        return "the image holds more ranges than a simulated host";
+    *out_root = header.root_system_description_pointer;
+    return simulated_host_place_image_ranges(simulated, image, length, header.range_count);
+}
+
 void advanced_configuration_and_power_interface_simulated_host_open(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated)
 {
@@ -479,5 +557,22 @@ bool advanced_configuration_and_power_interface_simulated_host_place(
     range->physical_address = physical_address;
     range->length = length;
     range->bytes = bytes;
+    return true;
+}
+
+bool advanced_configuration_and_power_interface_simulated_host_open_image(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, const void *image, uint64_t length,
+    const char **error)
+{
+    uint64_t root = 0u;
+
+    advanced_configuration_and_power_interface_simulated_host_open(simulated);
+    *error = simulated_host_read_image(simulated, image, length, &root);
+    if (*error != NULL)
+    {
+        advanced_configuration_and_power_interface_simulated_host_open(simulated);
+        return false;
+    }
+    simulated->root_system_description_pointer = root;
     return true;
 }

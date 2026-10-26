@@ -221,6 +221,9 @@ i686-elf-gdb kernel/lpl.kernel
 - **CPU State**: Use `show_mode` to check protected mode, paging, interrupts
 - **Registers**: All CPU registers are displayed automatically at each breakpoint
 - **Tick**: `-append lpl.timer=pit` keeps the tick on the PIT, the path a failed calibration of the local timer takes
+- **ACPI tables**: `-append lpl.acpi.tables=print` prints the tables of the boot's ACPI directory (the root table's
+  entries and the DSDT) as acpidump does; `build/acpi-host/test-acpi --firmware-log serial.log` runs the ACPI tests
+  on those bytes on the build machine
 
 ### Requirements
 

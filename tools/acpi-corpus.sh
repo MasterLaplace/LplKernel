@@ -8,6 +8,8 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh namespace [quick|corpus|full|qemu]
        tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
        tools/acpi-corpus.sh uacpi
+       tools/acpi-corpus.sh module <machine>...
+       tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
 
 The firmware of recorded machines, which the ACPI layer is checked on. linuxhw/ACPI is fetched at a
 pinned commit into build/acpi-corpus/, never committed and never put in an image.
@@ -38,6 +40,14 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
          yet; any other result fails
+  module  writes the firmware of each machine named, as `test-acpi --write-module` serves it, as one
+         Multiboot module in build/acpi-corpus/modules/, and prints its path
+  ring0  boots the debug kernel <kernel> on QEMU once per machine of a list, its module given with
+         -initrd, runs the ACPI tests with `lpl.test=advanced_configuration_and_power_interface*`,
+         and compares the records with those `test-acpi --boot-module` prints on the same module,
+         with tools/parity.sh; qemu boots it on q35 and pc with lpl.acpi.tables=print instead, and
+         compares with `test-acpi --firmware-log` on the tables it printed. The logs of the last run
+         stay in build/acpi-corpus/ring0/. BOOT_SECONDS (300) bounds each boot
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error.
@@ -61,6 +71,9 @@ readonly QEMU_TABLES="$QEMU/tests/data/acpi/x86"
 readonly UACPI="$CORPUS/uacpi"
 readonly UACPI_URL="https://github.com/uACPI/uACPI.git"
 readonly UACPI_COMMIT="c0edecef62bcac6ce3f783540099190bafadadda"
+readonly MODULES="$CORPUS/modules"
+readonly RING0_LOGS="$CORPUS/ring0"
+readonly SUITES="advanced_configuration_and_power_interface"
 
 # Refuses, with the usage, a list that is not quick, corpus or full.
 known_list() {
@@ -340,6 +353,108 @@ closure_table() {
             }'
 }
 
+# Prints the file name of the module of the machine $1: its path, each character but a letter, a digit,
+# a dot or a dash made an underscore, so that QEMU's -initrd takes it whole.
+module_name() {
+    printf '%s' "$1" | tr -c 'A-Za-z0-9.-' '_'
+    printf '.acpi\n'
+}
+
+# Writes the module of each machine named, and prints its path.
+modules() {
+    [[ "$#" -gt 0 ]] || { usage >&2; exit 2; }
+    (cd "$ROOT" && xmake build -q test-acpi)
+    mkdir -p "$MODULES"
+    local machine module
+    for machine in "$@"; do
+        module="$MODULES/$(module_name "$machine")"
+        "$HARNESS" --write-module "$LINUXHW/$machine.bin" "$module" || exit 1
+        echo "$module"
+    done
+}
+
+# Boots the kernel $1 on the QEMU machine $2, its serial port written to the log $3, with the boot line $4
+# and the module $5 when there is one, until its tests print their totals or BOOT_SECONDS pass. Both are
+# copied under a short path first: QEMU puts the kernel's path at the head of the boot line, which the
+# kernel cuts at 255 characters (#553), and takes a space or a comma in a module's path for a separator.
+boot() {
+    local kernel="$1" machine="$2" log="$3" line="$4" module="${5:-}" short pid
+    local -a initrd=()
+    short="$(mktemp -d)"
+    cp "$kernel" "$short/k"
+    if [[ -n "$module" ]]; then
+        cp "$module" "$short/m.acpi"
+        initrd=(-initrd "$short/m.acpi")
+    fi
+    : >"$log"
+    qemu-system-i386 -machine "$machine" -m 256 -kernel "$short/k" "${initrd[@]}" -append "$line" \
+        -serial "file:$log" -display none -no-reboot >/dev/null 2>&1 &
+    pid=$!
+    trap 'kill "$pid" 2>/dev/null; rm -rf "$short"; exit 130' INT TERM
+    for _ in $(seq "${BOOT_SECONDS:-300}"); do
+        grep -qF '# Totals:' "$log" && break
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 1
+    done
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    trap - INT TERM
+    rm -rf "$short"
+}
+
+# Compares the host log $1 with the serial log $2, and prints `ok` or `not ok` for the subject $3, numbered
+# $4, with what differs. tools/parity.sh compares only the tests the host ran, so the test $5, which reads the
+# subject's tables, must have run on the host; ring 0 is held to it by lpl.test.require.
+compare_ring0() {
+    local result
+    if ! grep -qE "^    ok [0-9]+ $5\$" "$1"; then
+        echo "not ok $4 $3: $5 did not run on the host"
+        grep -E "^test-acpi: | $5( |\$)" "$1" | sed 's/^/    # /'
+        return 1
+    fi
+    if result="$("$ROOT/tools/parity.sh" "$1" "$2")"; then
+        echo "ok $4 $3: $(tail -1 <<<"$result" | sed 's/^# //')"
+        return 0
+    fi
+    echo "not ok $4 $3"
+    grep -v '^ok ' <<<"$result" | sed 's/^/    # /'
+    return 1
+}
+
+# Boots the debug kernel $2 with the module of each machine of the list $1, and compares its records with the
+# host harness's on the same module; with qemu, boots it on q35 and pc and compares the tables it printed.
+ring0() {
+    command -v qemu-system-i386 >/dev/null || { echo "ring0: no qemu-system-i386" >&2; exit 1; }
+    [[ -f "$2" ]] || { echo "ring0: $2: no kernel" >&2; exit 1; }
+    grep -qaF 'KTAP version 1' "$2" || { echo "ring0: $2: a kernel without tests, build a debug one" >&2; exit 1; }
+    (cd "$ROOT" && xmake build -q test-acpi)
+    mkdir -p "$RING0_LOGS"
+    local number=0 agree=0 subject logs test
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        logs="$RING0_LOGS/$(module_name "$subject")"
+        mkdir -p "$logs"
+        if [[ "$1" == qemu ]]; then
+            test=the_booted_machine_loads
+            boot "$2" "$subject" "$logs/serial.log" \
+                "lpl.acpi.tables=print lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.$test"
+            "$HARNESS" --firmware-log "$logs/serial.log" >"$logs/host.log" 2>&1 || true
+        else
+            test=the_boot_module_machine_loads
+            if ! "$HARNESS" --write-module "$LINUXHW/$subject.bin" "$logs/machine.acpi" 2>"$logs/host.log"; then
+                echo "not ok $number $subject: $(cat "$logs/host.log")"
+                continue
+            fi
+            "$HARNESS" --boot-module "$logs/machine.acpi" >"$logs/host.log" 2>&1 || true
+            boot "$2" q35 "$logs/serial.log" "lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.$test" \
+                "$logs/machine.acpi"
+        fi
+        compare_ring0 "$logs/host.log" "$logs/serial.log" "$subject" "$number" "$test" && agree=$((agree + 1))
+    done < <(if [[ "$1" == qemu ]]; then printf 'q35\npc\n'; else reports "$1"; fi)
+    echo "# ring 0: $agree of $number agree with the host"
+    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
+}
+
 case "${1:-}" in
     fetch)
         mkdir -p "$CORPUS"
@@ -354,6 +469,12 @@ case "${1:-}" in
     closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
+    module) shift; modules "$@" ;;
+    ring0)
+        [[ "$#" -eq 3 ]] || { usage >&2; exit 2; }
+        [[ "$2" == qemu ]] || known_list "$2"
+        ring0 "$2" "$3"
+        ;;
     -h | --help) usage ;;
     *) usage >&2; exit 2 ;;
 esac

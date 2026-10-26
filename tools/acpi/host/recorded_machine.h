@@ -22,6 +22,10 @@
  * written. A live machine's XSDT leaves out the SSDTs loaded at run time; telling them apart takes
  * the interpreter's Load, so until then the directory holds them too.
  *
+ * The tables a debug kernel printed on its serial port, in the same format, are read and served the
+ * same way, and what a recorded machine serves can be written as an image, the Multiboot module of a
+ * debug kernel.
+ *
  * @author @MasterLaplace
  * @version 0.0.0
  * @date 2026-10-24
@@ -70,7 +74,39 @@ typedef struct RecordedMachine {
 extern bool recorded_machine_open(RecordedMachine_t *machine, const char *path, const char **error);
 
 /**
- * @brief Frees what recorded_machine_open took.
+ * @brief Reads the tables a kernel printed on its serial port and serves them, as recorded_machine_open
+ *        serves a dump's.
+ *
+ * @details A debug kernel booted with ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINT_TABLES_OPTION
+ *          prints every table its directory holds, in acpidump's format, between
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_BEGIN and
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_END; every other line of the log is
+ *          left alone.
+ *
+ * @param machine Filled; released with recorded_machine_close, even when this fails.
+ * @param path    The serial log.
+ * @param error   Receives what went wrong, when it fails.
+ * @return false when the log cannot be read, holds no printed tables, ends before their end, holds a
+ *         table of fewer or more bytes than its header says, or they cannot be served.
+ */
+extern bool recorded_machine_open_printed(RecordedMachine_t *machine, const char *path, const char **error);
+
+/**
+ * @brief Writes what @p machine serves as an image, which a debug kernel booted with it as a
+ *        Multiboot module serves in turn (simulated_host.h).
+ *
+ * @details The image is read back as ring 0 reads it, and compared with what @p machine serves,
+ *          before the file is written.
+ *
+ * @param machine An opened machine.
+ * @param path    The image file, created or replaced.
+ * @param error   Receives what went wrong, when it fails.
+ * @return false when the image read back differs, or the file cannot be written.
+ */
+extern bool recorded_machine_write_image(const RecordedMachine_t *machine, const char *path, const char **error);
+
+/**
+ * @brief Frees what recorded_machine_open or recorded_machine_open_printed took.
  *
  * @param machine The machine, unusable afterwards.
  */

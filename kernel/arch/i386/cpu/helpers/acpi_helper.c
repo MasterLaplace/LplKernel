@@ -36,6 +36,68 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_end_record();
 }
 
+#define ACPI_HELPER_ROW_BYTES 16u /**< Bytes of a table on one printed line, as acpidump prints them. */
+
+/**
+ * @brief Writes @p value as @p digits upper-case hexadecimal digits, from @p text on.
+ *
+ * @return Where the next character goes.
+ */
+static char *acpi_helper_put_hexadecimal(char *text, uint32_t value, uint32_t digits)
+{
+    static const char alphabet[] = "0123456789ABCDEF";
+
+    for (uint32_t digit = digits; digit != 0u; --digit)
+        *text++ = alphabet[(value >> (4u * (digit - 1u))) & 0xFu];
+    return text;
+}
+
+/**
+ * @brief How many hexadecimal digits acpidump prints @p offset in: four, or as many as it needs.
+ */
+static uint32_t acpi_helper_offset_digits(uint32_t offset)
+{
+    uint32_t digits = 4u;
+
+    while (digits < 8u && (offset >> (4u * digits)) != 0u)
+        ++digits;
+    return digits;
+}
+
+/**
+ * @brief Writes one table: its header line, its bytes ACPI_HELPER_ROW_BYTES per line, each led by its
+ *        offset as acpidump prints it, then an empty line.
+ */
+static void acpi_helper_write_table(Serial_t *serial, const AdvancedConfigurationAndPowerInterfaceTable_t *table)
+{
+    const uint8_t *bytes = (const uint8_t *) table->header;
+    char row[4u + 8u + 1u + 3u * ACPI_HELPER_ROW_BYTES + 2u];
+
+    for (uint32_t letter = 0u; letter < sizeof(table->signature); ++letter)
+        serial_write_char(serial, table->signature[letter]);
+    serial_write_string(serial, " @ ");
+    serial_write_hex64(serial, table->physical_address);
+    serial_write_char(serial, '\n');
+    for (uint32_t offset = 0u; offset < table->length; offset += ACPI_HELPER_ROW_BYTES)
+    {
+        char *end = row;
+
+        for (uint32_t space = 0u; space < 4u; ++space)
+            *end++ = ' ';
+        end = acpi_helper_put_hexadecimal(end, offset, acpi_helper_offset_digits(offset));
+        *end++ = ':';
+        for (uint32_t byte = offset; byte < offset + ACPI_HELPER_ROW_BYTES && byte < table->length; ++byte)
+        {
+            *end++ = ' ';
+            end = acpi_helper_put_hexadecimal(end, bytes[byte], 2u);
+        }
+        *end++ = '\n';
+        *end = '\0';
+        serial_write_string(serial, row);
+    }
+    serial_write_char(serial, '\n');
+}
+
 void write_acpi_tables_info(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory =
@@ -179,6 +241,17 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("mixed_type_comparisons", load->evaluation.mixed_type_comparisons);
     kernel_telemetry_write_unsigned("forbidden_conversions", load->evaluation.forbidden_conversions);
     kernel_telemetry_end_record();
+}
+
+void write_advanced_configuration_and_power_interface_tables(Serial_t *serial)
+{
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory =
+        advanced_configuration_and_power_interface_directory();
+
+    serial_write_string(serial, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_BEGIN "\n");
+    for (uint32_t index = 0u; index < directory->table_count; ++index)
+        acpi_helper_write_table(serial, &directory->tables[index]);
+    serial_write_string(serial, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_END "\n");
 }
 
 void write_acpi_ioapics_info(Serial_t *serial)

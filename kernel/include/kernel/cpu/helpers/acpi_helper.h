@@ -25,6 +25,12 @@
 
 #include <kernel/drivers/serial.h>
 
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINT_TABLES_OPTION                                                 \
+    "lpl.acpi.tables=print" /**< The boot option that has the boot print every ACPI table it read. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_BEGIN                                                \
+    "[acpidump] begin" /**< The line before the tables printed, which the host harness looks for. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_END "[acpidump] end" /**< The line after them. */
+
 /**
  * @brief Writes the `[LPLTLM] acpi` record: the root table walked, and every table it led to.
  *
@@ -61,6 +67,19 @@ extern void write_acpi_mode_record(Serial_t *serial);
  * @param serial The port the record is written to.
  */
 extern void write_acpi_machine_language_record(Serial_t *serial);
+
+/**
+ * @brief Writes every table the boot's directory holds, its bytes as acpidump prints them, so that
+ *        the host harness loads the bytes this boot read (`test-acpi --firmware-log`).
+ *
+ * @details Each table is a line `<signature> @ 0x<physical address>`, its bytes 16 per line, each line
+ *          led by its offset, then an empty line; ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_BEGIN
+ *          comes before them and ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PRINTED_TABLES_END after.
+ *          acpidump's ASCII column is left out.
+ *
+ * @param serial The port the tables are written to.
+ */
+extern void write_advanced_configuration_and_power_interface_tables(Serial_t *serial);
 extern void write_acpi_ioapics_info(Serial_t *serial);
 extern void write_acpi_isos_info(Serial_t *serial);
 extern void write_acpi_isa_routing_info(Serial_t *serial);

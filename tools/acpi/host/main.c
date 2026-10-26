@@ -1,16 +1,24 @@
 #include "needs_path_closure.h"
+#include "platform.h"
 #include "recorded_machine.h"
 
 #include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#define HARNESS_PAGE_BYTES 4096u /**< What a bootloader aligns a module to, and the harness too. */
+
 #define HARNESS_USAGE                                                                                                  \
-    "Usage: test-acpi                    runs the kernel's ACPI tests, reported in KTAP\n"                             \
+    "Usage: test-acpi [--boot-module <image>] [--firmware-log <log>]\n"                                                \
+    "                                    runs the kernel's ACPI tests, reported in KTAP; with <image>, the\n"          \
+    "                                    Multiboot module of a debug kernel, or <log>, the serial log of a debug\n"    \
+    "                                    kernel booted with lpl.acpi.tables=print, they run on the bytes that\n"       \
+    "                                    kernel read, and tools/parity.sh compares the two runs\n"                     \
     "       test-acpi --machine <dump>   walks the tables of an acpidump text file and prints its directory, its\n"    \
     "                                    MADT, then what loading its definition blocks decoded\n"                      \
     "       test-acpi --namespace <dump> loads the definition blocks of an acpidump text file and prints its\n"        \
@@ -20,7 +28,9 @@
     "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"            \
     "       test-acpi --evaluate <path> <table>...    loads raw definition blocks, the DSDT first, and prints\n"       \
     "                                    what evaluating the absolute path gives: its status, then the\n"              \
-    "                                    result's type and value, and each opcode run but not executed\n"
+    "                                    result's type and value, and each opcode run but not executed\n"              \
+    "       test-acpi --write-module <dump> <image>  writes the firmware an acpidump text file gives, as this\n"       \
+    "                                    harness serves it, as an image: the Multiboot module of a debug kernel\n"
 
 /**
  * @brief Prints the directory of @p directory: its counts and the FACS, then one line per table.
@@ -727,11 +737,60 @@ static int harness_evaluate(const char *path, int count, char **paths)
 }
 
 /**
+ * @brief Writes the firmware the dump at @p dump gives, as the harness serves it, as an image at @p path.
+ *
+ * @return 0 when the image is written, 1 otherwise.
+ */
+static int harness_write_module(const char *dump, const char *path)
+{
+    static RecordedMachine_t machine;
+    const char *error = NULL;
+    int status = 1;
+
+    if (!recorded_machine_open(&machine, dump, &error))
+        fprintf(stderr, "test-acpi: %s: %s\n", dump, error);
+    else if (!recorded_machine_write_image(&machine, path, &error))
+        fprintf(stderr, "test-acpi: %s: %s\n", path, error);
+    else
+        status = 0;
+    recorded_machine_close(&machine);
+    return status;
+}
+
+/**
+ * @brief Reads the file at @p path into pages of its own, as a bootloader loads a module.
+ *
+ * @return The bytes, freed by the caller, or NULL when the file is empty, longer than 4 GiB or cannot
+ *         be read.
+ */
+static uint8_t *harness_read_module(const char *path, uint32_t *out_length)
+{
+    FILE *file = fopen(path, "rb");
+    long length = -1;
+    uint8_t *bytes = NULL;
+
+    if (file != NULL && fseek(file, 0, SEEK_END) == 0)
+        length = ftell(file);
+    if (length > 0 && (unsigned long) length <= UINT32_MAX && fseek(file, 0, SEEK_SET) == 0)
+        bytes = aligned_alloc(HARNESS_PAGE_BYTES,
+                              ((size_t) length + HARNESS_PAGE_BYTES - 1u) / HARNESS_PAGE_BYTES * HARNESS_PAGE_BYTES);
+    if (bytes != NULL && fread(bytes, 1u, (size_t) length, file) != (size_t) length)
+    {
+        free(bytes);
+        bytes = NULL;
+    }
+    if (file != NULL)
+        fclose(file);
+    *out_length = (bytes != NULL) ? (uint32_t) length : 0u;
+    return bytes;
+}
+
+/**
  * @brief Runs every stage of the kernel's tests linked in, which are the ACPI ones.
  *
  * @return 0 when none failed, 1 otherwise.
  */
-static int harness_run_tests(void)
+static int harness_run_stages(void)
 {
     Serial_t standard_output = {0};
 
@@ -741,10 +800,72 @@ static int harness_run_tests(void)
     return (kernel_test_failure_count() == 0u) ? 0 : 1;
 }
 
+/**
+ * @brief Runs the kernel's ACPI tests, given the module at @p module_path and the firmware the log at
+ *        @p log_path printed, each when it is not NULL.
+ *
+ * @return 0 when every test passed and every window the firmware mapped was unmapped, 1 when one did
+ *         not or an input cannot be read.
+ */
+static int harness_run_tests(const char *module_path, const char *log_path)
+{
+    static RecordedMachine_t firmware;
+    uint8_t *module = NULL;
+    uint32_t module_length = 0u;
+    const char *error = NULL;
+    int status = 1;
+
+    if (module_path != NULL && (module = harness_read_module(module_path, &module_length)) == NULL)
+        fprintf(stderr, "test-acpi: %s: the module cannot be read, or is empty\n", module_path);
+    else if (log_path != NULL && !recorded_machine_open_printed(&firmware, log_path, &error))
+        fprintf(stderr, "test-acpi: %s: %s\n", log_path, error);
+    else
+    {
+        if (module != NULL)
+            platform_serve_boot_module(module_path, module, module_length);
+        if (log_path != NULL)
+            platform_serve_firmware(&firmware.simulated.host);
+        status = harness_run_stages();
+        if (firmware.simulated.outstanding_maps != 0u || firmware.simulated.mismatched_unmaps != 0u)
+        {
+            fprintf(stderr, "test-acpi: %s: %u windows left mapped, %u unmaps that named no window\n", log_path,
+                    firmware.simulated.outstanding_maps, firmware.simulated.mismatched_unmaps);
+            status = 1;
+        }
+        platform_serve_firmware(NULL);
+        platform_serve_boot_module(NULL, NULL, 0u);
+    }
+    recorded_machine_close(&firmware);
+    free(module);
+    return status;
+}
+
+/**
+ * @brief Reads the options of a test run: each of `--boot-module <image>` and `--firmware-log <log>`
+ *        at most once.
+ *
+ * @return false when an option is unknown, repeated or has no value.
+ */
+static bool harness_read_test_options(int count, char **options, const char **module_path, const char **log_path)
+{
+    for (int index = 0; index < count; index += 2)
+    {
+        const char **value = (strcmp(options[index], "--boot-module") == 0)  ? module_path :
+                             (strcmp(options[index], "--firmware-log") == 0) ? log_path :
+                                                                               NULL;
+
+        if (value == NULL || *value != NULL || index + 1 >= count)
+            return false;
+        *value = options[index + 1];
+    }
+    return true;
+}
+
 int main(int argc, char **argv)
 {
-    if (argc == 1)
-        return harness_run_tests();
+    const char *module_path = NULL;
+    const char *log_path = NULL;
+
     if (argc == 3 && strcmp(argv[1], "--machine") == 0)
         return harness_walk_machine(argv[2]);
     if (argc == 3 && (strcmp(argv[1], "--namespace") == 0 || strcmp(argv[1], "--closure") == 0))
@@ -753,6 +874,10 @@ int main(int argc, char **argv)
         return harness_dump_tables_namespace(argc - 2, argv + 2, strcmp(argv[1], "--closure-tables") == 0);
     if (argc >= 4 && strcmp(argv[1], "--evaluate") == 0)
         return harness_evaluate(argv[2], argc - 3, argv + 3);
+    if (argc == 4 && strcmp(argv[1], "--write-module") == 0)
+        return harness_write_module(argv[2], argv[3]);
+    if (harness_read_test_options(argc - 1, argv + 1, &module_path, &log_path))
+        return harness_run_tests(module_path, log_path);
     fputs(HARNESS_USAGE, (argc == 2 && strcmp(argv[1], "--help") == 0) ? stdout : stderr);
     return (argc == 2 && strcmp(argv[1], "--help") == 0) ? 0 : 2;
 }

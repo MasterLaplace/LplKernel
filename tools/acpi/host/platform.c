@@ -1,3 +1,5 @@
+#include "platform.h"
+
 #include <kernel/acpi/host.h>
 #include <kernel/boot/boot_module.h>
 #include <kernel/drivers/serial.h>
@@ -5,26 +7,34 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-static uint64_t platform_no_root_system_description_pointer(void *context)
+static const AdvancedConfigurationAndPowerInterfaceHost_t *platform_firmware;
+static const char *platform_module_name;
+static const uint8_t *platform_module_bytes;
+static uint32_t platform_module_length;
+
+static uint64_t platform_root_system_description_pointer(void *context)
 {
     (void) context;
-    return 0u;
+    if (platform_firmware == NULL)
+        return 0u;
+    return platform_firmware->root_system_description_pointer(platform_firmware->context);
 }
 
-static const void *platform_map_no_firmware(void *context, uint64_t physical_address, uint64_t length)
+static const void *platform_map_firmware(void *context, uint64_t physical_address, uint64_t length)
 {
     (void) context;
-    (void) physical_address;
-    (void) length;
-    return NULL;
+    if (platform_firmware == NULL)
+        return NULL;
+    return platform_firmware->map_firmware(platform_firmware->context, physical_address, length);
 }
 
-static void platform_unmap_no_firmware(void *context, const void *address, uint64_t length)
+static void platform_unmap_firmware(void *context, const void *address, uint64_t length)
 {
     (void) context;
-    (void) address;
-    (void) length;
+    if (platform_firmware != NULL)
+        platform_firmware->unmap_firmware(platform_firmware->context, address, length);
 }
 
 static uint8_t platform_no_memory_type(void *context, uint64_t physical_address, uint64_t length)
@@ -116,9 +126,9 @@ static void platform_release_pages(void *context, void *address, uint32_t count)
 
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
-    .root_system_description_pointer = platform_no_root_system_description_pointer,
-    .map_firmware = platform_map_no_firmware,
-    .unmap_firmware = platform_unmap_no_firmware,
+    .root_system_description_pointer = platform_root_system_description_pointer,
+    .map_firmware = platform_map_firmware,
+    .unmap_firmware = platform_unmap_firmware,
     .memory_type = platform_no_memory_type,
     .map_firmware_writable = platform_map_no_memory,
     .unmap_firmware_writable = platform_unmap_no_memory,
@@ -177,3 +187,27 @@ const char *boot_command_line_option(const char *option)
 }
 
 uint32_t boot_command_line_dropped(void) { return 0u; }
+bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *out_size)
+{
+    const size_t suffix_length = strlen(suffix);
+    const size_t name_length = (platform_module_name != NULL) ? strlen(platform_module_name) : 0u;
+
+    if (platform_module_bytes == NULL || platform_module_length == 0u || name_length < suffix_length ||
+        strcmp(platform_module_name + name_length - suffix_length, suffix) != 0)
+        return false;
+    *out_bytes = platform_module_bytes;
+    *out_size = platform_module_length;
+    return true;
+}
+
+void platform_serve_boot_module(const char *name, const uint8_t *bytes, uint32_t length)
+{
+    platform_module_name = name;
+    platform_module_bytes = bytes;
+    platform_module_length = length;
+}
+
+void platform_serve_firmware(const AdvancedConfigurationAndPowerInterfaceHost_t *firmware)
+{
+    platform_firmware = firmware;
+}

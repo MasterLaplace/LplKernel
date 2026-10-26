@@ -790,7 +790,8 @@ target_end()
 -- for the host and read through the simulated host of kernel/tests/acpi/, which ring 0 uses
 -- too. The kernel's own test runner reports them, so tools/parity.sh compares the two sides;
 -- tools/acpi/host/platform.c gives it stdout for a serial port and no boot command line, so
--- every test runs. `--machine <dump>` walks a recorded machine's tables instead.
+-- every test runs. `--boot-module <image>` and `--firmware-log <log>` give the tests the module
+-- and the firmware a debug kernel read; `--machine <dump>` walks a recorded machine's tables instead.
 -- ===========================================================================
 target("test-acpi")
     set_kind("binary")
