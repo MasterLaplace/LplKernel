@@ -120,14 +120,19 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader
  * @brief An operation region (§3.4): its space, and its offset and length once evaluated.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion {
-    uint8_t space;         /**< RegionSpace, as AML encodes it. */
-    uint8_t state;         /**< 1 once its offset and length are evaluated, 0 while they wait for the interpreter. */
-    uint16_t reserved;     /**< 0. */
-    uint32_t pci_device;   /**< Segment, bus, device and function, once attached; 0 before. */
-    uint64_t offset;       /**< Its address in its space. */
-    uint64_t length;       /**< Its length in bytes. */
-    uint32_t mapping;      /**< Its entry in the mapping cache, once attached; 0 before. */
-    uint32_t owner_device; /**< The device it is declared in, or 0. */
+    uint8_t space;        /**< RegionSpace, as AML encodes it. */
+    uint8_t state;        /**< 1 once its offset and length are evaluated, 0 while they wait for the interpreter. */
+    uint8_t attach;       /**< How far the attach of a PCI_Config region went (§4.4): 0 before it starts, a step
+                               while it waits for an object, then attached. */
+    uint8_t attach_flags; /**< What the attach of a PCI_Config region found: a function above the region, an
+                               unreachable one, a header of type 0. */
+    uint32_t pci_device;  /**< The segment in bits 16 to 31, the bus in bits 8 to 15, the device in bits 3 to 7 and
+                               the function in bits 0 to 2 of a PCI_Config region: those found so far while it
+                               attaches, its function's once attached. */
+    uint64_t offset;      /**< Its address in its space. */
+    uint64_t length;      /**< Its length in bytes. */
+    uint32_t mapping;     /**< Its entry in the mapping cache, once attached; 0 before. */
+    uint32_t attach_node; /**< The node whose object the attach of a PCI_Config region reads next, or 0. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t;
 
 /**

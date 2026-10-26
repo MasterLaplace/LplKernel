@@ -2,6 +2,7 @@
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/irq.h>
+#include <kernel/cpu/pci.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
@@ -135,6 +136,28 @@ static void acpi_host_port_write(void *context, uint16_t port, uint8_t width, ui
     }
 }
 
+static bool acpi_host_mechanism_one_reaches(uint16_t segment, uint16_t offset)
+{
+    return segment == 0u && offset <= 0xFFu;
+}
+
+static uint32_t acpi_host_pci_read(void *context, uint16_t segment, uint8_t bus, uint8_t device, uint8_t function,
+                                   uint16_t offset, uint8_t width)
+{
+    (void) context;
+    if (!acpi_host_mechanism_one_reaches(segment, offset))
+        return (width >= 4u) ? 0xFFFFFFFFu : ((1u << (8u * width)) - 1u);
+    return peripheral_component_interconnect_config_read(bus, device, function, (uint8_t) offset, width);
+}
+
+static void acpi_host_pci_write(void *context, uint16_t segment, uint8_t bus, uint8_t device, uint8_t function,
+                                uint16_t offset, uint8_t width, uint32_t value)
+{
+    (void) context;
+    if (acpi_host_mechanism_one_reaches(segment, offset))
+        peripheral_component_interconnect_config_write(bus, device, function, (uint8_t) offset, width, value);
+}
+
 static uint32_t acpi_host_sleep_milliseconds(void *context, uint32_t milliseconds)
 {
     const uint32_t hertz = clock_get_tick_hz();
@@ -206,6 +229,8 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .compare_exchange = acpi_host_compare_exchange,
     .port_read = acpi_host_port_read,
     .port_write = acpi_host_port_write,
+    .pci_read = acpi_host_pci_read,
+    .pci_write = acpi_host_pci_write,
     .sleep_milliseconds = acpi_host_sleep_milliseconds,
     .stall_microseconds = acpi_host_stall_microseconds,
     .clock_100ns = acpi_host_clock_100ns,

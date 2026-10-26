@@ -141,6 +141,36 @@ void peripheral_component_interconnect_config_write_byte(uint8_t bus, uint8_t de
     peripheral_component_interconnect_config_write_dword(bus, device, function, offset, dword);
 }
 
+uint32_t peripheral_component_interconnect_config_read(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset,
+                                                       uint8_t width)
+{
+    const uint16_t port = (uint16_t) (PERIPHERAL_COMPONENT_INTERCONNECT_CONFIG_DATA_PORT + (offset & 3u));
+
+    asmutils_output_dword(PERIPHERAL_COMPONENT_INTERCONNECT_CONFIG_ADDRESS_PORT,
+                          peripheral_component_interconnect_build_address(bus, device, function, offset));
+    switch (width)
+    {
+    case 1u: return asmutils_input_byte(port);
+    case 2u: return asmutils_input_word(port);
+    default: return asmutils_input_dword(port);
+    }
+}
+
+void peripheral_component_interconnect_config_write(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset,
+                                                    uint8_t width, uint32_t value)
+{
+    const uint16_t port = (uint16_t) (PERIPHERAL_COMPONENT_INTERCONNECT_CONFIG_DATA_PORT + (offset & 3u));
+
+    asmutils_output_dword(PERIPHERAL_COMPONENT_INTERCONNECT_CONFIG_ADDRESS_PORT,
+                          peripheral_component_interconnect_build_address(bus, device, function, offset));
+    switch (width)
+    {
+    case 1u: asmutils_output_byte(port, (uint8_t) value); break;
+    case 2u: asmutils_output_word(port, (uint16_t) value); break;
+    default: asmutils_output_dword(port, value); break;
+    }
+}
+
 void peripheral_component_interconnect_scan(void)
 {
     peripheral_component_interconnect_device_count = 0u;

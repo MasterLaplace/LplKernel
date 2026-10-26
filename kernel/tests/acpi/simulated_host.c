@@ -345,6 +345,56 @@ static uint64_t simulated_host_wait(AdvancedConfigurationAndPowerInterfaceSimula
     return waited;
 }
 
+static uint8_t *simulated_host_configuration(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                                             uint16_t segment, uint8_t bus, uint8_t device, uint8_t function,
+                                             uint16_t offset, uint8_t width)
+{
+    if (offset + width > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_CONFIGURATION_BYTES)
+        return NULL;
+    for (uint32_t index = 0u; index < simulated->function_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedFunction_t *candidate = &simulated->functions[index];
+
+        if (candidate->segment == segment && candidate->bus == bus && candidate->device == device &&
+            candidate->function == function)
+            return candidate->configuration + offset;
+    }
+    return NULL;
+}
+
+static uint64_t simulated_host_function_address(uint16_t segment, uint8_t bus, uint8_t device, uint8_t function)
+{
+    return ((uint64_t) segment << 16u) | ((uint64_t) bus << 8u) | ((uint64_t) device << 3u) | function;
+}
+
+static uint32_t simulated_host_pci_read(void *context, uint16_t segment, uint8_t bus, uint8_t device, uint8_t function,
+                                        uint16_t offset, uint8_t width)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+    const uint8_t *bytes = simulated_host_configuration(simulated, segment, bus, device, function, offset, width);
+    uint32_t value = 0u;
+
+    for (uint8_t byte = 0u; byte < width; ++byte)
+        value |= (uint32_t) ((bytes != NULL) ? bytes[byte] : simulated->configuration_fill) << (8u * byte);
+    simulated_host_log(simulated,
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_READ,
+                       width, offset, simulated_host_function_address(segment, bus, device, function), value);
+    return value;
+}
+
+static void simulated_host_pci_write(void *context, uint16_t segment, uint8_t bus, uint8_t device, uint8_t function,
+                                     uint16_t offset, uint8_t width, uint32_t value)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+    uint8_t *bytes = simulated_host_configuration(simulated, segment, bus, device, function, offset, width);
+
+    simulated_host_log(simulated,
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PERIPHERAL_COMPONENT_INTERCONNECT_WRITE,
+                       width, offset, simulated_host_function_address(segment, bus, device, function), value);
+    for (uint8_t byte = 0u; bytes != NULL && byte < width; ++byte)
+        bytes[byte] = (uint8_t) (value >> (8u * byte));
+}
+
 static uint32_t simulated_host_sleep_milliseconds(void *context, uint32_t milliseconds)
 {
     return (uint32_t) (simulated_host_wait(context, (uint64_t) milliseconds * SIMULATED_HOST_MILLISECOND) /
@@ -478,6 +528,8 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.compare_exchange = simulated_host_compare_exchange;
     simulated->host.port_read = simulated_host_port_read;
     simulated->host.port_write = simulated_host_port_write;
+    simulated->host.pci_read = simulated_host_pci_read;
+    simulated->host.pci_write = simulated_host_pci_write;
     simulated->host.sleep_milliseconds = simulated_host_sleep_milliseconds;
     simulated->host.stall_microseconds = simulated_host_stall_microseconds;
     simulated->host.clock_100ns = simulated_host_clock_100ns;
@@ -489,10 +541,12 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->range_count = 0u;
     simulated->outstanding_pages = 0u;
     simulated->memory_fill = 0u;
+    simulated->configuration_fill = 0xFFu;
     simulated->page_count = 0u;
     simulated->writes_dropped = 0u;
     simulated->memory_type_count = 0u;
     simulated->port_count = 0u;
+    simulated->function_count = 0u;
     simulated->access_count = 0u;
     simulated->map_serial = 0u;
     simulated->inconsistent_accesses = 0u;
@@ -529,6 +583,24 @@ bool advanced_configuration_and_power_interface_simulated_host_describe(
     range->physical_address = physical_address;
     range->length = length;
     range->type = type;
+    return true;
+}
+
+bool advanced_configuration_and_power_interface_simulated_host_add_function(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint16_t segment, uint8_t bus, uint8_t device,
+    uint8_t function, uint8_t *configuration)
+{
+    if (simulated->function_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_FUNCTIONS)
+        return false;
+
+    AdvancedConfigurationAndPowerInterfaceSimulatedFunction_t *entry =
+        &simulated->functions[simulated->function_count++];
+
+    entry->segment = segment;
+    entry->bus = bus;
+    entry->device = device;
+    entry->function = function;
+    entry->configuration = configuration;
     return true;
 }
 
@@ -604,5 +676,6 @@ bool advanced_configuration_and_power_interface_simulated_host_open_image(
         return false;
     }
     simulated->root_system_description_pointer = root;
+    simulated->configuration_fill = simulated->memory_fill;
     return true;
 }

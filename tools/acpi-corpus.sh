@@ -185,9 +185,19 @@ namespace_check() {
         "$(grep -o ' declared_not_run=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) declarations made without running"
     [[ "$1" == qemu ]] || echo "# field accesses: at most $(grep -o ' field_accesses_peak=[0-9]*' <<<"$runs" | cut -d= -f2 |
         sort -n | tail -1) in one table load"
+    [[ "$1" == qemu ]] || echo "# PCI_Config: $(pci_total attachments "$runs") regions attached through" \
+        "$(pci_total internal_evaluations "$runs") internal evaluations, $(pci_total internal_failures "$runs") of" \
+        "them failed; $(pci_total protected_writes "$runs")" \
+        "protected writes dropped, $(pci_total lost_accesses "$runs") accesses to unreachable functions," \
+        "$(pci_total ecam_accesses "$runs") that need ECAM on $(grep -c '^aml run pci .* ecam_accesses=[1-9]' <<<"$runs") machines"
     [[ "$1" == qemu ]] || grep '^aml run \(status\|unimplemented\|space\) ' <<<"$runs" | awk '{ split($4, pair, "="); total[$3 " " pair[1]] += pair[2] }
         END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k4,4nr || true
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
+}
+
+# Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
+pci_total() {
+    grep '^aml run pci ' <<<"$2" | grep -o " $1=[0-9]*" | cut -d= -f2 | paste -sd+ | bc
 }
 
 # Prints the reports of a list, one per line, without its comments.

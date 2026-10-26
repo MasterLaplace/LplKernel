@@ -162,6 +162,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            load->services.released_at_end, load->services.held_peak,
            (unsigned long long) load->services.time_requested_peak, load->services.signals,
            load->services.notifications, load->services.notifications_dropped, load->services.notification_peak);
+    printf("aml run pci attachments=%u internal_evaluations=%u internal_failures=%u protected_writes=%u "
+           "lost_accesses=%u ecam_accesses=%u\n",
+           regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
+           regions->pci_protected_writes, regions->pci_lost_accesses, regions->pci_ecam_accesses);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);

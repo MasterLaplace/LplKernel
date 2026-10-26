@@ -1,7 +1,7 @@
 # uACPI's test cases this kernel does not pass, read by tools/acpi/uacpi_cases.py, one per line:
 # <case> <why>, where <why> is the section of docs/acpi/specification.md that decides otherwise, or #<issue>
 # for a case that waits for that issue. A listed case that passes fails the run, so that the list stays true.
-bogus-pci #542: PCI_Config regions are not reached yet
+bogus-pci #58: its root bridge is in segment 0xDEAD, which needs ECAM and fails with address_unreachable until then, where uACPI reads all ones
 duplicate-named #593: the body of a duplicate declaration still runs under the first one
 indices-1 §5.2 mixed-type operands: Concatenate turns an Integer into 16 hexadecimal digits, as ACPICA does, where uACPI writes the shortest lowercase form
 indices-2 §5.2 references: a reference to a local dies with its frame, where uACPI keeps the local alive

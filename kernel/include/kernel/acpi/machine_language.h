@@ -225,21 +225,71 @@ advanced_configuration_and_power_interface_machine_language_field_write(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value);
 
 /**
+ * @brief Takes the attach of a PCI_Config region as far as it goes without evaluating a method
+ *        (§4.4): the root bridge above it, whose _HID or _CID is PNP0A03 or PNP0A08, its _SEG and
+ *        _BBN, then the _ADR of each device on the way down to the region, the bridges among them
+ *        moving the bus to their secondary one. A method among those objects is named for the caller
+ *        to evaluate in an internal frame (§3.6) and hand back.
+ *
+ * @param load       The load.
+ * @param region     The region's node.
+ * @param result     What the method the previous call named returned, or NULL.
+ * @param out_method The method, without arguments, whose result the attach waits for, or 0 once the
+ *                   region is attached.
+ * @return OK; TYPE_MISMATCH when @p region holds no PCI_Config region.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_attach(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t region,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *result, uint32_t *out_method);
+
+/**
+ * @brief The first PCI_Config region a unit's accesses reach that is not attached yet: its own, or
+ *        those of the registers of an IndexField or a BankField.
+ *
+ * @param load The load.
+ * @param unit The unit's node.
+ * @return The region's node, or 0.
+ */
+extern uint32_t
+advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_unattached_region(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t unit);
+
+/**
+ * @brief One access of 1, 2 or 4 bytes to the configuration space of a PCI_Config region's function,
+ *        attached first when that takes no method: a write to its protected header is dropped, a
+ *        function the attach could not reach reads all ones and drops writes, and an offset its width
+ *        does not divide is made byte by byte, all counted (§5.3).
+ *
+ * @param load   The load.
+ * @param region The region's node.
+ * @param offset The offset in the configuration space.
+ * @param width  1, 2 or 4.
+ * @param write  Whether the access writes @p value, rather than reading into it.
+ * @param value  The bytes written, or read.
+ * @return OK; REGION_UNEVALUATED when the attach needs a method, ADDRESS_UNREACHABLE past offset 0xFF
+ *         or in a segment other than 0, which need ECAM (#58).
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_access(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t region, uint64_t offset, uint8_t width,
+    bool write, uint32_t *value);
+
+/**
  * @brief Gives a node the OperationRegion object an OperationRegion in a method creates (§5.3); a
  *        table's regions are built in place by its load, which keeps window W1 within its budget.
  *
- * @param load         The load.
- * @param node         The region's node.
- * @param space        Its RegionSpace byte.
- * @param offset       Its offset in its space.
- * @param length       Its length in bytes.
- * @param owner_device The device it is declared in, or 0.
+ * @param load   The load.
+ * @param node   The region's node.
+ * @param space  Its RegionSpace byte.
+ * @param offset Its offset in its space.
+ * @param length Its length in bytes.
  * @return OK; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_region_build(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, uint8_t space, uint64_t offset,
-    uint64_t length, uint32_t owner_device);
+    uint64_t length);
 
 /**
  * @brief Gives a node the field unit object @p shape describes (§5.3), whether a table declares it or

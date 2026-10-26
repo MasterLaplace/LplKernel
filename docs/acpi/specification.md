@@ -166,7 +166,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `memory_type(physical u64, length u64)` → RAM, ACPI reclaim, ACPI NVS, reserved, or unknown | the boot memory map the PMM keeps | `reserved`, unless the machine's description says otherwise |
 | `unmap_firmware(address, length)`, and one unmap for each map | the matching unmap | matched to its map by address and length, so that a test sees every map unmapped as it was mapped |
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
-| `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor; offsets from 0x100 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
+| `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor, one access of the width asked; offsets from 0x100 and segments other than 0 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
 | `sleep_milliseconds(u32)` → the milliseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, `Sleep` halts until a deadline on the tick and `Stall` spins, both rounded up to a whole tick, which each returns; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
@@ -196,7 +196,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Node** | `name u32` (the NameSeg as an integer), `parent u32`, `first_child u32`, `next_sibling u32`, `previous_sibling u32` (circular: the first child's previous is the last), `type u8`, `flags u8`, `owner u16` (the table that declared it; a temporary is known by the context's stack), `value Value` | 40 | Declaration order is kept for walks (`_INI` order, dumps); O(1) append and O(1) unlink of temporaries. The object of a Name, Method, buffer field, mutex, Processor or PowerResource fits in `value`, with no second allocation. |
 | **Hash slot** | `node u32` (0 is empty) | 4, at a load of at most 1/2, so 8 per node | One open-addressing table for the whole namespace, keyed by (parent, NameSeg): linear probing, backward-shift deletion so no tombstones, a fixed unseeded 32-bit multiplicative mix. |
 | **Object header** | `references u32` (saturating), `kind u8`, `flags u8`, `auxiliary u16`, `length u32`, padding | 16 | One allocation per string, buffer or package: the bytes, or the `length` element values, follow the header. |
-| **Region object** | `space u8`, `state u8`, `pci_device u32` (segment, bus, device and function, packed once attached), `offset u64`, `length u64`, `mapping u32`, `owner_device u32` | 32 | Attached lazily, at the first access. |
+| **Region object** | `space u8`, `state u8`, `attach u8` (how far a PCI_Config attach went), `attach_flags u8`, `pci_device u32` (segment, bus, device and function, packed: those found so far while it attaches), `offset u64`, `length u64`, `mapping u32`, `attach_node u32` (the node whose object the attach reads next) | 32 | Attached lazily, at the first access. |
 | **Field unit object** | `kind u8` (normal, index, bank), `access u8`, `update u8`, `lock u8`, `region u32` (or the index field's node), `data_or_bank u32`, `bank_value u32`, `bit_offset u32`, `bit_length u32` | 24 | A 4 MiB field still costs 24 bytes. |
 | **Method** | in the node's `value`: `handle` = table, `payload` = body offset u32 and body length u32, `auxiliary` = MethodFlags | 0 extra | Bodies are never copied. |
 | **Buffer field** | in the node's `value`: `handle` = the buffer object, which it holds a count on, `payload` = bit offset u32 and bit length u32, `auxiliary` = access width in bytes, `flags` = reads as a Buffer (`CreateField`) | 0 extra | The object, not the node, as ACPICA and uACPI hold it: a field over a local, an `Index` or a method's buffer has no node, and `CopyObject` to the buffer's name leaves the field on the object it was made over. |
@@ -291,7 +291,13 @@ names resolve against objects that do not exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
-the same stacks, and the access resumes when they return. They count against the same depth limit.
+the same stacks, and the access resumes when they return: the name that reached it runs again. A field unit starts
+the attach of its regions when code first names it, whatever the operator, so that a reference made to it reads it
+later. They count against the same depth limit. A failure inside an internal frame, a limit of §6.1 apart, makes the
+object it evaluates absent, counted, as ACPICA and uACPI take a failed `_ADR`, `_SEG` or `_BBN`: an attach that needs
+a field of its own region reads `region_unevaluated` there, and goes on without that object. An attach that a name
+inside a package (§5.1) or a String path (§4.2) reaches, where no frame can wait, fails as `region_unevaluated` when
+it needs a method.
 
 **Errors** carry a typed status (§6.2). In a method, an error unwinds every frame of the evaluation: temporaries
 removed, mutexes released, values dropped. At table level, a statement that fails to run is skipped, a predicate
@@ -626,10 +632,10 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 |---|---|---|
 | SystemMemory regions | accessed through the mapping cache (§5.3) | [§5.5.2.4.1] |
 | SystemIO regions | accessed through `port_read` and `port_write`, with port protection (§5.3) | [§5.5.2.4.1] |
-| PCI_Config regions | the address comes from `_SEG`, `_BBN` and `_ADR` through the bridges, resolved once at attach; the header is write-protected (§5.3). Offsets from 0x100 need ECAM (#58) and fail with `address_unreachable`, counted, until then | [§5.5.2.4.1] |
+| PCI_Config regions | the address comes from `_SEG`, `_BBN` and `_ADR` through the bridges, resolved once at attach; the header is write-protected (§5.3). The root bridge is the closest ancestor whose `_HID` or `_CID` is PNP0A03 or PNP0A08; the region belongs to the closest Device at or above it, reached through each Device with an `_ADR` on the way down: a bridge moves the bus to its secondary one, and a function that is not a bridge keeps what lies below it, as uACPI walks it. A function behind an absent bridge or a bridge with no secondary bus, or an `_ADR` that names no device and function a bus holds, reads all ones and drops writes, counted. A datum its width does not divide is made byte by byte, counted. Offsets from 0x100 and segments other than 0 need ECAM (#58) and fail with `address_unreachable`, counted, until then | [§5.5.2.4.1] |
 | EmbeddedControl | no handler: an access fails and is counted; `_REG(3, 1)` is never called (§1.4) | |
 | SystemCMOS, GenericSerialBus, GeneralPurposeIo, IPMI, PlatformRtMechanism, SMBus, PciBarTarget, PCC, FFixedHW, OEM 0x80-0xFF | no handler (§1.4) | |
-| AccessType ByteAcc, WordAcc, DWordAcc, QWordAcc | one access per datum of that width; on i686 a 64-bit SystemMemory datum is two 32-bit accesses, low then high (§5.3); a QWordAcc datum of SystemIO, wider than any port, fails with `access_width_invalid` | [§19.6.48] |
+| AccessType ByteAcc, WordAcc, DWordAcc, QWordAcc | one access per datum of that width; on i686 a 64-bit SystemMemory datum is two 32-bit accesses, low then high (§5.3); a QWordAcc datum of SystemIO or PCI_Config, wider than any port or configuration access, fails with `access_width_invalid` | [§19.6.48] |
 | AccessType 6 to 15, reserved | the access fails with `access_width_invalid`, as ACPICA and uACPI refuse the field | [§19.6.48] |
 | AnyAcc | byte access, as Windows does | [§19.6.48] |
 | BufferAcc | byte access on the three spaces; the protocol buffers of GenericSerialBus, SMBus and IPMI wait for their handlers | [§19.6.48] |
@@ -713,7 +719,7 @@ Each row is a decision, and has at least one test (§8).
 | Region lifetime | Attached at the first access, not at declaration: handler chosen, PCI address resolved, mapping taken from the cache. | |
 | `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates after initialisation. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
 | Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIC and PCI itself, and AML must not race it; the PIT, the RTC and CMOS follow once `_OSI` asks, as on Windows, and the other ports the kernel drives, COM1 and the keyboard controller, are not protected. | |
-| PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. | |
+| PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. The header type is read once, at attach, and only the first byte of an access is checked, as Windows does. | |
 | Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is mapped cached read-write, anything else uncached, since an uncached alias of a page mapped cached elsewhere, by the kernel's own map of RAM or by the firmware window, is a memory-type conflict. Below 64 MiB, the boot map covers every page cached, so an uncached window there is such an alias until #590. | [§5.5.2.4.1] |
 | 64-bit data on i686 | A `QWordAcc` datum is two 32-bit host accesses, low then high, which the field engine makes itself; one access on x86-64. The simulated host sees the same order. `split_qword_accesses` counts them. | |
 
@@ -792,12 +798,13 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | Index or buffer field out of range, or an index or BankValue its register cannot hold | fails | construct skipped | `index_out_of_range` |
 | Reference cycle | fails | construct skipped | `reference_cycle` |
 | A limit of §6.1 | fails with the limit's name | construct skipped | `limit_<name>` |
-| Region without handler, out of bounds, or unreachable (above 4 GiB on i686, on physical page 0, where the kernel maps no window, a PCI offset from 0x100 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
-| A field of a region whose offset and length were never evaluated: declared in a branch that did not run, or its operands failed | fails | construct skipped | `region_unevaluated` |
-| A reserved AccessType, or a QWordAcc datum of SystemIO | fails | construct skipped | `access_width_invalid` |
+| Region without handler, out of bounds, or unreachable (above 4 GiB on i686, on physical page 0, where the kernel maps no window, a PCI offset from 0x100 or a PCI segment other than 0 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
+| A field of a region whose offset and length were never evaluated: declared in a branch that did not run, or its operands failed; or of a PCI_Config region whose attach needs a method where no frame can wait (§3.6) | fails | construct skipped | `region_unevaluated` |
+| A reserved AccessType, or a QWordAcc datum of SystemIO or PCI_Config | fails | construct skipped | `access_width_invalid` |
 | A `Lock` field or `\_GL` whose global lock the firmware does not release in time | fails | construct skipped | `global_lock_unavailable` |
 | A `Load` or `LoadTable` form outside §1.4 | fails | construct skipped | `load_form_unsupported` |
 | Protected port or PCI header | not a fault: zero read, write dropped | same | counted only |
+| A PCI function the attach cannot reach (§4.4) | not a fault: all ones read, write dropped | same | counted only |
 | Arena exhausted | fails | the table load stops | `out_of_memory` |
 
 At definition-block level, "construct skipped" means: a statement that fails to run is skipped, a predicate that

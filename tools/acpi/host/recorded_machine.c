@@ -467,6 +467,7 @@ static bool recorded_machine_open_file(RecordedMachine_t *machine, const char *p
 
     memset(machine, 0, sizeof(*machine));
     advanced_configuration_and_power_interface_simulated_host_open(&machine->simulated);
+    machine->simulated.configuration_fill = machine->simulated.memory_fill;
     if (!recorded_machine_read(machine, path, printed, error))
         return false;
 

@@ -99,6 +99,34 @@ extern void peripheral_component_interconnect_config_write_word(uint8_t bus, uin
 extern void peripheral_component_interconnect_config_write_byte(uint8_t bus, uint8_t device, uint8_t function,
                                                                 uint8_t offset, uint8_t value);
 
+/**
+ * @brief Reads 1, 2 or 4 bytes of a function's configuration space in one access of that width, which
+ *        touches no other register.
+ *
+ * @param bus      PCI bus number.
+ * @param device   Device number (0-31).
+ * @param function Function number (0-7).
+ * @param offset   Byte offset into config space, which @p width divides.
+ * @param width    1, 2 or 4.
+ * @return The bytes read, all ones for an absent function.
+ */
+extern uint32_t peripheral_component_interconnect_config_read(uint8_t bus, uint8_t device, uint8_t function,
+                                                              uint8_t offset, uint8_t width);
+
+/**
+ * @brief Writes 1, 2 or 4 bytes of a function's configuration space in one access of that width, so
+ *        that the bytes around them, such as status bits a write of 1 clears, are left as they are.
+ *
+ * @param bus      PCI bus number.
+ * @param device   Device number (0-31).
+ * @param function Function number (0-7).
+ * @param offset   Byte offset into config space, which @p width divides.
+ * @param width    1, 2 or 4.
+ * @param value    The bytes to write, in the low @p width bytes.
+ */
+extern void peripheral_component_interconnect_config_write(uint8_t bus, uint8_t device, uint8_t function,
+                                                           uint8_t offset, uint8_t width, uint32_t value);
+
 /** @brief Maximum number of devices recorded by a single enumeration pass. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES 64u
 

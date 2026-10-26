@@ -51,7 +51,9 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
  *          access of 1, 2 or 4 bytes to what one of those two mapped, given both the address it
  *          returned and the physical address beneath; compare_exchange swaps a 4-byte word there
  *          atomically when it holds the expected value, and returns what it held. port_read and
- *          port_write make one access of 1, 2 or 4 bytes to an I/O port. sleep_milliseconds waits at
+ *          port_write make one access of 1, 2 or 4 bytes to an I/O port. pci_read and pci_write make
+ *          one access of 1, 2 or 4 bytes, at an offset that width divides, to the configuration space
+ *          of a PCI function; an absent function reads all ones. sleep_milliseconds waits at
  *          least that many milliseconds and returns how many it waited, as its clock counts them,
  *          which may be more; stall_microseconds busy-waits at least that many microseconds and
  *          returns how many it waited, as its clock counts them;
@@ -79,6 +81,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
                                  uint32_t desired);                     /**< Swaps a word of it atomically. */
     uint32_t (*port_read)(void *context, uint16_t port, uint8_t width); /**< Reads an I/O port. */
     void (*port_write)(void *context, uint16_t port, uint8_t width, uint32_t value); /**< Writes one. */
+    uint32_t (*pci_read)(void *context, uint16_t segment, uint8_t bus, uint8_t device, uint8_t function,
+                         uint16_t offset, uint8_t width); /**< Reads PCI configuration space. */
+    void (*pci_write)(void *context, uint16_t segment, uint8_t bus, uint8_t device, uint8_t function, uint16_t offset,
+                      uint8_t width, uint32_t value);                     /**< Writes it. */
     uint32_t (*sleep_milliseconds)(void *context, uint32_t milliseconds); /**< Waits; returns what it waited. */
     uint32_t (*stall_microseconds)(void *context, uint32_t microseconds); /**< Busy-waits; returns what it waited. */
     uint64_t (*clock_100ns)(void *context);                               /**< Reads the clock. */
