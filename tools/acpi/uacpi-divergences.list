@@ -8,5 +8,5 @@ indices-2 §5.2 references: a reference to a local dies with its frame, where uA
 infinite-recursion §6.1 limits: 64 frames, the table's code included, stop the recursion at 63 calls, where the case wants more than 64
 osi §5.4 the Windows identity: no runner string ("TestRunner", "AnotherTestString") answers True, and "Windows 2006" answers True and "Extended Address Space Descriptor" False, where the case wants the answers of uACPI's or acpiexec's own runner
 read-fields-on-deref §6.2 errors: a region on physical page 0 is unreachable, the kernel mapping no window there
-reg-orphan-ec #544: _REG is not run yet
-reg-vs-copy-object #544: _REG is not run yet
+reg-orphan-ec #547: the _REG of the EmbeddedControl space comes with the EC handler, for an EC that declares no region of it too
+reg-vs-copy-object #547: the _REG of the EmbeddedControl space, and its disconnection, come with the EC handler

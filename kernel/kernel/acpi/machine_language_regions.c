@@ -9,9 +9,10 @@
 #define MACHINE_LANGUAGE_MAPPING(kind)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAPPING_##kind
 #define MACHINE_LANGUAGE_MEMORY(type)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_##type
 #define MACHINE_LANGUAGE_PAGE_BYTES       4096u
-#define MACHINE_LANGUAGE_SYSTEM_MEMORY    0x00u         /**< The RegionSpace byte of SystemMemory. */
-#define MACHINE_LANGUAGE_SYSTEM_IO        0x01u         /**< The RegionSpace byte of SystemIO. */
-#define MACHINE_LANGUAGE_PCI_CONFIG       0x02u         /**< The RegionSpace byte of PCI_Config. */
+#define MACHINE_LANGUAGE_SYSTEM_MEMORY    0x00u /**< The RegionSpace byte of SystemMemory. */
+#define MACHINE_LANGUAGE_SYSTEM_IO        0x01u /**< The RegionSpace byte of SystemIO. */
+#define MACHINE_LANGUAGE_PCI_CONFIG                                                                                    \
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION
 #define MACHINE_LANGUAGE_UPDATE_ONES      1u            /**< UpdateRule WriteAsOnes. */
 #define MACHINE_LANGUAGE_UPDATE_ZEROS     2u            /**< UpdateRule WriteAsZeros. */
 #define MACHINE_LANGUAGE_ACCESS_LAST      5u            /**< AccessType BufferAcc, the last one not reserved. */

@@ -4,7 +4,7 @@
 #include <kernel/core/identity.h>
 #include <kernel/cpu/stack_guard.h>
 
-#include <kernel/acpi/machine_language.h>
+#include <kernel/acpi/initialization.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/helpers/multiboot_info_helper.h>
 #include <kernel/boot/init_array.h>

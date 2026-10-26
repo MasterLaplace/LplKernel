@@ -140,7 +140,7 @@ architecture supplies the host interface.
 | `kernel/kernel/acpi/machine_language_interpreter.c` | the execution loop, frames, control flow, operator handlers |
 | `kernel/kernel/acpi/machine_language_regions.c` | region attach, mapping cache, field engine, port and PCI-header protection |
 | `kernel/kernel/acpi/machine_language_services.c` | `_OSI`, the Windows version it records and the ports that version protects; `Sleep`, `Stall`, `Timer` and the time budget; the Notify ring; the mutexes, `Signal` and the sync level |
-| `kernel/kernel/acpi/initialization.c` | the initialisation sequence of §3.8 |
+| `kernel/kernel/acpi/initialization.c`, `kernel/include/kernel/acpi/initialization.h` | the initialisation sequence of §3.8 and the boot's load |
 | `kernel/kernel/acpi/resources.c` | the zero-copy resource-template iterator |
 | `kernel/kernel/acpi/processor_idle.c` | `_CST` per processor, its binding to CPU slots, the published table (§3.10) |
 | `kernel/arch/i386/cpu/acpi_host.c` | the host interface in ring 0: windows, memory types, ports, PCI, time, sleep |
@@ -290,14 +290,14 @@ the body of a construct the declaration pass did not declare, but counts its fau
 names resolve against objects that do not exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
-`_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
+`_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on
 the same stacks, and the access resumes when they return: the name that reached it runs again. A field unit starts
 the attach of its regions when code first names it, whatever the operator, so that a reference made to it reads it
 later. They count against the same depth limit. A failure inside an internal frame, a limit of §6.1 apart, makes the
 object it evaluates absent, counted, as ACPICA and uACPI take a failed `_ADR`, `_SEG` or `_BBN`: an attach that needs
 a field of its own region reads `region_unevaluated` there, and goes on without that object. An attach that a name
 inside a package (§5.1) or a String path (§4.2) reaches, where no frame can wait, fails as `region_unevaluated` when
-it needs a method.
+it needs a method. A `_REG` that fails there is dropped, counted, and the method that created the region goes on.
 
 **Errors** carry a typed status (§6.2). In a method, an error unwinds every frame of the evaluation: temporaries
 removed, mutexes released, values dropped. At table level, a statement that fails to run is skipped, a predicate
@@ -351,7 +351,8 @@ Run once at boot by the bootstrap processor.
 2. **Run `\_INI`, then `\_SB._INI`,** before any `_REG`, as Windows does.
 3. **Run `_REG(PCI_Config, 1)`** once in every scope that declares a PCI_Config region; never for SystemMemory and
    SystemIO ([§6.5.4]).
-4. **Walk the devices in declaration order** ([§6.3.7], [§6.5.1]). A device without `_STA` is 0x0F. Present: run
+4. **Walk the devices in declaration order** ([§6.3.7], [§6.5.1]), processors and thermal zones among them, as
+   ACPICA and uACPI do; `\_SB._INI`, which step 2 ran, is not run again. A device without `_STA` is 0x0F. Present: run
    `_INI` and descend. Not present but functioning: skip `_INI` and descend. Neither: skip the subtree. A result
    ACPI declares invalid is treated as neither and counted (`status_invalid`): bit 0 clear with bit 1 set, or bit 0
    set with bit 1 clear and bit 3 set. A pre-pass marks the subtrees that hold an `_INI`, so most devices need no
@@ -717,7 +718,7 @@ Each row is a decision, and has at least one test (§8).
 | Strings and buffers stored to a field | Written in field-sized chunks, as Windows does. | |
 | Region bounds | An access must fit its region; rounding the region's length up to the access width is allowed and counted. | [§19.6.48] |
 | Region lifetime | Attached at the first access, not at declaration: handler chosen, PCI address resolved, mapping taken from the cache. | |
-| `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates after initialisation. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
+| `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates once step 3 has run, unless that scope's `_REG` is already running. Only the `_REG` of the region's own scope is called, never one above it, as ACPICA and uACPI find it. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
 | Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIC and PCI itself, and AML must not race it; the PIT, the RTC and CMOS follow once `_OSI` asks, as on Windows, and the other ports the kernel drives, COM1 and the keyboard controller, are not protected. | |
 | PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. The header type is read once, at attach, and only the first byte of an access is checked, as Windows does. | |
 | Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is mapped cached read-write, anything else uncached, since an uncached alias of a page mapped cached elsewhere, by the kernel's own map of RAM or by the firmware window, is a memory-type conflict. Below 64 MiB, the boot map covers every page cached, so an uncached window there is such an alias until #590. | [§5.5.2.4.1] |
@@ -776,8 +777,9 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | Region mapping cache | 64 entries, each the pages one access touched |
 
-A table load is one evaluation: its table-level code and the methods it calls share these limits, and the counts of
-back-edges and of field accesses start again from zero with each table. The node and arena caps depend on the profile, and probe counts
+A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
+back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the
+kernel asks for (§3.8). The node and arena caps depend on the profile, and probe counts
 follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
 (§8.7).
 
@@ -889,7 +891,7 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 | Window | Command | Budget files | First target |
 |---|---|---|---|
 | W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | at most 300 instructions per named object created; 0 allocations per method declared |
-| W2 initialisation (§3.8, steps 0 to 9) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same during the ring-0 corpus test | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget` | its first measurement |
+| W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same during the ring-0 corpus test | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget` | its first measurement |
 | W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget` | its first measurement |
 | W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT | debug: `--inside kernel_test_body_<test>` | `tools/acpi-microbenchmark.debug.budget` | at most 200 instructions per loop iteration, 0 allocations |
 
@@ -998,7 +1000,7 @@ published image. The made-up ASL is ours, under MIT.
 
 - The 105 ASL files of [uACPI's `tests/test-cases`](https://github.com/uACPI/uACPI/tree/c0edecef62bcac6ce3f783540099190bafadadda/tests/test-cases),
   fetched by commit and compiled with `iasl` in the sandbox.
-- Each starts with `// Name:` and `// Expect: <int|str> => <value>`; the harness evaluates `\MAIN` and compares.
+- Each starts with `// Name:` and `// Expect: <int|str> => <value>`; the harness initialises the namespace (§3.8), as uACPI's runner does, then evaluates `\MAIN` and compares.
   `check-*` expectations, which test uACPI's own API, are skipped and listed.
 - `tools/acpi-corpus.sh fetch uacpi` fetches them and `tools/acpi-corpus.sh uacpi` runs them, with
   `test-acpi --evaluate`. A case passes; or diverges, listed in `tools/acpi/uacpi-divergences.list` with the section

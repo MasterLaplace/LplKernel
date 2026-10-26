@@ -1,8 +1,12 @@
-#include <kernel/acpi/machine_language.h>
+#include <kernel/acpi/initialization.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/config.h>
 #include <kernel/cpu/helpers/acpi_helper.h>
 #include <kernel/diag/telemetry.h>
+
+#include <string.h>
+
+#define ACPI_HELPER_PATH_BYTES 64u /**< Bytes of the path the acpi.init record names: twelve levels deep. */
 
 /**
  * @brief Writes the `[LPLTLM] acpi.regions` record: the field accesses of the boot's load, and what
@@ -39,6 +43,39 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("pci_protected_writes", regions->pci_protected_writes);
     kernel_telemetry_write_unsigned("pci_lost_accesses", regions->pci_lost_accesses);
     kernel_telemetry_write_unsigned("pci_ecam_accesses", regions->pci_ecam_accesses);
+    kernel_telemetry_write_unsigned("pci_registrations", regions->pci_registrations);
+    kernel_telemetry_end_record();
+}
+
+/**
+ * @brief Writes the `[LPLTLM] acpi.init` record: what the initialisation of the boot's namespace ran
+ *        and counted (§3.8 steps 2 to 5), and the first evaluation that failed, by its path and status.
+ */
+static void
+acpi_helper_write_initialization_record(Serial_t *serial,
+                                        const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                        const AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization)
+{
+    char path[ACPI_HELPER_PATH_BYTES] = "none";
+
+    if (initialization->first_failure_node != 0u &&
+        advanced_configuration_and_power_interface_machine_language_namespace_path(
+            &load->space, initialization->first_failure_node, path, sizeof(path)) == 0u)
+        memcpy(path, "too_deep", sizeof("too_deep"));
+    kernel_telemetry_begin_record(serial, "acpi.init");
+    kernel_telemetry_write_unsigned("initializations", initialization->initializations);
+    kernel_telemetry_write_unsigned("initialization_failed", initialization->initialization_failed);
+    kernel_telemetry_write_unsigned("registrations", initialization->registrations);
+    kernel_telemetry_write_unsigned("region_registration_failed", initialization->region_registration_failed);
+    kernel_telemetry_write_unsigned("devices", initialization->devices);
+    kernel_telemetry_write_unsigned("status_evaluations", initialization->status_evaluations);
+    kernel_telemetry_write_unsigned("status_failed", initialization->status_failed);
+    kernel_telemetry_write_unsigned("status_invalid", initialization->status_invalid);
+    kernel_telemetry_write_unsigned("pic_mode_deferred", initialization->pic_mode_deferred);
+    kernel_telemetry_write_text("first_failure", path);
+    kernel_telemetry_write_text(
+        "first_failure_status",
+        advanced_configuration_and_power_interface_machine_language_status_name(initialization->first_failure));
     kernel_telemetry_end_record();
 }
 
@@ -279,6 +316,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_hexadecimal(
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
+    acpi_helper_write_initialization_record(serial, load, advanced_configuration_and_power_interface_initialization());
     acpi_helper_write_regions_record(serial, &load->regions);
     acpi_helper_write_services_record(serial, &load->services);
     kernel_telemetry_begin_record(serial, "acpi.values");

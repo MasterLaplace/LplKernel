@@ -199,12 +199,14 @@ bool advanced_configuration_and_power_interface_machine_language_port_is_protect
                sizeof(machine_language_windows_xp_ports) / sizeof(machine_language_windows_xp_ports[0]), port);
 }
 
-void advanced_configuration_and_power_interface_machine_language_begin_services(MachineLanguageLoad_t *load)
+void advanced_configuration_and_power_interface_machine_language_begin_evaluation(MachineLanguageLoad_t *load)
 {
+    load->evaluation.iterations = 0u;
+    load->evaluation.field_accesses = 0u;
     load->services.time_requested = 0u;
 }
 
-void advanced_configuration_and_power_interface_machine_language_end_services(MachineLanguageLoad_t *load)
+void advanced_configuration_and_power_interface_machine_language_end_evaluation(MachineLanguageLoad_t *load)
 {
     MachineLanguageServices_t *services = &load->services;
 

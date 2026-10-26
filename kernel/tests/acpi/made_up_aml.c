@@ -51,6 +51,22 @@ static void made_up_aml_package(MadeUpAml_t *aml, const uint8_t *lead, uint32_t 
 }
 
 /**
+ * @brief Appends a construct that names one NameSeg then holds a TermList: @p lead, a PkgLength,
+ *        @p name, then @p body.
+ */
+static void made_up_aml_named_package(MadeUpAml_t *aml, const uint8_t *lead, uint32_t lead_length, const char *name,
+                                      const MadeUpAml_t *body)
+{
+    MadeUpAml_t construct;
+
+    made_up_aml_begin(&construct);
+    made_up_aml_name(&construct, name);
+    made_up_aml_raw(&construct, body->bytes, body->length);
+    aml->overflowed = aml->overflowed || body->overflowed || construct.overflowed;
+    made_up_aml_package(aml, lead, lead_length, construct.bytes, construct.length);
+}
+
+/**
  * @brief Appends a field list's units to @p list.
  */
 static void made_up_aml_units(MadeUpAml_t *list, const MadeUpFieldUnit_t *units, uint32_t count)
@@ -165,13 +181,39 @@ void made_up_aml_method(MadeUpAml_t *aml, const char *name, uint8_t flags, const
 void made_up_aml_device(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body)
 {
     static const uint8_t lead[] = {0x5Bu, 0x82u};
-    MadeUpAml_t device;
 
-    made_up_aml_begin(&device);
-    made_up_aml_name(&device, name);
-    made_up_aml_raw(&device, body->bytes, body->length);
-    aml->overflowed = aml->overflowed || body->overflowed || device.overflowed;
-    made_up_aml_package(aml, lead, sizeof(lead), device.bytes, device.length);
+    made_up_aml_named_package(aml, lead, sizeof(lead), name, body);
+}
+
+void made_up_aml_scope(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body)
+{
+    static const uint8_t lead[] = {0x10u};
+
+    made_up_aml_named_package(aml, lead, sizeof(lead), name, body);
+}
+
+void made_up_aml_thermal_zone(MadeUpAml_t *aml, const char *name, const MadeUpAml_t *body)
+{
+    static const uint8_t lead[] = {0x5Bu, 0x85u};
+
+    made_up_aml_named_package(aml, lead, sizeof(lead), name, body);
+}
+
+void made_up_aml_processor(MadeUpAml_t *aml, const char *name, uint8_t processor_id, uint32_t block_address,
+                           uint8_t block_length, const MadeUpAml_t *body)
+{
+    static const uint8_t lead[] = {0x5Bu, 0x83u};
+    MadeUpAml_t processor;
+
+    made_up_aml_begin(&processor);
+    made_up_aml_name(&processor, name);
+    made_up_aml_byte(&processor, processor_id);
+    for (uint32_t byte = 0u; byte < 4u; ++byte)
+        made_up_aml_byte(&processor, (uint8_t) (block_address >> (8u * byte)));
+    made_up_aml_byte(&processor, block_length);
+    made_up_aml_raw(&processor, body->bytes, body->length);
+    aml->overflowed = aml->overflowed || body->overflowed || processor.overflowed;
+    made_up_aml_package(aml, lead, sizeof(lead), processor.bytes, processor.length);
 }
 
 void made_up_aml_store_name(MadeUpAml_t *aml, const char *source, const char *target)

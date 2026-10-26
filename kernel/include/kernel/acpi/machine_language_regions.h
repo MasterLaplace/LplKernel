@@ -35,6 +35,8 @@
     64u /**< Entries of the region mapping cache (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES                                             \
     256u /**< Region spaces, as AML encodes them in a byte. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION    \
+    0x02u /**< The RegionSpace byte of PCI_Config, the space a _REG is told of (§3.8 step 3). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_GLOBAL_LOCK_POLLS                                  \
     65536u /**< Reads of the global lock an acquisition waits for the firmware to release it. */
 
@@ -97,13 +99,17 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t unlocked_lock_accesses; /**< Lock fields accessed without a global lock: the platform has none, or
                                           its FACS was refused (facs_refused). */
     uint32_t pci_attachments;        /**< PCI_Config regions attached: their address resolved (§4.4). */
-    uint32_t internal_evaluations;   /**< Methods evaluated in internal frames for those attaches (§3.6, O13). */
+    uint32_t internal_evaluations;   /**< Methods evaluated in internal frames: for those attaches (O13), and the
+                                          _REG of the regions methods create (§3.6). */
     uint32_t internal_failures;      /**< Of those, the ones that failed, their object taken as absent. */
     uint32_t pci_protected_writes;   /**< Writes to the predefined header of a PCI function, dropped. */
     uint32_t pci_lost_accesses;      /**< Accesses to a function the attach could not reach: all ones read,
                                           writes dropped. */
     uint32_t pci_ecam_accesses;      /**< Accesses past offset 0xFF or in a segment other than 0, which need ECAM
                                           (#58) and fail with address_unreachable. */
+    bool registers_at_creation;      /**< Whether a PCI_Config region a method creates gets its _REG at once: true
+                                          once the initialisation has run the _REG of every scope (§3.8 step 3). */
+    uint32_t pci_registrations;      /**< _REG (PCI_Config, 1) run at once for a region a method created (§5.3). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t;
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_REGIONS_H */

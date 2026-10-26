@@ -2,9 +2,11 @@
 
 #include <string.h>
 
-#define MACHINE_LANGUAGE_CALL          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
-#define MACHINE_LANGUAGE_RESULT        (MACHINE_LANGUAGE_CALL + 1u)
-#define MACHINE_LANGUAGE_ATTACH        (MACHINE_LANGUAGE_CALL + 2u) /**< Waits for what an internal frame returns. */
+#define MACHINE_LANGUAGE_CALL   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
+#define MACHINE_LANGUAGE_RESULT (MACHINE_LANGUAGE_CALL + 1u)
+#define MACHINE_LANGUAGE_ATTACH (MACHINE_LANGUAGE_CALL + 2u) /**< Waits for what an internal frame returns. */
+#define MACHINE_LANGUAGE_REGISTER                                                                                      \
+    (MACHINE_LANGUAGE_CALL + 3u) /**< Drops what the _REG an internal frame runs for a new region returns. */
 #define MACHINE_LANGUAGE_OK            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK
 #define MACHINE_LANGUAGE_OPERAND(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_##kind
 #define MACHINE_LANGUAGE_OPCODE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##name
@@ -1284,9 +1286,12 @@ static MachineLanguageStatus_t machine_language_return(MachineLanguageLoad_t *lo
     machine_language_drop_frame(load);
     if (value != NULL)
         return machine_language_deliver(load, *value);
-    if (machine_language_active(evaluation) == NULL)
+
+    const MachineLanguagePendingOperator_t *caller = machine_language_active(evaluation);
+
+    if (caller == NULL)
         return MACHINE_LANGUAGE_OK;
-    ++evaluation->implicit_returns;
+    evaluation->implicit_returns += (caller->opcode == MACHINE_LANGUAGE_REGISTER) ? 0u : 1u;
     return machine_language_deliver(load, machine_language_integer(0u));
 }
 
@@ -1649,6 +1654,61 @@ static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_
     attach->node = region;
     ++load->regions.internal_evaluations;
     return machine_language_enter_method(load, method, 0u);
+}
+
+/**
+ * @brief Whether an internal frame already runs the _REG of @p scope for a region a method created.
+ */
+static bool machine_language_registering(const MachineLanguageEvaluation_t *evaluation, uint32_t scope)
+{
+    for (uint32_t index = 0u; index < evaluation->operator_count; ++index)
+        if (evaluation->operators[index].opcode == MACHINE_LANGUAGE_REGISTER &&
+            evaluation->operators[index].node == scope)
+            return true;
+    return false;
+}
+
+/**
+ * @brief Pushes the internal frame that runs _REG (PCI_Config, 1) for a PCI_Config region a method has
+ *        just created (§5.3), once the initialisation has registered, unless its scope's _REG already
+ *        runs: a _REG that creates such a region in its own scope is not called again.
+ */
+static MachineLanguageStatus_t machine_language_register_at_creation(MachineLanguageLoad_t *load, uint32_t region)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const uint32_t method =
+        load->regions.registers_at_creation ?
+            advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
+                load, region) :
+            0u;
+    const uint32_t scope =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, region)->parent;
+
+    if (method == 0u || machine_language_registering(evaluation, scope))
+        return MACHINE_LANGUAGE_OK;
+    if (evaluation->operator_count ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
+
+    MachineLanguagePendingOperator_t *registration = &evaluation->operators[evaluation->operator_count++];
+
+    registration->opcode = MACHINE_LANGUAGE_REGISTER;
+    registration->operands_done = 1u;
+    registration->operand_count = 1u;
+    registration->start = 0u;
+    registration->end = 0u;
+    registration->node = scope;
+    ++load->regions.internal_evaluations;
+    ++load->regions.pci_registrations;
+
+    MachineLanguageValue_t space = machine_language_integer(
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION);
+    MachineLanguageValue_t connected = machine_language_integer(1u);
+    MachineLanguageStatus_t status = machine_language_push(load, &space);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_push(load, &connected);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_enter_method(load, method, 2u) : status;
 }
 
 /**
@@ -3078,7 +3138,7 @@ static MachineLanguageStatus_t machine_language_create_field(MachineLanguageLoad
 
 /**
  * @brief Runs an OperationRegion a method declares: its node, temporary, takes a region of the space,
- *        offset and length on the stack (§5.3).
+ *        offset and length on the stack, and a PCI_Config one gets its _REG at once (§5.3).
  */
 static MachineLanguageStatus_t machine_language_operation_region(MachineLanguageLoad_t *load,
                                                                  const MachineLanguagePendingOperator_t *active)
@@ -3091,10 +3151,11 @@ static MachineLanguageStatus_t machine_language_operation_region(MachineLanguage
 
     status = advanced_configuration_and_power_interface_machine_language_region_build(
         load, active->node, (uint8_t) operands[0], operands[1], operands[2]);
-    if (status == MACHINE_LANGUAGE_OK)
-        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, active->node)->type =
-            MACHINE_LANGUAGE_NODE(OPERATION_REGION);
-    return status;
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, active->node)->type =
+        MACHINE_LANGUAGE_NODE(OPERATION_REGION);
+    return machine_language_register_at_creation(load, active->node);
 }
 
 /**
@@ -3372,6 +3433,12 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     {
     case MACHINE_LANGUAGE_CALL: return machine_language_enter_method(load, operator_.node, operator_.operand_count);
     case MACHINE_LANGUAGE_ATTACH: return machine_language_attach_result(load, &operator_);
+    case MACHINE_LANGUAGE_REGISTER: {
+        MachineLanguageValue_t value = machine_language_pop(evaluation);
+
+        machine_language_release(load, &value);
+        return MACHINE_LANGUAGE_OK;
+    }
     case MACHINE_LANGUAGE_OPCODE(NAME): return machine_language_name(load, &operator_);
     case MACHINE_LANGUAGE_OPCODE(RETURN): {
         MachineLanguageValue_t value = machine_language_pop(evaluation);
@@ -3477,9 +3544,9 @@ static bool machine_language_exhausted(MachineLanguageStatus_t status)
 
 /**
  * @brief Takes one step of the frames above @p base; a failure inside an internal frame, unless it is
- *        a limit, drops the frames above its attach operator and hands it an Uninitialized value, so
- *        that the object it evaluates is absent, as ACPICA and uACPI take a failed _ADR, _SEG or _BBN
- *        (§3.6), counted.
+ *        a limit, drops the frames above its attach or registration operator and hands it an
+ *        Uninitialized value, so that the object it evaluates is absent, as ACPICA and uACPI take a
+ *        failed _ADR, _SEG or _BBN, and a failed _REG is dropped (§3.6), counted.
  */
 static MachineLanguageStatus_t machine_language_step_above(MachineLanguageLoad_t *load, uint32_t base)
 {
@@ -3490,7 +3557,8 @@ static MachineLanguageStatus_t machine_language_step_above(MachineLanguageLoad_t
     if (status == MACHINE_LANGUAGE_OK || machine_language_exhausted(status))
         return status;
     while (slot > evaluation->frames[base].operator_base &&
-           evaluation->operators[slot - 1u].opcode != MACHINE_LANGUAGE_ATTACH)
+           evaluation->operators[slot - 1u].opcode != MACHINE_LANGUAGE_ATTACH &&
+           evaluation->operators[slot - 1u].opcode != MACHINE_LANGUAGE_REGISTER)
         --slot;
     if (slot == evaluation->frames[base].operator_base)
         return status;
@@ -3666,35 +3734,22 @@ void advanced_configuration_and_power_interface_machine_language_count_failure(M
     ++evaluation->statuses[status];
 }
 
-MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate(
-    MachineLanguageLoad_t *load, const char *path, const MachineLanguageValue_t *arguments, uint32_t argument_count,
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(
+    MachineLanguageLoad_t *load, uint32_t index, const MachineLanguageValue_t *arguments, uint32_t argument_count,
     MachineLanguageValue_t *out_result)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const uint32_t base = evaluation->frame_count;
-    uint32_t index = 0u;
-    uint32_t length = 0u;
-    MachineLanguageStatus_t status = MACHINE_LANGUAGE_STATUS(TRUNCATED);
-
-    memset(out_result, 0, sizeof(*out_result));
-    while (path[length] != '\0' && length < 0xFFFFu)
-        ++length;
-    if (length != 0u && path[0] == '\\')
-        status =
-            machine_language_resolve_path(load, (const uint8_t *) path, length,
-                                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, &index);
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
-
     const MachineLanguageNode_t *node =
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
+    memset(out_result, 0, sizeof(*out_result));
     if (node->type == MACHINE_LANGUAGE_NODE(FIELD_UNIT))
     {
-        evaluation->iterations = 0u;
-        advanced_configuration_and_power_interface_machine_language_begin_services(load);
+        advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
         status = machine_language_attach_for_host(load, index);
-        advanced_configuration_and_power_interface_machine_language_end_services(load);
+        advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
         if (status != MACHINE_LANGUAGE_OK)
             return status;
     }
@@ -3711,8 +3766,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         argument_count + 1u)
         return MACHINE_LANGUAGE_STATUS(LIMIT_VALUES);
 
-    evaluation->iterations = 0u;
-    advanced_configuration_and_power_interface_machine_language_begin_services(load);
+    advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
     status = machine_language_push_host_frame(load, node->value.handle);
     if (status == MACHINE_LANGUAGE_OK)
     {
@@ -3739,6 +3793,27 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     while (evaluation->frame_count > base + 1u)
         machine_language_drop_frame(load);
     machine_language_drop_frame(load);
-    advanced_configuration_and_power_interface_machine_language_end_services(load);
+    advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
     return status;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate(
+    MachineLanguageLoad_t *load, const char *path, const MachineLanguageValue_t *arguments, uint32_t argument_count,
+    MachineLanguageValue_t *out_result)
+{
+    uint32_t index = 0u;
+    uint32_t length = 0u;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_STATUS(TRUNCATED);
+
+    memset(out_result, 0, sizeof(*out_result));
+    while (path[length] != '\0' && length < 0xFFFFu)
+        ++length;
+    if (length != 0u && path[0] == '\\')
+        status =
+            machine_language_resolve_path(load, (const uint8_t *) path, length,
+                                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, &index);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    return advanced_configuration_and_power_interface_machine_language_evaluate_node(load, index, arguments,
+                                                                                     argument_count, out_result);
 }
