@@ -1062,8 +1062,8 @@ KERNEL_TEST(a_method_creates_index_and_bank_fields_over_the_table_s_registers)
 
 /**
  * @brief A field list in a method whose region resolves to nothing fails with name_not_found, and one
- *        whose named element is `\` and NullName rather than a NameSeg fails with truncated, as at table
- *        level; a Connection to a name or to a Buffer is passed over, and the unit after each reads its
+ *        whose named element is `\` or `^` and NullName rather than a NameSeg fails with truncated, as
+ *        at table level; a Connection to a name or to a Buffer is passed over, and the unit after each reads its
  *        byte.
  */
 KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_connection)
@@ -1080,7 +1080,9 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
                                           0x70u, 'C', 'B', '_', '_', 'R', 'B', '_', '_'};
     static const uint8_t prefixed_field[] = {0x5Bu, 0x81u, 0x0Bu, 'R', 'A', 'M',  'R',
                                              0x01u, 0x5Cu, 0x00u, 'A', 'B', 0x08u};
-    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 'M', 'C', 'O', 'N', 'M', 'P', 'F', 'X'};
+    static const uint8_t caret_field[] = {0x5Bu, 0x81u, 0x0Bu, 'R', 'A', 'M',  'R',
+                                          0x01u, 0x5Eu, 0x00u, 'A', 'B', 0x08u};
+    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 'M', 'C', 'O', 'N', 'M', 'P', 'F', 'X', 'M', 'P', 'F', 'C'};
     MadeUpAml_t body;
 
     regions_begin();
@@ -1097,6 +1099,9 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
     made_up_aml_begin(&body);
     made_up_aml_raw(&body, prefixed_field, sizeof(prefixed_field));
     made_up_aml_method(&regions_aml, "MPFX", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, caret_field, sizeof(caret_field));
+    made_up_aml_method(&regions_aml, "MPFC", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RC__", 0u);
     made_up_aml_name_integer(&regions_aml, "RB__", 0u);
     made_up_aml_raw(&regions_aml, calls, sizeof(calls));
@@ -1104,8 +1109,8 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
         return;
     kernel_test_check(test,
                       regions_failed(REGIONS_STATUS(NAME_NOT_FOUND)) == 1u &&
-                          regions_failed(REGIONS_STATUS(TRUNCATED)) == 1u && regions_load.evaluation.failures == 2u,
-                      "the missing region fails with name_not_found, the prefixed element with truncated");
+                          regions_failed(REGIONS_STATUS(TRUNCATED)) == 2u && regions_load.evaluation.failures == 3u,
+                      "the missing region fails with name_not_found, both prefixed elements with truncated");
     kernel_test_check(test, regions_integer("RC__") == 0x77u && regions_integer("RB__") == 0x88u,
                       "the unit after the Connection to a name reads 0x77, the one after the Buffer 0x88");
     regions_close(test);
@@ -1146,11 +1151,15 @@ KERNEL_TEST(an_access_as_in_a_method_s_field_list_widens_the_units_after_it)
 /**
  * @brief An ExtendedAccessAs in a method's field list widens the unit after it, and the LockRule and
  *        UpdateRule of its FieldFlags hold: a WriteAsOnes unit of 4 bits written 0 is one byte written
- *        0xF0, with no read, and its Lock, without a FACS, is counted as an unlocked access.
+ *        0xF0, and a WriteAsZeros one one byte written 0x00, with no read, and the Lock, without a FACS,
+ *        is counted as an unlocked access.
  */
 KERNEL_TEST(a_method_s_field_list_keeps_extended_access_and_its_lock_and_update_rules)
 {
-    static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u, 0x0Fu};
+    static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u, 0x0Fu, 0xFFu};
+    static const uint8_t zeros_field[] = {0x5Bu, 0x81u, 0x0Du, 'R', 'A', 'M', 'R',  0x41u,
+                                          0x00u, 0x28u, 'Z',   'W', '_', '_', 0x04u};
+    static const uint8_t zeros_store[] = {0x70u, 0x00u, 'Z', 'W', '_', '_'};
     static const uint8_t extended_field[] = {0x5Bu, 0x81u, 0x0Fu, 'R', 'A', 'M', 'R', 0x01u, 0x03u,
                                              0x03u, 0x0Bu, 0x04u, 'D', 'X', '_', '_', 0x20u};
     static const uint8_t locked_field[] = {0x5Bu, 0x81u, 0x0Du, 'R', 'A', 'M', 'R',  0x31u,
@@ -1166,17 +1175,20 @@ KERNEL_TEST(a_method_s_field_list_keeps_extended_access_and_its_lock_and_update_
     made_up_aml_begin(&body);
     made_up_aml_raw(&body, extended_field, sizeof(extended_field));
     made_up_aml_raw(&body, locked_field, sizeof(locked_field));
+    made_up_aml_raw(&body, zeros_field, sizeof(zeros_field));
     made_up_aml_raw(&body, stores, sizeof(stores));
+    made_up_aml_raw(&body, zeros_store, sizeof(zeros_store));
     made_up_aml_method(&regions_aml, "MEXT", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RX__", 0u);
     made_up_aml_raw(&regions_aml, call, sizeof(call));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
-                      regions_integer("RX__") == 0x44332211u && regions_host.access_count == 2u &&
+                      regions_integer("RX__") == 0x44332211u && regions_host.access_count == 3u &&
+                          regions_access(2u, REGIONS_ACCESS(MEMORY_WRITE), 1u, REGIONS_MEMORY + 5u, 0x00u) &&
                           regions_access(0u, REGIONS_ACCESS(MEMORY_READ), 4u, REGIONS_MEMORY, 0x44332211u) &&
                           regions_access(1u, REGIONS_ACCESS(MEMORY_WRITE), 1u, REGIONS_MEMORY + 4u, 0xF0u),
-                      "DX__ is one 4-byte read, and LW__ = 0 one byte written 0xF0");
+                      "DX__ is one 4-byte read, LW__ = 0 one byte written 0xF0, and ZW__ = 0 one byte written 0x00");
     kernel_test_check(test, regions_load.regions.unlocked_lock_accesses == 1u,
                       "the Lock of LW__ is counted as an unlocked access");
     regions_close(test);
