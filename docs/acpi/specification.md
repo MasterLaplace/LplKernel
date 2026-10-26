@@ -135,11 +135,11 @@ architecture supplies the host interface.
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
 | `kernel/kernel/acpi/machine_language_decoder.c` | opcode descriptor tables, PkgLength, NameString, operand kinds |
 | `kernel/kernel/acpi/machine_language_namespace.c` | node arena, hash, resolution, temporary nodes |
-| `kernel/kernel/acpi/machine_language_load.c` | definition-block load, the loaded-table registry, `Load`, `LoadTable` |
+| `kernel/kernel/acpi/machine_language_load.c` | definition-block load, the loaded-table registry, `Load`, `LoadTable`, the answers of `\_OS` and `\_REV` |
 | `kernel/kernel/acpi/machine_language_objects.c` | values, object heap, reference counts, conversions |
 | `kernel/kernel/acpi/machine_language_interpreter.c` | the execution loop, frames, control flow, operator handlers |
 | `kernel/kernel/acpi/machine_language_regions.c` | region attach, mapping cache, field engine, port and PCI-header protection |
-| `kernel/kernel/acpi/machine_language_services.c` | `_OSI`, `_OS`, `_REV`, the Notify queue, sleep and loop budgets |
+| `kernel/kernel/acpi/machine_language_services.c` | `_OSI`, the Windows version it records and the ports that version protects; `Sleep`, `Stall`, `Timer` and the time budget; the Notify ring; the mutexes, `Signal` and the sync level |
 | `kernel/kernel/acpi/initialization.c` | the initialisation sequence of §3.8 |
 | `kernel/kernel/acpi/resources.c` | the zero-copy resource-template iterator |
 | `kernel/kernel/acpi/processor_idle.c` | `_CST` per processor, its binding to CPU slots, the published table (§3.10) |
@@ -284,11 +284,10 @@ declared; one whose parent exists is placed where it stands.
 
 **The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
 predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
-skipped, and declares nothing. Until #539, #540 and #541 run what makes predicates fail today, a predicate that fails
-declares both its branches without running their code, counted (`declared_not_run`), so that a failure never takes
-an object out of the namespace. The decoding pass still decodes the body of a construct the declaration pass did
-not declare, but counts its faults apart (`undeclared_faults`): its names resolve against objects that do not
-exist.
+skipped, and declares nothing. A predicate that fails declares both its branches without running their code, counted
+(`declared_not_run`), so that a failure never takes an object out of the namespace. The decoding pass still decodes
+the body of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its
+names resolve against objects that do not exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after initialisation) are pushed as frames marked "internal" on
@@ -691,7 +690,7 @@ Each row is a decision, and has at least one test (§8).
 | Implicit return | A method that ends without `Return`, whose caller uses the result, returns Integer 0, counted. ACPI leaves the result undefined; firmware tested on Windows expects 0. | [§19.6.120] |
 | Uninitialized operands | Reading an uninitialized `LocalX` or `ArgX` as an operand gives Integer 0, counted. An uninitialized package element is an error. | |
 | `Serialized` | A sync-level check: calling a Serialized method whose SyncLevel is below the current level fails with `mutex_order`, and the same evaluation may re-enter it. No mutex object exists, because one owner runs AML (§3.7). | [§19.6.85] |
-| Mutexes | `Acquire` returns 0 when the evaluation holds the mutex, Ones otherwise; the owner may nest; an `Acquire` below the current sync level is ignored, counted, and gives Ones, as uACPI answers it; a `Release` is accepted out of order when the mutex has the SyncLevel of the one acquired last, and a `Release` of a mutex not held, or of another level, is ignored and counted, as uACPI does; everything held is released when the evaluation ends. | [§19.6.2], [§19.6.89] |
+| Mutexes | `Acquire` returns 0 when the evaluation holds the mutex; the owner may nest; an `Acquire` below the current sync level is ignored, counted, and gives Ones, as uACPI answers it, while an `Acquire (\_GL)` whose global lock the firmware never releases fails (§6.2); a `Release` is accepted out of order when the mutex has the SyncLevel of the one acquired last, and a `Release` of a mutex not held, or of another level, is ignored and counted, as uACPI does; everything held is released when the evaluation ends. | [§19.6.2], [§19.6.89] |
 | Events | `Signal` counts up, `Reset` clears, and `Wait` consumes a pending signal or reports a timeout at once, since nothing else can signal while the only AML owner waits. | [§19.6.125], [§19.6.149] |
 | Implicit source conversion | Operands are converted to the type the operator needs: Buffer to Integer from its first 4 or 8 bytes, String to Integer as hexadecimal up to the first non-hex character, a `0x` prefix accepted and an empty string giving 0; an Integer that `Mid` takes becomes a Buffer of 4 or 8 bytes, as ACPICA converts it; `SizeOf` refuses an Integer, as uACPI does, where ACPICA gives 4 or 8. An impossible conversion fails the evaluation. The cases ACPI forbids are counted (`forbidden_conversions`). | [§19.3.5.4], [§19.3.5.7] |
 | Mixed-type comparisons and `Concatenate` | The second operand is converted to the first's type, as ACPICA converts it: an Integer to a String of 8 or 16 hexadecimal digits, a Buffer to a String of `0x` and two digits per byte separated by spaces, a String to a Buffer with its NUL; `mixed_type_comparisons` counts it. | [§19.3.5.4] |
