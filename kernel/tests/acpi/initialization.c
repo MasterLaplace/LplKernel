@@ -304,10 +304,13 @@ KERNEL_TEST(a_status_acpi_declares_invalid_skips_the_subtree)
 
 /**
  * @brief A _STA that divides by zero gives its device no _INI, still walks its children, and is counted
- *        under its status and named as the first failure (§3.8, the failure table).
+ *        under its status and named as the first failure; one that gives no Integer fails too (§3.8, the
+ *        failure table).
  */
 KERNEL_TEST(a_status_that_fails_skips_the_initialization_but_not_the_children)
 {
+    static const uint8_t package_status[] = {0x08u, '_', 'S', 'T', 'A', 0x12u, 0x02u, 0x00u};
+
     initialization_begin();
     made_up_aml_begin(&initialization_inner);
     initialization_device(&initialization_inner, "CHLD", 2u, NULL);
@@ -317,13 +320,19 @@ KERNEL_TEST(a_status_that_fails_skips_the_initialization_but_not_the_children)
     made_up_aml_raw(&initialization_outer, initialization_inner.bytes, initialization_inner.length);
     made_up_aml_device(&initialization_aml, "DDIV", &initialization_outer);
     initialization_device(&initialization_aml, "NEXT", 3u, NULL);
+    made_up_aml_begin(&initialization_outer);
+    made_up_aml_raw(&initialization_outer, package_status, sizeof(package_status));
+    initialization_ini(&initialization_outer, 4u);
+    initialization_device(&initialization_aml, "DPKG", 0u, &initialization_outer);
     if (!initialization_run(test, true))
         return;
-    kernel_test_check(test, initialization_integer("TRAC") == 0x23u, "DDIV's child (2) and NEXT (3) run, not DDIV (1)");
+    kernel_test_check(test, initialization_integer("TRAC") == 0x23u,
+                      "DDIV's child (2) and NEXT (3) run, not DDIV (1), nor DPKG (4)");
     kernel_test_check(test,
-                      initialization_counts.status_failed == 1u &&
-                          initialization_counts.statuses[INITIALIZATION_STATUS(DIVIDE_BY_ZERO)] == 1u,
-                      "the failure is counted under divide_by_zero");
+                      initialization_counts.status_failed == 2u &&
+                          initialization_counts.statuses[INITIALIZATION_STATUS(DIVIDE_BY_ZERO)] == 1u &&
+                          initialization_counts.statuses[INITIALIZATION_STATUS(TYPE_MISMATCH)] == 1u,
+                      "the failures are counted under divide_by_zero, and type_mismatch for a _STA that is a Package");
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *failed =
         advanced_configuration_and_power_interface_machine_language_namespace_node(
@@ -383,6 +392,15 @@ KERNEL_TEST(an_initialization_that_fails_is_counted_and_the_sequence_goes_on)
     kernel_test_check(test,
                       initialization_counts.initializations == 5u && initialization_counts.initialization_failed == 3u,
                       "five _INI run, three of them fail");
+
+    char path[8];
+
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_namespace_path(
+                          &initialization_load.space, initialization_counts.first_failure_node, path, sizeof(path)) ==
+                              5u &&
+                          memcmp(path, "\\_INI", 6u) == 0,
+                      "the first failure is \\_INI's, which the later ones do not replace");
     initialization_close(test);
 }
 
@@ -563,12 +581,15 @@ KERNEL_TEST(the_interrupt_model_method_is_not_called)
 }
 
 /**
- * @brief A device whose subtree holds no _INI has its _STA left unevaluated; one with an _INI two
- *        levels down has its _STA evaluated (§3.8 step 4, O14).
+ * @brief A device whose subtree holds no _INI, or only an External one, has its _STA left
+ *        unevaluated; one with an _INI two levels down has its _STA evaluated; an _INI that is an
+ *        Alias runs what it names (§3.8 step 4, O14).
  */
 KERNEL_TEST(a_subtree_without_initialization_evaluates_no_status)
 {
     static const uint8_t counts[] = {0x75u, '\\', 'S', 'T', 'A', 'C', 0xA4u, 0x0Au, 0x0Fu};
+    static const uint8_t external[] = {0x15u, '_', 'I', 'N', 'I', 0x08u, 0x00u};
+    static const uint8_t alias[] = {0x06u, '\\', 'I', 'N', 'I', 'M', '_', 'I', 'N', 'I'};
 
     initialization_begin();
     made_up_aml_name_integer(&initialization_aml, "STAC", 0u);
@@ -586,13 +607,24 @@ KERNEL_TEST(a_subtree_without_initialization_evaluates_no_status)
     initialization_method(&initialization_inner, "_STA", 0x00u, counts, sizeof(counts));
     made_up_aml_raw(&initialization_inner, initialization_outer.bytes, initialization_outer.length);
     made_up_aml_device(&initialization_aml, "DDEP", &initialization_inner);
+    made_up_aml_begin(&initialization_outer);
+    made_up_aml_raw(&initialization_outer, external, sizeof(external));
+    initialization_method(&initialization_outer, "_STA", 0x00u, counts, sizeof(counts));
+    made_up_aml_device(&initialization_aml, "DEXT", &initialization_outer);
+    made_up_aml_begin(&initialization_method_body);
+    initialization_trace(&initialization_method_body, 2u);
+    made_up_aml_method(&initialization_aml, "INIM", 0x00u, &initialization_method_body);
+    made_up_aml_begin(&initialization_outer);
+    made_up_aml_raw(&initialization_outer, alias, sizeof(alias));
+    made_up_aml_device(&initialization_aml, "DALI", &initialization_outer);
     if (!initialization_run(test, true))
         return;
     kernel_test_check(test, initialization_integer("STAC") == 1u && initialization_counts.status_evaluations == 1u,
-                      "only DDEP's _STA is evaluated");
-    kernel_test_check(test, initialization_integer("TRAC") == 1u, "LEAF's _INI runs");
-    kernel_test_check(test, initialization_counts.devices == 7u,
-                      "seven devices in the namespace, \\_SB_ and \\_TZ_ included");
+                      "only DDEP's _STA is evaluated: an External _INI holds no _INI");
+    kernel_test_check(test, initialization_integer("TRAC") == 0x12u,
+                      "LEAF's _INI runs (1), then DALI's, an Alias of \\INIM (2)");
+    kernel_test_check(test, initialization_counts.devices == 9u,
+                      "nine devices in the namespace, \\_SB_ and \\_TZ_ included");
     initialization_close(test);
 }
 
