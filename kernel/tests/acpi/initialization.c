@@ -959,7 +959,8 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
 /**
  * @brief A processor object bound to a CPU slot gets the C-state bits, 3 and 4, through its _OSC with
  *        Intel's UUID, a commit, or its _PDC with a buffer of revision 1 and one DWORD when it has no _OSC;
- *        one bound to no slot, and a Device that is no processor, get nothing (§3.8 step 7, §3.10).
+ *        one bound to no slot, and Devices that are no processor, a PCI bridge and an ambient light sensor
+ *        with the same _UID, get nothing (§3.8 step 7, §3.10).
  */
 KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
 {
@@ -974,6 +975,7 @@ KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
     initialization_capabilities_names(&initialization_aml, 'A');
     initialization_capabilities_names(&initialization_aml, 'C');
     initialization_capabilities_names(&initialization_aml, 'N');
+    initialization_capabilities_names(&initialization_aml, 'S');
     made_up_aml_name_integer(&initialization_aml, "XPDC", 0u);
     made_up_aml_name_integer(&initialization_aml, "BPDC", 0u);
     made_up_aml_begin(&initialization_inner);
@@ -992,11 +994,16 @@ KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
     made_up_aml_raw(&initialization_inner, bridge_identifier, sizeof(bridge_identifier));
     initialization_capabilities_recorder(&initialization_inner, 'C', 6u, 0u);
     made_up_aml_device(&initialization_aml, "PCI0", &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    initialization_hardware_identifier(&initialization_inner, "ACPI0008");
+    made_up_aml_raw(&initialization_inner, unique_identifier, sizeof(unique_identifier));
+    initialization_capabilities_recorder(&initialization_inner, 'S', 7u, 0u);
+    made_up_aml_device(&initialization_aml, "ALSD", &initialization_inner);
     if (!initialization_run(test, true))
         return;
     initialization_uuid("4077A616-290C-47BE-9EBD-D87058713953", uuid);
     kernel_test_check(test, initialization_integer("TRAC") == 0x34u,
-                      "CPU0's _OSC (3), not its _PDC, then CPU1's _PDC (4); neither CPU9 nor PCI0");
+                      "CPU0's _OSC (3), not its _PDC, then CPU1's _PDC (4); not CPU9, PCI0 or ALSD");
     kernel_test_check(test,
                       initialization_buffer_holds("AUID", uuid, sizeof(uuid)) && initialization_integer("AREV") == 1u &&
                           initialization_integer("ACNT") == 2u && initialization_integer("ACAP") == 0x18u,
