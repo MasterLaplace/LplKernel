@@ -19,6 +19,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_initialization, KER
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t initialization_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t initialization_load;
 static AdvancedConfigurationAndPowerInterfaceInitialization_t initialization_counts;
+static AdvancedConfigurationAndPowerInterfaceMadtState_t initialization_madt;
+static AdvancedConfigurationAndPowerInterfaceInitializationMachine_t initialization_machine;
 static uint8_t initialization_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
 static MadeUpAml_t initialization_aml;
 static MadeUpAml_t initialization_outer;
@@ -27,10 +29,14 @@ static MadeUpAml_t initialization_method_body;
 
 /**
  * @brief Opens the simulated host and empties the AML, which starts with Name (TRAC, 0): the trace
- *        each made-up method appends its hexadecimal digits to.
+ *        each made-up method appends its hexadecimal digits to; the machine has an empty MADT and no
+ *        MONITOR/MWAIT.
  */
 static void initialization_begin(void)
 {
+    memset(&initialization_madt, 0, sizeof(initialization_madt));
+    initialization_machine.madt = &initialization_madt;
+    initialization_machine.monitor_wait = false;
     advanced_configuration_and_power_interface_simulated_host_open(&initialization_host);
     made_up_aml_begin(&initialization_aml);
     made_up_aml_name_integer(&initialization_aml, "TRAC", 0u);
@@ -48,7 +54,8 @@ static bool initialization_run(KernelTest_t *test, bool initialize)
         return false;
     memset(&initialization_counts, 0, sizeof(initialization_counts));
     if (initialize)
-        advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_counts);
+        advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,
+                                                                        &initialization_counts);
     return true;
 }
 
@@ -211,6 +218,158 @@ static void initialization_device_with_status(MadeUpAml_t *aml, const char *name
     initialization_ini(&initialization_outer, digit);
     made_up_aml_raw(&initialization_outer, initialization_inner.bytes, initialization_inner.length);
     made_up_aml_device(aml, name, &initialization_outer);
+}
+
+/**
+ * @brief Appends a NameString of the root, \ then the four characters @p prefix then @p suffix make.
+ */
+static void initialization_root_name(MadeUpAml_t *aml, char prefix, const char *suffix)
+{
+    const uint8_t name[5] = {'\\', (uint8_t) prefix, (uint8_t) suffix[0], (uint8_t) suffix[1], (uint8_t) suffix[2]};
+
+    made_up_aml_raw(aml, name, sizeof(name));
+}
+
+/**
+ * @brief Appends the four root Names, all Zero, an _OSC recorder of @p record keeps its calls in: @p record
+ *        then UID, REV, CNT and CAP.
+ */
+static void initialization_capabilities_names(MadeUpAml_t *aml, char record)
+{
+    static const char *const suffixes[] = {"UID", "REV", "CNT", "CAP"};
+
+    for (uint32_t index = 0u; index < 4u; ++index)
+    {
+        const char name[5] = {record, suffixes[index][0], suffixes[index][1], suffixes[index][2], '\0'};
+
+        made_up_aml_name_integer(aml, name, 0u);
+    }
+}
+
+/**
+ * @brief Appends Method (_OSC, 4) { CopyObject Arg0, Arg1 and Arg2 to \@p record UID, REV and CNT;
+ *        CreateDWordField (Arg3, 0, CDW1) and (Arg3, 4, CDW2); trace CDW1 + @p digit; \@p record CAP |=
+ *        CDW2; CDW1 |= @p error_bits; Return (Arg3) }: the query traces @p digit + 1, the commit @p digit.
+ */
+static void initialization_capabilities_recorder(MadeUpAml_t *aml, char record, uint8_t digit, uint8_t error_bits)
+{
+    static const uint8_t first_field[] = {0x8Au, 0x6Bu, 0x00u, 'C', 'D', 'W', '1'};
+    static const uint8_t second_field[] = {0x8Au, 0x6Bu, 0x0Au, 0x04u, 'C', 'D', 'W', '2'};
+    static const uint8_t trace_head[] = {0x70u, 0x72u, 0x77u, '\\', 'T', 'R', 'A', 'C',  0x0Au,
+                                         0x10u, 0x00u, 0x72u, 'C',  'D', 'W', '1', 0x0Au};
+    static const uint8_t trace_tail[] = {0x00u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
+    static const uint8_t or_byte = 0x7Du;
+    static const uint8_t refuse_head[] = {0x7Du, 'C', 'D', 'W', '1', 0x0Au};
+    static const uint8_t refuse_tail[] = {'C', 'D', 'W', '1'};
+    static const uint8_t give_back[] = {0xA4u, 0x6Bu};
+    static const char *const kept[] = {"UID", "REV", "CNT"};
+
+    made_up_aml_begin(&initialization_method_body);
+    for (uint8_t argument = 0u; argument < 3u; ++argument)
+    {
+        const uint8_t copy[] = {0x9Du, (uint8_t) (0x68u + argument)};
+
+        made_up_aml_raw(&initialization_method_body, copy, sizeof(copy));
+        initialization_root_name(&initialization_method_body, record, kept[argument]);
+    }
+    made_up_aml_raw(&initialization_method_body, first_field, sizeof(first_field));
+    made_up_aml_raw(&initialization_method_body, second_field, sizeof(second_field));
+    made_up_aml_raw(&initialization_method_body, trace_head, sizeof(trace_head));
+    made_up_aml_raw(&initialization_method_body, &digit, 1u);
+    made_up_aml_raw(&initialization_method_body, trace_tail, sizeof(trace_tail));
+    made_up_aml_raw(&initialization_method_body, &or_byte, 1u);
+    initialization_root_name(&initialization_method_body, record, "CAP");
+    made_up_aml_raw(&initialization_method_body, second_field + 4, 4u);
+    initialization_root_name(&initialization_method_body, record, "CAP");
+    if (error_bits != 0u)
+    {
+        made_up_aml_raw(&initialization_method_body, refuse_head, sizeof(refuse_head));
+        made_up_aml_raw(&initialization_method_body, &error_bits, 1u);
+        made_up_aml_raw(&initialization_method_body, refuse_tail, sizeof(refuse_tail));
+    }
+    made_up_aml_raw(&initialization_method_body, give_back, sizeof(give_back));
+    made_up_aml_method(aml, "_OSC", 0x04u, &initialization_method_body);
+}
+
+/**
+ * @brief Appends Method (_PDC, 1) { CopyObject (Arg0, \@p record PDC); trace @p digit }.
+ */
+static void initialization_driver_capabilities_recorder(MadeUpAml_t *aml, char record, uint64_t digit)
+{
+    static const uint8_t copy[] = {0x9Du, 0x68u};
+
+    made_up_aml_begin(&initialization_method_body);
+    made_up_aml_raw(&initialization_method_body, copy, sizeof(copy));
+    initialization_root_name(&initialization_method_body, record, "PDC");
+    initialization_trace(&initialization_method_body, digit);
+    made_up_aml_method(aml, "_PDC", 0x01u, &initialization_method_body);
+}
+
+/**
+ * @brief Appends Name (_HID, @p identifier), a String of eight characters.
+ */
+static void initialization_hardware_identifier(MadeUpAml_t *aml, const char *identifier)
+{
+    static const uint8_t head[] = {0x08u, '_', 'H', 'I', 'D', 0x0Du};
+    static const uint8_t end = 0x00u;
+
+    made_up_aml_raw(aml, head, sizeof(head));
+    made_up_aml_raw(aml, (const uint8_t *) identifier, 8u);
+    made_up_aml_raw(aml, &end, 1u);
+}
+
+/**
+ * @brief The 16 bytes ToUUID makes of @p text, "aabbccdd-eeff-gghh-iijj-kkllmmnnoopp": aa to hh land at
+ *        offsets 3, 2, 1, 0, 5, 4, 7 and 6, ii to pp in the order written (ACPI 6.6 §19.6.144).
+ */
+static void initialization_uuid(const char *text, uint8_t out_bytes[16])
+{
+    static const uint8_t written_at[16] = {3u, 2u, 1u, 0u, 5u, 4u, 7u, 6u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 15u};
+    uint8_t written[16] = {0};
+    uint32_t digits = 0u;
+
+    for (const char *character = text; *character != '\0' && digits < 32u; ++character)
+    {
+        if (*character == '-')
+            continue;
+
+        const uint8_t digit =
+            (*character <= '9') ? (uint8_t) (*character - '0') : (uint8_t) ((*character | 0x20) - 'a' + 10);
+
+        written[digits / 2u] = (uint8_t) ((digits % 2u == 0u) ? (digit << 4u) : (written[digits / 2u] | digit));
+        ++digits;
+    }
+    for (uint32_t index = 0u; index < 16u; ++index)
+        out_bytes[written_at[index]] = written[index];
+}
+
+/**
+ * @brief Whether the Name at the root called @p name holds a Buffer of the @p length bytes at @p bytes.
+ */
+static bool initialization_buffer_holds(const char *name, const uint8_t *bytes, uint32_t length)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+        made_up_root_node(&initialization_load, name);
+    const uint8_t *held = NULL;
+    uint32_t held_length = 0u;
+    uint8_t scratch[8];
+
+    return node != NULL &&
+           node->value.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER &&
+           advanced_configuration_and_power_interface_machine_language_value_bytes(
+               &initialization_load.heap, &node->value, 64u, scratch, &held, &held_length) ==
+               INITIALIZATION_STATUS(OK) &&
+           held_length == length && memcmp(held, bytes, length) == 0;
+}
+
+/**
+ * @brief Gives the CPU slots of the machine the ACPI Processor UIDs @p identifiers, in that order.
+ */
+static void initialization_slots(const uint32_t *identifiers, uint32_t count)
+{
+    initialization_madt.processor_count = count;
+    for (uint32_t slot = 0u; slot < count; ++slot)
+        initialization_madt.processors[slot].processor_unique_identifier = identifiers[slot];
 }
 
 /**
@@ -514,7 +673,8 @@ KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
     kernel_test_check(
         test, initialization_call("\\XDEV.MKRG") == INITIALIZATION_STATUS(OK) && initialization_integer("TRAC") == 0u,
         "a region created before the initialisation gets no _REG");
-    advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_counts);
+    advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,
+                                                                    &initialization_counts);
     kernel_test_check(test, initialization_integer("TRAC") == 0u && initialization_counts.registrations == 0u,
                       "the initialisation registers nothing: no table declares a PCI_Config region");
 
@@ -702,5 +862,221 @@ KERNEL_TEST(each_evaluation_starts_its_budgets_from_zero)
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS;
     kernel_test_check(test, initialization_call("\\READ") == INITIALIZATION_STATUS(OK),
                       "a method that reads a field and loops once succeeds after a load that spent both budgets");
+    initialization_close(test);
+}
+
+/**
+ * @brief \_SB._OSC is called with the platform UUID, revision 1 and two DWORDs, first as a query then as
+ *        a commit, and claims no DWORD 2 bit in either (§3.8 step 6).
+ */
+KERNEL_TEST(the_platform_is_asked_for_nothing_with_a_query_then_a_commit)
+{
+    static MadeUpAml_t system_bus;
+    uint8_t uuid[16];
+
+    initialization_begin();
+    initialization_capabilities_names(&initialization_aml, 'P');
+    made_up_aml_begin(&system_bus);
+    initialization_capabilities_recorder(&system_bus, 'P', 1u, 0u);
+    made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
+    if (!initialization_run(test, true))
+        return;
+    initialization_uuid("0811B06E-4A27-44F9-8D60-3CBBC22E7B48", uuid);
+    kernel_test_check(test, initialization_integer("TRAC") == 0x21u, "a query (2), then a commit (1)");
+    kernel_test_check(test, initialization_integer("PCAP") == 0u, "neither call claims a DWORD 2 bit");
+    kernel_test_check(test,
+                      initialization_buffer_holds("PUID", uuid, sizeof(uuid)) && initialization_integer("PREV") == 1u &&
+                          initialization_integer("PCNT") == 2u,
+                      "the platform UUID, revision 1, two DWORDs");
+    kernel_test_check(test,
+                      initialization_counts.platform_capabilities ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_GRANTED,
+                      "granted");
+    initialization_close(test);
+}
+
+/**
+ * @brief A query answered with an error bit is not committed, and is counted refused; an _OSC that fails,
+ *        or returns no Buffer, is counted failed and named; a \_SB without _OSC is absent (§3.8, the
+ *        failure table).
+ */
+KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
+{
+    static MadeUpAml_t system_bus;
+    static const uint8_t returns_one[] = {0xA4u, 0x01u};
+
+    initialization_begin();
+    initialization_capabilities_names(&initialization_aml, 'P');
+    made_up_aml_begin(&system_bus);
+    initialization_capabilities_recorder(&system_bus, 'P', 1u, 0x02u);
+    made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_integer("TRAC") == 0x2u &&
+                          initialization_counts.platform_capabilities ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_REFUSED &&
+                          initialization_counts.first_failure_node == 0u,
+                      "an error bit in the query's DWORD 1: no commit, refused, no failure named");
+    initialization_close(test);
+
+    initialization_begin();
+    made_up_aml_begin(&system_bus);
+    initialization_failing(&system_bus, "_OSC", 0x04u, true);
+    made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_counts.platform_capabilities ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_FAILED &&
+                          initialization_counts.first_failure == INITIALIZATION_STATUS(DIVIDE_BY_ZERO),
+                      "an _OSC that divides by zero fails, named");
+    initialization_close(test);
+
+    initialization_begin();
+    made_up_aml_begin(&system_bus);
+    initialization_method(&system_bus, "_OSC", 0x04u, returns_one, sizeof(returns_one));
+    made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_counts.platform_capabilities ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_FAILED &&
+                          initialization_counts.first_failure == INITIALIZATION_STATUS(TYPE_MISMATCH),
+                      "an _OSC that returns an Integer fails as a type mismatch");
+    initialization_close(test);
+
+    initialization_begin();
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_counts.platform_capabilities ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_ABSENT,
+                      "no _OSC: absent");
+    initialization_close(test);
+}
+
+/**
+ * @brief A processor object bound to a CPU slot gets the C-state bits, 3 and 4, through its _OSC with
+ *        Intel's UUID, a commit, or its _PDC with a buffer of revision 1 and one DWORD when it has no _OSC;
+ *        one bound to no slot, and a Device that is no processor, get nothing (§3.8 step 7, §3.10).
+ */
+KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
+{
+    static const uint32_t identifiers[] = {1u, 2u};
+    static const uint8_t driver_capabilities[] = {1u, 0u, 0u, 0u, 1u, 0u, 0u, 0u, 0x18u, 0u, 0u, 0u};
+    static const uint8_t unique_identifier[] = {0x08u, '_', 'U', 'I', 'D', 0x0Au, 0x02u};
+    static const uint8_t bridge_identifier[] = {0x08u, '_', 'H', 'I', 'D', 0x0Cu, 0x41u, 0xD0u, 0x0Au, 0x08u};
+    uint8_t uuid[16];
+
+    initialization_begin();
+    initialization_slots(identifiers, 2u);
+    initialization_capabilities_names(&initialization_aml, 'A');
+    initialization_capabilities_names(&initialization_aml, 'C');
+    initialization_capabilities_names(&initialization_aml, 'N');
+    made_up_aml_name_integer(&initialization_aml, "XPDC", 0u);
+    made_up_aml_name_integer(&initialization_aml, "BPDC", 0u);
+    made_up_aml_begin(&initialization_inner);
+    initialization_capabilities_recorder(&initialization_inner, 'A', 3u, 0u);
+    initialization_driver_capabilities_recorder(&initialization_inner, 'X', 9u);
+    made_up_aml_processor(&initialization_aml, "CPU0", 1u, 0x410u, 6u, &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    initialization_hardware_identifier(&initialization_inner, "ACPI0007");
+    made_up_aml_raw(&initialization_inner, unique_identifier, sizeof(unique_identifier));
+    initialization_driver_capabilities_recorder(&initialization_inner, 'B', 4u);
+    made_up_aml_device(&initialization_aml, "CPU1", &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    initialization_capabilities_recorder(&initialization_inner, 'N', 5u, 0u);
+    made_up_aml_processor(&initialization_aml, "CPU9", 9u, 0x410u, 6u, &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    made_up_aml_raw(&initialization_inner, bridge_identifier, sizeof(bridge_identifier));
+    initialization_capabilities_recorder(&initialization_inner, 'C', 6u, 0u);
+    made_up_aml_device(&initialization_aml, "PCI0", &initialization_inner);
+    if (!initialization_run(test, true))
+        return;
+    initialization_uuid("4077A616-290C-47BE-9EBD-D87058713953", uuid);
+    kernel_test_check(test, initialization_integer("TRAC") == 0x34u,
+                      "CPU0's _OSC (3), not its _PDC, then CPU1's _PDC (4); neither CPU9 nor PCI0");
+    kernel_test_check(test,
+                      initialization_buffer_holds("AUID", uuid, sizeof(uuid)) && initialization_integer("AREV") == 1u &&
+                          initialization_integer("ACNT") == 2u && initialization_integer("ACAP") == 0x18u,
+                      "Intel's UUID, revision 1, two DWORDs, bits 3 and 4");
+    kernel_test_check(test, initialization_buffer_holds("BPDC", driver_capabilities, sizeof(driver_capabilities)),
+                      "_PDC's buffer: revision 1, one DWORD, bits 3 and 4");
+    kernel_test_check(test,
+                      initialization_counts.processor_capabilities == 2u &&
+                          initialization_counts.processor_capabilities_legacy == 1u &&
+                          initialization_counts.processors_unbound == 1u &&
+                          initialization_counts.processor_capabilities_refused == 0u &&
+                          initialization_counts.processor_capabilities_failed == 0u,
+                      "two processors given the capabilities, one through _PDC, one unbound");
+    initialization_close(test);
+}
+
+/**
+ * @brief On processors that implement MONITOR/MWAIT the capabilities add bits 8 and 9, so that _CST
+ *        names MWAIT hints; without a MADT no processor binds (§3.8 step 7).
+ */
+KERNEL_TEST(monitor_wait_adds_the_mwait_bits_and_no_madt_binds_nothing)
+{
+    static const uint32_t identifiers[] = {1u};
+
+    initialization_begin();
+    initialization_slots(identifiers, 1u);
+    initialization_machine.monitor_wait = true;
+    initialization_capabilities_names(&initialization_aml, 'A');
+    made_up_aml_begin(&initialization_inner);
+    initialization_capabilities_recorder(&initialization_inner, 'A', 3u, 0u);
+    made_up_aml_processor(&initialization_aml, "CPU0", 1u, 0x410u, 6u, &initialization_inner);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test, initialization_integer("ACAP") == 0x318u, "bits 3, 4, 8 and 9");
+    initialization_close(test);
+
+    initialization_begin();
+    initialization_machine.madt = NULL;
+    initialization_capabilities_names(&initialization_aml, 'A');
+    made_up_aml_begin(&initialization_inner);
+    initialization_capabilities_recorder(&initialization_inner, 'A', 3u, 0u);
+    made_up_aml_processor(&initialization_aml, "CPU0", 1u, 0x410u, 6u, &initialization_inner);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_integer("TRAC") == 0u && initialization_counts.processors_unbound == 1u &&
+                          initialization_counts.processor_capabilities == 0u,
+                      "no MADT: the processor is unbound and given nothing");
+    initialization_close(test);
+}
+
+/**
+ * @brief A processor whose _OSC returns an error bit is counted refused, one whose _OSC fails is counted
+ *        failed and named, and the processors after them still get theirs (§3.8, the failure table).
+ */
+KERNEL_TEST(a_processor_that_refuses_or_fails_is_counted_and_the_next_one_goes_on)
+{
+    static const uint32_t identifiers[] = {1u, 2u, 3u};
+
+    initialization_begin();
+    initialization_slots(identifiers, 3u);
+    initialization_capabilities_names(&initialization_aml, 'A');
+    made_up_aml_name_integer(&initialization_aml, "CPDC", 0u);
+    made_up_aml_begin(&initialization_inner);
+    initialization_capabilities_recorder(&initialization_inner, 'A', 3u, 0x02u);
+    made_up_aml_processor(&initialization_aml, "CPU0", 1u, 0x410u, 6u, &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    initialization_failing(&initialization_inner, "_OSC", 0x04u, true);
+    made_up_aml_processor(&initialization_aml, "CPU1", 2u, 0x410u, 6u, &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    initialization_driver_capabilities_recorder(&initialization_inner, 'C', 5u);
+    made_up_aml_processor(&initialization_aml, "CPU2", 3u, 0x410u, 6u, &initialization_inner);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test, initialization_integer("TRAC") == 0x35u, "CPU0's _OSC (3), then CPU2's _PDC (5)");
+    kernel_test_check(test,
+                      initialization_counts.processor_capabilities == 3u &&
+                          initialization_counts.processor_capabilities_refused == 1u &&
+                          initialization_counts.processor_capabilities_failed == 1u &&
+                          initialization_counts.first_failure == INITIALIZATION_STATUS(DIVIDE_BY_ZERO),
+                      "three processors: one refused, one failed and named");
     initialization_close(test);
 }

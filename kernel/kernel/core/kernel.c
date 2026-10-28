@@ -52,6 +52,7 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
+#include <kernel/power/processor_sleep.h>
 
 #include <kernel/core/console.h>
 #include <kernel/core/reconciler.h>
@@ -383,7 +384,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_acpi_madt_record(&com1);
     advanced_configuration_and_power_interface_mode_initialize();
     write_acpi_mode_record(&com1);
-    advanced_configuration_and_power_interface_machine_language_initialize();
+    kernel_processor_sleep_initialize();
+    advanced_configuration_and_power_interface_machine_language_initialize(kernel_processor_sleep_has_monitor());
     write_acpi_machine_language_record(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())

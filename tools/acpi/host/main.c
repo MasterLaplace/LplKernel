@@ -524,6 +524,27 @@ typedef enum HarnessView {
 
 static NeedsPathClosure_t harness_closure;
 static AdvancedConfigurationAndPowerInterfaceInitialization_t harness_initialization;
+static uint32_t harness_unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT];
+
+/**
+ * @brief The machine a namespace is initialised for: the CPU slots of @p directory's MADT, none without a
+ *        directory, and a processor that implements MONITOR/MWAIT, since a recorded machine's processor is
+ *        not recorded.
+ */
+static const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *
+harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
+{
+    static AdvancedConfigurationAndPowerInterfaceMadtState_t madt;
+    static AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine;
+
+    machine.madt = (directory != NULL &&
+                    advanced_configuration_and_power_interface_read_madt(
+                        advanced_configuration_and_power_interface_find_in_directory(directory, "APIC"), &madt)) ?
+                       &madt :
+                       NULL;
+    machine.monitor_wait = true;
+    return &machine;
+}
 
 /**
  * @brief Makes the closure the load's observer when @p view is the closure.
@@ -560,20 +581,35 @@ static void harness_print_closure(AdvancedConfigurationAndPowerInterfaceMachineL
 }
 
 /**
- * @brief Initialises a decoded load's namespace as the boot does, and prints what it ran and counted,
- *        each status a failure ended with, and the first object whose evaluation failed.
+ * @brief Initialises a decoded load's namespace as the boot does, for the machine @p directory describes,
+ *        and prints what it ran and counted, each status a failure ended with, each unimplemented opcode
+ *        it reached, and the first object whose evaluation failed.
  */
-static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                         const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
     const AdvancedConfigurationAndPowerInterfaceInitialization_t *counts = &harness_initialization;
     char path[HARNESS_PATH_BYTES] = "none";
 
-    advanced_configuration_and_power_interface_initialize_namespace(load, &harness_initialization);
+    memcpy(harness_unimplemented, load->evaluation.unimplemented, sizeof(harness_unimplemented));
+    advanced_configuration_and_power_interface_initialize_namespace(load, harness_machine(directory),
+                                                                    &harness_initialization);
     printf("aml init initializations=%u initialization_failed=%u registrations=%u region_registration_failed=%u "
-           "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u\n",
+           "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u "
+           "platform_capabilities=%s processor_capabilities=%u processor_capabilities_legacy=%u "
+           "processor_capabilities_refused=%u processor_capabilities_failed=%u processors_unbound=%u\n",
            counts->initializations, counts->initialization_failed, counts->registrations,
            counts->region_registration_failed, counts->devices, counts->status_evaluations, counts->status_failed,
-           counts->status_invalid, counts->pic_mode_deferred);
+           counts->status_invalid, counts->pic_mode_deferred,
+           advanced_configuration_and_power_interface_platform_capabilities_name(counts->platform_capabilities),
+           counts->processor_capabilities, counts->processor_capabilities_legacy,
+           counts->processor_capabilities_refused, counts->processor_capabilities_failed, counts->processors_unbound);
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (load->evaluation.unimplemented[opcode] != harness_unimplemented[opcode])
+            printf("aml init unimplemented %s=%u\n",
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
+                   load->evaluation.unimplemented[opcode] - harness_unimplemented[opcode]);
     for (uint32_t status = 1u; status < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT;
          ++status)
         if (counts->statuses[status] != 0u)
@@ -591,16 +627,18 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
 
 /**
  * @brief Prints what a load could not build, then the view of it asked for: its namespace, its closure,
- *        or what initialising its namespace ran, which the runs printed after it include.
+ *        or what initialising its namespace for the machine @p directory describes, or none, ran, which
+ *        the runs printed after it include.
  */
-static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, HarnessView_t view)
+static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                               const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, HarnessView_t view)
 {
     printf("aml namespace table_level_failures=%u table_level_code=%u values_deferred=%u load_errors=%u "
            "decode_errors=%u\n",
            load->evaluation.failures, load->table_level_code, load->values_deferred, load->load_errors,
            load->decode_errors);
     if (view == HARNESS_VIEW_INITIALIZATION)
-        harness_print_initialization(load);
+        harness_print_initialization(load, directory);
     harness_print_runs(load);
     if (view == HARNESS_VIEW_CLOSURE)
         harness_print_closure(load);
@@ -635,7 +673,7 @@ static int harness_dump_namespace(const char *path, HarnessView_t view)
             harness_observe(&load, view))
         {
             advanced_configuration_and_power_interface_machine_language_load_directory(&load, &directory);
-            harness_print_load(&load, view);
+            harness_print_load(&load, &directory, view);
             status = 0;
         }
         advanced_configuration_and_power_interface_machine_language_close(&load);
@@ -705,7 +743,7 @@ static int harness_dump_tables_namespace(int count, char **paths, HarnessView_t 
         if (status == 0)
         {
             advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
-            harness_print_load(&load, view);
+            harness_print_load(&load, NULL, view);
         }
     }
     advanced_configuration_and_power_interface_machine_language_close(&load);
@@ -779,7 +817,8 @@ static int harness_evaluate(const char *path, int count, char **paths)
         if (status == 0)
         {
             advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
-            advanced_configuration_and_power_interface_initialize_namespace(&load, &harness_initialization);
+            advanced_configuration_and_power_interface_initialize_namespace(&load, harness_machine(NULL),
+                                                                            &harness_initialization);
             printf("aml evaluate status=%s\n", advanced_configuration_and_power_interface_machine_language_status_name(
                                                    advanced_configuration_and_power_interface_machine_language_evaluate(
                                                        &load, path, NULL, 0u, &result)));
