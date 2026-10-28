@@ -73,8 +73,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
                                                  8259 until #59. */
     uint32_t platform_capabilities;         /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_*
                                                  value. */
-    uint32_t processor_capabilities;        /**< Processors that were given the capabilities: through _OSC, or _PDC
-                                                 without one. */
+    uint32_t processor_capabilities;        /**< Processors bound to a CPU slot that were handed the capabilities,
+                                                 through _OSC, or _PDC without one, whatever the answer. */
     uint32_t processor_capabilities_legacy; /**< Of those, the ones given them through _PDC. */
     uint32_t processor_capabilities_refused; /**< Of those, the ones whose _OSC returned an error bit. */
     uint32_t processor_capabilities_failed;  /**< Of those, the ones whose _OSC or _PDC failed, or whose _OSC

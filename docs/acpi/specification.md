@@ -369,9 +369,10 @@ Run once at boot by the bootstrap processor.
 7. **For each processor object bound to a CPU slot** (§3.10), in declaration order, `_OSC` with Intel's processor
    UUID `4077A616-290C-47BE-9EBD-D87058713953`, a commit without a query, or `_PDC` with a buffer of revision 1 and
    one DWORD when the processor has no `_OSC` ([Appendix C]). The capabilities are bits 3 and 4 of [Intel's processor
-   vendor-specific ACPI document][Intel ACPI], C-states on each processor apart, which firmware loads `_CST` for, and
-   bits 8 and 9, MWAIT for C1 and for C2 and C3, when the processors implement MONITOR/MWAIT, so that `_CST` names
-   MWAIT hints; #302 claims the P-state bits once it drives them. A processor object bound to no CPU slot is given
+   vendor-specific ACPI document][Intel ACPI], independent C1, P- and T-state support, and independent C2 and C3, on
+   each processor, which firmware loads `_CST` for, and bits 8 and 9, MWAIT for C1 and for C2 and C3, when the
+   processors implement MONITOR/MWAIT, so that `_CST` names MWAIT hints; #302 claims the P-state bits once it drives
+   them. A processor object bound to no CPU slot is given
    nothing, and counted. The pre-pass of step 4 also marks the subtrees that hold an `_OSC` or a `_PDC`, so this
    step walks only them. This is where `Load` runs on Intel clients.
 8. **Write CST_CNT to SMI_CMD** when it is not 0 and step 0 put the platform in ACPI mode ([§5.2.9]); then `_CST`

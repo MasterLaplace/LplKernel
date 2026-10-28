@@ -20,9 +20,8 @@
 #define INITIALIZATION_QUERY           0x01u  /**< _OSC DWORD 1 bit 0: the call only asks what is granted. */
 #define INITIALIZATION_REFUSED         0x0Eu  /**< _OSC DWORD 1 bits 1 to 3: failed, UUID or revision unknown. */
 #define INITIALIZATION_PLATFORM_CLAIMS 0x00u  /**< The DWORD 2 bits \_SB._OSC claims: none (§3.8 step 6). */
-#define INITIALIZATION_C_STATES        0x18u  /**< Intel's bits 3 and 4: C-states on each processor apart. */
+#define INITIALIZATION_C_STATES        0x18u  /**< Intel's bits 3 and 4: independent C1, P and T, and C2 and C3. */
 #define INITIALIZATION_MONITOR_WAIT    0x300u /**< Intel's bits 8 and 9: MWAIT for C1, and for C2 and C3. */
-#define INITIALIZATION_PROCESSOR_ID    40u    /**< Where a Processor node's payload keeps its ProcessorID. */
 
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
 #    define INITIALIZATION_BOOT_MAX_NODES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_NODES
@@ -506,7 +505,9 @@ static bool initialization_processor_identifier(InitializationLoad_t *load, Init
 
     if (node->type == INITIALIZATION_NODE(PROCESSOR))
     {
-        *out_identifier = (node->value.payload >> INITIALIZATION_PROCESSOR_ID) & 0xFFu;
+        *out_identifier = (node->value.payload >>
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PROCESSOR_IDENTIFIER_SHIFT) &
+                          0xFFu;
         return true;
     }
 

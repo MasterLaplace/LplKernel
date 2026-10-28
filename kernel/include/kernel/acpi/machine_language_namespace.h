@@ -52,6 +52,9 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS                                           \
     41u /**< Runs of nodes: enough for the server cap and the unused node 0. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT 1u /**< The root's node index. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PROCESSOR_IDENTIFIER_SHIFT                         \
+    40u /**< Where a Processor node's payload keeps its ProcessorID, above its PblkAddr (bits 0 to 31) and its PblkLen \
+             (bits 32 to 39). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE                                          \
     0x01u /**< Node flag: the node was removed, and its index waits on the free list. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_INITIALIZATION                          \
