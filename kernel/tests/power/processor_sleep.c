@@ -62,6 +62,25 @@ KERNEL_TEST(hints_are_read_one_state_deep)
 }
 
 /**
+ * @brief The probe the ACPI initialisation reads arms nothing: the module answers after it as it did
+ *        before, so every sleep keeps the instruction it had.
+ *
+ * @details Whether this processor implements the pair is measured, not checked: QEMU advertises no
+ *          MWAIT.
+ */
+KERNEL_TEST(the_monitor_probe_arms_nothing)
+{
+    const bool armed = kernel_processor_sleep_has_monitor();
+    const uint32_t line = kernel_processor_sleep_monitor_line_bytes();
+    const bool implemented = kernel_processor_sleep_monitor_implemented();
+
+    kernel_test_check(
+        test, kernel_processor_sleep_has_monitor() == armed && kernel_processor_sleep_monitor_line_bytes() == line,
+        "the module answers after the probe as before it");
+    kernel_test_measure(test, "monitor_implemented", implemented ? 1u : 0u);
+}
+
+/**
  * @brief A wait on a word that already moved is skipped, one on a word that did not really sleeps,
  *        and whatever ended that sleep is named.
  *

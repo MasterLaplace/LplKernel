@@ -52,11 +52,17 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS                                           \
     41u /**< Runs of nodes: enough for the server cap and the unused node 0. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT 1u /**< The root's node index. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PROCESSOR_IDENTIFIER_SHIFT                         \
+    40u /**< Where a Processor node's payload keeps its ProcessorID, above its PblkAddr (bits 0 to 31) and its PblkLen \
+             (bits 32 to 39). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE                                          \
     0x01u /**< Node flag: the node was removed, and its index waits on the free list. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_INITIALIZATION                          \
     0x02u /**< Node flag: the node, or one below it, is the device, processor or thermal zone of an _INI, as the       \
                initialisation's pre-pass marks it (§3.8 step 4). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_CAPABILITIES                            \
+    0x04u /**< Node flag: the node, or one below it, is a device or processor with an _OSC or a _PDC, as the           \
+               initialisation's pre-pass marks it (§3.8 step 7). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS                                     \
     8u /**< Aliases one resolution follows before it gives up. */
 
@@ -114,7 +120,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNode {
     uint32_t next_sibling; /**< The sibling declared after it, or 0. */
     uint32_t previous_sibling; /**< The sibling declared before it; the first child's is the last child. */
     uint8_t type;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_* value. */
-    uint8_t flags;             /**< ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE, or 0. */
+    uint8_t flags;             /**< ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_* flags. */
     uint16_t owner;            /**< The table that declared it, counted from 1; 0 for a predefined node. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value; /**< Its object, when it fits in a value. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t;

@@ -103,6 +103,15 @@ void kernel_processor_sleep_initialize(void);
 bool kernel_processor_sleep_has_monitor(void);
 
 /**
+ * @brief Whether this processor implements the monitor/wait pair, read from CPUID without arming the
+ *        module: every sleep keeps the instruction it had.
+ *
+ * @return What kernel_processor_sleep_has_monitor answers once kernel_processor_sleep_initialize has
+ *         run: true when CPUID leaf 1 advertises the pair and leaf 5 gives a non-zero line size.
+ */
+bool kernel_processor_sleep_monitor_implemented(void);
+
+/**
  * @brief Smallest cache line the monitor can watch, in bytes.
  * @return The size, or 0 when the pair is unavailable.
  */

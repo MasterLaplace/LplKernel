@@ -228,11 +228,17 @@ initialize_check() {
     rm -f "$output"
     echo -n "# initialization of $((number - failed)) of $number:"
     for key in initializations initialization_failed registrations region_registration_failed devices \
-        status_evaluations status_failed status_invalid pic_mode_deferred; do
+        status_evaluations status_failed status_invalid pic_mode_deferred processor_capabilities \
+        processor_capabilities_legacy processor_capabilities_refused processor_capabilities_failed processors_unbound; do
         echo -n " $key=$(grep '^aml init initializations=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 |
             paste -sd+ | bc)"
     done
     echo
+    echo "# platform _OSC, machines per answer:" \
+        $(grep -o ' platform_capabilities=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
+    echo "# unimplemented opcodes the initialisation reached:" \
+        $(grep '^aml init unimplemented ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
+            END { for (key in total) printf " %s=%u", key, total[key] }')
     echo "# machines with a failure: $(grep -c '^aml init first_failure ' <<<"$counts")"
     grep '^aml init failed ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
         END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k3,3nr || true

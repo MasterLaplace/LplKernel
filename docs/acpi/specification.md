@@ -366,10 +366,15 @@ Run once at boot by the bootstrap processor.
 6. **Platform `\_SB._OSC`** with UUID `0811B06E-4A27-44F9-8D60-3CBBC22E7B48`, query then commit, claiming none of
    the DWORD 2 capabilities ([§6.2.12.1], [§6.2.12.2]), since the kernel exercises none of them at boot. #302 claims
    CPPC (bits 5, 6 and 10) in a second evaluation.
-7. **For each processor object,** `_OSC` with Intel's processor UUID `4077A616-290C-47BE-9EBD-D87058713953`, or
-   `_PDC` when the processor has no `_OSC` ([Appendix C]). The capability bits are those Intel's processor
-   vendor-specific ACPI document defines for `_CST`, MWAIT hints and P-states. This is where `Load` runs on Intel
-   clients.
+7. **For each processor object bound to a CPU slot** (§3.10), in declaration order, `_OSC` with Intel's processor
+   UUID `4077A616-290C-47BE-9EBD-D87058713953`, a commit without a query, or `_PDC` with a buffer of revision 1 and
+   one DWORD when the processor has no `_OSC` ([Appendix C]). The capabilities are bits 3 and 4 of [Intel's processor
+   vendor-specific ACPI document][Intel ACPI], independent C1, P- and T-state support, and independent C2 and C3, on
+   each processor, which firmware loads `_CST` for, and bits 8 and 9, MWAIT for C1 and for C2 and C3, when the
+   processors implement MONITOR/MWAIT, so that `_CST` names MWAIT hints; #302 claims the P-state bits once it drives
+   them. A processor object bound to no CPU slot is given
+   nothing, and counted. The pre-pass of step 4 also marks the subtrees that hold an `_OSC` or a `_PDC`, so this
+   step walks only them. This is where `Load` runs on Intel clients.
 8. **Write CST_CNT to SMI_CMD** when it is not 0 and step 0 put the platform in ACPI mode ([§5.2.9]); then `_CST`
    for each processor object (§3.10).
 9. **Drain the Notify ring.** A Notify 0x81 on a processor, queued after its step-8 evaluation, triggers one more
@@ -390,8 +395,8 @@ clients `_CST` exists only after step 7.
 | 4 a `_STA` | the evaluation's status | no `_INI` for that device; its children are still walked | `status_failed` |
 | 4 an `_INI` | the evaluation's status | continue and descend | `initialization_failed` |
 | 5 `\_PIC` | not called | | `pic_mode_deferred` |
-| 6 platform `_OSC` | absent, failed, or an error bit in the returned DWORD 1 | continue as if nothing was granted | `platform_capabilities_failed` |
-| 7 processor `_OSC` or `_PDC` | the evaluation's status | continue; that processor may have no `_CST` | `processor_capabilities_failed` |
+| 6 platform `_OSC` | absent, failed, or an error bit in the returned DWORD 1 | continue as if nothing was granted | `platform_capabilities`: `absent`, `failed` or `refused` |
+| 7 processor `_OSC` or `_PDC` | the evaluation's status, or an error bit in `_OSC`'s DWORD 1 | continue; that processor may have no `_CST` | `processor_capabilities_failed`, `processor_capabilities_refused` |
 | 8 a `_CST` | the evaluation's status, or a malformed package | that CPU keeps the states the kernel enters without ACPI (HLT, MWAIT C1) | `processor_idle_failed` |
 
 **Tables loaded at run time.** A table that step 7 loads can declare regions and devices. Once the evaluation that
@@ -1226,5 +1231,6 @@ its page.
 [§20.2.5.4]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=1139
 [§20.3]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=1144
 [Appendix C]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=1200
+[Intel ACPI]: https://cdrdv2-public.intel.com/772754/intel-processor-vendor-specific-acpi.pdf
 
 [uacpi-ports]: https://github.com/uACPI/uACPI/blob/c0edecef62bcac6ce3f783540099190bafadadda/source/default_handlers.c#L654-L761

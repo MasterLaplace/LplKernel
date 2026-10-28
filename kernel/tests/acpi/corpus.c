@@ -158,13 +158,23 @@ static void corpus_measure_load(KernelTest_t *test)
 }
 
 /**
- * @brief Initialises the namespace of the load as the boot does, and prints what it ran and counted.
+ * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
+ *        directory's MADT and MONITOR/MWAIT taken as implemented, as the host harness does, and prints what
+ *        it ran and counted.
  */
 static void corpus_initialize(KernelTest_t *test)
 {
     static AdvancedConfigurationAndPowerInterfaceInitialization_t initialization;
+    static AdvancedConfigurationAndPowerInterfaceMadtState_t madt;
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {
+        .madt = advanced_configuration_and_power_interface_read_madt(
+                    advanced_configuration_and_power_interface_find_in_directory(&corpus_directory, "APIC"), &madt) ?
+                    &madt :
+                    NULL,
+        .monitor_wait = true,
+    };
 
-    advanced_configuration_and_power_interface_initialize_namespace(&corpus_load, &initialization);
+    advanced_configuration_and_power_interface_initialize_namespace(&corpus_load, &machine, &initialization);
     kernel_test_measure(test, "initializations", initialization.initializations);
     kernel_test_measure(test, "initialization_failed", initialization.initialization_failed);
     kernel_test_measure(test, "registrations", initialization.registrations);
@@ -174,6 +184,12 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure(test, "status_failed", initialization.status_failed);
     kernel_test_measure(test, "status_invalid", initialization.status_invalid);
     kernel_test_measure(test, "pic_mode_deferred", initialization.pic_mode_deferred);
+    kernel_test_measure(test, "platform_capabilities", initialization.platform_capabilities);
+    kernel_test_measure(test, "processor_capabilities", initialization.processor_capabilities);
+    kernel_test_measure(test, "processor_capabilities_legacy", initialization.processor_capabilities_legacy);
+    kernel_test_measure(test, "processor_capabilities_refused", initialization.processor_capabilities_refused);
+    kernel_test_measure(test, "processor_capabilities_failed", initialization.processor_capabilities_failed);
+    kernel_test_measure(test, "processors_unbound", initialization.processors_unbound);
     kernel_test_measure(test, "first_failure", initialization.first_failure);
     kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
                       "the initialisation leaves no frame and no temporary node behind");

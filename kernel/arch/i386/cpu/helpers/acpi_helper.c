@@ -73,6 +73,14 @@ acpi_helper_write_initialization_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("status_failed", initialization->status_failed);
     kernel_telemetry_write_unsigned("status_invalid", initialization->status_invalid);
     kernel_telemetry_write_unsigned("pic_mode_deferred", initialization->pic_mode_deferred);
+    kernel_telemetry_write_text(
+        "platform_capabilities",
+        advanced_configuration_and_power_interface_platform_capabilities_name(initialization->platform_capabilities));
+    kernel_telemetry_write_unsigned("processor_capabilities", initialization->processor_capabilities);
+    kernel_telemetry_write_unsigned("processor_capabilities_legacy", initialization->processor_capabilities_legacy);
+    kernel_telemetry_write_unsigned("processor_capabilities_refused", initialization->processor_capabilities_refused);
+    kernel_telemetry_write_unsigned("processor_capabilities_failed", initialization->processor_capabilities_failed);
+    kernel_telemetry_write_unsigned("processors_unbound", initialization->processors_unbound);
     kernel_telemetry_write_text("first_failure", path);
     kernel_telemetry_write_text(
         "first_failure_status",

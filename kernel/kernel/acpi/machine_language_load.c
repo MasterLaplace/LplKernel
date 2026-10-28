@@ -1002,7 +1002,10 @@ static void machine_language_build_scope_object(MachineLanguageWalk_t *walk,
         const uint32_t block = (uint32_t) fields[-5] | ((uint32_t) fields[-4] << 8u) | ((uint32_t) fields[-3] << 16u) |
                                ((uint32_t) fields[-2] << 24u);
 
-        node->value.payload = block | ((uint64_t) fields[-1] << 32u) | ((uint64_t) fields[-6] << 40u);
+        node->value.payload =
+            block | ((uint64_t) fields[-1] << 32u) |
+            ((uint64_t) fields[-6]
+             << ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PROCESSOR_IDENTIFIER_SHIFT);
     }
     else if (active->opcode == MACHINE_LANGUAGE_OPCODE(POWER_RESOURCE))
     {
@@ -1737,7 +1740,11 @@ static uint32_t machine_language_fold_node(const AdvancedConfigurationAndPowerIn
     }
     if (node->type == MACHINE_LANGUAGE_NODE(PROCESSOR))
     {
-        fold = machine_language_fold_unsigned(fold, node->value.payload >> 40u, 1u);
+        fold = machine_language_fold_unsigned(
+            fold,
+            node->value.payload >>
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PROCESSOR_IDENTIFIER_SHIFT,
+            1u);
         fold = machine_language_fold_unsigned(fold, node->value.payload, 4u);
         return machine_language_fold_unsigned(fold, node->value.payload >> 32u, 1u);
     }
