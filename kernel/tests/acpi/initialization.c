@@ -897,13 +897,14 @@ KERNEL_TEST(the_platform_is_asked_for_nothing_with_a_query_then_a_commit)
 
 /**
  * @brief A query answered with an error bit is not committed, and is counted refused; an _OSC that fails,
- *        or returns no Buffer, is counted failed and named; a \_SB without _OSC is absent (§3.8, the
- *        failure table).
+ *        or returns no Buffer of two DWORDs, is counted failed and named; a \_SB without _OSC is absent
+ *        (§3.8, the failure table).
  */
 KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
 {
     static MadeUpAml_t system_bus;
     static const uint8_t returns_one[] = {0xA4u, 0x01u};
+    static const uint8_t returns_short_buffer[] = {0xA4u, 0x11u, 0x03u, 0x0Au, 0x04u};
 
     initialization_begin();
     initialization_capabilities_names(&initialization_aml, 'P');
@@ -944,6 +945,19 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_FAILED &&
                           initialization_counts.first_failure == INITIALIZATION_STATUS(TYPE_MISMATCH),
                       "an _OSC that returns an Integer fails as a type mismatch");
+    initialization_close(test);
+
+    initialization_begin();
+    made_up_aml_begin(&system_bus);
+    initialization_method(&system_bus, "_OSC", 0x04u, returns_short_buffer, sizeof(returns_short_buffer));
+    made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_counts.platform_capabilities ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_FAILED &&
+                          initialization_counts.first_failure == INITIALIZATION_STATUS(TYPE_MISMATCH),
+                      "an _OSC that returns a Buffer of one DWORD fails as a type mismatch");
     initialization_close(test);
 
     initialization_begin();
@@ -1087,5 +1101,50 @@ KERNEL_TEST(a_processor_that_refuses_or_fails_is_counted_and_the_next_one_goes_o
                           initialization_counts.processor_capabilities_failed == 1u &&
                           initialization_counts.first_failure == INITIALIZATION_STATUS(DIVIDE_BY_ZERO),
                       "three processors: one refused, one failed and named");
+    initialization_close(test);
+}
+
+/**
+ * @brief The handshake releases every Buffer it builds, whatever the firmware answers: an _OSC that
+ *        gives Arg3 back, one that fails, and a _PDC leave as many objects alive as there were before
+ *        (§3.8 steps 6 and 7).
+ */
+KERNEL_TEST(the_handshake_releases_every_buffer_it_builds)
+{
+    static MadeUpAml_t system_bus;
+    static const uint32_t identifiers[] = {1u, 2u, 3u};
+    static const uint8_t gives_back[] = {0xA4u, 0x6Bu};
+    static const MadeUpAml_t nothing = {0};
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap = &initialization_load.heap;
+
+    initialization_begin();
+    initialization_slots(identifiers, 3u);
+    made_up_aml_begin(&system_bus);
+    initialization_method(&system_bus, "_OSC", 0x04u, gives_back, sizeof(gives_back));
+    made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
+    made_up_aml_begin(&initialization_inner);
+    initialization_method(&initialization_inner, "_OSC", 0x04u, gives_back, sizeof(gives_back));
+    made_up_aml_processor(&initialization_aml, "CPU0", 1u, 0x410u, 6u, &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    made_up_aml_method(&initialization_inner, "_PDC", 0x01u, &nothing);
+    made_up_aml_processor(&initialization_aml, "CPU1", 2u, 0x410u, 6u, &initialization_inner);
+    made_up_aml_begin(&initialization_inner);
+    initialization_failing(&initialization_inner, "_OSC", 0x04u, true);
+    made_up_aml_processor(&initialization_aml, "CPU2", 3u, 0x410u, 6u, &initialization_inner);
+    if (!initialization_run(test, false))
+        return;
+
+    const uint32_t alive = heap->objects - heap->objects_freed;
+
+    advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,
+                                                                    &initialization_counts);
+    kernel_test_check(test,
+                      initialization_counts.platform_capabilities ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_GRANTED &&
+                          initialization_counts.processor_capabilities == 3u &&
+                          initialization_counts.processor_capabilities_failed == 1u,
+                      "the platform granted, three processors handed the capabilities, one failed");
+    kernel_test_check(test, heap->objects - heap->objects_freed == alive,
+                      "as many objects alive after the handshake as before it");
     initialization_close(test);
 }
