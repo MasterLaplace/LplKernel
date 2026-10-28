@@ -57,6 +57,29 @@ static void processor_sleep_charge_asleep_since(uint64_t before)
 }
 
 /**
+ * @brief Reads CPUID for the monitor/wait pair, and arms nothing.
+ *
+ * @param out_line Receives the line size CPUID leaf 5 gives.
+ * @param out_ecx  Receives CPUID leaf 5's ECX.
+ * @param out_edx  Receives CPUID leaf 5's EDX.
+ * @return true when leaf 1 advertises the pair and leaf 5 gives a non-zero line size.
+ */
+static bool processor_sleep_read_monitor(uint32_t *out_line, uint32_t *out_ecx, uint32_t *out_edx)
+{
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
+    if ((ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u)
+        return false;
+    asmutils_cpuid(PROCESSOR_SLEEP_MONITOR_LEAF, 0u, &eax, &ebx, out_ecx, out_edx);
+    *out_line = ebx & 0xFFFFu;
+    return *out_line != 0u;
+}
+
+/**
  * A line nothing in the kernel writes. Armed as the monitor target, it turns MWAIT into
  * the same wait as HLT — only an interrupt ends it — except at the requested depth.
  */
@@ -84,8 +107,7 @@ static uint32_t processor_sleep_deepest_enumerated_at_or_below(uint32_t ceiling)
 
 void kernel_processor_sleep_initialize(void)
 {
-    uint32_t eax = 0u;
-    uint32_t ebx = 0u;
+    uint32_t line = 0u;
     uint32_t ecx = 0u;
     uint32_t edx = 0u;
 
@@ -104,13 +126,7 @@ void kernel_processor_sleep_initialize(void)
     processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
     kernel_wakeup_accounting_reset();
 
-    asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
-    if ((ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u)
-        return;
-
-    asmutils_cpuid(PROCESSOR_SLEEP_MONITOR_LEAF, 0u, &eax, &ebx, &ecx, &edx);
-    const uint32_t line = ebx & 0xFFFFu;
-    if (line == 0u)
+    if (!processor_sleep_read_monitor(&line, &ecx, &edx))
         return;
 
     processor_sleep_monitor_available = true;
@@ -120,6 +136,15 @@ void kernel_processor_sleep_initialize(void)
 }
 
 bool kernel_processor_sleep_has_monitor(void) { return processor_sleep_monitor_available; }
+
+bool kernel_processor_sleep_monitor_implemented(void)
+{
+    uint32_t line = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    return processor_sleep_read_monitor(&line, &ecx, &edx);
+}
 
 uint32_t kernel_processor_sleep_monitor_line_bytes(void) { return processor_sleep_monitor_line; }
 
