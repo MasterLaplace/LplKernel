@@ -217,7 +217,7 @@ static bool initialization_status_invalid(uint64_t status)
 
 /**
  * @brief Reads a device's _STA into @p out_status: 0x0F without one, a String or a Buffer converted as
- *        an operand is (§5.2), 0 for a result ACPI declares invalid, counted.
+ *        an operand is (§5.2); a result ACPI 6.6 §6.3.7 calls invalid is counted and kept as it is.
  *
  * @return false when its evaluation failed or gave no Integer, String or Buffer, counted.
  */
@@ -248,10 +248,7 @@ static bool initialization_read_status(InitializationLoad_t *load, Initializatio
         return false;
     }
     if (initialization_status_invalid(*out_status))
-    {
         ++initialization->status_invalid;
-        *out_status = 0u;
-    }
     return true;
 }
 

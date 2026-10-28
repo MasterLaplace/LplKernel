@@ -284,21 +284,25 @@ KERNEL_TEST(the_status_of_a_device_decides_its_initialization_and_its_childrens)
 }
 
 /**
- * @brief The two _STA results ACPI 6.6 declares invalid, bit 0 clear with bit 1 set, and bit 0 set with
- *        bit 1 clear and bit 3 set, skip their device's subtree as neither present nor functioning, and
- *        are counted (§3.8 step 4).
+ * @brief The _STA results ACPI 6.6 §6.3.7 calls invalid, bit 0 clear with bit 1 set, and bit 0 set with
+ *        bit 1 clear and bit 3 set, are counted and walked by bits 0 and 3 alone, as its Table 6.67 says:
+ *        0x09 and 0x0D run their _INI and their child's, 0x0A walks its child without _INI, and 0x02
+ *        skips its subtree (§3.8 step 4).
  */
-KERNEL_TEST(a_status_acpi_declares_invalid_skips_the_subtree)
+KERNEL_TEST(a_status_acpi_calls_invalid_is_counted_and_walked_by_presence_and_function)
 {
     initialization_begin();
     initialization_device_with_status(&initialization_aml, "DIN1", 0x02u, 1u, 2u);
     initialization_device_with_status(&initialization_aml, "DIN2", 0x09u, 3u, 4u);
+    initialization_device_with_status(&initialization_aml, "DIN3", 0x0Du, 7u, 8u);
+    initialization_device_with_status(&initialization_aml, "DIN4", 0x0Au, 9u, 0xAu);
     initialization_device_with_status(&initialization_aml, "DVAL", 0x0Bu, 5u, 6u);
     if (!initialization_run(test, true))
         return;
-    kernel_test_check(test, initialization_integer("TRAC") == 0x56u, "only DVAL (5) and its child (6) run");
-    kernel_test_check(test, initialization_counts.status_invalid == 2u && initialization_counts.status_failed == 0u,
-                      "two invalid results, counted apart from failures");
+    kernel_test_check(test, initialization_integer("TRAC") == 0x3478A56u,
+                      "DIN2 (3, 4) and DIN3 (7, 8) run with their children, DIN4 only its child (A), DIN1 nothing");
+    kernel_test_check(test, initialization_counts.status_invalid == 4u && initialization_counts.status_failed == 0u,
+                      "four invalid results, counted apart from failures");
     initialization_close(test);
 }
 
