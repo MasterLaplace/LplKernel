@@ -372,7 +372,8 @@ Run once at boot by the bootstrap processor.
    vendor-specific ACPI document][Intel ACPI], C-states on each processor apart, which firmware loads `_CST` for, and
    bits 8 and 9, MWAIT for C1 and for C2 and C3, when the processors implement MONITOR/MWAIT, so that `_CST` names
    MWAIT hints; #302 claims the P-state bits once it drives them. A processor object bound to no CPU slot is given
-   nothing, and counted. This is where `Load` runs on Intel clients.
+   nothing, and counted. The pre-pass of step 4 also marks the subtrees that hold an `_OSC` or a `_PDC`, so this
+   step walks only them. This is where `Load` runs on Intel clients.
 8. **Write CST_CNT to SMI_CMD** when it is not 0 and step 0 put the platform in ACPI mode ([§5.2.9]); then `_CST`
    for each processor object (§3.10).
 9. **Drain the Notify ring.** A Notify 0x81 on a processor, queued after its step-8 evaluation, triggers one more

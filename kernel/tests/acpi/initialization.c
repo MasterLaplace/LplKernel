@@ -958,9 +958,9 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
 
 /**
  * @brief A processor object bound to a CPU slot gets the C-state bits, 3 and 4, through its _OSC with
- *        Intel's UUID, a commit, or its _PDC with a buffer of revision 1 and one DWORD when it has no _OSC;
- *        one bound to no slot, and Devices that are no processor, a PCI bridge and an ambient light sensor
- *        with the same _UID, get nothing (§3.8 step 7, §3.10).
+ *        Intel's UUID, a commit, or its _PDC with a buffer of revision 1 and one DWORD when it has no _OSC,
+ *        inside a Device that has neither too; one bound to no slot, and Devices that are no processor, a
+ *        PCI bridge and an ambient light sensor with the same _UID, get nothing (§3.8 step 7, §3.10).
  */
 KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
 {
@@ -986,7 +986,9 @@ KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
     initialization_hardware_identifier(&initialization_inner, "ACPI0007");
     made_up_aml_raw(&initialization_inner, unique_identifier, sizeof(unique_identifier));
     initialization_driver_capabilities_recorder(&initialization_inner, 'B', 4u);
-    made_up_aml_device(&initialization_aml, "CPU1", &initialization_inner);
+    made_up_aml_begin(&initialization_outer);
+    made_up_aml_device(&initialization_outer, "CPU1", &initialization_inner);
+    made_up_aml_device(&initialization_aml, "SCK0", &initialization_outer);
     made_up_aml_begin(&initialization_inner);
     initialization_capabilities_recorder(&initialization_inner, 'N', 5u, 0u);
     made_up_aml_processor(&initialization_aml, "CPU9", 9u, 0x410u, 6u, &initialization_inner);

@@ -6,6 +6,7 @@
 #define INITIALIZATION_ROOT        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT
 #define INITIALIZATION_NODE(type)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
 #define INITIALIZATION_HOLDS       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_INITIALIZATION
+#define INITIALIZATION_CAPABLE     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_CAPABILITIES
 #define INITIALIZATION_PRESENT     0x01u /**< _STA bit 0: the device is present. */
 #define INITIALIZATION_ENABLED     0x02u /**< _STA bit 1: the device is enabled and decodes its resources. */
 #define INITIALIZATION_FUNCTIONING 0x08u /**< _STA bit 3: the device works. */
@@ -202,29 +203,51 @@ static void initialization_register(InitializationLoad_t *load, Initialization_t
 }
 
 /**
- * @brief Marks @p index and every node above it as holding an _INI.
+ * @brief Gives @p index and every node above it the node flag @p flag.
  */
-static void initialization_mark(InitializationLoad_t *load, uint32_t index)
+static void initialization_mark(InitializationLoad_t *load, uint32_t index, uint8_t flag)
 {
-    for (; index != 0u && (initialization_node(load, index)->flags & INITIALIZATION_HOLDS) == 0u;
+    for (; index != 0u && (initialization_node(load, index)->flags & flag) == 0u;
          index = initialization_node(load, index)->parent)
-        initialization_node(load, index)->flags |= INITIALIZATION_HOLDS;
+        initialization_node(load, index)->flags |= flag;
 }
 
 /**
- * @brief The pre-pass of step 4, as ACPICA's AcpiNsFindIniMethods: marks every device, processor and
- *        thermal zone that holds an _INI, and every node above it, and counts them.
+ * @brief Whether @p index has an _OSC or a _PDC.
+ */
+static bool initialization_holds_capabilities(InitializationLoad_t *load, uint32_t index)
+{
+    return initialization_object(load, index, "_OSC") != 0u || initialization_object(load, index, "_PDC") != 0u;
+}
+
+/**
+ * @brief Whether the pre-pass marked @p index as a device or processor with an _OSC or a _PDC, or one
+ *        above such a node.
+ */
+static bool initialization_capable(const InitializationLoad_t *load, uint32_t index)
+{
+    return (initialization_node(load, index)->flags & INITIALIZATION_CAPABLE) != 0u;
+}
+
+/**
+ * @brief The pre-pass of steps 4 and 7, as ACPICA's AcpiNsFindIniMethods: marks every device, processor
+ *        and thermal zone that holds an _INI, and every device and processor with an _OSC or a _PDC, each
+ *        with every node above it, and counts them.
  */
 static void initialization_find_initializations(InitializationLoad_t *load, Initialization_t *initialization)
 {
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
          index = initialization_next(load, index, true))
     {
-        if (!initialization_is_device(initialization_node(load, index)))
+        const InitializationNode_t *node = initialization_node(load, index);
+
+        if (!initialization_is_device(node))
             continue;
         ++initialization->devices;
         if (initialization_object(load, index, "_INI") != 0u)
-            initialization_mark(load, index);
+            initialization_mark(load, index, INITIALIZATION_HOLDS);
+        if (node->type != INITIALIZATION_NODE(THERMAL_ZONE) && initialization_holds_capabilities(load, index))
+            initialization_mark(load, index, INITIALIZATION_CAPABLE);
     }
 }
 
@@ -577,21 +600,24 @@ static void initialization_negotiate_processor(InitializationLoad_t *load, Initi
 /**
  * @brief Gives every processor object with an _OSC or a _PDC that binds to a CPU slot the capabilities
  *        of its C-states, and MWAIT's when the processors implement it, in declaration order (§3.8 step
- *        7); counts the ones that bind to none.
+ *        7), walking only the subtrees the pre-pass marked; counts the ones that bind to none.
  */
 static void initialization_negotiate_processors(InitializationLoad_t *load, Initialization_t *initialization,
                                                 const InitializationMachine_t *machine)
 {
     const uint32_t capabilities = INITIALIZATION_C_STATES | (machine->monitor_wait ? INITIALIZATION_MONITOR_WAIT : 0u);
 
+    if (!initialization_capable(load, INITIALIZATION_ROOT))
+        return;
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
-         index = initialization_next(load, index, true))
+         index = initialization_next(load, index, initialization_capable(load, index)))
     {
         const uint8_t type = initialization_node(load, index)->type;
         uint64_t identifier = 0u;
 
-        if ((type != INITIALIZATION_NODE(PROCESSOR) && type != INITIALIZATION_NODE(DEVICE)) ||
-            (initialization_object(load, index, "_OSC") == 0u && initialization_object(load, index, "_PDC") == 0u) ||
+        if (!initialization_capable(load, index) ||
+            (type != INITIALIZATION_NODE(PROCESSOR) && type != INITIALIZATION_NODE(DEVICE)) ||
+            !initialization_holds_capabilities(load, index) ||
             !initialization_is_processor(load, initialization, index))
             continue;
         if (!initialization_processor_identifier(load, initialization, index, &identifier) ||
