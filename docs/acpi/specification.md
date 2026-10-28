@@ -355,11 +355,10 @@ Run once at boot by the bootstrap processor.
 4. **Walk the devices in declaration order** ([§6.3.7], [§6.5.1]), processors and thermal zones among them, as
    ACPICA and uACPI do; `\_SB._INI`, which step 2 ran, is not run again. A device without `_STA` is 0x0F. Present: run
    `_INI` and descend. Not present but functioning: skip `_INI` and descend. Neither: skip the subtree. Bits 0 and 3
-   alone decide, as the table of [§6.5.1] says and ACPICA, uACPI and Linux do: a result [§6.3.7] calls invalid, bit 0
-   clear with bit 1 set, or bit 0 set with bit 1 clear and bit 3 set, is walked as any other and counted
-   (`status_invalid`). Firmware returns 0x09 for a PCI interrupt link it has not routed, and 0x0D for a device the OS
-   disabled with `_DIS` ([§6.2.3]); whether to use such a device is its consumer's decision. A pre-pass marks the
-   subtrees that hold an `_INI`, so most devices need no `_STA` evaluation.
+   alone decide, as [§6.3.7] and the table of [§6.5.1] say and ACPICA, uACPI and Linux do: a result §6.3.7 calls
+   invalid, bit 0 clear with bit 1 set, or bit 0 set with bit 1 clear and bit 3 set, is walked as any other and
+   counted (`status_invalid`); whether to use such a device is its consumer's decision. A pre-pass marks the subtrees
+   that hold an `_INI`, so most devices need no `_STA` evaluation.
 5. **`\_PIC` is not called** while the kernel routes PCI INTx through the 8259; `pic_mode_deferred` counts it.
    Firmware assumes PIC mode until told otherwise ([§5.8.1]), and on AMD clients `\_PIC(1)` can rewrite every PIRQ
    router, which would silence every PCI device the kernel drives through the 8259. It is called once INTx goes
@@ -1111,7 +1110,6 @@ its page.
 [§5.7.3]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=428
 [§5.7.4]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=428
 [§5.8.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=430
-[§6.2.3]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=448
 [§6.2.12.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=473
 [§6.2.12.2]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=474
 [§6.3.7]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=497
