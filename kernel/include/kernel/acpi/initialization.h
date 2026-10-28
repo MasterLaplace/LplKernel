@@ -44,7 +44,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
     uint32_t status_evaluations;         /**< _STA objects evaluated: only in subtrees that hold an _INI. */
     uint32_t status_failed;              /**< Of those, the ones whose evaluation failed or gave no Integer, String
                                               or Buffer. */
-    uint32_t status_invalid;             /**< Of those, the results ACPI declares invalid. */
+    uint32_t status_invalid;             /**< Of those, the results ACPI 6.6 calls invalid, walked as any other. */
     uint32_t pic_mode_deferred;          /**< 1 when \_PIC exists and was not called: PCI interrupts go through the
                                               8259 until #59. */
     uint32_t statuses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT]; /**< The failures,
