@@ -1,5 +1,6 @@
 #include <kernel/config.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/diag/telemetry.h>
 #include <kernel/memory/helpers/pmm_helper.h>
 
 void write_pmm_strategy_info(Serial_t *serial)
@@ -9,13 +10,20 @@ void write_pmm_strategy_info(Serial_t *serial)
     serial_write_string(serial, "\n");
 }
 
-void write_pmm_pass_1_info(Serial_t *serial, uint32_t boot_map_pages_unmapped)
+void write_pmm_pass_1_info(Serial_t *serial)
 {
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-64MB) ready: ");
     serial_write_int(serial, (int32_t) physical_memory_manager_get_free_page_count());
-    serial_write_string(serial, " pages free, ");
-    serial_write_int(serial, (int32_t) boot_map_pages_unmapped);
-    serial_write_string(serial, " pages past the first MiB that are not RAM unmapped from the boot map\n");
+    serial_write_string(serial, " pages free\n");
+}
+
+void write_boot_map_record(Serial_t *serial, const PhysicalMemoryManagerBootMapRestriction_t *restriction)
+{
+    kernel_telemetry_begin_record(serial, "boot_map");
+    kernel_telemetry_write_boolean("memory_map", restriction->memory_map);
+    kernel_telemetry_write_unsigned("runs_unmapped", restriction->runs_unmapped);
+    kernel_telemetry_write_unsigned("pages_unmapped", restriction->pages_unmapped);
+    kernel_telemetry_end_record();
 }
 
 void write_pmm_pass_2_start_info(Serial_t *serial)

@@ -344,7 +344,10 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing PMM...\n");
     write_pmm_strategy_info(&com1);
     physical_memory_manager_initialize();
-    write_pmm_pass_1_info(&com1, physical_memory_manager_restrict_boot_mapping());
+    write_pmm_pass_1_info(&com1);
+    const PhysicalMemoryManagerBootMapRestriction_t boot_map_restriction =
+        physical_memory_manager_restrict_boot_mapping();
+    write_boot_map_record(&com1, &boot_map_restriction);
     kernel_splash_update("Physical Memory Manager Pass 1");
 
     advanced_configuration_and_power_interface_madt_initialize();

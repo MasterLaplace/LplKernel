@@ -1033,28 +1033,43 @@ void physical_memory_manager_extend_mapping(void)
 #endif
 }
 
-uint32_t physical_memory_manager_restrict_boot_mapping(void)
+bool physical_memory_manager_boot_map_next_hole(const uint8_t *map, uint32_t length, uint32_t from, uint32_t *out_first,
+                                                uint32_t *out_end)
 {
+    if (!map || length == 0u)
+        return false;
+    for (uint32_t page = from < PMM_LOW_MEMORY_LIMIT ? PMM_LOW_MEMORY_LIMIT : PAGE_ALIGN_DOWN(from);
+         page < PMM_BOOT_MAP_LIMIT;)
+    {
+        const uint32_t kept_end = pmm_kept_memory_end(map, length, page);
+
+        if (kept_end <= page)
+        {
+            *out_first = page;
+            *out_end = pmm_next_kept_memory(map, length, page, PMM_BOOT_MAP_LIMIT);
+            return true;
+        }
+        page = kept_end;
+    }
+    return false;
+}
+
+PhysicalMemoryManagerBootMapRestriction_t physical_memory_manager_restrict_boot_mapping(void)
+{
+    PhysicalMemoryManagerBootMapRestriction_t restriction = {0};
     uint8_t *mmap_base = NULL;
     uint32_t mmap_length = 0u;
-    uint32_t unmapped = 0u;
+    uint32_t first = 0u;
+    uint32_t end = 0u;
 
-    if (!pmm_get_multiboot_mmap(&mmap_base, &mmap_length))
-        return 0u;
-    for (uint32_t page = PMM_LOW_MEMORY_LIMIT; page < PMM_BOOT_MAP_LIMIT;)
+    restriction.memory_map = pmm_get_multiboot_mmap(&mmap_base, &mmap_length);
+    for (uint32_t from = PMM_LOW_MEMORY_LIMIT;
+         restriction.memory_map &&
+         physical_memory_manager_boot_map_next_hole(mmap_base, mmap_length, from, &first, &end);
+         from = end)
     {
-        const uint32_t kept_end = pmm_kept_memory_end(mmap_base, mmap_length, page);
-
-        if (kept_end > page)
-        {
-            page = kept_end;
-            continue;
-        }
-
-        const uint32_t next = pmm_next_kept_memory(mmap_base, mmap_length, page, PMM_BOOT_MAP_LIMIT);
-
-        unmapped += paging_unmap_range(pmm_phys_to_virt(page), (next - page) / PAGE_SIZE, false);
-        page = next;
+        ++restriction.runs_unmapped;
+        restriction.pages_unmapped += paging_unmap_range(pmm_phys_to_virt(first), (end - first) / PAGE_SIZE, false);
     }
-    return unmapped;
+    return restriction;
 }
