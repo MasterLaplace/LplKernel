@@ -972,6 +972,50 @@ KERNEL_TEST(a_processor_below_a_device_step_four_found_absent_is_out_unread)
 }
 
 /**
+ * @brief Step 8 decides the devices above a processor from the top down, and stops at the first one found
+ *        neither present nor functioning: DEVC, present, lies between CPU0 and DEVA, which is absent and
+ *        holds an _INI; DEVC's _STA is never read.
+ */
+KERNEL_TEST(a_device_below_one_found_absent_is_not_read)
+{
+    static const uint32_t identifiers[] = {1u};
+    static const uint8_t absent[] = {0x75u, '\\', 'D', 'S', 'T', 'A', 0xA4u, 0x00u};
+    static const uint8_t present[] = {0x75u, '\\', 'C', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
+    static const uint8_t nothing[] = {0xA3u};
+    static MadeUpAml_t middle;
+    static MadeUpAml_t outer;
+    const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
+    MadeUpAml_t body;
+
+    idle_begin(identifiers, 1u);
+    made_up_aml_name_integer(&idle_aml, "DSTA", 0u);
+    made_up_aml_name_integer(&idle_aml, "CSTA", 0u);
+    made_up_aml_begin(&idle_scope);
+    idle_static(&idle_scope, 1u, &only, 1u);
+    made_up_aml_begin(&middle);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, present, sizeof(present));
+    made_up_aml_method(&middle, "_STA", 0x00u, &body);
+    made_up_aml_processor(&middle, "CPU0", 1u, 0x410u, 6u, &idle_scope);
+    made_up_aml_begin(&outer);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, absent, sizeof(absent));
+    made_up_aml_method(&outer, "_STA", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_method(&outer, "_INI", 0x00u, &body);
+    made_up_aml_device(&outer, "DEVC", &middle);
+    made_up_aml_device(&idle_aml, "DEVA", &outer);
+    if (!idle_run(test))
+        return;
+    kernel_test_check(test, made_up_root_node(&idle_load, "CSTA")->value.payload == 0u,
+                      "DEVC, below DEVA found absent, is never read");
+    kernel_test_check(test, idle_table.slots[0].processor == 0u && idle_counts.processor_idle_absent == 1u,
+                      "CPU0 publishes nothing, counted absent");
+    idle_close(test);
+}
+
+/**
  * @brief A _CST that fails when step 9 evaluates it once more publishes nothing in place of what step 8
  *        published: its _CST notifies its own processor 0x81 and divides by zero on its second run.
  */
