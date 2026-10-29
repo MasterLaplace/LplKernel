@@ -440,15 +440,20 @@ functioning is walked. No `_INI` runs twice. `late_initializations` counts how o
     from two equal ones out of order too, at most 16 times; Linux reads so only on the chipsets it lists, unbounded;
   - only its 24 low bits count, whatever TMR_VAL_EXT says; it must move forward ten times, each within 10,000 reads,
     the ten checks back to back, where Linux waits `udelay(100 * j)` between them;
-  - over three ticks of IRQ0 it must count 3.579545 MHz within 5 %, in one of three measurements, since a tick seen
-    late spoils one; Linux measures 30 ms of PIT channel 2 by polling it, once. A clock that does not step within
-    65,536 reads leaves the timer unused (`no-reference`), and so does a timer that counts half a second before it
-    steps (`ran-ahead`).
+  - from one step of the kernel's clock to the first at least 80 ms later, eight ticks of IRQ0, it must count
+    3.579545 MHz within 5 %, in one of two measurements; Linux measures 30 ms of PIT channel 2 by polling it, once.
+    An IRQ0 edge seen 2 ms late moves a measurement by 2.5 %: an exact timer is still kept, and one 8 % off still
+    refused, where 30 ms or 60 ms would let it through.
 
-  Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which is
-  going back, is `derailed`: the wait finishes on the tick, and so do the later ones. Otherwise, and on a
-  hardware-reduced platform, `Stall` spins on the tick. The boot prints one `[LPLTLM] acpi.timer` line: the state, the
-  port, the rate when it was measured, the reads and the time the checks took, the stalls and their reads.
+  A clock that does not step within 65,536 reads leaves the timer unused (`no-reference`), and so does a timer that
+  counts half a second before it steps (`ran-ahead`): a still clock whose reads, with the timer's, take more than
+  about 7.6 µs a poll reads as `ran-ahead` too, since these two sources cannot tell it from a timer far too fast.
+  Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which
+  is going back, is `derailed`: the wait finishes on the tick, and so do the later ones. A pause of 2.34 s or more
+  between two reads of a wait, half the range, therefore demotes a healthy timer for the rest of the boot, which is
+  accepted: nothing at boot holds a wait off the processor that long. Otherwise, and on a hardware-reduced platform, `Stall` spins on the tick. The boot prints one
+  `[LPLTLM] acpi.timer` line once its AML has run: the state, the port, the rate when it was measured, the reads and
+  the time the checks took, the stalls and their reads.
 - **The switch to ACPI mode** is a routine of the tables layer: SCI_EN read, enables cleared, ACPI_ENABLE written,
   a bounded poll (§3.8 step 0).
 - **The MADT.** Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for an entry whose Enabled flag is

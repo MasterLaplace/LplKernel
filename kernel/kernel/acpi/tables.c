@@ -98,8 +98,8 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_TIMER_ORDERED_TRIES  16u   /**< Triples of reads made before the middle one is kept out of order. */
 #define ACPI_TIMER_RATE_EXACT     1000u /**< The rate of a timer that counts 3.579545 MHz, in thousandths. */
 #define ACPI_TIMER_RATE_TOLERANCE 50u   /**< Thousandths the rate may stray from it: 5 %, as Linux allows. */
-#define ACPI_TIMER_RATE_STEPS     3u    /**< Clock steps a rate is measured over: Linux's 30 ms at 100 Hz. */
-#define ACPI_TIMER_RATE_ATTEMPTS  3u    /**< Rate measurements made at most; the first within tolerance holds. */
+#define ACPI_TIMER_RATE_WINDOW    800000u /**< The host's clock a rate is measured over, at least: 80 ms. */
+#define ACPI_TIMER_RATE_ATTEMPTS  2u      /**< Rate measurements made at most; the first within tolerance holds. */
 #define ACPI_TIMER_REFERENCE_COUNTS                                                                                    \
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ /                                         \
      2u) /**< Counts the timer makes at most while a step of the host's clock is awaited: half a second. */
@@ -743,13 +743,14 @@ static uint8_t acpi_timer_await_step(const AdvancedConfigurationAndPowerInterfac
 }
 
 /**
- * @brief Counts the timer over ACPI_TIMER_RATE_STEPS whole steps of the host's clock, from one move of the
- *        clock to the third after it, against what 3.579545 MHz counts in that time.
+ * @brief Counts the timer from one step of the host's clock to the first step at least
+ *        ACPI_TIMER_RATE_WINDOW later, against what 3.579545 MHz counts in that time: a step seen 2 ms
+ *        late moves the measurement by 2.5 %.
  *
  * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE within
- *         ACPI_TIMER_RATE_TOLERANCE of ACPI_TIMER_RATE_EXACT, WRONG_RATE past it, and the state
- *         acpi_timer_await_step gives when the clock does not move; the ratio in thousandths, rounded, goes
- *         to the timer's rate.
+ *         ACPI_TIMER_RATE_TOLERANCE of ACPI_TIMER_RATE_EXACT, WRONG_RATE past it, the state
+ *         acpi_timer_await_step gives when the clock does not step, and NO_REFERENCE when it goes back; the
+ *         ratio in thousandths, rounded, goes to the timer's rate.
  */
 static uint8_t acpi_timer_measure_rate(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
                                        AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer)
@@ -761,22 +762,19 @@ static uint8_t acpi_timer_measure_rate(const AdvancedConfigurationAndPowerInterf
     uint8_t state = acpi_timer_await_step(host, timer, host->clock_100ns(host->context), &start_clock, &start_count);
 
     clock = start_clock;
-    for (uint32_t step = 0u; step < ACPI_TIMER_RATE_STEPS &&
-                             state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
-         ++step)
+    while (state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE && clock >= start_clock &&
+           clock - start_clock < ACPI_TIMER_RATE_WINDOW)
         state = acpi_timer_await_step(host, timer, clock, &clock, &count);
     if (state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
         return state;
+    if (clock < start_clock)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
 
     const uint64_t expected =
-        (clock > start_clock) ?
-            ((clock - start_clock) * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ) /
-                ACPI_HUNDRED_NANOSECONDS_PER_SECOND :
-            0u;
+        ((clock - start_clock) * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ) /
+        ACPI_HUNDRED_NANOSECONDS_PER_SECOND;
     const uint64_t counted = (count - start_count) & ACPI_TIMER_BITS;
 
-    if (expected == 0u)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
     timer->rate_per_mille = (uint32_t) ((counted * ACPI_TIMER_RATE_EXACT + expected / 2u) / expected);
     if (timer->rate_per_mille < ACPI_TIMER_RATE_EXACT - ACPI_TIMER_RATE_TOLERANCE ||
         timer->rate_per_mille > ACPI_TIMER_RATE_EXACT + ACPI_TIMER_RATE_TOLERANCE)

@@ -206,12 +206,18 @@ typedef enum AdvancedConfigurationAndPowerInterfacePowerManagementTimerState {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_INCONSISTENT = 3, /**< It went back, other than
                                                                                              by a wrap. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE = 4, /**< The host's clock did not
-                                                                                             step, so its rate went
-                                                                                             unchecked. */
+                                                                                             step within 65,536 reads,
+                                                                                             or went back, so its rate
+                                                                                             went unchecked. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD = 5,    /**< It counted half a second
                                                                                              before the host's clock
                                                                                              stepped: it runs far too
-                                                                                             fast, or jumps. */
+                                                                                             fast or jumps, or the clock
+                                                                                             stands still and a read
+                                                                                             of both takes more than
+                                                                                             about 7.6 µs, which these
+                                                                                             two sources cannot tell
+                                                                                             apart. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE = 6,   /**< It ran more than 5 % away
                                                                                              from 3.579545 MHz against
                                                                                              the host's clock, at every
@@ -229,7 +235,7 @@ typedef enum AdvancedConfigurationAndPowerInterfacePowerManagementTimerState {
 typedef struct AdvancedConfigurationAndPowerInterfacePowerManagementTimer {
     uint8_t state;               /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_* state. */
     uint16_t port;               /**< Its I/O port, or 0 when the FADT gives none there. */
-    uint32_t rate_per_mille;     /**< The counts it made over three steps of the host's clock, against the counts
+    uint32_t rate_per_mille;     /**< The counts it made over 80 ms of the host's clock, against the counts
                                       3.579545 MHz makes, in thousandths; 0 when not measured. */
     uint32_t check_reads;        /**< Reads of its port the checks made. */
     uint32_t check_microseconds; /**< Microseconds the checks took, as the host's clock counts them. */
@@ -589,8 +595,8 @@ extern const char *advanced_configuration_and_power_interface_mode_outcome_name(
  *          the chipsets that latch the counter badly; only its 24 low bits are counted, which every
  *          such timer runs, whatever TMR_VAL_EXT says. Then, ten times, it must move within
  *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS reads, forward
- *          or by a wrap. Last, over three steps of the host's clock, it must count 3.579545 MHz within
- *          5 %, in one of three measurements; each step is awaited within
+ *          or by a wrap. Last, from one step of the host's clock to the first at least 80 ms later, it
+ *          must count 3.579545 MHz within 5 %, in one of two measurements; each step is awaited within
  *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS reads of the
  *          clock, and while the timer counts at most half a second.
  *
@@ -623,6 +629,11 @@ extern uint32_t advanced_configuration_and_power_interface_power_management_time
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,
     AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds);
 
+/**
+ * @brief Finds and checks this machine's power management timer, through
+ *        advanced_configuration_and_power_interface_machine_host and the FADT of the boot's directory;
+ *        needs the kernel tick running.
+ */
 extern void advanced_configuration_and_power_interface_power_management_timer_initialize(void);
 
 /**
@@ -631,7 +642,7 @@ extern void advanced_configuration_and_power_interface_power_management_timer_in
  *        advanced_configuration_and_power_interface_machine_host.
  *
  * @param microseconds How long to wait.
- * @return The microseconds waited; 0 unless the boot found the timer usable.
+ * @return The microseconds waited; 0 unless the timer is usable: never found so, or derailed since.
  */
 extern uint32_t advanced_configuration_and_power_interface_power_management_timer_machine_stall(uint32_t microseconds);
 

@@ -7,21 +7,23 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_power_management_timer, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define TIMER_PORT         0x608u      /**< Where the made-up platform's timer lies, as on QEMU's q35. */
-#define TIMER_HERTZ        3579545u    /**< What a timer counts per second, written out apart from the code. */
-#define TIMER_TICK         100000u     /**< A step of the made-up host's clock, 10 ms in units of 100 ns. */
-#define TIMER_ACCESS       1000u       /**< Nanoseconds each read of the made-up host costs. */
-#define TIMER_FAST_ACCESS  100u        /**< Nanoseconds a read costs where a wait's precision is checked. */
-#define TIMER_MILLISECOND  1000000u    /**< A millisecond of the made-up machine, in nanoseconds. */
-#define TIMER_LOW_BITS     0x00FFFFFFu /**< The 24 bits every such timer runs. */
-#define TIMER_ALL_BITS     0xFFFFFFFFu /**< A timer of 32 bits, TMR_VAL_EXT set. */
-#define TIMER_EIGHT_BITS   0x000000FFu /**< A port that decodes only 8 bits of the count. */
-#define TIMER_OUT_OF_ORDER 0x00400000u /**< What a read caught in an increment adds to the count. */
-#define TIMER_NO_EVENT     0u          /**< A read or an edge number that names none. */
-#define TIMER_STUTTER      6u          /**< Port reads a stuttering timer holds each count for: two triples. */
-#define TIMER_WRAP_FIRST   20u /**< Counts before the wrap a timer starts at, fewest: it wraps in the first checks. */
-#define TIMER_WRAP_LAST    60u /**< Most: two checks of reads later, so that one of them sees the wrap inside it. */
-#define TIMER_STATE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_##name
+#define TIMER_PORT          0x608u      /**< Where the made-up platform's timer lies, as on QEMU's q35. */
+#define TIMER_HERTZ         3579545u    /**< What a timer counts per second, written out apart from the code. */
+#define TIMER_TICK          100000u     /**< A step of the made-up host's clock, 10 ms in units of 100 ns. */
+#define TIMER_ACCESS        1000u       /**< Nanoseconds each read of the made-up host costs. */
+#define TIMER_FAST_ACCESS   100u        /**< Nanoseconds a read costs where a wait's precision is checked. */
+#define TIMER_SLOW_ACCESS   10000u      /**< Nanoseconds a read costs on a slow bus, 40 µs a poll. */
+#define TIMER_MATRIX_ACCESS 4000u       /**< Nanoseconds a read costs where many timers are found in a row. */
+#define TIMER_MILLISECOND   1000000u    /**< A millisecond of the made-up machine, in nanoseconds. */
+#define TIMER_LOW_BITS      0x00FFFFFFu /**< The 24 bits every such timer runs. */
+#define TIMER_ALL_BITS      0xFFFFFFFFu /**< A timer of 32 bits, TMR_VAL_EXT set. */
+#define TIMER_EIGHT_BITS    0x000000FFu /**< A port that decodes only 8 bits of the count. */
+#define TIMER_OUT_OF_ORDER  0x00400000u /**< What a read caught in an increment adds to the count. */
+#define TIMER_NO_EVENT      0u          /**< A read or an edge number that names none. */
+#define TIMER_STUTTER       6u          /**< Port reads a stuttering timer holds each count for: two triples. */
+#define TIMER_WRAP_FIRST    20u /**< Counts before the wrap a timer starts at, fewest: it wraps in the first checks. */
+#define TIMER_WRAP_LAST     60u /**< Most: two checks of reads later, so that one of them sees the wrap inside it. */
+#define TIMER_STATE(name)   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_##name
 
 /**
  * @brief A made-up machine whose time moves with each read made of it, its timer counting at its own
@@ -238,7 +240,8 @@ KERNEL_TEST(a_platform_without_a_reachable_timer_has_none_and_reads_no_port)
 /**
  * @brief A timer of 24 bits, and one of 32 bits that crosses 2^24, that count 3.579545 MHz are usable,
  *        their rate a thousand thousandths of it within the 1 µs a read costs, wherever the wrap falls
- *        among the reads of the checks; the checks count their reads, and take three to four ticks.
+ *        among the reads of the checks; the checks count their reads, and last from time 0 to the step of
+ *        the clock 80 ms after the first one, 90 ms.
  */
 KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
 {
@@ -268,8 +271,7 @@ KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
     kernel_test_check(test, timer_found.port == TIMER_PORT, "its port is PM_TMR_BLK's");
     kernel_test_check(test, low_rate >= 999u && low_rate <= 1001u, "its rate is 3.579545 MHz within a read");
     kernel_test_check(test, low_reads == timer_machine.reads, "the checks count every read of the port");
-    kernel_test_check(test, low_microseconds >= 30000u && low_microseconds <= 40000u,
-                      "and take three to four ticks of the clock");
+    kernel_test_check(test, low_microseconds == 90000u, "and last 90 ms of the clock");
     kernel_test_check(test, wide_state == TIMER_STATE(USABLE), "a 32-bit timer that crosses 2^24 is usable");
     kernel_test_measure(test, "rate_per_mille", low_rate);
     kernel_test_measure(test, "check_reads", low_reads);
@@ -277,15 +279,15 @@ KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
 }
 
 /**
- * @brief A step of the clock seen 1 ms late leaves an exact timer usable; one seen 2 ms late spoils the
+ * @brief A step of the clock seen 1 ms late leaves an exact timer usable; one seen 5 ms late spoils the
  *        first measurement only, and the second holds; a timer 6 % fast keeps the wrong rate through
- *        every measurement.
+ *        both measurements.
  */
 KERNEL_TEST(a_tick_seen_late_spoils_one_measurement_not_the_timer)
 {
     uint8_t one_late;
-    uint8_t two_late;
-    uint32_t two_late_rate;
+    uint8_t five_late;
+    uint32_t five_late_rate;
     uint8_t fast;
     uint32_t fast_rate;
 
@@ -295,20 +297,52 @@ KERNEL_TEST(a_tick_seen_late_spoils_one_measurement_not_the_timer)
     one_late = timer_find();
     timer_open(0u);
     timer_machine.late_edge = 1u;
-    timer_machine.late_by = 2u * TIMER_MILLISECOND;
-    two_late = timer_find();
-    two_late_rate = timer_found.rate_per_mille;
+    timer_machine.late_by = 5u * TIMER_MILLISECOND;
+    five_late = timer_find();
+    five_late_rate = timer_found.rate_per_mille;
     timer_open(0u);
     timer_machine.hertz = TIMER_HERTZ * 106ull / 100u;
     fast = timer_find();
     fast_rate = timer_found.rate_per_mille;
 
     kernel_test_check(test, one_late == TIMER_STATE(USABLE), "a tick 1 ms late leaves the timer usable");
-    kernel_test_check(test, two_late == TIMER_STATE(USABLE), "a tick 2 ms late spoils one measurement");
-    kernel_test_check(test, two_late_rate >= 999u && two_late_rate <= 1001u, "and the next one holds");
+    kernel_test_check(test, five_late == TIMER_STATE(USABLE), "a tick 5 ms late spoils one measurement");
+    kernel_test_check(test, five_late_rate >= 999u && five_late_rate <= 1001u, "and the next one holds");
     kernel_test_check(test, fast == TIMER_STATE(WRONG_RATE) && fast_rate >= 1059u && fast_rate <= 1061u,
                       "a timer 6 % fast keeps the wrong rate");
-    kernel_test_measure(test, "two_late_rate", two_late_rate);
+    kernel_test_measure(test, "five_late_rate", five_late_rate);
+}
+
+/**
+ * @brief With one step of the clock seen 1 or 2 ms late at either end of either measurement, no timer
+ *        8 % fast or slow is found usable, and an exact one always is.
+ */
+KERNEL_TEST(one_tick_seen_late_lets_no_timer_eight_percent_off_through)
+{
+    const uint32_t edges[] = {1u, 9u, 10u, 18u};
+    const uint32_t per_hundred[] = {92u, 100u, 108u};
+    uint32_t off_usable = 0u;
+    uint32_t exact_refused = 0u;
+
+    for (uint32_t edge = 0u; edge < sizeof(edges) / sizeof(edges[0]); ++edge)
+        for (uint32_t late = 1u; late <= 2u; ++late)
+            for (uint32_t rate = 0u; rate < sizeof(per_hundred) / sizeof(per_hundred[0]); ++rate)
+            {
+                timer_open(0u);
+                timer_machine.access = TIMER_MATRIX_ACCESS;
+                timer_machine.hertz = TIMER_HERTZ * (uint64_t) per_hundred[rate] / 100u;
+                timer_machine.late_edge = edges[edge];
+                timer_machine.late_by = late * TIMER_MILLISECOND;
+
+                const bool usable = timer_find() == TIMER_STATE(USABLE);
+
+                off_usable += (per_hundred[rate] != 100u && usable) ? 1u : 0u;
+                exact_refused += (per_hundred[rate] == 100u && !usable) ? 1u : 0u;
+            }
+
+    kernel_test_check(test, off_usable == 0u, "no timer 8 % off is found usable");
+    kernel_test_check(test, exact_refused == 0u, "and every exact one is");
+    kernel_test_measure(test, "off_usable", off_usable);
 }
 
 /**
@@ -367,15 +401,17 @@ KERNEL_TEST(a_timer_that_holds_still_goes_back_or_runs_off_rate_is_not_usable)
 }
 
 /**
- * @brief A clock that stands still leaves the rate unchecked once it was read
- *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS times; a timer that
- *        counts half a second before the clock steps, decoded on 8 bits or a hundred times too fast, ran
- *        ahead.
+ * @brief A clock that stands still, read fast, leaves the rate unchecked once it was read
+ *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS times; read slowly,
+ *        it lets the timer count half a second first, and reads as a timer that ran ahead, as one decoded
+ *        on 8 bits or a hundred times too fast does: the timer and the clock alone cannot tell them apart.
  */
-KERNEL_TEST(a_still_clock_and_a_timer_that_runs_ahead_are_told_apart)
+KERNEL_TEST(a_still_clock_reads_as_no_reference_or_ran_ahead_by_the_cost_of_a_read)
 {
     uint8_t still_clock;
     uint64_t still_nanoseconds;
+    uint8_t slow_still_clock;
+    uint64_t slow_still_nanoseconds;
     uint8_t eight_bits;
     uint8_t hundredfold;
 
@@ -384,15 +420,25 @@ KERNEL_TEST(a_still_clock_and_a_timer_that_runs_ahead_are_told_apart)
     still_clock = timer_find();
     still_nanoseconds = timer_machine.nanoseconds;
     timer_open(0u);
+    timer_machine.tick = 0u;
+    timer_machine.access = TIMER_SLOW_ACCESS;
+    slow_still_clock = timer_find();
+    slow_still_nanoseconds = timer_machine.nanoseconds;
+    timer_open(0u);
     timer_machine.bits = TIMER_EIGHT_BITS;
     eight_bits = timer_find();
     timer_open(0u);
     timer_machine.hertz = TIMER_HERTZ * 100ull;
     hundredfold = timer_find();
 
-    kernel_test_check(test, still_clock == TIMER_STATE(NO_REFERENCE), "a clock that stands still: no reference");
+    kernel_test_check(test, still_clock == TIMER_STATE(NO_REFERENCE), "a still clock read fast: no reference");
     kernel_test_check(test, still_nanoseconds < 500ull * TIMER_MILLISECOND,
                       "found within the reads of the clock, before the timer counted half a second");
+    kernel_test_check(test, slow_still_clock == TIMER_STATE(RAN_AHEAD), "a still clock read slowly: ran ahead");
+    kernel_test_check(test,
+                      slow_still_nanoseconds >= 500ull * TIMER_MILLISECOND &&
+                          slow_still_nanoseconds < 1000ull * TIMER_MILLISECOND,
+                      "once the timer counted half a second");
     kernel_test_check(test, eight_bits == TIMER_STATE(RAN_AHEAD), "a timer decoded on 8 bits ran ahead");
     kernel_test_check(test, hundredfold == TIMER_STATE(RAN_AHEAD), "a timer a hundred times too fast ran ahead");
 }
@@ -455,15 +501,18 @@ KERNEL_TEST(a_stall_waits_its_microseconds_on_the_timer)
 
 /**
  * @brief A read caught in an increment does not end a stall early, whether it is the first or the
- *        middle read of a triple; a timer that is not usable is not waited on, and no port is read.
+ *        middle read of a triple, with reads of 100 ns, where the two others are equal, and of 1 µs,
+ *        where they are not; a timer that is not usable is not waited on, and no port is read.
  */
 KERNEL_TEST(a_stall_survives_a_bad_read)
 {
     uint32_t first_glitch_waited;
     uint32_t glitch_waited;
     uint32_t unusable_waited;
+    uint32_t slow_glitch_waited;
     uint64_t first_glitch;
     uint64_t glitch;
+    uint64_t slow_glitch;
     uint32_t reads_before;
 
     timer_open(0u);
@@ -473,6 +522,10 @@ KERNEL_TEST(a_stall_survives_a_bad_read)
     first_glitch = timer_wait(50u, &first_glitch_waited);
     timer_machine.out_of_order = timer_machine.reads + 5u;
     glitch = timer_wait(50u, &glitch_waited);
+    timer_open(0u);
+    (void) timer_find();
+    timer_machine.out_of_order = timer_machine.reads + 5u;
+    slow_glitch = timer_wait(50u, &slow_glitch_waited);
     timer_found.state = TIMER_STATE(STOPPED);
     reads_before = timer_machine.reads;
     unusable_waited =
@@ -481,6 +534,8 @@ KERNEL_TEST(a_stall_survives_a_bad_read)
     kernel_test_check(test, first_glitch >= 50000u && first_glitch_waited >= 50u,
                       "a first read caught in an increment ends nothing early");
     kernel_test_check(test, glitch >= 50000u && glitch_waited >= 50u, "nor does a middle one");
+    kernel_test_check(test, slow_glitch >= 50000u && slow_glitch_waited >= 50u,
+                      "nor a middle one between two unequal reads, at 1 µs a read");
     kernel_test_check(test, timer_machine.host_stalls == 0u, "and neither leans on the host's stall");
     kernel_test_check(test, unusable_waited == 0u && timer_machine.reads == reads_before,
                       "a timer that is not usable is not waited on");
@@ -500,7 +555,7 @@ KERNEL_TEST(a_timer_that_goes_back_during_a_stall_derails)
 
     timer_open(0x00100000u);
     before = timer_find();
-    timer_machine.goes_back_at = timer_machine.reads + 4u;
+    timer_machine.goes_back_at = timer_machine.reads + 16u;
     timer_machine.back_by = 0x2000u;
     elapsed = timer_wait(50u, &waited);
     reads_before = timer_machine.reads;
@@ -509,10 +564,11 @@ KERNEL_TEST(a_timer_that_goes_back_during_a_stall_derails)
 
     kernel_test_check(test, before == TIMER_STATE(USABLE), "usable before it goes back");
     kernel_test_check(test, timer_found.state == TIMER_STATE(DERAILED), "derailed once a stall sees it go back");
-    kernel_test_check(test, elapsed >= 50000u && waited >= 50u && waited <= 51u,
-                      "the stall still lasts 50 µs, and says so");
-    kernel_test_check(test, timer_machine.host_stalls == 1u && timer_machine.host_microseconds <= 50u,
-                      "the host's own stall finishing it");
+    kernel_test_check(test, elapsed >= 50000u && waited == 50u, "the stall still lasts 50 µs, and says so");
+    kernel_test_check(test,
+                      timer_machine.host_stalls == 1u && timer_machine.host_microseconds > 0u &&
+                          timer_machine.host_microseconds < 50u,
+                      "the host's own stall finishing what the timer left");
     kernel_test_check(test, later_waited == 0u && timer_machine.reads == reads_before,
                       "and a later stall reads the timer no more");
     kernel_test_measure(test, "waited_us", waited);
@@ -539,7 +595,7 @@ KERNEL_TEST(a_timer_that_stops_during_a_stall_derails)
     later = timer_wait(50u, &later_waited);
 
     kernel_test_check(test, timer_found.state == TIMER_STATE(DERAILED), "derailed once it stood still");
-    kernel_test_check(test, elapsed >= 200000u && waited >= 200u, "the stall still lasts 200 µs, and says so");
+    kernel_test_check(test, elapsed >= 200000u && waited == 200u, "the stall still lasts 200 µs, and says so");
     kernel_test_check(
         test, stall_reads <= 3u * (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS + 10u),
         "after a bounded number of reads");

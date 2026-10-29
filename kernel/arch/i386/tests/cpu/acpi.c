@@ -250,8 +250,9 @@ static bool acpi_test_firmware_names_a_timer(void)
 }
 
 /**
- * @brief The power management timer the FADT names passes the boot's checks, and the machine host's
- *        stall waits on it about the microseconds asked, not whole ticks: ten stalls of 50 µs let at
+ * @brief The power management timer the FADT names passes the boot's checks, no wait of the boot's AML
+ *        sees it derail, and the machine host's stall waits on it about the microseconds asked, not whole
+ *        ticks: ten stalls of 50 µs let at
  *        most one tick pass, and a stall of two and a half tick periods lets two to four pass; each says
  *        it waited at least what it was asked and less than a tick more.
  */
@@ -267,8 +268,12 @@ KERNEL_TEST(the_machine_host_stall_waits_its_microseconds)
         kernel_test_skip(test, "no tick runs, or the FADT names no power management timer in the I/O space");
         return;
     }
-    kernel_test_check(test, timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE,
+    kernel_test_check(test,
+                      timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE ||
+                          timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED,
                       "the timer the FADT names passes the boot's checks");
+    kernel_test_check(test, timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED,
+                      "and no wait of the boot's AML saw it derail since");
     if (timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
         return;
 
