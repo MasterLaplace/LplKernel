@@ -593,8 +593,8 @@ KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones
 
 /**
  * @brief A table a _REG of step 3 loads gets the _REG of its scope once step 3 is over, and step 3
- *        does not reach its region again; its devices, and those of a table an _INI of step 4 loads,
- *        come after the walk of step 4, which initialises each once when it reaches it (§3.8).
+ *        does not reach its region again; its devices, and those of a table an _INI of step 4 loads, lie
+ *        where step 4 has not reached yet, and step 4 initialises each once when it reaches it (§3.8).
  */
 KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
 {
@@ -766,7 +766,10 @@ static bool load_absent_machine(KernelTest_t *test, uint8_t status, bool loader_
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    return kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
+    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4"))
+        return true;
+    load_close(test);
+    return false;
 }
 
 /**
@@ -811,3 +814,141 @@ KERNEL_TEST(no_initialization_runs_twice)
                       "GONE's, ZDEV's then LATE's _INI each run once, all at step 4");
     load_close(test);
 }
+
+/**
+ * @brief Builds Device (@p first) and Device (@p second) under Device (PARE), present, with an _INI that
+ *        traces 9 in SIBA and one that loads a table in BDEV, then Device (ZDEV), present, tracing 5; the
+ *        table declares Device (LATE), present, tracing 7, in @p scope. Then initialises the namespace.
+ *
+ * @return false, the load closed, when the table was not loaded.
+ */
+static bool load_sibling_machine(KernelTest_t *test, const char *first, const char *second, const char *scope)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static MadeUpAml_t device;
+    static MadeUpAml_t parent;
+    static MadeUpAml_t scope_body;
+
+    load_begin();
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_begin(&scope_body);
+    made_up_aml_device(&scope_body, "LATE", &device);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_scope(&load_inner, scope, &scope_body);
+    made_up_aml_scope(&load_loaded, "PARE", &load_inner);
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&parent);
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        const char *name = (index == 0u) ? first : second;
+
+        made_up_aml_begin(&device);
+        if (strcmp(name, "BDEV") == 0)
+            load_method(&device, "_INI", loads, sizeof(loads));
+        else
+            load_present_initialization(&device, 9u);
+        made_up_aml_device(&parent, name, &device);
+    }
+    made_up_aml_device(&load_aml, "PARE", &parent);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 5u);
+    made_up_aml_device(&load_aml, "ZDEV", &device);
+    if (!load_run(test))
+        return false;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4"))
+        return true;
+    load_close(test);
+    return false;
+}
+
+/**
+ * @brief A device loaded under a sibling step 4 has walked, below the root, is initialised late: the
+ *        lowest node above it and the device step 4 is at is their parent, not the root (§3.8).
+ */
+KERNEL_TEST(a_device_loaded_under_a_sibling_step_four_walked_is_initialised_late)
+{
+    if (!load_sibling_machine(test, "SIBA", "BDEV", "SIBA"))
+        return;
+    kernel_test_check(test, load_integer("TRAC") == 0x975u && load_counts.late_initializations == 1u,
+                      "SIBA's _INI, then LATE's, late, then ZDEV's");
+    load_close(test);
+}
+
+/**
+ * @brief A device loaded under the device whose _INI loads it is left to step 4, which descends into that
+ *        device next: its _INI runs once (§3.8).
+ */
+KERNEL_TEST(a_device_loaded_under_the_loader_runs_its_initialization_once)
+{
+    if (!load_sibling_machine(test, "SIBA", "BDEV", "BDEV"))
+        return;
+    kernel_test_check(test, load_integer("TRAC") == 0x975u && load_counts.late_initializations == 0u,
+                      "SIBA's _INI, then LATE's once, at step 4, then ZDEV's");
+    load_close(test);
+}
+
+/**
+ * @brief Builds Device (NOIN), whose _STA returns 0 and which has no _INI, before or after Device (BDEV),
+ *        whose _INI loads a table declaring Device (\NOIN.LATE), present, tracing 7, then Device (ZDEV),
+ *        present, tracing 5; initialises the namespace and checks the result is the same either way.
+ */
+static void load_skipped_absent(KernelTest_t *test, bool absent_first)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t absent[] = {0xA4u, 0x00u};
+    static MadeUpAml_t device;
+    static MadeUpAml_t loader;
+
+    load_begin();
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_device(&load_inner, "LATE", &device);
+    made_up_aml_scope(&load_loaded, "NOIN", &load_inner);
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_STA", absent, sizeof(absent));
+    made_up_aml_begin(&loader);
+    load_method(&loader, "_INI", loads, sizeof(loads));
+    if (absent_first)
+        made_up_aml_device(&load_aml, "NOIN", &device);
+    made_up_aml_device(&load_aml, "BDEV", &loader);
+    if (!absent_first)
+        made_up_aml_device(&load_aml, "NOIN", &device);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 5u);
+    made_up_aml_device(&load_aml, "ZDEV", &device);
+    if (!load_run(test))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
+    kernel_test_check(test, load_integer("TRAC") == 5u && load_counts.status_evaluations == 2u,
+                      "NOIN's _STA is read once, says absent, and LATE is left alone: only ZDEV's _INI runs");
+    load_close(test);
+}
+
+/**
+ * @brief A device loaded under an absent one without _INI declared after the loader is left alone: step 4
+ *        reads that device's _STA when it reaches it (§3.8).
+ */
+KERNEL_TEST(a_device_loaded_under_an_absent_one_step_four_reaches_later_is_left_alone)
+{
+    load_skipped_absent(test, false);
+}
+
+/**
+ * @brief A device loaded under an absent one without _INI declared before the loader, which step 4 skipped
+ *        without reading its _STA, is left alone all the same: the late initialisation reads that _STA
+ *        (§3.8).
+ */
+KERNEL_TEST(a_device_loaded_under_an_absent_one_step_four_skipped_is_left_alone) { load_skipped_absent(test, true); }

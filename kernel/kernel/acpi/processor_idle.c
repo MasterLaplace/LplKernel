@@ -21,7 +21,7 @@
 #define PROCESSOR_IDLE_ENABLED        0x02u    /**< _STA bit 1: the device is enabled. */
 #define PROCESSOR_IDLE_FUNCTIONING    0x08u    /**< _STA bit 3: the device works. */
 #define PROCESSOR_IDLE_NO_STATUS      0x0Fu    /**< What a device without _STA reads as (ACPI 6.6 §6.3.7). */
-#define PROCESSOR_IDLE_STATUS_READ    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_STATUS_READ
+#define PROCESSOR_IDLE_WALKED         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED
 #define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT
 #define PROCESSOR_IDLE_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define PROCESSOR_IDLE_FOLD_PRIME     0x01000193u /**< FNV-1a's prime. */
@@ -352,14 +352,14 @@ static bool processor_idle_hidden(ProcessorIdleLoad_t *load, ProcessorIdleCounts
 
             if (!processor_idle_is_device(above))
                 continue;
-            if ((above->flags & PROCESSOR_IDLE_STATUS_READ) == 0u)
+            if ((above->flags & PROCESSOR_IDLE_WALKED) == 0u)
                 unread = index;
             else if ((above->flags & PROCESSOR_IDLE_ABSENT) != 0u)
                 return true;
         }
         if (unread == 0u)
             return false;
-        processor_idle_node(load, unread)->flags |= PROCESSOR_IDLE_STATUS_READ;
+        processor_idle_node(load, unread)->flags |= PROCESSOR_IDLE_WALKED;
         if ((processor_idle_status(load, counts, unread) & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
             processor_idle_node(load, unread)->flags |= PROCESSOR_IDLE_ABSENT;
     }
