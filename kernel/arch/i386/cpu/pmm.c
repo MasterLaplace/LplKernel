@@ -35,12 +35,6 @@
 /** @brief Multiboot memory region type: available RAM. */
 #define MMAP_TYPE_AVAILABLE 1
 
-/** @brief Multiboot memory region type: ACPI tables, reclaimable once read. */
-#define MMAP_TYPE_ACPI_RECLAIMABLE 3
-
-/** @brief Multiboot memory region type: ACPI NVS, which firmware keeps across sleep. */
-#define MMAP_TYPE_ACPI_NON_VOLATILE_STORAGE 4
-
 /** @brief Minimum e820 entry payload size (bytes). */
 #define MMAP_MIN_ENTRY_SIZE 20
 
@@ -720,18 +714,8 @@ static bool pmm_next_mmap_entry(const uint8_t *mmap_base, uint32_t mmap_length, 
 }
 
 /**
- * @brief Whether the boot map keeps a region of @p type past the first MiB: usable RAM, and ACPI memory,
- *        which every other mapping of the kernel maps write-back too.
- */
-static bool pmm_boot_map_keeps(uint32_t type)
-{
-    return type == MMAP_TYPE_AVAILABLE || type == MMAP_TYPE_ACPI_RECLAIMABLE ||
-           type == MMAP_TYPE_ACPI_NON_VOLATILE_STORAGE;
-}
-
-/**
  * @brief Where the memory the boot map keeps stops from @p page on: the end of the last whole page of the
- *        RAM or ACPI region that holds @p page whole, the farthest when several do, or @p page when none does.
+ *        usable RAM region that holds @p page whole, the farthest when several do, or @p page when none does.
  */
 static uint32_t pmm_kept_memory_end(const uint8_t *mmap_base, uint32_t mmap_length, uint32_t page)
 {
@@ -743,7 +727,7 @@ static uint32_t pmm_kept_memory_end(const uint8_t *mmap_base, uint32_t mmap_leng
     {
         uint32_t region_start, region_end;
 
-        if (pmm_boot_map_keeps(entry->type) && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
+        if (entry->type == MMAP_TYPE_AVAILABLE && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
             region_start <= page && region_end > end)
             end = region_end;
         offset += sizeof(uint32_t) + entry->size;
@@ -752,7 +736,7 @@ static uint32_t pmm_kept_memory_end(const uint8_t *mmap_base, uint32_t mmap_leng
 }
 
 /**
- * @brief The first page past @p page that a RAM or ACPI region holds whole, or @p limit when none lies below
+ * @brief The first page past @p page that a usable RAM region holds whole, or @p limit when none lies below
  *        it.
  */
 static uint32_t pmm_next_kept_memory(const uint8_t *mmap_base, uint32_t mmap_length, uint32_t page, uint32_t limit)
@@ -765,7 +749,7 @@ static uint32_t pmm_next_kept_memory(const uint8_t *mmap_base, uint32_t mmap_len
     {
         uint32_t region_start, region_end;
 
-        if (pmm_boot_map_keeps(entry->type) && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
+        if (entry->type == MMAP_TYPE_AVAILABLE && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
             region_start > page && region_start < next)
             next = region_start;
         offset += sizeof(uint32_t) + entry->size;

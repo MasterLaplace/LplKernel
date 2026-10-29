@@ -29,10 +29,9 @@ static const uint8_t *boot_map_test_memory_map(uint32_t *out_length)
 }
 
 /**
- * @brief Whether one entry of the memory map, usable RAM (1), ACPI reclaimable (3) or ACPI NVS (4) memory,
- *        holds the whole page at @p page.
+ * @brief Whether one usable RAM entry (type 1) of the memory map holds the whole page at @p page.
  */
-static bool boot_map_test_page_is_memory(uint32_t page)
+static bool boot_map_test_page_is_ram(uint32_t page)
 {
     uint32_t length = 0u;
     const uint8_t *const map = boot_map_test_memory_map(&length);
@@ -42,8 +41,7 @@ static bool boot_map_test_page_is_memory(uint32_t page)
         const MemoryMapEntry_t *const entry = (const MemoryMapEntry_t *) (map + offset);
         const uint64_t end = entry->base_addr + entry->length;
 
-        if ((entry->type == 1u || entry->type == 3u || entry->type == 4u) && entry->base_addr <= page &&
-            end >= (uint64_t) page + PAGE_SIZE)
+        if (entry->type == 1u && entry->base_addr <= page && end >= (uint64_t) page + PAGE_SIZE)
             return true;
         offset += sizeof(uint32_t) + entry->size;
     }
@@ -69,8 +67,8 @@ static bool boot_map_test_direct_entry(uint32_t page, PageTableEntry_t *out_entr
 }
 
 /**
- * @brief A device window on a page below 64 MiB that the memory map calls neither RAM nor ACPI memory never
- *        sits beside a mapping of that page with another memory type in the boot map.
+ * @brief A device window on a page below 64 MiB that the memory map does not call RAM never sits beside a
+ *        mapping of that page with another memory type in the boot map.
  *
  * @details Intel SDM vol. 3, §14.12.4: a page mapped with two memory types is undefined behaviour. The boot
  *          map used to cover 0 to 64 MiB write-back, so the uncached window AML takes on a reserved page there
@@ -92,7 +90,7 @@ KERNEL_TEST(a_device_window_gives_no_page_below_64_mib_a_second_memory_type)
 
     for (uint32_t page = PAGE_SIZE; page < KERNEL_BOOT_MAPPED_END; page += PAGE_SIZE)
     {
-        if (boot_map_test_page_is_memory(page))
+        if (boot_map_test_page_is_ram(page))
             continue;
 
         const uint32_t window = kernel_vmm_map_device_window(page, PAGE_SIZE);
@@ -113,7 +111,7 @@ KERNEL_TEST(a_device_window_gives_no_page_below_64_mib_a_second_memory_type)
 
     kernel_test_measure(test, "pages_checked", checked);
     kernel_test_measure(test, "pages_agreeing", agreeing);
-    kernel_test_check(test, checked != 0u, "the memory map leaves pages below 64 MiB outside RAM and ACPI memory");
+    kernel_test_check(test, checked != 0u, "the memory map leaves pages below 64 MiB outside RAM");
     kernel_test_check(test, refused == 0u, "a window is mapped on each of them");
     kernel_test_check(test, agreeing == checked,
                       "the boot map maps none of them with a memory type other than its device window's");
@@ -122,7 +120,7 @@ KERNEL_TEST(a_device_window_gives_no_page_below_64_mib_a_second_memory_type)
 /**
  * @brief The boot map keeps the first mebibyte, which the kernel reads directly (VGA text, the BIOS data area,
  *        the BIOS area the root pointer is scanned in, the processor trampoline), and past it only the pages the
- *        memory map calls RAM or ACPI memory.
+ *        memory map calls RAM, as Linux maps only RAM past the ISA range.
  */
 KERNEL_TEST(the_boot_map_keeps_the_first_mebibyte_and_only_memory_past_it)
 {
@@ -142,7 +140,7 @@ KERNEL_TEST(the_boot_map_keeps_the_first_mebibyte_and_only_memory_past_it)
     for (uint32_t page = 0u; page < KERNEL_BOOT_MAPPED_END; page += PAGE_SIZE)
     {
         PageTableEntry_t entry;
-        const bool expected = page < BOOT_MAP_TEST_FIRST_MEBIBYTE_END || boot_map_test_page_is_memory(page);
+        const bool expected = page < BOOT_MAP_TEST_FIRST_MEBIBYTE_END || boot_map_test_page_is_ram(page);
         const bool mapped = boot_map_test_direct_entry(page, &entry);
 
         if (mapped)
@@ -157,7 +155,7 @@ KERNEL_TEST(the_boot_map_keeps_the_first_mebibyte_and_only_memory_past_it)
     kernel_test_measure(test, "pages_dropped", dropped);
     kernel_test_measure_hexadecimal(test, "first_wrong_page", first_wrong);
     kernel_test_check(test, wrong == 0u,
-                      "every page below 64 MiB is mapped exactly when it lies in the first MiB, RAM or ACPI memory");
+                      "every page below 64 MiB is mapped exactly when it lies in the first MiB or in RAM");
 }
 
 /**
