@@ -1,0 +1,13 @@
+# Window W3 of the ACPI specification (§7.4): the test the_window_w3_c_states_of_an_intel_and_an_amd_processor, which
+# loads Intel's pattern, a Serialized _CST that patches a package of buffers from NVS fields and returns names, and
+# AMD's static package, initialises the namespace and publishes both processors' C-states; on a debug server kernel
+# (./build.sh --server), the test alone selected so that no other test changes the page allocator it starts from.
+# Checked by tools/instructions.sh --budget tools/acpi-cst.debug.budget kernel/lpl.kernel; a change that moves the
+# evaluation of _CST records the new counts. The pages the simulated host and the load take (buddy_insert_order,
+# memset) count 574,516 of them.
+inside=kernel_test_body_the_window_w3_c_states_of_an_intel_and_an_amd_processor
+times=1
+append=lpl.test=advanced_configuration_and_power_interface_processor_idle.the_window_w3_c_states_of_an_intel_and_an_amd_processor
+instructions=903322
+accesses=390620
+tolerance=1
