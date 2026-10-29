@@ -13,6 +13,7 @@ KERNEL_TEST_SUITE(boot_map, KERNEL_TEST_STAGE_INITIALIZATION);
 #define BOOT_MAP_TEST_FIRST_MEBIBYTE_END 0x00100000u /**< The end of the first MiB, which the boot map keeps. */
 #define BOOT_MAP_TEST_BOOT_MAP_END       0x04000000u /**< The end of what boot.S maps, 64 MiB. */
 #define BOOT_MAP_TEST_TOP_PAGE           0xFFFFF000u /**< The top page below 4 GiB, the firmware's on every PC. */
+#define BOOT_MAP_TEST_READ_BACK_OFFSET   0x123u      /**< Where in that page the read-back window starts. */
 #define BOOT_MAP_TEST_KERNEL_MAP_END                                                                                   \
     (KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE) /**< The end of the kernel's map of physical memory, 256 MiB. */
 #define BOOT_MAP_TEST_BOOT_MAP_PAGES    (BOOT_MAP_TEST_BOOT_MAP_END / PAGE_SIZE) /**< Pages boot.S maps. */
@@ -110,6 +111,32 @@ static const BootMapTestEntry_t boot_map_test_size_past_the_map[] = {
 };
 static BootMapTestEntry_t boot_map_test_alternating[BOOT_MAP_TEST_ALTERNATING_COUNT];
 
+static const BootMapTestMap_t boot_map_test_maps[] = {
+    {NULL,                               0u                                                            },
+    {boot_map_test_no_entry,             0u                                                            },
+    {boot_map_test_no_entry,             1u                                                            },
+    {boot_map_test_q35_64,               sizeof(boot_map_test_q35_64) / sizeof(boot_map_test_q35_64[0])},
+    {boot_map_test_q35_48,               sizeof(boot_map_test_q35_48) / sizeof(boot_map_test_q35_48[0])},
+    {boot_map_test_ram_past_64_mib,      2u                                                            },
+    {boot_map_test_overlapping_ram,      2u                                                            },
+    {boot_map_test_ram_under_reserved,   2u                                                            },
+    {boot_map_test_mid_page_bounds,      3u                                                            },
+    {boot_map_test_split_mid_page,       2u                                                            },
+    {boot_map_test_crossing_4_gib,       1u                                                            },
+    {boot_map_test_ending_at_4_gib,      1u                                                            },
+    {boot_map_test_above_4_gib_first,    2u                                                            },
+    {boot_map_test_alternating,          BOOT_MAP_TEST_ALTERNATING_COUNT                               },
+    {boot_map_test_unsorted_acpi,        4u                                                            },
+    {boot_map_test_extended_size,        1u                                                            },
+    {boot_map_test_corrupt_size,         3u                                                            },
+    {boot_map_test_low_ram_only,         1u                                                            },
+    {boot_map_test_ram_in_the_last_page, 2u                                                            },
+    {boot_map_test_size_past_the_map,    1u                                                            },
+};
+#define BOOT_MAP_TEST_MAP_COUNT    (sizeof(boot_map_test_maps) / sizeof(boot_map_test_maps[0])) /**< Made-up maps. */
+#define BOOT_MAP_TEST_LOW_RAM_ONLY 17u /**< The index of the map with RAM below 1 MiB only. */
+#define BOOT_MAP_TEST_Q35_64       3u  /**< The index of q35's map with 64 MiB. */
+
 static uint8_t boot_map_test_map_bytes[BOOT_MAP_TEST_MAP_BYTES];
 static uint32_t boot_map_test_dropped[BOOT_MAP_TEST_BOOT_MAP_PAGES / 32u];
 
@@ -158,6 +185,32 @@ static bool boot_map_test_page_is_ram(uint32_t page)
     const uint8_t *const map = boot_map_test_memory_map(&length);
 
     return boot_map_test_map_holds_ram(map, length, page);
+}
+
+/**
+ * @brief Fills the made-up map that alternates RAM and reserved entries: 256 KiB every 512 KiB from 1 MiB, one in
+ *        three reserved.
+ */
+static void boot_map_test_fill_alternating(void)
+{
+    for (uint32_t index = 0u; index < BOOT_MAP_TEST_ALTERNATING_COUNT; ++index)
+        boot_map_test_alternating[index] =
+            (BootMapTestEntry_t){0x100000u + (uint64_t) index * 0x80000u, 0x40000u, index % 3u ? 1u : 2u, 20u};
+}
+
+/**
+ * @brief Whether, by the test's own reading of @p map, every page of [@p first, @p end) between 1 and 64 MiB lies in
+ *        RAM: no map, or an empty one, holds everything.
+ */
+static bool boot_map_test_map_holds_range(const uint8_t *map, uint32_t length, uint32_t first, uint32_t end)
+{
+    for (uint32_t page = first & ~(PAGE_SIZE - 1u);
+         map && length != 0u && page < end && page < BOOT_MAP_TEST_BOOT_MAP_END; page += PAGE_SIZE)
+    {
+        if (page >= BOOT_MAP_TEST_FIRST_MEBIBYTE_END && !boot_map_test_map_holds_ram(map, length, page))
+            return false;
+    }
+    return true;
 }
 
 /**
@@ -239,8 +292,13 @@ static int boot_map_test_window_agrees(uint32_t page)
     PageTableEntry_t window_entry;
     PageTableEntry_t direct_entry;
 
-    if (window == 0u || !paging_get_page_table_entry(window, &window_entry))
+    if (window == 0u)
         return -1;
+    if (!paging_get_page_table_entry(window, &window_entry))
+    {
+        kernel_vmm_unmap_device_window(window, PAGE_SIZE);
+        return -1;
+    }
 
     const bool direct = boot_map_test_direct_entry(page, &direct_entry);
     const bool agrees =
@@ -330,40 +388,15 @@ KERNEL_TEST(no_page_below_256_mib_gets_a_second_memory_type_from_a_device_window
  */
 KERNEL_TEST(the_holes_of_made_up_memory_maps_are_the_pages_no_ram_holds)
 {
-    for (uint32_t index = 0u; index < BOOT_MAP_TEST_ALTERNATING_COUNT; ++index)
-        boot_map_test_alternating[index] =
-            (BootMapTestEntry_t){0x100000u + (uint64_t) index * 0x80000u, 0x40000u, index % 3u ? 1u : 2u, 20u};
-
-    const BootMapTestMap_t maps[] = {
-        {NULL,                               0u                                                            },
-        {boot_map_test_no_entry,             0u                                                            },
-        {boot_map_test_no_entry,             1u                                                            },
-        {boot_map_test_q35_64,               sizeof(boot_map_test_q35_64) / sizeof(boot_map_test_q35_64[0])},
-        {boot_map_test_q35_48,               sizeof(boot_map_test_q35_48) / sizeof(boot_map_test_q35_48[0])},
-        {boot_map_test_ram_past_64_mib,      2u                                                            },
-        {boot_map_test_overlapping_ram,      2u                                                            },
-        {boot_map_test_ram_under_reserved,   2u                                                            },
-        {boot_map_test_mid_page_bounds,      3u                                                            },
-        {boot_map_test_split_mid_page,       2u                                                            },
-        {boot_map_test_crossing_4_gib,       1u                                                            },
-        {boot_map_test_ending_at_4_gib,      1u                                                            },
-        {boot_map_test_above_4_gib_first,    2u                                                            },
-        {boot_map_test_alternating,          BOOT_MAP_TEST_ALTERNATING_COUNT                               },
-        {boot_map_test_unsorted_acpi,        4u                                                            },
-        {boot_map_test_extended_size,        1u                                                            },
-        {boot_map_test_corrupt_size,         3u                                                            },
-        {boot_map_test_low_ram_only,         1u                                                            },
-        {boot_map_test_ram_in_the_last_page, 2u                                                            },
-        {boot_map_test_size_past_the_map,    1u                                                            },
-    };
+    boot_map_test_fill_alternating();
     uint32_t agreeing = 0u;
     uint32_t dropped = 0u;
     uint32_t first_disagreeing = 0u;
 
-    for (uint32_t index = 0u; index < sizeof(maps) / sizeof(maps[0]); ++index)
+    for (uint32_t index = 0u; index < BOOT_MAP_TEST_MAP_COUNT; ++index)
     {
-        const uint32_t length = boot_map_test_lay_out(&maps[index]);
-        const uint8_t *const map = maps[index].entries ? boot_map_test_map_bytes : NULL;
+        const uint32_t length = boot_map_test_lay_out(&boot_map_test_maps[index]);
+        const uint8_t *const map = boot_map_test_maps[index].entries ? boot_map_test_map_bytes : NULL;
         bool agrees = boot_map_test_mark_holes(map, length);
 
         for (uint32_t page = 0u; agrees && page < BOOT_MAP_TEST_BOOT_MAP_END; page += PAGE_SIZE)
@@ -381,11 +414,11 @@ KERNEL_TEST(the_holes_of_made_up_memory_maps_are_the_pages_no_ram_holds)
             first_disagreeing = index + 1u;
     }
 
-    kernel_test_measure(test, "maps", sizeof(maps) / sizeof(maps[0]));
+    kernel_test_measure(test, "maps", BOOT_MAP_TEST_MAP_COUNT);
     kernel_test_measure(test, "maps_agreeing", agreeing);
     kernel_test_measure(test, "pages_dropped", dropped);
     kernel_test_measure(test, "first_disagreeing_map_one_based", first_disagreeing);
-    kernel_test_check(test, agreeing == sizeof(maps) / sizeof(maps[0]),
+    kernel_test_check(test, agreeing == BOOT_MAP_TEST_MAP_COUNT,
                       "each map's holes are its pages between 1 and 64 MiB that no RAM entry holds whole");
 }
 
@@ -455,9 +488,83 @@ KERNEL_TEST(a_device_window_past_the_kernels_map_is_uncached)
     const bool mapped = window != 0u && paging_get_page_table_entry(window, &entry);
 
     kernel_test_check(test, mapped, "a window is mapped on the top page below 4 GiB");
-    if (!mapped)
+    if (mapped)
+        kernel_test_check(test,
+                          entry.cache_disable == 1u && entry.write_through == 1u && entry.page_attribute_table == 0u,
+                          "it is uncached");
+    if (window != 0u)
+        kernel_vmm_unmap_device_window(window, PAGE_SIZE);
+}
+
+/**
+ * @brief The physical address of a window above 2 GiB reads back through paging_get_physical_address, its offset
+ *        within the page kept: the frame's 20 bits are shifted as an unsigned value, never as an int that 0x80000 or
+ *        more overflows.
+ */
+KERNEL_TEST(a_window_above_2_gib_reads_back_its_physical_address)
+{
+    const uint32_t physical = BOOT_MAP_TEST_TOP_PAGE + BOOT_MAP_TEST_READ_BACK_OFFSET;
+    const uint32_t window = kernel_vmm_map_device_window(physical, sizeof(uint32_t));
+    uint32_t read_back = 0u;
+
+    kernel_test_check(test, window != 0u, "a window is mapped on the top page below 4 GiB");
+    if (window == 0u)
         return;
-    kernel_test_check(test, entry.cache_disable == 1u && entry.write_through == 1u && entry.page_attribute_table == 0u,
-                      "it is uncached");
-    kernel_vmm_unmap_device_window(window, PAGE_SIZE);
+    kernel_test_check(test, paging_get_physical_address(window, &read_back), "its address is mapped");
+    kernel_test_measure_hexadecimal(test, "read_back", read_back);
+    kernel_test_check(test, read_back == physical, "it reads back 0xFFFFF123");
+    kernel_vmm_unmap_device_window(window, sizeof(uint32_t));
+}
+
+/**
+ * @brief On the made-up memory maps, physical_memory_manager_boot_map_holds says a range is held exactly when no page
+ *        of it between 1 and 64 MiB lies outside RAM, as the test reads each map; so a map that leaves the kernel's
+ *        image outside RAM, RAM below 1 MiB only, is refused, and q35's with 64 MiB is not.
+ */
+KERNEL_TEST(a_memory_map_that_leaves_the_kernel_outside_ram_does_not_hold_it)
+{
+    const uint32_t kernel_end = KERNEL_VIRTUAL_END - KERNEL_VIRTUAL_BASE;
+    const uint32_t ranges[][2] = {
+        {BOOT_MAP_TEST_FIRST_MEBIBYTE_END, kernel_end                      },
+        {0x80000u,                         BOOT_MAP_TEST_FIRST_MEBIBYTE_END},
+        {0x2000000u,                       0x2100000u                      },
+        {0x3FDE000u,                       0x3FE0001u                      },
+        {0x1100000u,                       0x1100800u                      },
+        {0x3FFF800u,                       0x4000800u                      },
+        {0x4000000u,                       0x5000000u                      },
+        {0x2000000u,                       0x2000000u                      },
+    };
+    uint32_t checked = 0u;
+    uint32_t agreeing = 0u;
+    uint32_t refusing = 0u;
+    bool low_ram_only_refuses_the_kernel = false;
+    bool q35_holds_the_kernel = false;
+
+    boot_map_test_fill_alternating();
+    for (uint32_t index = 0u; index < BOOT_MAP_TEST_MAP_COUNT; ++index)
+    {
+        const uint32_t length = boot_map_test_lay_out(&boot_map_test_maps[index]);
+        const uint8_t *const map = boot_map_test_maps[index].entries ? boot_map_test_map_bytes : NULL;
+
+        for (uint32_t range = 0u; range < sizeof(ranges) / sizeof(ranges[0]); ++range)
+        {
+            const bool holds = physical_memory_manager_boot_map_holds(map, length, ranges[range][0], ranges[range][1]);
+
+            ++checked;
+            agreeing += holds == boot_map_test_map_holds_range(map, length, ranges[range][0], ranges[range][1]);
+            refusing += !holds;
+            if (range == 0u && index == BOOT_MAP_TEST_LOW_RAM_ONLY)
+                low_ram_only_refuses_the_kernel = !holds;
+            if (range == 0u && index == BOOT_MAP_TEST_Q35_64)
+                q35_holds_the_kernel = holds;
+        }
+    }
+
+    kernel_test_measure(test, "ranges_checked", checked);
+    kernel_test_measure(test, "ranges_agreeing", agreeing);
+    kernel_test_measure(test, "ranges_refused", refusing);
+    kernel_test_check(test, agreeing == checked, "each answer is the test's own reading of the map");
+    kernel_test_check(test, low_ram_only_refuses_the_kernel,
+                      "a map with RAM below 1 MiB only does not hold the kernel");
+    kernel_test_check(test, q35_holds_the_kernel, "q35's map with 64 MiB holds the kernel");
 }
