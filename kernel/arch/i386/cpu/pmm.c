@@ -35,6 +35,12 @@
 /** @brief Multiboot memory region type: available RAM. */
 #define MMAP_TYPE_AVAILABLE 1
 
+/** @brief Multiboot memory region type: ACPI tables, reclaimable once read. */
+#define MMAP_TYPE_ACPI_RECLAIMABLE 3
+
+/** @brief Multiboot memory region type: ACPI NVS, which firmware keeps across sleep. */
+#define MMAP_TYPE_ACPI_NON_VOLATILE_STORAGE 4
+
 /** @brief Minimum e820 entry payload size (bytes). */
 #define MMAP_MIN_ENTRY_SIZE 20
 
@@ -713,6 +719,60 @@ static bool pmm_next_mmap_entry(const uint8_t *mmap_base, uint32_t mmap_length, 
     return true;
 }
 
+/**
+ * @brief Whether the boot map keeps a region of @p type past the first MiB: usable RAM, and ACPI memory,
+ *        which every other mapping of the kernel maps write-back too.
+ */
+static bool pmm_boot_map_keeps(uint32_t type)
+{
+    return type == MMAP_TYPE_AVAILABLE || type == MMAP_TYPE_ACPI_RECLAIMABLE ||
+           type == MMAP_TYPE_ACPI_NON_VOLATILE_STORAGE;
+}
+
+/**
+ * @brief Where the memory the boot map keeps stops from @p page on: the end of the last whole page of the
+ *        RAM or ACPI region that holds @p page whole, the farthest when several do, or @p page when none does.
+ */
+static uint32_t pmm_kept_memory_end(const uint8_t *mmap_base, uint32_t mmap_length, uint32_t page)
+{
+    uint32_t end = page;
+    uint32_t offset = 0u;
+    MemoryMapEntry_t *entry = NULL;
+
+    while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
+    {
+        uint32_t region_start, region_end;
+
+        if (pmm_boot_map_keeps(entry->type) && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
+            region_start <= page && region_end > end)
+            end = region_end;
+        offset += sizeof(uint32_t) + entry->size;
+    }
+    return end;
+}
+
+/**
+ * @brief The first page past @p page that a RAM or ACPI region holds whole, or @p limit when none lies below
+ *        it.
+ */
+static uint32_t pmm_next_kept_memory(const uint8_t *mmap_base, uint32_t mmap_length, uint32_t page, uint32_t limit)
+{
+    uint32_t next = limit;
+    uint32_t offset = 0u;
+    MemoryMapEntry_t *entry = NULL;
+
+    while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
+    {
+        uint32_t region_start, region_end;
+
+        if (pmm_boot_map_keeps(entry->type) && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
+            region_start > page && region_start < next)
+            next = region_start;
+        offset += sizeof(uint32_t) + entry->size;
+    }
+    return next;
+}
+
 void physical_memory_manager_page_frame_free(uint32_t phys_addr)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
@@ -987,4 +1047,30 @@ void physical_memory_manager_extend_mapping(void)
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     buddy_population_in_progress = false;
 #endif
+}
+
+uint32_t physical_memory_manager_restrict_boot_mapping(void)
+{
+    uint8_t *mmap_base = NULL;
+    uint32_t mmap_length = 0u;
+    uint32_t unmapped = 0u;
+
+    if (!pmm_get_multiboot_mmap(&mmap_base, &mmap_length))
+        return 0u;
+    for (uint32_t page = PMM_LOW_MEMORY_LIMIT; page < PMM_BOOT_MAP_LIMIT;)
+    {
+        const uint32_t kept_end = pmm_kept_memory_end(mmap_base, mmap_length, page);
+
+        if (kept_end > page)
+        {
+            page = kept_end;
+            continue;
+        }
+
+        const uint32_t next = pmm_next_kept_memory(mmap_base, mmap_length, page, PMM_BOOT_MAP_LIMIT);
+
+        unmapped += paging_unmap_range(pmm_phys_to_virt(page), (next - page) / PAGE_SIZE, false);
+        page = next;
+    }
+    return unmapped;
 }

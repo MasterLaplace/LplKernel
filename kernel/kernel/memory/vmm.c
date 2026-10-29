@@ -47,11 +47,35 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
 }
 
 /**
+ * @brief The entry @p frame gets in a window: @p pte_flags, with the memory type bits of the kernel's map
+ *        of physical memory when that map holds the frame, so that no page has two memory types (Intel SDM
+ *        vol. 3, §14.12.4).
+ *
+ * @details That map keeps the first MiB write-back, as Linux keeps the ISA range, and past it only RAM and
+ *          ACPI memory (physical_memory_manager_restrict_boot_mapping): a window there is write-back too,
+ *          and the MTRRs decide its effective memory type.
+ */
+static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t pte_flags)
+{
+    PageTableEntry_t direct;
+
+    if (frame >= KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE ||
+        !paging_get_page_table_entry(frame + KERNEL_VIRTUAL_BASE, &direct) ||
+        ((uint32_t) direct.page_frame_base << 12u) != frame)
+        return pte_flags;
+    pte_flags.write_through = direct.write_through;
+    pte_flags.cache_disable = direct.cache_disable;
+    pte_flags.page_attribute_table = direct.page_attribute_table;
+    return pte_flags;
+}
+
+/**
  * @brief Maps the frames under @p size bytes from @p physical_base into a free run of kernel pages.
  *
  * @param physical_base Physical address of the window's first byte.
  * @param size          Window length in bytes.
- * @param pte_flags     The flags every page of the window gets.
+ * @param pte_flags     The flags every page of the window gets, but the memory type of a frame the kernel's
+ *                      map of physical memory holds (vmm_window_page_flags).
  * @return The virtual address of @p physical_base, its offset within its page kept, or 0 when the
  *         window's last byte would lie past 4 GiB, no run is free or a page cannot be mapped; the run
  *         is then given back, and no frame freed.
@@ -74,7 +98,9 @@ static uint32_t vmm_map_window(uint32_t physical_base, uint32_t size, PageTableE
 
     for (uint32_t i = 0u; i < page_count; ++i)
     {
-        if (!paging_map_page(virt_start + i * PAGE_SIZE, first_frame + i * PAGE_SIZE, pde_flags, pte_flags))
+        const uint32_t frame = first_frame + i * PAGE_SIZE;
+
+        if (!paging_map_page(virt_start + i * PAGE_SIZE, frame, pde_flags, vmm_window_page_flags(frame, pte_flags)))
         {
             vmm_release(virt_start, page_count, i, false);
             return 0u;

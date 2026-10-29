@@ -9,11 +9,13 @@ void write_pmm_strategy_info(Serial_t *serial)
     serial_write_string(serial, "\n");
 }
 
-void write_pmm_pass_1_info(Serial_t *serial)
+void write_pmm_pass_1_info(Serial_t *serial, uint32_t boot_map_pages_unmapped)
 {
     serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: PMM pass 1 (0-64MB) ready: ");
     serial_write_int(serial, (int32_t) physical_memory_manager_get_free_page_count());
-    serial_write_string(serial, " pages free\n");
+    serial_write_string(serial, " pages free, ");
+    serial_write_int(serial, (int32_t) boot_map_pages_unmapped);
+    serial_write_string(serial, " pages neither RAM nor ACPI memory unmapped from the boot map\n");
 }
 
 void write_pmm_pass_2_start_info(Serial_t *serial)

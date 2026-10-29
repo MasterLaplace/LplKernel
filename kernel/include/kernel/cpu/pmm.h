@@ -51,6 +51,24 @@
 extern void physical_memory_manager_initialize(void);
 
 /**
+ * @brief Unmaps from the boot map, past its first MiB, every page that no usable RAM or ACPI region of
+ *        the Multiboot memory map holds whole.
+ *
+ * @details boot.S maps 0 to 64 MiB write-back before the memory map is read, device memory, reserved
+ *          ranges and holes included; an uncached window on such a page would then alias a write-back
+ *          one, which Intel SDM vol. 3, §14.12.4 calls undefined. The first MiB stays, as Linux keeps
+ *          the ISA range, since the kernel reads VGA text, the BIOS data area and the BIOS area through
+ *          it; a window there takes its write-back type (kernel_vmm_map_device_window). RAM stays for
+ *          the allocators, ACPI memory because every mapping of it is write-back. Without a memory map
+ *          nothing is unmapped.
+ *
+ * @note Called once, after physical_memory_manager_initialize() and before any window is mapped or any
+ *       other processor starts.
+ * @return The pages unmapped.
+ */
+extern uint32_t physical_memory_manager_restrict_boot_mapping(void);
+
+/**
  * @brief Allocate one physical 4 KB page.
  *
  * @return Physical address of the allocated page (4 KB aligned),

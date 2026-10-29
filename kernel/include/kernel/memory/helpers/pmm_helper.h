@@ -25,8 +25,18 @@
 
 #include <kernel/drivers/serial.h>
 
+#include <stdint.h>
+
 extern void write_pmm_strategy_info(Serial_t *serial);
-extern void write_pmm_pass_1_info(Serial_t *serial);
+
+/**
+ * @brief Reports the first pass of the physical memory manager: the pages it freed, and those it unmapped
+ *        from the boot map.
+ *
+ * @param serial                   The port the report goes to.
+ * @param boot_map_pages_unmapped  What physical_memory_manager_restrict_boot_mapping returned.
+ */
+extern void write_pmm_pass_1_info(Serial_t *serial, uint32_t boot_map_pages_unmapped);
 extern void write_pmm_pass_2_start_info(Serial_t *serial);
 extern void write_pmm_ready_info(Serial_t *serial);
 extern void write_pmm_buddy_info(Serial_t *serial);

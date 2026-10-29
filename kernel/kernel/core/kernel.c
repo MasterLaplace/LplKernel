@@ -344,7 +344,7 @@ __attribute__((constructor)) void kernel_initialize(void)
     serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: initializing PMM...\n");
     write_pmm_strategy_info(&com1);
     physical_memory_manager_initialize();
-    write_pmm_pass_1_info(&com1);
+    write_pmm_pass_1_info(&com1, physical_memory_manager_restrict_boot_mapping());
     kernel_splash_update("Physical Memory Manager Pass 1");
 
     advanced_configuration_and_power_interface_madt_initialize();
