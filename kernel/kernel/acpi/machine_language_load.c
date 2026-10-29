@@ -450,9 +450,15 @@ static uint8_t machine_language_declared_type(uint32_t opcode)
  */
 static bool machine_language_declares_scope(uint32_t opcode)
 {
-    return machine_language_declared_type(opcode) != 0xFFu &&
-           (advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags &
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_OPENS_SCOPE) != 0u;
+    switch (opcode)
+    {
+    case MACHINE_LANGUAGE_OPCODE(DEVICE):
+    case MACHINE_LANGUAGE_OPCODE(THERMAL_ZONE):
+    case MACHINE_LANGUAGE_OPCODE(PROCESSOR):
+    case MACHINE_LANGUAGE_OPCODE(POWER_RESOURCE):
+    case MACHINE_LANGUAGE_OPCODE(METHOD): return true;
+    default: return false;
+    }
 }
 
 /**
