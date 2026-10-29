@@ -299,7 +299,7 @@ KERNEL_TEST(a_low_x2apic_id_counts_when_no_local_apic_names_a_processor)
 
 /**
  * @brief An Online Capable local APIC entry names a processor that can run, so an x2APIC ID below 0xFF
- *        beside it names none, as Linux decides.
+ *        beside it names none, as Linux decides; an x2APIC ID of 0xFF still names one.
  */
 KERNEL_TEST(an_online_capable_local_apic_makes_a_low_x2apic_id_name_none)
 {
@@ -308,13 +308,15 @@ KERNEL_TEST(an_online_capable_local_apic_makes_a_low_x2apic_id_name_none)
     made_up_madt_local_apic(&madt, 1u, 4u, MADE_UP_MADT_ONLINE);
     made_up_madt_local_x2apic(&madt, 0x300u, 0x10u, MADE_UP_MADT_ENABLED);
     made_up_madt_local_x2apic(&madt, 0x301u, 0x100u, MADE_UP_MADT_ENABLED);
+    made_up_madt_local_x2apic(&madt, 0x302u, 0xFFu, MADE_UP_MADT_ENABLED);
 
     const bool read =
         advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
 
     kernel_test_check(test,
-                      read && made_up_madt_state.processor_count == 1u && made_up_madt_slot_is(0u, 0x301u, 0x100u),
-                      "only the x2APIC ID of 0x100 gets a slot");
+                      read && made_up_madt_state.processor_count == 2u && made_up_madt_slot_is(0u, 0x301u, 0x100u) &&
+                          made_up_madt_slot_is(1u, 0x302u, 0xFFu),
+                      "the x2APIC IDs of 0x100 and 0xFF get a slot each");
     kernel_test_check(test, made_up_madt_state.invalid_count == 1u, "the x2APIC ID of 0x10 is counted invalid");
     kernel_test_check(test, made_up_madt_state.online_capable_count == 1u, "the local APIC entry is counted");
 }
@@ -345,21 +347,21 @@ KERNEL_TEST(an_entry_not_enabled_is_counted_by_its_flags_whatever_its_identifier
 }
 
 /**
- * @brief An entry of a type the reader reads but shorter than that type gives nothing and is counted
- *        apart from the types not read, since it loses a processor or an interrupt line; the entries
- *        after it are still read.
+ * @brief An entry of a type the reader reads but one byte shorter than that type gives nothing and is
+ *        counted apart from the types not read, since it loses a processor, an interrupt line or the
+ *        local APIC address; the entries after it are still read.
  */
 KERNEL_TEST(an_entry_shorter_than_its_type_is_counted_apart)
 {
     MadeUpMadt_t madt = made_up_madt_begin();
 
-    (void) made_up_madt_entry(&madt, 0x0u, 6u);
-    (void) made_up_madt_entry(&madt, 0x1u, 8u);
-    (void) made_up_madt_entry(&madt, 0x2u, 8u);
-    (void) made_up_madt_entry(&madt, 0x4u, 4u);
-    (void) made_up_madt_entry(&madt, 0x5u, 8u);
-    (void) made_up_madt_entry(&madt, 0x9u, 12u);
-    (void) made_up_madt_entry(&madt, 0xAu, 8u);
+    (void) made_up_madt_entry(&madt, 0x0u, 7u);
+    (void) made_up_madt_entry(&madt, 0x1u, 11u);
+    (void) made_up_madt_entry(&madt, 0x2u, 9u);
+    (void) made_up_madt_entry(&madt, 0x4u, 5u);
+    (void) made_up_madt_entry(&madt, 0x5u, 11u);
+    (void) made_up_madt_entry(&madt, 0x9u, 15u);
+    (void) made_up_madt_entry(&madt, 0xAu, 11u);
     (void) made_up_madt_entry(&madt, MADE_UP_MADT_NOT_A_TABLE, 6u);
     made_up_madt_local_apic(&madt, 7u, 3u, MADE_UP_MADT_ENABLED);
 
