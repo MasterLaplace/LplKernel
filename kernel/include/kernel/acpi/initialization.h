@@ -136,6 +136,20 @@ extern void advanced_configuration_and_power_interface_initialize_namespace(
     struct AdvancedConfigurationAndPowerInterfaceProcessorIdleTable *out_idle);
 
 /**
+ * @brief Whether no device, processor or thermal zone above @p index is absent, deciding first, from the
+ *        top down and as step 4 does, the presence of those no walk decided yet (§3.8): step 8 and the late
+ *        initialisation share these decisions, so that each device's _STA is read once.
+ *
+ * @param load           The load.
+ * @param initialization The counts the sequence keeps, the _STA evaluations among them.
+ * @param index          The node whose ancestors are decided.
+ * @return false when one of them is neither present nor functioning.
+ */
+extern bool advanced_configuration_and_power_interface_initialization_present_above(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t index);
+
+/**
  * @brief Runs the late initialisation of the tables Load and LoadTable added since the last one (§3.8),
  *        once step 4 is over: what an evaluation of _CST in step 8 or step 9 loaded. Nothing runs when no
  *        table was added.

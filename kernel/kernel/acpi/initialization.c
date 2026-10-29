@@ -846,6 +846,13 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     advanced_configuration_and_power_interface_processor_idle_publish(load, machine, out_initialization, out_idle);
 }
 
+bool advanced_configuration_and_power_interface_initialization_present_above(InitializationLoad_t *load,
+                                                                             Initialization_t *initialization,
+                                                                             uint32_t index)
+{
+    return !initialization_under_absent(load, index) && initialization_decide_above(load, initialization, index);
+}
+
 void advanced_configuration_and_power_interface_initialization_settle(InitializationLoad_t *load,
                                                                       Initialization_t *initialization)
 {
