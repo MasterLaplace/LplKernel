@@ -78,16 +78,18 @@ bool kernel_vmm_reserve_at(void *virt, uint32_t page_count);
 void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
 
 /**
- * @brief Maps a device's memory window into a free run of kernel virtual pages, uncached.
+ * @brief Maps a device's memory window into a free run of kernel virtual pages, writable, with the
+ *        memory type its frames decide: uncached for a device's registers.
  *
- * @details Cache-disabled and write-through, because these are registers: a cached read would
- *          return whatever the line held when it was filled, which for a status register is the
- *          answer to a question nobody asked. A page the kernel's map of physical memory holds, the
- *          first MiB among them, takes that map's write-back type instead, so that no page has two
- *          memory types, and the MTRRs decide its effective type: as Linux does for 0xA0000-0xFFFFF;
- *          below it, where Linux would alias, the window takes the map's type too.
- *          A window that cannot be mapped whole is given back without freeing its frames, as
- *          kernel_vmm_unmap_device_window does.
+ * @details Every window takes the memory type of its frames, never of its kind, so that no page has
+ *          two memory types (Intel SDM vol. 3, §14.12.4): a page the kernel's map of physical memory
+ *          holds, the first MiB among them, takes that map's write-back type, and the MTRRs decide its
+ *          effective type; any other page is write-back when the boot memory map calls it RAM, ACPI
+ *          reclaimable or ACPI NVS memory, and uncached otherwise. A device's registers lie in reserved
+ *          memory or where no entry reaches, so they are cache-disabled and write-through: a cached read
+ *          would return whatever the line held when it was filled, which for a status register is the
+ *          answer to a question nobody asked. A window that cannot be mapped whole is given back
+ *          without freeing its frames, as kernel_vmm_unmap_device_window does.
  *
  * @param physical_base Physical address of the window, as its base address register gives it.
  * @param size          Window length in bytes.
@@ -110,12 +112,15 @@ void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size);
 
 /**
  * @brief Maps memory the firmware wrote, such as its ACPI tables, into a free run of kernel virtual
- *        pages, cached and read-only.
+ *        pages, read-only, with the memory type its frames decide.
  *
- * @details Unlike a device window it is cached, since these frames are memory, and read-only, since
- *          the kernel has no reason to write what the firmware describes. Like one, it does not rely
- *          on the frames lying where the kernel's own mapping of physical memory reaches, and its
- *          frames are never handed to the physical memory manager.
+ * @details Read-only, since the kernel has no reason to write what the firmware describes. Its memory
+ *          type is the one kernel_vmm_map_device_window gives the same frames: cached for RAM, ACPI
+ *          reclaimable and ACPI NVS memory and in the kernel's map of physical memory, uncached for a
+ *          table in reserved memory or where no entry of the boot memory map reaches, so that an AML
+ *          region on the same page gives it no second type. It does not rely on the frames lying where
+ *          the kernel's own mapping of physical memory reaches, and its frames are never handed to the
+ *          physical memory manager.
  *
  * @param physical_base Physical address of the first byte.
  * @param size          Length in bytes.
@@ -134,11 +139,10 @@ void kernel_vmm_unmap_firmware_window(uint32_t window, uint32_t size);
 
 /**
  * @brief Maps memory the firmware writes too, such as its ACPI NVS variables, into a free run of
- *        kernel virtual pages, cached and writable.
+ *        kernel virtual pages, writable, with the memory type its frames decide.
  *
- * @details Cached like a firmware window, since these frames are memory and an uncached alias of a
- *          page mapped cached elsewhere is a memory-type conflict; writable, since AML stores to
- *          them. kernel_vmm_unmap_firmware_window takes it back.
+ * @details The memory type of a firmware window on the same frames, cached for memory; writable,
+ *          since AML stores to them. kernel_vmm_unmap_firmware_window takes it back.
  *
  * @param physical_base Physical address of the first byte.
  * @param size          Length in bytes.
