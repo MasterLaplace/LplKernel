@@ -569,7 +569,7 @@ KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
 
 /**
  * @brief A faulty state is left out and counted on its CPU slot, and the states around it are published,
- *        as Linux skips it: a state of three elements, a Register with only an End Tag, a cut Generic
+ *        as Linux skips it: a state of five elements, a Register with only an End Tag, a cut Generic
  *        Register, or a Generic Register shorter than 12 bytes, a Type that is a String, a Latency past
  *        32 bits. The Generic Register is found after another descriptor, a Latency of 32 bits is kept, and
  *        a register of any space, SystemMemory here, is published.
@@ -597,7 +597,9 @@ KERNEL_TEST(a_faulty_state_is_left_out_and_counted_on_its_slot)
     idle_package_begin(10u, 9u);
     idle_state_start(4u, NULL, 0u);
     idle_state_end(1u, 1u, 1000u);
-    idle_state_start(3u, NULL, 0u);
+    idle_state_start(5u, NULL, 0u);
+    made_up_aml_integer(&idle_state_body, 2u);
+    made_up_aml_integer(&idle_state_body, 2u);
     made_up_aml_integer(&idle_state_body, 2u);
     made_up_aml_integer(&idle_state_body, 2u);
     idle_package_add();
