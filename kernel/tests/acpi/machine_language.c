@@ -1377,6 +1377,54 @@ KERNEL_TEST(a_device_whose_path_names_nothing_is_still_decoded)
 }
 
 /**
+ * @brief A duplicate that names the scope it stands in is skipped by every pass: `Scope (DEV0) { Device
+ *        (\DEV0) { Noop } }` and `Device (DEV1) { Device (^DEV1) { Noop } }`, whose names are found, are no
+ *        constructs naming nothing.
+ */
+KERNEL_TEST(a_duplicate_that_names_its_own_scope_is_skipped)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x05u, 'D',   'E',   'V',   '0', 0x10u, 0x0Eu, 'D',   'E',   'V',   '0',
+        0x5Bu, 0x82u, 0x07u, '\\',  'D',   'E',   'V', '0',   0xA3u, 0x5Bu, 0x82u, 0x0Eu, 'D',
+        'E',   'V',   '1',   0x5Bu, 0x82u, 0x07u, '^', 'D',   'E',   'V',   '1',   0xA3u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 2u && made_up_load.decode_errors == 0u,
+                      "Device (\\DEV0) and Device (^DEV1) are the two duplicates");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 0u,
+                      "the decoding pass reads neither body");
+    made_up_close(test);
+}
+
+/**
+ * @brief The Externals pass skips a duplicate's body too: an External a second Device holds, whose parent
+ *        does not exist, is never placed, as in acpiexec, while an External outside it is.
+ */
+KERNEL_TEST(the_externals_pass_skips_a_duplicate_s_body)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x05u, 'D', 'E', 'V', '2', 0x5Bu, 0x82u, 0x12u, 'D',   'E',   'V',   '2',
+        0x15u, '\\',  0x2Eu, 'M', 'I', 'S', 'S', 'F',   'O',   'O',   '_',   0x08u, 0x00u, 0x15u,
+        '\\',  0x2Eu, 'O',   'T', 'H', 'R', 'B', 'A',   'R',   '_',   0x08u, 0x00u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 1u && made_up_node_at("\\MISS") == 0u,
+                      "the second DEV2 is a duplicate, and \\MISS is not created");
+    kernel_test_check(test,
+                      made_up_node("\\\x2E"
+                                   "OTHR"
+                                   "BAR_")
+                              ->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_EXTERNAL,
+                      "the External outside it, \\OTHR.BAR_, is placed");
+    made_up_close(test);
+}
+
+/**
  * @brief An Alias of an object that does not exist is counted and skipped alone, and the table goes on, as
  *        acpiexec goes on loading: the Name after it is still declared. acpiexec also creates the alias and
  *        an Untyped node for its source; the kernel creates neither, since ACPI 6.6 §19.6.4 says the source
