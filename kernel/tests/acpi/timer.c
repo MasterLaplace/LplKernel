@@ -128,7 +128,7 @@ static void timer_place(uint32_t count)
  */
 static bool timer_name_is(const char *name, const char *expected)
 {
-    return memcmp(name, expected, strlen(expected) + 1u) == 0;
+    return strlen(name) == strlen(expected) && memcmp(name, expected, strlen(expected)) == 0;
 }
 
 /**
