@@ -200,8 +200,8 @@ KERNEL_TEST(a_platform_without_a_reachable_timer_has_none_and_reads_no_port)
 }
 
 /**
- * @brief A timer of 24 bits, and one of 32 bits crossing 2^24, that count 3.579545 MHz are usable,
- *        their rate a thousand thousandths of it within the 1 µs a read costs.
+ * @brief A timer of 24 bits that wraps during the checks, and one of 32 bits that crosses 2^24 then, that
+ *        count 3.579545 MHz are usable, their rate a thousand thousandths of it within the 1 µs a read costs.
  */
 KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
 {
@@ -209,10 +209,10 @@ KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
     uint32_t low_rate;
     uint8_t wide_state;
 
-    timer_open(0x00FFF000u);
+    timer_open(TIMER_LOW_BITS - 8u);
     low_state = timer_find();
     low_rate = timer_found.rate_per_mille;
-    timer_open(0x00FFF000u);
+    timer_open(TIMER_LOW_BITS - 8u);
     timer_machine.bits = TIMER_ALL_BITS;
     wide_state = timer_find();
 
@@ -331,15 +331,17 @@ KERNEL_TEST(a_stall_waits_its_microseconds_on_the_timer)
 }
 
 /**
- * @brief A read caught in an increment does not end a stall early; a timer that stops during a stall
- *        ends it within a bounded number of reads, saying it waited less; a timer that is not usable
- *        is not waited on, and no port is read.
+ * @brief A read caught in an increment does not end a stall early, whether it is the first or the
+ *        middle read of a triple; a timer that stops during a stall ends it within a bounded number of
+ *        reads, saying it waited less; a timer that is not usable is not waited on, and no port is read.
  */
 KERNEL_TEST(a_stall_survives_a_bad_read_and_a_timer_that_stops)
 {
+    uint32_t first_glitch_waited;
     uint32_t glitch_waited;
     uint32_t stopped_waited;
     uint32_t unusable_waited;
+    uint64_t first_glitch;
     uint64_t glitch;
     uint32_t reads_before;
     uint32_t stopped_reads;
@@ -347,6 +349,8 @@ KERNEL_TEST(a_stall_survives_a_bad_read_and_a_timer_that_stops)
     timer_open(0u);
     timer_machine.access = TIMER_FAST_ACCESS;
     (void) timer_find();
+    timer_machine.out_of_order = timer_machine.reads + 4u;
+    first_glitch = timer_wait(50u, &first_glitch_waited);
     timer_machine.out_of_order = timer_machine.reads + 5u;
     glitch = timer_wait(50u, &glitch_waited);
     timer_machine.stops_after = timer_machine.reads + 10u;
@@ -359,8 +363,9 @@ KERNEL_TEST(a_stall_survives_a_bad_read_and_a_timer_that_stops)
     unusable_waited =
         advanced_configuration_and_power_interface_power_management_timer_stall(&timer_host, &timer_found, 50u);
 
-    kernel_test_check(test, glitch >= 50000u && glitch_waited >= 50u,
-                      "a read caught in an increment ends nothing early");
+    kernel_test_check(test, first_glitch >= 50000u && first_glitch_waited >= 50u,
+                      "a first read caught in an increment ends nothing early");
+    kernel_test_check(test, glitch >= 50000u && glitch_waited >= 50u, "nor does a middle one");
     kernel_test_check(test, stopped_waited < 200u, "a timer that stops ends the stall, saying it waited less");
     kernel_test_check(test,
                       stopped_reads <=
