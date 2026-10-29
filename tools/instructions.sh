@@ -17,14 +17,17 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --inside SYMBOL count only from each entry of SYMBOL to its return, over its first --times calls;
                   what runs between two calls, such as a loop waiting for the next one, is left out
   --skip N        with --inside, leave its first N calls out and count the --times calls after them:
-                  a test that runs a function the boot ran before it, on other data, is its second call
+                  a test that runs a function the boot ran before it, on other data, is its second call.
+                  With a boot line that names lpl.test=, the run stops once the tests print their totals
+                  and says how many calls began, when the window has not closed by then
   --until TEXT    without --from or --inside, stop when the serial output prints TEXT
                   (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line
-  --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), under a short path
-                  that keeps its file name: a recorded machine of the ACPI corpus, which
-                  tools/acpi-corpus.sh module <machine> writes, is found by its .acpi suffix
+  --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), named by its file
+                  name alone, which the kernel reads up to 255 characters: a recorded machine of the
+                  ACPI corpus, which tools/acpi-corpus.sh module <machine> writes, is found by its .acpi
+                  suffix
   --machine NAME  QEMU's machine, such as q35 (default: QEMU's own, pc)
   --cdrom ISO     boot ISO through GRUB instead of <kernel> alone: a client gets its display and its
                   cartridge only that way. <kernel> is still the image the ISO holds, which names
@@ -38,7 +41,8 @@ the window, unless the command line does, append being the boot line, such as th
 the tests run before a window inside one, and module a path from the repository's root;
 instructions and accesses (loads and stores) record the counts;
 tolerance is how far above them, in percent, the counts may go. Below them by more than the
-tolerance, the run says to record the new counts.
+tolerance, the run says to record the new counts; for a window that skips calls or takes a module,
+it also fails, since a count that small may come from another call or another machine.
 
 A SYMBOL is a function's name as the symbol table spells it, or its demangled name up to the
 parenthesis of its parameters. One processor only: QEMU 10.2 crashes when -icount, a plugin and
@@ -48,7 +52,8 @@ The QEMU plugin is built on first use, under build/qemu-plugin/, against the plu
 the QEMU it finds (qemu-system-i386 --version), fetched from QEMU's repository at that tag.
 
 Exit status: 0 when the counts were written, 1 when QEMU stopped or timed out before the end
-of the window, 2 on a usage error, 3 when a count passed its budget.
+of the window, 2 on a usage error, 3 when a count passed its budget, 4 when a count of a window
+that skips calls or takes a module fell below its budget by more than the tolerance.
 EOF
 }
 
@@ -120,11 +125,12 @@ if [ -n "$budget" ]; then
 fi
 times="${times:-1}"
 skip="${skip:-0}"
-[[ "$skip" =~ ^[0-9]+$ ]] || { echo "--skip takes a count of calls" >&2; exit 2; }
+[[ "$skip" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "--skip takes a count of calls, in decimal" >&2; exit 2; }
 [ "$skip" -eq 0 ] || [ -n "$inside_symbol" ] || { echo "--skip goes with --inside" >&2; exit 2; }
 [ -z "$module" ] || [ -f "$module" ] ||
     { echo "no module $module: tools/acpi-corpus.sh module <machine> writes a recorded machine's module" >&2; exit 2; }
-[ -z "$module" ] || [ -z "$cdrom" ] || { echo "--module reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
+[ -z "$module" ] || [ -z "$cdrom" ] ||
+    { echo "--module reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 [ -z "$cdrom" ] || [ -z "$append" ] || { echo "--append reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 if [ -n "$from_symbol" ] && [ -z "$to_symbol" ] || [ -z "$from_symbol" ] && [ -n "$to_symbol" ]; then
     echo "--from and --to go together" >&2
@@ -188,18 +194,18 @@ if [ -n "$inside_symbol" ]; then
     plugin_args="$plugin_args,inside=$inside,times=$times,skip=$skip"
 fi
 
-boot=(-kernel "$kernel")
-[ -z "$cdrom" ] || boot=(-cdrom "$cdrom")
+boot=(-kernel "$(cd "$(dirname "$kernel")" && pwd)/$(basename "$kernel")")
+[ -z "$cdrom" ] || boot=(-cdrom "$(cd "$(dirname "$cdrom")" && pwd)/$(basename "$cdrom")")
 if [ -n "$module" ]; then
-    module_copy="$work/$(basename "$module" | tr -c 'A-Za-z0-9.\n-' '_')"
-    cp "$module" "$module_copy"
-    boot+=(-initrd "$module_copy")
+    module_name="$(basename "$module" | tr -c 'A-Za-z0-9.\n-' '_')"
+    cp "$module" "$work/$module_name"
+    boot+=(-initrd "$module_name")
 fi
 qemu_command=(qemu-system-i386 "${boot[@]}" -smp 1 -m 512 -display none -no-reboot -monitor none
               -serial "file:$serial" -icount shift=0,sleep=off -plugin "$plugin,$plugin_args")
 [ -z "$append" ] || qemu_command+=(-append "$append")
 [ -z "$machine" ] || qemu_command+=(-machine "$machine")
-"${qemu_command[@]}" &
+(cd "$work" && exec "${qemu_command[@]}") &
 qemu_pid=$!
 
 finished=0
@@ -210,6 +216,11 @@ for _ in $(seq 1 "$timeout_seconds"); do
     fi
     if [ -z "$from_symbol$inside_symbol" ] && [ -f "$serial" ] && grep -aqF "$until_text" "$serial"; then
         finished=1
+        break
+    fi
+    if [ -n "$inside_symbol" ] && [[ "$append" == *lpl.test=* ]] && [ -f "$serial" ] &&
+        grep -aqF "# Totals:" "$serial"; then
+        [ ! -s "$counts" ] || finished=1
         break
     fi
     kill -0 "$qemu_pid" 2>/dev/null || break
@@ -224,7 +235,7 @@ if [ -n "$keep" ]; then
     cp -f "$counts" "$keep/" 2>/dev/null || true
 fi
 if [ "$finished" -ne 1 ] || [ ! -s "$counts" ]; then
-    echo "the window did not close: QEMU stopped or the run timed out before it" >&2
+    echo "the window did not close: QEMU stopped, the tests ended or the run timed out before it" >&2
     exit 1
 fi
 
@@ -281,8 +292,14 @@ check_budget() {
         within=0
     elif [ $((counted * 100)) -lt $((recorded * (100 - tolerance))) ]; then
         echo "$name $counted is below $recorded by more than $tolerance %: record it in $budget"
+        if [ "$skip" -gt 0 ] || [ -n "$module" ]; then
+            echo "below budget: $name $counted; check that the window counts the call and the module $budget names" >&2
+            below=1
+        fi
     fi
 }
+below=0
 check_budget instructions "$counted_instructions" "$recorded_instructions"
 check_budget accesses "$((counted_loads + counted_stores))" "$recorded_accesses"
 [ "$within" -eq 1 ] || exit 3
+[ "$below" -eq 0 ] || exit 4

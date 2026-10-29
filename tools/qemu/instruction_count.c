@@ -38,6 +38,7 @@ static uint64_t window_end_executions = 1u;
 static uint64_t window_end_seen;
 static uint64_t window_skip;
 static uint64_t window_skipped;
+static uint64_t window_calls;
 static gboolean window_skipping;
 static gboolean window_open;
 static gboolean window_closed;
@@ -167,6 +168,7 @@ static void enter_function(unsigned int vcpu_index, void *userdata)
     g_mutex_lock(&blocks_lock);
     if (!window_open && !window_closed && !window_skipping && read_return_address(&inside_return))
     {
+        ++window_calls;
         if (window_skipped < window_skip)
             window_skipping = TRUE;
         else
@@ -274,6 +276,11 @@ static void finish(qemu_plugin_id_t id, void *userdata)
     g_mutex_lock(&blocks_lock);
     if (window_begin == 0u && window_inside == 0u && !window_closed)
         close_counting();
+    if (window_inside != 0u && !window_closed)
+        fprintf(stderr,
+                "instruction_count: the window did not close: inside= began %" PRIu64 " calls, skip=%" PRIu64
+                " and times=%" PRIu64 " need %" PRIu64 "\n",
+                window_calls, window_skip, window_end_executions, window_skip + window_end_executions);
     g_mutex_unlock(&blocks_lock);
 }
 
