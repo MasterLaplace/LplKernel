@@ -51,9 +51,10 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
  *        of physical memory when that map holds the frame, so that no page has two memory types (Intel SDM
  *        vol. 3, §14.12.4).
  *
- * @details That map keeps the first MiB write-back, as Linux keeps the ISA range, and past it only RAM
- *          (physical_memory_manager_restrict_boot_mapping): a window there is write-back too, and the
- *          MTRRs decide its effective memory type.
+ * @details That map keeps the first MiB write-back, as Linux does, and past it only RAM
+ *          (physical_memory_manager_restrict_boot_mapping). A window on a page it holds is write-back too, and
+ *          the MTRRs decide its effective memory type: as Linux does for 0xA0000-0xFFFFF; below it, where Linux
+ *          would alias, the window takes the map's type too.
  */
 static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t pte_flags)
 {

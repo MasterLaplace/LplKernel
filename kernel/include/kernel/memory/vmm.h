@@ -84,8 +84,8 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
  *          return whatever the line held when it was filled, which for a status register is the
  *          answer to a question nobody asked. A page the kernel's map of physical memory holds, the
  *          first MiB among them, takes that map's write-back type instead, so that no page has two
- *          memory types; the MTRRs then decide its effective type, as Linux leaves them to for the ISA
- *          range.
+ *          memory types, and the MTRRs decide its effective type: as Linux does for 0xA0000-0xFFFFF;
+ *          below it, where Linux would alias, the window takes the map's type too.
  *          A window that cannot be mapped whole is given back without freeing its frames, as
  *          kernel_vmm_unmap_device_window does.
  *
