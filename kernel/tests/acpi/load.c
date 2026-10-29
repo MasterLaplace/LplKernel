@@ -844,7 +844,7 @@ static bool load_sibling_machine(KernelTest_t *test, const char *first, const ch
         const char *name = (index == 0u) ? first : second;
 
         made_up_aml_begin(&device);
-        if (strcmp(name, "BDEV") == 0)
+        if (memcmp(name, "BDEV", 4u) == 0)
             load_method(&device, "_INI", loads, sizeof(loads));
         else
             load_present_initialization(&device, 9u);
