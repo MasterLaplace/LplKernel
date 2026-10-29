@@ -449,9 +449,9 @@ functioning is walked. No `_INI` runs twice. `late_initializations` counts how o
   counts half a second before it steps (`ran-ahead`): a still clock whose reads, with the timer's, take more than
   about 7.6 µs a poll reads as `ran-ahead` too, since these two sources cannot tell it from a timer far too fast.
   Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which
-  is going back, is `derailed`: the wait finishes on the tick, and so do the later ones. A pause of 2.34 s or more
-  between two reads of a wait, half the range, therefore demotes a healthy timer for the rest of the boot, which is
-  accepted: nothing at boot holds a wait off the processor that long. Otherwise, and on a hardware-reduced platform, `Stall` spins on the tick. The boot prints one
+  is going back, is `derailed`: the wait finishes on the tick, and so do the later ones. A pause between two reads of
+  a wait reads modulo 4.69 s, the 24-bit range, so one of 2.34 s to 4.69 s demotes a healthy timer for the rest of
+  the boot, which is accepted: nothing at boot holds a wait off the processor that long. Otherwise, and on a hardware-reduced platform, `Stall` spins on the tick. The boot prints one
   `[LPLTLM] acpi.timer` line once its AML has run: the state, the port, the rate when it was measured, the reads and
   the time the checks took, the stalls and their reads.
 - **The switch to ACPI mode** is a routine of the tables layer: SCI_EN read, enables cleared, ACPI_ENABLE written,
