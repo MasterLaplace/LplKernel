@@ -8,6 +8,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh namespace [quick|corpus|full|qemu]
        tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
        tools/acpi-corpus.sh initialize [quick|corpus|full|qemu]
+       tools/acpi-corpus.sh idle [quick|corpus|full]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
        tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
@@ -38,8 +39,13 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          it on, and which when they are five or fewer: the opcodes the interpreter executes
          (specification §4.1); a machine not read or a decode fault fails it
   initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
-         `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, then
-         the statuses their failures ended with; a machine the harness fails on fails it
+         `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, the
+         C-states they published, then the statuses their failures ended with; a machine the harness fails
+         on fails it
+  idle   initialises each machine of a list with `test-acpi --initialize`, then compares the C-states it
+         publishes for each CPU slot with those tools/acpi/acpiexec_idle.py reads from the _CST acpiexec
+         evaluates for the same processor objects, after the same handshake; a machine that publishes none,
+         or where acpiexec stops before a _CST, is counted apart
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -223,7 +229,7 @@ initialize_check() {
             continue
         fi
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
-        counts+="$(grep '^aml init ' "$output")"$'\n'
+        counts+="$(grep -E '^aml (init|idle) ' "$output")"$'\n'
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
     echo -n "# initialization of $((number - failed)) of $number:"
@@ -239,10 +245,54 @@ initialize_check() {
     echo "# unimplemented opcodes the initialisation reached:" \
         $(grep '^aml init unimplemented ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
             END { for (key in total) printf " %s=%u", key, total[key] }')
+    echo -n "# C-states of"
+    for key in slots published states processor_idle processor_idle_failed processor_idle_unbound idle_states_dropped \
+        processor_idle_changes; do
+        echo -n " $key=$(grep '^aml idle control=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
+    done
+    echo
+    echo "# CST_CNT, machines per outcome:" \
+        $(grep -o '^aml idle control=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# machines with a failure: $(grep -c '^aml init first_failure ' <<<"$counts")"
     grep '^aml init failed ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
         END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k3,3nr || true
     [[ "$number" -gt 0 && "$failed" -eq 0 ]]
+}
+
+# Compares the C-states each machine of the list $1 publishes with those acpiexec's _CST give for the same processor
+# objects, after the same handshake (specification §8.6).
+idle_check() {
+    [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "idle: no acpiexec, run fetch acpica first" >&2; exit 1; }
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local number=0 agree=0 empty=0 stopped=0 slots=0 states=0 subject ours theirs
+    ours="$(mktemp)"
+    theirs="$(mktemp)"
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        "$HARNESS" --initialize "$LINUXHW/$subject.bin" 2>&1 | grep -E '^aml idle (slot|state) ' >"$ours" || true
+        if [[ ! -s "$ours" ]]; then
+            echo "ok $number $subject: no C-states published"
+            empty=$((empty + 1))
+            continue
+        fi
+        python3 -I "$ROOT/tools/acpi/acpiexec_idle.py" "$ACPICA_BIN" "$LINUXHW/$subject.bin" <"$ours" >"$theirs" || true
+        if grep -q '^aml idle unevaluated ' "$theirs"; then
+            echo "ok $number $subject # SKIP acpiexec stops before $(cut -d' ' -f4 "$theirs")._CST"
+            stopped=$((stopped + 1))
+        elif cmp -s "$ours" "$theirs"; then
+            agree=$((agree + 1))
+            slots=$((slots + $(grep -c '^aml idle slot ' "$ours" || true)))
+            states=$((states + $(grep -c '^aml idle state ' "$ours" || true)))
+            echo "ok $number $subject"
+        else
+            echo "not ok $number $subject"
+            diff "$ours" "$theirs" | head -8 | sed 's/^/    # /' || true
+        fi
+    done < <(reports "$1")
+    rm -f "$ours" "$theirs"
+    echo "# idle: $agree of $((number - empty - stopped)) agree with acpiexec, $slots CPU slots and $states states;" \
+        "$empty publish no C-states; acpiexec stops before a _CST on $stopped"
+    [[ "$agree" -eq $((number - empty - stopped)) ]]
 }
 
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
@@ -528,6 +578,7 @@ case "${1:-}" in
     namespace) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; namespace_check "${2:-corpus}" ;;
     closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
     initialize) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; initialize_check "${2:-corpus}" ;;
+    idle) known_list "${2:-corpus}"; idle_check "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
     module) shift; modules "$@" ;;
