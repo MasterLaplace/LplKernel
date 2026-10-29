@@ -588,3 +588,57 @@ KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones
                       "no late initialisation runs: the table came before step 3");
     load_close(test);
 }
+
+/**
+ * @brief A table a _REG of step 3 loads, and one an _INI of step 4 loads, each get one late
+ *        initialisation once the evaluation that loaded it returns, and neither step reaches their
+ *        regions or devices again (§3.8).
+ */
+KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
+{
+    static const uint8_t registers[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', '3', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t initializes[] = {0x70u, 0x72u, 0x77u, '\\', 'T', 'R',  'A', 'C', 0x0Au, 0x10u,
+                                          0x00u, 0x01u, 0x00u, '\\', 'T', 'R',  'A', 'C', 0x5Bu, 0x20u,
+                                          '\\',  'T',   'B',   'L',  '4', '\\', 'H', 'N', 'D',   '2'};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HND2", LOAD_UNTOUCHED);
+    made_up_aml_begin(&device);
+    load_registration(&device);
+    made_up_aml_region(&device, "CPCI", 0x02u, 0u, 0x100u);
+    load_present_initialization(&device, 3u);
+    made_up_aml_device(&load_loaded, "CDEV", &device);
+    load_region("TBL3", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 5u);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_device(&load_inner, "EDEV", &device);
+    load_region("TBL4", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
+    made_up_aml_begin(&device);
+    made_up_aml_region(&device, "APCI", 0x02u, 0u, 0x100u);
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, registers, sizeof(registers));
+    made_up_aml_method(&device, "_REG", 0x02u, &load_body);
+    made_up_aml_device(&load_aml, "ADEV", &device);
+    made_up_aml_begin(&device);
+    load_method(&device, "_INI", initializes, sizeof(initializes));
+    made_up_aml_device(&load_aml, "BDEV", &device);
+    if (!load_run(test))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES && load_integer("HND2") == LOAD_ONES,
+                      "ADEV's _REG loads the first table at step 3, BDEV's _INI the second at step 4");
+    kernel_test_check(test, load_integer("TRAC") == 0x21315u,
+                      "CDEV gets one _REG then its _INI after step 3, before BDEV's _INI; EDEV's _INI runs once, "
+                      "right after BDEV's");
+    kernel_test_check(test,
+                      load_counts.late_initializations == 2u && load_counts.tables == 3u &&
+                          load_counts.registrations == 2u && load_counts.devices == 6u,
+                      "two late initialisations, counted with their registration and their devices");
+    load_close(test);
+}
