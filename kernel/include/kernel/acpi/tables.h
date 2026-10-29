@@ -38,7 +38,7 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT                                                       \
     16u /**< Interrupt source overrides one MADT reading keeps: one per ISA interrupt. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT                                                 \
-    256u /**< CPU slots one MADT reading keeps; the largest server of the corpus enables 224. */
+    256u /**< CPU slots one MADT reading keeps; the largest server of the corpus enables 208. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT                                    \
     256u /**< NMI connections one MADT reading keeps; firmware lists up to one per processor. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ENABLED 0x1u /**< Local APIC flag: ready for use. */
@@ -289,7 +289,8 @@ typedef struct {
  *        set.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceProcessor {
-    uint32_t processor_unique_identifier; /**< Its ACPI Processor UID: its processor object's `_UID`. */
+    uint32_t processor_unique_identifier; /**< Its ACPI Processor UID, which the `_UID` of its processor device or
+                                               the ProcessorId of its `Processor` declaration equals. */
     uint32_t apic_id;                     /**< Its local APIC ID, or its x2APIC ID. */
 } AdvancedConfigurationAndPowerInterfaceProcessor_t;
 
@@ -323,13 +324,15 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMadtState {
     uint32_t online_capable_count;         /**< Processors that can be enabled at run time: counted, unused. */
     uint32_t disabled_count;               /**< Processor entries with both flags clear, which OSPM ignores. */
     uint32_t invalid_count;                /**< Enabled entries whose APIC ID names no processor: 0xFF for a local APIC,
-                                                0xFFFFFFFF for an x2APIC, or an x2APIC ID below 0xFF when local APIC
-                                                entries name processors. */
+                                                0xFFFFFFFF for an x2APIC, or an x2APIC ID below 0xFF when a local APIC
+                                                entry whose ID is not 0xFF is Enabled or Online Capable. */
     uint32_t non_maskable_interrupt_count; /**< NMI connections kept. */
-    uint32_t non_maskable_interrupts_dropped;    /**< NMI connections past the capacity, counted. */
-    uint32_t skipped_count;                      /**< Entries of a type not read, or shorter than their type. */
-    uint8_t io_apic_count;                       /**< I/O APICs kept. */
-    uint32_t io_apics_dropped;                   /**< I/O APICs past the capacity, counted. */
+    uint32_t non_maskable_interrupts_dropped; /**< NMI connections past the capacity, counted. */
+    uint32_t skipped_count;                   /**< Entries of a type not read, skipped by their length. */
+    uint32_t too_short_count;  /**< Entries of a type read but shorter than that type: a processor, an I/O APIC,
+                                    an override, an NMI connection or the local APIC address lost. */
+    uint8_t io_apic_count;     /**< I/O APICs kept. */
+    uint32_t io_apics_dropped; /**< I/O APICs past the capacity, counted. */
     uint8_t interrupt_source_override_count;     /**< Interrupt source overrides kept. */
     uint32_t interrupt_source_overrides_dropped; /**< Interrupt source overrides past the capacity, counted. */
     AdvancedConfigurationAndPowerInterfaceProcessor_t
@@ -419,11 +422,14 @@ extern void advanced_configuration_and_power_interface_madt_initialize(void);
  *
  * @details Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for a local APIC or local
  *          x2APIC entry whose Enabled flag is set; an Online Capable entry is counted and unused, and
- *          one with both flags clear is counted and ignored. As Linux does, a local APIC ID of 0xFF
- *          and an x2APIC ID of 0xFFFFFFFF name no processor, nor does an x2APIC ID below 0xFF when
- *          local APIC entries name processors. An NMI entry for processor UID 0xFF keeps
- *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ALL_PROCESSORS. Every other type is skipped by
- *          its length and counted. A table whose checksum fails is read all the same, and recorded.
+ *          one with both flags clear is counted and ignored. A local APIC ID of 0xFF and an x2APIC ID
+ *          of 0xFFFFFFFF name no processor, nor does an x2APIC ID below 0xFF when a local APIC entry
+ *          whose ID is not 0xFF is Enabled or Online Capable, as Linux does on firmware of ACPI 6.3 or
+ *          later; on older firmware Linux also counts a local APIC entry with both flags clear, which
+ *          ACPI 6.6 tells OSPM to ignore. Such an entry is counted invalid only when Enabled. An NMI entry for
+ * processor UID 0xFF keeps ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ALL_PROCESSORS. Every other type is skipped by
+ *          its length and counted; an entry shorter than its type is skipped and counted apart. A
+ *          table whose checksum fails is read all the same, and recorded.
  *
  * @param table     The table, every byte of its length readable.
  * @param out_state Emptied, then filled with what the table holds.

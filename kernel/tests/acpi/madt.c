@@ -182,8 +182,8 @@ static bool made_up_madt_state_is(const char *name)
 }
 
 /**
- * @brief A MADT that lists its processors only as local x2APIC entries, as three Intel clients of 2024
- *        do with 8 and 48 of them, gives each a CPU slot with its x2APIC ID and its UID.
+ * @brief A MADT that lists its processors only as local x2APIC entries, as four clients of the corpus
+ *        do with 8 or 48 of them, gives each a CPU slot with its x2APIC ID and its UID.
  */
 KERNEL_TEST(an_x2apic_only_table_gives_every_processor_a_slot)
 {
@@ -298,6 +298,118 @@ KERNEL_TEST(a_low_x2apic_id_counts_when_no_local_apic_names_a_processor)
 }
 
 /**
+ * @brief An Online Capable local APIC entry names a processor that can run, so an x2APIC ID below 0xFF
+ *        beside it names none, as Linux decides; an x2APIC ID of 0xFF still names one.
+ */
+KERNEL_TEST(an_online_capable_local_apic_makes_a_low_x2apic_id_name_none)
+{
+    MadeUpMadt_t madt = made_up_madt_begin();
+
+    made_up_madt_local_apic(&madt, 1u, 4u, MADE_UP_MADT_ONLINE);
+    made_up_madt_local_x2apic(&madt, 0x300u, 0x10u, MADE_UP_MADT_ENABLED);
+    made_up_madt_local_x2apic(&madt, 0x301u, 0x100u, MADE_UP_MADT_ENABLED);
+    made_up_madt_local_x2apic(&madt, 0x302u, 0xFFu, MADE_UP_MADT_ENABLED);
+
+    const bool read =
+        advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
+
+    kernel_test_check(test,
+                      read && made_up_madt_state.processor_count == 2u && made_up_madt_slot_is(0u, 0x301u, 0x100u) &&
+                          made_up_madt_slot_is(1u, 0x302u, 0xFFu),
+                      "the x2APIC IDs of 0x100 and 0xFF get a slot each");
+    kernel_test_check(test, made_up_madt_state.invalid_count == 1u, "the x2APIC ID of 0x10 is counted invalid");
+    kernel_test_check(test, made_up_madt_state.online_capable_count == 1u, "the local APIC entry is counted");
+}
+
+/**
+ * @brief An entry that is not Enabled is counted by its flags, whatever its ID: 482 entries of 25
+ *        machines of the corpus hold an ID that names no processor without the Enabled flag.
+ */
+KERNEL_TEST(an_entry_not_enabled_is_counted_by_its_flags_whatever_its_identifier)
+{
+    MadeUpMadt_t madt = made_up_madt_begin();
+
+    made_up_madt_local_apic(&madt, 1u, 0u, MADE_UP_MADT_ENABLED);
+    made_up_madt_local_apic(&madt, 2u, 0xFFu, 0u);
+    made_up_madt_local_apic(&madt, 3u, 0xFFu, MADE_UP_MADT_ONLINE);
+    made_up_madt_local_x2apic(&madt, 0x300u, 0xFFFFFFFFu, 0u);
+    made_up_madt_local_x2apic(&madt, 0x301u, 0x10u, MADE_UP_MADT_ONLINE);
+
+    const bool read =
+        advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
+
+    kernel_test_check(test, read && made_up_madt_state.processor_count == 1u, "only the enabled processor gets a slot");
+    kernel_test_check(test, made_up_madt_state.disabled_count == 2u,
+                      "local APIC ID 0xFF and x2APIC ID 0xFFFFFFFF with both flags clear are counted disabled");
+    kernel_test_check(test, made_up_madt_state.online_capable_count == 2u,
+                      "local APIC ID 0xFF and an x2APIC ID below 0xFF, Online Capable, are counted Online Capable");
+    kernel_test_check(test, made_up_madt_state.invalid_count == 0u, "none is counted invalid");
+}
+
+/**
+ * @brief An entry of a type the reader reads but one byte shorter than that type gives nothing and is
+ *        counted apart from the types not read, since it loses a processor, an interrupt line or the
+ *        local APIC address; the entries after it are still read.
+ */
+KERNEL_TEST(an_entry_shorter_than_its_type_is_counted_apart)
+{
+    MadeUpMadt_t madt = made_up_madt_begin();
+
+    (void) made_up_madt_entry(&madt, 0x0u, 7u);
+    (void) made_up_madt_entry(&madt, 0x1u, 11u);
+    (void) made_up_madt_entry(&madt, 0x2u, 9u);
+    (void) made_up_madt_entry(&madt, 0x4u, 5u);
+    (void) made_up_madt_entry(&madt, 0x5u, 11u);
+    (void) made_up_madt_entry(&madt, 0x9u, 15u);
+    (void) made_up_madt_entry(&madt, 0xAu, 11u);
+    (void) made_up_madt_entry(&madt, MADE_UP_MADT_NOT_A_TABLE, 6u);
+    made_up_madt_local_apic(&madt, 7u, 3u, MADE_UP_MADT_ENABLED);
+
+    const bool read =
+        advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
+
+    kernel_test_check(test, read && made_up_madt_state.available, "the table is read to its end");
+    kernel_test_check(test, made_up_madt_state.too_short_count == 7u,
+                      "each of the seven types read, too short, is counted too short");
+    kernel_test_check(test, made_up_madt_state.skipped_count == 1u, "only the type not read is counted skipped");
+    kernel_test_check(test,
+                      made_up_madt_state.processor_count == 1u && made_up_madt_slot_is(0u, 7u, 3u) &&
+                          made_up_madt_state.io_apic_count == 0u &&
+                          made_up_madt_state.interrupt_source_override_count == 0u &&
+                          made_up_madt_state.non_maskable_interrupt_count == 0u &&
+                          made_up_madt_state.local_apic_physical_base == MADE_UP_MADT_LOCAL_APIC,
+                      "the short entries give nothing, and the processor after them gets its slot");
+    kernel_test_measure(test, "too_short", made_up_madt_state.too_short_count);
+}
+
+/**
+ * @brief NMI connections past the capacity are counted, not written past it.
+ */
+KERNEL_TEST(non_maskable_interrupts_past_the_capacity_are_counted)
+{
+    MadeUpMadt_t madt = made_up_madt_begin();
+    const uint32_t listed = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT + 3u;
+
+    for (uint32_t index = 0u; index < listed; ++index)
+        made_up_madt_local_apic_non_maskable_interrupt(&madt, (uint8_t) (index % 200u), 0x5u, 1u);
+
+    const bool read =
+        advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
+    const AdvancedConfigurationAndPowerInterfaceProcessorNonMaskableInterrupt_t *last =
+        &made_up_madt_state
+             .non_maskable_interrupts[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT - 1u];
+
+    kernel_test_check(test,
+                      read && made_up_madt_state.non_maskable_interrupt_count ==
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT,
+                      "every NMI place is filled");
+    kernel_test_check(test, last->processor_unique_identifier == 55u, "the last place holds the 256th entry");
+    kernel_test_check(test, made_up_madt_state.non_maskable_interrupts_dropped == 3u,
+                      "the three connections past them are counted");
+    kernel_test_measure(test, "nmis_dropped", made_up_madt_state.non_maskable_interrupts_dropped);
+}
+
+/**
  * @brief NMI entries name their processor, or every processor, with their input and flags.
  */
 KERNEL_TEST(non_maskable_interrupt_entries_name_their_processor_and_input)
@@ -335,8 +447,8 @@ KERNEL_TEST(non_maskable_interrupt_entries_name_their_processor_and_input)
 }
 
 /**
- * @brief A MADT whose checksum fails is read all the same, and recorded as failing: refusing it
- *        would leave the machine with one CPU.
+ * @brief A MADT whose checksum holds is recorded as holding; one whose checksum fails is read all the
+ *        same, and recorded as failing: refusing it would leave the machine with one CPU.
  */
 KERNEL_TEST(a_table_whose_checksum_fails_is_read_and_recorded)
 {
@@ -346,6 +458,10 @@ KERNEL_TEST(a_table_whose_checksum_fails_is_read_and_recorded)
     made_up_madt_local_apic(&madt, 1u, 1u, MADE_UP_MADT_ENABLED);
 
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *table = made_up_madt_seal(&madt);
+    const bool sealed_read = advanced_configuration_and_power_interface_read_madt(table, &made_up_madt_state);
+
+    kernel_test_check(test, sealed_read && made_up_madt_state.checksum_valid,
+                      "a table whose bytes sum to zero is recorded with its checksum holding");
 
     madt.bytes[16] ^= 0x01u;
 

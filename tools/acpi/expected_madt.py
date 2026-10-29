@@ -86,10 +86,11 @@ def read(header, entries, data):
     """What the kernel's reading of this MADT must find, as the lines the harness prints."""
     usable = ENABLED | ONLINE_CAPABLE
     local_apic_processors = any(
-        entry["Subtable Type"][:2] == "00" and number(entry, "Local Apic ID") != 0xFF
-        and number(entry, "Flags (decoded below)") & usable for entry in entries)
+        entry["Subtable Type"][:2] == "00" and number(entry, "Length") >= SHORTEST["00"]
+        and number(entry, "Local Apic ID") != 0xFF and number(entry, "Flags (decoded below)") & usable
+        for entry in entries)
     counts = dict.fromkeys(("processors_dropped", "online_capable", "disabled", "invalid", "nmis_dropped",
-                            "skipped", "io_apics_dropped", "overrides_dropped"), 0)
+                            "skipped", "too_short", "io_apics_dropped", "overrides_dropped"), 0)
     processors, io_apics, overrides, connections = [], [], [], []
 
     def processor(flags, valid, apic_id, uid):
@@ -112,8 +113,10 @@ def read(header, entries, data):
         kind, length = entry["Subtable Type"][:2], number(entry, "Length")
         if length < 2:
             raise Unreadable("a subtable of type %s is %u bytes long" % (kind, length))
-        if kind not in SHORTEST or length < SHORTEST[kind]:
+        if kind not in SHORTEST:
             counts["skipped"] += 1
+        elif length < SHORTEST[kind]:
+            counts["too_short"] += 1
         elif kind == "00":
             apic_id = number(entry, "Local Apic ID")
             processor(number(entry, "Flags (decoded below)"), apic_id != 0xFF, apic_id,
@@ -146,11 +149,12 @@ def read(header, entries, data):
             raise Unreadable("no report of the corpus decodes a local APIC address override: its lines are unknown")
 
     summary = ("madt read=1 checksum=%s local_apic=0x%08X processors=%u processors_dropped=%u online_capable=%u "
-               "disabled=%u invalid=%u nmis=%u nmis_dropped=%u skipped=%u io_apics=%u io_apics_dropped=%u "
-               "overrides=%u overrides_dropped=%u") % (
+               "disabled=%u invalid=%u nmis=%u nmis_dropped=%u skipped=%u too_short=%u io_apics=%u "
+               "io_apics_dropped=%u overrides=%u overrides_dropped=%u") % (
         "ok" if sum(data) % 256 == 0 else "bad", number(header, "Local Apic Address"), len(processors),
         counts["processors_dropped"], counts["online_capable"], counts["disabled"], counts["invalid"],
-        len(connections), counts["nmis_dropped"], counts["skipped"], len(io_apics), counts["io_apics_dropped"],
+        len(connections), counts["nmis_dropped"], counts["skipped"], counts["too_short"], len(io_apics),
+        counts["io_apics_dropped"],
         len(overrides), counts["overrides_dropped"])
     return [summary] + processors + io_apics + overrides + connections
 
