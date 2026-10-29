@@ -30,8 +30,8 @@ extern void write_pmm_strategy_info(Serial_t *serial);
 extern void write_pmm_pass_1_info(Serial_t *serial);
 
 /**
- * @brief Prints the `[LPLTLM] boot_map` record: whether the bootloader gave a memory map, and the runs and pages
- *        unmapped from the boot map.
+ * @brief Prints the `[LPLTLM] boot_map` record: whether the bootloader gave a memory map, whether it was refused,
+ *        and the runs and pages unmapped from the boot map.
  *
  * @param serial      The port the record goes to.
  * @param restriction What physical_memory_manager_restrict_boot_mapping returned.

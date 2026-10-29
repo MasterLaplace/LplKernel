@@ -32,6 +32,9 @@
 /** @brief Multiboot flag bit indicating presence of a memory map. */
 #define MULTIBOOT_FLAG_MMAP (1 << 6)
 
+/** @brief Multiboot flag bit indicating presence of the boot modules' table. */
+#define MULTIBOOT_FLAG_MODULES (1u << 3)
+
 /** @brief Multiboot memory region type: available RAM. */
 #define MMAP_TYPE_AVAILABLE 1
 
@@ -761,6 +764,38 @@ static uint32_t pmm_next_kept_memory(const uint8_t *mmap_base, uint32_t mmap_len
     return next;
 }
 
+/**
+ * @brief Whether @p map holds in RAM what the kernel still reads through the boot map once it is restricted: its
+ *        image, from 1 MiB, the Multiboot information and memory map, the boot modules' table and each module.
+ */
+static bool pmm_boot_map_holds_the_boot(const uint8_t *map, uint32_t length)
+{
+    extern MultibootInfo_t *multiboot_info;
+    const uint32_t kernel_end = pmm_virt_to_phys((uint32_t) (uintptr_t) &global_kernel_end);
+    const uint32_t information = pmm_virt_to_phys((uint32_t) (uintptr_t) multiboot_info);
+    const uint32_t memory_map = (uint32_t) (uintptr_t) multiboot_info->mmap_addr;
+
+    if (!physical_memory_manager_boot_map_holds(map, length, PMM_LOW_MEMORY_LIMIT, kernel_end) ||
+        !physical_memory_manager_boot_map_holds(map, length, information, information + sizeof(MultibootInfo_t)) ||
+        !physical_memory_manager_boot_map_holds(map, length, memory_map, memory_map + multiboot_info->mmap_length))
+        return false;
+    if (!(multiboot_info->flags & MULTIBOOT_FLAG_MODULES) || !multiboot_info->mods_count || !multiboot_info->mods_addr)
+        return true;
+
+    const uint32_t table = (uint32_t) (uintptr_t) multiboot_info->mods_addr;
+    const Module_t *const modules = (const Module_t *) (uintptr_t) pmm_phys_to_virt(table);
+
+    if (!physical_memory_manager_boot_map_holds(map, length, table,
+                                                table + multiboot_info->mods_count * (uint32_t) sizeof(Module_t)))
+        return false;
+    for (uint32_t index = 0u; index < multiboot_info->mods_count; ++index)
+    {
+        if (!physical_memory_manager_boot_map_holds(map, length, modules[index].mod_start, modules[index].mod_end))
+            return false;
+    }
+    return true;
+}
+
 void physical_memory_manager_page_frame_free(uint32_t phys_addr)
 {
 #ifdef LPL_KERNEL_REAL_TIME_MODE
@@ -1058,6 +1093,15 @@ bool physical_memory_manager_boot_map_next_hole(const uint8_t *map, uint32_t len
     return false;
 }
 
+bool physical_memory_manager_boot_map_holds(const uint8_t *map, uint32_t length, uint32_t first, uint32_t end)
+{
+    uint32_t hole_first = 0u;
+    uint32_t hole_end = 0u;
+
+    return end <= first || !physical_memory_manager_boot_map_next_hole(map, length, first, &hole_first, &hole_end) ||
+           hole_first >= end;
+}
+
 PhysicalMemoryManagerBootMapRestriction_t physical_memory_manager_restrict_boot_mapping(void)
 {
     PhysicalMemoryManagerBootMapRestriction_t restriction = {0};
@@ -1067,8 +1111,9 @@ PhysicalMemoryManagerBootMapRestriction_t physical_memory_manager_restrict_boot_
     uint32_t end = 0u;
 
     restriction.memory_map = pmm_get_multiboot_mmap(&mmap_base, &mmap_length);
+    restriction.memory_map_refused = restriction.memory_map && !pmm_boot_map_holds_the_boot(mmap_base, mmap_length);
     for (uint32_t from = PMM_LOW_MEMORY_LIMIT;
-         restriction.memory_map &&
+         restriction.memory_map && !restriction.memory_map_refused &&
          physical_memory_manager_boot_map_next_hole(mmap_base, mmap_length, from, &first, &end);
          from = end)
     {

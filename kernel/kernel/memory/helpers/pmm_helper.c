@@ -21,6 +21,7 @@ void write_boot_map_record(Serial_t *serial, const PhysicalMemoryManagerBootMapR
 {
     kernel_telemetry_begin_record(serial, "boot_map");
     kernel_telemetry_write_boolean("memory_map", restriction->memory_map);
+    kernel_telemetry_write_boolean("memory_map_refused", restriction->memory_map_refused);
     kernel_telemetry_write_unsigned("runs_unmapped", restriction->runs_unmapped);
     kernel_telemetry_write_unsigned("pages_unmapped", restriction->pages_unmapped);
     kernel_telemetry_end_record();

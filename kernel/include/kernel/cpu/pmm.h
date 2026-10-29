@@ -55,6 +55,8 @@ extern void physical_memory_manager_initialize(void);
  */
 typedef struct PhysicalMemoryManagerBootMapRestriction {
     bool memory_map;         /**< The bootloader gave a memory map; without one nothing is unmapped. */
+    bool memory_map_refused; /**< The map leaves outside RAM what the kernel runs on (its image, the Multiboot
+                                  information, a boot module): it is not believed, and nothing is unmapped. */
     uint32_t runs_unmapped;  /**< Runs of pages unmapped, each with one TLB shootdown. */
     uint32_t pages_unmapped; /**< Pages unmapped. */
 } PhysicalMemoryManagerBootMapRestriction_t;
@@ -81,16 +83,31 @@ extern bool physical_memory_manager_boot_map_next_hole(const uint8_t *map, uint3
                                                        uint32_t *out_first, uint32_t *out_end);
 
 /**
+ * @brief Whether the Multiboot memory map @p map leaves in RAM every page of [@p first, @p end) that the boot map
+ *        could drop, so that no run physical_memory_manager_boot_map_next_hole gives meets it.
+ *
+ * @param map    The memory map's first entry, or NULL.
+ * @param length The memory map's length in bytes.
+ * @param first  The range's first byte.
+ * @param end    The byte past its last; a range that ends at or before @p first is held.
+ * @return true when no hole meets the range: always for a range below 1 MiB or from 64 MiB, and without a map.
+ */
+extern bool physical_memory_manager_boot_map_holds(const uint8_t *map, uint32_t length, uint32_t first, uint32_t end);
+
+/**
  * @brief Unmaps from the boot map every run physical_memory_manager_boot_map_next_hole finds in the bootloader's
- *        memory map.
+ *        memory map, unless the map leaves outside RAM what the kernel runs on.
  *
  * @details boot.S maps 0 to 64 MiB write-back before the memory map is read, device memory, reserved ranges and
  *          holes included; an uncached window on such a page would then alias a write-back one, which Intel SDM
- *          vol. 3, §14.12.4 calls undefined. Without a memory map nothing is unmapped.
+ *          vol. 3, §14.12.4 calls undefined. Without a memory map nothing is unmapped; nor with one that leaves
+ *          outside RAM the kernel's image, the Multiboot information and memory map, the boot modules' table or a
+ *          module (physical_memory_manager_boot_map_holds), since unmapping them would stop the boot: such a map is
+ *          refused.
  *
  * @note Called once, after physical_memory_manager_initialize() and before any window is mapped or any other
  *       processor starts.
- * @return Whether there was a map, and the runs and pages unmapped.
+ * @return Whether there was a map, whether it was refused, and the runs and pages unmapped.
  */
 extern PhysicalMemoryManagerBootMapRestriction_t physical_memory_manager_restrict_boot_mapping(void);
 
