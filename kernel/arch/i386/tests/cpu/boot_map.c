@@ -746,8 +746,9 @@ KERNEL_TEST(the_windows_on_one_page_give_it_one_memory_type)
 
 /**
  * @brief A device window that reaches usable RAM past the first MiB is refused and counted, whether it lies on a RAM
- *        page or only crosses into one, as Linux refuses ioremap on System RAM; a firmware window on the same page
- *        maps, and a device window on usable RAM in the first MiB, which the kernel's map keeps, maps too.
+ *        page or only crosses into one from below or out of one, as Linux refuses ioremap on System RAM; a firmware
+ *        window on the same page maps, and a device window on usable RAM in the first MiB, which the kernel's map
+ *        keeps, maps too.
  */
 KERNEL_TEST(a_device_window_reaching_usable_ram_past_the_first_mebibyte_is_refused)
 {
@@ -762,7 +763,8 @@ KERNEL_TEST(a_device_window_reaching_usable_ram_past_the_first_mebibyte_is_refus
 
     const uint32_t refused_before = kernel_vmm_get_device_windows_refused_count();
     const bool on_ram = boot_map_test_device_window_maps(first, PAGE_SIZE);
-    const bool crossing = boot_map_test_device_window_maps(last + PAGE_SIZE - 1u, 2u);
+    const bool crossing_in = boot_map_test_device_window_maps(first - 1u, 2u);
+    const bool crossing_out = boot_map_test_device_window_maps(last + PAGE_SIZE - 1u, 2u);
     const uint32_t refused = kernel_vmm_get_device_windows_refused_count() - refused_before;
     const uint32_t firmware = kernel_vmm_map_firmware_window(first, PAGE_SIZE);
     const bool low_ram = boot_map_test_page_type(PAGE_SIZE) == 1u;
@@ -771,8 +773,9 @@ KERNEL_TEST(a_device_window_reaching_usable_ram_past_the_first_mebibyte_is_refus
         kernel_vmm_unmap_firmware_window(firmware, PAGE_SIZE);
     kernel_test_measure_hexadecimal(test, "ram_page", first);
     kernel_test_measure(test, "refused", refused);
-    kernel_test_check(test, !on_ram && !crossing && refused == 2u,
-                      "a device window on a RAM page, and one crossing into the last, are refused and counted");
+    kernel_test_check(test, !on_ram && !crossing_in && !crossing_out && refused == 3u,
+                      "a device window on a RAM page, one crossing into the first and one crossing out of the last "
+                      "are refused and counted");
     kernel_test_check(test, firmware != 0u, "a firmware window on that page maps");
     if (low_ram)
         kernel_test_check(test, boot_map_test_device_window_maps(PAGE_SIZE, PAGE_SIZE),
