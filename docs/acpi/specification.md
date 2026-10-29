@@ -421,7 +421,8 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
   length, so that the fields a short FADT lacks read 0; the legacy register blocks converted to Generic Address
   Structures, unless the 64-bit block gives an address. PSTATE_CNT and CST_CNT, which ACPI 1.0 reserved, read 0 up to
   revision 2; RESET_REG reads absent without RESET_REG_SUP; a hardware-reduced FADT reads 0 in every field ACPI tells
-  OSPM to ignore ([§5.2.9]). The fields read are those of N4 (§1.2), plus the PM1 and GPE blocks.
+  OSPM to ignore ([§5.2.9]). The fields read are those of N4 (§1.2), plus the PM1 and GPE blocks. A GPE block's
+  length is GPE0_BLK_LEN or GPE1_BLK_LEN, for the 64-bit block too ([§5.2.9]), and 0 without it, as in ACPICA.
 - **A block keeps the width firmware declares,** its legacy length when its Generic Address Structure gives none: a
   PM1 control block may be longer than 2 bytes ([§4.8.1.2]), and SCI_EN is read with a word access
   ([§4.8.3.2.1]). ACPICA instead rewrites each PM block's width to a fixed default.
