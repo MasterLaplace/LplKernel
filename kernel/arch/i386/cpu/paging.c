@@ -386,7 +386,7 @@ bool paging_get_physical_address(uint32_t virt_addr, uint32_t *phys_addr)
 
     if (!pte || !phys_addr)
         return false;
-    *phys_addr = (pte->page_frame_base << 12) | PAGE_OFFSET(virt_addr);
+    *phys_addr = (((uint32_t) pte->page_frame_base) << 12) | PAGE_OFFSET(virt_addr);
     return true;
 }
 
