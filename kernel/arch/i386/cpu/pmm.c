@@ -609,6 +609,10 @@ static bool pmm_compute_region_bounds(const MemoryMapEntry_t *entry, uint32_t *o
         return false;
 
     uint32_t region_start = (uint32_t) entry->base_addr;
+
+    if (region_start > PAGE_ALIGN_DOWN(0xFFFFFFFFu))
+        return false;
+
     uint32_t region_length = (entry->length >> 32) ? 0xFFFFFFFFUL - region_start : (uint32_t) entry->length;
 
     uint32_t region_end = (region_start + region_length < region_start) ? 0xFFFFFFFFUL : region_start + region_length;
@@ -706,7 +710,7 @@ static bool pmm_next_mmap_entry(const uint8_t *mmap_base, uint32_t mmap_length, 
 
     if (entry->size < MMAP_MIN_ENTRY_SIZE)
         return false;
-    if (*offset + sizeof(uint32_t) + entry->size > mmap_length)
+    if (entry->size > mmap_length - *offset - sizeof(uint32_t))
         return false;
 
     *out_entry = entry;
