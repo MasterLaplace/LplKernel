@@ -236,15 +236,9 @@ static uint32_t paging_withdraw_pages(uint32_t virt_start, uint32_t page_count)
 
     for (uint32_t page = 0u; page < page_count; ++page)
     {
-        const uint32_t virt_addr = virt_start + page * PAGE_SIZE;
-        const PageDirectoryEntry_t *const pde = &current_page_directory->entries[PAGE_DIRECTORY_INDEX(virt_addr)];
+        PageTableEntry_t *const pte = paging_find_present_entry(virt_start + page * PAGE_SIZE);
 
-        if (!pde->present)
-            continue;
-
-        PageTableEntry_t *const pte = &paging_get_page_table(pde)->entries[PAGE_TABLE_INDEX(virt_addr)];
-
-        if (!pte->present)
+        if (!pte)
             continue;
         pte->present = 0;
         pte->available = PAGING_ENTRY_AWAITING_RELEASE;
