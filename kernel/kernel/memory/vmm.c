@@ -6,11 +6,8 @@
 #include <stddef.h>
 #include <string.h>
 
-#define VMM_PAGE_COUNT              (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
-#define VMM_BITMAP_SIZE             (VMM_PAGE_COUNT / 8)
-#define VMM_MEMORY_MAP_RAM          1u /**< A usable RAM entry of the boot memory map. */
-#define VMM_MEMORY_MAP_ACPI_RECLAIM 3u /**< An ACPI reclaimable entry of the boot memory map: tables. */
-#define VMM_MEMORY_MAP_ACPI_NVS     4u /**< An ACPI NVS entry of the boot memory map: memory the firmware keeps. */
+#define VMM_PAGE_COUNT  (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
+#define VMM_BITMAP_SIZE (VMM_PAGE_COUNT / 8)
 
 static uint8_t vmm_bitmap[VMM_BITMAP_SIZE];
 static uint32_t vmm_last_search_index = 0u;
@@ -50,17 +47,6 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
 }
 
 /**
- * @brief Whether the boot memory map calls the whole page at @p frame memory: usable RAM, ACPI reclaimable or ACPI
- *        NVS.
- */
-static bool vmm_frame_is_memory(uint32_t frame)
-{
-    const uint32_t type = physical_memory_manager_memory_type(frame, PAGE_SIZE);
-
-    return type == VMM_MEMORY_MAP_RAM || type == VMM_MEMORY_MAP_ACPI_RECLAIM || type == VMM_MEMORY_MAP_ACPI_NVS;
-}
-
-/**
  * @brief The entry @p frame gets in a window: @p pte_flags, with the memory type the frame decides, whatever kind of
  *        window asks, so that no page has two memory types (Intel SDM vol. 3, §14.12.4), between two windows either.
  *
@@ -77,7 +63,8 @@ static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t p
     const bool held = frame < KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE &&
                       paging_get_page_table_entry(frame + KERNEL_VIRTUAL_BASE, &direct) &&
                       ((uint32_t) direct.page_frame_base << 12u) == frame;
-    const uint32_t uncached = !held && !vmm_frame_is_memory(frame);
+    const uint32_t uncached =
+        !held && !physical_memory_manager_type_is_memory(physical_memory_manager_memory_type(frame, PAGE_SIZE));
 
     pte_flags.write_through = held ? direct.write_through : uncached;
     pte_flags.cache_disable = held ? direct.cache_disable : uncached;

@@ -163,6 +163,16 @@ extern uint32_t physical_memory_manager_get_free_page_count(void);
 extern uint32_t physical_memory_manager_memory_type(uint64_t physical_address, uint64_t length);
 
 /**
+ * @brief Says whether a boot memory map type names memory: what ACPI 6.6, Table 15.1, calls RAM, ACPI
+ *        reclaimable or ACPI NVS memory, the ranges a window maps cached.
+ *
+ * @param type A Multiboot type, as physical_memory_manager_memory_type gives it.
+ * @return true for 1 (usable RAM), 3 (ACPI reclaimable) and 4 (ACPI NVS); false for 0 (no entry), 2
+ *         (reserved), 5 (defective) and every other type, persistent memory (7) among them.
+ */
+extern bool physical_memory_manager_type_is_memory(uint32_t type);
+
+/**
  * @brief Return the active PMM strategy name.
  *
  * @return Human-readable strategy string selected at compile time.

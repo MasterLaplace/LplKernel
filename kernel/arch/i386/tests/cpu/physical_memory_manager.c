@@ -378,6 +378,25 @@ KERNEL_TEST(no_free_frame_is_mapped_where_the_virtual_memory_manager_maps)
 }
 
 /**
+ * @brief The boot memory map types that name memory, which a window maps cached, are those ACPI 6.6, Table 15.1,
+ *        calls RAM: AddressRangeMemory (1), AddressRangeACPI (3) and AddressRangeNVS (4); a reserved (2), unusable
+ *        (5), disabled (6), persistent (7) or unaccepted (8) range, an undefined type and no entry (0) are not.
+ */
+KERNEL_TEST(the_memory_map_types_that_name_memory_are_ram_acpi_and_nvs)
+{
+    static const uint32_t memory[] = {1u, 3u, 4u};
+    static const uint32_t not_memory[] = {0u, 2u, 5u, 6u, 7u, 8u, 9u, 12u, 0xFFFFFFFFu};
+    uint32_t wrong = 0u;
+
+    for (uint32_t index = 0u; index < sizeof(memory) / sizeof(memory[0]); ++index)
+        wrong += !physical_memory_manager_type_is_memory(memory[index]);
+    for (uint32_t index = 0u; index < sizeof(not_memory) / sizeof(not_memory[0]); ++index)
+        wrong += physical_memory_manager_type_is_memory(not_memory[index]);
+    kernel_test_measure(test, "types_misread", wrong);
+    kernel_test_check(test, wrong == 0u, "types 1, 3 and 4 are memory, and no other");
+}
+
+/**
  * @brief The copy of the boot memory map says what a range is: a frame the allocator gives is usable
  *        memory; an empty range, one that wraps, and one past every entry are nothing.
  */

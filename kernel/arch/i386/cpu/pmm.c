@@ -38,6 +38,12 @@
 /** @brief Multiboot memory region type: available RAM. */
 #define MMAP_TYPE_AVAILABLE 1
 
+/** @brief Multiboot memory region type: ACPI reclaimable memory, RAM once the tables are read. */
+#define MMAP_TYPE_ACPI_RECLAIMABLE 3
+
+/** @brief Multiboot memory region type: ACPI NVS memory, which the firmware keeps. */
+#define MMAP_TYPE_ACPI_NVS 4
+
 /** @brief Minimum e820 entry payload size (bytes). */
 #define MMAP_MIN_ENTRY_SIZE 20
 
@@ -851,6 +857,11 @@ uint32_t physical_memory_manager_memory_type(uint64_t physical_address, uint64_t
             return range->type;
     }
     return 0u;
+}
+
+bool physical_memory_manager_type_is_memory(uint32_t type)
+{
+    return type == MMAP_TYPE_AVAILABLE || type == MMAP_TYPE_ACPI_RECLAIMABLE || type == MMAP_TYPE_ACPI_NVS;
 }
 
 const char *physical_memory_manager_get_strategy_name(void) { return pmm_strategy_name; }
