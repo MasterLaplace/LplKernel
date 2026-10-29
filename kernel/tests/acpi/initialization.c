@@ -4,6 +4,7 @@
 
 #include <kernel/acpi/initialization.h>
 #include <kernel/acpi/machine_language.h>
+#include <kernel/acpi/processor_idle.h>
 #include <kernel/testing/test.h>
 
 #include <stdint.h>
@@ -21,6 +22,7 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t initializatio
 static AdvancedConfigurationAndPowerInterfaceInitialization_t initialization_counts;
 static AdvancedConfigurationAndPowerInterfaceMadtState_t initialization_madt;
 static AdvancedConfigurationAndPowerInterfaceInitializationMachine_t initialization_machine;
+static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t initialization_idle;
 static uint8_t initialization_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
 static MadeUpAml_t initialization_aml;
 static MadeUpAml_t initialization_outer;
@@ -55,7 +57,7 @@ static bool initialization_run(KernelTest_t *test, bool initialize)
     memset(&initialization_counts, 0, sizeof(initialization_counts));
     if (initialize)
         advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,
-                                                                        &initialization_counts);
+                                                                        &initialization_counts, &initialization_idle);
     return true;
 }
 
@@ -674,7 +676,7 @@ KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
         test, initialization_call("\\XDEV.MKRG") == INITIALIZATION_STATUS(OK) && initialization_integer("TRAC") == 0u,
         "a region created before the initialisation gets no _REG");
     advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,
-                                                                    &initialization_counts);
+                                                                    &initialization_counts, &initialization_idle);
     kernel_test_check(test, initialization_integer("TRAC") == 0u && initialization_counts.registrations == 0u,
                       "the initialisation registers nothing: no table declares a PCI_Config region");
 
@@ -1137,7 +1139,7 @@ KERNEL_TEST(the_handshake_releases_every_buffer_it_builds)
     const uint32_t alive = heap->objects - heap->objects_freed;
 
     advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,
-                                                                    &initialization_counts);
+                                                                    &initialization_counts, &initialization_idle);
     kernel_test_check(test,
                       initialization_counts.platform_capabilities ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_GRANTED &&

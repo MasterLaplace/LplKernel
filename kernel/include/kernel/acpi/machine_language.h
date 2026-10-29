@@ -471,8 +471,8 @@ extern bool advanced_configuration_and_power_interface_machine_language_take_not
 
 /**
  * @brief Takes every Notify from the ring and acts on none, each counted as taken: what the boot
- *        does with the Notifies its tables' code raised, until #547 acts on a Notify 0x81 on a
- *        processor (§3.8 step 9).
+ *        does with the Notifies its last evaluations raised, once step 9 evaluated each _CST a Notify
+ *        0x81 changed (§3.8 step 9), until #547 acts on them.
  *
  * @param load The load.
  */
@@ -602,6 +602,25 @@ advanced_configuration_and_power_interface_machine_language_evaluate_node(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *arguments, uint32_t argument_count,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_result);
+
+/**
+ * @brief Reads one element of a Package, a name it holds resolved as §5.1 resolves it when read: the
+ *        object the name names, a field unit's read, never a method's evaluation.
+ *
+ * @param load      The load.
+ * @param package   A Package value.
+ * @param element   The element, counted from 0.
+ * @param out_value Receives the element, which the caller gives back with
+ *                  advanced_configuration_and_power_interface_machine_language_value_release.
+ * @return TYPE_MISMATCH when @p package is no Package, the element is Uninitialized or names a method;
+ *         INDEX_OUT_OF_RANGE past its last element; why its name could not be resolved or read; OK
+ *         otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_package_element(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *package, uint32_t element,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
 
 /**
  * @brief Releases what Local0 to Local7 of table-level code hold, once a table's code has run: its

@@ -374,6 +374,20 @@ uint32_t advanced_configuration_and_power_interface_machine_language_namespace_f
     }
 }
 
+uint32_t advanced_configuration_and_power_interface_machine_language_namespace_next(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t index, bool descend)
+{
+    if (descend &&
+        advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->first_child != 0u)
+        return advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->first_child;
+    while (index != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT &&
+           advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->next_sibling == 0u)
+        index = advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->parent;
+    return (index == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT) ?
+               0u :
+               advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->next_sibling;
+}
+
 uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_object(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name)
 {

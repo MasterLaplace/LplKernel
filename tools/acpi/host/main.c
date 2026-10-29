@@ -3,6 +3,7 @@
 #include "recorded_machine.h"
 
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
@@ -524,12 +525,13 @@ typedef enum HarnessView {
 
 static NeedsPathClosure_t harness_closure;
 static AdvancedConfigurationAndPowerInterfaceInitialization_t harness_initialization;
+static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t harness_idle;
 static uint32_t harness_unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT];
 
 /**
- * @brief The machine a namespace is initialised for: the CPU slots of @p directory's MADT, none without a
- *        directory, and a processor that implements MONITOR/MWAIT, since a recorded machine's processor is
- *        not recorded.
+ * @brief The machine a namespace is initialised for: the CPU slots of @p directory's MADT and its FADT,
+ *        none without a directory, a processor that implements MONITOR/MWAIT, since a recorded machine's
+ *        processor is not recorded, and a platform step 0 never switched to ACPI mode.
  */
 static const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *
 harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
@@ -543,6 +545,7 @@ harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directo
                        &madt :
                        NULL;
     machine.monitor_wait = true;
+    machine.fadt = (directory != NULL) ? &directory->fixed_description : NULL;
     return &machine;
 }
 
@@ -581,9 +584,72 @@ static void harness_print_closure(AdvancedConfigurationAndPowerInterfaceMachineL
 }
 
 /**
+ * @brief Which method step 7 hands a bound processor object its capabilities through: its _OSC, else
+ *        its _PDC, else none, so that acpiexec can be given the same handshake.
+ */
+static const char *harness_handshake(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                     uint32_t processor)
+{
+    if (advanced_configuration_and_power_interface_machine_language_namespace_find_object(
+            &load->space, processor,
+            advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "_OSC", 0u)) !=
+        0u)
+        return "osc";
+    if (advanced_configuration_and_power_interface_machine_language_namespace_find_object(
+            &load->space, processor,
+            advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "_PDC", 0u)) !=
+        0u)
+        return "pdc";
+    return "none";
+}
+
+/**
+ * @brief Prints what steps 8 and 9 counted, then each CPU slot whose _CST was evaluated, by its processor
+ *        object's path, and each state it published.
+ */
+static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                               const AdvancedConfigurationAndPowerInterfaceInitialization_t *counts)
+{
+    char path[HARNESS_PATH_BYTES];
+    uint32_t published = 0u;
+    uint32_t states = 0u;
+
+    for (uint32_t slot = 0u; slot < harness_idle.slot_count; ++slot)
+    {
+        published += (harness_idle.slots[slot].processor != 0u) ? 1u : 0u;
+        states += harness_idle.slots[slot].count;
+    }
+    printf("aml idle control=%s processor_idle=%u processor_idle_failed=%u processor_idle_unbound=%u "
+           "idle_states_dropped=%u processor_idle_changes=%u slots=%u published=%u states=%u fold=0x%08X\n",
+           advanced_configuration_and_power_interface_idle_control_name(counts->idle_control), counts->processor_idle,
+           counts->processor_idle_failed, counts->processor_idle_unbound, counts->idle_states_dropped,
+           counts->processor_idle_changes, harness_idle.slot_count, published, states,
+           advanced_configuration_and_power_interface_processor_idle_fold(&harness_idle));
+    for (uint32_t slot = 0u; slot < harness_idle.slot_count; ++slot)
+    {
+        const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle = &harness_idle.slots[slot];
+
+        if (idle->processor == 0u)
+            continue;
+        if (advanced_configuration_and_power_interface_machine_language_namespace_path(&load->space, idle->processor,
+                                                                                       path, sizeof(path)) == 0u)
+            memcpy(path, "too_deep", sizeof("too_deep"));
+        printf("aml idle slot %u %s states=%u handshake=%s\n", slot, path, idle->count,
+               harness_handshake(load, idle->processor));
+        for (uint32_t state = 0u; state < idle->count; ++state)
+            printf("aml idle state %u %u type=%u latency=%u power=%u space=0x%02X width=%u offset=%u access=%u "
+                   "address=0x%llX\n",
+                   slot, state + 1u, idle->states[state].type, idle->states[state].latency, idle->states[state].power,
+                   idle->states[state].entry.space, idle->states[state].entry.bit_width,
+                   idle->states[state].entry.bit_offset, idle->states[state].entry.access_size,
+                   (unsigned long long) idle->states[state].entry.address);
+    }
+}
+
+/**
  * @brief Initialises a decoded load's namespace as the boot does, for the machine @p directory describes,
  *        and prints what it ran and counted, each status a failure ended with, each unimplemented opcode
- *        it reached, and the first object whose evaluation failed.
+ *        it reached, the first object whose evaluation failed, and the C-states it published.
  */
 static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                          const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
@@ -593,7 +659,7 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
 
     memcpy(harness_unimplemented, load->evaluation.unimplemented, sizeof(harness_unimplemented));
     advanced_configuration_and_power_interface_initialize_namespace(load, harness_machine(directory),
-                                                                    &harness_initialization);
+                                                                    &harness_initialization, &harness_idle);
     printf("aml init initializations=%u initialization_failed=%u registrations=%u region_registration_failed=%u "
            "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u "
            "platform_capabilities=%s processor_capabilities=%u processor_capabilities_legacy=%u "
@@ -623,6 +689,7 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
         printf("aml init first_failure %s %s\n", path,
                advanced_configuration_and_power_interface_machine_language_status_name(counts->first_failure));
     }
+    harness_print_idle(load, counts);
 }
 
 /**
@@ -818,7 +885,7 @@ static int harness_evaluate(const char *path, int count, char **paths)
         {
             advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
             advanced_configuration_and_power_interface_initialize_namespace(&load, harness_machine(NULL),
-                                                                            &harness_initialization);
+                                                                            &harness_initialization, &harness_idle);
             printf("aml evaluate status=%s\n", advanced_configuration_and_power_interface_machine_language_status_name(
                                                    advanced_configuration_and_power_interface_machine_language_evaluate(
                                                        &load, path, NULL, 0u, &result)));

@@ -233,6 +233,18 @@ extern uint32_t advanced_configuration_and_power_interface_machine_language_name
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name);
 
 /**
+ * @brief The node after @p index in a depth-first walk in declaration order, children after their
+ *        parent.
+ *
+ * @param space   The namespace.
+ * @param index   The node the walk stands on.
+ * @param descend Whether the walk goes into @p index's children, or skips them.
+ * @return The next node, or 0 once the walk is back at the root.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_next(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t index, bool descend);
+
+/**
  * @brief Writes the absolute path of a node, such as `\_SB_.PCI0._STA`, its NameSegs four characters
  *        each, ended by a NUL.
  *

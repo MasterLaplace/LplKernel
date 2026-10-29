@@ -1,4 +1,5 @@
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/processor_idle.h>
 
 #include <string.h>
 
@@ -39,9 +40,11 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t Initializati
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t InitializationValue_t;
 typedef AdvancedConfigurationAndPowerInterfaceInitialization_t Initialization_t;
 typedef AdvancedConfigurationAndPowerInterfaceInitializationMachine_t InitializationMachine_t;
+typedef AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t InitializationIdle_t;
 
 static InitializationLoad_t initialization_boot_load;
 static Initialization_t initialization_boot;
+static InitializationIdle_t initialization_boot_idle;
 
 /**
  * @brief The platform-wide _OSC's UUID, 0811B06E-4A27-44F9-8D60-3CBBC22E7B48, as ToUUID lays it out.
@@ -86,11 +89,7 @@ static uint32_t initialization_object(InitializationLoad_t *load, uint32_t scope
  */
 static uint32_t initialization_next(const InitializationLoad_t *load, uint32_t index, bool descend)
 {
-    if (descend && initialization_node(load, index)->first_child != 0u)
-        return initialization_node(load, index)->first_child;
-    while (index != INITIALIZATION_ROOT && initialization_node(load, index)->next_sibling == 0u)
-        index = initialization_node(load, index)->parent;
-    return (index == INITIALIZATION_ROOT) ? 0u : initialization_node(load, index)->next_sibling;
+    return advanced_configuration_and_power_interface_machine_language_namespace_next(&load->space, index, descend);
 }
 
 /**
@@ -461,92 +460,6 @@ static void initialization_negotiate_platform(InitializationLoad_t *load, Initia
 }
 
 /**
- * @brief Whether a Device or a Processor is a processor object: a Processor, or a Device whose _HID is
- *        "ACPI0007" (ACPI 6.6 §8.4); a _HID that cannot be read is counted.
- */
-static bool initialization_is_processor(InitializationLoad_t *load, Initialization_t *initialization, uint32_t index)
-{
-    if (initialization_node(load, index)->type == INITIALIZATION_NODE(PROCESSOR))
-        return true;
-
-    const uint32_t object = initialization_object(load, index, "_HID");
-    uint8_t scratch[8];
-    const uint8_t *bytes = NULL;
-    uint32_t length = 0u;
-    InitializationValue_t result;
-
-    if (object == 0u)
-        return false;
-
-    const InitializationStatus_t status =
-        advanced_configuration_and_power_interface_machine_language_evaluate_node(load, object, NULL, 0u, &result);
-    const bool processor = status == INITIALIZATION_OK && result.kind == INITIALIZATION_VALUE(STRING) &&
-                           advanced_configuration_and_power_interface_machine_language_value_bytes(
-                               &load->heap, &result, 64u, scratch, &bytes, &length) == INITIALIZATION_OK &&
-                           length == 8u && memcmp(bytes, "ACPI0007", 8u) == 0;
-
-    advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, &result);
-    if (status != INITIALIZATION_OK)
-        initialization_count_failure(initialization, object, status);
-    return processor;
-}
-
-/**
- * @brief The ACPI Processor UID of a processor object into @p out_identifier: a Processor's ProcessorID,
- *        or a Device's _UID converted as an operand is (§3.10, §5.2); a _UID that cannot be read is
- *        counted.
- *
- * @return false when the Device has no _UID, or it cannot be read.
- */
-static bool initialization_processor_identifier(InitializationLoad_t *load, Initialization_t *initialization,
-                                                uint32_t index, uint64_t *out_identifier)
-{
-    const InitializationNode_t *node = initialization_node(load, index);
-
-    if (node->type == INITIALIZATION_NODE(PROCESSOR))
-    {
-        *out_identifier = (node->value.payload >>
-                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PROCESSOR_IDENTIFIER_SHIFT) &
-                          0xFFu;
-        return true;
-    }
-
-    const uint32_t object = initialization_object(load, index, "_UID");
-    InitializationValue_t result;
-    bool forbidden = false;
-
-    if (object == 0u)
-        return false;
-
-    InitializationStatus_t status =
-        advanced_configuration_and_power_interface_machine_language_evaluate_node(load, object, NULL, 0u, &result);
-
-    if (status == INITIALIZATION_OK)
-        status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
-            &load->heap, &result, (load->integer_bits == 32u) ? 32u : 64u, out_identifier, &forbidden);
-    load->evaluation.forbidden_conversions += forbidden ? 1u : 0u;
-    advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, &result);
-    if (status == INITIALIZATION_OK)
-        return true;
-    initialization_count_failure(initialization, object, status);
-    return false;
-}
-
-/**
- * @brief Whether a CPU slot of @p machine's MADT, which holds Enabled processors only, has the ACPI
- *        Processor UID @p identifier (§3.10).
- */
-static bool initialization_processor_bound(const InitializationMachine_t *machine, uint64_t identifier)
-{
-    if (machine->madt == NULL)
-        return false;
-    for (uint32_t slot = 0u; slot < machine->madt->processor_count; ++slot)
-        if (machine->madt->processors[slot].processor_unique_identifier == identifier)
-            return true;
-    return false;
-}
-
-/**
  * @brief Evaluates a _PDC with a buffer of revision 1 that holds the one DWORD @p capabilities.
  */
 static InitializationStatus_t initialization_processor_driver_capabilities(InitializationLoad_t *load, uint32_t method,
@@ -614,15 +527,14 @@ static void initialization_negotiate_processors(InitializationLoad_t *load, Init
          index = initialization_next(load, index, initialization_capable(load, index)))
     {
         const uint8_t type = initialization_node(load, index)->type;
-        uint64_t identifier = 0u;
 
         if (!initialization_capable(load, index) ||
             (type != INITIALIZATION_NODE(PROCESSOR) && type != INITIALIZATION_NODE(DEVICE)) ||
             !initialization_holds_capabilities(load, index) ||
-            !initialization_is_processor(load, initialization, index))
+            !advanced_configuration_and_power_interface_processor_object(load, initialization, index))
             continue;
-        if (!initialization_processor_identifier(load, initialization, index, &identifier) ||
-            !initialization_processor_bound(machine, identifier))
+        if (advanced_configuration_and_power_interface_processor_slot(load, machine, initialization, index) ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_NO_SLOT)
         {
             ++initialization->processors_unbound;
             continue;
@@ -633,7 +545,8 @@ static void initialization_negotiate_processors(InitializationLoad_t *load, Init
 
 void advanced_configuration_and_power_interface_initialize_namespace(InitializationLoad_t *load,
                                                                      const InitializationMachine_t *machine,
-                                                                     Initialization_t *out_initialization)
+                                                                     Initialization_t *out_initialization,
+                                                                     InitializationIdle_t *out_idle)
 {
     memset(out_initialization, 0, sizeof(*out_initialization));
     initialization_find_initializations(load, out_initialization);
@@ -644,7 +557,14 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     out_initialization->pic_mode_deferred = (initialization_object(load, INITIALIZATION_ROOT, "_PIC") != 0u) ? 1u : 0u;
     initialization_negotiate_platform(load, out_initialization);
     initialization_negotiate_processors(load, out_initialization, machine);
-    advanced_configuration_and_power_interface_machine_language_drop_notifications(load);
+    advanced_configuration_and_power_interface_processor_idle_publish(load, machine, out_initialization, out_idle);
+}
+
+void advanced_configuration_and_power_interface_initialization_count_failure(Initialization_t *initialization,
+                                                                             uint32_t node,
+                                                                             InitializationStatus_t status)
+{
+    initialization_count_failure(initialization, node, status);
 }
 
 const char *advanced_configuration_and_power_interface_platform_capabilities_name(uint32_t capabilities)
@@ -661,6 +581,8 @@ void advanced_configuration_and_power_interface_machine_language_initialize(bool
                     advanced_configuration_and_power_interface_madt() :
                     NULL,
         .monitor_wait = monitor_wait,
+        .fadt = &advanced_configuration_and_power_interface_directory()->fixed_description,
+        .mode = advanced_configuration_and_power_interface_mode()->outcome,
     };
 
     if (advanced_configuration_and_power_interface_machine_language_open(
@@ -669,8 +591,8 @@ void advanced_configuration_and_power_interface_machine_language_initialize(bool
     {
         advanced_configuration_and_power_interface_machine_language_load_directory(
             &initialization_boot_load, advanced_configuration_and_power_interface_directory());
-        advanced_configuration_and_power_interface_initialize_namespace(&initialization_boot_load, &machine,
-                                                                        &initialization_boot);
+        advanced_configuration_and_power_interface_initialize_namespace(
+            &initialization_boot_load, &machine, &initialization_boot, &initialization_boot_idle);
     }
 }
 
@@ -680,3 +602,8 @@ const InitializationLoad_t *advanced_configuration_and_power_interface_machine_l
 }
 
 const Initialization_t *advanced_configuration_and_power_interface_initialization(void) { return &initialization_boot; }
+
+const InitializationIdle_t *advanced_configuration_and_power_interface_processor_idle(void)
+{
+    return &initialization_boot_idle;
+}

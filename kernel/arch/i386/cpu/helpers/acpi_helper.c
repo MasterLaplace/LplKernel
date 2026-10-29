@@ -1,4 +1,5 @@
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/config.h>
 #include <kernel/cpu/helpers/acpi_helper.h>
@@ -50,7 +51,8 @@ acpi_helper_write_regions_record(Serial_t *serial,
 
 /**
  * @brief Writes the `[LPLTLM] acpi.init` record: what the initialisation of the boot's namespace ran
- *        and counted (§3.8 steps 2 to 5), and the first evaluation that failed, by its path and status.
+ *        and counted (§3.8 steps 2 to 9), the fold of the C-states it published, and the first evaluation
+ *        that failed, by its path and status.
  */
 static void
 acpi_helper_write_initialization_record(Serial_t *serial,
@@ -81,6 +83,15 @@ acpi_helper_write_initialization_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("processor_capabilities_refused", initialization->processor_capabilities_refused);
     kernel_telemetry_write_unsigned("processor_capabilities_failed", initialization->processor_capabilities_failed);
     kernel_telemetry_write_unsigned("processors_unbound", initialization->processors_unbound);
+    kernel_telemetry_write_text(
+        "idle_control", advanced_configuration_and_power_interface_idle_control_name(initialization->idle_control));
+    kernel_telemetry_write_unsigned("processor_idle", initialization->processor_idle);
+    kernel_telemetry_write_unsigned("processor_idle_failed", initialization->processor_idle_failed);
+    kernel_telemetry_write_unsigned("processor_idle_unbound", initialization->processor_idle_unbound);
+    kernel_telemetry_write_unsigned("idle_states_dropped", initialization->idle_states_dropped);
+    kernel_telemetry_write_unsigned("processor_idle_changes", initialization->processor_idle_changes);
+    kernel_telemetry_write_hexadecimal("idle_fold", advanced_configuration_and_power_interface_processor_idle_fold(
+                                                        advanced_configuration_and_power_interface_processor_idle()));
     kernel_telemetry_write_text("first_failure", path);
     kernel_telemetry_write_text(
         "first_failure_status",
@@ -148,6 +159,51 @@ static void acpi_helper_write_table(Serial_t *serial, const AdvancedConfiguratio
         serial_write_string(serial, row);
     }
     serial_write_char(serial, '\n');
+}
+
+/**
+ * @brief Writes @p value in decimal from @p text on.
+ *
+ * @return Where the next character goes.
+ */
+static char *acpi_helper_put_decimal(char *text, uint32_t value)
+{
+    char digits[10];
+    uint32_t count = 0u;
+
+    do
+    {
+        digits[count++] = (char) ('0' + value % 10u);
+        value /= 10u;
+    } while (value != 0u);
+    while (count != 0u)
+        *text++ = digits[--count];
+    return text;
+}
+
+/**
+ * @brief Writes one published C-state as `type:latency:power:space:width:offset:access:address`, the
+ *        space and the address in hexadecimal, from @p text on, and ends the text.
+ */
+static void acpi_helper_put_idle_state(char *text, const AdvancedConfigurationAndPowerInterfaceIdleState_t *state)
+{
+    text = acpi_helper_put_decimal(text, state->type);
+    *text++ = ':';
+    text = acpi_helper_put_decimal(text, state->latency);
+    *text++ = ':';
+    text = acpi_helper_put_decimal(text, state->power);
+    *text++ = ':';
+    text = acpi_helper_put_hexadecimal(text, state->entry.space, 2u);
+    *text++ = ':';
+    text = acpi_helper_put_decimal(text, state->entry.bit_width);
+    *text++ = ':';
+    text = acpi_helper_put_decimal(text, state->entry.bit_offset);
+    *text++ = ':';
+    text = acpi_helper_put_decimal(text, state->entry.access_size);
+    *text++ = ':';
+    text = acpi_helper_put_hexadecimal(text, (uint32_t) (state->entry.address >> 32u), 8u);
+    text = acpi_helper_put_hexadecimal(text, (uint32_t) state->entry.address, 8u);
+    *text = '\0';
 }
 
 /**
@@ -425,5 +481,33 @@ void write_acpi_isa_routing_info(Serial_t *serial)
             serial_write_string(serial, ", ioapic_index=none");
 
         serial_write_string(serial, "\n");
+    }
+}
+
+void write_acpi_processor_idle_record(Serial_t *serial)
+{
+    static const char *const keys[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_MAX_STATES] = {
+        "state1", "state2", "state3", "state4", "state5", "state6", "state7", "state8"};
+    const AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t *table =
+        advanced_configuration_and_power_interface_processor_idle();
+    const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt = advanced_configuration_and_power_interface_madt();
+    char text[72];
+
+    for (uint32_t slot = 0u; slot < table->slot_count; ++slot)
+    {
+        const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle = &table->slots[slot];
+
+        kernel_telemetry_begin_record(serial, "acpi.cst");
+        kernel_telemetry_write_unsigned("slot", slot);
+        kernel_telemetry_write_unsigned("apic_id", madt->processors[slot].apic_id);
+        kernel_telemetry_write_unsigned("uid", madt->processors[slot].processor_unique_identifier);
+        kernel_telemetry_write_boolean("evaluated", idle->processor != 0u);
+        kernel_telemetry_write_unsigned("states", idle->count);
+        for (uint32_t state = 0u; state < idle->count; ++state)
+        {
+            acpi_helper_put_idle_state(text, &idle->states[state]);
+            kernel_telemetry_write_text(keys[state], text);
+        }
+        kernel_telemetry_end_record();
     }
 }
