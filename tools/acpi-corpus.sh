@@ -246,8 +246,8 @@ initialize_check() {
         $(grep '^aml init unimplemented ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
             END { for (key in total) printf " %s=%u", key, total[key] }')
     echo -n "# C-states of"
-    for key in slots published states processor_idle processor_idle_failed processor_idle_unbound idle_states_dropped \
-        processor_idle_changes; do
+    for key in slots published states skipped processor_idle processor_idle_failed processor_idle_absent \
+        processor_idle_unbound idle_states_dropped processor_idle_changes; do
         echo -n " $key=$(grep '^aml idle control=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
     done
     echo

@@ -34,7 +34,8 @@
 #include <stdint.h>
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_MAX_STATES                                           \
-    8u /**< States one CPU slot publishes, as Linux's ACPI_PROCESSOR_MAX_POWER; the rest are counted (§6.1). */
+    7u /**< States one CPU slot publishes, as Linux, whose table of ACPI_PROCESSOR_MAX_POWER (8) keeps its first entry \
+            for C0; the states after them are counted and not read (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_NO_SLOT                                              \
     0xFFFFFFFFu /**< What a processor object bound to no CPU slot binds to. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_CHANGED                                              \
@@ -57,10 +58,12 @@ typedef enum AdvancedConfigurationAndPowerInterfaceIdleControl {
  *        type, latency and power.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceIdleState {
-    AdvancedConfigurationAndPowerInterfaceGenericAddress_t entry; /**< The Register descriptor: FFixedHW (0x7F)
-                                                                       with the MWAIT hint as its address, its
-                                                                       vendor and class as its width and offset;
-                                                                       a SystemIO port read; or SystemMemory. */
+    AdvancedConfigurationAndPowerInterfaceGenericAddress_t entry; /**< The Register descriptor, in any space, kept
+                                                                       as firmware gives it: FFixedHW (0x7F) with
+                                                                       the MWAIT hint as its address and its vendor
+                                                                       and class as its width and offset, a SystemIO
+                                                                       port read, or another; #298 decides which to
+                                                                       enter. */
     uint32_t type;    /**< The C-state type: 1, 2 or 3 as ACPI defines them, as firmware gave it. */
     uint32_t latency; /**< The worst-case latency to enter and leave it, in microseconds. */
     uint32_t power;   /**< The processor's average power in it, in milliwatts. */
@@ -73,6 +76,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceProcessorIdle {
     uint32_t processor; /**< The node of the processor object bound to the slot whose _CST was evaluated, or 0. */
     uint32_t count;     /**< States published: 0 when the evaluation failed or its package is malformed, and the
                              CPU keeps the states the kernel enters without ACPI. */
+    uint32_t skipped;   /**< States the _CST listed that were faulty, and are left out. */
     AdvancedConfigurationAndPowerInterfaceIdleState_t
         states[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_MAX_STATES]; /**< In _CST's order. */
 } AdvancedConfigurationAndPowerInterfaceProcessorIdle_t;
@@ -139,7 +143,7 @@ extern void advanced_configuration_and_power_interface_processor_idle_publish(
 
 /**
  * @brief Folds a published table with FNV-1a, 32 bits, over little-endian bytes: the slot count, then
- *        per slot whether a _CST was evaluated for it, its state count, and each state's register
+ *        per slot whether a _CST was evaluated for it, its state count, its skipped count, and each state's register
  *        (space, bit width, bit offset, access size, address), type, latency and power; never a node
  *        index (§8.7).
  *

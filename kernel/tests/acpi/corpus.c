@@ -197,6 +197,7 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure(test, "idle_control", initialization.idle_control);
     kernel_test_measure(test, "processor_idle", initialization.processor_idle);
     kernel_test_measure(test, "processor_idle_failed", initialization.processor_idle_failed);
+    kernel_test_measure(test, "processor_idle_absent", initialization.processor_idle_absent);
     kernel_test_measure(test, "processor_idle_unbound", initialization.processor_idle_unbound);
     kernel_test_measure(test, "idle_states_dropped", initialization.idle_states_dropped);
     kernel_test_measure(test, "processor_idle_changes", initialization.processor_idle_changes);

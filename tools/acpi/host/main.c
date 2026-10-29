@@ -613,18 +613,21 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
     char path[HARNESS_PATH_BYTES];
     uint32_t published = 0u;
     uint32_t states = 0u;
+    uint32_t skipped = 0u;
 
     for (uint32_t slot = 0u; slot < harness_idle.slot_count; ++slot)
     {
         published += (harness_idle.slots[slot].processor != 0u) ? 1u : 0u;
         states += harness_idle.slots[slot].count;
+        skipped += harness_idle.slots[slot].skipped;
     }
-    printf("aml idle control=%s processor_idle=%u processor_idle_failed=%u processor_idle_unbound=%u "
-           "idle_states_dropped=%u processor_idle_changes=%u slots=%u published=%u states=%u fold=0x%08X\n",
+    printf("aml idle control=%s processor_idle=%u processor_idle_failed=%u processor_idle_absent=%u "
+           "processor_idle_unbound=%u idle_states_dropped=%u processor_idle_changes=%u slots=%u published=%u states=%u "
+           "skipped=%u fold=0x%08X\n",
            advanced_configuration_and_power_interface_idle_control_name(counts->idle_control), counts->processor_idle,
-           counts->processor_idle_failed, counts->processor_idle_unbound, counts->idle_states_dropped,
-           counts->processor_idle_changes, harness_idle.slot_count, published, states,
-           advanced_configuration_and_power_interface_processor_idle_fold(&harness_idle));
+           counts->processor_idle_failed, counts->processor_idle_absent, counts->processor_idle_unbound,
+           counts->idle_states_dropped, counts->processor_idle_changes, harness_idle.slot_count, published, states,
+           skipped, advanced_configuration_and_power_interface_processor_idle_fold(&harness_idle));
     for (uint32_t slot = 0u; slot < harness_idle.slot_count; ++slot)
     {
         const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle = &harness_idle.slots[slot];
@@ -634,7 +637,7 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
         if (advanced_configuration_and_power_interface_machine_language_namespace_path(&load->space, idle->processor,
                                                                                        path, sizeof(path)) == 0u)
             memcpy(path, "too_deep", sizeof("too_deep"));
-        printf("aml idle slot %u %s states=%u handshake=%s\n", slot, path, idle->count,
+        printf("aml idle slot %u %s states=%u skipped=%u handshake=%s\n", slot, path, idle->count, idle->skipped,
                harness_handshake(load, idle->processor));
         for (uint32_t state = 0u; state < idle->count; ++state)
             printf("aml idle state %u %u type=%u latency=%u power=%u space=0x%02X width=%u offset=%u access=%u "

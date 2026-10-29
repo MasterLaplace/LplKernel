@@ -63,6 +63,12 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_CAPABILITIES                            \
     0x04u /**< Node flag: the node, or one below it, is a device or processor with an _OSC or a _PDC, as the           \
                initialisation's pre-pass marks it (§3.8 step 7). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_STATUS_READ                                   \
+    0x08u /**< Node flag: step 8 read the _STA of this device, processor or thermal zone, which lies above a processor \
+               object with a _CST (§3.10). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT                                        \
+    0x10u /**< Node flag: that _STA says neither present nor functioning, which keeps every processor object below it  \
+               out of step 8. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS                                     \
     8u /**< Aliases one resolution follows before it gives up. */
 

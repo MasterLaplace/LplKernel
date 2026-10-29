@@ -87,6 +87,7 @@ acpi_helper_write_initialization_record(Serial_t *serial,
         "idle_control", advanced_configuration_and_power_interface_idle_control_name(initialization->idle_control));
     kernel_telemetry_write_unsigned("processor_idle", initialization->processor_idle);
     kernel_telemetry_write_unsigned("processor_idle_failed", initialization->processor_idle_failed);
+    kernel_telemetry_write_unsigned("processor_idle_absent", initialization->processor_idle_absent);
     kernel_telemetry_write_unsigned("processor_idle_unbound", initialization->processor_idle_unbound);
     kernel_telemetry_write_unsigned("idle_states_dropped", initialization->idle_states_dropped);
     kernel_telemetry_write_unsigned("processor_idle_changes", initialization->processor_idle_changes);
@@ -162,44 +163,24 @@ static void acpi_helper_write_table(Serial_t *serial, const AdvancedConfiguratio
 }
 
 /**
- * @brief Writes @p value in decimal from @p text on.
- *
- * @return Where the next character goes.
- */
-static char *acpi_helper_put_decimal(char *text, uint32_t value)
-{
-    char digits[10];
-    uint32_t count = 0u;
-
-    do
-    {
-        digits[count++] = (char) ('0' + value % 10u);
-        value /= 10u;
-    } while (value != 0u);
-    while (count != 0u)
-        *text++ = digits[--count];
-    return text;
-}
-
-/**
- * @brief Writes one published C-state as `type:latency:power:space:width:offset:access:address`, the
- *        space and the address in hexadecimal, from @p text on, and ends the text.
+ * @brief Writes one published C-state as `type:latency:power:space:width:offset:access:address` in
+ *        hexadecimal, each field as wide as its type, from @p text on, and ends the text.
  */
 static void acpi_helper_put_idle_state(char *text, const AdvancedConfigurationAndPowerInterfaceIdleState_t *state)
 {
-    text = acpi_helper_put_decimal(text, state->type);
+    text = acpi_helper_put_hexadecimal(text, state->type, 8u);
     *text++ = ':';
-    text = acpi_helper_put_decimal(text, state->latency);
+    text = acpi_helper_put_hexadecimal(text, state->latency, 8u);
     *text++ = ':';
-    text = acpi_helper_put_decimal(text, state->power);
+    text = acpi_helper_put_hexadecimal(text, state->power, 8u);
     *text++ = ':';
     text = acpi_helper_put_hexadecimal(text, state->entry.space, 2u);
     *text++ = ':';
-    text = acpi_helper_put_decimal(text, state->entry.bit_width);
+    text = acpi_helper_put_hexadecimal(text, state->entry.bit_width, 2u);
     *text++ = ':';
-    text = acpi_helper_put_decimal(text, state->entry.bit_offset);
+    text = acpi_helper_put_hexadecimal(text, state->entry.bit_offset, 2u);
     *text++ = ':';
-    text = acpi_helper_put_decimal(text, state->entry.access_size);
+    text = acpi_helper_put_hexadecimal(text, state->entry.access_size, 2u);
     *text++ = ':';
     text = acpi_helper_put_hexadecimal(text, (uint32_t) (state->entry.address >> 32u), 8u);
     text = acpi_helper_put_hexadecimal(text, (uint32_t) state->entry.address, 8u);
@@ -484,10 +465,10 @@ void write_acpi_isa_routing_info(Serial_t *serial)
     }
 }
 
-void write_acpi_processor_idle_record(Serial_t *serial)
+void write_advanced_configuration_and_power_interface_processor_idle_record(Serial_t *serial)
 {
     static const char *const keys[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_MAX_STATES] = {
-        "state1", "state2", "state3", "state4", "state5", "state6", "state7", "state8"};
+        "state1", "state2", "state3", "state4", "state5", "state6", "state7"};
     const AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t *table =
         advanced_configuration_and_power_interface_processor_idle();
     const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt = advanced_configuration_and_power_interface_madt();
@@ -503,6 +484,7 @@ void write_acpi_processor_idle_record(Serial_t *serial)
         kernel_telemetry_write_unsigned("uid", madt->processors[slot].processor_unique_identifier);
         kernel_telemetry_write_boolean("evaluated", idle->processor != 0u);
         kernel_telemetry_write_unsigned("states", idle->count);
+        kernel_telemetry_write_unsigned("skipped", idle->skipped);
         for (uint32_t state = 0u; state < idle->count; ++state)
         {
             acpi_helper_put_idle_state(text, &idle->states[state]);

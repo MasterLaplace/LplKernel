@@ -90,6 +90,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
     uint32_t idle_control;                   /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_* value. */
     uint32_t processor_idle;         /**< _CST evaluations of processor objects bound to a CPU slot, steps 8 and 9. */
     uint32_t processor_idle_failed;  /**< Of those, the ones that failed or gave a malformed package. */
+    uint32_t processor_idle_absent;  /**< Processor objects with a _CST that _STA keeps out: not present nor
+                                          functioning, not enabled, or below a device neither present nor
+                                          functioning; they publish nothing. */
     uint32_t processor_idle_unbound; /**< Processor objects with a _CST that bind to no CPU slot, or to one an
                                           earlier object took, and publish nothing. */
     uint32_t idle_states_dropped;    /**< States past the ones a CPU slot publishes, counted and left out. */

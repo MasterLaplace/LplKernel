@@ -70,13 +70,13 @@ extern void write_acpi_machine_language_record(Serial_t *serial);
 
 /**
  * @brief Writes one `[LPLTLM] acpi.cst` record per CPU slot (§3.10): its slot, local APIC ID and ACPI
- *        Processor UID, whether a _CST was evaluated for it, its state count, then each state it published
- *        as `stateN=type:latency:power:space:width:offset:access:address`, the space and the 64-bit address
- *        in hexadecimal.
+ *        Processor UID, whether a _CST was evaluated for it, its state count and the faulty states it left
+ *        out, then each state it published as `stateN=type:latency:power:space:width:offset:access:address`
+ *        in hexadecimal, each field as wide as its type.
  *
  * @param serial The port the records are written to.
  */
-extern void write_acpi_processor_idle_record(Serial_t *serial);
+extern void write_advanced_configuration_and_power_interface_processor_idle_record(Serial_t *serial);
 
 /**
  * @brief Writes every table the boot's directory holds, its bytes as acpidump prints them, so that

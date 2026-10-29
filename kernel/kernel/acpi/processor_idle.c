@@ -14,9 +14,15 @@
 #define PROCESSOR_IDLE_MAX_STATES     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_MAX_STATES
 #define PROCESSOR_IDLE_MAX_SLOTS      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_PROCESSOR_COUNT
 #define PROCESSOR_IDLE_MALFORMED      PROCESSOR_IDLE_STATUS(TYPE_MISMATCH) /**< What a malformed _CST package fails as. */
-#define PROCESSOR_IDLE_STATE_ELEMENTS 4u          /**< A C-state's elements: Register, Type, Latency and Power. */
-#define PROCESSOR_IDLE_PORTS          0x10000u    /**< The I/O space: ports 0 to 0xFFFF. */
-#define PROCESSOR_IDLE_SLOT_BITS      32u         /**< CPU slots one word of a slot set holds. */
+#define PROCESSOR_IDLE_STATE_ELEMENTS 4u       /**< A C-state's elements: Register, Type, Latency and Power. */
+#define PROCESSOR_IDLE_PORTS          0x10000u /**< The I/O space: ports 0 to 0xFFFF. */
+#define PROCESSOR_IDLE_SLOT_BITS      32u      /**< CPU slots one word of a slot set holds. */
+#define PROCESSOR_IDLE_PRESENT        0x01u    /**< _STA bit 0: the device is present. */
+#define PROCESSOR_IDLE_ENABLED        0x02u    /**< _STA bit 1: the device is enabled. */
+#define PROCESSOR_IDLE_FUNCTIONING    0x08u    /**< _STA bit 3: the device works. */
+#define PROCESSOR_IDLE_NO_STATUS      0x0Fu    /**< What a device without _STA reads as (ACPI 6.6 §6.3.7). */
+#define PROCESSOR_IDLE_STATUS_READ    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_STATUS_READ
+#define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT
 #define PROCESSOR_IDLE_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define PROCESSOR_IDLE_FOLD_PRIME     0x01000193u /**< FNV-1a's prime. */
 
@@ -93,9 +99,8 @@ static ProcessorIdleStatus_t processor_idle_double_word(ProcessorIdleLoad_t *loa
 }
 
 /**
- * @brief Reads the Register of a C-state: the first Generic Register of the resource template its
- *        first element holds, before its End Tag (ACPI 6.6 §8.4.1.1). An Integer or a String, whose bytes
- *        can hold no Generic Register, is malformed as well.
+ * @brief Reads the Register of a C-state: the first Generic Register of the resource template, a Buffer,
+ *        its first element holds, before its End Tag (ACPI 6.6 §8.4.1.1).
  */
 static ProcessorIdleStatus_t processor_idle_register(ProcessorIdleLoad_t *load, const ProcessorIdleValue_t *state,
                                                      AdvancedConfigurationAndPowerInterfaceGenericAddress_t *out_entry)
@@ -110,6 +115,8 @@ static ProcessorIdleStatus_t processor_idle_register(ProcessorIdleLoad_t *load, 
     ProcessorIdleStatus_t status =
         advanced_configuration_and_power_interface_machine_language_package_element(load, state, 0u, &buffer);
 
+    if (status == PROCESSOR_IDLE_OK && buffer.kind != PROCESSOR_IDLE_VALUE(BUFFER))
+        status = PROCESSOR_IDLE_MALFORMED;
     if (status == PROCESSOR_IDLE_OK)
         status = advanced_configuration_and_power_interface_machine_language_value_bytes(&load->heap, &buffer, 64u,
                                                                                          scratch, &bytes, &length);
@@ -154,29 +161,37 @@ static ProcessorIdleStatus_t processor_idle_state(ProcessorIdleLoad_t *load, con
 }
 
 /**
- * @brief Reads what a _CST returned into @p out_idle: a Package of a Count, then as many C-states. The
- *        states past PROCESSOR_IDLE_MAX_STATES are read, counted and left out.
+ * @brief Reads what a _CST returned into @p out_idle: a Package of a Count of at least 1, then as many
+ *        C-states, as Linux reads it. A faulty state is left out and counted on the slot; once
+ *        PROCESSOR_IDLE_MAX_STATES are published, the states after them are counted and not read.
+ *
+ * @return MALFORMED when the package has no Integer Count, a Count below 1, or a Count other than the
+ *         sub-packages after it, and publishes nothing; OK otherwise.
  */
 static ProcessorIdleStatus_t processor_idle_read(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts,
                                                  const ProcessorIdleValue_t *idle, ProcessorIdle_t *out_idle)
 {
     uint32_t count = 0u;
-    ProcessorIdleState_t dropped;
     ProcessorIdleStatus_t status =
         (idle->kind == PROCESSOR_IDLE_VALUE(PACKAGE) && processor_idle_elements(load, idle) != 0u) ?
             processor_idle_double_word(load, idle, 0u, &count) :
             PROCESSOR_IDLE_MALFORMED;
 
-    if (status == PROCESSOR_IDLE_OK && count != processor_idle_elements(load, idle) - 1u)
+    if (status == PROCESSOR_IDLE_OK && (count == 0u || count != processor_idle_elements(load, idle) - 1u))
         status = PROCESSOR_IDLE_MALFORMED;
     for (uint32_t state = 0u; status == PROCESSOR_IDLE_OK && state < count; ++state)
-        status = processor_idle_state(load, idle, state + 1u,
-                                      (state < PROCESSOR_IDLE_MAX_STATES) ? &out_idle->states[state] : &dropped);
-    if (status != PROCESSOR_IDLE_OK)
-        return status;
-    out_idle->count = (count < PROCESSOR_IDLE_MAX_STATES) ? count : PROCESSOR_IDLE_MAX_STATES;
-    counts->idle_states_dropped += count - out_idle->count;
-    return PROCESSOR_IDLE_OK;
+    {
+        if (out_idle->count == PROCESSOR_IDLE_MAX_STATES)
+        {
+            counts->idle_states_dropped += count - state;
+            break;
+        }
+        if (processor_idle_state(load, idle, state + 1u, &out_idle->states[out_idle->count]) == PROCESSOR_IDLE_OK)
+            ++out_idle->count;
+        else
+            ++out_idle->skipped;
+    }
+    return status;
 }
 
 /**
@@ -271,6 +286,102 @@ static void processor_idle_take_notifications(ProcessorIdleLoad_t *load, const P
 }
 
 /**
+ * @brief Evaluates @p object and converts what it gives into @p out_value, as an operand is converted
+ *        (§5.2); a failure is counted.
+ *
+ * @return Whether it could.
+ */
+static bool processor_idle_integer(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t object,
+                                   uint64_t *out_value)
+{
+    ProcessorIdleValue_t result;
+    bool forbidden = false;
+    ProcessorIdleStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate_node(load, object, NULL, 0u, &result);
+
+    if (status == PROCESSOR_IDLE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
+            &load->heap, &result, (load->integer_bits == 32u) ? 32u : 64u, out_value, &forbidden);
+    load->evaluation.forbidden_conversions += forbidden ? 1u : 0u;
+    processor_idle_release(load, &result);
+    if (status == PROCESSOR_IDLE_OK)
+        return true;
+    advanced_configuration_and_power_interface_initialization_count_failure(counts, object, status);
+    return false;
+}
+
+/**
+ * @brief What the _STA of @p node reads as Linux reads it (v7.3 acpi_bus_get_status_handle,
+ *        acpi_scan_init_status): 0x0F without one, 0 when it cannot be read.
+ */
+static uint64_t processor_idle_status(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t node)
+{
+    const uint32_t object = processor_idle_object(load, node, "_STA");
+    uint64_t status = PROCESSOR_IDLE_NO_STATUS;
+
+    if (object != 0u && !processor_idle_integer(load, counts, object, &status))
+        status = 0u;
+    return status;
+}
+
+/**
+ * @brief Whether a node is one Linux makes a device of, whose _STA it reads: a Device, a Processor or a
+ *        ThermalZone.
+ */
+static bool processor_idle_is_device(const ProcessorIdleNode_t *node)
+{
+    return node->type == PROCESSOR_IDLE_NODE(DEVICE) || node->type == PROCESSOR_IDLE_NODE(PROCESSOR) ||
+           node->type == PROCESSOR_IDLE_NODE(THERMAL_ZONE);
+}
+
+/**
+ * @brief Whether a device above @p node is neither present nor functioning, as Linux attaches nothing
+ *        below such a device (v7.3 acpi_bus_attach). Each device's _STA is read once, the topmost first,
+ *        and kept in its node's flags.
+ */
+static bool processor_idle_hidden(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t node)
+{
+    for (;;)
+    {
+        uint32_t unread = 0u;
+
+        for (uint32_t index = processor_idle_node(load, node)->parent; index != PROCESSOR_IDLE_ROOT;
+             index = processor_idle_node(load, index)->parent)
+        {
+            const ProcessorIdleNode_t *above = processor_idle_node(load, index);
+
+            if (!processor_idle_is_device(above))
+                continue;
+            if ((above->flags & PROCESSOR_IDLE_STATUS_READ) == 0u)
+                unread = index;
+            else if ((above->flags & PROCESSOR_IDLE_ABSENT) != 0u)
+                return true;
+        }
+        if (unread == 0u)
+            return false;
+        processor_idle_node(load, unread)->flags |= PROCESSOR_IDLE_STATUS_READ;
+        if ((processor_idle_status(load, counts, unread) & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
+            processor_idle_node(load, unread)->flags |= PROCESSOR_IDLE_ABSENT;
+    }
+}
+
+/**
+ * @brief Whether Linux would attach the processor object @p processor (v7.3 acpi_bus_attach,
+ *        acpi_processor_add): no device above it hidden, and its own _STA present or functioning, and
+ *        enabled.
+ */
+static bool processor_idle_present(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor)
+{
+    if (processor_idle_hidden(load, counts, processor))
+        return false;
+
+    const uint64_t status = processor_idle_status(load, counts, processor);
+
+    return (status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) != 0u &&
+           (status & PROCESSOR_IDLE_ENABLED) != 0u;
+}
+
+/**
  * @brief Whether a node may be a processor object with a _CST: a Processor, or a Device, that holds one.
  */
 static bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
@@ -282,8 +393,9 @@ static bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
 }
 
 /**
- * @brief Step 8 of §3.8: publishes the _CST of each processor object bound to a CPU slot no earlier
- *        object took, in declaration order, the Notifies queued before each evaluation taken first.
+ * @brief Step 8 of §3.8: publishes the _CST of each processor object _STA keeps in and bound to a CPU slot
+ *        no earlier object took, in declaration order, the Notifies queued before each evaluation taken
+ *        first.
  */
 static void processor_idle_publish_slots(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
                                          ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed)
@@ -296,6 +408,11 @@ static void processor_idle_publish_slots(ProcessorIdleLoad_t *load, const Proces
         if (!processor_idle_candidate(load, index) ||
             !advanced_configuration_and_power_interface_processor_object(load, counts, index))
             continue;
+        if (!processor_idle_present(load, counts, index))
+        {
+            ++counts->processor_idle_absent;
+            continue;
+        }
 
         const uint32_t slot = advanced_configuration_and_power_interface_processor_slot(load, machine, counts, index);
 
@@ -352,25 +469,9 @@ uint32_t advanced_configuration_and_power_interface_processor_slot(ProcessorIdle
     else
     {
         const uint32_t object = processor_idle_object(load, node, "_UID");
-        ProcessorIdleValue_t result;
-        bool forbidden = false;
 
-        if (object == 0u)
+        if (object == 0u || !processor_idle_integer(load, initialization, object, &identifier))
             return PROCESSOR_IDLE_NO_SLOT;
-
-        ProcessorIdleStatus_t status =
-            advanced_configuration_and_power_interface_machine_language_evaluate_node(load, object, NULL, 0u, &result);
-
-        if (status == PROCESSOR_IDLE_OK)
-            status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
-                &load->heap, &result, (load->integer_bits == 32u) ? 32u : 64u, &identifier, &forbidden);
-        load->evaluation.forbidden_conversions += forbidden ? 1u : 0u;
-        processor_idle_release(load, &result);
-        if (status != PROCESSOR_IDLE_OK)
-        {
-            advanced_configuration_and_power_interface_initialization_count_failure(initialization, object, status);
-            return PROCESSOR_IDLE_NO_SLOT;
-        }
     }
     for (uint32_t slot = 0u; machine->madt != NULL && slot < machine->madt->processor_count; ++slot)
         if (machine->madt->processors[slot].processor_unique_identifier == identifier)
@@ -383,7 +484,7 @@ void advanced_configuration_and_power_interface_processor_idle_publish(Processor
                                                                        ProcessorIdleCounts_t *initialization,
                                                                        ProcessorIdleTable_t *out_table)
 {
-    uint32_t changed[PROCESSOR_IDLE_MAX_SLOTS / PROCESSOR_IDLE_SLOT_BITS] = {0u};
+    uint32_t changed[(PROCESSOR_IDLE_MAX_SLOTS + PROCESSOR_IDLE_SLOT_BITS - 1u) / PROCESSOR_IDLE_SLOT_BITS] = {0u};
 
     out_table->slot_count = (machine->madt != NULL) ? machine->madt->processor_count : 0u;
     memset(out_table->slots, 0, out_table->slot_count * sizeof(out_table->slots[0]));
@@ -409,6 +510,7 @@ uint32_t advanced_configuration_and_power_interface_processor_idle_fold(const Pr
 
         fold = processor_idle_fold_unsigned(fold, (idle->processor != 0u) ? 1u : 0u, 1u);
         fold = processor_idle_fold_unsigned(fold, idle->count, 4u);
+        fold = processor_idle_fold_unsigned(fold, idle->skipped, 4u);
         for (uint32_t state = 0u; state < idle->count; ++state)
         {
             const ProcessorIdleState_t *entry = &idle->states[state];
