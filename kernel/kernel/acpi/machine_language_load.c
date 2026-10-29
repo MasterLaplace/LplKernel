@@ -447,15 +447,17 @@ static uint8_t machine_language_declared_type(uint32_t opcode)
 
 /**
  * @brief Notes what the declaration pass did with the object a scope-opening declaration names: the body
- *        of a duplicate is marked to be skipped; a Device, ThermalZone, Processor or PowerResource it
- *        created keeps the offset of its opcode, which with its owner tells the later passes which construct
- *        declared it (a Method's recorded body does the same).
+ *        of a duplicate is marked to be skipped, and the object it names marked as having one; a Device,
+ *        ThermalZone, Processor or PowerResource it created keeps the offset of its opcode, which with its
+ *        owner tells the later passes which construct declared it (a Method's recorded body does the same).
  */
 static void machine_language_note_scope_declaration(MachineLanguageWalk_t *walk,
                                                     const MachineLanguagePendingOperator_t *active)
 {
     if (walk->last_created != active->node)
     {
+        machine_language_node(walk, active->node)->flags |=
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DUPLICATED;
         walk->duplicate_next = true;
         return;
     }
@@ -464,20 +466,29 @@ static void machine_language_note_scope_declaration(MachineLanguageWalk_t *walk,
 }
 
 /**
- * @brief Whether the node a scope-opening declaration names, past the declaration pass, is the one this
- *        construct declared: a Method whose recorded body ends where the construct ends in its table, or
- *        another object its table created with the opcode at the construct's start.
+ * @brief Whether a scope-opening declaration met past the declaration pass is a duplicate's, whose body no
+ *        pass reads: the object it names had a duplicate refused, and another construct declared it, this
+ *        one declaring a Method whose recorded body ends where the construct ends in its table, or another
+ *        object its table created with the opcode at the construct's start. A load that refused no
+ *        duplicate looks nothing up.
  */
-static bool machine_language_declared_here(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
+static bool machine_language_declared_elsewhere(MachineLanguageWalk_t *walk,
+                                                const MachineLanguagePendingOperator_t *active)
 {
+    if (walk->load->duplicates == 0u)
+        return false;
+
     const MachineLanguageNode_t *node = machine_language_node(walk, active->node);
 
-    if (node == NULL || node->type != machine_language_declared_type(active->opcode))
+    if (node == NULL ||
+        (node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DUPLICATED) == 0u)
         return false;
+    if (node->type != machine_language_declared_type(active->opcode))
+        return true;
     if (node->type == MACHINE_LANGUAGE_NODE(METHOD))
-        return node->value.handle == walk->table + 1u &&
-               (uint32_t) node->value.payload + (uint32_t) (node->value.payload >> 32u) == active->end;
-    return node->owner == walk->table + 1u && node->value.handle == active->start;
+        return node->value.handle != walk->table + 1u ||
+               (uint32_t) node->value.payload + (uint32_t) (node->value.payload >> 32u) != active->end;
+    return node->owner != walk->table + 1u || node->value.handle != active->start;
 }
 
 /**
@@ -627,7 +638,7 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
             if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->node == block->scope)
                 return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
             walk->undeclared_next = active->node == block->scope;
-            walk->duplicate_next = !walk->undeclared_next && !machine_language_declared_here(walk, active);
+            walk->duplicate_next = !walk->undeclared_next && machine_language_declared_elsewhere(walk, active);
         }
         else if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
             machine_language_keep_external(walk, active, name);

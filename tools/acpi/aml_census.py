@@ -191,6 +191,7 @@ class Namespace:
     def __init__(self):
         self.kinds = dict(PREDEFINED_ROOT)
         self.declarers = {}
+        self.duplicated = set()
         self.argument_counts = {("_OSI",): 1}
         self.created = []
         self.unplaced_externals = []
@@ -531,7 +532,8 @@ class Walker:
     def declare_scope(self, scope, name, kind, start, argument_count=None):
         """Declare a Device, ThermalZone, Processor, PowerResource or Method and tell whether its body is read: the
         declaration pass skips the body of a duplicate, and the counting pass, outside method bodies, the body of
-        any construct but the one that declared its path (docs/acpi/specification.md §5.1)."""
+        a construct naming a path a duplicate was refused for, unless it declared that path
+        (docs/acpi/specification.md §5.1)."""
         path = self.namespace.creation_path(scope, name)
         existing = self.namespace.kinds.get(path) if path else None
         self.declare(scope, name, kind, argument_count)
@@ -539,10 +541,11 @@ class Walker:
             return path, True
         if not self.counting:
             if existing is not None and existing != "External":
+                self.namespace.duplicated.add(path)
                 return path, False
             self.namespace.declarers[path] = (self.label, start)
             return path, True
-        return path, existing is None or self.namespace.declarers.get(path) == (self.label, start)
+        return path, path not in self.namespace.duplicated or self.namespace.declarers.get(path) == (self.label, start)
 
     def count_for_disassembly(self, offset, end, scope, depth, method):
         """Walk a body no pass reads, a duplicate's, for the per-table opcode counts alone, which the iASL
