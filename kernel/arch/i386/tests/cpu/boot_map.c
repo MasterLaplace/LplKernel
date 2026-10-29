@@ -101,6 +101,13 @@ static const BootMapTestEntry_t boot_map_test_low_ram_only[] = {
 static const BootMapTestEntry_t boot_map_test_no_entry[] = {
     {0x0u, 0x0u, 0u, 0u}
 };
+static const BootMapTestEntry_t boot_map_test_ram_in_the_last_page[] = {
+    {0x100000u,   0x100000u, 1u, 20u},
+    {0xFFFFF001u, 0x10u,     1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_size_past_the_map[] = {
+    {0x100000u, 0x100000u, 1u, 0xFFFFFFFCu}
+};
 static BootMapTestEntry_t boot_map_test_alternating[BOOT_MAP_TEST_ALTERNATING_COUNT];
 
 static uint8_t boot_map_test_map_bytes[BOOT_MAP_TEST_MAP_BYTES];
@@ -132,7 +139,7 @@ static bool boot_map_test_map_holds_ram(const uint8_t *map, uint32_t length, uin
     {
         const MemoryMapEntry_t *const entry = (const MemoryMapEntry_t *) (map + offset);
 
-        if (entry->size < BOOT_MAP_TEST_ENTRY_SIZE_LEAST || offset + sizeof(uint32_t) + entry->size > length)
+        if (entry->size < BOOT_MAP_TEST_ENTRY_SIZE_LEAST || entry->size > length - offset - sizeof(uint32_t))
             return false;
         if (entry->type == 1u && entry->base_addr <= page &&
             entry->base_addr + entry->length >= (uint64_t) page + PAGE_SIZE)
@@ -155,7 +162,7 @@ static bool boot_map_test_page_is_ram(uint32_t page)
 
 /**
  * @brief Lays @p map out as a Multiboot memory map in boot_map_test_map_bytes, each entry its size field then that
- *        many bytes, a corrupt size moving the next entry onto its fields.
+ *        many bytes, a size below 20 moving the next entry onto its fields, one past 24 ending the map after it.
  *
  * @return Its length in bytes.
  */
@@ -173,7 +180,7 @@ static uint32_t boot_map_test_lay_out(const BootMapTestMap_t *map)
 
         memset(boot_map_test_map_bytes + length, 0, sizeof(uint32_t) + 24u);
         memcpy(boot_map_test_map_bytes + length, &entry, sizeof(entry));
-        length += sizeof(uint32_t) + made_up->size;
+        length += sizeof(uint32_t) + (made_up->size <= sizeof(MemoryMapEntry_t) ? made_up->size : 20u);
     }
     return length;
 }
@@ -311,14 +318,15 @@ KERNEL_TEST(no_page_below_256_mib_gets_a_second_memory_type_from_a_device_window
 }
 
 /**
- * @brief On 18 made-up memory maps, the holes physical_memory_manager_boot_map_next_hole gives are exactly the pages
+ * @brief On 20 made-up memory maps, the holes physical_memory_manager_boot_map_next_hole gives are exactly the pages
  *        between 1 and 64 MiB that no usable RAM entry holds whole, as the test reads each map itself.
  *
  * @details The maps: none, empty, a lone corrupt entry, q35 with 64 and 48 MiB, RAM past 64 MiB, overlapping RAM,
  *          RAM under a reserved entry, bounds and RAM within a page, RAM split mid-page, RAM crossing and ending at
  *          4 GiB, an entry above 4 GiB first, 100 alternating entries, unsorted RAM with ACPI memory, a 24-byte
- *          entry, a corrupt entry before the kernel's RAM, and RAM below 1 MiB only. No boot exercises most of them:
- *          the boots with 256 MiB or more leave nothing to unmap.
+ *          entry, a corrupt entry before the kernel's RAM, RAM below 1 MiB only, a RAM entry based in the last page
+ *          below 4 GiB, and an entry whose size runs past the map. No boot exercises most of them: the boots with
+ *          256 MiB or more leave nothing to unmap.
  */
 KERNEL_TEST(the_holes_of_made_up_memory_maps_are_the_pages_no_ram_holds)
 {
@@ -327,24 +335,26 @@ KERNEL_TEST(the_holes_of_made_up_memory_maps_are_the_pages_no_ram_holds)
             (BootMapTestEntry_t){0x100000u + (uint64_t) index * 0x80000u, 0x40000u, index % 3u ? 1u : 2u, 20u};
 
     const BootMapTestMap_t maps[] = {
-        {NULL,                             0u                                                            },
-        {boot_map_test_no_entry,           0u                                                            },
-        {boot_map_test_no_entry,           1u                                                            },
-        {boot_map_test_q35_64,             sizeof(boot_map_test_q35_64) / sizeof(boot_map_test_q35_64[0])},
-        {boot_map_test_q35_48,             sizeof(boot_map_test_q35_48) / sizeof(boot_map_test_q35_48[0])},
-        {boot_map_test_ram_past_64_mib,    2u                                                            },
-        {boot_map_test_overlapping_ram,    2u                                                            },
-        {boot_map_test_ram_under_reserved, 2u                                                            },
-        {boot_map_test_mid_page_bounds,    3u                                                            },
-        {boot_map_test_split_mid_page,     2u                                                            },
-        {boot_map_test_crossing_4_gib,     1u                                                            },
-        {boot_map_test_ending_at_4_gib,    1u                                                            },
-        {boot_map_test_above_4_gib_first,  2u                                                            },
-        {boot_map_test_alternating,        BOOT_MAP_TEST_ALTERNATING_COUNT                               },
-        {boot_map_test_unsorted_acpi,      4u                                                            },
-        {boot_map_test_extended_size,      1u                                                            },
-        {boot_map_test_corrupt_size,       3u                                                            },
-        {boot_map_test_low_ram_only,       1u                                                            },
+        {NULL,                               0u                                                            },
+        {boot_map_test_no_entry,             0u                                                            },
+        {boot_map_test_no_entry,             1u                                                            },
+        {boot_map_test_q35_64,               sizeof(boot_map_test_q35_64) / sizeof(boot_map_test_q35_64[0])},
+        {boot_map_test_q35_48,               sizeof(boot_map_test_q35_48) / sizeof(boot_map_test_q35_48[0])},
+        {boot_map_test_ram_past_64_mib,      2u                                                            },
+        {boot_map_test_overlapping_ram,      2u                                                            },
+        {boot_map_test_ram_under_reserved,   2u                                                            },
+        {boot_map_test_mid_page_bounds,      3u                                                            },
+        {boot_map_test_split_mid_page,       2u                                                            },
+        {boot_map_test_crossing_4_gib,       1u                                                            },
+        {boot_map_test_ending_at_4_gib,      1u                                                            },
+        {boot_map_test_above_4_gib_first,    2u                                                            },
+        {boot_map_test_alternating,          BOOT_MAP_TEST_ALTERNATING_COUNT                               },
+        {boot_map_test_unsorted_acpi,        4u                                                            },
+        {boot_map_test_extended_size,        1u                                                            },
+        {boot_map_test_corrupt_size,         3u                                                            },
+        {boot_map_test_low_ram_only,         1u                                                            },
+        {boot_map_test_ram_in_the_last_page, 2u                                                            },
+        {boot_map_test_size_past_the_map,    1u                                                            },
     };
     uint32_t agreeing = 0u;
     uint32_t dropped = 0u;
