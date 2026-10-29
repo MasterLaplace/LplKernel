@@ -241,9 +241,9 @@ the loop one statement or predicate at a time (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
-declared, the load decodes each body once, running nothing: a body that would lose its place is found at boot rather
-than when firmware calls it, and the walk creates no node but the temporaries each body declares while it is
-decoded.
+declared, the load decodes each body but a duplicate's (§5.1) once, running nothing: a body that would lose its place
+is found at boot rather than when firmware calls it, and the walk creates no node but the temporaries each body
+declares while it is decoded.
 
 **The loop**, in order of precedence at each step:
 
@@ -287,7 +287,8 @@ declared; one whose parent exists is placed where it stands.
 **The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
 predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
 skipped, and declares nothing. A predicate that fails declares both its branches without running their code, counted
-(`declared_not_run`), so that a failure never takes an object out of the namespace. The decoding pass still decodes
+(`declared_not_run`), so that a failure never takes an object out of the namespace; an object both branches declare
+is the first branch's, the second's a duplicate (§5.1), as any later declaration is. The decoding pass still decodes
 the body of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its
 names resolve against objects that do not exist.
 

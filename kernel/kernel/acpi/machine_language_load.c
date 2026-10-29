@@ -30,8 +30,8 @@ typedef enum MachineLanguagePass {
     MACHINE_LANGUAGE_PASS_EXTERNALS, /**< Places the Externals whose path the declaration pass could not find, once
                                         every table is declared; skips method bodies, declares nothing else, records no
                                           fault. */
-    MACHINE_LANGUAGE_PASS_DECODE,    /**< Decodes and counts every term; declares only the temporary nodes of method
-                                          bodies. */
+    MACHINE_LANGUAGE_PASS_DECODE,    /**< Decodes and counts every term but a duplicate's body; declares only the
+                                          temporary nodes of method bodies. */
 } MachineLanguagePass_t;
 
 /**
