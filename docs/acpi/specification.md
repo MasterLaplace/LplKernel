@@ -234,10 +234,10 @@ Rules:
 
 ### 3.6 Execution model
 
-**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #587 (below). The stacks are fixed arrays sized by the limits of §6.1, so they are
-never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic. Until #587, the
-declaration pass walks the control flow of table-level code itself and hands the loop one statement or predicate at
-a time (below).
+**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #587 (below). The stacks are fixed
+arrays sized by the limits of §6.1, so they are never reallocated and no pointer into them goes stale. A limit reached
+is an error, never a panic. Until #587, the declaration pass walks the control flow of table-level code itself and hands
+the loop one statement or predicate at a time (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
@@ -404,9 +404,11 @@ clients `_CST` exists only after step 7.
 
 **Tables loaded at run time.** A table loaded before step 3 is initialised by steps 3 and 4 with the static ones,
 and step 7 sees its processors. A table loaded later can declare regions and devices: once the evaluation that loaded
-it returns, or once step 3 is over for a `_REG`'s, its scopes get the `_REG` of step 3, then the `_STA` and `_INI` walk
-of step 4 over its device subtrees ([§6.5.1]); steps 3 and 4 leave them to it. `late_initializations` counts how
-often this does anything.
+it returns, or once step 3 is over for a `_REG`'s, its scopes get the `_REG` of step 3, which step 3 leaves to it. Its
+devices that step 4 still reaches, below the device step 4 is at or after it in declaration order, are left to step 4;
+the others get the `_STA` and `_INI` walk of step 4 over their subtrees ([§6.5.1]), but those below a device step 4
+found neither present nor functioning, whose subtree it left alone. No `_INI` runs twice. `late_initializations`
+counts how often this does anything.
 
 ### 3.9 The static tables
 
@@ -1034,18 +1036,18 @@ published image. The made-up ASL is ours, under MIT.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
   lines and compared path by path, without the nodes ACPICA creates for `External`.
-- **`Load` on the corpus.** Dumps hold the dynamic SSDTs, every table's address printed as 0. In a table that holds a `Load`,
-  the harness finds the (label, address, length) triples that Intel's `PmRef` code reads, and the SystemMemory regions
-  of constant address and length that a `Load` names; each places at that address the SSDT of that length whose OEM
-  table ID the label names, case apart, else the only SSDT of that length (`tools/acpi/loaded_tables.py` computes the
-  same apart from the harness). A placed table is left out of the XSDT; the views compared with the census or with
+- **`Load` on the corpus.** Dumps hold the dynamic SSDTs, every table's address printed as 0. In a table that holds a
+  `Load`, the harness finds the (label, address, length) triples that Intel's `PmRef` code reads, and the SystemMemory
+  regions of constant address and length that a `Load` names; each places at that address the SSDT of that length whose
+  OEM table ID the label names, case apart, else the only SSDT of that length (`tools/acpi/loaded_tables.py` computes
+  the same apart from the harness). A placed table is left out of the XSDT; the views compared with the census or with
   `acpiexec`'s load declare it statically after the SSDTs, as `acpiexec` does. `tools/acpi-corpus.sh load` gives
   `acpiexec` statically the tables an initialisation ended with, `Load`'s included, and compares the two namespaces as
   sorted path sets. The values firmware writes to NVS at boot, absent from dumps, come from one preset file of the
-  harness, `tools/acpi/presets.txt`, so that the `Load` and `_CST` branches run: `CFGD = 0x0076F6FF`, the static
-  `Name (CFGD, 0x0076F6FF)` of the IdeaPad Z470's CPU SSDT, on the 44 machines whose `CFGD` is an NVS field. A `Load`
-  whose address firmware computes in a method, or whose `PmRef` package names a table the dump lacks, reads no table
-  and fails as `region_bounds`, which ends the evaluation that runs it, as ACPICA's does: an artifact of the corpus.
+  harness, `tools/acpi/presets.txt`, so that the `Load` and `_CST` branches run: `CFGD = 0x0076F6FF`, the static `Name
+  (CFGD, 0x0076F6FF)` of the IdeaPad Z470's CPU SSDT, on the 44 machines whose `CFGD` is an NVS field. A `Load` whose
+  address firmware computes in a method, or whose `PmRef` package names a table the dump lacks, reads no table and fails
+  as `region_bounds`, which ends the evaluation that runs it, as ACPICA's does: an artifact of the corpus.
 
 ### 8.5 uACPI's test cases
 
@@ -1069,7 +1071,7 @@ acpixtract -a dump.txt                         # acpidump text -> one .dat per t
 acpiexec -l -di -b "namespace" dsdt.dat ssdt*.dat          # load only: no _STA/_INI
 acpiexec -b "namespace" dsdt.dat ssdt*.dat                 # after _REG/_STA/_INI
 acpiexec -dr -fv 0 -b "evaluate \_SB.PCI0._STA" dsdt.dat ssdt*.dat   # raw results, zero-filled regions
-acpiexec -dr -fi presets.txt -b "evaluate \_PR.CPU0._CST" dsdt.dat ssdt*.dat        # NVS presets
+acpiexec -dr -fi nvs.txt -b "evaluate \_PR.CPU0._CST" dsdt.dat ssdt*.dat   # presets.txt without its # lines
 acpiexec -es ...                               # slack mode: implicit return, uninitialised locals = 0
 acpiexec -to 5 -te ...                         # loop timeout 5 s, exit the loop instead of aborting
 iasl -oa -r 1 test.asl                         # no AML optimisation; revision 1 = 32-bit integers

@@ -32,7 +32,8 @@
     "                                    initialises their namespace as the boot does, and prints what it ran and\n"   \
     "                                    counted, each status a failure ended with, and the first object that\n"       \
     "                                    failed; the SSDTs the dump's PmRef triples place wait for Load, and\n"        \
-    "                                    <presets>, in acpiexec's -fi format, gives NVS objects their values\n"        \
+    "                                    <presets>, a path and a hexadecimal integer per line, # for a comment,\n"     \
+    "                                    gives NVS objects their values\n"                                             \
     "       test-acpi --loaded <dump> <presets> <directory>  the same, then prints the namespace and writes\n"         \
     "                                    each table it holds, Load's included, as a raw file of <directory>\n"         \
     "       test-acpi --initialize-tables <table>...  the same from raw definition blocks, the DSDT first\n"           \
@@ -744,7 +745,7 @@ static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLang
 }
 
 /**
- * @brief The node the absolute path @p text names, as acpiexec's -fi file writes it: a backslash, then
+ * @brief The node the absolute path @p text names, as acpiexec writes one: a backslash, then
  *        NameSegs of up to four characters, padded with underscores, separated by dots; 0 when a
  *        segment is missing.
  */
@@ -774,8 +775,8 @@ static uint32_t harness_find_path(AdvancedConfigurationAndPowerInterfaceMachineL
 }
 
 /**
- * @brief Gives the objects a preset file names their value before the initialisation, as acpiexec's -fi
- *        file gives them, so that firmware reads what it wrote to NVS at boot, which a dump lacks
+ * @brief Gives the objects a preset file names their value before the initialisation, as an acpiexec -fi
+ *        file of the same lines would, so that firmware reads what it wrote to NVS at boot, which a dump lacks
  *        (§8.4): each line is a path and a hexadecimal integer; a field unit is written, an Integer
  *        replaced; a line that starts with #, or names nothing else, is skipped.
  *
