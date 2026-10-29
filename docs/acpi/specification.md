@@ -305,7 +305,7 @@ wait, fails as `region_unevaluated` when it needs a method.
 **Errors** carry a typed status (§6.2). In a method, an error unwinds every frame of the evaluation: temporaries
 removed, mutexes released, values dropped. At table level, a statement that fails to run is skipped, a predicate
 that fails is handled as above, a fault in the declaration pass's own decoding skips the innermost enclosing
-PkgLength construct, and the load goes on.
+PkgLength construct, but an `Alias` whose source does not exist is skipped alone (§5.1), and the load goes on.
 
 ### 3.7 Concurrency
 
@@ -724,6 +724,7 @@ Each row is a decision, and has at least one test (§8).
 | Integer width | Fixed once from the DSDT's revision, for every table: below 2, every integer is 32 bits, results are masked, `Ones` is `0xFFFFFFFF` and Integer to Buffer gives 4 bytes. | [§19.6.29] |
 | `External` | Creates nothing at run time. Its node only gives the decoder a method's argument count, and a declaration of the object replaces it. One whose parent does not exist yet is placed once every table is declared, the missing segments created as Externals: firmware calls such methods behind `CondRefOf`. | [§19.6.46] |
 | Unresolved names | An error only when executed: in methods they sit behind `CondRefOf` or capability bits. | |
+| An `Alias` whose source does not exist | Counted as `name_not_found` and skipped alone: neither the alias nor its source is created, and the table goes on. ACPI says the source must already exist; `acpiexec` creates the alias and an Untyped node for its source. | [§19.6.4] |
 | Names inside packages | Kept as a lazy path with its scope, resolved when the element is read, at most 8 indirections, then `name_resolution_loop`. Resolving at creation would make the result depend on the order tables load in. | [§19.6.102] |
 | Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted. | [§19.6.102] |
 | Orphan data and `Noop` at table level | Evaluated and dropped. | [§5.4.2] |
@@ -854,7 +855,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 
 At definition-block level, "construct skipped" means: a statement that fails to run is skipped, a predicate that
 fails declares both branches without running them (§3.6), and a fault in the declaration pass's own decoding skips
-the innermost enclosing PkgLength construct.
+the innermost enclosing PkgLength construct, but an `Alias` whose source does not exist is skipped alone (§5.1).
 
 Every failure unwinds the evaluation completely: temporaries removed, mutexes released, values dropped, the context
 reset. The caller receives the typed status and decides.
