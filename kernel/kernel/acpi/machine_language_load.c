@@ -75,6 +75,8 @@ typedef struct MachineLanguageWalk {
                                declaration pass did not declare. */
     uint32_t undeclared_from; /**< The depth of the outermost such TermList open, or 0: faults inside it are
                                    counted apart. */
+    bool duplicate_next;      /**< Whether the next TermList the declaration pass opens is the body of a duplicate
+                                   declaration, which no pass reads (§5.1). */
 } MachineLanguageWalk_t;
 
 /**
@@ -239,13 +241,14 @@ static void machine_language_close_block(MachineLanguageWalk_t *walk)
 }
 
 /**
- * @brief Drops the marks a failed predicate or a Scope the walk could not find left for the TermList
- *        to come, once a recovery leaves the construct that TermList belongs to.
+ * @brief Drops the marks a failed predicate, a Scope the walk could not find or a duplicate declaration
+ *        left for the TermList to come, once a recovery leaves the construct that TermList belongs to.
  */
 static void machine_language_forget_marks(MachineLanguageWalk_t *walk)
 {
     walk->not_run_next = false;
     walk->undeclared_next = false;
+    walk->duplicate_next = false;
 }
 
 /**
@@ -442,6 +445,67 @@ static uint8_t machine_language_declared_type(uint32_t opcode)
 }
 
 /**
+ * @brief Whether @p opcode declares an object that opens a scope: a Device, a ThermalZone, a Processor, a
+ *        PowerResource or a Method, whose body a duplicate declaration skips (§5.1).
+ */
+static bool machine_language_declares_scope(uint32_t opcode)
+{
+    return machine_language_declared_type(opcode) != 0xFFu &&
+           (advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_OPENS_SCOPE) != 0u;
+}
+
+/**
+ * @brief Notes what the declaration pass did with the object a scope-opening declaration names: the body
+ *        of a duplicate is marked to be skipped; a Device, ThermalZone, Processor or PowerResource it
+ *        created keeps the offset of its opcode, which with its owner tells the later passes which construct
+ *        declared it (a Method's recorded body does the same).
+ */
+static void machine_language_note_scope_declaration(MachineLanguageWalk_t *walk,
+                                                    const MachineLanguagePendingOperator_t *active)
+{
+    if (walk->last_created != active->node)
+    {
+        walk->duplicate_next = true;
+        return;
+    }
+    if (active->opcode != MACHINE_LANGUAGE_OPCODE(METHOD))
+        machine_language_node(walk, active->node)->value.handle = active->start;
+}
+
+/**
+ * @brief Whether the node a scope-opening declaration names, past the declaration pass, is the one this
+ *        construct declared: a Method whose recorded body starts at the walk's pc in its table, or another
+ *        object its table created with the opcode at the construct's start.
+ */
+static bool machine_language_declared_here(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
+{
+    const MachineLanguageNode_t *node = machine_language_node(walk, active->node);
+
+    if (node == NULL || node->type != machine_language_declared_type(active->opcode))
+        return false;
+    if (node->type == MACHINE_LANGUAGE_NODE(METHOD))
+        return node->value.handle == walk->table + 1u && (uint32_t) node->value.payload == walk->pc;
+    return node->owner == walk->table + 1u && node->value.handle == active->start;
+}
+
+/**
+ * @brief Whether the TermList that ends @p active is the body of a duplicate declaration, which no pass
+ *        reads (§5.1): the declaration pass marked it; a later pass, at table level, finds that another
+ *        construct declared the node its name names. A construct whose name names nothing, in a branch the
+ *        declaration pass did not take, is still decoded.
+ */
+static bool machine_language_skips_body(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active,
+                                        const MachineLanguageBlock_t *around)
+{
+    if (walk->pass == MACHINE_LANGUAGE_PASS_DECLARE)
+        return walk->duplicate_next;
+    if (around->placement != 0u || walk->undeclared_next || !machine_language_declares_scope(active->opcode))
+        return false;
+    return !machine_language_declared_here(walk, active);
+}
+
+/**
  * @brief The node an External's last segment belongs to, in the Externals pass: every missing segment
  *        before it is created as an External with no object, since no table declares it.
  */
@@ -600,6 +664,8 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
     }
     status = declaring ? machine_language_declare(walk, name, type, &active->node) :
                          machine_language_declare_temporary(walk, name, type, &active->node);
+    if (status == MACHINE_LANGUAGE_OK && declaring && opens_scope)
+        machine_language_note_scope_declaration(walk, active);
     if (status != MACHINE_LANGUAGE_OK && declaring && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
     {
         active->node = 0u;
@@ -1388,7 +1454,7 @@ static void machine_language_record_method(MachineLanguageWalk_t *walk, const Ma
 /**
  * @brief Opens the list that ends the active operator: a TermList, a FieldList or a
  *        PackageElementList, run as a construct up to the operator's end. A method body is skipped
- *        but in the decoding pass.
+ *        but in the decoding pass, and the body of a duplicate declaration in every pass.
  */
 static MachineLanguageStatus_t
 machine_language_open_list(MachineLanguageWalk_t *walk,
@@ -1405,6 +1471,13 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_IN_METHOD :
                                   0u;
 
+    if (kind == MACHINE_LANGUAGE_OPERAND(TERM_LIST) && machine_language_skips_body(walk, &active, around))
+    {
+        machine_language_forget_marks(walk);
+        --walk->pending_count;
+        walk->pc = active.end;
+        return MACHINE_LANGUAGE_OK;
+    }
     walk->not_run_next = walk->not_run_next && kind != MACHINE_LANGUAGE_OPERAND(TERM_LIST);
 
     if (active.opcode == MACHINE_LANGUAGE_OPCODE(METHOD))
