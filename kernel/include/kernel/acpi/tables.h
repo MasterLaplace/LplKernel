@@ -330,7 +330,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMadtState {
     uint32_t non_maskable_interrupts_dropped; /**< NMI connections past the capacity, counted. */
     uint32_t skipped_count;                   /**< Entries of a type not read, skipped by their length. */
     uint32_t too_short_count;  /**< Entries of a type read but shorter than that type: a processor, an I/O APIC,
-                                    an override or an NMI connection lost. */
+                                    an override, an NMI connection or the local APIC address lost. */
     uint8_t io_apic_count;     /**< I/O APICs kept. */
     uint32_t io_apics_dropped; /**< I/O APICs past the capacity, counted. */
     uint8_t interrupt_source_override_count;     /**< Interrupt source overrides kept. */
@@ -422,11 +422,12 @@ extern void advanced_configuration_and_power_interface_madt_initialize(void);
  *
  * @details Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for a local APIC or local
  *          x2APIC entry whose Enabled flag is set; an Online Capable entry is counted and unused, and
- *          one with both flags clear is counted and ignored. As Linux does, a local APIC ID of 0xFF
- *          and an x2APIC ID of 0xFFFFFFFF name no processor, nor does an x2APIC ID below 0xFF when a
- *          local APIC entry whose ID is not 0xFF is Enabled or Online Capable; such an entry is counted
- *          invalid only when Enabled. An NMI entry for processor UID 0xFF keeps
- *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ALL_PROCESSORS. Every other type is skipped by
+ *          one with both flags clear is counted and ignored. A local APIC ID of 0xFF and an x2APIC ID
+ *          of 0xFFFFFFFF name no processor, nor does an x2APIC ID below 0xFF when a local APIC entry
+ *          whose ID is not 0xFF is Enabled or Online Capable, as Linux does on firmware of ACPI 6.3 or
+ *          later; on older firmware Linux also counts a local APIC entry with both flags clear, which
+ *          ACPI 6.6 tells OSPM to ignore. Such an entry is counted invalid only when Enabled. An NMI entry for
+ * processor UID 0xFF keeps ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_ALL_PROCESSORS. Every other type is skipped by
  *          its length and counted; an entry shorter than its type is skipped and counted apart. A
  *          table whose checksum fails is read all the same, and recorded.
  *
