@@ -324,19 +324,17 @@ static bool initialization_is_system_bus(const InitializationLoad_t *load, uint3
 
 /**
  * @brief Initialises one device, processor or thermal zone (§3.8 step 4): present, its _INI runs,
- *        but for \_SB_'s; a subtree without _INI, a device neither present nor functioning, marked
- *        absent, or one a table past the first @p covered declares, which its late initialisation walks,
- *        is not walked.
+ *        but for \_SB_'s; a subtree without _INI, or a device neither present nor functioning, marked
+ *        absent, is not walked.
  *
  * @return Whether the walk descends into its children.
  */
 static bool initialization_initialize_device(InitializationLoad_t *load, Initialization_t *initialization,
-                                             uint32_t device, uint32_t covered)
+                                             uint32_t device)
 {
     uint64_t status = 0u;
 
-    if ((initialization_node(load, device)->flags & INITIALIZATION_HOLDS) == 0u ||
-        initialization_node(load, device)->owner > covered)
+    if ((initialization_node(load, device)->flags & INITIALIZATION_HOLDS) == 0u)
         return false;
     if (!initialization_read_status(load, initialization, device, &status))
         return true;
@@ -455,12 +453,54 @@ static bool initialization_under_absent(const InitializationLoad_t *load, uint32
 }
 
 /**
+ * @brief Whether @p index lies below @p above.
+ */
+static bool initialization_is_below(const InitializationLoad_t *load, uint32_t index, uint32_t above)
+{
+    for (index = initialization_node(load, index)->parent; index != 0u;
+         index = initialization_node(load, index)->parent)
+        if (index == above)
+            return true;
+    return false;
+}
+
+/**
+ * @brief Whether the walk of step 4, at @p walking, which it descends into when @p descend holds, still
+ *        reaches @p index, which a table loaded meanwhile declares: below @p walking, or after it in
+ *        declaration order, below the lowest node above both; never once step 4 is over, @p walking 0.
+ */
+static bool initialization_reached_later(const InitializationLoad_t *load, uint32_t index, uint32_t walking,
+                                         bool descend)
+{
+    uint32_t branch = walking;
+
+    if (walking == 0u)
+        return false;
+    if (initialization_is_below(load, index, walking))
+        return descend;
+    while (!initialization_is_below(load, index, initialization_node(load, branch)->parent))
+        branch = initialization_node(load, branch)->parent;
+
+    const uint32_t common = initialization_node(load, branch)->parent;
+    uint32_t other = index;
+
+    while (initialization_node(load, other)->parent != common)
+        other = initialization_node(load, other)->parent;
+    for (uint32_t child = initialization_node(load, common)->first_child; child != 0u;
+         child = initialization_node(load, child)->next_sibling)
+        if (child == branch || child == other)
+            return child == branch;
+    return false;
+}
+
+/**
  * @brief Walks, as step 4 does, each device subtree the tables past the first @p first, up to the
- *        first @p last, declare: from each device of theirs whose parent is not one of theirs, unless a
- *        device above it was found absent (§3.8).
+ *        first @p last, declare that step 4, at @p walking and descending into it when @p descend holds,
+ *        no longer reaches: from each device of theirs whose parent is not one of theirs, unless a device
+ *        above it was found absent (§3.8). Step 4 initialises the others when it reaches them.
  */
 static void initialization_walk_late(InitializationLoad_t *load, Initialization_t *initialization, uint32_t first,
-                                     uint32_t last)
+                                     uint32_t last, uint32_t walking, bool descend)
 {
     for (uint32_t top = initialization_next(load, INITIALIZATION_ROOT, true); top != 0u;
          top = initialization_next(load, top, true))
@@ -470,14 +510,14 @@ static void initialization_walk_late(InitializationLoad_t *load, Initialization_
         if (!initialization_is_device(node) || !initialization_is_late(load, top, first, last) ||
             (initialization_is_device(initialization_node(load, node->parent)) &&
              initialization_is_late(load, node->parent, first, last)) ||
-            initialization_under_absent(load, top))
+            initialization_under_absent(load, top) || initialization_reached_later(load, top, walking, descend))
             continue;
         for (uint32_t index = top; index != 0u;)
         {
-            const bool descend = !initialization_is_device(initialization_node(load, index)) ||
-                                 initialization_initialize_device(load, initialization, index, last);
+            const bool below = !initialization_is_device(initialization_node(load, index)) ||
+                               initialization_initialize_device(load, initialization, index);
 
-            index = initialization_next_below(load, top, index, descend);
+            index = initialization_next_below(load, top, index, below);
         }
     }
 }
@@ -485,10 +525,12 @@ static void initialization_walk_late(InitializationLoad_t *load, Initialization_
 /**
  * @brief Runs the late initialisation of the tables Load and LoadTable added since the last one, until
  *        none is left (§3.8): marks what they declare, runs the _REG of step 3 in their scopes, then
- *        walks their device subtrees as step 4 does; counted when it evaluates anything. Before step 3,
- *        while initialization->tables is 0, nothing runs: steps 3 and 4 initialise them.
+ *        walks as step 4 does their device subtrees that step 4, at @p walking and descending into it when
+ *        @p descend holds, no longer reaches; counted when it evaluates anything. Before step 3, while
+ *        initialization->tables is 0, nothing runs: steps 3 and 4 initialise them.
  */
-static void initialization_settle(InitializationLoad_t *load, Initialization_t *initialization)
+static void initialization_settle(InitializationLoad_t *load, Initialization_t *initialization, uint32_t walking,
+                                  bool descend)
 {
     while (initialization->tables != 0u && initialization->tables < load->table_count)
     {
@@ -504,7 +546,7 @@ static void initialization_settle(InitializationLoad_t *load, Initialization_t *
         if (regions)
             initialization_register_late(load, initialization, first, last);
         if (devices)
-            initialization_walk_late(load, initialization, first, last);
+            initialization_walk_late(load, initialization, first, last, walking, descend);
         if (initialization->registrations + initialization->status_evaluations + initialization->initializations !=
             evaluations)
             ++initialization->late_initializations;
@@ -513,10 +555,11 @@ static void initialization_settle(InitializationLoad_t *load, Initialization_t *
 
 /**
  * @brief Walks the devices, processors and thermal zones in declaration order, children after their
- *        parent (§3.8 step 4), those of the first @p covered tables; a table Load or LoadTable adds
- *        meanwhile gets its late initialisation once the evaluation that loaded it returns.
+ *        parent (§3.8 step 4), the devices of the tables Load and LoadTable add meanwhile among them; the
+ *        late initialisation of such a table, once the evaluation that loaded it returns, walks the devices
+ *        the walk has gone past.
  */
-static void initialization_walk(InitializationLoad_t *load, Initialization_t *initialization, uint32_t covered)
+static void initialization_walk(InitializationLoad_t *load, Initialization_t *initialization)
 {
     uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true);
 
@@ -526,9 +569,9 @@ static void initialization_walk(InitializationLoad_t *load, Initialization_t *in
 
         if (initialization_is_device(initialization_node(load, index)))
         {
-            descend = initialization_initialize_device(load, initialization, index, covered);
+            descend = initialization_initialize_device(load, initialization, index);
             if (load->table_count != initialization->tables)
-                initialization_settle(load, initialization);
+                initialization_settle(load, initialization, index, descend);
         }
         index = initialization_next(load, index, descend);
     }
@@ -727,7 +770,7 @@ static void initialization_negotiate_processors(InitializationLoad_t *load, Init
             continue;
         }
         initialization_negotiate_processor(load, initialization, index, capabilities);
-        initialization_settle(load, initialization);
+        initialization_settle(load, initialization, 0u, false);
     }
 }
 
@@ -751,11 +794,11 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     const uint32_t covered = out_initialization->tables;
 
     initialization_register(load, out_initialization, covered);
-    initialization_settle(load, out_initialization);
-    initialization_walk(load, out_initialization, covered);
+    initialization_settle(load, out_initialization, INITIALIZATION_ROOT, true);
+    initialization_walk(load, out_initialization);
     out_initialization->pic_mode_deferred = (initialization_object(load, INITIALIZATION_ROOT, "_PIC") != 0u) ? 1u : 0u;
     initialization_negotiate_platform(load, out_initialization);
-    initialization_settle(load, out_initialization);
+    initialization_settle(load, out_initialization, 0u, false);
     initialization_negotiate_processors(load, out_initialization, machine);
     advanced_configuration_and_power_interface_processor_idle_publish(load, machine, out_initialization, out_idle);
 }

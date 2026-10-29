@@ -592,9 +592,9 @@ KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones
 }
 
 /**
- * @brief A table a _REG of step 3 loads, and one an _INI of step 4 loads, each get one late
- *        initialisation once the evaluation that loaded it returns, and neither step reaches their
- *        regions or devices again (§3.8).
+ * @brief A table a _REG of step 3 loads gets the _REG of its scope once step 3 is over, and step 3
+ *        does not reach its region again; its devices, and those of a table an _INI of step 4 loads,
+ *        come after the walk of step 4, which initialises each once when it reaches it (§3.8).
  */
 KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
 {
@@ -635,13 +635,13 @@ KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
     kernel_test_check(test, load_integer("HND1") == LOAD_ONES && load_integer("HND2") == LOAD_ONES,
                       "ADEV's _REG loads the first table at step 3, BDEV's _INI the second at step 4");
-    kernel_test_check(test, load_integer("TRAC") == 0x21315u,
-                      "CDEV gets one _REG then its _INI after step 3, before BDEV's _INI; EDEV's _INI runs once, "
-                      "right after BDEV's");
+    kernel_test_check(test, load_integer("TRAC") == 0x21135u,
+                      "CDEV's scope gets one _REG after step 3; step 4 then runs BDEV's _INI, CDEV's, then EDEV's, "
+                      "each once");
     kernel_test_check(test,
-                      load_counts.late_initializations == 2u && load_counts.tables == 3u &&
+                      load_counts.late_initializations == 1u && load_counts.tables == 3u &&
                           load_counts.registrations == 2u && load_counts.devices == 6u,
-                      "two late initialisations, counted with their registration and their devices");
+                      "one late initialisation runs a registration, and every device is counted");
     load_close(test);
 }
 
@@ -720,5 +720,94 @@ KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
                           load_counts.late_initializations == 0u,
                       "neither GONE's _INI nor its loaded child's _STA and _INI run");
     kernel_test_check(test, load_counts.devices == 5u, "the loaded device is counted all the same");
+    load_close(test);
+}
+
+/**
+ * @brief Builds the made-up machine of the tests below: Device (GONE) whose _STA returns @p status and whose
+ *        _INI traces 9, Device (BDEV) whose _INI loads a table, and Device (ZDEV), present, whose _INI traces 5,
+ *        in the order @p loader_first says, BDEV first or GONE first; the table declares Device (LATE) in
+ *        @p scope, present, whose _INI traces 7. Then initialises the namespace.
+ */
+static bool load_absent_machine(KernelTest_t *test, uint8_t status, bool loader_first, const char *scope)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t traces_nine[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
+                                          0x00u, 0x0Au, 0x09u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
+    static MadeUpAml_t device;
+    static MadeUpAml_t loader;
+    static MadeUpAml_t gone;
+    const uint8_t returns[] = {0xA4u, 0x0Au, status};
+
+    load_begin();
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_device(&load_inner, "LATE", &device);
+    made_up_aml_scope(&load_loaded, scope, &load_inner);
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&gone);
+    load_method(&gone, "_STA", returns, sizeof(returns));
+    load_method(&gone, "_INI", traces_nine, sizeof(traces_nine));
+    made_up_aml_begin(&loader);
+    load_method(&loader, "_INI", loads, sizeof(loads));
+    if (loader_first)
+        made_up_aml_device(&load_aml, "BDEV", &loader);
+    made_up_aml_device(&load_aml, "GONE", &gone);
+    if (!loader_first)
+        made_up_aml_device(&load_aml, "BDEV", &loader);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 5u);
+    made_up_aml_device(&load_aml, "ZDEV", &device);
+    if (!load_run(test))
+        return false;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    return kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
+}
+
+/**
+ * @brief A device a table loaded at step 4 declares under a device step 4 has not reached yet is left to
+ *        step 4, which finds that device absent and leaves both alone (§3.8).
+ */
+KERNEL_TEST(a_device_loaded_under_one_step_four_reaches_later_is_left_to_it)
+{
+    if (!load_absent_machine(test, 0x00u, true, "GONE"))
+        return;
+    kernel_test_check(test,
+                      load_integer("TRAC") == 5u && load_counts.status_evaluations == 2u &&
+                          load_counts.late_initializations == 0u,
+                      "only ZDEV's _INI runs: GONE is absent, and LATE waits for step 4, which never reaches it");
+    load_close(test);
+}
+
+/**
+ * @brief A device found not present but functioning is not marked absent: a device a table loaded later
+ *        declares below it gets its _STA and _INI (§3.8).
+ */
+KERNEL_TEST(a_device_loaded_under_a_functioning_one_is_initialised)
+{
+    if (!load_absent_machine(test, 0x08u, false, "GONE"))
+        return;
+    kernel_test_check(test,
+                      load_integer("TRAC") == 0x75u && load_counts.status_evaluations == 3u &&
+                          load_counts.late_initializations == 1u,
+                      "GONE's _INI does not run, but LATE's does, late, before ZDEV's");
+    load_close(test);
+}
+
+/**
+ * @brief A device a table loaded at step 4 declares under a present device step 4 reaches later runs its
+ *        _INI once, when step 4 reaches it, never also at the late initialisation (§3.8).
+ */
+KERNEL_TEST(no_initialization_runs_twice)
+{
+    if (!load_absent_machine(test, 0x0Fu, true, "ZDEV"))
+        return;
+    kernel_test_check(test, load_integer("TRAC") == 0x957u && load_counts.late_initializations == 0u,
+                      "GONE's, ZDEV's then LATE's _INI each run once, all at step 4");
     load_close(test);
 }
