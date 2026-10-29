@@ -16,10 +16,15 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
                   the same function, the window holds exactly N of its runs
   --inside SYMBOL count only from each entry of SYMBOL to its return, over its first --times calls;
                   what runs between two calls, such as a loop waiting for the next one, is left out
+  --skip N        with --inside, leave its first N calls out and count the --times calls after them:
+                  a test that runs a function the boot ran before it, on other data, is its second call
   --until TEXT    without --from or --inside, stop when the serial output prints TEXT
                   (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line
+  --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), under a short path
+                  that keeps its file name: a recorded machine of the ACPI corpus, which
+                  tools/acpi-corpus.sh module <machine> writes, is found by its .acpi suffix
   --machine NAME  QEMU's machine, such as q35 (default: QEMU's own, pc)
   --cdrom ISO     boot ISO through GRUB instead of <kernel> alone: a client gets its display and its
                   cartridge only that way. <kernel> is still the image the ISO holds, which names
@@ -28,9 +33,10 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --keep DIR      keep the serial log and the raw counts in DIR
   --budget FILE   check the counts against FILE, which records a window and the counts it held
 
-A budget FILE holds key=value lines: from, to, inside, times, machine and append give the window,
-unless the command line does, append being the boot line, such as the lpl.test= that picks the tests
-run before a window inside one; instructions and accesses (loads and stores) record the counts;
+A budget FILE holds key=value lines: from, to, inside, times, skip, machine, append and module give
+the window, unless the command line does, append being the boot line, such as the lpl.test= that picks
+the tests run before a window inside one, and module a path from the repository's root;
+instructions and accesses (loads and stores) record the counts;
 tolerance is how far above them, in percent, the counts may go. Below them by more than the
 tolerance, the run says to record the new counts.
 
@@ -55,6 +61,8 @@ append=""
 machine=""
 timeout_seconds=1800
 times=""
+skip=""
+module=""
 keep=""
 budget=""
 kernel=""
@@ -66,10 +74,12 @@ while [ $# -gt 0 ]; do
         --to) to_symbol="${2:?}"; shift 2 ;;
         --times) times="${2:?}"; shift 2 ;;
         --inside) inside_symbol="${2:?}"; shift 2 ;;
+        --skip) skip="${2:?}"; shift 2 ;;
         --until) until_text="${2:?}"; shift 2 ;;
         --top) top="${2:?}"; shift 2 ;;
         --test) from_symbol="lplTestBody_${2:?}"; to_symbol="lpl::testing::(anonymous namespace)::writeResult"; shift 2 ;;
         --append) append="${2:?}"; shift 2 ;;
+        --module) module="${2:?}"; shift 2 ;;
         --machine) machine="${2:?}"; shift 2 ;;
         --cdrom) cdrom="${2:?}"; shift 2 ;;
         --timeout) timeout_seconds="${2:?}"; shift 2 ;;
@@ -81,6 +91,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$kernel" ] && [ -f "$kernel" ] || { usage >&2; exit 2; }
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -z "$cdrom" ] || [ -f "$cdrom" ] || { echo "no ISO $cdrom" >&2; exit 2; }
 recorded_instructions=""
 recorded_accesses=""
@@ -94,6 +105,8 @@ if [ -n "$budget" ]; then
             to) [ -n "$to_symbol" ] || to_symbol="$value" ;;
             inside) [ -n "$inside_symbol" ] || inside_symbol="$value" ;;
             times) [ -n "$times" ] || times="$value" ;;
+            skip) [ -n "$skip" ] || skip="$value" ;;
+            module) [ -n "$module" ] || module="$root/$value" ;;
             machine) [ -n "$machine" ] || machine="$value" ;;
             append) [ -n "$append" ] || append="$value" ;;
             instructions) recorded_instructions="$value" ;;
@@ -106,6 +119,12 @@ if [ -n "$budget" ]; then
         { echo "$budget needs instructions and accesses above 0, and tolerance, as integers" >&2; exit 2; }
 fi
 times="${times:-1}"
+skip="${skip:-0}"
+[[ "$skip" =~ ^[0-9]+$ ]] || { echo "--skip takes a count of calls" >&2; exit 2; }
+[ "$skip" -eq 0 ] || [ -n "$inside_symbol" ] || { echo "--skip goes with --inside" >&2; exit 2; }
+[ -z "$module" ] || [ -f "$module" ] ||
+    { echo "no module $module: tools/acpi-corpus.sh module <machine> writes a recorded machine's module" >&2; exit 2; }
+[ -z "$module" ] || [ -z "$cdrom" ] || { echo "--module reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 [ -z "$cdrom" ] || [ -z "$append" ] || { echo "--append reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 if [ -n "$from_symbol" ] && [ -z "$to_symbol" ] || [ -z "$from_symbol" ] && [ -n "$to_symbol" ]; then
     echo "--from and --to go together" >&2
@@ -116,7 +135,6 @@ if [ -n "$inside_symbol" ] && [ -n "$from_symbol" ]; then
     exit 2
 fi
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 qemu_version="$(qemu-system-i386 --version | sed -n 's/^QEMU emulator version \([0-9.]*\).*/\1/p')"
 [ -n "$qemu_version" ] || { echo "qemu-system-i386 not found" >&2; exit 2; }
 plugin_dir="$root/build/qemu-plugin/$qemu_version"
@@ -167,11 +185,16 @@ if [ -n "$inside_symbol" ]; then
         "") echo "no function $inside_symbol in $kernel" >&2; exit 2 ;;
         ambiguous) echo "more than one function $inside_symbol in $kernel" >&2; exit 2 ;;
     esac
-    plugin_args="$plugin_args,inside=$inside,times=$times"
+    plugin_args="$plugin_args,inside=$inside,times=$times,skip=$skip"
 fi
 
 boot=(-kernel "$kernel")
 [ -z "$cdrom" ] || boot=(-cdrom "$cdrom")
+if [ -n "$module" ]; then
+    module_copy="$work/$(basename "$module" | tr -c 'A-Za-z0-9.\n-' '_')"
+    cp "$module" "$module_copy"
+    boot+=(-initrd "$module_copy")
+fi
 qemu_command=(qemu-system-i386 "${boot[@]}" -smp 1 -m 512 -display none -no-reboot -monitor none
               -serial "file:$serial" -icount shift=0,sleep=off -plugin "$plugin,$plugin_args")
 [ -z "$append" ] || qemu_command+=(-append "$append")

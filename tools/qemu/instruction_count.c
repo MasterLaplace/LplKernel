@@ -36,6 +36,9 @@ static uint64_t window_end;
 static uint64_t window_inside;
 static uint64_t window_end_executions = 1u;
 static uint64_t window_end_seen;
+static uint64_t window_skip;
+static uint64_t window_skipped;
+static gboolean window_skipping;
 static gboolean window_open;
 static gboolean window_closed;
 static gboolean window_just_opened;
@@ -162,8 +165,13 @@ static void enter_function(unsigned int vcpu_index, void *userdata)
     (void) vcpu_index;
     (void) userdata;
     g_mutex_lock(&blocks_lock);
-    if (!window_open && !window_closed && read_return_address(&inside_return))
-        resume_counting();
+    if (!window_open && !window_closed && !window_skipping && read_return_address(&inside_return))
+    {
+        if (window_skipped < window_skip)
+            window_skipping = TRUE;
+        else
+            resume_counting();
+    }
     g_mutex_unlock(&blocks_lock);
 }
 
@@ -175,7 +183,12 @@ static void reach_block(unsigned int vcpu_index, void *userdata)
     if (block->address != inside_return)
         return;
     g_mutex_lock(&blocks_lock);
-    if (window_open && !window_closed)
+    if (window_skipping)
+    {
+        window_skipping = FALSE;
+        ++window_skipped;
+    }
+    else if (window_open && !window_closed)
     {
         if (++window_end_seen == window_end_executions)
             close_counting();
@@ -290,6 +303,8 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
             known = read_address(pair[1], &window_inside);
         else if (known && g_strcmp0(pair[0], "times") == 0)
             known = read_address(pair[1], &window_end_executions) && window_end_executions != 0u;
+        else if (known && g_strcmp0(pair[0], "skip") == 0)
+            known = read_address(pair[1], &window_skip);
         else
             known = FALSE;
         g_strfreev(pair);
@@ -297,15 +312,16 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_
         {
             fprintf(stderr,
                     "instruction_count: unknown argument %s (out=FILE, begin=ADDRESS, end=ADDRESS, inside=ADDRESS, "
-                    "times=N)\n",
+                    "times=N, skip=N)\n",
                     argv[index]);
             return -1;
         }
     }
     if (output_path == NULL || (window_begin != 0u) != (window_end != 0u) ||
-        (window_inside != 0u && window_begin != 0u))
+        (window_inside != 0u && window_begin != 0u) || (window_skip != 0u && window_inside == 0u))
     {
-        fprintf(stderr, "instruction_count: needs out=FILE, and begin= with end=, or inside=, or neither\n");
+        fprintf(stderr,
+                "instruction_count: needs out=FILE, and begin= with end=, or inside= with skip= if any, or neither\n");
         return -1;
     }
 
