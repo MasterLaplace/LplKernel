@@ -500,10 +500,14 @@ static void initialization_walk(InitializationLoad_t *load, Initialization_t *in
 
     while (index != 0u)
     {
-        const bool descend = !initialization_is_device(initialization_node(load, index)) ||
-                             initialization_initialize_device(load, initialization, index, covered);
+        bool descend = true;
 
-        initialization_settle(load, initialization);
+        if (initialization_is_device(initialization_node(load, index)))
+        {
+            descend = initialization_initialize_device(load, initialization, index, covered);
+            if (load->table_count != initialization->tables)
+                initialization_settle(load, initialization);
+        }
         index = initialization_next(load, index, descend);
     }
 }
