@@ -358,8 +358,8 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
 
 /**
  * @brief The node a scope-opening declaration at table level names past the declaration pass, which
- *        created it; the scope the walk is in when it cannot be found, so that the decoding pass still
- *        decodes its body, and the Externals pass knows to skip it.
+ *        created it, or 0 when it cannot be found: the decoding pass still decodes the body of such a
+ *        construct, and the Externals pass skips it.
  */
 static uint32_t machine_language_declared_node(MachineLanguageWalk_t *walk, const MachineLanguageNameString_t *name)
 {
@@ -373,7 +373,7 @@ static uint32_t machine_language_declared_node(MachineLanguageWalk_t *walk, cons
             space, scope, walk->bytes, name, &parent, &segment) == MACHINE_LANGUAGE_OK)
         index =
             advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, parent, segment);
-    return (index != 0u) ? index : scope;
+    return index;
 }
 
 /**
@@ -634,11 +634,13 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
     {
         if (opens_scope)
         {
-            active->node = machine_language_declared_node(walk, name);
-            if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->node == block->scope)
+            const uint32_t found = machine_language_declared_node(walk, name);
+
+            if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && found == 0u)
                 return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
-            walk->undeclared_next = active->node == block->scope;
-            walk->duplicate_next = !walk->undeclared_next && machine_language_declared_elsewhere(walk, active);
+            active->node = (found != 0u) ? found : block->scope;
+            walk->undeclared_next = found == 0u;
+            walk->duplicate_next = found != 0u && machine_language_declared_elsewhere(walk, active);
         }
         else if (walk->pass == MACHINE_LANGUAGE_PASS_EXTERNALS && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
             machine_language_keep_external(walk, active, name);
