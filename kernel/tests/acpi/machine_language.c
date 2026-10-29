@@ -1337,6 +1337,46 @@ KERNEL_TEST(a_duplicate_at_the_same_offset_of_another_table_is_skipped)
 }
 
 /**
+ * @brief A Device of the name of a Name is a duplicate too: the Name stays, and the Device's body is
+ *        neither declared nor decoded.
+ */
+KERNEL_TEST(a_device_of_the_name_of_a_name_is_a_duplicate)
+{
+    static const uint8_t aml[] = {0x08u, 'N',   'D', 'E', 'V', 0x0Au, 0x01u, 0x5Bu,
+                                  0x82u, 0x06u, 'N', 'D', 'E', 'V',   0xA3u};
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 1u && made_up_node("NDEV")->value.payload == 1u,
+                      "the Device is counted as a duplicate, and NDEV stays the Name 1");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 0u,
+                      "the decoding pass reads nothing of its body");
+    made_up_close(test);
+}
+
+/**
+ * @brief A Device whose path cannot be created is not a duplicate, even inside an object that has one: the
+ *        decoding pass still decodes its body, its faults counted apart (§3.6).
+ */
+KERNEL_TEST(a_device_whose_path_names_nothing_is_still_decoded)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x05u, 'D',   'E',   'V',   '0',  0x5Bu, 0x82u, 0x05u, 'D', 'E', 'V', '0', 0x10u, 0x13u, 'D',
+        'E',   'V',   '0',   0x5Bu, 0x82u, 0x0Cu, '\\', 0x2Eu, 'N',   'O',   'P', 'E', 'X', 'X', 'X',   'X',   0xA3u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 1u && made_up_load.load_errors == 1u,
+                      "the second DEV0 is a duplicate, and \\NOPE.XXXX a fault of the declaration pass");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 1u,
+                      "the decoding pass reads the body of the Device that names nothing");
+    made_up_close(test);
+}
+
+/**
  * @brief An Alias of an object that does not exist is counted and skipped alone, and the table goes on, as
  *        acpiexec goes on loading: the Name after it is still declared. acpiexec also creates the alias and
  *        an Untyped node for its source; the kernel creates neither, since ACPI 6.6 §19.6.4 says the source
