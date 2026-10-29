@@ -504,8 +504,9 @@ KERNEL_TEST(a_stall_waits_its_microseconds_on_the_timer)
 
 /**
  * @brief A read caught in an increment does not end a stall early, whether it is the first or the
- *        middle read of a triple, with reads of 100 ns, where the two others are equal, and of 1 µs,
- *        where they are not; a timer that is not usable is not waited on, and no port is read.
+ *        middle read of a triple, with reads of 100 ns and of 1 µs, or a middle read between two equal
+ *        ones while the timer holds its count; a timer that is not usable is not waited on, and no port is
+ *        read.
  */
 KERNEL_TEST(a_stall_survives_a_bad_read)
 {
@@ -513,9 +514,11 @@ KERNEL_TEST(a_stall_survives_a_bad_read)
     uint32_t glitch_waited;
     uint32_t unusable_waited;
     uint32_t slow_glitch_waited;
+    uint32_t held_glitch_waited;
     uint64_t first_glitch;
     uint64_t glitch;
     uint64_t slow_glitch;
+    uint64_t held_glitch;
     uint32_t reads_before;
 
     timer_open(0u);
@@ -529,6 +532,13 @@ KERNEL_TEST(a_stall_survives_a_bad_read)
     (void) timer_find();
     timer_machine.out_of_order = timer_machine.reads + 5u;
     slow_glitch = timer_wait(50u, &slow_glitch_waited);
+    timer_open(0u);
+    timer_machine.access = TIMER_FAST_ACCESS;
+    (void) timer_find();
+    timer_machine.stutters = true;
+    timer_machine.held_nanoseconds = timer_machine.nanoseconds;
+    timer_machine.out_of_order = timer_machine.reads + 5u;
+    held_glitch = timer_wait(50u, &held_glitch_waited);
     timer_found.state = TIMER_STATE(STOPPED);
     reads_before = timer_machine.reads;
     unusable_waited =
@@ -539,6 +549,8 @@ KERNEL_TEST(a_stall_survives_a_bad_read)
     kernel_test_check(test, glitch >= 50000u && glitch_waited >= 50u, "nor does a middle one");
     kernel_test_check(test, slow_glitch >= 50000u && slow_glitch_waited >= 50u,
                       "nor a middle one between two unequal reads, at 1 µs a read");
+    kernel_test_check(test, held_glitch >= 50000u && held_glitch_waited >= 50u,
+                      "nor a middle one between two equal reads, which Linux's test lets through");
     kernel_test_check(test, timer_machine.host_stalls == 0u, "and neither leans on the host's stall");
     kernel_test_check(test, unusable_waited == 0u && timer_machine.reads == reads_before,
                       "a timer that is not usable is not waited on");
