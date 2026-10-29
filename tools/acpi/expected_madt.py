@@ -86,8 +86,9 @@ def read(header, entries, data):
     """What the kernel's reading of this MADT must find, as the lines the harness prints."""
     usable = ENABLED | ONLINE_CAPABLE
     local_apic_processors = any(
-        entry["Subtable Type"][:2] == "00" and number(entry, "Local Apic ID") != 0xFF
-        and number(entry, "Flags (decoded below)") & usable for entry in entries)
+        entry["Subtable Type"][:2] == "00" and number(entry, "Length") >= SHORTEST["00"]
+        and number(entry, "Local Apic ID") != 0xFF and number(entry, "Flags (decoded below)") & usable
+        for entry in entries)
     counts = dict.fromkeys(("processors_dropped", "online_capable", "disabled", "invalid", "nmis_dropped",
                             "skipped", "too_short", "io_apics_dropped", "overrides_dropped"), 0)
     processors, io_apics, overrides, connections = [], [], [], []
