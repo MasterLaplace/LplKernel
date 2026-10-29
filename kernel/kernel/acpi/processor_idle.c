@@ -395,16 +395,15 @@ static bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
 }
 
 /**
- * @brief Publishes the _CST of @p index when it is a processor object _STA keeps in and bound to a CPU slot
- *        no earlier object took (§3.8 step 8), the Notifies queued before its evaluation taken first;
- *        counts it when _STA keeps it out or it binds to no free slot.
+ * @brief Publishes the _CST of the candidate @p index when it is a processor object _STA keeps in and bound to
+ *        a CPU slot no earlier object took (§3.8 step 8), the Notifies queued before its evaluation taken
+ *        first; counts it when _STA keeps it out or it binds to no free slot.
  */
 static void processor_idle_publish_processor(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
                                              ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table,
                                              uint32_t *changed, uint32_t index)
 {
-    if (!processor_idle_candidate(load, index) ||
-        !advanced_configuration_and_power_interface_processor_object(load, counts, index))
+    if (!advanced_configuration_and_power_interface_processor_object(load, counts, index))
         return;
     if (!processor_idle_present(load, counts, index))
     {
@@ -435,7 +434,7 @@ static void processor_idle_publish_slots(ProcessorIdleLoad_t *load, const Proces
              &load->space, PROCESSOR_IDLE_ROOT, true);
          index != 0u;
          index = advanced_configuration_and_power_interface_machine_language_namespace_next(&load->space, index, true))
-        if (processor_idle_node(load, index)->owner <= tables)
+        if (processor_idle_candidate(load, index) && processor_idle_node(load, index)->owner <= tables)
             processor_idle_publish_processor(load, machine, counts, table, changed, index);
 }
 
@@ -462,7 +461,8 @@ static void processor_idle_publish_loaded(ProcessorIdleLoad_t *load, const Proce
             if (owner <= tables || owner > last)
                 continue;
             advanced_configuration_and_power_interface_initialization_negotiate(load, machine, counts, index);
-            processor_idle_publish_processor(load, machine, counts, table, changed, index);
+            if (processor_idle_candidate(load, index))
+                processor_idle_publish_processor(load, machine, counts, table, changed, index);
         }
         tables = last;
     }
