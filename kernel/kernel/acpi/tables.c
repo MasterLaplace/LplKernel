@@ -98,12 +98,8 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_TIMER_ORDERED_TRIES  16u   /**< Triples of reads made before the middle one is kept out of order. */
 #define ACPI_TIMER_RATE_EXACT     1000u /**< The rate of a timer that counts 3.579545 MHz, in thousandths. */
 #define ACPI_TIMER_RATE_TOLERANCE 50u   /**< Thousandths the rate may stray from it: 5 %, as Linux allows. */
-#define ACPI_TIMER_RATE_STEPS                                                                                          \
-    3u /**< Steps of the host's clock a rate is measured over: three ticks, as Linux measures 30 ms of PIT channel 2.  \
-        */
-#define ACPI_TIMER_RATE_ATTEMPTS                                                                                       \
-    3u /**< Measurements of the rate made at most; the first within the tolerance holds.                               \
-        */
+#define ACPI_TIMER_RATE_STEPS     3u    /**< Clock steps a rate is measured over: Linux's 30 ms at 100 Hz. */
+#define ACPI_TIMER_RATE_ATTEMPTS  3u    /**< Rate measurements made at most; the first within tolerance holds. */
 #define ACPI_TIMER_REFERENCE_COUNTS                                                                                    \
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ /                                         \
      2u) /**< Counts the timer makes at most while a step of the host's clock is awaited: half a second. */
