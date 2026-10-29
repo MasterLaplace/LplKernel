@@ -719,16 +719,17 @@ static void idle_notifying(const char *name, uint8_t identifier, const char *run
 /**
  * @brief A Notify 0x81 on a processor queued after its _CST was evaluated evaluates it once more (§3.8 step
  *        9): CPU1's _CST notifies CPU0 and itself, so each runs twice. A Notify 0x81 queued before a
- *        processor's evaluation, by CPU0's _INI for CPU2 or by CPU0's _CST for CPU1, a Notify 0x80 on CPU2,
- *        and what the last evaluations raise are dropped: CPU2 runs once.
+ *        processor's evaluation, by CPU0's _INI for CPU2 or by CPU0's _CST for CPU1, the Notify 0x80 CPU2's
+ *        _CST raises on itself, and what the last evaluations raise are dropped: CPU2 runs once.
  */
 KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
 {
     static const uint32_t identifiers[] = {1u, 2u, 3u};
     static const uint8_t initialize[] = {0x86u, '\\', 'C', 'P', 'U', '2', 0x0Au, 0x81u};
     static const uint8_t first[] = {0x86u, '\\', 'C', 'P', 'U', '1', 0x0Au, 0x81u};
-    static const uint8_t second[] = {0x86u, '\\', 'C',   'P',   'U',   '0',  0x0Au, 0x81u, 0x86u, '\\', 'C',   'P',
-                                     'U',   '1',  0x0Au, 0x81u, 0x86u, '\\', 'C',   'P',   'U',   '2',  0x0Au, 0x80u};
+    static const uint8_t second[] = {0x86u, '\\', 'C', 'P', 'U', '0', 0x0Au, 0x81u,
+                                     0x86u, '\\', 'C', 'P', 'U', '1', 0x0Au, 0x81u};
+    static const uint8_t third[] = {0x86u, '\\', 'C', 'P', 'U', '2', 0x0Au, 0x80u};
 
     idle_begin(identifiers, 3u);
     made_up_aml_name_integer(&idle_aml, "C0RN", 0u);
@@ -736,7 +737,7 @@ KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
     made_up_aml_name_integer(&idle_aml, "C2RN", 0u);
     idle_notifying("CPU0", 1u, "C0RN", first, sizeof(first), initialize, sizeof(initialize));
     idle_notifying("CPU1", 2u, "C1RN", second, sizeof(second), NULL, 0u);
-    idle_notifying("CPU2", 3u, "C2RN", NULL, 0u, NULL, 0u);
+    idle_notifying("CPU2", 3u, "C2RN", third, sizeof(third), NULL, 0u);
     if (!idle_run(test))
         return;
     kernel_test_check(test,
@@ -747,8 +748,8 @@ KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
                       "CPU2's runs once: its Notify 0x81 came before its evaluation, its Notify 0x80 is no change");
     kernel_test_check(test, idle_counts.processor_idle == 5u && idle_counts.processor_idle_changes == 2u,
                       "five evaluations, two of them for a Notify 0x81");
-    kernel_test_check(test, idle_load.services.notifications_taken == 9u,
-                      "nine Notifies taken: the _INI's, CPU0's twice, CPU1's three twice");
+    kernel_test_check(test, idle_load.services.notifications_taken == 8u,
+                      "eight Notifies taken: the _INI's, CPU0's twice, CPU1's two twice, CPU2's");
     idle_close(test);
 }
 
