@@ -6,8 +6,9 @@ Computed from the dump alone, apart from the kernel's code, with the reader of
 real_firmware_census.py. A dump holds no root pointer and no root table, so the harness writes an
 XSDT that lists every table but the root pointer, the root tables, the FACS and the DSDT, in the
 dump's order; the DSDT follows when the FADT the directory takes names one, by X_DSDT below 4 GiB or
-by its 32-bit field. The harness serves the DSDT at every address a FADT names, and serves each table
-with as many bytes as the dump holds, never padded.
+by its 32-bit field. The harness serves the DSDT at every address a FADT names, the SSDTs firmware loads
+at run time where loaded_tables.py places them, left out of the XSDT, and each table with as many bytes as
+the dump holds, never padded.
 A directory records 64 tables and counts the rest unreachable, with every table whose bytes or
 header length cannot be a table, or whose header claims more bytes than the dump holds. The FACS is
 the 32-bit FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL when it lies below 4 GiB, else none.
@@ -17,6 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import loaded_tables  # noqa: E402
 import real_firmware_census  # noqa: E402
 
 CAPACITY = 64
@@ -58,7 +60,9 @@ def read_directory(path):
     the FACS."""
     tables = [bytes(entry["bytes"]) for entry in real_firmware_census.read_acpidump(path)]
     dsdt = next((data for data in tables if data[:4] == b"DSDT"), None)
-    listed = [data for data in tables if data is not dsdt and not is_left_out(data)]
+    placed = loaded_tables.placed_tables(tables)
+    listed = [data for index, data in enumerate(tables)
+              if data is not dsdt and index not in placed and not is_left_out(data)]
 
     recorded, unreachable = [], 0
     for data in listed:

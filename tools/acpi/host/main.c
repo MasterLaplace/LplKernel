@@ -28,9 +28,13 @@
     "       test-acpi --namespace-tables <table>...  the same from raw definition blocks, the DSDT first\n"            \
     "       test-acpi --closure <dump>   prints the opcodes the needs path of an acpidump text file reaches\n"         \
     "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"            \
-    "       test-acpi --initialize <dump>  loads the definition blocks of an acpidump text file, initialises\n"        \
-    "                                    their namespace as the boot does, and prints what it ran and counted,\n"      \
-    "                                    each status a failure ended with, and the first object that failed\n"         \
+    "       test-acpi --initialize <dump> [<presets>]  loads the definition blocks of an acpidump text file,\n"        \
+    "                                    initialises their namespace as the boot does, and prints what it ran and\n"   \
+    "                                    counted, each status a failure ended with, and the first object that\n"       \
+    "                                    failed; the SSDTs the dump's PmRef triples place wait for Load, and\n"        \
+    "                                    <presets>, in acpiexec's -fi format, gives NVS objects their values\n"        \
+    "       test-acpi --loaded <dump> <presets> <directory>  the same, then prints the namespace and writes\n"         \
+    "                                    each table it holds, Load's included, as a raw file of <directory>\n"         \
     "       test-acpi --initialize-tables <table>...  the same from raw definition blocks, the DSDT first\n"           \
     "       test-acpi --evaluate <path> <table>...    loads raw definition blocks, the DSDT first, initialises\n"      \
     "                                    their namespace, and prints what evaluating the absolute path gives: its\n"   \
@@ -133,8 +137,8 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 
 /**
  * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
- *        operating system services it called, the failures per status, the region spaces refused, and
- *        the opcodes that failed as unimplemented.
+ *        operating system services it called, the tables Load and LoadTable added, the failures per
+ *        status, the region spaces refused, and the opcodes that failed as unimplemented.
  */
 static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
@@ -169,6 +173,8 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            load->services.released_at_end, load->services.held_peak,
            (unsigned long long) load->services.time_requested_peak, load->services.signals,
            load->services.notifications, load->services.notifications_dropped, load->services.notification_peak);
+    printf("aml run tables loaded=%u duplicates=%u missing=%u bytes_copied=%u\n", load->tables_loaded,
+           load->load_duplicates, load->load_tables_missing, load->table_bytes_copied);
     printf("aml run pci attachments=%u internal_evaluations=%u internal_failures=%u protected_writes=%u "
            "lost_accesses=%u ecam_accesses=%u registrations=%u registration_failures=%u\n",
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
@@ -192,10 +198,29 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
 }
 
 /**
- * @brief Loads the DSDT and the SSDTs of @p directory with the server profile's caps, and prints
- *        what the load counted: its tables and faults, then each opcode decoded, in descriptor order.
+ * @brief Loads the DSDT and the SSDTs of @p directory into @p load, then, statically, the SSDTs
+ *        @p machine serves for Load, as acpiexec and the census read every table of a dump; then decodes
+ *        them all.
  */
-static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
+static void harness_load_every_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
+                                     const RecordedMachine_t *machine)
+{
+    advanced_configuration_and_power_interface_machine_language_declare_directory(load, directory);
+    for (uint32_t index = 0u; index < machine->table_count; ++index)
+        if (machine->tables[index].placed != 0u)
+            (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+                load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) machine->tables[index].bytes);
+    advanced_configuration_and_power_interface_machine_language_decode_tables(load);
+}
+
+/**
+ * @brief Loads every table of @p machine, as harness_load_every_table does, with the server profile's
+ *        caps, and prints what the load counted: its tables and faults, then each opcode decoded, in
+ *        descriptor order.
+ */
+static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
+                                           const RecordedMachine_t *machine)
 {
     static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
 
@@ -209,7 +234,7 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
         return;
     }
     load.declares_every_branch = true;
-    advanced_configuration_and_power_interface_machine_language_load_directory(&load, directory);
+    harness_load_every_table(&load, directory, machine);
     printf("aml tables=%u bytes=%u decode_errors=%u calls=%u\n", load.table_count, load.bytes, load.decode_errors,
            load.method_calls);
     printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u\n", load.load_errors,
@@ -257,7 +282,7 @@ static int harness_walk_machine(const char *path)
         harness_print_directory(&directory);
         harness_print_fixed_description(&directory.fixed_description);
         harness_print_madt(&directory);
-        harness_print_machine_language(&directory);
+        harness_print_machine_language(&directory, &machine);
         advanced_configuration_and_power_interface_release_directory(&directory);
         status = (machine.simulated.outstanding_maps == 0u && machine.simulated.mismatched_unmaps == 0u) ? 0 : 1;
         if (status != 0)
@@ -666,13 +691,15 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
     printf("aml init initializations=%u initialization_failed=%u registrations=%u region_registration_failed=%u "
            "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u "
            "platform_capabilities=%s processor_capabilities=%u processor_capabilities_legacy=%u "
-           "processor_capabilities_refused=%u processor_capabilities_failed=%u processors_unbound=%u\n",
+           "processor_capabilities_refused=%u processor_capabilities_failed=%u processors_unbound=%u tables=%u "
+           "late_initializations=%u\n",
            counts->initializations, counts->initialization_failed, counts->registrations,
            counts->region_registration_failed, counts->devices, counts->status_evaluations, counts->status_failed,
            counts->status_invalid, counts->pic_mode_deferred,
            advanced_configuration_and_power_interface_platform_capabilities_name(counts->platform_capabilities),
            counts->processor_capabilities, counts->processor_capabilities_legacy,
-           counts->processor_capabilities_refused, counts->processor_capabilities_failed, counts->processors_unbound);
+           counts->processor_capabilities_refused, counts->processor_capabilities_failed, counts->processors_unbound,
+           counts->tables, counts->late_initializations);
     for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
          ++opcode)
         if (load->evaluation.unimplemented[opcode] != harness_unimplemented[opcode])
@@ -717,12 +744,121 @@ static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLang
 }
 
 /**
+ * @brief The node the absolute path @p text names, as acpiexec's -fi file writes it: a backslash, then
+ *        NameSegs of up to four characters, padded with underscores, separated by dots; 0 when a
+ *        segment is missing.
+ */
+static uint32_t harness_find_path(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *text)
+{
+    uint32_t node = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+
+    if (*text++ != '\\')
+        return 0u;
+    while (*text != '\0' && node != 0u)
+    {
+        uint8_t segment[4] = {'_', '_', '_', '_'};
+        uint32_t length = 0u;
+
+        while (*text != '\0' && *text != '.')
+        {
+            if (length == sizeof(segment))
+                return 0u;
+            segment[length++] = (uint8_t) *text++;
+        }
+        if (*text == '.')
+            ++text;
+        node = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+            &load->space, node, advanced_configuration_and_power_interface_machine_language_name_segment(segment, 0u));
+    }
+    return node;
+}
+
+/**
+ * @brief Gives the objects a preset file names their value before the initialisation, as acpiexec's -fi
+ *        file gives them, so that firmware reads what it wrote to NVS at boot, which a dump lacks
+ *        (§8.4): each line is a path and a hexadecimal integer; a field unit is written, an Integer
+ *        replaced; a line that names nothing else is skipped.
+ *
+ * @return The presets given.
+ */
+static uint32_t harness_apply_presets(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                      const char *path)
+{
+    FILE *file = fopen(path, "r");
+    char line[HARNESS_PATH_BYTES];
+    uint32_t applied = 0u;
+
+    if (file == NULL)
+    {
+        fprintf(stderr, "test-acpi: %s: cannot be opened\n", path);
+        return 0u;
+    }
+    while (fgets(line, sizeof(line), file) != NULL)
+    {
+        char name[HARNESS_PATH_BYTES];
+        unsigned long long integer = 0u;
+        uint32_t node = 0u;
+
+        if (sscanf(line, "%255s %llx", name, &integer) != 2 || (node = harness_find_path(load, name)) == 0u)
+            continue;
+
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *object =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value = {
+            .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+            .payload = integer};
+
+        if (object->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FIELD_UNIT)
+            applied += (advanced_configuration_and_power_interface_machine_language_field_write(load, node, &value) ==
+                        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK) ?
+                           1u :
+                           0u;
+        else if (object->value.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+        {
+            object->value.payload = integer;
+            ++applied;
+        }
+    }
+    fclose(file);
+    return applied;
+}
+
+/**
+ * @brief Writes each table of @p load, in its order, as a raw file of @p directory, so that acpiexec
+ *        loads statically the tables the load holds, the ones Load added included.
+ *
+ * @return false, said on stderr, when one cannot be written.
+ */
+static bool harness_write_tables(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                 const char *directory)
+{
+    for (uint32_t index = 0u; index < load->table_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load->tables[index];
+        char path[HARNESS_PATH_BYTES * 2u];
+        FILE *file = NULL;
+
+        snprintf(path, sizeof(path), "%s/%03u-%.4s.dat", directory, index, table->header->signature);
+        file = fopen(path, "wb");
+        if (file == NULL || fwrite(table->header, 1u, table->length, file) != table->length || fclose(file) != 0)
+        {
+            fprintf(stderr, "test-acpi: %s: cannot be written\n", path);
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
  * @brief Loads the definition blocks of the dump at @p path with the server profile's caps, and
- *        prints what the load could not build, then the view of it asked for.
+ *        prints what the load could not build, then the view of it asked for: initialised, the tables
+ *        served for Load wait for it, and the objects of the preset file @p presets, when it is not
+ *        NULL, get their value first; any other view loads them statically. With @p tables, the
+ *        initialised namespace is printed too, and each table it holds written there.
  *
  * @return 0 when the directory was read, 1 otherwise.
  */
-static int harness_dump_namespace(const char *path, HarnessView_t view)
+static int harness_dump_namespace(const char *path, HarnessView_t view, const char *presets, const char *tables)
 {
     static RecordedMachine_t machine;
     static AdvancedConfigurationAndPowerInterfaceDirectory_t directory;
@@ -742,9 +878,21 @@ static int harness_dump_namespace(const char *path, HarnessView_t view)
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES) &&
             harness_observe(&load, view))
         {
-            advanced_configuration_and_power_interface_machine_language_load_directory(&load, &directory);
+            if (view == HARNESS_VIEW_INITIALIZATION)
+            {
+                advanced_configuration_and_power_interface_machine_language_load_directory(&load, &directory);
+                printf("aml load placed=%u presets=%u\n", machine.placed_count,
+                       (presets != NULL) ? harness_apply_presets(&load, presets) : 0u);
+            }
+            else
+                harness_load_every_table(&load, &directory, &machine);
             harness_print_load(&load, &directory, view);
             status = 0;
+            if (tables != NULL)
+            {
+                harness_print_namespace(&load);
+                status = harness_write_tables(&load, tables) ? 0 : 1;
+            }
         }
         advanced_configuration_and_power_interface_machine_language_close(&load);
         needs_path_closure_release(&harness_closure);
@@ -1072,7 +1220,11 @@ int main(int argc, char **argv)
     if (argc == 3 && strcmp(argv[1], "--machine") == 0)
         return harness_walk_machine(argv[2]);
     if (argc == 3 && harness_view(argv[1], "", &view))
-        return harness_dump_namespace(argv[2], view);
+        return harness_dump_namespace(argv[2], view, NULL, NULL);
+    if (argc == 4 && strcmp(argv[1], "--initialize") == 0)
+        return harness_dump_namespace(argv[2], HARNESS_VIEW_INITIALIZATION, argv[3], NULL);
+    if (argc == 5 && strcmp(argv[1], "--loaded") == 0)
+        return harness_dump_namespace(argv[2], HARNESS_VIEW_INITIALIZATION, argv[3], argv[4]);
     if (argc >= 3 && harness_view(argv[1], "-tables", &view))
         return harness_dump_tables_namespace(argc - 2, argv + 2, view);
     if (argc >= 4 && strcmp(argv[1], "--evaluate") == 0)

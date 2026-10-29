@@ -9,6 +9,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
        tools/acpi-corpus.sh initialize [quick|corpus|full|qemu]
        tools/acpi-corpus.sh idle [quick|corpus|full]
+       tools/acpi-corpus.sh load [quick|corpus|full]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
        tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
@@ -44,7 +45,13 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
   initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
          `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, the
          C-states they published, then the statuses their failures ended with; a machine the harness fails
-         on fails it
+         on fails it. The SSDTs a dump's firmware loads at run time wait for Load where
+         tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt, in acpiexec's -fi format,
+         gives the NVS objects firmware fills at boot their values, which a dump lacks (specification §8.4)
+  load  initialises each machine of a list whose firmware loads tables at run time, with
+         `test-acpi --loaded`, and compares the paths of its namespace with those of the namespace
+         acpiexec loads, statically, from the tables it ended with, Load's included; a machine whose
+         table-level code fails is counted and left out, as namespace leaves it out
   idle   initialises each machine of a list with `test-acpi --initialize`, then compares the C-states it
          publishes for each CPU slot with those tools/acpi/acpiexec_idle.py works out apart from the kernel's
          code: the processor objects and the slots they bind to from acpiexec's namespace and the decoded MADT,
@@ -74,6 +81,7 @@ readonly LINUXHW="$CORPUS/linuxhw"
 readonly LINUXHW_URL="https://github.com/linuxhw/ACPI.git"
 readonly LINUXHW_COMMIT="d6d30c6ef6f45506567f25a302c64f009d8f5f4e"
 readonly HARNESS="$ROOT/build/acpi-host/test-acpi"
+readonly PRESETS="$ROOT/tools/acpi/presets.txt"
 readonly ACPICA="$CORPUS/acpica"
 readonly ACPICA_URL="https://github.com/acpica/acpica.git"
 readonly ACPICA_COMMIT="e85aa3bebaae81ed1e6d163511ac7e1eafe732cf"
@@ -225,7 +233,7 @@ initialize_check() {
             subject="${tables[0]#"$QEMU_TABLES"/}"
             "$HARNESS" --initialize-tables "${tables[@]}" >"$output" 2>&1 || true
         else
-            "$HARNESS" --initialize "$LINUXHW/$subject.bin" >"$output" 2>&1 || true
+            "$HARNESS" --initialize "$LINUXHW/$subject.bin" "$PRESETS" >"$output" 2>&1 || true
         fi
         if ! grep -q '^aml init initializations=' "$output"; then
             echo "not ok $number $subject: the harness failed"
@@ -234,17 +242,22 @@ initialize_check() {
             continue
         fi
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
-        counts+="$(grep -E '^aml (init|idle) ' "$output")"$'\n'
+        counts+="$(grep -E '^aml (init|idle|load) |^aml run tables ' "$output")"$'\n'
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
     echo -n "# initialization of $((number - failed)) of $number:"
     for key in initializations initialization_failed registrations region_registration_failed devices \
         status_evaluations status_failed status_invalid pic_mode_deferred processor_capabilities \
-        processor_capabilities_legacy processor_capabilities_refused processor_capabilities_failed processors_unbound; do
+        processor_capabilities_legacy processor_capabilities_refused processor_capabilities_failed processors_unbound \
+        late_initializations; do
         echo -n " $key=$(grep '^aml init initializations=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 |
             paste -sd+ | bc)"
     done
     echo
+    echo "# tables Load places: $(total_of placed "$counts"), on $(grep -c '^aml load placed=[1-9]' <<<"$counts")" \
+        "machines; added at run time: $(total_of loaded "$counts"), on $(grep -c '^aml run tables loaded=[1-9]' <<<"$counts")" \
+        "machines; refused as loaded already: $(total_of duplicates "$counts"); LoadTable found none:" \
+        "$(total_of missing "$counts"); presets given: $(total_of presets "$counts")"
     echo "# platform _OSC, machines per answer:" \
         $(grep -o ' platform_capabilities=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# unimplemented opcodes the initialisation reached:" \
@@ -301,6 +314,52 @@ idle_check() {
     echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots and $states states, $none" \
         "publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
     [[ "$agree" -eq $((number - stopped)) ]]
+}
+
+# Initialises each machine of the list $1 that places tables for Load, and compares the paths of its
+# namespace with those acpiexec loads statically from the tables the initialisation ended with.
+load_check() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "load: no acpiexec, run fetch acpica first" >&2; exit 1; }
+    local number=0 agree=0 deferred=0 placed=0 loaded=0 subject ours theirs tables result counts
+    ours="$(mktemp)" theirs="$(mktemp)" tables="$(mktemp -d)"
+    while IFS= read -r subject; do
+        rm -f "$tables"/*.dat
+        if ! "$HARNESS" --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" >"$ours" 2>&1; then
+            number=$((number + 1))
+            echo "not ok $number $subject: the harness failed"
+            sed 's/^/    # /' "$ours" | tail -5
+            continue
+        fi
+        grep -q '^aml load placed=[1-9]' "$ours" || continue
+        number=$((number + 1))
+        counts="$(grep '^aml load \|^aml run tables ' "$ours")"
+        placed=$((placed + $(total_of placed "$counts")))
+        loaded=$((loaded + $(total_of loaded "$counts")))
+        if ! grep -q '^aml namespace table_level_failures=0 ' "$ours"; then
+            echo "skip $number $subject: $(head -2 "$ours" | tail -1 | cut -d' ' -f3)"
+            deferred=$((deferred + 1))
+            continue
+        fi
+        python3 -I "$ROOT/tools/acpi/acpiexec_namespace.py" "$ACPICA_BIN" --tables "$tables"/*.dat >"$theirs"
+        if result="$(python3 -I "$ROOT/tools/acpi/compare_namespace.py" --paths "$ours" "$theirs")"; then
+            echo "ok $number $subject: $(total_of loaded "$counts") of $(total_of placed "$counts") tables loaded;" \
+                "$result"
+            agree=$((agree + 1))
+        else
+            echo "not ok $number $subject"
+            sed 's/^/    # /' <<<"$result"
+        fi
+    done < <(reports "$1")
+    rm -rf "$ours" "$theirs" "$tables"
+    echo "# load: $agree of $((number - deferred)) machines that place tables for Load agree with acpiexec;" \
+        "$deferred fail in table-level code; $loaded of the $placed tables placed were loaded"
+    [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
+}
+
+# Prints the sum of the counter $1 over the lines $2.
+total_of() {
+    grep -o " $1=[0-9]*" <<<"$2" | cut -d= -f2 | paste -sd+ | bc
 }
 
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
@@ -632,6 +691,7 @@ case "${1:-}" in
     closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
     initialize) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; initialize_check "${2:-corpus}" ;;
     idle) known_list "${2:-corpus}"; idle_check "${2:-corpus}" ;;
+    load) known_list "${2:-corpus}"; load_check "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
     module) shift; modules "$@" ;;

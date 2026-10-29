@@ -17,10 +17,11 @@
  *
  * A dump holds every table the machine's firmware handed to Linux, the SSDTs it loads at run time
  * included, but neither its root pointer nor its root table, and every table address is 0. What a
- * FADT names keeps its real address: the DSDT is served there. Every other table is served at an
- * address of the harness's choosing, and a root pointer and an XSDT that list them all are
- * written. A live machine's XSDT leaves out the SSDTs loaded at run time; telling them apart takes
- * the interpreter's Load, so until then the directory holds them too.
+ * FADT names keeps its real address: the DSDT is served there. An SSDT that a package of (OEM table
+ * ID, address, length) triples names, as Intel's PmRef code reads them for Load, is served at that
+ * address and left out of the XSDT, as a live machine's XSDT leaves it out (§8.4). Every other table
+ * is served at an address of the harness's choosing, and a root pointer and an XSDT that list them
+ * are written.
  *
  * The tables a debug kernel printed on its serial port, in the same format, are read and served the
  * same way, and what a recorded machine serves can be written as an image, the Multiboot module of a
@@ -49,6 +50,7 @@ typedef struct RecordedTable {
     uint8_t *bytes;    /**< Its bytes, as many as the dump holds: a table cut short is never padded. */
     uint32_t length;   /**< How many of them the table has. */
     uint32_t capacity; /**< How many @p bytes can hold before it grows. */
+    uint64_t placed;   /**< Where it is served for Load, which the XSDT leaves out; 0 when the XSDT lists it. */
 } RecordedTable_t;
 
 /**
@@ -60,6 +62,7 @@ typedef struct RecordedMachine {
     uint32_t table_count;                                            /**< Tables the dump holds. */
     RecordedTable_t tables[RECORDED_MACHINE_MAX_TABLES];             /**< In the dump's order. */
     uint8_t *root;                                                   /**< The root pointer, then the XSDT. */
+    uint32_t placed_count;                                           /**< Tables served for Load. */
 } RecordedMachine_t;
 
 /**
