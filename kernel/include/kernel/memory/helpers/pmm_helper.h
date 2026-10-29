@@ -23,10 +23,20 @@
 #ifndef KERNEL_MEMORY_PMM_HELPER_H
 #define KERNEL_MEMORY_PMM_HELPER_H
 
+#include <kernel/cpu/pmm.h>
 #include <kernel/drivers/serial.h>
 
 extern void write_pmm_strategy_info(Serial_t *serial);
 extern void write_pmm_pass_1_info(Serial_t *serial);
+
+/**
+ * @brief Prints the `[LPLTLM] boot_map` record: whether the bootloader gave a memory map, whether it was refused,
+ *        and the runs and pages unmapped from the boot map.
+ *
+ * @param serial      The port the record goes to.
+ * @param restriction What physical_memory_manager_restrict_boot_mapping returned.
+ */
+extern void write_boot_map_record(Serial_t *serial, const PhysicalMemoryManagerBootMapRestriction_t *restriction);
 extern void write_pmm_pass_2_start_info(Serial_t *serial);
 extern void write_pmm_ready_info(Serial_t *serial);
 extern void write_pmm_buddy_info(Serial_t *serial);

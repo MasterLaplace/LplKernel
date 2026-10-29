@@ -337,6 +337,16 @@ bool paging_set_page_read_only(uint32_t virt_addr);
 bool paging_page_is_read_only(uint32_t virt_addr, bool *is_read_only);
 
 /**
+ * @brief Reads the page table entry that maps a virtual address.
+ *
+ * @param virt_addr Virtual address inside the page to query.
+ * @param out_entry Receives the entry: its frame, its permissions and its memory type bits (PWT, PCD,
+ *                  PAT).
+ * @return true when the address is mapped, false otherwise, @p out_entry then untouched.
+ */
+bool paging_get_page_table_entry(uint32_t virt_addr, PageTableEntry_t *out_entry);
+
+/**
  * @brief Return number of runtime-created page tables currently active.
  *
  * @details Counts only page tables created by paging_map_page() at runtime,

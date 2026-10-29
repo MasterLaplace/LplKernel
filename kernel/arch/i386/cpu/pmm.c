@@ -32,6 +32,9 @@
 /** @brief Multiboot flag bit indicating presence of a memory map. */
 #define MULTIBOOT_FLAG_MMAP (1 << 6)
 
+/** @brief Multiboot flag bit indicating presence of the boot modules' table. */
+#define MULTIBOOT_FLAG_MODULES (1u << 3)
+
 /** @brief Multiboot memory region type: available RAM. */
 #define MMAP_TYPE_AVAILABLE 1
 
@@ -609,6 +612,10 @@ static bool pmm_compute_region_bounds(const MemoryMapEntry_t *entry, uint32_t *o
         return false;
 
     uint32_t region_start = (uint32_t) entry->base_addr;
+
+    if (region_start > PAGE_ALIGN_DOWN(0xFFFFFFFFu))
+        return false;
+
     uint32_t region_length = (entry->length >> 32) ? 0xFFFFFFFFUL - region_start : (uint32_t) entry->length;
 
     uint32_t region_end = (region_start + region_length < region_start) ? 0xFFFFFFFFUL : region_start + region_length;
@@ -706,10 +713,86 @@ static bool pmm_next_mmap_entry(const uint8_t *mmap_base, uint32_t mmap_length, 
 
     if (entry->size < MMAP_MIN_ENTRY_SIZE)
         return false;
-    if (*offset + sizeof(uint32_t) + entry->size > mmap_length)
+    if (entry->size > mmap_length - *offset - sizeof(uint32_t))
         return false;
 
     *out_entry = entry;
+    return true;
+}
+
+/**
+ * @brief Where the memory the boot map keeps stops from @p page on: the end of the last whole page of the
+ *        usable RAM region that holds @p page whole, the farthest when several do, or @p page when none does.
+ */
+static uint32_t pmm_kept_memory_end(const uint8_t *mmap_base, uint32_t mmap_length, uint32_t page)
+{
+    uint32_t end = page;
+    uint32_t offset = 0u;
+    MemoryMapEntry_t *entry = NULL;
+
+    while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
+    {
+        uint32_t region_start, region_end;
+
+        if (entry->type == MMAP_TYPE_AVAILABLE && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
+            region_start <= page && region_end > end)
+            end = region_end;
+        offset += sizeof(uint32_t) + entry->size;
+    }
+    return end;
+}
+
+/**
+ * @brief The first page past @p page that a usable RAM region holds whole, or @p limit when none lies below
+ *        it.
+ */
+static uint32_t pmm_next_kept_memory(const uint8_t *mmap_base, uint32_t mmap_length, uint32_t page, uint32_t limit)
+{
+    uint32_t next = limit;
+    uint32_t offset = 0u;
+    MemoryMapEntry_t *entry = NULL;
+
+    while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
+    {
+        uint32_t region_start, region_end;
+
+        if (entry->type == MMAP_TYPE_AVAILABLE && pmm_compute_region_bounds(entry, &region_start, &region_end) &&
+            region_start > page && region_start < next)
+            next = region_start;
+        offset += sizeof(uint32_t) + entry->size;
+    }
+    return next;
+}
+
+/**
+ * @brief Whether @p map holds in RAM what the kernel still reads through the boot map once it is restricted: its
+ *        image, from 1 MiB, the Multiboot information and memory map, the boot modules' table and each module.
+ */
+static bool pmm_boot_map_holds_the_boot(const uint8_t *map, uint32_t length)
+{
+    extern MultibootInfo_t *multiboot_info;
+    const uint32_t kernel_end = pmm_virt_to_phys((uint32_t) (uintptr_t) &global_kernel_end);
+    const uint32_t information = pmm_virt_to_phys((uint32_t) (uintptr_t) multiboot_info);
+    const uint32_t memory_map = (uint32_t) (uintptr_t) multiboot_info->mmap_addr;
+
+    if (!physical_memory_manager_boot_map_holds(map, length, PMM_LOW_MEMORY_LIMIT, kernel_end) ||
+        !physical_memory_manager_boot_map_holds(map, length, information, information + sizeof(MultibootInfo_t)) ||
+        !physical_memory_manager_boot_map_holds(map, length, memory_map, memory_map + multiboot_info->mmap_length))
+        return false;
+    if (!(multiboot_info->flags & MULTIBOOT_FLAG_MODULES) || !multiboot_info->mods_count || !multiboot_info->mods_addr)
+        return true;
+
+    const uint32_t table = (uint32_t) (uintptr_t) multiboot_info->mods_addr;
+    const Module_t *const modules = (const Module_t *) (uintptr_t) pmm_phys_to_virt(table);
+
+    if (!physical_memory_manager_boot_map_holds(map, length, table,
+                                                table + multiboot_info->mods_count * (uint32_t) sizeof(Module_t)))
+        return false;
+    for (uint32_t index = 0u; index < multiboot_info->mods_count; ++index)
+    {
+        if (!physical_memory_manager_boot_map_holds(map, length, modules[index].mod_start, modules[index].mod_end))
+            return false;
+    }
     return true;
 }
 
@@ -987,4 +1070,55 @@ void physical_memory_manager_extend_mapping(void)
 #ifndef LPL_KERNEL_REAL_TIME_MODE
     buddy_population_in_progress = false;
 #endif
+}
+
+bool physical_memory_manager_boot_map_next_hole(const uint8_t *map, uint32_t length, uint32_t from, uint32_t *out_first,
+                                                uint32_t *out_end)
+{
+    if (!map || length == 0u)
+        return false;
+    for (uint32_t page = from < PMM_LOW_MEMORY_LIMIT ? PMM_LOW_MEMORY_LIMIT : PAGE_ALIGN_DOWN(from);
+         page < PMM_BOOT_MAP_LIMIT;)
+    {
+        const uint32_t kept_end = pmm_kept_memory_end(map, length, page);
+
+        if (kept_end <= page)
+        {
+            *out_first = page;
+            *out_end = pmm_next_kept_memory(map, length, page, PMM_BOOT_MAP_LIMIT);
+            return true;
+        }
+        page = kept_end;
+    }
+    return false;
+}
+
+bool physical_memory_manager_boot_map_holds(const uint8_t *map, uint32_t length, uint32_t first, uint32_t end)
+{
+    uint32_t hole_first = 0u;
+    uint32_t hole_end = 0u;
+
+    return end <= first || !physical_memory_manager_boot_map_next_hole(map, length, first, &hole_first, &hole_end) ||
+           hole_first >= end;
+}
+
+PhysicalMemoryManagerBootMapRestriction_t physical_memory_manager_restrict_boot_mapping(void)
+{
+    PhysicalMemoryManagerBootMapRestriction_t restriction = {0};
+    uint8_t *mmap_base = NULL;
+    uint32_t mmap_length = 0u;
+    uint32_t first = 0u;
+    uint32_t end = 0u;
+
+    restriction.memory_map = pmm_get_multiboot_mmap(&mmap_base, &mmap_length);
+    restriction.memory_map_refused = restriction.memory_map && !pmm_boot_map_holds_the_boot(mmap_base, mmap_length);
+    for (uint32_t from = PMM_LOW_MEMORY_LIMIT;
+         restriction.memory_map && !restriction.memory_map_refused &&
+         physical_memory_manager_boot_map_next_hole(mmap_base, mmap_length, from, &first, &end);
+         from = end)
+    {
+        ++restriction.runs_unmapped;
+        restriction.pages_unmapped += paging_unmap_range(pmm_phys_to_virt(first), (end - first) / PAGE_SIZE, false);
+    }
+    return restriction;
 }

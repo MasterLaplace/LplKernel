@@ -51,6 +51,67 @@
 extern void physical_memory_manager_initialize(void);
 
 /**
+ * @brief What physical_memory_manager_restrict_boot_mapping found and did.
+ */
+typedef struct PhysicalMemoryManagerBootMapRestriction {
+    bool memory_map;         /**< The bootloader gave a memory map; without one nothing is unmapped. */
+    bool memory_map_refused; /**< The map leaves outside RAM what the kernel runs on (its image, the Multiboot
+                                  information, a boot module): it is not believed, and nothing is unmapped. */
+    uint32_t runs_unmapped;  /**< Runs of pages unmapped, each with one TLB shootdown. */
+    uint32_t pages_unmapped; /**< Pages unmapped. */
+} PhysicalMemoryManagerBootMapRestriction_t;
+
+/**
+ * @brief The first run of pages, from @p from on, past the first MiB and below the end of the boot map (64 MiB),
+ *        that no usable RAM entry of the Multiboot memory map @p map holds whole: what
+ *        physical_memory_manager_restrict_boot_mapping unmaps.
+ *
+ * @details The first MiB stays, as Linux keeps it mapped: the kernel reads VGA text, the BIOS data area and the
+ *          BIOS area through it. Past it, a page stays only when one usable RAM entry holds it whole, as Linux maps
+ *          only RAM there; ACPI memory and everything else are reached through windows. Entries are read as
+ *          Multiboot lays them out, each its size then that many bytes, up to the first whose size is below 20 or
+ *          that runs past @p length; an entry or the part of one above 4 GiB holds nothing.
+ *
+ * @param map       The memory map's first entry, or NULL.
+ * @param length    The memory map's length in bytes; 0, like a NULL @p map, means no map, and no hole.
+ * @param from      Where to search from, rounded down to its page and raised to the first MiB's end.
+ * @param out_first Receives the run's first page.
+ * @param out_end   Receives the page past its last, at most 64 MiB.
+ * @return true and the run, or false when none is left.
+ */
+extern bool physical_memory_manager_boot_map_next_hole(const uint8_t *map, uint32_t length, uint32_t from,
+                                                       uint32_t *out_first, uint32_t *out_end);
+
+/**
+ * @brief Whether the Multiboot memory map @p map leaves in RAM every page of [@p first, @p end) that the boot map
+ *        could drop, so that no run physical_memory_manager_boot_map_next_hole gives meets it.
+ *
+ * @param map    The memory map's first entry, or NULL.
+ * @param length The memory map's length in bytes.
+ * @param first  The range's first byte.
+ * @param end    The byte past its last; a range that ends at or before @p first is held.
+ * @return true when no hole meets the range: always for a range below 1 MiB or from 64 MiB, and without a map.
+ */
+extern bool physical_memory_manager_boot_map_holds(const uint8_t *map, uint32_t length, uint32_t first, uint32_t end);
+
+/**
+ * @brief Unmaps from the boot map every run physical_memory_manager_boot_map_next_hole finds in the bootloader's
+ *        memory map, unless the map leaves outside RAM what the kernel runs on.
+ *
+ * @details boot.S maps 0 to 64 MiB write-back before the memory map is read, device memory, reserved ranges and
+ *          holes included; an uncached window on such a page would then alias a write-back one, which Intel SDM
+ *          vol. 3, §14.12.4 calls undefined. Without a memory map nothing is unmapped; nor with one that leaves
+ *          outside RAM the kernel's image, the Multiboot information and memory map, the boot modules' table or a
+ *          module (physical_memory_manager_boot_map_holds), since unmapping them would stop the boot: such a map is
+ *          refused.
+ *
+ * @note Called once, after physical_memory_manager_initialize() and before any window is mapped or any other
+ *       processor starts.
+ * @return Whether there was a map, whether it was refused, and the runs and pages unmapped.
+ */
+extern PhysicalMemoryManagerBootMapRestriction_t physical_memory_manager_restrict_boot_mapping(void);
+
+/**
  * @brief Allocate one physical 4 KB page.
  *
  * @return Physical address of the allocated page (4 KB aligned),
