@@ -230,6 +230,12 @@ void made_up_aml_store_integer(MadeUpAml_t *aml, uint64_t value, const char *tar
     made_up_aml_name(aml, target);
 }
 
+void made_up_aml_construct(MadeUpAml_t *aml, const uint8_t *lead, uint32_t lead_length, const MadeUpAml_t *body)
+{
+    aml->overflowed = aml->overflowed || body->overflowed;
+    made_up_aml_package(aml, lead, lead_length, body->bytes, body->length);
+}
+
 void made_up_aml_raw(MadeUpAml_t *aml, const uint8_t *bytes, uint32_t length)
 {
     for (uint32_t index = 0u; index < length; ++index)

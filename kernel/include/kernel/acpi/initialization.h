@@ -14,7 +14,8 @@
  *
  * @file initialization.h
  * @brief The initialisation sequence of the ACPI namespace: \_INI and \_SB._INI, the _REG of PCI_Config
- *        regions, the _STA and _INI walk, and the boot's load that runs them.
+ *        regions, the _STA and _INI walk, the firmware handshake, the C-states of each CPU, and the boot's
+ *        load that runs them.
  *
  * Layer L6 of the specification (docs/acpi/specification.md, §3.8): ordinary kernel code that asks
  * the interpreter to evaluate objects and reads plain results. A failure is counted and the sequence
@@ -33,6 +34,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
+struct AdvancedConfigurationAndPowerInterfaceProcessorIdleTable;
 
 /**
  * @brief How the platform-wide \_SB._OSC answered (§3.8 step 6).
@@ -54,10 +57,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitializationMachine {
     const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt; /**< The CPU slots processor objects bind to, or
                                                                         NULL: none binds. */
     bool monitor_wait; /**< The processors implement MONITOR/MWAIT, so _CST may name MWAIT hints. */
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt; /**< SMI_CMD and CST_CNT, which step 8
+                                                                               writes, or NULL: nothing written. */
+    uint8_t mode; /**< How step 0 ended: an ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_* outcome. */
 } AdvancedConfigurationAndPowerInterfaceInitializationMachine_t;
 
 /**
- * @brief What the initialisation of a namespace ran and counted (§3.8 steps 2 to 7).
+ * @brief What the initialisation of a namespace ran and counted (§3.8 steps 2 to 9).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
     uint32_t initializations;               /**< _INI methods run, \_INI and \_SB._INI included. */
@@ -81,6 +87,16 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
                                                   returned no Buffer of two DWORDs. */
     uint32_t processors_unbound;             /**< Processor objects with an _OSC or a _PDC that bind to no CPU
                                                   slot, and were given nothing. */
+    uint32_t idle_control;                   /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_* value. */
+    uint32_t processor_idle;         /**< _CST evaluations of processor objects bound to a CPU slot, steps 8 and 9. */
+    uint32_t processor_idle_failed;  /**< Of those, the ones that failed or gave a malformed package. */
+    uint32_t processor_idle_absent;  /**< Processor objects with a _CST that _STA keeps out: not present nor
+                                          functioning, not enabled, or below a device neither present nor
+                                          functioning; they publish nothing. */
+    uint32_t processor_idle_unbound; /**< Processor objects with a _CST that bind to no CPU slot, or to one an
+                                          earlier object took, and publish nothing. */
+    uint32_t idle_states_dropped;    /**< States past the ones a CPU slot publishes, counted and left out. */
+    uint32_t processor_idle_changes; /**< Notifies 0x81 that evaluated a _CST once more, step 9. */
     uint32_t statuses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT]; /**< The failures,
                                                                                                      per status. */
     uint32_t first_failure_node; /**< The object whose evaluation failed first, or 0. */
@@ -88,22 +104,37 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
 } AdvancedConfigurationAndPowerInterfaceInitialization_t;
 
 /**
- * @brief Initialises a loaded namespace as firmware expects (§3.8 steps 2 to 7, and 9): runs \_INI then
+ * @brief Initialises a loaded namespace as firmware expects (§3.8 steps 2 to 9): runs \_INI then
  *        \_SB._INI; runs _REG (PCI_Config, 1) once in every scope that declares a PCI_Config region,
  *        after which a region a method creates gets its _REG at once; walks the devices, processors and
  *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; leaves
  *        \_PIC uncalled; asks \_SB._OSC for nothing, a query then a commit; gives every processor object
- *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC; then drops the
- *        Notifies the load and the sequence raised.
+ *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC; publishes the
+ *        C-states of each CPU slot from its processor object's _CST; then takes the Notifies the load and
+ *        the sequence raised, a _CST changed since its evaluation evaluated once more.
  *
  * @param load               A load whose tables are decoded, its stacks free.
- * @param machine            The CPU slots and the processor features of the machine.
+ * @param machine            The CPU slots, the processor features, the FADT and how step 0 ended.
  * @param out_initialization Receives what the sequence ran and counted; zeroed first.
+ * @param out_idle           Receives the C-states of every CPU slot of the MADT, those slots zeroed first.
  */
 extern void advanced_configuration_and_power_interface_initialize_namespace(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *machine,
-    AdvancedConfigurationAndPowerInterfaceInitialization_t *out_initialization);
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *out_initialization,
+    struct AdvancedConfigurationAndPowerInterfaceProcessorIdleTable *out_idle);
+
+/**
+ * @brief Counts a failed evaluation under its status, the first one kept as the one the acpi.init record
+ *        names.
+ *
+ * @param initialization The counts.
+ * @param node           The object whose evaluation failed.
+ * @param status         Why, not OK.
+ */
+extern void advanced_configuration_and_power_interface_initialization_count_failure(
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t node,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
 
 /**
  * @brief The name the telemetry gives a platform _OSC answer.
@@ -115,8 +146,8 @@ extern const char *advanced_configuration_and_power_interface_platform_capabilit
 
 /**
  * @brief Loads this machine's definition blocks at boot, into the boot's load, with the caps of the
- *        build's profile, and initialises the namespace they build (§3.8 steps 1 to 7, and 9), its
- *        processor objects bound to the boot's MADT.
+ *        build's profile, and initialises the namespace they build (§3.8 steps 1 to 9), its processor
+ *        objects bound to the boot's MADT, after the boot's switch to ACPI mode.
  *
  * @param monitor_wait The processors implement MONITOR/MWAIT.
  */
@@ -138,5 +169,14 @@ advanced_configuration_and_power_interface_machine_language(void);
  */
 extern const AdvancedConfigurationAndPowerInterfaceInitialization_t *
 advanced_configuration_and_power_interface_initialization(void);
+
+/**
+ * @brief The C-states the boot's initialisation published for each CPU slot (§3.10).
+ *
+ * @return The table, never NULL: no slot until advanced_configuration_and_power_interface_machine_language_initialize
+ *         runs, and when the boot's namespace could not be opened.
+ */
+extern const struct AdvancedConfigurationAndPowerInterfaceProcessorIdleTable *
+advanced_configuration_and_power_interface_processor_idle(void);
 
 #endif /* KERNEL_ACPI_INITIALIZATION_H */

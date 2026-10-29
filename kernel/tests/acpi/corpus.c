@@ -1,6 +1,7 @@
 #include "simulated_host.h"
 
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/boot_module.h>
 #include <kernel/testing/test.h>
@@ -159,12 +160,14 @@ static void corpus_measure_load(KernelTest_t *test)
 
 /**
  * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
- *        directory's MADT and MONITOR/MWAIT taken as implemented, as the host harness does, and prints what
- *        it ran and counted.
+ *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform never switched to ACPI mode,
+ *        as the host harness does, and prints what it ran and counted and the fold of the C-states it
+ *        published.
  */
 static void corpus_initialize(KernelTest_t *test)
 {
     static AdvancedConfigurationAndPowerInterfaceInitialization_t initialization;
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t idle;
     static AdvancedConfigurationAndPowerInterfaceMadtState_t madt;
     const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {
         .madt = advanced_configuration_and_power_interface_read_madt(
@@ -172,9 +175,10 @@ static void corpus_initialize(KernelTest_t *test)
                     &madt :
                     NULL,
         .monitor_wait = true,
+        .fadt = &corpus_directory.fixed_description,
     };
 
-    advanced_configuration_and_power_interface_initialize_namespace(&corpus_load, &machine, &initialization);
+    advanced_configuration_and_power_interface_initialize_namespace(&corpus_load, &machine, &initialization, &idle);
     kernel_test_measure(test, "initializations", initialization.initializations);
     kernel_test_measure(test, "initialization_failed", initialization.initialization_failed);
     kernel_test_measure(test, "registrations", initialization.registrations);
@@ -190,6 +194,15 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure(test, "processor_capabilities_refused", initialization.processor_capabilities_refused);
     kernel_test_measure(test, "processor_capabilities_failed", initialization.processor_capabilities_failed);
     kernel_test_measure(test, "processors_unbound", initialization.processors_unbound);
+    kernel_test_measure(test, "idle_control", initialization.idle_control);
+    kernel_test_measure(test, "processor_idle", initialization.processor_idle);
+    kernel_test_measure(test, "processor_idle_failed", initialization.processor_idle_failed);
+    kernel_test_measure(test, "processor_idle_absent", initialization.processor_idle_absent);
+    kernel_test_measure(test, "processor_idle_unbound", initialization.processor_idle_unbound);
+    kernel_test_measure(test, "idle_states_dropped", initialization.idle_states_dropped);
+    kernel_test_measure(test, "processor_idle_changes", initialization.processor_idle_changes);
+    kernel_test_measure_hexadecimal(test, "idle_fold",
+                                    advanced_configuration_and_power_interface_processor_idle_fold(&idle));
     kernel_test_measure(test, "first_failure", initialization.first_failure);
     kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
                       "the initialisation leaves no frame and no temporary node behind");

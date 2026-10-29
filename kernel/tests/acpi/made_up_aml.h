@@ -201,6 +201,17 @@ extern void made_up_aml_store_name(MadeUpAml_t *aml, const char *source, const c
 extern void made_up_aml_store_integer(MadeUpAml_t *aml, uint64_t value, const char *target);
 
 /**
+ * @brief Appends a construct: the @p lead_length opcode bytes at @p lead, a PkgLength, then @p body; a
+ *        Buffer, a Package or an If, its fixed fields at the start of @p body.
+ *
+ * @param aml         The builder.
+ * @param lead        The opcode bytes.
+ * @param lead_length How many.
+ * @param body        What follows the PkgLength, written with another builder.
+ */
+extern void made_up_aml_construct(MadeUpAml_t *aml, const uint8_t *lead, uint32_t lead_length, const MadeUpAml_t *body);
+
+/**
  * @brief Appends raw bytes, for a term the other calls do not write.
  *
  * @param aml    The builder.

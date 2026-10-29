@@ -3824,3 +3824,39 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     return advanced_configuration_and_power_interface_machine_language_evaluate_node(load, index, arguments,
                                                                                      argument_count, out_result);
 }
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_package_element(
+    MachineLanguageLoad_t *load, const MachineLanguageValue_t *package, uint32_t element,
+    MachineLanguageValue_t *out_value)
+{
+    uint32_t node = 0u;
+
+    memset(out_value, 0, sizeof(*out_value));
+    if (package->kind != MACHINE_LANGUAGE_VALUE(PACKAGE))
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (element >= machine_language_object(load, package)->length)
+        return MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE);
+
+    const MachineLanguageValue_t *slot =
+        (const MachineLanguageValue_t *) advanced_configuration_and_power_interface_machine_language_object_payload(
+            &load->heap, package->handle) +
+        element;
+
+    if (slot->kind == MACHINE_LANGUAGE_VALUE(UNINITIALIZED))
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (slot->kind != MACHINE_LANGUAGE_VALUE(NAME_REFERENCE))
+    {
+        *out_value = *slot;
+        machine_language_retain(load, out_value);
+        return MACHINE_LANGUAGE_OK;
+    }
+
+    const MachineLanguageStatus_t status = machine_language_resolve_element_name(load, slot, &node);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    if (advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node)->type ==
+        MACHINE_LANGUAGE_NODE(METHOD))
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    return advanced_configuration_and_power_interface_machine_language_evaluate_node(load, node, NULL, 0u, out_value);
+}
