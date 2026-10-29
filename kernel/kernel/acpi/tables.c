@@ -405,8 +405,8 @@ static uint8_t acpi_fadt_read_block(const uint8_t *copy, AcpiFadtBlockIndex_t in
 }
 
 /**
- * @brief Reads GPE block @p index of a FADT's copy, and its length in bytes: the legacy length, else
- *        the block's own width; 0 when the block is absent.
+ * @brief Reads GPE block @p index of a FADT's copy, and its length in bytes: the legacy length, which
+ *        ACPI gives the extended block too; 0 when the block is absent.
  */
 static void acpi_fadt_read_event_block(const uint8_t *copy, AcpiFadtBlockIndex_t index,
                                        AdvancedConfigurationAndPowerInterfaceGenericAddress_t *out_block,
@@ -414,10 +414,7 @@ static void acpi_fadt_read_event_block(const uint8_t *copy, AcpiFadtBlockIndex_t
 {
     const uint8_t length = acpi_fadt_read_block(copy, index, out_block);
 
-    if (out_block->address == 0u)
-        *out_length = 0u;
-    else
-        *out_length = (length != 0u) ? length : (uint8_t) (out_block->bit_width / 8u);
+    *out_length = (out_block->address == 0u) ? 0u : length;
 }
 
 /**

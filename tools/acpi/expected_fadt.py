@@ -15,7 +15,7 @@ it, reads 0. The rules that normalise them are the specification's, section 3.9,
 - a Generic Address Structure whose address is 0 reads absent, every field 0;
 - an extended block whose address is not 0 wins, as wide as its legacy length when it gives no width; else a legacy
   block that is not 0 lies in the I/O space, as wide as its length, capped at 255 bits;
-- a GPE block's length is its legacy length, else its width in bytes, and 0 when the block is absent;
+- a GPE block's length is its legacy length, which ACPI gives the extended block too, and 0 when the block is absent;
 - the reset register and its value read 0 unless the revision is 2 or more and RESET_REG_SUP, bit 10, is set.
 """
 import os
@@ -114,7 +114,7 @@ def normalise(fields, registers):
             block = (1, width, 0, 0, value(legacy))
         else:
             block = ABSENT
-        lengths[name] = 0 if block[4] == 0 else (size if size else block[1] // 8)
+        lengths[name] = 0 if block[4] == 0 else size
         blocks.append((name, block))
     reset_supported = revision >= 2 and (flags >> 10) & 1
     reset = register("Reset Register") if reset_supported else ABSENT
