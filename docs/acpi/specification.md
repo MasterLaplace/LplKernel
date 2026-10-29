@@ -469,9 +469,11 @@ functioning is walked. No `_INI` runs twice. `late_initializations` counts how o
   and so is one whose slot an object declared before it took.
 - **Presence.** Step 8 evaluates the `_CST` of a processor object Linux attaches (v7.3 `acpi_bus_attach`,
   `acpi_processor_add`): its `_STA` present or functioning, and enabled, and no Device, Processor or ThermalZone
-  above it whose `_STA` is neither present nor functioning. A missing `_STA` reads 0x0F, one that fails reads 0 and
-  is counted; each device's `_STA` is read once. A processor kept out takes no slot, and is counted
-  (`processor_idle_absent`).
+  above it found absent. Step 8 decides the devices above it as the walk of step 4 does, and shares each decision
+  with step 4 and the late initialisation, so that a device's `_STA` is read once: one step 4 or a late
+  initialisation found absent keeps the processor out unread, and one whose `_STA` fails is walked into, where
+  Linux would read it as 0. The processor's own `_STA` reads 0x0F when missing, and keeps it out when it fails,
+  counted. A processor kept out takes no slot, and is counted (`processor_idle_absent`).
 - **Every state firmware lists is published,** type 3 included ([§8.1.4]), up to the cap of §6.1; which states to
   enter is #298's policy.
 - **A faulty state is left out** and counted on its slot, as Linux skips it: a sub-package of other than four
