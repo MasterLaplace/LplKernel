@@ -173,6 +173,25 @@ extern uint32_t physical_memory_manager_memory_type(uint64_t physical_address, u
 extern bool physical_memory_manager_type_is_memory(uint32_t type);
 
 /**
+ * @brief Says whether a range reaches usable RAM past the first MiB: whether one of its pages lies whole in a
+ *        usable RAM entry of the boot memory map, as Linux's ioremap finds System RAM it refuses to map.
+ *
+ * @param physical_address First byte of the range.
+ * @param length           Its length in bytes.
+ * @details It reads the copy of the map initialisation kept, its first 64 entries.
+ * @return true when a page at or past 1 MiB that the range touches lies whole in a usable RAM entry; false for
+ *         an empty or wrapping range, and when the boot gave no memory map.
+ */
+extern bool physical_memory_manager_reaches_ram(uint64_t physical_address, uint64_t length);
+
+/**
+ * @brief Entries of the boot memory map past the 64 initialisation kept: a page only they describe reads type 0.
+ *
+ * @return The count since boot.
+ */
+extern uint32_t physical_memory_manager_get_memory_map_dropped_count(void);
+
+/**
  * @brief Return the active PMM strategy name.
  *
  * @return Human-readable strategy string selected at compile time.

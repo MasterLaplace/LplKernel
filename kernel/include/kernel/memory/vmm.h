@@ -84,17 +84,20 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
  * @details Every window takes the memory type of its frames, never of its kind, so that no page has
  *          two memory types (Intel SDM vol. 3, §14.12.4): a page the kernel's map of physical memory
  *          holds, the first MiB among them, takes that map's write-back type, and the MTRRs decide its
- *          effective type; any other page is write-back when the boot memory map calls it RAM, ACPI
- *          reclaimable or ACPI NVS memory, and uncached otherwise. A device's registers lie in reserved
- *          memory or where no entry reaches, so they are cache-disabled and write-through: a cached read
- *          would return whatever the line held when it was filled, which for a status register is the
- *          answer to a question nobody asked. A window that cannot be mapped whole is given back
+ *          effective type; any other page is write-back when the first 64 entries of the boot memory
+ *          map call it RAM, ACPI reclaimable or ACPI NVS memory, and uncached otherwise. A device's
+ *          registers lie in reserved memory or where no entry reaches, so they are cache-disabled and
+ *          write-through: a cached read would return whatever the line held when it was filled, which
+ *          for a status register is the answer to a question nobody asked. A window that reaches usable
+ *          RAM past the first MiB is refused and counted, as Linux refuses ioremap on System RAM: those
+ *          frames belong to the physical memory manager. Registers the map calls ACPI reclaimable or
+ *          NVS memory are mapped, write-back. A window that cannot be mapped whole is given back
  *          without freeing its frames, as kernel_vmm_unmap_device_window does.
  *
  * @param physical_base Physical address of the window, as its base address register gives it.
  * @param size          Window length in bytes.
  * @return The virtual address of @p physical_base, its offset within its page kept, or 0, as when the
- *         window's last byte would lie past 4 GiB.
+ *         window's last byte would lie past 4 GiB or the window reaches usable RAM past the first MiB.
  */
 uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size);
 
@@ -117,7 +120,8 @@ void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size);
  * @details Read-only, since the kernel has no reason to write what the firmware describes. Its memory
  *          type is the one kernel_vmm_map_device_window gives the same frames: cached for RAM, ACPI
  *          reclaimable and ACPI NVS memory and in the kernel's map of physical memory, uncached for a
- *          table in reserved memory or where no entry of the boot memory map reaches, so that an AML
+ *          table in reserved memory or where none of the first 64 entries of the boot memory map
+ *          reaches, so that an AML
  *          region on the same page gives it no second type. It does not rely on the frames lying where
  *          the kernel's own mapping of physical memory reaches, and its frames are never handed to the
  *          physical memory manager.
@@ -156,5 +160,11 @@ uint32_t kernel_vmm_map_firmware_writable_window(uint32_t physical_base, uint32_
  * @return The count since boot.
  */
 uint32_t kernel_vmm_get_unmapped_range_count(void);
+
+/**
+ * @brief Device windows refused because they reach usable RAM past the first MiB.
+ * @return The count since boot.
+ */
+uint32_t kernel_vmm_get_device_windows_refused_count(void);
 
 #endif /* !KERNEL_MEMORY_VMM_H_ */

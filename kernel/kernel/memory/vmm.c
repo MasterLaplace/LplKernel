@@ -13,6 +13,7 @@ static uint8_t vmm_bitmap[VMM_BITMAP_SIZE];
 static uint32_t vmm_last_search_index = 0u;
 static bool vmm_initialized = false;
 static uint32_t vmm_unmapped_range_count = 0u;
+static uint32_t vmm_device_windows_refused = 0u;
 
 static void vmm_bitmap_set(uint32_t index) { vmm_bitmap[index / 8] |= (1 << (index % 8)); }
 
@@ -63,7 +64,7 @@ static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t p
     const bool held = frame < KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE &&
                       paging_get_page_table_entry(frame + KERNEL_VIRTUAL_BASE, &direct) &&
                       ((uint32_t) direct.page_frame_base << 12u) == frame;
-    const uint32_t uncached =
+    const bool uncached =
         !held && !physical_memory_manager_type_is_memory(physical_memory_manager_memory_type(frame, PAGE_SIZE));
 
     pte_flags.write_through = held ? direct.write_through : uncached;
@@ -254,6 +255,11 @@ uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size)
 {
     const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u};
 
+    if (physical_memory_manager_reaches_ram(physical_base, size))
+    {
+        ++vmm_device_windows_refused;
+        return 0u;
+    }
     return vmm_map_window(physical_base, size, pte_flags);
 }
 
@@ -276,3 +282,5 @@ uint32_t kernel_vmm_map_firmware_writable_window(uint32_t physical_base, uint32_
 }
 
 uint32_t kernel_vmm_get_unmapped_range_count(void) { return vmm_unmapped_range_count; }
+
+uint32_t kernel_vmm_get_device_windows_refused_count(void) { return vmm_device_windows_refused; }

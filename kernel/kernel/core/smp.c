@@ -186,6 +186,7 @@ void kernel_symmetric_multiprocessing_report(Serial_t *serial)
     kernel_telemetry_write_unsigned("ap_parked", smp_ap_parked);
     kernel_telemetry_write_unsigned("shootdowns", advanced_pic_ipi_get_tlb_shootdown_broadcast_count());
     kernel_telemetry_write_unsigned("ranges_unmapped", kernel_vmm_get_unmapped_range_count());
+    kernel_telemetry_write_unsigned("device_windows_refused", kernel_vmm_get_device_windows_refused_count());
     kernel_telemetry_write_unsigned("shootdown_timeouts", timeouts);
     kernel_telemetry_write_unsigned("control_registers_compared", control_registers_compared);
     kernel_telemetry_write_unsigned("control_registers_differ", control_registers_differ);
