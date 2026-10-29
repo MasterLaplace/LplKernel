@@ -19,6 +19,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_power_management_ti
 #define TIMER_OUT_OF_ORDER 0x00400000u /**< What a read caught in an increment adds to the count. */
 #define TIMER_NO_EVENT     0u          /**< A read or an edge number that names none. */
 #define TIMER_STUTTER      6u          /**< Port reads a stuttering timer holds each count for: two triples. */
+#define TIMER_WRAP_FIRST   20u /**< Counts before the wrap a timer starts at, fewest: it wraps in the first checks. */
+#define TIMER_WRAP_LAST    60u /**< Most: two checks of reads later, so that one of them sees the wrap inside it. */
 #define TIMER_STATE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_##name
 
 /**
@@ -234,9 +236,9 @@ KERNEL_TEST(a_platform_without_a_reachable_timer_has_none_and_reads_no_port)
 }
 
 /**
- * @brief A timer of 24 bits that wraps during the checks, and one of 32 bits that crosses 2^24 then, that
- *        count 3.579545 MHz are usable, their rate a thousand thousandths of it within the 1 µs a read
- *        costs; the checks count their reads, and take three to four ticks of the clock.
+ * @brief A timer of 24 bits, and one of 32 bits that crosses 2^24, that count 3.579545 MHz are usable,
+ *        their rate a thousand thousandths of it within the 1 µs a read costs, wherever the wrap falls
+ *        among the reads of the checks; the checks count their reads, and take three to four ticks.
  */
 KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
 {
@@ -244,18 +246,25 @@ KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
     uint32_t low_rate;
     uint32_t low_reads;
     uint32_t low_microseconds;
+    bool every_wrap_usable = true;
     uint8_t wide_state;
 
-    timer_open(TIMER_LOW_BITS - 64u);
+    for (uint32_t before_wrap = TIMER_WRAP_FIRST; before_wrap <= TIMER_WRAP_LAST; ++before_wrap)
+    {
+        timer_open(TIMER_LOW_BITS - before_wrap);
+        every_wrap_usable = every_wrap_usable && timer_find() == TIMER_STATE(USABLE);
+    }
+    timer_open(0u);
     low_state = timer_find();
     low_rate = timer_found.rate_per_mille;
     low_reads = timer_found.check_reads;
     low_microseconds = timer_found.check_microseconds;
-    timer_open(TIMER_LOW_BITS - 64u);
+    timer_open(TIMER_LOW_BITS - TIMER_WRAP_FIRST);
     timer_machine.bits = TIMER_ALL_BITS;
     wide_state = timer_find();
 
-    kernel_test_check(test, low_state == TIMER_STATE(USABLE), "a 24-bit timer that wraps is usable");
+    kernel_test_check(test, every_wrap_usable, "a 24-bit timer that wraps during any check is usable");
+    kernel_test_check(test, low_state == TIMER_STATE(USABLE), "a 24-bit timer is usable");
     kernel_test_check(test, timer_found.port == TIMER_PORT, "its port is PM_TMR_BLK's");
     kernel_test_check(test, low_rate >= 999u && low_rate <= 1001u, "its rate is 3.579545 MHz within a read");
     kernel_test_check(test, low_reads == timer_machine.reads, "the checks count every read of the port");
