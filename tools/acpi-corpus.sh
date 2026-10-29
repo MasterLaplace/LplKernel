@@ -359,7 +359,7 @@ load_check() {
 
 # Prints the sum of the counter $1 over the lines $2.
 total_of() {
-    grep -o " $1=[0-9]*" <<<"$2" | cut -d= -f2 | paste -sd+ | bc
+    { grep -o " $1=[0-9]*" <<<"$2" || true; echo " $1=0"; } | cut -d= -f2 | paste -sd+ | bc
 }
 
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
