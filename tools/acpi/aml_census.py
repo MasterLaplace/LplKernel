@@ -190,6 +190,7 @@ class Namespace:
 
     def __init__(self):
         self.kinds = dict(PREDEFINED_ROOT)
+        self.declarers = {}
         self.argument_counts = {("_OSI",): 1}
         self.created = []
         self.unplaced_externals = []
@@ -527,6 +528,36 @@ class Walker:
                 self.census.predefined[path[-1]][kind] += 1
         return path
 
+    def declare_scope(self, scope, name, kind, start, argument_count=None):
+        """Declare a Device, ThermalZone, Processor, PowerResource or Method and tell whether its body is read: the
+        declaration pass skips the body of a duplicate, and the counting pass, outside method bodies, the body of
+        any construct but the one that declared its path (docs/acpi/specification.md §5.1)."""
+        path = self.namespace.creation_path(scope, name)
+        existing = self.namespace.kinds.get(path) if path else None
+        self.declare(scope, name, kind, argument_count)
+        if self.method_stack or path is None:
+            return path, True
+        if not self.counting:
+            if existing is not None and existing != "External":
+                return path, False
+            self.namespace.declarers[path] = (self.label, start)
+            return path, True
+        return path, existing is None or self.namespace.declarers.get(path) == (self.label, start)
+
+    def count_for_disassembly(self, offset, end, scope, depth, method):
+        """Walk a body no pass reads, a duplicate's, for the per-table opcode counts alone, which the iASL
+        comparison reads: iASL disassembles every body."""
+        scratch = Census()
+        walker = Walker(self.data, self.start, self.namespace, scratch, self.label, True)
+        walker.method_stack = self.method_stack + ([scope] if method else [])
+        mark = len(self.namespace.created)
+        if method:
+            walker.last_statement(offset, end, scope, depth)
+        else:
+            walker.term_list(offset, end, scope, depth)
+        self.namespace.forget_since(mark)
+        self.census.opcodes_by_table[self.label].update(scratch.opcodes_by_table[self.label])
+
     def reference(self, scope, name):
         """Count a name reference and return the path it resolves to."""
         path = self.namespace.resolve(scope, name)
@@ -729,8 +760,10 @@ class Walker:
 
     def scoped_body(self, kind, offset, end, scope, depth, prefix_bytes=0):
         """Walk Scope, Device, PowerResource, Processor and ThermalZone."""
+        start = offset
         block_end, offset = self.package_length(offset, end)
         name, offset = self.name_string(offset)
+        reads = True
         if kind == "Scope":
             path = self.namespace.resolve(scope, name) if name.segments else self.namespace.creation_path(scope, name)
             if path is None and not self.counting:
@@ -739,12 +772,16 @@ class Walker:
             if self.counting:
                 self.census.named_objects["Scope"] += 1
         else:
-            path = self.declare(scope, name, kind)
+            path, reads = self.declare_scope(scope, name, kind, start)
         if prefix_bytes:
             self.integer(offset, prefix_bytes)
             offset += prefix_bytes
         if path is None:
             raise AmlError(f"{kind} {name.text()} climbs above the root")
+        if not reads:
+            if self.counting:
+                self.count_for_disassembly(offset, block_end, path, depth + 1, False)
+            return block_end
         return self.term_list(offset, block_end, path, depth + 1)
 
     def op_Scope(self, offset, end, scope, depth):
@@ -763,14 +800,18 @@ class Walker:
         return self.scoped_body("Processor", offset, end, scope, depth, prefix_bytes=6)
 
     def op_Method(self, offset, end, scope, depth):
+        start = offset
         block_end, offset = self.package_length(offset, end)
         name, offset = self.name_string(offset)
         flags = self.byte(offset)
         offset += 1
-        path = self.declare(scope, name, "Method", flags & 0x07)
+        path, reads = self.declare_scope(scope, name, "Method", start, flags & 0x07)
         if path is None:
             raise AmlError(f"Method {name.text()} climbs above the root")
         if not self.counting:
+            return block_end
+        if not reads:
+            self.count_for_disassembly(offset, block_end, path, depth + 1, True)
             return block_end
         census = self.census
         census.methods += 1
