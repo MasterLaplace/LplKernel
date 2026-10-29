@@ -75,6 +75,25 @@ static inline PageTable_t *paging_get_page_table(const PageDirectoryEntry_t *pde
 }
 
 /**
+ * @brief The present page table entry that maps @p virt_addr in the current directory, or NULL when its
+ *        directory entry or its page table entry is not present.
+ */
+static PageTableEntry_t *paging_find_present_entry(uint32_t virt_addr)
+{
+    if (!current_page_directory)
+        return NULL;
+
+    const PageDirectoryEntry_t *const pde = &current_page_directory->entries[PAGE_DIRECTORY_INDEX(virt_addr)];
+
+    if (!pde->present)
+        return NULL;
+
+    PageTableEntry_t *const pte = &paging_get_page_table(pde)->entries[PAGE_TABLE_INDEX(virt_addr)];
+
+    return pte->present ? pte : NULL;
+}
+
+/**
  * @brief Allocate and install a new Page Table for a missing PDE.
  *
  * @details Obtains a physical page via physical_memory_manager_page_frame_allocate(), zeroes it to
@@ -369,24 +388,11 @@ bool paging_unmap_page(uint32_t virt_addr) { return paging_unmap_range(virt_addr
 
 bool paging_get_physical_address(uint32_t virt_addr, uint32_t *phys_addr)
 {
-    if (!current_page_directory || !phys_addr)
+    const PageTableEntry_t *const pte = paging_find_present_entry(virt_addr);
+
+    if (!pte || !phys_addr)
         return false;
-
-    uint32_t pd_index = PAGE_DIRECTORY_INDEX(virt_addr);
-    uint32_t pt_index = PAGE_TABLE_INDEX(virt_addr);
-    uint32_t offset = PAGE_OFFSET(virt_addr);
-
-    PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
-    if (!pde->present)
-        return false;
-
-    PageTable_t *page_table = paging_get_page_table(pde);
-    PageTableEntry_t *pte = &page_table->entries[pt_index];
-
-    if (!pte->present)
-        return false;
-
-    *phys_addr = (pte->page_frame_base << 12) | offset;
+    *phys_addr = (pte->page_frame_base << 12) | PAGE_OFFSET(virt_addr);
     return true;
 }
 
@@ -398,66 +404,30 @@ bool paging_is_mapped(uint32_t virt_addr)
 
 bool paging_set_page_read_only(uint32_t virt_addr)
 {
-    if (!current_page_directory)
+    PageTableEntry_t *const pte = paging_find_present_entry(virt_addr);
+
+    if (!pte)
         return false;
-
-    virt_addr = PAGE_ALIGN_DOWN(virt_addr);
-
-    uint32_t pd_index = PAGE_DIRECTORY_INDEX(virt_addr);
-    uint32_t pt_index = PAGE_TABLE_INDEX(virt_addr);
-
-    PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
-    if (!pde->present)
-        return false;
-
-    PageTable_t *page_table = paging_get_page_table(pde);
-    PageTableEntry_t *pte = &page_table->entries[pt_index];
-
-    if (!pte->present)
-        return false;
-
     pte->read_write = 0;
-    paging_invlpg(virt_addr);
+    paging_invlpg(PAGE_ALIGN_DOWN(virt_addr));
     return true;
 }
 
 bool paging_page_is_read_only(uint32_t virt_addr, bool *is_read_only)
 {
-    if (!current_page_directory || !is_read_only)
+    const PageTableEntry_t *const pte = paging_find_present_entry(virt_addr);
+
+    if (!pte || !is_read_only)
         return false;
-
-    virt_addr = PAGE_ALIGN_DOWN(virt_addr);
-
-    uint32_t pd_index = PAGE_DIRECTORY_INDEX(virt_addr);
-    uint32_t pt_index = PAGE_TABLE_INDEX(virt_addr);
-
-    PageDirectoryEntry_t *pde = &current_page_directory->entries[pd_index];
-    if (!pde->present)
-        return false;
-
-    PageTable_t *page_table = paging_get_page_table(pde);
-    PageTableEntry_t *pte = &page_table->entries[pt_index];
-
-    if (!pte->present)
-        return false;
-
     *is_read_only = (pte->read_write == 0);
     return true;
 }
 
 bool paging_get_page_table_entry(uint32_t virt_addr, PageTableEntry_t *out_entry)
 {
-    if (!current_page_directory || !out_entry)
-        return false;
+    const PageTableEntry_t *const pte = paging_find_present_entry(virt_addr);
 
-    const PageDirectoryEntry_t *const pde = &current_page_directory->entries[PAGE_DIRECTORY_INDEX(virt_addr)];
-
-    if (!pde->present)
-        return false;
-
-    const PageTableEntry_t *const pte = &paging_get_page_table(pde)->entries[PAGE_TABLE_INDEX(virt_addr)];
-
-    if (!pte->present)
+    if (!pte || !out_entry)
         return false;
     *out_entry = *pte;
     return true;
