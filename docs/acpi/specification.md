@@ -929,9 +929,10 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 - **release** (`SMOKE_TESTS=0 ./build.sh --server`): the windows that run at boot, on QEMU's live tables;
 - **debug** (the poison build): the windows inside a `KERNEL_TEST`, among them the ring-0 corpus test on three
   corpus machines, so that real firmware sets budgets next to QEMU: the Lenovo IdeaPad Z470, a revision-2 Intel
-  client whose `_PDC` runs `Load`; the MSI MS-7E16, an AMD client; Intel's ArcherCity, a server. The boot runs the
-  load and the initialisation on QEMU's tables before the test runs them on the machine's, so their windows skip
-  that first call (`--skip 1`), the machine given as a module (`--module`). Their files end in `.debug.budget`.
+  client whose `_PDC` runs `Load`; the MSI MS-7E16, an AMD client; the HP ProLiant DL360 G5, a server whose eight
+  processors publish their `_CST`. The boot runs the load and the initialisation on QEMU's tables before the test
+  runs them on the machine's, so their windows skip that first call (`--skip 1`), the machine given as a module
+  (`--module`). Their files end in `.debug.budget`.
 
 | Window | Command | Budget files | First target |
 |---|---|---|---|
