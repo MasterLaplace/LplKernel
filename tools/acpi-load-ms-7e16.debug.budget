@@ -1,0 +1,14 @@
+# Window W1 of the ACPI specification (§7.4) on a recorded machine: the load of the definition blocks of the MSI
+# MS-7E16, an AMD client, inside the ring-0 corpus test the_boot_module_machine_loads, on a debug server kernel
+# (./build.sh --server). The boot runs the same function on q35's own tables first, hence skip=1. tools/acpi-corpus.sh
+# module 'Desktop/MSI/MS-7/MS-7E16/B75C85853132' writes the module. Checked by tools/instructions.sh --budget
+# tools/acpi-load-ms-7e16.debug.budget kernel/lpl.kernel; a change that moves the count records the new one.
+inside=advanced_configuration_and_power_interface_machine_language_load_directory
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
+module=build/acpi-corpus/modules/Desktop_MSI_MS-7_MS-7E16_B75C85853132.acpi
+instructions=87338457
+accesses=43918594
+tolerance=1

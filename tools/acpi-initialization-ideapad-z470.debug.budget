@@ -1,0 +1,16 @@
+# Window W2 of the ACPI specification (§7.4) on a recorded machine: the initialisation of the namespace of the Lenovo
+# IdeaPad Z470, a revision-2 Intel client whose _PDC Loads two SSDTs, steps 2 to 9 of §3.8, inside the ring-0 corpus
+# test the_boot_module_machine_loads, on a debug server kernel (./build.sh --server). The boot runs the same function
+# on q35's own tables first, hence skip=1. tools/acpi-corpus.sh module
+# 'Notebook/Lenovo/IdeaPad/IdeaPad Z470/C7F3CC0C50BF' writes the module. Checked by tools/instructions.sh --budget
+# tools/acpi-initialization-ideapad-z470.debug.budget kernel/lpl.kernel; a change that moves the count records the new
+# one.
+inside=advanced_configuration_and_power_interface_initialize_namespace
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
+module=build/acpi-corpus/modules/Notebook_Lenovo_IdeaPad_IdeaPad_Z470_C7F3CC0C50BF.acpi
+instructions=3341435
+accesses=1619346
+tolerance=1
