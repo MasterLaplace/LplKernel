@@ -281,7 +281,7 @@ KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
 /**
  * @brief A step of the clock seen 1 ms late leaves an exact timer usable; one seen 5 ms late spoils the
  *        first measurement only, and the second holds; a timer 6 % fast keeps the wrong rate through
- *        both measurements.
+ *        both measurements, which end 180 ms into the clock.
  */
 KERNEL_TEST(a_tick_seen_late_spoils_one_measurement_not_the_timer)
 {
@@ -290,6 +290,7 @@ KERNEL_TEST(a_tick_seen_late_spoils_one_measurement_not_the_timer)
     uint32_t five_late_rate;
     uint8_t fast;
     uint32_t fast_rate;
+    uint32_t fast_microseconds;
 
     timer_open(0u);
     timer_machine.late_edge = 1u;
@@ -304,12 +305,14 @@ KERNEL_TEST(a_tick_seen_late_spoils_one_measurement_not_the_timer)
     timer_machine.hertz = TIMER_HERTZ * 106ull / 100u;
     fast = timer_find();
     fast_rate = timer_found.rate_per_mille;
+    fast_microseconds = timer_found.check_microseconds;
 
     kernel_test_check(test, one_late == TIMER_STATE(USABLE), "a tick 1 ms late leaves the timer usable");
     kernel_test_check(test, five_late == TIMER_STATE(USABLE), "a tick 5 ms late spoils one measurement");
     kernel_test_check(test, five_late_rate >= 999u && five_late_rate <= 1001u, "and the next one holds");
     kernel_test_check(test, fast == TIMER_STATE(WRONG_RATE) && fast_rate >= 1059u && fast_rate <= 1061u,
                       "a timer 6 % fast keeps the wrong rate");
+    kernel_test_check(test, fast_microseconds == 180000u, "through two measurements, no more");
     kernel_test_measure(test, "five_late_rate", five_late_rate);
 }
 
