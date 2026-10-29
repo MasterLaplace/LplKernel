@@ -348,10 +348,6 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("load_errors", load->load_errors);
     kernel_telemetry_write_unsigned("decode_errors", load->decode_errors);
     kernel_telemetry_write_unsigned("checksum_bad_loaded", load->checksum_bad_loaded);
-    kernel_telemetry_write_unsigned("tables_loaded", load->tables_loaded);
-    kernel_telemetry_write_unsigned("load_duplicates", load->load_duplicates);
-    kernel_telemetry_write_unsigned("load_tables_missing", load->load_tables_missing);
-    kernel_telemetry_write_unsigned("table_bytes_copied", load->table_bytes_copied);
     kernel_telemetry_write_unsigned("nodes", load->space.live_nodes);
     kernel_telemetry_write_unsigned("arena_bytes", load->space.arena_bytes);
     kernel_telemetry_write_unsigned("lookups", load->space.lookups);
@@ -371,6 +367,12 @@ void write_acpi_machine_language_record(Serial_t *serial)
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
     acpi_helper_write_initialization_record(serial, load, advanced_configuration_and_power_interface_initialization());
+    kernel_telemetry_begin_record(serial, "acpi.load");
+    kernel_telemetry_write_unsigned("tables_loaded", load->tables_loaded);
+    kernel_telemetry_write_unsigned("load_duplicates", load->load_duplicates);
+    kernel_telemetry_write_unsigned("load_tables_missing", load->load_tables_missing);
+    kernel_telemetry_write_unsigned("table_bytes_copied", load->table_bytes_copied);
+    kernel_telemetry_end_record();
     acpi_helper_write_regions_record(serial, &load->regions);
     acpi_helper_write_services_record(serial, &load->services);
     kernel_telemetry_begin_record(serial, "acpi.values");

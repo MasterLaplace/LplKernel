@@ -44,10 +44,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          (specification §4.1); a machine not read or a decode fault fails it
   initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
          `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, the
-         C-states they published, then the statuses their failures ended with; a machine the harness fails
-         on fails it. The SSDTs a dump's firmware loads at run time wait for Load where
-         tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt, in acpiexec's -fi format,
-         gives the NVS objects firmware fills at boot their values, which a dump lacks (specification §8.4)
+         C-states they published, then the statuses their failures ended with; a machine the harness fails on
+         fails it. The SSDTs a dump's firmware loads at run time wait for Load where
+         tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt gives the NVS objects firmware
+         fills at boot their values, which a dump lacks (specification §8.4)
   load  initialises each machine of a list whose firmware loads tables at run time, with
          `test-acpi --loaded`, and compares the paths of its namespace with those of the namespace
          acpiexec loads, statically, from the tables it ended with, Load's included; a machine whose
@@ -67,7 +67,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          -initrd, runs the ACPI tests with `lpl.test=advanced_configuration_and_power_interface*`,
          and compares the records with those `test-acpi --boot-module` prints on the same module,
          with tools/parity.sh; qemu boots it on q35 and pc with lpl.acpi.tables=print instead, and
-         compares with `test-acpi --firmware-log` on the tables it printed. The logs of the last run
+         compares with `test-acpi --firmware-log` on the tables it printed; a boot whose telemetry lost a
+         field past a record's cap fails. The logs of the last run
          stay in build/acpi-corpus/ring0/. BOOT_SECONDS (300) bounds each boot
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
@@ -629,6 +630,11 @@ boot() {
 # subject's tables, must have run on the host; ring 0 is held to it by lpl.test.require.
 compare_ring0() {
     local result
+    if grep -qaE 'dropped_fields=[1-9]' "$2"; then
+        echo "not ok $4 $3: a record of the boot passed the field cap, and lost fields"
+        grep -aoE 'dropped_fields=[0-9]+' "$2" | sed 's/^/    # /'
+        return 1
+    fi
     if ! grep -qE "^    ok [0-9]+ $5\$" "$1"; then
         echo "not ok $4 $3: $5 did not run on the host"
         grep -E "^test-acpi: | $5( |\$)" "$1" | sed 's/^/    # /'
