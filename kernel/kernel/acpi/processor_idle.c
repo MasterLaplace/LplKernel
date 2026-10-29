@@ -94,7 +94,8 @@ static ProcessorIdleStatus_t processor_idle_double_word(ProcessorIdleLoad_t *loa
 
 /**
  * @brief Reads the Register of a C-state: the first Generic Register of the resource template its
- *        first element holds, before its End Tag (ACPI 6.6 §8.4.1.1).
+ *        first element holds, before its End Tag (ACPI 6.6 §8.4.1.1). An Integer or a String, whose bytes
+ *        can hold no Generic Register, is malformed as well.
  */
 static ProcessorIdleStatus_t processor_idle_register(ProcessorIdleLoad_t *load, const ProcessorIdleValue_t *state,
                                                      AdvancedConfigurationAndPowerInterfaceGenericAddress_t *out_entry)
@@ -109,8 +110,6 @@ static ProcessorIdleStatus_t processor_idle_register(ProcessorIdleLoad_t *load, 
     ProcessorIdleStatus_t status =
         advanced_configuration_and_power_interface_machine_language_package_element(load, state, 0u, &buffer);
 
-    if (status == PROCESSOR_IDLE_OK && buffer.kind != PROCESSOR_IDLE_VALUE(BUFFER))
-        status = PROCESSOR_IDLE_MALFORMED;
     if (status == PROCESSOR_IDLE_OK)
         status = advanced_configuration_and_power_interface_machine_language_value_bytes(&load->heap, &buffer, 64u,
                                                                                          scratch, &bytes, &length);
@@ -202,7 +201,6 @@ static void processor_idle_evaluate(ProcessorIdleLoad_t *load, ProcessorIdleCoun
     processor_idle_release(load, &result);
     if (status == PROCESSOR_IDLE_OK)
         return;
-    out_idle->count = 0u;
     ++counts->processor_idle_failed;
     advanced_configuration_and_power_interface_initialization_count_failure(counts, (object != 0u) ? object : processor,
                                                                             status);

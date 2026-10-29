@@ -498,22 +498,23 @@ static void idle_state_start(uint8_t elements, const uint8_t *bytes, uint32_t le
 }
 
 /**
- * @brief A _CST that fails, returns no Package, counts its states wrong, holds a state of three elements,
- *        a Register buffer without a Generic Register or whose descriptor runs past it, a Type that is a
- *        String, or a Latency past 32 bits, publishes no state, and is counted with its status; a Latency of
- *        32 bits is published.
+ * @brief A _CST that fails, returns no Package or an empty one, counts its states wrong, holds a state of
+ *        three elements, a Register buffer without a Generic Register or whose descriptor runs past it, a
+ *        Type that is a String, or a Latency past 32 bits, publishes no state, and is counted with its
+ *        status; a Latency of 32 bits is published.
  */
 KERNEL_TEST(a_malformed_cst_publishes_no_state_and_is_counted)
 {
-    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u};
+    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u};
     static const uint8_t divide[] = {0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
     static const uint8_t integer[] = {0x0Au, 0x03u};
     static const uint8_t miscounted[] = {0x12u, 0x04u, 0x01u, 0x0Au, 0x02u};
     static const uint8_t end_only[] = {0x79u, 0x00u};
     static const uint8_t cut[] = {0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x01u};
     static const uint8_t string_one[] = {0x0Du, '1', 0x00u};
+    static const uint8_t empty_package[] = {0x12u, 0x02u, 0x00u};
 
-    idle_begin(identifiers, 9u);
+    idle_begin(identifiers, 10u);
     made_up_aml_begin(&idle_method);
     made_up_aml_raw(&idle_method, divide, sizeof(divide));
     made_up_aml_begin(&idle_scope);
@@ -550,26 +551,27 @@ KERNEL_TEST(a_malformed_cst_publishes_no_state_and_is_counted)
     made_up_aml_integer(&idle_state_body, 0xFFFFFFFFu);
     made_up_aml_integer(&idle_state_body, 1000u);
     idle_single("CPU9", 9u);
+    idle_returning("CPUA", 10u, empty_package, sizeof(empty_package));
     if (!idle_run(test))
         return;
 
     uint32_t evaluated = 0u;
     uint32_t empty = 0u;
 
-    for (uint32_t slot = 0u; slot < 9u; ++slot)
+    for (uint32_t slot = 0u; slot < 10u; ++slot)
     {
         evaluated += (idle_table.slots[slot].processor != 0u) ? 1u : 0u;
-        empty += (slot < 8u && idle_table.slots[slot].count == 0u) ? 1u : 0u;
+        empty += (slot != 8u && idle_table.slots[slot].count == 0u) ? 1u : 0u;
     }
-    kernel_test_check(test, evaluated == 9u, "every slot's _CST was evaluated");
-    kernel_test_check(test, empty == 8u, "each malformed _CST publishes no state");
+    kernel_test_check(test, evaluated == 10u, "every slot's _CST was evaluated");
+    kernel_test_check(test, empty == 9u, "each malformed _CST publishes no state");
     kernel_test_check(test, idle_table.slots[8].count == 1u && idle_table.slots[8].states[0].latency == 0xFFFFFFFFu,
                       "a latency of 32 bits is published");
     kernel_test_check(test,
-                      idle_counts.processor_idle == 9u && idle_counts.processor_idle_failed == 8u &&
+                      idle_counts.processor_idle == 10u && idle_counts.processor_idle_failed == 9u &&
                           idle_counts.statuses[IDLE_STATUS(DIVIDE_BY_ZERO)] == 1u &&
-                          idle_counts.statuses[IDLE_STATUS(TYPE_MISMATCH)] == 7u,
-                      "eight failures: one divide_by_zero, seven type_mismatch");
+                          idle_counts.statuses[IDLE_STATUS(TYPE_MISMATCH)] == 8u,
+                      "nine failures: one divide_by_zero, eight type_mismatch");
     idle_close(test);
 }
 
@@ -716,31 +718,35 @@ static void idle_notifying(const char *name, uint8_t identifier, const char *run
 
 /**
  * @brief A Notify 0x81 on a processor queued after its _CST was evaluated evaluates it once more (§3.8 step
- *        9): CPU1's _CST notifies both processors, so each runs twice. A Notify 0x81 queued before a
- *        processor's evaluation, by its _INI or by CPU0's _CST for CPU1, another value, and what the last
- *        evaluations raise are dropped.
+ *        9): CPU1's _CST notifies CPU0 and itself, so each runs twice. A Notify 0x81 queued before a
+ *        processor's evaluation, by CPU0's _INI for CPU2 or by CPU0's _CST for CPU1, a Notify 0x80 on CPU2,
+ *        and what the last evaluations raise are dropped: CPU2 runs once.
  */
 KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
 {
-    static const uint32_t identifiers[] = {1u, 2u};
-    static const uint8_t initialize[] = {0x86u, '\\', 'C', 'P', 'U', '0', 0x0Au, 0x81u};
+    static const uint32_t identifiers[] = {1u, 2u, 3u};
+    static const uint8_t initialize[] = {0x86u, '\\', 'C', 'P', 'U', '2', 0x0Au, 0x81u};
     static const uint8_t first[] = {0x86u, '\\', 'C', 'P', 'U', '1', 0x0Au, 0x81u};
     static const uint8_t second[] = {0x86u, '\\', 'C',   'P',   'U',   '0',  0x0Au, 0x81u, 0x86u, '\\', 'C',   'P',
-                                     'U',   '1',  0x0Au, 0x81u, 0x86u, '\\', 'C',   'P',   'U',   '0',  0x0Au, 0x80u};
+                                     'U',   '1',  0x0Au, 0x81u, 0x86u, '\\', 'C',   'P',   'U',   '2',  0x0Au, 0x80u};
 
-    idle_begin(identifiers, 2u);
+    idle_begin(identifiers, 3u);
     made_up_aml_name_integer(&idle_aml, "C0RN", 0u);
     made_up_aml_name_integer(&idle_aml, "C1RN", 0u);
+    made_up_aml_name_integer(&idle_aml, "C2RN", 0u);
     idle_notifying("CPU0", 1u, "C0RN", first, sizeof(first), initialize, sizeof(initialize));
     idle_notifying("CPU1", 2u, "C1RN", second, sizeof(second), NULL, 0u);
+    idle_notifying("CPU2", 3u, "C2RN", NULL, 0u, NULL, 0u);
     if (!idle_run(test))
         return;
     kernel_test_check(test,
                       made_up_root_node(&idle_load, "C0RN")->value.payload == 2u &&
                           made_up_root_node(&idle_load, "C1RN")->value.payload == 2u,
-                      "each _CST runs twice: once in step 8, once in step 9");
-    kernel_test_check(test, idle_counts.processor_idle == 4u && idle_counts.processor_idle_changes == 2u,
-                      "four evaluations, two of them for a Notify 0x81");
+                      "CPU0's and CPU1's _CST run twice: once in step 8, once in step 9");
+    kernel_test_check(test, made_up_root_node(&idle_load, "C2RN")->value.payload == 1u,
+                      "CPU2's runs once: its Notify 0x81 came before its evaluation, its Notify 0x80 is no change");
+    kernel_test_check(test, idle_counts.processor_idle == 5u && idle_counts.processor_idle_changes == 2u,
+                      "five evaluations, two of them for a Notify 0x81");
     kernel_test_check(test, idle_load.services.notifications_taken == 9u,
                       "nine Notifies taken: the _INI's, CPU0's twice, CPU1's three twice");
     idle_close(test);
