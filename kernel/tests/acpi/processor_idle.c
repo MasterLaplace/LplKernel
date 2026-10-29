@@ -906,6 +906,64 @@ KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
 }
 
 /**
+ * @brief A processor below a device the walk of step 4 found neither present nor functioning is out of
+ *        step 8 with nothing evaluated: step 4 read that device's _STA because it holds an _INI, and step 8
+ *        reads neither its _STA again nor the processor's. So is a processor step 4 found absent itself.
+ */
+KERNEL_TEST(a_processor_below_a_device_step_four_found_absent_is_out_unread)
+{
+    static const uint32_t identifiers[] = {1u, 2u};
+    static const uint8_t absent_status[] = {0x75u, '\\', 'P', '1', 'S', 'T', 0xA4u, 0x00u};
+    static const uint8_t device_status[] = {0x75u, '\\', 'D', 'S', 'T', 'A', 0xA4u, 0x00u};
+    static const uint8_t processor_status[] = {0x75u, '\\', 'P', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
+    static const uint8_t nothing[] = {0xA3u};
+    const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
+    MadeUpAml_t device;
+    MadeUpAml_t body;
+
+    idle_begin(identifiers, 2u);
+    made_up_aml_name_integer(&idle_aml, "DSTA", 0u);
+    made_up_aml_name_integer(&idle_aml, "PSTA", 0u);
+    made_up_aml_name_integer(&idle_aml, "P1ST", 0u);
+    made_up_aml_begin(&idle_scope);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, processor_status, sizeof(processor_status));
+    made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
+    idle_static(&idle_scope, 1u, &only, 1u);
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, device_status, sizeof(device_status));
+    made_up_aml_method(&device, "_STA", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_method(&device, "_INI", 0x00u, &body);
+    made_up_aml_processor(&device, "CPU0", 1u, 0x410u, 6u, &idle_scope);
+    made_up_aml_device(&idle_aml, "DEVA", &device);
+    made_up_aml_begin(&idle_scope);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, absent_status, sizeof(absent_status));
+    made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_method(&idle_scope, "_INI", 0x00u, &body);
+    idle_static(&idle_scope, 1u, &only, 1u);
+    idle_processor("CPU1", 2u, &idle_scope);
+    if (!idle_run(test))
+        return;
+    kernel_test_check(test,
+                      made_up_root_node(&idle_load, "DSTA")->value.payload == 1u &&
+                          made_up_root_node(&idle_load, "P1ST")->value.payload == 1u,
+                      "the device's _STA and CPU1's are read once, by step 4");
+    kernel_test_check(test, made_up_root_node(&idle_load, "PSTA")->value.payload == 0u,
+                      "the processor's _STA is never read");
+    kernel_test_check(test,
+                      idle_table.slots[0].processor == 0u && idle_table.slots[1].processor == 0u &&
+                          idle_counts.processor_idle_absent == 2u,
+                      "both processors publish nothing, counted absent");
+    idle_close(test);
+}
+
+/**
  * @brief A _CST that fails when step 9 evaluates it once more publishes nothing in place of what step 8
  *        published: its _CST notifies its own processor 0x81 and divides by zero on its second run.
  */
