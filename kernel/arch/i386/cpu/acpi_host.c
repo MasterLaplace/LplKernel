@@ -1,4 +1,5 @@
 #include <kernel/acpi/host.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/irq.h>
@@ -176,10 +177,15 @@ static uint32_t acpi_host_sleep_milliseconds(void *context, uint32_t millisecond
 
 static uint32_t acpi_host_stall_microseconds(void *context, uint32_t microseconds)
 {
+    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
+        advanced_configuration_and_power_interface_power_management_timer();
     const uint32_t hertz = clock_get_tick_hz();
     const uint32_t start = clock_get_tick_count();
 
     (void) context;
+    if (timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        return advanced_configuration_and_power_interface_power_management_timer_stall(
+            &advanced_configuration_and_power_interface_machine_host, timer, microseconds);
     if (hertz == 0u)
         return 0u;
     interrupt_request_spin_microseconds(microseconds);

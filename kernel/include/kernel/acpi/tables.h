@@ -61,6 +61,12 @@
     3000u /**< Reads of SCI_EN the switch to ACPI mode makes at most, 1 ms apart. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS                                           \
     3000u /**< Milliseconds the switch to ACPI mode waits between them at most, as the host counts them. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ                                        \
+    3579545u /**< What the ACPI power management timer counts per second. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS                                  \
+    10000u /**< Reads within which the power management timer must move, as Linux's ACPI_PM_READ_CHECKS. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS                              \
+    0x01000000u /**< Reads of the host's clock within which it must move once to check the timer's rate. */
 
 typedef struct __attribute__((packed)) {
     char signature[8];
@@ -185,6 +191,39 @@ typedef struct AdvancedConfigurationAndPowerInterfaceModeSwitch {
     uint32_t polls;                    /**< Reads of SCI_EN once ACPI_ENABLE was written. */
     uint32_t waited_milliseconds;      /**< Milliseconds the host waited between them, as it counts them. */
 } AdvancedConfigurationAndPowerInterfaceModeSwitch_t;
+
+/**
+ * @brief Whether a platform's ACPI power management timer can be busy-waited on, and why not.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfacePowerManagementTimerState {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_ABSENT = 0,       /**< No FADT, a hardware-reduced
+                                                                                             one, or no PM_TMR_BLK. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_UNREACHABLE = 1,  /**< PM_TMR_BLK does not lie,
+                                                                                             4 bytes long, in the I/O
+                                                                                             space. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_STOPPED = 2,      /**< It read the same value
+                                                                                             for every check. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_INCONSISTENT = 3, /**< It went back, other than
+                                                                                             by a wrap. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE = 4, /**< The host's clock did not
+                                                                                             move, so its rate went
+                                                                                             unchecked. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE = 5,   /**< It ran more than 5 % away
+                                                                                             from 3.579545 MHz against
+                                                                                             the host's clock. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE = 6,       /**< Every check held. */
+} AdvancedConfigurationAndPowerInterfacePowerManagementTimerState_t;
+
+/**
+ * @brief A platform's ACPI power management timer, PM_TMR_BLK, as the checks before its first use
+ *        found it.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfacePowerManagementTimer {
+    uint8_t state;           /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_* state. */
+    uint16_t port;           /**< Its I/O port, or 0 when the FADT gives none there. */
+    uint32_t rate_per_mille; /**< The counts it made over one step of the host's clock, against the counts
+                                  3.579545 MHz makes, in thousandths; 0 when not measured. */
+} AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t;
 
 /**
  * @struct AdvancedConfigurationAndPowerInterfaceDirectory
@@ -527,6 +566,70 @@ extern const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *advanced_config
  * @return Its name, such as "switched", or "unknown" for a value that names none.
  */
 extern const char *advanced_configuration_and_power_interface_mode_outcome_name(uint8_t outcome);
+
+/**
+ * @brief Finds the ACPI power management timer a normalised FADT names, and checks it before any
+ *        wait relies on it, as Linux does before it trusts one.
+ *
+ * @details It is absent without a FADT, on a hardware-reduced platform or without PM_TMR_BLK, and
+ *          unreachable unless PM_TMR_BLK lies, 4 bytes long, in the I/O space. Each read is three
+ *          reads of the port, of which the middle one is kept once the three are in order, against
+ *          the chipsets that latch the counter badly; only its 24 low bits are counted, which every
+ *          such timer runs, whatever TMR_VAL_EXT says. Then, ten times, it must move within
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS reads, forward
+ *          or by a wrap; and over one step of the host's clock, waited for within
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS reads of
+ *          it, it must count 3.579545 MHz within 5 %.
+ *
+ * @param host      The host whose I/O ports and clock are read.
+ * @param fadt      The platform's normalised FADT.
+ * @param out_timer Emptied, then filled with the timer's port, its state and its measured rate.
+ */
+extern void advanced_configuration_and_power_interface_find_power_management_timer(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+    AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *out_timer);
+
+/**
+ * @brief Busy-waits on a usable power management timer until it has counted at least @p microseconds.
+ *
+ * @details A timer that stops moving for
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS reads in a row
+ *          ends the wait early.
+ *
+ * @param host         The host whose I/O port is read.
+ * @param timer        A timer advanced_configuration_and_power_interface_find_power_management_timer
+ *                     found usable; any other is not waited on.
+ * @param microseconds How long to wait.
+ * @return The microseconds the timer counted, rounded down: at least @p microseconds unless it
+ *         stopped, and 0 for a timer that is not usable.
+ */
+extern uint32_t advanced_configuration_and_power_interface_power_management_timer_stall(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds);
+
+/**
+ * @brief Finds and checks this machine's power management timer, through
+ *        advanced_configuration_and_power_interface_machine_host and the FADT of the boot's directory;
+ *        needs the kernel tick running.
+ */
+extern void advanced_configuration_and_power_interface_power_management_timer_initialize(void);
+
+/**
+ * @brief What advanced_configuration_and_power_interface_power_management_timer_initialize found.
+ *
+ * @return The boot's timer, never NULL; absent before the boot looked for it.
+ */
+extern const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *
+advanced_configuration_and_power_interface_power_management_timer(void);
+
+/**
+ * @brief The name the boot's telemetry gives a power management timer's state.
+ *
+ * @param state An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_* state.
+ * @return Its name, such as "usable", or "unknown" for a value that names none.
+ */
+extern const char *advanced_configuration_and_power_interface_power_management_timer_state_name(uint8_t state);
 
 /**
  * @brief Walks the tables the root system description pointer of a host leads to, each mapped

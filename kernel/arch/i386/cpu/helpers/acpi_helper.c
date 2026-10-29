@@ -325,6 +325,19 @@ void write_acpi_mode_record(Serial_t *serial)
     kernel_telemetry_end_record();
 }
 
+void write_acpi_power_management_timer_record(Serial_t *serial)
+{
+    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
+        advanced_configuration_and_power_interface_power_management_timer();
+
+    kernel_telemetry_begin_record(serial, "acpi.timer");
+    kernel_telemetry_write_text(
+        "state", advanced_configuration_and_power_interface_power_management_timer_state_name(timer->state));
+    kernel_telemetry_write_hexadecimal("port", timer->port);
+    kernel_telemetry_write_unsigned("rate_per_mille", timer->rate_per_mille);
+    kernel_telemetry_end_record();
+}
+
 void write_acpi_machine_language_record(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load =

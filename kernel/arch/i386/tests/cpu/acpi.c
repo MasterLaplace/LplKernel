@@ -237,20 +237,39 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
 }
 
 /**
- * @brief The machine host's stall waits about the microseconds asked, not whole ticks: ten stalls of
- *        50 µs let at most one tick pass, and a stall of two and a half tick periods lets two to four
- *        pass; each says it waited at least what it was asked and less than a tick more.
+ * @brief Whether the boot's FADT names a power management timer the machine host could read: one that
+ *        is neither absent nor unreachable.
+ */
+static bool acpi_test_firmware_names_a_timer(void)
+{
+    const uint8_t state = advanced_configuration_and_power_interface_power_management_timer()->state;
+
+    return state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_ABSENT &&
+           state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_UNREACHABLE;
+}
+
+/**
+ * @brief The power management timer the FADT names passes the boot's checks, and the machine host's
+ *        stall waits on it about the microseconds asked, not whole ticks: ten stalls of 50 µs let at
+ *        most one tick pass, and a stall of two and a half tick periods lets two to four pass; each says
+ *        it waited at least what it was asked and less than a tick more.
  */
 KERNEL_TEST(the_machine_host_stall_waits_its_microseconds)
 {
     const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
+        advanced_configuration_and_power_interface_power_management_timer();
     const uint32_t hertz = clock_get_tick_hz();
 
-    if (hertz == 0u)
+    if (hertz == 0u || !acpi_test_firmware_names_a_timer())
     {
-        kernel_test_skip(test, "no tick runs");
+        kernel_test_skip(test, "no tick runs, or the FADT names no power management timer in the I/O space");
         return;
     }
+    kernel_test_check(test, timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE,
+                      "the timer the FADT names passes the boot's checks");
+    if (timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        return;
 
     const uint32_t period = 1000000u / hertz;
     const uint32_t before = clock_get_tick_count();
@@ -280,8 +299,9 @@ KERNEL_TEST(the_machine_host_stall_waits_its_microseconds)
 }
 
 /**
- * @brief The machine host's stall spins at least the microseconds asked, and says how many it waited:
- *        for 50 µs a whole tick passes, the one it lands in not counted.
+ * @brief Without a power management timer, the machine host's stall spins on the tick at least the
+ *        microseconds asked, and says how many it waited: for 50 µs a whole tick passes, the one it lands
+ *        in not counted.
  */
 KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
 {
@@ -289,9 +309,9 @@ KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
     const uint32_t hertz = clock_get_tick_hz();
     const uint32_t before = clock_get_tick_count();
 
-    if (hertz == 0u)
+    if (hertz == 0u || acpi_test_firmware_names_a_timer())
     {
-        kernel_test_skip(test, "no tick runs");
+        kernel_test_skip(test, "no tick runs, or the stall waits on the power management timer the FADT names");
         return;
     }
 
