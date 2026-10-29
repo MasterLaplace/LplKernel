@@ -1,2 +1,6 @@
+# The values firmware writes to NVS at boot, which a dump lacks (docs/acpi/specification.md §8.4): a path and a
+# hexadecimal integer per line, read by test-acpi --initialize and --loaded.
+# CFGD, the CPU configuration Intel's PmRef code tests before each Load: 0x0076F6FF is the static
+# Name (CFGD, 0x0076F6FF) of the IdeaPad Z470's CPU SSDT; it applies to the 44 machines whose CFGD is an NVS field.
 \_SB.CFGD 0x0076F6FF
 \_PR.CFGD 0x0076F6FF

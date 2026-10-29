@@ -234,7 +234,7 @@ Rules:
 
 ### 3.6 Execution model
 
-**One loop, explicit stacks, no C recursion.** The stacks are fixed arrays sized by the limits of §6.1, so they are
+**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #587 (below). The stacks are fixed arrays sized by the limits of §6.1, so they are
 never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic. Until #587, the
 declaration pass walks the control flow of table-level code itself and hands the loop one statement or predicate at
 a time (below).
@@ -723,7 +723,7 @@ Each row is a decision, and has at least one test (§8).
 | Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted. | [§19.6.102] |
 | Orphan data and `Noop` at table level | Evaluated and dropped. | [§5.4.2] |
 | Objects a method creates | Temporary: removed at the method's exit, even when created with a full path elsewhere. A second creation of the same name in the same frame (a `Name` inside a `While` body) is an error. | [§5.5.2.3], [§19.6.150] |
-| `Load` | From a SystemMemory region or a field that holds the whole table: the table is copied (§3.5), its checksum computed on the copy, its objects created relative to the root; True goes to its target and is its result. A table already loaded, compared over its whole length as ACPICA does, is refused, and `Load` gives False. | [§19.6.77] |
+| `Load` | From a SystemMemory region or a field that holds the whole table: the table is copied (§3.5), its checksum computed on the copy, its objects created relative to the root; True goes to its target and is its result. A table already loaded, compared over its whole length as ACPICA does, is refused: where ACPICA fails the evaluation, `Load` gives False. | [§19.6.77] |
 | `LoadTable` | Finds the first table of the directory by signature and OEM identifiers, each compared with its field padded with zeros, an empty one matching any, as ACPICA does, with an empty RootPath, ParameterPath and ParameterData only, and runs it in place; True, or False when none matches or it is loaded already. | [§19.6.78] |
 
 ### 5.2 Methods and values
@@ -1034,15 +1034,18 @@ published image. The made-up ASL is ours, under MIT.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
   lines and compared path by path, without the nodes ACPICA creates for `External`.
-- **`Load` on the corpus.** Dumps hold the dynamic SSDTs but zero every address. In a table that holds a `Load`,
+- **`Load` on the corpus.** Dumps hold the dynamic SSDTs, every table's address printed as 0. In a table that holds a `Load`,
   the harness finds the (label, address, length) triples that Intel's `PmRef` code reads, and the SystemMemory regions
   of constant address and length that a `Load` names; each places at that address the SSDT of that length whose OEM
   table ID the label names, case apart, else the only SSDT of that length (`tools/acpi/loaded_tables.py` computes the
   same apart from the harness). A placed table is left out of the XSDT; the views compared with the census or with
   `acpiexec`'s load declare it statically after the SSDTs, as `acpiexec` does. `tools/acpi-corpus.sh load` gives
   `acpiexec` statically the tables an initialisation ended with, `Load`'s included, and compares the two namespaces as
-  sorted path sets. The values firmware writes to NVS at boot, absent from dumps, come from one preset file in
-  `acpiexec`'s `-fi` format, `tools/acpi/presets.txt`, which feeds both oracles, so the `Load` and `_CST` branches run.
+  sorted path sets. The values firmware writes to NVS at boot, absent from dumps, come from one preset file of the
+  harness, `tools/acpi/presets.txt`, so that the `Load` and `_CST` branches run: `CFGD = 0x0076F6FF`, the static
+  `Name (CFGD, 0x0076F6FF)` of the IdeaPad Z470's CPU SSDT, on the 44 machines whose `CFGD` is an NVS field. A `Load`
+  whose address firmware computes in a method, or whose `PmRef` package names a table the dump lacks, reads no table
+  and fails as `region_bounds`, which ends the evaluation that runs it, as ACPICA's does: an artifact of the corpus.
 
 ### 8.5 uACPI's test cases
 

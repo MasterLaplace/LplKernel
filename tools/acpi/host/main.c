@@ -777,7 +777,7 @@ static uint32_t harness_find_path(AdvancedConfigurationAndPowerInterfaceMachineL
  * @brief Gives the objects a preset file names their value before the initialisation, as acpiexec's -fi
  *        file gives them, so that firmware reads what it wrote to NVS at boot, which a dump lacks
  *        (§8.4): each line is a path and a hexadecimal integer; a field unit is written, an Integer
- *        replaced; a line that names nothing else is skipped.
+ *        replaced; a line that starts with #, or names nothing else, is skipped.
  *
  * @return The presets given.
  */
@@ -799,7 +799,8 @@ static uint32_t harness_apply_presets(AdvancedConfigurationAndPowerInterfaceMach
         unsigned long long integer = 0u;
         uint32_t node = 0u;
 
-        if (sscanf(line, "%255s %llx", name, &integer) != 2 || (node = harness_find_path(load, name)) == 0u)
+        if (line[0] == '#' || sscanf(line, "%255s %llx", name, &integer) != 2 ||
+            (node = harness_find_path(load, name)) == 0u)
             continue;
 
         AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *object =

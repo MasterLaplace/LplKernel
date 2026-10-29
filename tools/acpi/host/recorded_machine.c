@@ -504,7 +504,7 @@ static bool recorded_machine_read_reference(const RecordedTable_t *source, uint3
     *out_label_length = 0u;
     if (bytes[offset] == RECORDED_MACHINE_STRING_PREFIX)
     {
-        while (cursor < source->length && cursor - offset <= 9u && bytes[cursor] != 0u)
+        while (cursor < source->length && cursor - offset <= 8u && bytes[cursor] != 0u)
             ++cursor;
         if (cursor == source->length || bytes[cursor] != 0u)
             return false;
