@@ -20,9 +20,8 @@
 #define PROCESSOR_IDLE_PRESENT        0x01u    /**< _STA bit 0: the device is present. */
 #define PROCESSOR_IDLE_ENABLED        0x02u    /**< _STA bit 1: the device is enabled. */
 #define PROCESSOR_IDLE_FUNCTIONING    0x08u    /**< _STA bit 3: the device works. */
-#define PROCESSOR_IDLE_NO_STATUS      0x0Fu    /**< What a device without _STA reads as (ACPI 6.6 §6.3.7). */
-#define PROCESSOR_IDLE_WALKED         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED
-#define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT
+#define PROCESSOR_IDLE_DECIDED        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_DECIDED
+#define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_ABSENT
 #define PROCESSOR_IDLE_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define PROCESSOR_IDLE_FOLD_PRIME     0x01000193u /**< FNV-1a's prime. */
 
@@ -314,29 +313,74 @@ static bool processor_idle_integer(ProcessorIdleLoad_t *load, ProcessorIdleCount
 }
 
 /**
+ * @brief Whether a node is one step 8 decides the presence of above a processor object: a Device, a
+ *        Processor or a ThermalZone, as the walk of step 4 does.
+ */
+static bool processor_idle_is_device(const ProcessorIdleNode_t *node)
+{
+    return node->type == PROCESSOR_IDLE_NODE(DEVICE) || node->type == PROCESSOR_IDLE_NODE(PROCESSOR) ||
+           node->type == PROCESSOR_IDLE_NODE(THERMAL_ZONE);
+}
+
+/**
+ * @brief The highest device above @p index whose presence step 8 has not decided, or 0, also when one above
+ *        it is a device step 8 found absent, which @p out_absent then tells.
+ */
+static uint32_t processor_idle_undecided_above(const ProcessorIdleLoad_t *load, uint32_t index, bool *out_absent)
+{
+    uint32_t highest = 0u;
+
+    for (index = processor_idle_node(load, index)->parent; index != 0u;
+         index = processor_idle_node(load, index)->parent)
+    {
+        const ProcessorIdleNode_t *node = processor_idle_node(load, index);
+
+        if ((node->flags & PROCESSOR_IDLE_ABSENT) != 0u)
+        {
+            *out_absent = true;
+            return 0u;
+        }
+        if (processor_idle_is_device(node) && (node->flags & PROCESSOR_IDLE_DECIDED) == 0u)
+            highest = index;
+    }
+    return highest;
+}
+
+/**
+ * @brief Reads the _STA of @p device into @p out_status, step 4 being over, and records in its node that
+ *        step 8 decided it, and found it absent when it is neither present nor functioning.
+ *
+ * @return false when its _STA failed, counted: nothing is found absent.
+ */
+static bool processor_idle_decide(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t device,
+                                  uint64_t *out_status)
+{
+    processor_idle_node(load, device)->flags |= PROCESSOR_IDLE_DECIDED;
+    if (!advanced_configuration_and_power_interface_initialization_read_status(load, counts, device, out_status))
+        return false;
+    if ((*out_status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
+        processor_idle_node(load, device)->flags |= PROCESSOR_IDLE_ABSENT;
+    return true;
+}
+
+/**
  * @brief Whether Linux would attach the processor object @p processor (v7.3 acpi_bus_attach,
- *        acpi_processor_add): no device above it absent, their presence decided as step 4 decides it and
- *        shared with the late initialisation, and its own _STA present or functioning, and enabled, a
- *        missing one reading 0x0F and one that fails keeping it out, counted. Its own presence is recorded
- *        in its node's flags, as a walk records it.
+ *        acpi_processor_add), from _STA values read once step 4 is over, as Linux reads them after every
+ *        _INI, and each read once by step 8: no device above it absent, decided from the top down, one whose
+ *        _STA fails walked into; and its own _STA present or functioning, and enabled, a missing one reading
+ *        0x0F and one that fails keeping it out, counted.
  */
 static bool processor_idle_present(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor)
 {
-    const uint32_t object = processor_idle_object(load, processor, "_STA");
-    uint64_t status = PROCESSOR_IDLE_NO_STATUS;
+    bool absent = false;
+    uint64_t status = 0u;
 
-    if ((processor_idle_node(load, processor)->flags & PROCESSOR_IDLE_ABSENT) != 0u ||
-        !advanced_configuration_and_power_interface_initialization_present_above(load, counts, processor))
-        return false;
-    processor_idle_node(load, processor)->flags |= PROCESSOR_IDLE_WALKED;
-    if (object != 0u && !processor_idle_integer(load, counts, object, &status))
-        return false;
-    if ((status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
-    {
-        processor_idle_node(load, processor)->flags |= PROCESSOR_IDLE_ABSENT;
-        return false;
-    }
-    return (status & PROCESSOR_IDLE_ENABLED) != 0u;
+    for (uint32_t device = processor_idle_undecided_above(load, processor, &absent); device != 0u;
+         device = processor_idle_undecided_above(load, processor, &absent))
+        processor_idle_decide(load, counts, device, &status);
+    return !absent && processor_idle_decide(load, counts, processor, &status) &&
+           (status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) != 0u &&
+           (status & PROCESSOR_IDLE_ENABLED) != 0u;
 }
 
 /**

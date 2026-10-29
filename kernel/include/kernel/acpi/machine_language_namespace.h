@@ -64,15 +64,21 @@
     0x04u /**< Node flag: the node, or one below it, is a device or processor with an _OSC or a _PDC, as the           \
                initialisation's pre-pass marks it (§3.8 step 7). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT                                        \
-    0x08u /**< Node flag: step 4, a late initialisation or step 8 found the device neither present nor functioning:    \
-               what lies below it is left alone, by a late initialisation and by step 8 (§3.8, §3.10). */
+    0x08u /**< Node flag: step 4 or a late initialisation found the device neither present nor functioning: a late     \
+               initialisation leaves alone what lies below it (§3.8). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED                                        \
-    0x10u /**< Node flag: step 4, a late initialisation or step 8 decided whether the device is present, by its _STA   \
-               or without one (§3.8, §3.10). */
+    0x10u /**< Node flag: step 4 or a late initialisation decided whether the device is present, by its _STA or        \
+               without one (§3.8). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DUPLICATED                                    \
     0x20u /**< Node flag: the declaration pass refused a Device, ThermalZone, Processor, PowerResource or Method of    \
                this name as a duplicate: past it, the body of a construct naming the node is read only when that       \
                construct declared it (§5.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_DECIDED                                  \
+    0x40u /**< Node flag: step 8 decided whether the device is present, by its _STA read once step 4 was over or       \
+               without one, and reads it no more (§3.10). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_ABSENT                                   \
+    0x80u /**< Node flag: step 8 found the device neither present nor functioning: step 8 leaves alone what lies below \
+               it (§3.10). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS                                     \
     8u /**< Aliases one resolution follows before it gives up. */
 

@@ -846,11 +846,11 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     advanced_configuration_and_power_interface_processor_idle_publish(load, machine, out_initialization, out_idle);
 }
 
-bool advanced_configuration_and_power_interface_initialization_present_above(InitializationLoad_t *load,
-                                                                             Initialization_t *initialization,
-                                                                             uint32_t index)
+bool advanced_configuration_and_power_interface_initialization_read_status(InitializationLoad_t *load,
+                                                                           Initialization_t *initialization,
+                                                                           uint32_t device, uint64_t *out_status)
 {
-    return !initialization_under_absent(load, index) && initialization_decide_above(load, initialization, index);
+    return initialization_read_status(load, initialization, device, out_status);
 }
 
 void advanced_configuration_and_power_interface_initialization_settle(InitializationLoad_t *load,

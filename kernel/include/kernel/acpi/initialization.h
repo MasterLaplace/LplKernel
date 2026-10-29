@@ -71,7 +71,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
     uint32_t registrations;                 /**< _REG (PCI_Config, 1) run, one per scope that declares such a region. */
     uint32_t region_registration_failed;    /**< Of those, the ones that failed. */
     uint32_t devices;                       /**< Devices, processors and thermal zones in the namespace. */
-    uint32_t status_evaluations;            /**< _STA objects evaluated: only in subtrees that hold an _INI. */
+    uint32_t status_evaluations;            /**< _STA objects evaluated: by step 4 and the late initialisations
+                                                 only in subtrees that hold an _INI, and by step 8 once on each
+                                                 processor object with a _CST and on the devices above it. */
     uint32_t status_failed;                 /**< Of those, the ones whose evaluation failed or gave no Integer, String
                                                  or Buffer. */
     uint32_t status_invalid;                /**< Of those, the results ACPI 6.6 calls invalid, walked as any other. */
@@ -136,18 +138,19 @@ extern void advanced_configuration_and_power_interface_initialize_namespace(
     struct AdvancedConfigurationAndPowerInterfaceProcessorIdleTable *out_idle);
 
 /**
- * @brief Whether no device, processor or thermal zone above @p index is absent, deciding first, from the
- *        top down and as step 4 does, the presence of those no walk decided yet (§3.8): step 8 and the late
- *        initialisation share these decisions, so that each device's _STA is read once.
+ * @brief Reads the _STA of a device, processor or thermal zone as step 4 reads it, counted with step 4's:
+ *        0x0F without one, a String or a Buffer converted as an operand is (§5.2), and a result ACPI 6.6
+ *        §6.3.7 calls invalid counted and kept as it is.
  *
  * @param load           The load.
  * @param initialization The counts the sequence keeps, the _STA evaluations among them.
- * @param index          The node whose ancestors are decided.
- * @return false when one of them is neither present nor functioning.
+ * @param device         The node whose _STA is read.
+ * @param out_status     Receives the status.
+ * @return false when its evaluation failed or gave no Integer, String or Buffer, counted.
  */
-extern bool advanced_configuration_and_power_interface_initialization_present_above(
+extern bool advanced_configuration_and_power_interface_initialization_read_status(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t index);
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t device, uint64_t *out_status);
 
 /**
  * @brief Runs the late initialisation of the tables Load and LoadTable added since the last one (§3.8),

@@ -914,11 +914,11 @@ KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
 }
 
 /**
- * @brief A processor below a device the walk of step 4 found neither present nor functioning is out of
- *        step 8 with nothing evaluated: step 4 read that device's _STA because it holds an _INI, and step 8
- *        reads neither its _STA again nor the processor's. So is a processor step 4 found absent itself.
+ * @brief A processor below a device found neither present nor functioning is out of step 8 with its own _STA
+ *        unread: step 4 reads that device's _STA because it holds an _INI, and step 8 reads it once more, once
+ *        step 4 is over (§3.10). A processor found absent itself is out too, its _STA read by both.
  */
-KERNEL_TEST(a_processor_below_a_device_step_four_found_absent_is_out_unread)
+KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
 {
     static const uint32_t identifiers[] = {1u, 2u};
     static const uint8_t absent_status[] = {0x75u, '\\', 'P', '1', 'S', 'T', 0xA4u, 0x00u};
@@ -959,11 +959,10 @@ KERNEL_TEST(a_processor_below_a_device_step_four_found_absent_is_out_unread)
     if (!idle_run(test))
         return;
     kernel_test_check(test,
-                      made_up_root_node(&idle_load, "DSTA")->value.payload == 1u &&
-                          made_up_root_node(&idle_load, "P1ST")->value.payload == 1u,
-                      "the device's _STA and CPU1's are read once, by step 4");
-    kernel_test_check(test, made_up_root_node(&idle_load, "PSTA")->value.payload == 0u,
-                      "the processor's _STA is never read");
+                      made_up_root_node(&idle_load, "DSTA")->value.payload == 2u &&
+                          made_up_root_node(&idle_load, "P1ST")->value.payload == 2u,
+                      "the device's _STA and CPU1's are read twice: once by step 4, once by step 8");
+    kernel_test_check(test, made_up_root_node(&idle_load, "PSTA")->value.payload == 0u, "CPU0's _STA is never read");
     kernel_test_check(test,
                       idle_table.slots[0].processor == 0u && idle_table.slots[1].processor == 0u &&
                           idle_counts.processor_idle_absent == 2u,
@@ -1012,6 +1011,52 @@ KERNEL_TEST(a_device_below_one_found_absent_is_not_read)
                       "DEVC, below DEVA found absent, is never read");
     kernel_test_check(test, idle_table.slots[0].processor == 0u && idle_counts.processor_idle_absent == 1u,
                       "CPU0 publishes nothing, counted absent");
+    idle_close(test);
+}
+
+/**
+ * @brief Step 8 decides presence from the _STA values it reads once step 4 is over, as Linux reads them when
+ *        it attaches, after every _INI (§3.10): DEVB's _STA reads FLAG, which LATE's _INI sets after step 4
+ *        read DEVB absent; step 8 reads DEVB present, and CPU0, below it, publishes.
+ */
+KERNEL_TEST(a_status_an_initialization_changes_after_step_four_decides_step_eight)
+{
+    static const uint32_t identifiers[] = {1u};
+    static const uint8_t status[] = {0x75u, '\\', 'B', 'S', 'T',   'A',   0xA0u, 0x09u, '\\',
+                                     'F',   'L',  'A', 'G', 0xA4u, 0x0Au, 0x0Fu, 0xA4u, 0x00u};
+    static const uint8_t nothing[] = {0xA3u};
+    static const uint8_t sets[] = {0x70u, 0x01u, '\\', 'F', 'L', 'A', 'G'};
+    const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
+    MadeUpAml_t device;
+    MadeUpAml_t body;
+
+    idle_begin(identifiers, 1u);
+    made_up_aml_name_integer(&idle_aml, "FLAG", 0u);
+    made_up_aml_name_integer(&idle_aml, "BSTA", 0u);
+    made_up_aml_begin(&idle_scope);
+    idle_static(&idle_scope, 1u, &only, 1u);
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, status, sizeof(status));
+    made_up_aml_method(&device, "_STA", 0x00u, &body);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_method(&device, "_INI", 0x00u, &body);
+    made_up_aml_processor(&device, "CPU0", 1u, 0x410u, 6u, &idle_scope);
+    made_up_aml_device(&idle_aml, "DEVB", &device);
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, sets, sizeof(sets));
+    made_up_aml_method(&device, "_INI", 0x00u, &body);
+    made_up_aml_device(&idle_aml, "LATE", &device);
+    if (!idle_run(test))
+        return;
+    kernel_test_check(test,
+                      made_up_root_node(&idle_load, "FLAG")->value.payload == 1u &&
+                          made_up_root_node(&idle_load, "BSTA")->value.payload == 2u,
+                      "LATE's _INI sets FLAG, and DEVB's _STA is read by step 4, then by step 8");
+    kernel_test_check(test, idle_published(0u, &only, 1u) && idle_counts.processor_idle_absent == 0u,
+                      "CPU0 publishes its state");
     idle_close(test);
 }
 
