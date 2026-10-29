@@ -703,17 +703,39 @@ static void acpi_madt_add_non_maskable_interrupt(AdvancedConfigurationAndPowerIn
 }
 
 /**
- * @brief Reads one MADT entry of a type that names a processor or its NMI connection.
+ * @brief The length of the shortest entry of @p type this reader reads, or 0 for a type it does not read.
+ */
+static uint8_t acpi_madt_shortest_entry(uint8_t type)
+{
+    switch (type)
+    {
+    case ACPI_MADT_LOCAL_APIC: return sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t);
+    case ACPI_MADT_IO_APIC: return sizeof(AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t);
+    case ACPI_MADT_INTERRUPT_SOURCE_OVERRIDE:
+        return sizeof(AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t);
+    case ACPI_MADT_LOCAL_APIC_NON_MASKABLE_INTERRUPT:
+        return sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t);
+    case ACPI_MADT_LOCAL_APIC_ADDRESS:
+        return sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t);
+    case ACPI_MADT_LOCAL_X2APIC: return sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t);
+    case ACPI_MADT_LOCAL_X2APIC_NON_MASKABLE_INTERRUPT:
+        return sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t);
+    default: return 0u;
+    }
+}
+
+/**
+ * @brief Reads one MADT entry of a type that names a processor or its NMI connection, at least as long
+ *        as its type.
  *
- * @return false when its type is none of those, or it is shorter than its type.
+ * @return false when its type is none of those.
  */
 static bool acpi_madt_read_processor_entry(AdvancedConfigurationAndPowerInterfaceMadtState_t *state,
                                            const uint8_t *entry, bool local_apic_processors)
 {
     const uint8_t type = entry[0];
-    const uint8_t length = entry[1];
 
-    if (type == ACPI_MADT_LOCAL_APIC && length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t))
+    if (type == ACPI_MADT_LOCAL_APIC)
     {
         const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *local_apic =
             (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t *) entry;
@@ -722,8 +744,7 @@ static bool acpi_madt_read_processor_entry(AdvancedConfigurationAndPowerInterfac
                                 local_apic->apic_id, local_apic->acpi_processor_id);
         return true;
     }
-    if (type == ACPI_MADT_LOCAL_X2APIC &&
-        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t))
+    if (type == ACPI_MADT_LOCAL_X2APIC)
     {
         const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t *local_x2apic =
             (const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t *) entry;
@@ -734,8 +755,7 @@ static bool acpi_madt_read_processor_entry(AdvancedConfigurationAndPowerInterfac
                                 local_x2apic->processor_unique_identifier);
         return true;
     }
-    if (type == ACPI_MADT_LOCAL_APIC_NON_MASKABLE_INTERRUPT &&
-        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t))
+    if (type == ACPI_MADT_LOCAL_APIC_NON_MASKABLE_INTERRUPT)
     {
         const AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t *connection =
             (const AdvancedConfigurationAndPowerInterfaceMadtLocalApicNonMaskableInterruptEntry_t *) entry;
@@ -748,8 +768,7 @@ static bool acpi_madt_read_processor_entry(AdvancedConfigurationAndPowerInterfac
                                              connection->local_interrupt);
         return true;
     }
-    if (type == ACPI_MADT_LOCAL_X2APIC_NON_MASKABLE_INTERRUPT &&
-        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t))
+    if (type == ACPI_MADT_LOCAL_X2APIC_NON_MASKABLE_INTERRUPT)
     {
         const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t *connection =
             (const AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t *) entry;
@@ -762,17 +781,15 @@ static bool acpi_madt_read_processor_entry(AdvancedConfigurationAndPowerInterfac
 }
 
 /**
- * @brief Reads one MADT entry of a type that names an I/O APIC or an interrupt source override.
- *
- * @return false when its type is neither, or it is shorter than its type.
+ * @brief Reads one MADT entry that names an I/O APIC or an interrupt source override, at least as
+ *        long as its type.
  */
-static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfaceMadtState_t *state,
+static void acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfaceMadtState_t *state,
                                            const uint8_t *entry)
 {
     const uint8_t type = entry[0];
-    const uint8_t length = entry[1];
 
-    if (type == ACPI_MADT_IO_APIC && length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t))
+    if (type == ACPI_MADT_IO_APIC)
     {
         const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *io_apic =
             (const AdvancedConfigurationAndPowerInterfaceMadtIoApicEntry_t *) entry;
@@ -780,7 +797,7 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
         if (state->io_apic_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_IOAPIC_COUNT)
         {
             ++state->io_apics_dropped;
-            return true;
+            return;
         }
 
         AdvancedConfigurationAndPowerInterfaceIoApicInfo_t *info = &state->io_apics[state->io_apic_count++];
@@ -788,10 +805,9 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
         info->id = io_apic->io_apic_id;
         info->physical_base = io_apic->io_apic_address;
         info->gsi_base = io_apic->global_system_interrupt_base;
-        return true;
+        return;
     }
-    if (type == ACPI_MADT_INTERRUPT_SOURCE_OVERRIDE &&
-        length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t))
+    if (type == ACPI_MADT_INTERRUPT_SOURCE_OVERRIDE)
     {
         const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *override =
             (const AdvancedConfigurationAndPowerInterfaceMadtInterruptSourceOverrideEntry_t *) entry;
@@ -799,7 +815,7 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
         if (state->interrupt_source_override_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_ISO_COUNT)
         {
             ++state->interrupt_source_overrides_dropped;
-            return true;
+            return;
         }
 
         AdvancedConfigurationAndPowerInterfaceInterruptSourceOverrideInfo_t *info =
@@ -809,9 +825,7 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
         info->source_irq = override->source;
         info->global_system_interrupt = override->global_system_interrupt;
         info->flags = override->flags;
-        return true;
     }
-    return false;
 }
 
 bool advanced_configuration_and_power_interface_port_is_protected(uint16_t port)
@@ -1122,8 +1136,13 @@ bool advanced_configuration_and_power_interface_read_madt(
             return false;
         }
 
-        if (type == ACPI_MADT_LOCAL_APIC_ADDRESS &&
-            length >= sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t))
+        const uint8_t shortest = acpi_madt_shortest_entry(type);
+
+        if (shortest == 0u)
+            ++out_state->skipped_count;
+        else if (length < shortest)
+            ++out_state->too_short_count;
+        else if (type == ACPI_MADT_LOCAL_APIC_ADDRESS)
         {
             const uint64_t address =
                 ((const AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t *) entry)
@@ -1136,11 +1155,8 @@ bool advanced_configuration_and_power_interface_read_madt(
             }
             out_state->local_apic_physical_base = (uint32_t) address;
         }
-        else if (!acpi_madt_read_processor_entry(out_state, entry, local_apic_processors) &&
-                 !acpi_madt_read_interrupt_entry(out_state, entry))
-        {
-            ++out_state->skipped_count;
-        }
+        else if (!acpi_madt_read_processor_entry(out_state, entry, local_apic_processors))
+            acpi_madt_read_interrupt_entry(out_state, entry);
         entry += length;
     }
 

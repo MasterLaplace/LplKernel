@@ -107,12 +107,12 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
         return;
     }
     printf("madt read=1 checksum=%s local_apic=0x%08X processors=%u processors_dropped=%u online_capable=%u "
-           "disabled=%u invalid=%u nmis=%u nmis_dropped=%u skipped=%u io_apics=%u io_apics_dropped=%u overrides=%u "
-           "overrides_dropped=%u\n",
+           "disabled=%u invalid=%u nmis=%u nmis_dropped=%u skipped=%u too_short=%u io_apics=%u io_apics_dropped=%u "
+           "overrides=%u overrides_dropped=%u\n",
            madt.checksum_valid ? "ok" : "bad", madt.local_apic_physical_base, madt.processor_count,
            madt.processors_dropped, madt.online_capable_count, madt.disabled_count, madt.invalid_count,
            madt.non_maskable_interrupt_count, madt.non_maskable_interrupts_dropped, madt.skipped_count,
-           madt.io_apic_count, madt.io_apics_dropped, madt.interrupt_source_override_count,
+           madt.too_short_count, madt.io_apic_count, madt.io_apics_dropped, madt.interrupt_source_override_count,
            madt.interrupt_source_overrides_dropped);
     for (uint32_t slot = 0u; slot < madt.processor_count; ++slot)
         printf("processor %u uid=0x%X apic_id=0x%X\n", slot, madt.processors[slot].processor_unique_identifier,

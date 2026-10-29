@@ -236,7 +236,7 @@ void write_acpi_madt_info(Serial_t *serial)
     serial_write_hex32(serial, advanced_configuration_and_power_interface_madt_get_local_apic_physical_base());
     serial_write_string(serial, ", ioapic_count=");
     serial_write_int(serial, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_count());
-    serial_write_string(serial, ", lapic_count=");
+    serial_write_string(serial, ", processors=");
     serial_write_unsigned(serial, advanced_configuration_and_power_interface_madt()->processor_count);
     serial_write_string(serial, ", iso_count=");
     serial_write_int(serial,
@@ -259,6 +259,7 @@ void write_acpi_madt_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("nmis", madt->non_maskable_interrupt_count);
     kernel_telemetry_write_unsigned("nmis_dropped", madt->non_maskable_interrupts_dropped);
     kernel_telemetry_write_unsigned("skipped", madt->skipped_count);
+    kernel_telemetry_write_unsigned("too_short", madt->too_short_count);
     kernel_telemetry_write_unsigned("io_apics", madt->io_apic_count);
     kernel_telemetry_write_unsigned("io_apics_dropped", madt->io_apics_dropped);
     kernel_telemetry_write_unsigned("overrides", madt->interrupt_source_override_count);
