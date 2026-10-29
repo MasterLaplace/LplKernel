@@ -20,12 +20,12 @@ _STA of every candidate and of the Devices, Processors and ThermalZones above it
 A processor object is a Processor, or a Device whose _HID is "ACPI0007"; it binds to the first slot of its UID, the
 ProcessorID or the _UID. Its _CST is published, in declaration order, when its _STA says present or functioning and
 enabled, a _STA that fails keeping it out, no device above it says neither present nor functioning (a missing _STA
-reads 0x0F, and one that fails is walked into, as step 4 walks into it), and no object declared before it took its
-slot. A _CST is a Package of an Integer Count of at least 1, then as many states; anything else publishes no state. A
-state is a Package of a Buffer holding a Generic Register before its End Tag, then three Integers of 32 bits; a
-faulty one is skipped and counted, and once seven are published the others are not read. When acpiexec stops before
-it evaluates all it was given, as it does when a handshake loads a table from a region of length 0, only `aml idle
-unevaluated <path>` is printed, the first path it did not reach.
+reads 0x0F; one that fails reads 0 for a Device or a Processor and 0x0F for a ThermalZone, as Linux v7.3 reads them),
+and no object declared before it took its slot. A _CST is a Package of an Integer Count of at least 1, then as many
+states; anything else publishes no state. A state is a Package of a Buffer holding a Generic Register before its End
+Tag, then three Integers of 32 bits; a faulty one is skipped and counted, and once seven are published the others are
+not read. When acpiexec stops before it evaluates all it was given, as it does when a handshake loads a table from a
+region of length 0, only `aml idle unevaluated <path>` is printed, the first path it did not reach.
 """
 import os
 import re
@@ -214,18 +214,20 @@ def above(path):
 
 def publish(nodes, found, candidates, slot_of):
     """The published slots: for each, its processor object's path, its states and its skipped count."""
-    def status_of(device, failed):
+    def status_of(device):
         if device + "._STA" not in nodes:
             return NO_STATUS
         value = integer_of(found.get(device + "._STA"))
-        return failed if value is None else value
+        if value is None:
+            return NO_STATUS if nodes[device][0] == "Thermal" else 0
+        return value
 
     published, taken = {}, set()
     for path in candidates:
-        if any(device in nodes and nodes[device][0] in DEVICES and status_of(device, NO_STATUS) & 0x09 == 0
+        if any(device in nodes and nodes[device][0] in DEVICES and status_of(device) & 0x09 == 0
                for device in above(path)):
             continue
-        own, slot = status_of(path, 0), slot_of(path)
+        own, slot = status_of(path), slot_of(path)
         if own & 0x09 == 0 or own & 0x02 == 0 or slot is None or slot in taken:
             continue
         taken.add(slot)

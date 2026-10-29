@@ -401,7 +401,7 @@ clients `_CST` exists only after step 7.
 | 5 `\_PIC` | not called | | `pic_mode_deferred` |
 | 6 platform `_OSC` | absent, failed, or an error bit in the returned DWORD 1 | continue as if nothing was granted | `platform_capabilities`: `absent`, `failed` or `refused` |
 | 7 processor `_OSC` or `_PDC` | the evaluation's status, or an error bit in `_OSC`'s DWORD 1 | continue; that processor may have no `_CST` | `processor_capabilities_failed`, `processor_capabilities_refused` |
-| 8 a `_STA` | the evaluation's status | a device above the processor is walked into; the processor is kept out | `status_failed` |
+| 8 a `_STA` | the evaluation's status | the processor is kept out, and so is what lies below a Device or a Processor; a ThermalZone is walked into | `status_failed` |
 | 8 a `_CST` | the evaluation's status, or a malformed package | that CPU keeps the states the kernel enters without ACPI (HLT, MWAIT C1) | `processor_idle_failed` |
 
 **Tables loaded at run time.** A table loaded before step 3 is initialised by steps 3 and 4 with the static ones,
@@ -498,9 +498,10 @@ the pass goes on while the tables it loads declare more.
   above it found neither present nor functioning. Step 8 reads these `_STA` once step 4 is over, as Linux reads
   them when it attaches, after every `_INI`; what step 4 or a late initialisation found decides nothing here, and
   step 4's absences still keep the late initialisation out. Step 8 decides the devices above a processor from the
-  top down, stops at the first one absent, and reads each `_STA` once; one whose `_STA` fails is walked into,
-  where Linux would read it as 0. The processor's own `_STA` reads 0x0F when missing, and keeps it out when it
-  fails. These reads are counted with step 4's (`status_evaluations`, `status_failed`). A processor kept out takes
+  top down, stops at the first one absent, and reads each `_STA` once. A `_STA` that fails reads as Linux reads it
+  (v7.3 `acpi_scan_init_status`, `acpi_bus_get_status`): 0 for a Device or a Processor, which keeps out what lies
+  below it, and 0x0F for a ThermalZone, which is walked into. The processor's own `_STA` reads 0x0F when missing,
+  and keeps it out when it fails. These reads are counted with step 4's (`status_evaluations`, `status_failed`). A processor kept out takes
   no slot, and is counted (`processor_idle_absent`).
 - **Every state firmware lists is published,** type 3 included ([§8.1.4]), up to the cap of §6.1; which states to
   enter is #298's policy.

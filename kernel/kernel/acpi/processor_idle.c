@@ -20,6 +20,7 @@
 #define PROCESSOR_IDLE_PRESENT        0x01u    /**< _STA bit 0: the device is present. */
 #define PROCESSOR_IDLE_ENABLED        0x02u    /**< _STA bit 1: the device is enabled. */
 #define PROCESSOR_IDLE_FUNCTIONING    0x08u    /**< _STA bit 3: the device works. */
+#define PROCESSOR_IDLE_NO_STATUS      0x0Fu    /**< What Linux keeps for a ThermalZone whose _STA fails. */
 #define PROCESSOR_IDLE_DECIDED        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_DECIDED
 #define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_ABSENT
 #define PROCESSOR_IDLE_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
@@ -338,28 +339,29 @@ static uint32_t processor_idle_undecided_above(const ProcessorIdleLoad_t *load, 
 }
 
 /**
- * @brief Reads the _STA of @p device into @p out_status, step 4 being over, and records in its node that
- *        step 8 decided it, and found it absent when it is neither present nor functioning.
- *
- * @return false when its _STA failed, counted: nothing is found absent.
+ * @brief Reads the _STA of @p device into @p out_status, step 4 being over, as Linux reads it (v7.3
+ *        acpi_scan_init_status, acpi_bus_get_status): one that fails, counted, reads 0 for a Device or a
+ *        Processor and 0x0F for a ThermalZone; then records in its node that step 8 decided it, and found it
+ *        absent when it is neither present nor functioning.
  */
-static bool processor_idle_decide(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t device,
+static void processor_idle_decide(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t device,
                                   uint64_t *out_status)
 {
-    processor_idle_node(load, device)->flags |= PROCESSOR_IDLE_DECIDED;
+    ProcessorIdleNode_t *node = processor_idle_node(load, device);
+
+    node->flags |= PROCESSOR_IDLE_DECIDED;
     if (!advanced_configuration_and_power_interface_initialization_read_status(load, counts, device, out_status))
-        return false;
+        *out_status = (node->type == PROCESSOR_IDLE_NODE(THERMAL_ZONE)) ? PROCESSOR_IDLE_NO_STATUS : 0u;
     if ((*out_status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
-        processor_idle_node(load, device)->flags |= PROCESSOR_IDLE_ABSENT;
-    return true;
+        node->flags |= PROCESSOR_IDLE_ABSENT;
 }
 
 /**
  * @brief Whether Linux would attach the processor object @p processor (v7.3 acpi_bus_attach,
  *        acpi_processor_add), from _STA values read once step 4 is over, as Linux reads them after every
- *        _INI, and each read once by step 8: no device above it absent, decided from the top down, one whose
- *        _STA fails walked into; and its own _STA present or functioning, and enabled, a missing one reading
- *        0x0F and one that fails keeping it out, counted.
+ *        _INI, and each read once by step 8: no device above it absent, decided from the top down; and its
+ *        own _STA present or functioning, and enabled, a missing one reading 0x0F and one that fails keeping
+ *        it out, counted.
  */
 static bool processor_idle_present(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor)
 {
@@ -369,8 +371,10 @@ static bool processor_idle_present(ProcessorIdleLoad_t *load, ProcessorIdleCount
     for (uint32_t device = processor_idle_undecided_above(load, processor, &absent); device != 0u;
          device = processor_idle_undecided_above(load, processor, &absent))
         processor_idle_decide(load, counts, device, &status);
-    return !absent && processor_idle_decide(load, counts, processor, &status) &&
-           (status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) != 0u &&
+    if (absent)
+        return false;
+    processor_idle_decide(load, counts, processor, &status);
+    return (status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) != 0u &&
            (status & PROCESSOR_IDLE_ENABLED) != 0u;
 }
 
