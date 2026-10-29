@@ -638,6 +638,8 @@ static uint32_t idle_control(KernelTest_t *test, uint8_t mode, uint32_t command_
     {
         control = idle_counts.idle_control;
         *out_writes = idle_port_writes((uint16_t) command_port, command);
+        kernel_test_check(test, idle_table.slots[0].processor == 0u && idle_table.slots[0].count == 0u,
+                          "a namespace without processor objects publishes nothing in its slot");
         idle_close(test);
     }
     return control;

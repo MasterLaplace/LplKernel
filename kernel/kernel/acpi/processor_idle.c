@@ -385,8 +385,8 @@ void advanced_configuration_and_power_interface_processor_idle_publish(Processor
 {
     uint32_t changed[PROCESSOR_IDLE_MAX_SLOTS / PROCESSOR_IDLE_SLOT_BITS] = {0u};
 
-    memset(out_table, 0, sizeof(*out_table));
     out_table->slot_count = (machine->madt != NULL) ? machine->madt->processor_count : 0u;
+    memset(out_table->slots, 0, out_table->slot_count * sizeof(out_table->slots[0]));
     initialization->idle_control = processor_idle_claim_control(load, machine);
     processor_idle_publish_slots(load, machine, initialization, out_table, changed);
     for (uint32_t slot = 0u; slot < out_table->slot_count; ++slot)

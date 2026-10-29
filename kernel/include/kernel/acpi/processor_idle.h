@@ -128,7 +128,8 @@ extern uint32_t advanced_configuration_and_power_interface_processor_slot(
  * @param load           A load whose namespace steps 2 to 7 initialised, its stacks free.
  * @param machine        The CPU slots, the FADT and how step 0 ended.
  * @param initialization Where the evaluations and their failures are counted.
- * @param out_table      Receives the states of every CPU slot; zeroed first.
+ * @param out_table      Receives the states of every CPU slot of the MADT, those slots zeroed first, and
+ *                       nothing past them, which no reader of the table reads.
  */
 extern void advanced_configuration_and_power_interface_processor_idle_publish(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,

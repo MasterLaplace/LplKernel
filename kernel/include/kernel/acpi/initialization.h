@@ -113,7 +113,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  * @param load               A load whose tables are decoded, its stacks free.
  * @param machine            The CPU slots, the processor features, the FADT and how step 0 ended.
  * @param out_initialization Receives what the sequence ran and counted; zeroed first.
- * @param out_idle           Receives the C-states of every CPU slot; zeroed first.
+ * @param out_idle           Receives the C-states of every CPU slot of the MADT, those slots zeroed first.
  */
 extern void advanced_configuration_and_power_interface_initialize_namespace(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
