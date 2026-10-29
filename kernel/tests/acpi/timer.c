@@ -246,12 +246,12 @@ KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
     uint32_t low_microseconds;
     uint8_t wide_state;
 
-    timer_open(TIMER_LOW_BITS - 8u);
+    timer_open(TIMER_LOW_BITS - 64u);
     low_state = timer_find();
     low_rate = timer_found.rate_per_mille;
     low_reads = timer_found.check_reads;
     low_microseconds = timer_found.check_microseconds;
-    timer_open(TIMER_LOW_BITS - 8u);
+    timer_open(TIMER_LOW_BITS - 64u);
     timer_machine.bits = TIMER_ALL_BITS;
     wide_state = timer_find();
 
