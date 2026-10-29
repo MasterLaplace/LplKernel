@@ -928,14 +928,16 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 
 - **release** (`SMOKE_TESTS=0 ./build.sh --server`): the windows that run at boot, on QEMU's live tables;
 - **debug** (the poison build): the windows inside a `KERNEL_TEST`, among them the ring-0 corpus test on three
-  corpus machines (a revision-2 Intel client with `Load`, an AMD client, a server), so that real firmware sets
-  budgets next to QEMU. Their files end in `.debug.budget`.
+  corpus machines, so that real firmware sets budgets next to QEMU: the Lenovo IdeaPad Z470, a revision-2 Intel
+  client whose `_PDC` runs `Load`; the MSI MS-7E16, an AMD client; Intel's ArcherCity, a server. The boot runs the
+  load and the initialisation on QEMU's tables before the test runs them on the machine's, so their windows skip
+  that first call (`--skip 1`), the machine given as a module (`--module`). Their files end in `.debug.budget`.
 
 | Window | Command | Budget files | First target |
 |---|---|---|---|
-| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | at most 300 instructions per named object created; 0 allocations per method declared |
-| W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same during the ring-0 corpus test | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget` | its first measurement |
-| W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget` | its first measurement |
+| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside --skip 1` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | at most 300 instructions per named object created; 0 allocations per method declared |
+| W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same `--skip 1` during the ring-0 corpus test | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget` | its first measurement |
+| W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget`; `tools/acpi-cst-<machine>.debug.budget` | its first measurement |
 | W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT | debug: `--inside kernel_test_body_<test>` | `tools/acpi-microbenchmark.debug.budget` | at most 200 instructions per loop iteration, 0 allocations |
 
 `_PRT` gets a window once #59 gives it a boot consumer.
