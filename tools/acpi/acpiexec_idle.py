@@ -2,14 +2,17 @@
 CPU slots they bind to from ACPICA's namespace and the decoded MADT, their states from the _CST acpiexec evaluates, as
 the `aml idle slot` and `aml idle state` lines `test-acpi --initialize` prints.
 
-Usage: python3 -I tools/acpi/acpiexec_idle.py <acpica bin directory> <dump> <MADT lines>
+Usage: python3 -I tools/acpi/acpiexec_idle.py <acpica bin directory> <MADT lines> <presets> <table>...
 
 The MADT lines are those tools/acpi/expected_madt.py reads from the machine's decoded report: `processor <slot>
-uid=<UID>` gives each CPU slot. The dump is split with acpixtract. acpiexec loads its DSDT and SSDTs without running
-them to list the namespace (tools/acpi/acpiexec_namespace.py): every Processor or Device with a _CST, an _OSC or a
-_PDC, and each one's ancestors. A first run reads the _HID and _UID of those Devices. A second run, with region fill 0
-and no repair of return values (`-fv 0 -dr`), which runs _REG, _STA and _INI, is given on its standard input, since a
-batch (`-b`) holds a few hundred characters only, the handshake of the specification's §3.8 steps 6 and 7:
+uid=<UID>` gives each CPU slot. The tables are those `test-acpi --loaded` writes, the DSDT first: the ones the
+initialisation ended with, Load's included, which acpiexec loads statically. The presets are tools/acpi/presets.txt,
+whose lines but its comments become acpiexec's -fi file, so that both read the same NVS values. acpiexec loads the
+tables without running them to list the namespace (tools/acpi/acpiexec_namespace.py): every Processor or Device with a
+_CST, an _OSC or a _PDC, and each one's ancestors. A first run reads the _HID and _UID of those Devices. A second run,
+with region fill 0 and no repair of return values (`-fv 0 -dr`), which runs _REG, _STA and _INI, is given on its
+standard input, since a batch (`-b`) holds a few hundred characters only, the handshake of the specification's §3.8
+steps 6 and 7:
 `\\_SB._OSC` asked for nothing, a query then a commit, then the _OSC with Intel's processor UUID, or the _PDC, of each
 processor object that binds to a CPU slot, with the capabilities of C1 to C3 and MWAIT (0x318). It then reads the
 _STA of every candidate and of the Devices, Processors and ThermalZones above it, and evaluates each _CST.
@@ -25,6 +28,7 @@ region of length 0, only `aml idle unevaluated <path>` is printed, the first pat
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,7 +40,7 @@ import acpiexec_namespace  # noqa: E402
 PLATFORM_UUID = "6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48"
 PROCESSOR_UUID = "16 A6 77 40 0C 29 BE 47 9E BD D8 70 58 71 39 53"
 CAPABILITIES = "18 03 00 00"
-OPTIONS = ["-fv", "0", "-dr"]
+OPTIONS = ["-fv", "0", "-dr", "-fi", "nvs.txt"]
 MAX_STATES = 7
 NO_STATUS = 0x0F
 DEVICES = ("Device", "Processor", "Thermal")
@@ -229,13 +233,19 @@ def publish(nodes, found, candidates, slot_of):
 
 
 def main():
-    bin_directory, dump = os.path.abspath(sys.argv[1]), sys.argv[2]
-    slots = [int(match.group(2), 16) for match in map(SLOT.match, open(sys.argv[3]).read().splitlines()) if match]
+    bin_directory = os.path.abspath(sys.argv[1])
+    slots = [int(match.group(2), 16) for match in map(SLOT.match, open(sys.argv[2]).read().splitlines()) if match]
+    presets = [line for line in open(sys.argv[3]).read().splitlines() if line.strip() and not line.startswith("#")]
     nodes = {}
     with tempfile.TemporaryDirectory() as work:
-        tables = acpiexec_namespace.tables_of_dump(bin_directory, dump, work)
+        tables = []
+        for index, table in enumerate(sys.argv[4:]):
+            tables.append("table%03u.dat" % index)
+            shutil.copyfile(table, os.path.join(work, tables[-1]))
         if not tables:
             return
+        with open(os.path.join(work, "nvs.txt"), "w") as nvs:
+            nvs.write("".join(line + "\n" for line in presets))
         for line in acpiexec_namespace.namespace(bin_directory, tables, work):
             match = NODE.match(line)
             if match:

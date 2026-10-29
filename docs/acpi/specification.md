@@ -78,7 +78,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | Implicit return of the last value | §5.2 returns Integer 0 | a needs-path result that differs between `acpiexec` and `acpiexec -es` (§8.6) |
 | Auto-serialisation of methods that create names | two evaluations never interleave (§3.7) | concurrent AML execution |
 | PSDT and OSDT loading | absent from the corpus | a machine that ships one |
-| `LoadTable` with a RootPath, ParameterPath or ParameterData, `Load` from a Buffer | every call site on the corpus passes `""`, `""`, `Zero`, and loads from a region or a field; another form fails with `load_form_unsupported` | a needs-path call site with another form |
+| `LoadTable` with a RootPath, ParameterPath or ParameterData, `Load` from a Buffer, either run while a table is declared | every call site on the corpus passes `""`, `""`, `Zero`, and loads from a region or a field, in a method; another form fails with `load_form_unsupported` | a needs-path call site with another form |
 | `_REG` for SystemMemory and SystemIO | ACPI declares both always available, and OSPM runs no `_REG` for them ([§6.5.4]) | a needs-path `_REG` that tests either space |
 | Opcodes outside the needs path | not reached on the path to `_CST` | the needs path of a later need, or a counted `unimplemented_operator` |
 | T-states, S1 and S2, `_GTS`, `_BFS`, `_TTS`, hotplug, WMI, video extensions, APEI, active cooling | no need asks for them | the issue that names one |
@@ -203,7 +203,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 4), `table u16`, `argument_count u8`, `serial u32` (which frame this is, so that a reference to one of its locals, its arguments or the names it creates dies with it) | 276 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
 | **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
-| **Loaded table** | `physical u64`, `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `length u32`, `checksum u8`, `checksum_valid u8`, `oem_table_id[8]`, `origin u8` (static, `Load`, `LoadTable`), `owner u16` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory. `bytes` is one of the two pointers of §2: printed, never folded. |
+| **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 50 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. |
 
 ### 3.5 Memory strategy
@@ -234,10 +234,10 @@ Rules:
 
 ### 3.6 Execution model
 
-**One loop, explicit stacks, no C recursion.** The stacks are fixed arrays sized by the limits of §6.1, so they are
-never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic. Until #587, the
-declaration pass walks the control flow of table-level code itself and hands the loop one statement or predicate at
-a time (below).
+**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #587 (below). The stacks are fixed
+arrays sized by the limits of §6.1, so they are never reallocated and no pointer into them goes stale. A limit reached
+is an error, never a panic. Until #587, the declaration pass walks the control flow of table-level code itself and hands
+the loop one statement or predicate at a time (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
@@ -277,8 +277,10 @@ and every fixed field and every NameString against the innermost end. A crossing
 inside it. The error report names the table, the offset, the opcode and the method path.
 
 **A table load is a frame.** A definition block runs as a pseudo-method whose named objects are permanent and whose
-`Local0` to `Local7` exist. `Load` and `LoadTable` push such a frame on the same stack, so a load from a method
-costs no C stack. Declarations load in one pass and in order: table-level code sees only what was declared before
+`Local0` to `Local7` exist. Until #587, `Load` and `LoadTable` run the declaration pass of their table from their
+handler, one level of C deep, its statements on the stacks of the method that loads it: a `Load` or `LoadTable` that
+table-level code runs while a table is declared fails with `load_form_unsupported`, so there is no second level.
+Declarations load in one pass and in order: table-level code sees only what was declared before
 it. An `External` whose parent no table has declared yet is placed by a pass of its own once every table is
 declared; one whose parent exists is placed where it stands.
 
@@ -400,9 +402,14 @@ clients `_CST` exists only after step 7.
 | 7 processor `_OSC` or `_PDC` | the evaluation's status, or an error bit in `_OSC`'s DWORD 1 | continue; that processor may have no `_CST` | `processor_capabilities_failed`, `processor_capabilities_refused` |
 | 8 a `_CST` | the evaluation's status, or a malformed package | that CPU keeps the states the kernel enters without ACPI (HLT, MWAIT C1) | `processor_idle_failed` |
 
-**Tables loaded at run time.** A table that step 7 loads can declare regions and devices. Once the evaluation that
-loaded it ends, its scopes get the `_REG` of step 3, then the `_STA` and `_INI` walk of step 4 over its device
-subtrees ([§6.5.1]). `late_initializations` counts how often this does anything.
+**Tables loaded at run time.** A table loaded before step 3 is initialised by steps 3 and 4 with the static ones,
+and step 7 sees its processors. A table loaded later can declare regions and devices: once the evaluation that loaded
+it returns, or once step 3 is over for a `_REG`'s, its scopes get the `_REG` of step 3, which step 3 leaves to it. Its
+devices that step 4 still reaches, below the device step 4 is at or below a node it has not reached yet, are left to
+step 4; the others get the `_STA` and `_INI` walk of step 4 over their subtrees ([§6.5.1]). The devices above them
+whose `_STA` step 4 did not read, in subtrees it skipped, have it read first, from the top down, under step 4's rule,
+so that the result does not depend on where the loader is declared; nothing below a device found neither present nor
+functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything.
 
 ### 3.9 The static tables
 
@@ -462,9 +469,11 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
   and so is one whose slot an object declared before it took.
 - **Presence.** Step 8 evaluates the `_CST` of a processor object Linux attaches (v7.3 `acpi_bus_attach`,
   `acpi_processor_add`): its `_STA` present or functioning, and enabled, and no Device, Processor or ThermalZone
-  above it whose `_STA` is neither present nor functioning. A missing `_STA` reads 0x0F, one that fails reads 0 and
-  is counted; each device's `_STA` is read once. A processor kept out takes no slot, and is counted
-  (`processor_idle_absent`).
+  above it found absent. Step 8 decides the devices above it as the walk of step 4 does, and shares each decision
+  with step 4 and the late initialisation, so that a device's `_STA` is read once: one step 4 or a late
+  initialisation found absent keeps the processor out unread, and one whose `_STA` fails is walked into, where
+  Linux would read it as 0. The processor's own `_STA` reads 0x0F when missing, and keeps it out when it fails,
+  counted. A processor kept out takes no slot, and is counted (`processor_idle_absent`).
 - **Every state firmware lists is published,** type 3 included ([§8.1.4]), up to the cap of §6.1; which states to
   enter is #298's policy.
 - **A faulty state is left out** and counted on its slot, as Linux skips it: a sub-package of other than four
@@ -686,7 +695,7 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | Case | Behaviour | Counter |
 |---|---|---|
 | An opcode decoded but not executed: outside the needs path, `DataTableRegion`, `Nor`, `Revision` | in a method, the evaluation fails with `unimplemented_operator`; at definition-block level, the statement or predicate that holds it fails as in §6.2 and the load goes on | `unimplemented_operator[opcode]` |
-| `Load` from a Buffer; `LoadTable` with a non-empty RootPath, ParameterPath or ParameterData | fails as above | `load_form_unsupported` |
+| `Load` from a Buffer; `LoadTable` with a non-empty RootPath, ParameterPath or ParameterData; either run while a table is declared | fails as above | `load_form_unsupported` |
 | A byte that is not an opcode | fails as above, with `invalid_opcode`; at table level without an enclosing construct, the rest of the table is abandoned and the next table loads | `invalid_opcode` |
 | `Unload` | its operand is evaluated, and nothing else happens | `unload_refused` |
 | A region space without a handler | the field access fails with `space_unsupported`; `_REG` is never called for that space | `space_unsupported[space]` |
@@ -719,8 +728,8 @@ Each row is a decision, and has at least one test (§8).
 | Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted. | [§19.6.102] |
 | Orphan data and `Noop` at table level | Evaluated and dropped. | [§5.4.2] |
 | Objects a method creates | Temporary: removed at the method's exit, even when created with a full path elsewhere. A second creation of the same name in the same frame (a `Name` inside a `While` body) is an error. | [§5.5.2.3], [§19.6.150] |
-| `Load` | From a region or a field: the table is copied (§3.5), its checksum computed on the copy, its objects created relative to the root. A table already loaded is refused, and `Load` returns False. | [§19.6.77] |
-| `LoadTable` | Finds the table by signature and OEM identifiers, with an empty RootPath, ParameterPath and ParameterData only, and runs it in place. | [§19.6.78] |
+| `Load` | From a SystemMemory region or a field that holds the whole table: the table is copied (§3.5), its checksum computed on the copy, its objects created relative to the root; True goes to its target and is its result. A table already loaded, compared over its whole length as ACPICA does, is refused: where ACPICA fails the evaluation, `Load` gives False. | [§19.6.77] |
+| `LoadTable` | Finds the first table of the directory by signature and OEM identifiers, each compared with its field padded with zeros, an empty one matching any, as ACPICA does, with an empty RootPath, ParameterPath and ParameterData only, and runs it in place; True, or False when none matches or it is loaded already. | [§19.6.78] |
 
 ### 5.2 Methods and values
 
@@ -1030,11 +1039,18 @@ published image. The made-up ASL is ours, under MIT.
 - **The ACPICA oracle**: `acpixtract -a` splits the same dump; `acpiexec` loads it with the same fill as our
   simulated regions (`-fv`) and the same `_OSI` answers; both namespace dumps are normalised to `path type value`
   lines and compared path by path, without the nodes ACPICA creates for `External`.
-- **`Load` on the corpus.** Dumps hold the dynamic SSDTs but zero every address. The harness finds the packages of
-  (OEM table ID, address, length) triples that Intel's `PmRef` code reads, places each matching table at that
-  address in simulated memory, and leaves it out of the static load; `acpiexec` gets those tables statically. The
-  two namespaces are compared as sorted path sets. The values firmware writes to NVS at boot, absent from dumps,
-  come from one preset file in `acpiexec`'s `-fi` format, which feeds both oracles, so the `_CST` branches run.
+- **`Load` on the corpus.** Dumps hold the dynamic SSDTs, every table's address printed as 0. In a table that holds a
+  `Load`, the harness finds the (label, address, length) triples that Intel's `PmRef` code reads, and the SystemMemory
+  regions of constant address and length that a `Load` names; each places at that address the SSDT of that length whose
+  OEM table ID the label names, case apart, else the only SSDT of that length (`tools/acpi/loaded_tables.py` computes
+  the same apart from the harness). A placed table is left out of the XSDT; the views compared with the census or with
+  `acpiexec`'s load declare it statically after the SSDTs, as `acpiexec` does. `tools/acpi-corpus.sh load` gives
+  `acpiexec` statically the tables an initialisation ended with, `Load`'s included, and compares the two namespaces as
+  sorted path sets. The values firmware writes to NVS at boot, absent from dumps, come from one preset file of the
+  harness, `tools/acpi/presets.txt`, so that the `Load` and `_CST` branches run: `CFGD = 0x0076F6FF`, the static `Name
+  (CFGD, 0x0076F6FF)` of the IdeaPad Z470's CPU SSDT, on the 44 machines whose `CFGD` is an NVS field. A `Load` whose
+  address firmware computes in a method, or whose `PmRef` package names a table the dump lacks, reads no table and fails
+  as `region_bounds`, which ends the evaluation that runs it, as ACPICA's does: an artifact of the corpus.
 
 ### 8.5 uACPI's test cases
 
@@ -1058,7 +1074,7 @@ acpixtract -a dump.txt                         # acpidump text -> one .dat per t
 acpiexec -l -di -b "namespace" dsdt.dat ssdt*.dat          # load only: no _STA/_INI
 acpiexec -b "namespace" dsdt.dat ssdt*.dat                 # after _REG/_STA/_INI
 acpiexec -dr -fv 0 -b "evaluate \_SB.PCI0._STA" dsdt.dat ssdt*.dat   # raw results, zero-filled regions
-acpiexec -dr -fi presets.txt -b "evaluate \_PR.CPU0._CST" dsdt.dat ssdt*.dat        # NVS presets
+acpiexec -dr -fi nvs.txt -b "evaluate \_PR.CPU0._CST" dsdt.dat ssdt*.dat   # presets.txt without its # lines
 acpiexec -es ...                               # slack mode: implicit return, uninitialised locals = 0
 acpiexec -to 5 -te ...                         # loop timeout 5 s, exit the loop instead of aborting
 iasl -oa -r 1 test.asl                         # no AML optimisation; revision 1 = 32-bit integers

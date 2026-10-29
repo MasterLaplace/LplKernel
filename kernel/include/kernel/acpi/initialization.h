@@ -87,6 +87,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
                                                   returned no Buffer of two DWORDs. */
     uint32_t processors_unbound;             /**< Processor objects with an _OSC or a _PDC that bind to no CPU
                                                   slot, and were given nothing. */
+    uint32_t tables;                         /**< Tables the sequence initialised: those loaded before its step 3,
+                                                  then those Load and LoadTable added later, once their late
+                                                  initialisation ran. */
+    uint32_t late_initializations;           /**< Late initialisations of tables loaded at run time that evaluated
+                                                  a _REG, a _STA or an _INI (§3.8). */
     uint32_t idle_control;                   /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_* value. */
     uint32_t processor_idle;         /**< _CST evaluations of processor objects bound to a CPU slot, steps 8 and 9. */
     uint32_t processor_idle_failed;  /**< Of those, the ones that failed or gave a malformed package. */
@@ -111,7 +116,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  *        \_PIC uncalled; asks \_SB._OSC for nothing, a query then a commit; gives every processor object
  *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC; publishes the
  *        C-states of each CPU slot from its processor object's _CST; then takes the Notifies the load and
- *        the sequence raised, a _CST changed since its evaluation evaluated once more.
+ *        the sequence raised, a _CST changed since its evaluation evaluated once more. A table Load or
+ *        LoadTable adds once step 2 is over gets its late initialisation as soon as the evaluation that
+ *        loaded it returns, or once step 3 is over for a table a _REG loaded: the _REG of step 3 in its
+ *        scopes, then the _STA and _INI walk of step 4 over the device subtrees step 4 has gone past, once
+ *        the devices above them whose _STA step 4 did not read are found present or functioning, and never
+ *        under an absent one; step 4 initialises the devices it has not reached yet, so that no _INI runs
+ *        twice.
  *
  * @param load               A load whose tables are decoded, its stacks free.
  * @param machine            The CPU slots, the processor features, the FADT and how step 0 ended.
@@ -123,6 +134,32 @@ extern void advanced_configuration_and_power_interface_initialize_namespace(
     const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *machine,
     AdvancedConfigurationAndPowerInterfaceInitialization_t *out_initialization,
     struct AdvancedConfigurationAndPowerInterfaceProcessorIdleTable *out_idle);
+
+/**
+ * @brief Whether no device, processor or thermal zone above @p index is absent, deciding first, from the
+ *        top down and as step 4 does, the presence of those no walk decided yet (§3.8): step 8 and the late
+ *        initialisation share these decisions, so that each device's _STA is read once.
+ *
+ * @param load           The load.
+ * @param initialization The counts the sequence keeps, the _STA evaluations among them.
+ * @param index          The node whose ancestors are decided.
+ * @return false when one of them is neither present nor functioning.
+ */
+extern bool advanced_configuration_and_power_interface_initialization_present_above(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t index);
+
+/**
+ * @brief Runs the late initialisation of the tables Load and LoadTable added since the last one (§3.8),
+ *        once step 4 is over: what an evaluation of _CST in step 8 or step 9 loaded. Nothing runs when no
+ *        table was added.
+ *
+ * @param load           The load.
+ * @param initialization The counts the sequence keeps, its count of tables initialised among them.
+ */
+extern void advanced_configuration_and_power_interface_initialization_settle(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization);
 
 /**
  * @brief Counts a failed evaluation under its status, the first one kept as the one the acpi.init record

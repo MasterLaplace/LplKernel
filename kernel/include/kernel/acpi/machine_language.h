@@ -42,7 +42,9 @@
 #include <stdint.h>
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES                                         \
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT /**< Definition blocks one load holds. */
+    128u /**< Definition blocks one load holds: those of the root table, then those Load and LoadTable add (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLE_BYTES                                    \
+    (256u * 1024u) /**< Bytes Load copies, over every table it adds (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PENDING_OPERATORS                              \
     256u /**< Operators waiting for their operands (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS                                         \
@@ -60,14 +62,32 @@
             predicate that failed. */
 
 /**
- * @brief One definition block of a load, and what decoding it found.
+ * @brief Where a definition block of a load comes from (§3.4).
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageTableOrigin {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_STATIC = 0, /**< The root table lists it: it is
+                                                                                     declared at boot, in place. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_LOAD = 1,   /**< Load copied it from a region
+                                                                                     or a field. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_LOAD_TABLE = 2, /**< LoadTable found it in the
+                                                                                         directory: it runs in place. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageTableOrigin_t;
+
+/**
+ * @brief One definition block of a load, and what decoding it found: the loaded-table registry (§3.4).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header; /**< Its bytes, header included. */
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header; /**< Its bytes, header included: the firmware
+                                                                          window of a table read in place, the copy
+                                                                          Load made of any other. */
+    uint64_t physical_address;                                       /**< Where Load read it: its region's address;
+                                                                          0 for a field and a table read in place. */
     uint32_t length;                                                 /**< Its length, header included. */
     bool checksum_valid;                                             /**< Whether its bytes sum to zero. */
-    uint32_t terms;                                                  /**< Opcodes the decoding pass decoded. */
-    uint32_t decode_errors;                                          /**< Faults the decoding pass met. */
+    uint8_t origin;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_* origin. */
+    uint16_t pages;              /**< Pages of the namespace arena its copy takes, 0 for a table read in place. */
+    uint32_t terms;              /**< Opcodes the decoding pass decoded. */
+    uint32_t decode_errors;      /**< Faults the decoding pass met. */
     uint32_t first_error_offset; /**< Offset of the first fault's term, in the table. */
     uint16_t first_error_opcode; /**< The descriptor of the first fault's term, or the invalid one. */
     uint8_t first_error;         /**< The first fault's status. */
@@ -97,11 +117,18 @@ typedef void (*AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t)(
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t space; /**< The namespace it declares into. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t heap;       /**< The objects its nodes hold. */
-    uint8_t status;              /**< OK, or why the namespace could not be opened. */
-    bool declares_every_branch;  /**< Whether the declaration pass declares every branch of table-level code and
-                                      runs none of it, as the census oracle reads AML (§8.4); false at boot. */
-    uint8_t integer_bits;        /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
-    uint32_t table_count;        /**< Tables declared. */
+    uint8_t status;               /**< OK, or why the namespace could not be opened. */
+    bool declares_every_branch;   /**< Whether the declaration pass declares every branch of table-level code and
+                                       runs none of it, as the census oracle reads AML (§8.4); false at boot. */
+    uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
+    uint32_t table_count;         /**< Tables declared. */
+    uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
+    uint32_t load_duplicates;     /**< Load and LoadTable calls refused, False returned, for a table the load holds. */
+    uint32_t load_tables_missing; /**< LoadTable calls that found no table, False returned. */
+    uint32_t table_bytes_copied;  /**< Bytes Load copied. */
+    uint32_t declaring;           /**< Declaration passes running, 1 while a table's code runs at load. */
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, or
+                                                                             NULL. */
     uint32_t bytes;              /**< AML bytes of those tables, headers apart. */
     uint32_t declarations;       /**< Nodes the tables created. */
     uint32_t duplicates;         /**< Declarations of a name that already existed, skipped. */
@@ -689,6 +716,17 @@ extern void advanced_configuration_and_power_interface_machine_language_decode_t
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
+ * @brief Declares the DSDT, then every SSDT, of a directory, which LoadTable searches from then on, and
+ *        gives the load the global lock of its FACS.
+ *
+ * @param load      An open load, with no table yet.
+ * @param directory The directory, whose tables stay mapped until the load is closed.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_declare_directory(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory);
+
+/**
  * @brief Loads the DSDT, then every SSDT, of a directory: both passes over every table.
  *
  * @param load      An open load, with no table yet.
@@ -697,6 +735,60 @@ extern void advanced_configuration_and_power_interface_machine_language_decode_t
 extern void advanced_configuration_and_power_interface_machine_language_load_directory(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory);
+
+/**
+ * @brief Runs Load on the object a node holds (§5.1): the table a SystemMemory region or a field unit
+ *        holds is copied into the namespace arena, its checksum computed on the copy, and its objects
+ *        created relative to the root, inside the evaluation that runs the Load; a table the load holds
+ *        already is refused.
+ *
+ * @param load       The load, in an evaluation.
+ * @param source     The node of the region or of the field unit.
+ * @param out_loaded Receives whether the table was added: false for a table the load holds already.
+ * @return OK; LOAD_FORM_UNSUPPORTED for a node that holds a Buffer or a buffer field, or while a table is
+ *         declared;
+ *         TYPE_MISMATCH for any other object or a region of another space; REGION_UNEVALUATED for a
+ *         region whose address was never evaluated; REGION_BOUNDS for a table shorter than its header
+ *         or longer than what holds it; what reading it failed with; LIMIT_TABLES, LIMIT_TABLE_BYTES or
+ *         OUT_OF_MEMORY when it cannot be kept.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_load_from(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t source, bool *out_loaded);
+
+/**
+ * @brief Runs LoadTable with an empty RootPath, ParameterPath and ParameterData (§5.1): the first table of
+ *        the directory with that signature, and that OEM ID and OEM table ID unless they are empty, each
+ *        compared with its field padded with zeros, runs in place as Load runs a table it copied.
+ *
+ * @param load       The load, in an evaluation.
+ * @param signature  The SignatureString's bytes.
+ * @param oem        The OEMIDString's bytes.
+ * @param oem_table  The OEMTableIDString's bytes.
+ * @param lengths    The lengths of the signature, the OEM ID and the OEM table ID.
+ * @param out_loaded Receives whether a table was added: false when none matches or the load holds it already.
+ * @return OK; LOAD_FORM_UNSUPPORTED while a table is declared; TYPE_MISMATCH for a signature of another
+ *         length than 4, an OEM ID longer than 6 or an OEM table ID longer than 8; LIMIT_TABLES.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_load_from_directory(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const uint8_t *signature, const uint8_t *oem,
+    const uint8_t *oem_table, const uint32_t lengths[3], bool *out_loaded);
+
+/**
+ * @brief Reads memory through the mapping cache, as regions read it: a 4-byte access where the address
+ *        and what is left allow it, a byte otherwise, so that no access is unaligned.
+ *
+ * @param load             The load.
+ * @param physical_address The first byte.
+ * @param length           Bytes to read.
+ * @param destination      Receives them.
+ * @return OK; ADDRESS_UNREACHABLE for a byte past 4 GiB or a page the host does not map.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_memory_read(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint64_t physical_address, uint32_t length,
+    uint8_t *destination);
 
 /**
  * @brief Folds a load's namespace as the parity record of the specification (§8.7) does: FNV-1a,

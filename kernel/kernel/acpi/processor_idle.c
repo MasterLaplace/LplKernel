@@ -21,7 +21,7 @@
 #define PROCESSOR_IDLE_ENABLED        0x02u    /**< _STA bit 1: the device is enabled. */
 #define PROCESSOR_IDLE_FUNCTIONING    0x08u    /**< _STA bit 3: the device works. */
 #define PROCESSOR_IDLE_NO_STATUS      0x0Fu    /**< What a device without _STA reads as (ACPI 6.6 §6.3.7). */
-#define PROCESSOR_IDLE_STATUS_READ    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_STATUS_READ
+#define PROCESSOR_IDLE_WALKED         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED
 #define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT
 #define PROCESSOR_IDLE_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define PROCESSOR_IDLE_FOLD_PRIME     0x01000193u /**< FNV-1a's prime. */
@@ -196,7 +196,8 @@ static ProcessorIdleStatus_t processor_idle_read(ProcessorIdleLoad_t *load, Proc
 
 /**
  * @brief Evaluates the _CST of the processor object @p processor and publishes its states in @p out_idle,
- *        none when the evaluation fails or its package is malformed, counted.
+ *        none when the evaluation fails or its package is malformed, counted; then gives the tables it
+ *        loaded their late initialisation.
  */
 static void processor_idle_evaluate(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor,
                                     ProcessorIdle_t *out_idle)
@@ -214,6 +215,7 @@ static void processor_idle_evaluate(ProcessorIdleLoad_t *load, ProcessorIdleCoun
     if (status == PROCESSOR_IDLE_OK)
         status = processor_idle_read(load, counts, &result, out_idle);
     processor_idle_release(load, &result);
+    advanced_configuration_and_power_interface_initialization_settle(load, counts);
     if (status == PROCESSOR_IDLE_OK)
         return;
     ++counts->processor_idle_failed;
@@ -311,74 +313,29 @@ static bool processor_idle_integer(ProcessorIdleLoad_t *load, ProcessorIdleCount
 }
 
 /**
- * @brief What the _STA of @p node reads as Linux reads it (v7.3 acpi_bus_get_status_handle,
- *        acpi_scan_init_status): 0x0F without one, 0 when it cannot be read.
- */
-static uint64_t processor_idle_status(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t node)
-{
-    const uint32_t object = processor_idle_object(load, node, "_STA");
-    uint64_t status = PROCESSOR_IDLE_NO_STATUS;
-
-    if (object != 0u && !processor_idle_integer(load, counts, object, &status))
-        status = 0u;
-    return status;
-}
-
-/**
- * @brief Whether a node is one Linux makes a device of, whose _STA it reads: a Device, a Processor or a
- *        ThermalZone.
- */
-static bool processor_idle_is_device(const ProcessorIdleNode_t *node)
-{
-    return node->type == PROCESSOR_IDLE_NODE(DEVICE) || node->type == PROCESSOR_IDLE_NODE(PROCESSOR) ||
-           node->type == PROCESSOR_IDLE_NODE(THERMAL_ZONE);
-}
-
-/**
- * @brief Whether a device above @p node is neither present nor functioning, as Linux attaches nothing
- *        below such a device (v7.3 acpi_bus_attach). Each device's _STA is read once, the topmost first,
- *        and kept in its node's flags.
- */
-static bool processor_idle_hidden(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t node)
-{
-    for (;;)
-    {
-        uint32_t unread = 0u;
-
-        for (uint32_t index = processor_idle_node(load, node)->parent; index != PROCESSOR_IDLE_ROOT;
-             index = processor_idle_node(load, index)->parent)
-        {
-            const ProcessorIdleNode_t *above = processor_idle_node(load, index);
-
-            if (!processor_idle_is_device(above))
-                continue;
-            if ((above->flags & PROCESSOR_IDLE_STATUS_READ) == 0u)
-                unread = index;
-            else if ((above->flags & PROCESSOR_IDLE_ABSENT) != 0u)
-                return true;
-        }
-        if (unread == 0u)
-            return false;
-        processor_idle_node(load, unread)->flags |= PROCESSOR_IDLE_STATUS_READ;
-        if ((processor_idle_status(load, counts, unread) & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
-            processor_idle_node(load, unread)->flags |= PROCESSOR_IDLE_ABSENT;
-    }
-}
-
-/**
  * @brief Whether Linux would attach the processor object @p processor (v7.3 acpi_bus_attach,
- *        acpi_processor_add): no device above it hidden, and its own _STA present or functioning, and
- *        enabled.
+ *        acpi_processor_add): no device above it absent, their presence decided as step 4 decides it and
+ *        shared with the late initialisation, and its own _STA present or functioning, and enabled, a
+ *        missing one reading 0x0F and one that fails keeping it out, counted. Its own presence is recorded
+ *        in its node's flags, as a walk records it.
  */
 static bool processor_idle_present(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor)
 {
-    if (processor_idle_hidden(load, counts, processor))
+    const uint32_t object = processor_idle_object(load, processor, "_STA");
+    uint64_t status = PROCESSOR_IDLE_NO_STATUS;
+
+    if ((processor_idle_node(load, processor)->flags & PROCESSOR_IDLE_ABSENT) != 0u ||
+        !advanced_configuration_and_power_interface_initialization_present_above(load, counts, processor))
         return false;
-
-    const uint64_t status = processor_idle_status(load, counts, processor);
-
-    return (status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) != 0u &&
-           (status & PROCESSOR_IDLE_ENABLED) != 0u;
+    processor_idle_node(load, processor)->flags |= PROCESSOR_IDLE_WALKED;
+    if (object != 0u && !processor_idle_integer(load, counts, object, &status))
+        return false;
+    if ((status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
+    {
+        processor_idle_node(load, processor)->flags |= PROCESSOR_IDLE_ABSENT;
+        return false;
+    }
+    return (status & PROCESSOR_IDLE_ENABLED) != 0u;
 }
 
 /**

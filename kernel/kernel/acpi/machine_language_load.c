@@ -1572,10 +1572,12 @@ static MachineLanguageStatus_t machine_language_step(MachineLanguageWalk_t *walk
 }
 
 /**
- * @brief Runs one pass over table @p table of a load.
+ * @brief Runs one pass over table @p table of a load: the declaration pass of a table the root table
+ *        lists is an evaluation of its own (§6.1), that of a table Load or LoadTable adds belongs to the
+ *        evaluation that runs it, so that @p alone is false then.
  */
 static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-                                        uint32_t table, MachineLanguagePass_t pass)
+                                        uint32_t table, MachineLanguagePass_t pass, bool alone)
 {
     MachineLanguageWalk_t walk = {
         .load = load,
@@ -1591,7 +1593,9 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
 
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
-        advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
+        ++load->declaring;
+        if (alone)
+            advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
     }
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
     block->placement = 0u;
@@ -1614,7 +1618,9 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
         advanced_configuration_and_power_interface_machine_language_release_table_locals(load);
-        advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
+        if (alone)
+            advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
+        --load->declaring;
     }
 }
 
@@ -1785,6 +1791,203 @@ machine_language_answer_identity(AdvancedConfigurationAndPowerInterfaceMachineLa
     return MACHINE_LANGUAGE_OK;
 }
 
+/**
+ * @brief The length the header at @p bytes gives, little-endian.
+ */
+static uint32_t machine_language_header_length(const uint8_t *bytes)
+{
+    return (uint32_t) bytes[4] | ((uint32_t) bytes[5] << 8u) | ((uint32_t) bytes[6] << 16u) |
+           ((uint32_t) bytes[7] << 24u);
+}
+
+/**
+ * @brief Whether the load holds a table of @p length bytes equal to @p header's: ACPICA compares two
+ *        tables over their whole length.
+ */
+static bool machine_language_holds_table(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                         const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header,
+                                         uint32_t length)
+{
+    for (uint32_t table = 0u; table < load->table_count; ++table)
+        if (load->tables[table].length == length && memcmp(load->tables[table].header, header, length) == 0)
+            return true;
+    return false;
+}
+
+/**
+ * @brief Adds a table Load or LoadTable brings to the registry, then runs its passes inside the
+ *        evaluation that runs the Load: its declarations, the Externals they could not place, its
+ *        decoding. A table the load holds already is refused, counted.
+ */
+static MachineLanguageStatus_t
+machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                           const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header, uint32_t length,
+                           uint64_t physical_address, uint8_t origin, uint16_t pages, bool *out_added)
+{
+    *out_added = false;
+    if (machine_language_holds_table(load, header, length))
+    {
+        ++load->load_duplicates;
+        return MACHINE_LANGUAGE_OK;
+    }
+    if (load->table_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_TABLES);
+
+    const uint32_t index = load->table_count++;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load->tables[index];
+
+    memset(table, 0, sizeof(*table));
+    table->header = header;
+    table->physical_address = physical_address;
+    table->length = length;
+    table->checksum_valid = advanced_configuration_and_power_interface_checksum_holds(header, length);
+    table->origin = origin;
+    table->pages = pages;
+    load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
+    load->bytes += length - (uint32_t) sizeof(*header);
+    ++load->tables_loaded;
+    machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECLARE, false);
+    if (load->externals_unplaced != 0u)
+        machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_EXTERNALS, false);
+    machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECODE, false);
+    *out_added = true;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Takes pages of the namespace arena for the copy of a table of @p length bytes, within the
+ *        bytes Load may copy.
+ */
+static MachineLanguageStatus_t
+machine_language_take_copy(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t length,
+                           uint8_t **out_copy, uint16_t *out_pages)
+{
+    const uint32_t pages = (length + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES - 1u) /
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
+
+    if (length > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLE_BYTES - load->table_bytes_copied)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES);
+    *out_copy = advanced_configuration_and_power_interface_machine_language_namespace_take_pages(&load->space, pages);
+    if (*out_copy == NULL)
+        return MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY);
+    *out_pages = (uint16_t) pages;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Adds the copy Load made of a table of @p length bytes, counted; gives its pages back when it
+ *        is refused or cannot be added.
+ */
+static MachineLanguageStatus_t
+machine_language_keep_copy(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint8_t *copy,
+                           uint32_t length, uint16_t pages, uint64_t physical_address, bool *out_loaded)
+{
+    const MachineLanguageStatus_t status = machine_language_add_table(
+        load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) copy, length, physical_address,
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_LOAD, pages, out_loaded);
+
+    if (status == MACHINE_LANGUAGE_OK && *out_loaded)
+        load->table_bytes_copied += length;
+    else
+        advanced_configuration_and_power_interface_machine_language_namespace_give_pages(&load->space, copy, pages);
+    return status;
+}
+
+/**
+ * @brief Runs Load on a region: SystemMemory only, the table wholly inside it, read through the mapping
+ *        cache, its header first.
+ */
+static MachineLanguageStatus_t
+machine_language_load_region(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                             const MachineLanguageNode_t *node, bool *out_loaded)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region =
+        (const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t
+             *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, node->value.handle) +
+                 1);
+    uint8_t header[sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t)];
+    uint8_t *copy = NULL;
+    uint16_t pages = 0u;
+
+    if (region->space != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_MEMORY)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (region->state == 0u)
+        return MACHINE_LANGUAGE_STATUS(REGION_UNEVALUATED);
+    if (region->length < sizeof(header))
+        return MACHINE_LANGUAGE_STATUS(REGION_BOUNDS);
+
+    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_memory_read(
+        load, region->offset, (uint32_t) sizeof(header), header);
+    const uint32_t length = machine_language_header_length(header);
+
+    if (status == MACHINE_LANGUAGE_OK && (length < sizeof(header) || length > region->length))
+        status = MACHINE_LANGUAGE_STATUS(REGION_BOUNDS);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_take_copy(load, length, &copy, &pages);
+    if (status == MACHINE_LANGUAGE_OK)
+        status =
+            advanced_configuration_and_power_interface_machine_language_memory_read(load, region->offset, length, copy);
+    if (status == MACHINE_LANGUAGE_OK)
+        return machine_language_keep_copy(load, copy, length, pages, region->offset, out_loaded);
+    if (copy != NULL)
+        advanced_configuration_and_power_interface_machine_language_namespace_give_pages(&load->space, copy, pages);
+    return status;
+}
+
+/**
+ * @brief Runs Load on a field unit: the unit read as a Buffer, the table wholly inside it.
+ */
+static MachineLanguageStatus_t
+machine_language_load_field(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t source,
+                            bool *out_loaded)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value = {0};
+    uint8_t scratch[8];
+    const uint8_t *bytes = NULL;
+    uint32_t available = 0u;
+    uint32_t length = 0u;
+    uint8_t *copy = NULL;
+    uint16_t pages = 0u;
+    MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_field_read(load, source, &value);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        status = (value.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER) ?
+                     advanced_configuration_and_power_interface_machine_language_value_bytes(
+                         &load->heap, &value, 64u, scratch, &bytes, &available) :
+                     MACHINE_LANGUAGE_STATUS(REGION_BOUNDS);
+    if (status == MACHINE_LANGUAGE_OK)
+    {
+        length = (available >= sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t)) ?
+                     machine_language_header_length(bytes) :
+                     0u;
+        if (length < sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t) || length > available)
+            status = MACHINE_LANGUAGE_STATUS(REGION_BOUNDS);
+    }
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_take_copy(load, length, &copy, &pages);
+    if (status == MACHINE_LANGUAGE_OK)
+        memcpy(copy, bytes, length);
+    advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, &value);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_keep_copy(load, copy, length, pages, 0u, out_loaded) :
+                                             status;
+}
+
+/**
+ * @brief Whether the @p length bytes at @p wanted, padded with zeros to @p width, equal the @p width
+ *        bytes of @p field; an empty one matches any, as in ACPICA.
+ */
+static bool machine_language_identifier_matches(const char *field, const uint8_t *wanted, uint32_t length,
+                                                uint32_t width)
+{
+    if (length == 0u)
+        return true;
+    for (uint32_t index = 0u; index < width; ++index)
+        if ((uint8_t) field[index] != ((index < length) ? wanted[index] : 0u))
+            return false;
+    return true;
+}
+
 bool advanced_configuration_and_power_interface_machine_language_open(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes)
@@ -1815,7 +2018,7 @@ bool advanced_configuration_and_power_interface_machine_language_declare_table(
     load->bytes += header->length - (uint32_t) sizeof(*header);
     if (memcmp(header->signature, "DSDT", sizeof(header->signature)) == 0 && load->integer_bits == 0u)
         load->integer_bits = (header->revision < 2u) ? 32u : 64u;
-    machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE);
+    machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE, true);
     return true;
 }
 
@@ -1823,12 +2026,12 @@ void advanced_configuration_and_power_interface_machine_language_decode_tables(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     for (uint32_t table = 0u; table < load->table_count && load->externals_unplaced != 0u; ++table)
-        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS);
+        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS, true);
     for (uint32_t table = 0u; table < load->table_count; ++table)
-        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE);
+        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE, true);
 }
 
-void advanced_configuration_and_power_interface_machine_language_load_directory(
+void advanced_configuration_and_power_interface_machine_language_declare_directory(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
@@ -1848,7 +2051,64 @@ void advanced_configuration_and_power_interface_machine_language_load_directory(
             (void) advanced_configuration_and_power_interface_machine_language_declare_table(
                 load, directory->tables[index].header);
     }
+    load->directory = directory;
+}
+
+void advanced_configuration_and_power_interface_machine_language_load_directory(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
+{
+    advanced_configuration_and_power_interface_machine_language_declare_directory(load, directory);
     advanced_configuration_and_power_interface_machine_language_decode_tables(load);
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_load_from(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t source, bool *out_loaded)
+{
+    const MachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, source);
+
+    *out_loaded = false;
+    if (load->declaring != 0u)
+        return MACHINE_LANGUAGE_STATUS(LOAD_FORM_UNSUPPORTED);
+    switch (node->value.kind)
+    {
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION:
+        return machine_language_load_region(load, node, out_loaded);
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_FIELD_UNIT:
+        return machine_language_load_field(load, source, out_loaded);
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER:
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD:
+        return MACHINE_LANGUAGE_STATUS(LOAD_FORM_UNSUPPORTED);
+    default: return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    }
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_load_from_directory(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const uint8_t *signature, const uint8_t *oem,
+    const uint8_t *oem_table, const uint32_t lengths[3], bool *out_loaded)
+{
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory = load->directory;
+
+    *out_loaded = false;
+    if (load->declaring != 0u)
+        return MACHINE_LANGUAGE_STATUS(LOAD_FORM_UNSUPPORTED);
+    if (lengths[0] != sizeof(directory->tables[0].signature) || lengths[1] > 6u || lengths[2] > 8u)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    for (uint32_t index = 0u; directory != NULL && index < directory->table_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = directory->tables[index].header;
+
+        if (header != NULL && memcmp(header->signature, signature, lengths[0]) == 0 &&
+            machine_language_identifier_matches(header->oem_id, oem, lengths[1], sizeof(header->oem_id)) &&
+            machine_language_identifier_matches(header->oem_table_id, oem_table, lengths[2],
+                                                sizeof(header->oem_table_id)))
+            return machine_language_add_table(
+                load, header, directory->tables[index].length, 0u,
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_LOAD_TABLE, 0u, out_loaded);
+    }
+    ++load->load_tables_missing;
+    return MACHINE_LANGUAGE_OK;
 }
 
 void advanced_configuration_and_power_interface_machine_language_close(
@@ -1856,6 +2116,10 @@ void advanced_configuration_and_power_interface_machine_language_close(
 {
     advanced_configuration_and_power_interface_machine_language_regions_close(load);
     advanced_configuration_and_power_interface_machine_language_heap_close(&load->heap, &load->space);
+    for (uint32_t table = 0u; table < load->table_count; ++table)
+        if (load->tables[table].pages != 0u)
+            advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
+                &load->space, (void *) (uintptr_t) load->tables[table].header, load->tables[table].pages);
     advanced_configuration_and_power_interface_machine_language_namespace_close(&load->space);
 }
 

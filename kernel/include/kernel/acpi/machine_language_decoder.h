@@ -354,7 +354,20 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_MUTEX_ORDER, /**< A Serialized method called
                                                                                         below the current sync level
                                                                                         (§5.2). */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,       /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LOAD_FORM_UNSUPPORTED, /**< A Load from a
+                                                                                                 Buffer, a LoadTable
+                                                                                                 with a RootPath, a
+                                                                                                 ParameterPath or
+                                                                                                 ParameterData, or a
+                                                                                                 Load while a table is
+                                                                                                 declared (§4.5). */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLES,          /**< Load and LoadTable
+                                                                                                  add a table past the
+                                                                                                  cap of §6.1. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLE_BYTES, /**< Load copies more table
+                                                                                              bytes than §6.1
+                                                                                              allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,             /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**
