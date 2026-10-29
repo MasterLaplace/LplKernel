@@ -689,20 +689,20 @@ static void idle_present(MadeUpAml_t *aml, const char *name, uint8_t identifier,
 /**
  * @brief Step 8 evaluates the _CST of the processor objects Linux attaches (v7.3 acpi_bus_attach,
  *        acpi_processor_add): present or functioning and enabled, with no device above them neither present
- *        nor functioning; a processor's own _STA that fails keeps it out, and a missing one reads 0x0F. A
- *        device above whose _STA fails is walked into, as step 4 walks into it. A processor kept out takes
- *        no slot, and each device's _STA is read once.
+ *        nor functioning, a thermal zone among them; a processor's own _STA that fails keeps it out, and a
+ *        missing one reads 0x0F. A device above whose _STA fails is walked into, as step 4 walks into it. A
+ *        processor kept out takes no slot, and each device's _STA is read once.
  */
 KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
 {
-    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 10u, 11u};
+    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 10u, 11u, 12u};
     static const uint8_t counted_absent[] = {0x75u, '\\', 'D', '0', 'R', 'D', 0xA4u, 0x00u};
     static const uint8_t failing[] = {0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
     const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
     MadeUpAml_t device;
     MadeUpAml_t body;
 
-    idle_begin(identifiers, 10u);
+    idle_begin(identifiers, 11u);
     made_up_aml_name_integer(&idle_aml, "D0RD", 0u);
     idle_present(&idle_aml, "CPU0", 1u, 0x100u);
     idle_present(&idle_aml, "CPU1", 2u, 0x0Du);
@@ -733,6 +733,10 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     idle_present(&device, "CPUB", 11u, 0x100u);
     made_up_aml_device(&idle_aml, "DEV2", &device);
+    made_up_aml_begin(&device);
+    made_up_aml_name_integer(&device, "_STA", 0x00u);
+    idle_present(&device, "CPUC", 12u, 0x100u);
+    made_up_aml_thermal_zone(&idle_aml, "TZ00", &device);
     if (!idle_run(test))
         return;
     kernel_test_check(test,
@@ -744,11 +748,11 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     kernel_test_check(test,
                       idle_table.slots[1].processor == 0u && idle_table.slots[2].processor == 0u &&
                           idle_table.slots[4].processor == 0u && idle_table.slots[6].processor == 0u &&
-                          idle_table.slots[8].processor == 0u,
-                      "CPU1 not enabled, CPU2 neither present nor enabled, CPU4 and CPU9 below an absent device, and "
-                      "CPU6 whose _STA fails publish nothing");
-    kernel_test_check(test, idle_counts.processor_idle_absent == 6u && idle_counts.processor_idle_unbound == 0u,
-                      "six processors kept out, CPU7 among them, which leaves its slot to CPU8");
+                          idle_table.slots[8].processor == 0u && idle_table.slots[10].processor == 0u,
+                      "CPU1 not enabled, CPU2 neither present nor enabled, CPU4 and CPU9 below an absent device, "
+                      "CPU6 whose _STA fails, and CPUC below an absent thermal zone publish nothing");
+    kernel_test_check(test, idle_counts.processor_idle_absent == 7u && idle_counts.processor_idle_unbound == 0u,
+                      "seven processors kept out, CPU7 among them, which leaves its slot to CPU8");
     kernel_test_check(test, made_up_root_node(&idle_load, "D0RD")->value.payload == 1u,
                       "DEV0's _STA is read once for its two processors");
     kernel_test_check(test, idle_counts.statuses[IDLE_STATUS(DIVIDE_BY_ZERO)] == 2u, "each _STA that fails is counted");
@@ -962,6 +966,7 @@ KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
                       made_up_root_node(&idle_load, "DSTA")->value.payload == 2u &&
                           made_up_root_node(&idle_load, "P1ST")->value.payload == 2u,
                       "the device's _STA and CPU1's are read twice: once by step 4, once by step 8");
+    kernel_test_check(test, idle_counts.status_evaluations == 4u, "the four reads are counted, step 8's with step 4's");
     kernel_test_check(test, made_up_root_node(&idle_load, "PSTA")->value.payload == 0u, "CPU0's _STA is never read");
     kernel_test_check(test,
                       idle_table.slots[0].processor == 0u && idle_table.slots[1].processor == 0u &&
