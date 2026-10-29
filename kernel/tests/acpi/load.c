@@ -625,6 +625,158 @@ KERNEL_TEST(a_table_a_step_nine_evaluation_loads_is_initialised_late)
 }
 
 /**
+ * @brief Writes a DSDT whose CPU0 has a _CST that loads a table declaring CPU1, with a _PDC and a _CST that
+ *        append 1 and 2 to \TRAC: at the root, after CPU0, or in the scope of DEVZ, a device declared before
+ *        CPU0, when @p in_device holds; then loads it and initialises it with the CPU slots of both.
+ */
+static bool load_late_processor(KernelTest_t *test, bool in_device)
+{
+    static const uint8_t driver[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
+                                     0x00u, 0x0Au, 0x01u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
+    static const uint8_t idle[] = {0x70u, 0x72u, 0x77u, '\\',  'T',   'R',   'A',   'C',   0x0Au, 0x10u, 0x00u,
+                                   0x0Au, 0x02u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0xA4u, 0x12u, 0x20u,
+                                   0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
+                                   0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                   0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
+                                    0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
+                                    0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                    0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static MadeUpAml_t device;
+    static MadeUpAml_t scope;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, driver, sizeof(driver));
+    made_up_aml_method(&device, "_PDC", 0x01u, &load_body);
+    load_method(&device, "_CST", idle, sizeof(idle));
+    made_up_aml_begin(&scope);
+    made_up_aml_processor(in_device ? &scope : &load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
+    if (in_device)
+    {
+        made_up_aml_scope(&load_loaded, "DEVZ", &scope);
+        made_up_aml_begin(&scope);
+        made_up_aml_name_integer(&scope, "ZNAM", 0u);
+        made_up_aml_device(&load_aml, "DEVZ", &scope);
+    }
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", loads, sizeof(loads));
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return false;
+    load_madt.processor_count = 2u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+    load_madt.processors[1].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER + 1u;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    return true;
+}
+
+/**
+ * @brief Checks what the pass after step 8 gave CPU1, which the table CPU0's _CST loads declares: its _PDC,
+ *        then its _CST, each once (§3.8).
+ */
+static void load_check_late_processor(KernelTest_t *test)
+{
+    kernel_test_check(test, load_integer("HC0_") == LOAD_ONES && load_load.tables_loaded == 1u,
+                      "CPU0's _CST loads the table that declares CPU1");
+    kernel_test_check(test, load_integer("TRAC") == 0x12u, "CPU1's _PDC runs, then its _CST, each once");
+    kernel_test_check(test,
+                      load_counts.processor_capabilities == 1u && load_counts.processor_capabilities_legacy == 1u &&
+                          load_counts.processor_capabilities_failed == 0u,
+                      "CPU1 is given step 7's capabilities through its _PDC");
+    kernel_test_check(test,
+                      load_counts.processor_idle == 2u && load_idle.slots[0].count == 1u &&
+                          load_idle.slots[1].count == 1u && load_counts.processor_idle_unbound == 0u,
+                      "CPU0 and CPU1 publish their states");
+}
+
+/**
+ * @brief A processor that a table step 8 loads declares after the processor whose _CST loads it is left to
+ *        the pass after step 8, which gives it step 7's capabilities before its _CST (§3.8).
+ */
+KERNEL_TEST(a_processor_a_cst_loads_gets_its_capabilities_then_its_cst)
+{
+    if (!load_late_processor(test, false))
+        return;
+    load_check_late_processor(test);
+    load_close(test);
+}
+
+/**
+ * @brief A processor that a table step 8 loads declares below a device step 8 has gone past publishes its
+ *        _CST in the pass after step 8, as Linux attaches it when it scans the namespace again (§3.8).
+ */
+KERNEL_TEST(a_processor_a_cst_loads_below_a_device_step_eight_passed_publishes)
+{
+    if (!load_late_processor(test, true))
+        return;
+    load_check_late_processor(test);
+    load_close(test);
+}
+
+/**
+ * @brief The pass after step 8 goes on while the tables it loads declare processor objects (§3.8): CPU0's
+ *        _CST loads the table of CPU1, whose _CST loads the table of CPU2; each publishes once.
+ */
+KERNEL_TEST(the_pass_after_step_eight_goes_on_while_its_tables_declare_processors)
+{
+    static const uint8_t first[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
+                                    0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
+                                    0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                    0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static const uint8_t second[] = {0x5Bu, 0x20u, '\\',  'O',   'T',   'H',   'R',   '\\',  'H',   'C',   '1',   '_',
+                                     0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
+                                     0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                     0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static const uint8_t last[] = {0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
+                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_name_integer(&load_aml, "HC1_", 0u);
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", second, sizeof(second));
+    made_up_aml_processor(&load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&load_inner);
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", last, sizeof(last));
+    made_up_aml_processor(&load_inner, "CPU2", LOAD_PROCESSOR_IDENTIFIER + 2u, 0u, 0u, &device);
+    load_region("OTHR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", first, sizeof(first));
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 3u;
+    for (uint32_t slot = 0u; slot < 3u; ++slot)
+        load_madt.processors[slot].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER + slot;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(
+        test, load_integer("HC0_") == LOAD_ONES && load_integer("HC1_") == LOAD_ONES && load_load.tables_loaded == 2u,
+        "CPU0's _CST loads CPU1's table, and CPU1's loads CPU2's");
+    kernel_test_check(test,
+                      load_counts.processor_idle == 3u && load_counts.processor_idle_unbound == 0u &&
+                          load_idle.slots[0].count == 1u && load_idle.slots[1].count == 1u &&
+                          load_idle.slots[2].count == 1u,
+                      "the three processors publish their states, each _CST read once");
+    load_close(test);
+}
+
+/**
  * @brief A _CST that loads a table, then fails, is the first failure, before the _INI of the loaded device
  *        that fails in the late initialisation its return starts (§3.8): the _CST loads, then divides by
  *        zero; the loaded _INI reads a name that does not exist.

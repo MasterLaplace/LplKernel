@@ -117,8 +117,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; leaves
  *        \_PIC uncalled; asks \_SB._OSC for nothing, a query then a commit; gives every processor object
  *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC; publishes the
- *        C-states of each CPU slot from its processor object's _CST; then takes the Notifies the load and
- *        the sequence raised, a _CST changed since its evaluation evaluated once more. A table Load or
+ *        C-states of each CPU slot from its processor object's _CST, a processor object a table loaded
+ *        meanwhile declares given those capabilities first, after the others; then takes the Notifies the
+ *        load and the sequence raised, a _CST changed since its evaluation evaluated once more. A table Load or
  *        LoadTable adds once step 2 is over gets its late initialisation as soon as the evaluation that
  *        loaded it returns, or once step 3 is over for a table a _REG loaded: the _REG of step 3 in its
  *        scopes, then the _STA and _INI walk of step 4 over the device subtrees step 4 has gone past, once
@@ -151,6 +152,21 @@ extern void advanced_configuration_and_power_interface_initialize_namespace(
 extern bool advanced_configuration_and_power_interface_initialization_read_status(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t device, uint64_t *out_status);
+
+/**
+ * @brief Gives @p processor what step 7 gives a processor object (§3.8 step 7): when it has an _OSC or a
+ *        _PDC and binds to a CPU slot, the capabilities of its C-states through them, then the late
+ *        initialisation of the tables that loaded; counted as step 7 counts.
+ *
+ * @param load           The load, step 4 over.
+ * @param machine        The CPU slots and the processor features.
+ * @param initialization The counts the sequence keeps.
+ * @param processor      The node, any type: nothing is given to one that is no processor object.
+ */
+extern void advanced_configuration_and_power_interface_initialization_negotiate(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *machine,
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t processor);
 
 /**
  * @brief Runs the late initialisation of the tables Load and LoadTable added since the last one (§3.8),

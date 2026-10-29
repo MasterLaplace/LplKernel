@@ -395,38 +395,77 @@ static bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
 }
 
 /**
- * @brief Step 8 of §3.8: publishes the _CST of each processor object _STA keeps in and bound to a CPU slot
- *        no earlier object took, in declaration order, the Notifies queued before each evaluation taken
- *        first.
+ * @brief Publishes the _CST of @p index when it is a processor object _STA keeps in and bound to a CPU slot
+ *        no earlier object took (§3.8 step 8), the Notifies queued before its evaluation taken first;
+ *        counts it when _STA keeps it out or it binds to no free slot.
+ */
+static void processor_idle_publish_processor(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
+                                             ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table,
+                                             uint32_t *changed, uint32_t index)
+{
+    if (!processor_idle_candidate(load, index) ||
+        !advanced_configuration_and_power_interface_processor_object(load, counts, index))
+        return;
+    if (!processor_idle_present(load, counts, index))
+    {
+        ++counts->processor_idle_absent;
+        return;
+    }
+
+    const uint32_t slot = advanced_configuration_and_power_interface_processor_slot(load, machine, counts, index);
+
+    if (slot == PROCESSOR_IDLE_NO_SLOT || table->slots[slot].processor != 0u)
+    {
+        ++counts->processor_idle_unbound;
+        return;
+    }
+    processor_idle_take_notifications(load, table, changed);
+    processor_idle_evaluate(load, counts, index, &table->slots[slot]);
+}
+
+/**
+ * @brief Step 8 of §3.8: publishes the _CST of each processor object the first @p tables tables declare, in
+ *        declaration order; the ones the tables loaded meanwhile declare are left to the pass after it.
  */
 static void processor_idle_publish_slots(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
-                                         ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed)
+                                         ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed,
+                                         uint32_t tables)
 {
     for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
              &load->space, PROCESSOR_IDLE_ROOT, true);
          index != 0u;
          index = advanced_configuration_and_power_interface_machine_language_namespace_next(&load->space, index, true))
+        if (processor_idle_node(load, index)->owner <= tables)
+            processor_idle_publish_processor(load, machine, counts, table, changed, index);
+}
+
+/**
+ * @brief The pass of step 8 over the tables loaded since the first @p tables, as Linux scans the namespace
+ *        again once a table loads (v7.3 acpi_table_events_fn): each processor object they declare gets, in
+ *        declaration order, step 7's capabilities, then step 8's _CST; until no table is left.
+ */
+static void processor_idle_publish_loaded(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
+                                          ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed,
+                                          uint32_t tables)
+{
+    while (tables != load->table_count)
     {
-        if (!processor_idle_candidate(load, index) ||
-            !advanced_configuration_and_power_interface_processor_object(load, counts, index))
-            continue;
-        if (!processor_idle_present(load, counts, index))
-        {
-            ++counts->processor_idle_absent;
-            continue;
-        }
+        const uint32_t last = load->table_count;
 
-        const uint32_t slot = advanced_configuration_and_power_interface_processor_slot(load, machine, counts, index);
-
-        if (slot == PROCESSOR_IDLE_NO_SLOT || table->slots[slot].processor != 0u)
+        for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
+                 &load->space, PROCESSOR_IDLE_ROOT, true);
+             index != 0u; index = advanced_configuration_and_power_interface_machine_language_namespace_next(
+                              &load->space, index, true))
         {
-            ++counts->processor_idle_unbound;
-            continue;
+            const uint16_t owner = processor_idle_node(load, index)->owner;
+
+            if (owner <= tables || owner > last)
+                continue;
+            advanced_configuration_and_power_interface_initialization_negotiate(load, machine, counts, index);
+            processor_idle_publish_processor(load, machine, counts, table, changed, index);
         }
-        processor_idle_take_notifications(load, table, changed);
-        processor_idle_evaluate(load, counts, index, &table->slots[slot]);
+        tables = last;
     }
-    processor_idle_take_notifications(load, table, changed);
 }
 
 bool advanced_configuration_and_power_interface_processor_object(ProcessorIdleLoad_t *load,
@@ -487,11 +526,14 @@ void advanced_configuration_and_power_interface_processor_idle_publish(Processor
                                                                        ProcessorIdleTable_t *out_table)
 {
     uint32_t changed[(PROCESSOR_IDLE_MAX_SLOTS + PROCESSOR_IDLE_SLOT_BITS - 1u) / PROCESSOR_IDLE_SLOT_BITS] = {0u};
+    const uint32_t tables = load->table_count;
 
     out_table->slot_count = (machine->madt != NULL) ? machine->madt->processor_count : 0u;
     memset(out_table->slots, 0, out_table->slot_count * sizeof(out_table->slots[0]));
     initialization->idle_control = processor_idle_claim_control(load, machine);
-    processor_idle_publish_slots(load, machine, initialization, out_table, changed);
+    processor_idle_publish_slots(load, machine, initialization, out_table, changed, tables);
+    processor_idle_publish_loaded(load, machine, initialization, out_table, changed, tables);
+    processor_idle_take_notifications(load, out_table, changed);
     for (uint32_t slot = 0u; slot < out_table->slot_count; ++slot)
     {
         if ((changed[slot / PROCESSOR_IDLE_SLOT_BITS] & (1u << (slot % PROCESSOR_IDLE_SLOT_BITS))) == 0u)

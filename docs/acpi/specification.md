@@ -411,7 +411,11 @@ devices that step 4 still reaches, below the device step 4 is at or below a node
 step 4; the others get the `_STA` and `_INI` walk of step 4 over their subtrees ([§6.5.1]). The devices above them
 whose `_STA` step 4 did not read, in subtrees it skipped, have it read first, from the top down, under step 4's rule,
 so that the result does not depend on where the loader is declared; nothing below a device found neither present nor
-functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything.
+functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything. A
+processor object that a table loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux
+scans the namespace again once a table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the
+capabilities of step 7, then the `_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`;
+the pass goes on while the tables it loads declare more.
 
 ### 3.9 The static tables
 
