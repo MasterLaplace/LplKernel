@@ -175,21 +175,24 @@ static uint32_t acpi_host_sleep_milliseconds(void *context, uint32_t millisecond
     return (uint32_t) (((uint64_t) (clock_get_tick_count() - start) * 1000u) / hertz);
 }
 
-static uint32_t acpi_host_stall_microseconds(void *context, uint32_t microseconds)
+static uint32_t acpi_host_stall_on_tick(uint32_t microseconds)
 {
-    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
-        advanced_configuration_and_power_interface_power_management_timer();
     const uint32_t hertz = clock_get_tick_hz();
     const uint32_t start = clock_get_tick_count();
 
-    (void) context;
-    if (timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
-        return advanced_configuration_and_power_interface_power_management_timer_stall(
-            &advanced_configuration_and_power_interface_machine_host, timer, microseconds);
     if (hertz == 0u)
         return 0u;
     interrupt_request_spin_microseconds(microseconds);
     return (uint32_t) (((uint64_t) (clock_get_tick_count() - start) * 1000000u) / hertz);
+}
+
+static uint32_t acpi_host_stall_microseconds(void *context, uint32_t microseconds)
+{
+    (void) context;
+    if (advanced_configuration_and_power_interface_power_management_timer()->state ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        return advanced_configuration_and_power_interface_power_management_timer_machine_stall(microseconds);
+    return acpi_host_stall_on_tick(microseconds);
 }
 
 static uint64_t acpi_host_clock_100ns(void *context)

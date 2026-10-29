@@ -66,7 +66,7 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS                                  \
     10000u /**< Reads within which the power management timer must move, as Linux's ACPI_PM_READ_CHECKS. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS                              \
-    0x01000000u /**< Reads of the host's clock within which it must move once to check the timer's rate. */
+    0x00010000u /**< Reads of the host's clock within which it must step once while the timer's rate is measured. */
 
 typedef struct __attribute__((packed)) {
     char signature[8];
@@ -206,23 +206,35 @@ typedef enum AdvancedConfigurationAndPowerInterfacePowerManagementTimerState {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_INCONSISTENT = 3, /**< It went back, other than
                                                                                              by a wrap. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE = 4, /**< The host's clock did not
-                                                                                             move, so its rate went
+                                                                                             step, so its rate went
                                                                                              unchecked. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE = 5,   /**< It ran more than 5 % away
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD = 5,    /**< It counted half a second
+                                                                                             before the host's clock
+                                                                                             stepped: it runs far too
+                                                                                             fast, or jumps. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE = 6,   /**< It ran more than 5 % away
                                                                                              from 3.579545 MHz against
-                                                                                             the host's clock. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE = 6,       /**< Every check held. */
+                                                                                             the host's clock, at every
+                                                                                             measurement. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE = 7,       /**< Every check held. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED = 8,     /**< Usable, then a wait saw it
+                                                                                             stand still or go back:
+                                                                                             no longer waited on. */
 } AdvancedConfigurationAndPowerInterfacePowerManagementTimerState_t;
 
 /**
  * @brief A platform's ACPI power management timer, PM_TMR_BLK, as the checks before its first use
- *        found it.
+ *        found it, and what the waits on it did.
  */
 typedef struct AdvancedConfigurationAndPowerInterfacePowerManagementTimer {
-    uint8_t state;           /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_* state. */
-    uint16_t port;           /**< Its I/O port, or 0 when the FADT gives none there. */
-    uint32_t rate_per_mille; /**< The counts it made over one step of the host's clock, against the counts
-                                  3.579545 MHz makes, in thousandths; 0 when not measured. */
+    uint8_t state;               /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_* state. */
+    uint16_t port;               /**< Its I/O port, or 0 when the FADT gives none there. */
+    uint32_t rate_per_mille;     /**< The counts it made over three steps of the host's clock, against the counts
+                                      3.579545 MHz makes, in thousandths; 0 when not measured. */
+    uint32_t check_reads;        /**< Reads of its port the checks made. */
+    uint32_t check_microseconds; /**< Microseconds the checks took, as the host's clock counts them. */
+    uint32_t stalls;             /**< Waits made on it. */
+    uint32_t stall_reads;        /**< Reads of its port those waits made. */
 } AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t;
 
 /**
@@ -577,13 +589,15 @@ extern const char *advanced_configuration_and_power_interface_mode_outcome_name(
  *          the chipsets that latch the counter badly; only its 24 low bits are counted, which every
  *          such timer runs, whatever TMR_VAL_EXT says. Then, ten times, it must move within
  *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS reads, forward
- *          or by a wrap; and over one step of the host's clock, waited for within
- *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS reads of
- *          it, it must count 3.579545 MHz within 5 %.
+ *          or by a wrap. Last, over three steps of the host's clock, it must count 3.579545 MHz within
+ *          5 %, in one of three measurements; each step is awaited within
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS reads of the
+ *          clock, and while the timer counts at most half a second.
  *
  * @param host      The host whose I/O ports and clock are read.
  * @param fadt      The platform's normalised FADT.
- * @param out_timer Emptied, then filled with the timer's port, its state and its measured rate.
+ * @param out_timer Emptied, then filled with the timer's port, its state, its measured rate, and the
+ *                  reads and time the checks took.
  */
 extern void advanced_configuration_and_power_interface_find_power_management_timer(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,
@@ -593,27 +607,33 @@ extern void advanced_configuration_and_power_interface_find_power_management_tim
 /**
  * @brief Busy-waits on a usable power management timer until it has counted at least @p microseconds.
  *
- * @details A timer that stops moving for
- *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS reads in a row
- *          ends the wait early.
+ * @details A timer that reads the same count
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS times in a row,
+ *          or moves more than half its 24-bit range in one step, which is going back, derails: it is
+ *          marked derailed and no longer waited on, and the rest of the wait goes to the host's
+ *          stall_microseconds, which must then wait without it.
  *
- * @param host         The host whose I/O port is read.
+ * @param host         The host whose I/O port is read, and whose stall finishes a wait the timer left.
  * @param timer        A timer advanced_configuration_and_power_interface_find_power_management_timer
  *                     found usable; any other is not waited on.
  * @param microseconds How long to wait.
- * @return The microseconds the timer counted, rounded down: at least @p microseconds unless it
- *         stopped, and 0 for a timer that is not usable.
+ * @return The microseconds waited, at least @p microseconds; 0 for a timer that is not usable.
  */
 extern uint32_t advanced_configuration_and_power_interface_power_management_timer_stall(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,
-    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds);
+    AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds);
+
+extern void advanced_configuration_and_power_interface_power_management_timer_initialize(void);
 
 /**
- * @brief Finds and checks this machine's power management timer, through
- *        advanced_configuration_and_power_interface_machine_host and the FADT of the boot's directory;
- *        needs the kernel tick running.
+ * @brief Busy-waits on this machine's power management timer, as
+ *        advanced_configuration_and_power_interface_power_management_timer_stall does, through
+ *        advanced_configuration_and_power_interface_machine_host.
+ *
+ * @param microseconds How long to wait.
+ * @return The microseconds waited; 0 unless the boot found the timer usable.
  */
-extern void advanced_configuration_and_power_interface_power_management_timer_initialize(void);
+extern uint32_t advanced_configuration_and_power_interface_power_management_timer_machine_stall(uint32_t microseconds);
 
 /**
  * @brief What advanced_configuration_and_power_interface_power_management_timer_initialize found.
