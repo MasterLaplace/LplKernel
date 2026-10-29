@@ -197,7 +197,7 @@ static ProcessorIdleStatus_t processor_idle_read(ProcessorIdleLoad_t *load, Proc
 /**
  * @brief Evaluates the _CST of the processor object @p processor and publishes its states in @p out_idle,
  *        none when the evaluation fails or its package is malformed, counted; then gives the tables it
- *        loaded their late initialisation.
+ *        loaded their late initialisation, as step 7 does after its failure is counted.
  */
 static void processor_idle_evaluate(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor,
                                     ProcessorIdle_t *out_idle)
@@ -215,12 +215,13 @@ static void processor_idle_evaluate(ProcessorIdleLoad_t *load, ProcessorIdleCoun
     if (status == PROCESSOR_IDLE_OK)
         status = processor_idle_read(load, counts, &result, out_idle);
     processor_idle_release(load, &result);
+    if (status != PROCESSOR_IDLE_OK)
+    {
+        ++counts->processor_idle_failed;
+        advanced_configuration_and_power_interface_initialization_count_failure(
+            counts, (object != 0u) ? object : processor, status);
+    }
     advanced_configuration_and_power_interface_initialization_settle(load, counts);
-    if (status == PROCESSOR_IDLE_OK)
-        return;
-    ++counts->processor_idle_failed;
-    advanced_configuration_and_power_interface_initialization_count_failure(counts, (object != 0u) ? object : processor,
-                                                                            status);
 }
 
 /**

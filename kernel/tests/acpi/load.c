@@ -582,6 +582,52 @@ KERNEL_TEST(a_table_a_cst_loads_is_initialised_late)
 }
 
 /**
+ * @brief A _CST that loads a table, then fails, is the first failure, before the _INI of the loaded device
+ *        that fails in the late initialisation its return starts (§3.8): the _CST loads, then divides by
+ *        zero; the loaded _INI reads a name that does not exist.
+ */
+KERNEL_TEST(a_cst_that_loads_a_table_then_fails_is_the_first_failure)
+{
+    static const uint8_t body[] = {0x5Bu, 0x20u, '\\', 'C',   'S',   'T',   'R',   '\\',  'H',
+                                   'C',   '0',   '_',  0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
+    static const uint8_t present[] = {0xA4u, 0x0Au, 0x0Fu};
+    static const uint8_t missing[] = {0x70u, '\\', 'Z', 'Z', 'Z', 'Z', 0x60u};
+    static MadeUpAml_t device;
+    char path[12];
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_begin(&device);
+    load_method(&device, "_STA", present, sizeof(present));
+    load_method(&device, "_INI", missing, sizeof(missing));
+    made_up_aml_device(&load_loaded, "LDEV", &device);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", body, sizeof(body));
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 1u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test,
+                      load_integer("HC0_") == LOAD_ONES && load_counts.late_initializations == 1u &&
+                          load_counts.initialization_failed == 1u && load_counts.processor_idle_failed == 1u,
+                      "the _CST loads its table and fails, then the loaded _INI fails");
+    kernel_test_check(test,
+                      load_counts.first_failure == LOAD_STATUS(DIVIDE_BY_ZERO) &&
+                          advanced_configuration_and_power_interface_machine_language_namespace_path(
+                              &load_load.space, load_counts.first_failure_node, path, sizeof(path)) == 10u &&
+                          memcmp(path, "\\CPU0._CST", 11u) == 0,
+                      "the first failure is the _CST's, divide_by_zero");
+    load_close(test);
+}
+
+/**
  * @brief Step 8 and the late initialisation share the presence of a device: step 8 reads the _STA of
  *        DEVB, above its processor, which step 4 left unread, since nothing below it holds an _INI; the table
  *        that processor's _CST loads declares a device under DEVB, and its late initialisation reads DEVB's
