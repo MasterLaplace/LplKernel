@@ -427,13 +427,16 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
 - **The MADT.** Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for an entry whose Enabled flag is
   set; an Online Capable entry is counted and unused, since there is no hotplug; an entry with both flags clear is
   ignored ([§5.2.12.2]). Every other type, the RISC-V types and the Multiprocessor Wakeup structure among them, is
-  skipped by its length and counted. No CPU cap sits below the profile's, and the ACPI Processor UID is kept per
-  CPU slot. A local APIC ID of 0xFF, an x2APIC ID of 0xFFFFFFFF, and an x2APIC ID below 0xFF in a table that also
-  lists local APICs name no processor and are counted invalid, as in
+  skipped by its length and counted; an entry of a type read but shorter than that type is skipped and counted
+  apart, since it loses a processor or an interrupt line. No CPU cap sits below the profile's, and the ACPI
+  Processor UID is kept per CPU slot. A local APIC ID of 0xFF, an x2APIC ID of 0xFFFFFFFF, and an x2APIC ID below
+  0xFF when a local APIC entry whose ID is not 0xFF is Enabled or Online Capable name no processor, as in
   [Linux](https://github.com/torvalds/linux/blob/e5f0a698b34ed76002dc5cff3804a61c80233a7a/arch/x86/kernel/acpi/boot.c#L162-L272).
-  The MADT keeps 256 CPU slots, 256 NMI connections, 64 I/O APICs and 16 interrupt source overrides, past which it
-  counts what it drops; an NMI entry whose UID is 0xFF, or 0xFFFFFFFF for an x2APIC one, applies to every
-  processor. The boot prints one `[LPLTLM] acpi.madt` line with the slot count and every counter.
+  The flags decide first: such an entry is counted invalid when it is Enabled, and with the Online Capable or the
+  disabled entries otherwise. The MADT keeps 256 CPU slots, 256 NMI connections, 64 I/O APICs and 16 interrupt
+  source overrides, past which it counts what it drops; an NMI entry whose UID is 0xFF, or 0xFFFFFFFF for an x2APIC
+  one, applies to every processor. The boot prints one `[LPLTLM] acpi.madt` line with the slot count and every
+  counter.
 - **MCFG** gives the segment groups and their ECAM bases (#58); **HPET** its base address (#60, #298). Each is
   parsed by its first consumer.
 
