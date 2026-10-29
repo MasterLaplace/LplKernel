@@ -52,11 +52,12 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          `test-acpi --loaded`, and compares the paths of its namespace with those of the namespace
          acpiexec loads, statically, from the tables it ended with, Load's included; a machine whose
          table-level code fails is counted and left out, as namespace leaves it out
-  idle   initialises each machine of a list with `test-acpi --initialize`, then compares the C-states it
-         publishes for each CPU slot with those tools/acpi/acpiexec_idle.py works out apart from the kernel's
-         code: the processor objects and the slots they bind to from acpiexec's namespace and the decoded MADT,
-         their states from the _CST acpiexec evaluates after the same handshake; a machine where acpiexec
-         stops before an evaluation it was given is counted apart
+  idle   initialises each machine of a list with `test-acpi --loaded`, its presets given, then compares the
+         C-states it publishes for each CPU slot with those tools/acpi/acpiexec_idle.py works out apart from
+         the kernel's code: the processor objects and the slots they bind to from acpiexec's namespace and the
+         decoded MADT, their states from the _CST acpiexec evaluates after the same handshake, given the
+         tables the initialisation ended with and the same presets; a machine where acpiexec stops before an
+         evaluation it was given is counted apart
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -279,45 +280,6 @@ initialize_check() {
     [[ "$number" -gt 0 && "$failed" -eq 0 ]]
 }
 
-# Compares the C-states each machine of the list $1 publishes with those tools/acpi/acpiexec_idle.py works out apart from
-# the kernel's code: the processor objects and their CPU slots from acpiexec's namespace and the decoded MADT, their
-# states from the _CST acpiexec evaluates after the same handshake (specification §8.6).
-idle_check() {
-    [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "idle: no acpiexec, run fetch acpica first" >&2; exit 1; }
-    (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 none=0 stopped=0 slots=0 states=0 subject ours theirs madt
-    ours="$(mktemp)"
-    theirs="$(mktemp)"
-    madt="$(mktemp)"
-    while IFS= read -r subject; do
-        number=$((number + 1))
-        if ! has_decoded "$subject"; then
-            echo "not ok $number $subject: no decoded report, run fetch first"
-            continue
-        fi
-        "$HARNESS" --initialize "$LINUXHW/$subject.bin" 2>&1 | grep -E '^aml idle (slot|state) ' >"$ours" || true
-        decoded "$subject" | python3 -I "$ROOT/tools/acpi/expected_madt.py" "$LINUXHW/$subject.bin" - >"$madt" || true
-        python3 -I "$ROOT/tools/acpi/acpiexec_idle.py" "$ACPICA_BIN" "$LINUXHW/$subject.bin" "$madt" >"$theirs" || true
-        if grep -q '^aml idle unevaluated ' "$theirs"; then
-            echo "ok $number $subject # SKIP acpiexec stops before $(cut -d' ' -f4 "$theirs")"
-            stopped=$((stopped + 1))
-        elif cmp -s "$ours" "$theirs"; then
-            agree=$((agree + 1))
-            [[ -s "$ours" ]] || none=$((none + 1))
-            slots=$((slots + $(grep -c '^aml idle slot ' "$ours" || true)))
-            states=$((states + $(grep -c '^aml idle state ' "$ours" || true)))
-            echo "ok $number $subject"
-        else
-            echo "not ok $number $subject"
-            diff "$ours" "$theirs" | head -8 | sed 's/^/    # /' || true
-        fi
-    done < <(reports "$1")
-    rm -f "$ours" "$theirs" "$madt"
-    echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots and $states states, $none" \
-        "publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
-    [[ "$agree" -eq $((number - stopped)) ]]
-}
-
 # Initialises each machine of the list $1 that places tables for Load, and compares the paths of its
 # namespace with those acpiexec loads statically from the tables the initialisation ended with.
 load_check() {
@@ -362,6 +324,45 @@ load_check() {
 # Prints the sum of the counter $1 over the lines $2.
 total_of() {
     { grep -o " $1=[0-9]*" <<<"$2" || true; echo " $1=0"; } | cut -d= -f2 | paste -sd+ | bc
+}
+
+# Compares the C-states each machine of the list $1 publishes with those tools/acpi/acpiexec_idle.py works out apart from
+# the kernel's code: the processor objects and their CPU slots from acpiexec's namespace and the decoded MADT, their
+# states from the _CST acpiexec evaluates after the same handshake (specification §8.6).
+idle_check() {
+    [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "idle: no acpiexec, run fetch acpica first" >&2; exit 1; }
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local number=0 agree=0 none=0 stopped=0 slots=0 states=0 subject ours theirs madt tables
+    ours="$(mktemp)" theirs="$(mktemp)" madt="$(mktemp)" tables="$(mktemp -d)"
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        if ! has_decoded "$subject"; then
+            echo "not ok $number $subject: no decoded report, run fetch first"
+            continue
+        fi
+        rm -f "$tables"/*.dat
+        "$HARNESS" --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" 2>&1 | grep -E '^aml idle (slot|state) ' >"$ours" ||
+            true
+        decoded "$subject" | python3 -I "$ROOT/tools/acpi/expected_madt.py" "$LINUXHW/$subject.bin" - >"$madt" || true
+        python3 -I "$ROOT/tools/acpi/acpiexec_idle.py" "$ACPICA_BIN" "$madt" "$PRESETS" "$tables"/*.dat >"$theirs" || true
+        if grep -q '^aml idle unevaluated ' "$theirs"; then
+            echo "ok $number $subject # SKIP acpiexec stops before $(cut -d' ' -f4 "$theirs")"
+            stopped=$((stopped + 1))
+        elif cmp -s "$ours" "$theirs"; then
+            agree=$((agree + 1))
+            [[ -s "$ours" ]] || none=$((none + 1))
+            slots=$((slots + $(grep -c '^aml idle slot ' "$ours" || true)))
+            states=$((states + $(grep -c '^aml idle state ' "$ours" || true)))
+            echo "ok $number $subject"
+        else
+            echo "not ok $number $subject"
+            diff "$ours" "$theirs" | head -8 | sed 's/^/    # /' || true
+        fi
+    done < <(reports "$1")
+    rm -rf "$ours" "$theirs" "$madt" "$tables"
+    echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots and $states states, $none" \
+        "publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
+    [[ "$agree" -eq $((number - stopped)) ]]
 }
 
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
