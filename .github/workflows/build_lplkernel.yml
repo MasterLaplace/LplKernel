@@ -194,6 +194,9 @@ jobs:
     - name: The ACPI layer holds no architecture
       run: tools/acpi/check-portable.sh
 
+    - name: The rule the oracle of _CST publishes processors by
+      run: python3 -I -B tools/acpi/acpiexec_idle.py --self-test
+
     - name: The ACPI tests on the host
       run: |
         set -e

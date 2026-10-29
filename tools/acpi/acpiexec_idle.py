@@ -3,6 +3,10 @@ CPU slots they bind to from ACPICA's namespace and the decoded MADT, their state
 the `aml idle slot` and `aml idle state` lines `test-acpi --initialize` prints.
 
 Usage: python3 -I tools/acpi/acpiexec_idle.py <acpica bin directory> <MADT lines> <presets> <table>...
+       python3 -I tools/acpi/acpiexec_idle.py --self-test
+
+--self-test checks the rule that decides which processors publish on made-up namespaces, each expected slot written
+by hand, and exits 1 when one differs.
 
 The MADT lines are those tools/acpi/expected_madt.py reads from the machine's decoded report: `processor <slot>
 uid=<UID>` gives each CPU slot. The tables are those `test-acpi --loaded` writes, the DSDT first: the ones the
@@ -235,7 +239,46 @@ def publish(nodes, found, candidates, slot_of):
     return published
 
 
+def self_test():
+    """Checks publish() on made-up namespaces: a processor CPU0 of UID 0 with a _CST of one state, below a node DEV0
+    of each kind, each _STA missing, failing or returning a value; the slots each case publishes are written by hand.
+    Returns the count of cases that differ."""
+    register = bytes([0x82, 0x0C, 0x00, 0x7F, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x79, 0x00])
+    cst = ("package", [("integer", 1), ("package", [("buffer", register), ("integer", 1), ("integer", 1),
+                                                    ("integer", 1000)])])
+    failed = "fails"
+    cases = [
+        ("no _STA", "Device", None, None, [0]),
+        ("a Device above, present", "Device", ("integer", 0x0F), None, [0]),
+        ("a Device above, neither present nor functioning", "Device", ("integer", 0), None, []),
+        ("a Device above, functioning only", "Device", ("integer", 0x08), None, [0]),
+        ("a Device above whose _STA fails", "Device", failed, None, []),
+        ("a Processor above whose _STA fails", "Processor", failed, None, []),
+        ("a ThermalZone above whose _STA fails", "Thermal", failed, None, [0]),
+        ("a ThermalZone above, neither present nor functioning", "Thermal", ("integer", 0), None, []),
+        ("its own _STA fails", "Device", None, failed, []),
+        ("its own _STA not enabled", "Device", None, ("integer", 0x0D), []),
+        ("its own _STA a String of digits", "Device", None, ("string", "0F"), [0]),
+    ]
+    failures = 0
+    for what, kind, above_status, own_status, expected in cases:
+        nodes = {"\\DEV0": (kind, ""), "\\DEV0.CPU0": ("Processor", "ID 00"), "\\DEV0.CPU0._CST": ("Method", "")}
+        found = {"\\DEV0.CPU0._CST": cst}
+        for path, status in (("\\DEV0._STA", above_status), ("\\DEV0.CPU0._STA", own_status)):
+            if status is not None:
+                nodes[path] = ("Method", "")
+                found[path] = None if status == failed else status
+        published = sorted(publish(nodes, found, ["\\DEV0.CPU0"], lambda path: 0))
+        if published != expected:
+            print("self-test: %s publishes slots %s, expected %s" % (what, published, expected))
+            failures += 1
+    print("self-test: pass" if failures == 0 else "self-test: %d failure(s)" % failures)
+    return failures
+
+
 def main():
+    if sys.argv[1:] == ["--self-test"]:
+        sys.exit(1 if self_test() else 0)
     bin_directory = os.path.abspath(sys.argv[1])
     slots = [int(match.group(2), 16) for match in map(SLOT.match, open(sys.argv[2]).read().splitlines()) if match]
     presets = [line for line in open(sys.argv[3]).read().splitlines() if line.strip() and not line.startswith("#")]
