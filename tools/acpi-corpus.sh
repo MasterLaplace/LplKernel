@@ -67,9 +67,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          -initrd, runs the ACPI tests with `lpl.test=advanced_configuration_and_power_interface*`,
          and compares the records with those `test-acpi --boot-module` prints on the same module,
          with tools/parity.sh; qemu boots it on q35 and pc with lpl.acpi.tables=print instead, and
-         compares with `test-acpi --firmware-log` on the tables it printed; a boot without its telemetry
-         record, or whose telemetry kept a duplicate key, sanitised a character or lost a field past a
-         record's cap, fails. The logs of the last run
+         compares with `test-acpi --firmware-log` on the tables it printed; a boot that ends no test run,
+         has no telemetry record, or whose telemetry kept a duplicate key, sanitised a character or lost a
+         field past a record's cap, fails. The logs of the last run
          stay in build/acpi-corpus/ring0/. BOOT_SECONDS (300) bounds each boot
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
@@ -631,6 +631,10 @@ boot() {
 # subject's tables, must have run on the host; ring 0 is held to it by lpl.test.require.
 compare_ring0() {
     local result
+    if ! grep -qaE '^# Totals: ' "$2"; then
+        echo "not ok $4 $3: the boot printed no '# Totals:': it hung or crashed in its tests"
+        return 1
+    fi
     if ! grep -qaE '^\[LPLTLM\] telemetry .* duplicate_keys=0 sanitised_characters=0 dropped_fields=0$' "$2"; then
         echo "not ok $4 $3: the boot's telemetry is missing, or kept a duplicate key, a character it had to sanitise or a"
         echo "    # field past a record's cap: $(grep -aE '^\[LPLTLM\] telemetry ' "$2" || echo 'no telemetry record')"

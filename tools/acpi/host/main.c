@@ -32,7 +32,8 @@
     "                                    initialises their namespace as the boot does, and prints what it ran and\n"   \
     "                                    counted, each status a failure ended with, and the first object that\n"       \
     "                                    failed; the SSDTs the dump's PmRef triples place wait for Load, and\n"        \
-    "                                    <presets>, a path and a hexadecimal integer per line, # for a comment,\n"     \
+    "                                    <presets>, a path and a 0x-prefixed hexadecimal integer per line, #\n"        \
+    "                                    for a comment,\n"                                                             \
     "                                    gives NVS objects their values\n"                                             \
     "       test-acpi --loaded <dump> <presets> <directory>  the same, then prints the namespace and writes\n"         \
     "                                    each table it holds, Load's included, as a raw file of <directory>\n"         \
@@ -777,8 +778,9 @@ static uint32_t harness_find_path(AdvancedConfigurationAndPowerInterfaceMachineL
 /**
  * @brief Gives the objects a preset file names their value before the initialisation, as an acpiexec -fi
  *        file of the same lines would, so that firmware reads what it wrote to NVS at boot, which a dump lacks
- *        (§8.4): each line is a path and a hexadecimal integer; a field unit is written, an Integer
- *        replaced; a line that starts with #, or names nothing else, is skipped.
+ *        (§8.4): each line is a path and a 0x-prefixed hexadecimal integer, which acpiexec reads alike; a
+ *        field unit is written, an Integer replaced; a line that starts with #, or names nothing else, is
+ *        skipped.
  *
  * @return The presets given.
  */
@@ -800,7 +802,7 @@ static uint32_t harness_apply_presets(AdvancedConfigurationAndPowerInterfaceMach
         unsigned long long integer = 0u;
         uint32_t node = 0u;
 
-        if (line[0] == '#' || sscanf(line, "%255s %llx", name, &integer) != 2 ||
+        if (line[0] == '#' || sscanf(line, "%255s 0x%llx", name, &integer) != 2 ||
             (node = harness_find_path(load, name)) == 0u)
             continue;
 

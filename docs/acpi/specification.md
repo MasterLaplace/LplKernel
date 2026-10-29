@@ -405,10 +405,11 @@ clients `_CST` exists only after step 7.
 **Tables loaded at run time.** A table loaded before step 3 is initialised by steps 3 and 4 with the static ones,
 and step 7 sees its processors. A table loaded later can declare regions and devices: once the evaluation that loaded
 it returns, or once step 3 is over for a `_REG`'s, its scopes get the `_REG` of step 3, which step 3 leaves to it. Its
-devices that step 4 still reaches, below the device step 4 is at or after it in declaration order, are left to step 4;
-the others get the `_STA` and `_INI` walk of step 4 over their subtrees ([§6.5.1]), but those below a device step 4
-found neither present nor functioning, whose subtree it left alone. No `_INI` runs twice. `late_initializations`
-counts how often this does anything.
+devices that step 4 still reaches, below the device step 4 is at or below a node it has not reached yet, are left to
+step 4; the others get the `_STA` and `_INI` walk of step 4 over their subtrees ([§6.5.1]). The devices above them
+whose `_STA` step 4 did not read, in subtrees it skipped, have it read first, from the top down, under step 4's rule,
+so that the result does not depend on where the loader is declared; nothing below a device found neither present nor
+functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything.
 
 ### 3.9 The static tables
 
