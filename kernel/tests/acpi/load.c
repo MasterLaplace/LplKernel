@@ -644,3 +644,81 @@ KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
                       "two late initialisations, counted with their registration and their devices");
     load_close(test);
 }
+
+/**
+ * @brief A table Load adds whose table-level code runs a Load of its own is declared on one level only:
+ *        that inner Load fails with load_form_unsupported and stores nothing, the declarations after it
+ *        are made, and a method of the table that loads the other table later succeeds (§3.6).
+ */
+KERNEL_TEST(a_load_the_code_of_a_loaded_table_runs_while_it_is_declared_is_refused)
+{
+    static const uint8_t loads_outer[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'A', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t loads_inner[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', '2', '\\', 'H', 'N', 'D', '2'};
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HND2", LOAD_UNTOUCHED);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_name_integer(&load_inner, "SCND", 2u);
+    load_region("TBL2", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
+    made_up_aml_raw(&load_loaded, loads_inner, sizeof(loads_inner));
+    made_up_aml_name_integer(&load_loaded, "AFTR", 7u);
+    load_method(&load_loaded, "LDB2", loads_inner, sizeof(loads_inner));
+    load_region("TBLA", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    load_method(&load_aml, "LDA2", loads_outer, sizeof(loads_outer));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_call("\\LDA2") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "the outer Load succeeds and stores True");
+    kernel_test_check(test,
+                      load_load.evaluation.statuses[LOAD_STATUS(LOAD_FORM_UNSUPPORTED)] == 1u &&
+                          load_integer("HND2") == LOAD_UNTOUCHED && load_integer("SCND") == 0xDEADu,
+                      "the Load its table-level code runs fails with load_form_unsupported, and loads nothing");
+    kernel_test_check(test, load_integer("AFTR") == 7u, "the declarations after that Load are made");
+    kernel_test_check(test,
+                      load_call("\\LDB2") == LOAD_STATUS(OK) && load_integer("HND2") == LOAD_ONES &&
+                          load_integer("SCND") == 2u && load_load.table_count == 3u,
+                      "a method of the loaded table loads the other table later");
+    load_close(test);
+}
+
+/**
+ * @brief A device a table loaded at step 4 declares under a device step 4 found neither present nor
+ *        functioning is left alone by the late initialisation, as step 4 left that subtree (§3.8).
+ */
+KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t traces_nine[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
+                                          0x00u, 0x0Au, 0x09u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
+    static const uint8_t absent[] = {0xA4u, 0x00u};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_device(&load_inner, "LATE", &device);
+    made_up_aml_scope(&load_loaded, "GONE", &load_inner);
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_STA", absent, sizeof(absent));
+    load_method(&device, "_INI", traces_nine, sizeof(traces_nine));
+    made_up_aml_device(&load_aml, "GONE", &device);
+    made_up_aml_begin(&device);
+    load_method(&device, "_INI", loads, sizeof(loads));
+    made_up_aml_device(&load_aml, "BDEV", &device);
+    if (!load_run(test))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
+    kernel_test_check(test,
+                      load_integer("TRAC") == 0u && load_counts.status_evaluations == 1u &&
+                          load_counts.late_initializations == 0u,
+                      "neither GONE's _INI nor its loaded child's _STA and _INI run");
+    kernel_test_check(test, load_counts.devices == 5u, "the loaded device is counted all the same");
+    load_close(test);
+}

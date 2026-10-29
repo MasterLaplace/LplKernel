@@ -8,6 +8,7 @@
 #define INITIALIZATION_NODE(type)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
 #define INITIALIZATION_HOLDS       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_INITIALIZATION
 #define INITIALIZATION_CAPABLE     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_HOLDS_CAPABILITIES
+#define INITIALIZATION_ABSENT      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT
 #define INITIALIZATION_PRESENT     0x01u /**< _STA bit 0: the device is present. */
 #define INITIALIZATION_ENABLED     0x02u /**< _STA bit 1: the device is enabled and decodes its resources. */
 #define INITIALIZATION_FUNCTIONING 0x08u /**< _STA bit 3: the device works. */
@@ -323,8 +324,9 @@ static bool initialization_is_system_bus(const InitializationLoad_t *load, uint3
 
 /**
  * @brief Initialises one device, processor or thermal zone (§3.8 step 4): present, its _INI runs,
- *        but for \_SB_'s; a subtree without _INI, a device neither present nor functioning, or one a
- *        table past the first @p covered declares, which its late initialisation walks, is not walked.
+ *        but for \_SB_'s; a subtree without _INI, a device neither present nor functioning, marked
+ *        absent, or one a table past the first @p covered declares, which its late initialisation walks,
+ *        is not walked.
  *
  * @return Whether the walk descends into its children.
  */
@@ -338,8 +340,13 @@ static bool initialization_initialize_device(InitializationLoad_t *load, Initial
         return false;
     if (!initialization_read_status(load, initialization, device, &status))
         return true;
+    if ((status & (INITIALIZATION_PRESENT | INITIALIZATION_FUNCTIONING)) == 0u)
+    {
+        initialization_node(load, device)->flags |= INITIALIZATION_ABSENT;
+        return false;
+    }
     if ((status & INITIALIZATION_PRESENT) == 0u)
-        return (status & INITIALIZATION_FUNCTIONING) != 0u;
+        return true;
     if (!initialization_is_system_bus(load, device))
         initialization_run_ini(load, initialization, device);
     return true;
@@ -435,8 +442,22 @@ static void initialization_register_late(InitializationLoad_t *load, Initializat
 }
 
 /**
+ * @brief Whether a device above @p index was found neither present nor functioning: step 4 left its
+ *        subtree alone.
+ */
+static bool initialization_under_absent(const InitializationLoad_t *load, uint32_t index)
+{
+    for (index = initialization_node(load, index)->parent; index != 0u;
+         index = initialization_node(load, index)->parent)
+        if ((initialization_node(load, index)->flags & INITIALIZATION_ABSENT) != 0u)
+            return true;
+    return false;
+}
+
+/**
  * @brief Walks, as step 4 does, each device subtree the tables past the first @p first, up to the
- *        first @p last, declare: from each device of theirs whose parent is not one of theirs (§3.8).
+ *        first @p last, declare: from each device of theirs whose parent is not one of theirs, unless a
+ *        device above it was found absent (§3.8).
  */
 static void initialization_walk_late(InitializationLoad_t *load, Initialization_t *initialization, uint32_t first,
                                      uint32_t last)
@@ -448,7 +469,8 @@ static void initialization_walk_late(InitializationLoad_t *load, Initialization_
 
         if (!initialization_is_device(node) || !initialization_is_late(load, top, first, last) ||
             (initialization_is_device(initialization_node(load, node->parent)) &&
-             initialization_is_late(load, node->parent, first, last)))
+             initialization_is_late(load, node->parent, first, last)) ||
+            initialization_under_absent(load, top))
             continue;
         for (uint32_t index = top; index != 0u;)
         {

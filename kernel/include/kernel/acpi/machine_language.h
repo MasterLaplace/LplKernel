@@ -745,7 +745,8 @@ extern void advanced_configuration_and_power_interface_machine_language_load_dir
  * @param load       The load, in an evaluation.
  * @param source     The node of the region or of the field unit.
  * @param out_loaded Receives whether the table was added: false for a table the load holds already.
- * @return OK; LOAD_FORM_UNSUPPORTED for a node that holds a Buffer, or while a table is declared;
+ * @return OK; LOAD_FORM_UNSUPPORTED for a node that holds a Buffer or a buffer field, or while a table is
+ *         declared;
  *         TYPE_MISMATCH for any other object or a region of another space; REGION_UNEVALUATED for a
  *         region whose address was never evaluated; REGION_BOUNDS for a table shorter than its header
  *         or longer than what holds it; what reading it failed with; LIMIT_TABLES, LIMIT_TABLE_BYTES or

@@ -3394,8 +3394,8 @@ static MachineLanguageStatus_t machine_language_synchronize(MachineLanguageLoad_
 
 /**
  * @brief Runs Load (§5.1): True to its target and as its result once the table is added, False for a
- *        table the load holds already; an operand that names no object, as a Buffer in a local, is a
- *        form the kernel does not load.
+ *        table the load holds already; an operand that names no node, as a local or an argument that holds
+ *        a Buffer, is a form the kernel does not load.
  */
 static MachineLanguageStatus_t machine_language_load_operator(MachineLanguageLoad_t *load)
 {

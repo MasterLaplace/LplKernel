@@ -118,8 +118,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  *        C-states of each CPU slot from its processor object's _CST; then takes the Notifies the load and
  *        the sequence raised, a _CST changed since its evaluation evaluated once more. A table Load or
  *        LoadTable adds once step 2 is over gets its late initialisation as soon as the evaluation that
- *        loaded it returns: the _REG of step 3 in its scopes, then the _STA and _INI walk of step 4 over its
- *        device subtrees.
+ *        loaded it returns, or once step 3 is over for a table a _REG loaded: the _REG of step 3 in its
+ *        scopes, then the _STA and _INI walk of step 4 over its device subtrees, but under a device step 4
+ *        found absent.
  *
  * @param load               A load whose tables are decoded, its stacks free.
  * @param machine            The CPU slots, the processor features, the FADT and how step 0 ended.
