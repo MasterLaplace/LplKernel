@@ -378,9 +378,10 @@ KERNEL_TEST(no_free_frame_is_mapped_where_the_virtual_memory_manager_maps)
 }
 
 /**
- * @brief The boot memory map types that name memory, which a window maps cached, are those ACPI 6.6, Table 15.1,
- *        calls RAM: AddressRangeMemory (1), AddressRangeACPI (3) and AddressRangeNVS (4); a reserved (2), unusable
- *        (5), disabled (6), persistent (7) or unaccepted (8) range, an undefined type and no entry (0) are not.
+ * @brief The boot memory map types that name memory, which a window maps cached, are those of ACPI 6.6, Table 15.1:
+ *        AddressRangeMemory (1) and AddressRangeACPI (3), RAM, and AddressRangeNVS (4), ACPI NVS memory, reserved by
+ *        the system; a reserved (2), unusable (5), disabled (6), persistent (7) or unaccepted (8) range, an undefined
+ *        type and no entry (0) are not.
  */
 KERNEL_TEST(the_memory_map_types_that_name_memory_are_ram_acpi_and_nvs)
 {
