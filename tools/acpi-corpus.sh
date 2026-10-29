@@ -29,7 +29,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          decode with what tools/acpi/aml_census.py counts, once tools/acpi/check_census.py has
          checked that census against hand-made tables; then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
-         the report's iASL disassembly, and lists the tables where they differ
+         the report's iASL disassembly, and lists the tables where they differ. Once fetch acpica has
+         built acpiexec, the FADT is also compared with the local FADT ACPICA builds from the same table,
+         printed by tools/acpi/acpica_fadt.c, built here against acpiexec's objects, and compared by
+         tools/acpi/against_acpica_fadt.py
   namespace  loads each machine of a list, or each QEMU configuration, with `test-acpi --namespace`
          and compares its namespace with the one acpiexec loads from the same tables; a machine whose
          table-level code fails is counted and left out, until the interpreter runs what failed
@@ -68,6 +71,7 @@ readonly ACPICA="$CORPUS/acpica"
 readonly ACPICA_URL="https://github.com/acpica/acpica.git"
 readonly ACPICA_COMMIT="e85aa3bebaae81ed1e6d163511ac7e1eafe732cf"
 readonly ACPICA_BIN="$ACPICA/generate/unix/bin"
+readonly FADT_ORACLE="$ROOT/build/acpi-host/acpica-fadt"
 readonly QEMU="$CORPUS/qemu"
 readonly QEMU_URL="https://github.com/qemu/qemu.git"
 readonly QEMU_COMMIT="2d3df8abca265c9bcc9e438d691d561592060998"
@@ -298,6 +302,35 @@ fetch() {
     echo "changed: converted from acpidump text to binary tables."
 }
 
+# Builds tools/acpi/acpica_fadt.c, which prints the local FADT ACPICA builds from a table, against the objects of the
+# acpiexec fetch acpica built, but acpiexec's own. Returns 2 when that acpiexec was not built, and 1, after saying so,
+# when the build fails.
+build_fadt_oracle() {
+    local library="$ROOT/build/acpi-host/libacpica-exec.a" objects=()
+    [[ -x "$ACPICA_BIN/acpiexec" ]] || return 2
+    [[ "$FADT_ORACLE" -nt "$ROOT/tools/acpi/acpica_fadt.c" && "$FADT_ORACLE" -nt "$ACPICA_BIN/acpiexec" ]] && return 0
+    mapfile -t objects < <(find "$ACPICA/generate/unix/acpiexec/obj" -name '*.o' ! -name 'ae*.o')
+    mkdir -p "$ROOT/build/acpi-host"
+    rm -f "$library" "$FADT_ORACLE"
+    if ! ar rcs "$library" "${objects[@]}" ||
+        ! cc -std=c99 -O2 -Wall -Wextra -Werror -D_LINUX -D_GNU_SOURCE -DACPI_EXEC_APP -I"$ACPICA/source/include" \
+            -I"$ACPICA/source/tools/acpiexec" -o "$FADT_ORACLE" "$ROOT/tools/acpi/acpica_fadt.c" "$library" \
+            -lpthread -lrt; then
+        echo "# FADT against ACPICA's: tools/acpi/acpica_fadt.c does not build against $ACPICA" >&2
+        return 1
+    fi
+}
+
+# Prints, for the dump $1 and the harness's lines $2, whether its FADT agrees with the local FADT ACPICA builds from
+# the same table, then, when it does not, the fields that differ and what the program printed on its error output.
+against_acpica_fadt() {
+    local errors="$ROOT/build/acpi-host/acpica-fadt.errors" lines verdict
+    lines="$(python3 -I "$ROOT/tools/acpi/fadt_bytes.py" "$1" | "$FADT_ORACLE" 2>"$errors")" || true
+    verdict="$(python3 -I "$ROOT/tools/acpi/against_acpica_fadt.py" <(grep '^fadt ' <<<"$2") <(echo "$lines"))"
+    echo "$verdict"
+    [[ "$verdict" == "fadt acpica agrees"* ]] || sed 's/^/acpica-fadt: /' "$errors"
+}
+
 # Tells whether the clone holds the decoded report of the machine $1, never fetching it from git 2.45 on;
 # an older git fetches it instead.
 has_decoded() {
@@ -315,6 +348,9 @@ decoded() {
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables census
+    local oracle=0 acpica="" verdict
+    build_fadt_oracle || oracle=$?
+    [[ "$oracle" -ne 1 ]] || return 1
     if ! census="$(python3 -I "$ROOT/tools/acpi/check_census.py")"; then
         grep -v '^ok ' <<<"$census"
         return 1
@@ -341,15 +377,27 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
         disassembly+="$(decoded "$machine" | python3 -I "$ROOT/tools/acpi/check_against_iasl.py" "$dump" - |
             sed "s|^|$machine |")"$'\n' || true
         compared+="$expected"$'\n'
-        if [[ "$actual" == "$expected" ]]; then
+        verdict="fadt acpica agrees"
+        if [[ "$oracle" -eq 0 ]]; then
+            verdict="$(against_acpica_fadt "$dump" "$actual")"
+            acpica+="$(head -1 <<<"$verdict")"$'\n'
+        fi
+        [[ "$actual" == "$expected" ]] && agree=$((agree + 1))
+        if [[ "$actual" == "$expected" && "$verdict" == "fadt acpica agrees"* ]]; then
             echo "ok $number $machine"
-            agree=$((agree + 1))
         else
             echo "not ok $number $machine"
             diff <(echo "$expected") <(echo "$actual") | sed 's/^/    # /' || true
+            [[ "$verdict" == "fadt acpica agrees"* ]] || sed 's/^ */    # /' <<<"$verdict"
         fi
     done < <(reports "$1")
     echo "# directory, FADT and MADT: $agree of $number machines agree"
+    if [[ "$oracle" -eq 0 ]]; then
+        echo "# FADT against ACPICA's: $(grep -c '^fadt acpica agrees' <<<"$acpica") of $number agree, the fields" \
+            "ACPI says to ignore left out of the $(grep -c ' hardware-reduced$' <<<"$acpica") hardware-reduced ones"
+    else
+        echo "# FADT against ACPICA's: not compared, run fetch acpica first"
+    fi
     echo "# compared: $(grep -c '^fadt present=1 ' <<<"$compared") FADTs," \
         "$(grep -c '^fadt [a-z0-9_]* space=[0-9]* width=[0-9]* offset=[0-9]* access=[0-9]* address=0x[1-9A-F]' <<<"$compared") registers present," \
         "$(grep -c '^processor ' <<<"$compared") CPU slots," \
@@ -366,7 +414,8 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
             cut -d= -f2 | paste -sd+ | bc) names that resolve to nothing"
     [[ "$(grep -c ' iasl \(agrees\|differs\|missing\) ' <<<"$disassembly")" -eq "$tables" ]] ||
         { echo "# iASL comparison: not every table was compared" >&2; return 1; }
-    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
+    [[ "$number" -gt 0 && "$agree" -eq "$number" ]] &&
+        [[ "$oracle" -eq 2 || "$(grep -c '^fadt acpica agrees' <<<"$acpica")" -eq "$number" ]]
 }
 
 # Prints, for each opcode the needs-path closure of some machine of the list $1, or of some QEMU configuration,

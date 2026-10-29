@@ -422,6 +422,9 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
   Structures, unless the 64-bit block gives an address. PSTATE_CNT and CST_CNT, which ACPI 1.0 reserved, read 0 up to
   revision 2; RESET_REG reads absent without RESET_REG_SUP; a hardware-reduced FADT reads 0 in every field ACPI tells
   OSPM to ignore ([§5.2.9]). The fields read are those of N4 (§1.2), plus the PM1 and GPE blocks.
+- **A block keeps the width firmware declares,** its legacy length when its Generic Address Structure gives none: a
+  PM1 control block may be longer than 2 bytes ([§4.8.1.2]), and SCI_EN is read with a word access
+  ([§4.8.3.2.1]). ACPICA instead rewrites each PM block's width to a fixed default.
 - **The switch to ACPI mode** is a routine of the tables layer: SCI_EN read, enables cleared, ACPI_ENABLE written,
   a bounded poll (§3.8 step 0).
 - **The MADT.** Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for an entry whose Enabled flag is
@@ -989,7 +992,13 @@ published image. The made-up ASL is ours, under MIT.
   the needs-path closure, and the needs-path run (§3.8, steps 0 to 9) with the opcodes, spaces and access types it
   executed.
 - **The static tables**: the parsed FADT, MADT, MCFG and HPET fields of every machine equal the decoded `[xxxh]`
-  lines that ship with each dump.
+  lines that ship with each dump. The FADT also equals the local FADT ACPICA builds from the same bytes
+  (`tools/acpi/acpica_fadt.c`), with ACPICA's rewrite of PM block widths (`AcpiGbl_UseDefaultRegisterWidths`)
+  turned off, since the kernel keeps the declared width (§3.9); the reset register is read only with RESET_REG_SUP,
+  as `AcpiReset` does, and a GPE block's length only with its address, as `AcpiEvGpeInitialize` does. Left out are
+  the length and the revision, which ACPICA replaces with its structure's size and keeps as written; the GPE block
+  widths, which neither reads; and, on a hardware-reduced FADT, the fields ACPI tells OSPM to ignore, which ACPICA
+  keeps.
 - **Ring 0**: `tools/acpi-corpus.sh module <machine>` writes that machine's tables as one Multiboot module. A debug
   kernel booted with it runs a `KERNEL_TEST` that loads the tables through the simulated host and prints the same
   records as the host harness; without a module the test is skipped, and `tools/acpi-corpus.sh ring0`, which passes
@@ -1105,7 +1114,9 @@ its page.
 
 
 [§3.11.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=120
+[§4.8.1.2]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=138
 [§4.8.2.2.1.3]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=143
+[§4.8.3.2.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=153
 [§5.2.9]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=182
 [§5.2.10.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=200
 [§5.2.12.2]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=207
