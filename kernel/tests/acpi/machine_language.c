@@ -1308,6 +1308,35 @@ KERNEL_TEST(a_duplicate_declaration_is_skipped_with_its_body)
 }
 
 /**
+ * @brief A Device an SSDT declares again at the very offset the DSDT declared it is still a duplicate: the
+ *        table that declared it tells the two apart, and the SSDT's body is neither declared nor decoded.
+ */
+KERNEL_TEST(a_duplicate_at_the_same_offset_of_another_table_is_skipped)
+{
+    static const uint8_t first[] = {0x5Bu, 0x82u, 0x0Cu, 'D', 'E', 'V', '0', 0x08u, 'A', 'A', 'A', 'A', 0x0Au, 0x01u};
+    static const uint8_t second[] = {0x5Bu, 0x82u, 0x0Du, 'D', 'E', 'V',   '0',  0xA3u,
+                                     0x08u, 'B',   'B',   'B', 'B', 0x0Au, 0x02u};
+
+    if (!made_up_open(test))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", first, sizeof(first)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", second, sizeof(second)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test,
+                      made_up_load.duplicates == 1u && made_up_node_at("\x2E"
+                                                                       "DEV0"
+                                                                       "BBBB") == 0u,
+                      "the SSDT's Device is a duplicate, and BBBB is not created");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 0u &&
+                          made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NAME) == 1u,
+                      "the decoding pass reads the DSDT's body alone");
+    made_up_close(test);
+}
+
+/**
  * @brief An Alias of an object that does not exist is counted and skipped alone, and the table goes on, as
  *        acpiexec goes on loading: the Name after it is still declared. acpiexec also creates the alias and
  *        an Untyped node for its source; the kernel creates neither, since ACPI 6.6 §19.6.4 says the source
