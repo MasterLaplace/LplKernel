@@ -463,18 +463,32 @@ static void idle_buffer_of(MadeUpAml_t *aml, const uint8_t *bytes, uint32_t leng
 }
 
 /**
- * @brief Appends Processor (@p name, @p identifier) { Name (_CST, Package () { 1, Package () { the
- *        state idle_state_body holds, its element count first } }) }.
+ * @brief Starts in idle_package a _CST package of @p elements elements whose Count is @p count.
  */
-static void idle_single(const char *name, uint8_t identifier)
+static void idle_package_begin(uint8_t elements, uint64_t count)
+{
+    made_up_aml_begin(&idle_package);
+    made_up_aml_raw(&idle_package, &elements, 1u);
+    made_up_aml_integer(&idle_package, count);
+}
+
+/**
+ * @brief Appends to idle_package the state idle_state_body holds, its element count first.
+ */
+static void idle_package_add(void)
 {
     static const uint8_t lead[] = {0x12u};
-    static const uint8_t two = 2u;
 
-    made_up_aml_begin(&idle_package);
-    made_up_aml_raw(&idle_package, &two, 1u);
-    made_up_aml_integer(&idle_package, 1u);
     made_up_aml_construct(&idle_package, lead, sizeof(lead), &idle_state_body);
+}
+
+/**
+ * @brief Appends Processor (@p name, @p identifier) { Name (_CST, the package idle_package holds) }.
+ */
+static void idle_package_end(const char *name, uint8_t identifier)
+{
+    static const uint8_t lead[] = {0x12u};
+
     made_up_aml_begin(&idle_scope);
     idle_name(&idle_scope, "_CST");
     made_up_aml_construct(&idle_scope, lead, sizeof(lead), &idle_package);
@@ -498,23 +512,32 @@ static void idle_state_start(uint8_t elements, const uint8_t *bytes, uint32_t le
 }
 
 /**
- * @brief A _CST that fails, returns no Package or an empty one, counts its states wrong, holds a state of
- *        three elements, a Register buffer without a Generic Register or whose descriptor runs past it, a
- *        Type that is a String, or a Latency past 32 bits, publishes no state, and is counted with its
- *        status; a Latency of 32 bits is published.
+ * @brief Appends the Type, Latency and Power of a state to idle_state_body, then the state to idle_package.
  */
-KERNEL_TEST(a_malformed_cst_publishes_no_state_and_is_counted)
+static void idle_state_end(uint64_t type, uint64_t latency, uint64_t power)
 {
-    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u};
+    made_up_aml_integer(&idle_state_body, type);
+    made_up_aml_integer(&idle_state_body, latency);
+    made_up_aml_integer(&idle_state_body, power);
+    idle_package_add();
+}
+
+/**
+ * @brief A _CST that fails, or returns no Package, an empty one, one whose Count is no Integer, below 1, or
+ *        other than its sub-packages, fails as a whole, as Linux refuses it: nothing is published and the
+ *        failure is counted with its status.
+ */
+KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
+{
+    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u};
     static const uint8_t divide[] = {0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
     static const uint8_t integer[] = {0x0Au, 0x03u};
     static const uint8_t miscounted[] = {0x12u, 0x04u, 0x01u, 0x0Au, 0x02u};
-    static const uint8_t end_only[] = {0x79u, 0x00u};
-    static const uint8_t cut[] = {0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x01u};
-    static const uint8_t string_one[] = {0x0Du, '1', 0x00u};
     static const uint8_t empty_package[] = {0x12u, 0x02u, 0x00u};
+    static const uint8_t zero_count[] = {0x12u, 0x03u, 0x01u, 0x00u};
+    static const uint8_t string_count[] = {0x12u, 0x05u, 0x01u, 0x0Du, '1', 0x00u};
 
-    idle_begin(identifiers, 10u);
+    idle_begin(identifiers, 6u);
     made_up_aml_begin(&idle_method);
     made_up_aml_raw(&idle_method, divide, sizeof(divide));
     made_up_aml_begin(&idle_scope);
@@ -522,80 +545,203 @@ KERNEL_TEST(a_malformed_cst_publishes_no_state_and_is_counted)
     idle_processor("CPU1", 1u, &idle_scope);
     idle_returning("CPU2", 2u, integer, sizeof(integer));
     idle_returning("CPU3", 3u, miscounted, sizeof(miscounted));
-    idle_state_start(3u, NULL, 0u);
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 1u);
-    idle_single("CPU4", 4u);
-    idle_state_start(4u, end_only, sizeof(end_only));
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 1000u);
-    idle_single("CPU5", 5u);
-    idle_state_start(4u, cut, sizeof(cut));
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 1000u);
-    idle_single("CPU6", 6u);
-    idle_state_start(4u, NULL, 0u);
-    made_up_aml_raw(&idle_state_body, string_one, sizeof(string_one));
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 1000u);
-    idle_single("CPU7", 7u);
-    idle_state_start(4u, NULL, 0u);
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 0x100000000ull);
-    made_up_aml_integer(&idle_state_body, 1000u);
-    idle_single("CPU8", 8u);
-    idle_state_start(4u, NULL, 0u);
-    made_up_aml_integer(&idle_state_body, 1u);
-    made_up_aml_integer(&idle_state_body, 0xFFFFFFFFu);
-    made_up_aml_integer(&idle_state_body, 1000u);
-    idle_single("CPU9", 9u);
-    idle_returning("CPUA", 10u, empty_package, sizeof(empty_package));
+    idle_returning("CPU4", 4u, empty_package, sizeof(empty_package));
+    idle_returning("CPU5", 5u, zero_count, sizeof(zero_count));
+    idle_returning("CPU6", 6u, string_count, sizeof(string_count));
     if (!idle_run(test))
         return;
 
-    uint32_t evaluated = 0u;
     uint32_t empty = 0u;
 
-    for (uint32_t slot = 0u; slot < 10u; ++slot)
-    {
-        evaluated += (idle_table.slots[slot].processor != 0u) ? 1u : 0u;
-        empty += (slot != 8u && idle_table.slots[slot].count == 0u) ? 1u : 0u;
-    }
-    kernel_test_check(test, evaluated == 10u, "every slot's _CST was evaluated");
-    kernel_test_check(test, empty == 9u, "each malformed _CST publishes no state");
-    kernel_test_check(test, idle_table.slots[8].count == 1u && idle_table.slots[8].states[0].latency == 0xFFFFFFFFu,
-                      "a latency of 32 bits is published");
+    for (uint32_t slot = 0u; slot < 6u; ++slot)
+        empty += (idle_table.slots[slot].processor != 0u && idle_table.slots[slot].count == 0u &&
+                  idle_table.slots[slot].skipped == 0u) ?
+                     1u :
+                     0u;
+    kernel_test_check(test, empty == 6u, "each _CST was evaluated, and publishes and skips nothing");
     kernel_test_check(test,
-                      idle_counts.processor_idle == 10u && idle_counts.processor_idle_failed == 9u &&
+                      idle_counts.processor_idle == 6u && idle_counts.processor_idle_failed == 6u &&
                           idle_counts.statuses[IDLE_STATUS(DIVIDE_BY_ZERO)] == 1u &&
-                          idle_counts.statuses[IDLE_STATUS(TYPE_MISMATCH)] == 8u,
-                      "nine failures: one divide_by_zero, eight type_mismatch");
+                          idle_counts.statuses[IDLE_STATUS(TYPE_MISMATCH)] == 5u,
+                      "six failures: one divide_by_zero, five type_mismatch");
     idle_close(test);
 }
 
 /**
- * @brief A _CST of nine states publishes the first eight, and counts the ninth (§6.1).
+ * @brief A faulty state is left out and counted on its CPU slot, and the states around it are published,
+ *        as Linux skips it: a state of three elements, a Register with only an End Tag, a cut Generic
+ *        Register, or a Generic Register shorter than 12 bytes, a Type that is a String, a Latency past
+ *        32 bits. The Generic Register is found after another descriptor, a Latency of 32 bits is kept, and
+ *        a register of any space, SystemMemory here, is published.
  */
-KERNEL_TEST(nine_states_publish_eight_and_count_the_ninth)
+KERNEL_TEST(a_faulty_state_is_left_out_and_counted_on_its_slot)
 {
     static const uint32_t identifiers[] = {1u};
-    IdleState_t states[9];
+    static const uint8_t end_only[] = {0x79u, 0x00u};
+    static const uint8_t cut[] = {0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x01u};
+    static const uint8_t short_register[] = {0x82u, 0x02u, 0x00u, 0x7Fu, 0x01u, 0x79u, 0x00u};
+    static const uint8_t after_interrupt[] = {0x22u, 0x01u, 0x00u, 0x82u, 0x0Cu, 0x00u, 0x01u, 0x08u, 0x00u, 0x01u,
+                                              0x15u, 0x04u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x79u, 0x00u};
+    static const uint8_t string_one[] = {0x0Du, '1', 0x00u};
+    static const uint8_t elements = 4u;
+    const IdleState_t memory = {
+        .entry = {.address = 0xFED00010u, .space = 0x00u, .bit_width = 32u, .access_size = 3u},
+        .type = 3u,
+        .latency = 200u,
+        .power = 100u
+    };
+    const IdleState_t expected[3] = {idle_monitor_wait(0x00u, 1u, 1u, 1000u),
+                                     idle_port(0x415u, 1u, 2u, 0xFFFFFFFFu, 350u), memory};
 
     idle_begin(identifiers, 1u);
+    idle_package_begin(10u, 9u);
+    idle_state_start(4u, NULL, 0u);
+    idle_state_end(1u, 1u, 1000u);
+    idle_state_start(3u, NULL, 0u);
+    made_up_aml_integer(&idle_state_body, 2u);
+    made_up_aml_integer(&idle_state_body, 2u);
+    idle_package_add();
+    idle_state_start(4u, end_only, sizeof(end_only));
+    idle_state_end(2u, 2u, 2u);
+    idle_state_start(4u, cut, sizeof(cut));
+    idle_state_end(2u, 2u, 2u);
+    idle_state_start(4u, short_register, sizeof(short_register));
+    idle_state_end(2u, 2u, 2u);
+    idle_state_start(4u, NULL, 0u);
+    made_up_aml_raw(&idle_state_body, string_one, sizeof(string_one));
+    made_up_aml_integer(&idle_state_body, 2u);
+    made_up_aml_integer(&idle_state_body, 2u);
+    idle_package_add();
+    idle_state_start(4u, NULL, 0u);
+    idle_state_end(2u, 0x100000000ull, 2u);
+    idle_state_start(4u, after_interrupt, sizeof(after_interrupt));
+    idle_state_end(2u, 0xFFFFFFFFu, 350u);
+    made_up_aml_begin(&idle_state_body);
+    made_up_aml_raw(&idle_state_body, &elements, 1u);
+    idle_register(&idle_state_body, &memory.entry);
+    idle_state_end(memory.type, memory.latency, memory.power);
+    idle_package_end("CPU0", 1u);
+    if (!idle_run(test))
+        return;
+    kernel_test_check(test, idle_published(0u, expected, 3u),
+                      "MWAIT C1, the port read after an IRQ descriptor, and the SystemMemory register are published");
+    kernel_test_check(test, idle_table.slots[0].skipped == 6u, "six faulty states are counted on the slot");
+    kernel_test_check(test, idle_counts.processor_idle == 1u && idle_counts.processor_idle_failed == 0u,
+                      "the _CST does not fail");
+    idle_close(test);
+}
+
+/**
+ * @brief A _CST of nine states, the fourth faulty, publishes seven, as Linux; the ninth, past them, is
+ *        counted and not read, though it is faulty too (§6.1).
+ */
+KERNEL_TEST(seven_states_are_published_and_the_ones_after_them_are_not_read)
+{
+    static const uint32_t identifiers[] = {1u};
+    IdleState_t expected[7];
+    uint32_t published = 0u;
+
+    idle_begin(identifiers, 1u);
+    idle_package_begin(10u, 9u);
     for (uint32_t state = 0u; state < 9u; ++state)
-        states[state] = idle_monitor_wait(0x10u * state, (state < 2u) ? state + 1u : 3u, 10u * state, 100u);
+    {
+        if (state == 3u || state == 8u)
+        {
+            idle_state_start(3u, NULL, 0u);
+            made_up_aml_integer(&idle_state_body, 3u);
+            made_up_aml_integer(&idle_state_body, 3u);
+            idle_package_add();
+            continue;
+        }
+        expected[published] = idle_monitor_wait(0x10u * state, (state < 2u) ? state + 1u : 3u, 10u * state, 100u);
+        idle_state(&idle_package, &expected[published]);
+        ++published;
+    }
+    idle_package_end("CPU0", 1u);
+    if (!idle_run(test))
+        return;
+    kernel_test_check(
+        test, idle_published(0u, expected, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_MAX_STATES),
+        "the seven well-formed states before the cap are published");
+    kernel_test_check(test, idle_table.slots[0].skipped == 1u && idle_counts.idle_states_dropped == 1u,
+                      "the fourth is skipped; the ninth is dropped unread, not skipped");
+    kernel_test_check(test, idle_counts.processor_idle_failed == 0u, "the _CST does not fail");
+    idle_close(test);
+}
+
+/**
+ * @brief Appends Processor (@p name, @p identifier) { Name (_STA, @p status), Name (_CST, one MWAIT C1) }
+ *        to @p aml, or no _STA when @p status is above 0xFF.
+ */
+static void idle_present(MadeUpAml_t *aml, const char *name, uint8_t identifier, uint64_t status)
+{
+    const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
+
     made_up_aml_begin(&idle_scope);
-    idle_static(&idle_scope, 9u, states, 9u);
-    idle_processor("CPU0", 1u, &idle_scope);
+    if (status <= 0xFFu)
+        made_up_aml_name_integer(&idle_scope, "_STA", status);
+    idle_static(&idle_scope, 1u, &only, 1u);
+    made_up_aml_processor(aml, name, identifier, 0x410u, 6u, &idle_scope);
+}
+
+/**
+ * @brief Step 8 evaluates the _CST of the processor objects Linux attaches (v7.3 acpi_bus_attach,
+ *        acpi_processor_add): present or functioning and enabled, with no device above them neither present
+ *        nor functioning; a _STA that fails reads 0, and a missing one 0x0F. A processor kept out takes no
+ *        slot, and each device's _STA is read once.
+ */
+KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
+{
+    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 10u};
+    static const uint8_t counted_absent[] = {0x75u, '\\', 'D', '0', 'R', 'D', 0xA4u, 0x00u};
+    static const uint8_t failing[] = {0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
+    const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
+    MadeUpAml_t device;
+    MadeUpAml_t body;
+
+    idle_begin(identifiers, 9u);
+    made_up_aml_name_integer(&idle_aml, "D0RD", 0u);
+    idle_present(&idle_aml, "CPU0", 1u, 0x100u);
+    idle_present(&idle_aml, "CPU1", 2u, 0x0Du);
+    idle_present(&idle_aml, "CPU2", 3u, 0x08u);
+    idle_present(&idle_aml, "CPU3", 4u, 0x0Au);
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, counted_absent, sizeof(counted_absent));
+    made_up_aml_method(&device, "_STA", 0x00u, &body);
+    idle_present(&device, "CPU4", 5u, 0x100u);
+    idle_present(&device, "CPU9", 10u, 0x100u);
+    made_up_aml_device(&idle_aml, "DEV0", &device);
+    made_up_aml_begin(&device);
+    made_up_aml_name_integer(&device, "_STA", 0x08u);
+    idle_present(&device, "CPU5", 6u, 0x100u);
+    made_up_aml_device(&idle_aml, "DEV1", &device);
+    made_up_aml_begin(&idle_scope);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, failing, sizeof(failing));
+    made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
+    idle_static(&idle_scope, 1u, &only, 1u);
+    idle_processor("CPU6", 7u, &idle_scope);
+    idle_present(&idle_aml, "CPU7", 8u, 0x00u);
+    idle_present(&idle_aml, "CPU8", 8u, 0x100u);
     if (!idle_run(test))
         return;
     kernel_test_check(test,
-                      idle_published(0u, states, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_MAX_STATES),
-                      "the first eight states are published");
-    kernel_test_check(test, idle_counts.idle_states_dropped == 1u && idle_counts.processor_idle_failed == 0u,
-                      "the ninth is counted, and the _CST did not fail");
+                      idle_published(0u, &only, 1u) && idle_published(3u, &only, 1u) && idle_published(5u, &only, 1u) &&
+                          idle_published(7u, &only, 1u),
+                      "CPU0 without _STA, CPU3 functioning and enabled, CPU5 below a functioning device, and CPU8 "
+                      "publish");
+    kernel_test_check(test,
+                      idle_table.slots[1].processor == 0u && idle_table.slots[2].processor == 0u &&
+                          idle_table.slots[4].processor == 0u && idle_table.slots[6].processor == 0u &&
+                          idle_table.slots[8].processor == 0u,
+                      "CPU1 not enabled, CPU2 neither present nor enabled, CPU4 and CPU9 below an absent device, and "
+                      "CPU6 whose _STA fails publish nothing");
+    kernel_test_check(test, idle_counts.processor_idle_absent == 6u && idle_counts.processor_idle_unbound == 0u,
+                      "six processors kept out, CPU7 among them, which leaves its slot to CPU8");
+    kernel_test_check(test, made_up_root_node(&idle_load, "D0RD")->value.payload == 1u,
+                      "DEV0's _STA is read once for its two processors");
+    kernel_test_check(test, idle_counts.statuses[IDLE_STATUS(DIVIDE_BY_ZERO)] == 1u, "the _STA that fails is counted");
     idle_close(test);
 }
 
@@ -647,13 +793,15 @@ static uint32_t idle_control(KernelTest_t *test, uint8_t mode, uint32_t command_
 
 /**
  * @brief CST_CNT goes to SMI_CMD once, as one byte, when step 0 left the platform in ACPI mode; never in
- *        legacy mode, before step 0, on a protected port or past the I/O space; and nothing is to be
- *        written when CST_CNT or SMI_CMD is 0, or no FADT is given.
+ *        legacy mode, before step 0, where step 0 could not reach, on a hardware-reduced platform, on a
+ *        protected port or past the I/O space; and nothing is to be written when CST_CNT or SMI_CMD is 0, or
+ *        no FADT is given.
  */
 KERNEL_TEST(cst_control_goes_to_smi_command_once_in_acpi_mode_only)
 {
     static const uint8_t written[] = {IDLE_MODE(SWITCHED), IDLE_MODE(ALREADY), IDLE_MODE(NO_LEGACY_MODE)};
-    static const uint8_t skipped[] = {IDLE_MODE(FAILED), IDLE_MODE(NOT_RUN), IDLE_MODE(UNREACHABLE)};
+    static const uint8_t skipped[] = {IDLE_MODE(FAILED), IDLE_MODE(NOT_RUN), IDLE_MODE(UNREACHABLE),
+                                      IDLE_MODE(HARDWARE_REDUCED)};
     uint32_t writes = 0u;
 
     for (uint32_t mode = 0u; mode < sizeof(written); ++mode)
@@ -753,6 +901,74 @@ KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
     kernel_test_check(test, idle_load.services.notifications_taken == 8u,
                       "eight Notifies taken: the _INI's, CPU0's twice, CPU1's two twice, CPU2's");
     idle_close(test);
+}
+
+/**
+ * @brief A _CST that fails when step 9 evaluates it once more publishes nothing in place of what step 8
+ *        published: its _CST notifies its own processor 0x81 and divides by zero on its second run.
+ */
+KERNEL_TEST(a_cst_that_fails_in_step_9_publishes_nothing)
+{
+    static const uint32_t identifiers[] = {1u};
+    static const uint8_t body[] = {0x75u, '\\', 'R',   'U',   'N',   'S',   0x86u, '\\',  'C',   'P',
+                                   'U',   '0',  0x0Au, 0x81u, 0xA0u, 0x0Eu, 0x93u, '\\',  'R',   'U',
+                                   'N',   'S',  0x0Au, 0x02u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u, 0xA4u};
+    const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
+
+    idle_begin(identifiers, 1u);
+    made_up_aml_name_integer(&idle_aml, "RUNS", 0u);
+    made_up_aml_begin(&idle_method);
+    made_up_aml_raw(&idle_method, body, sizeof(body));
+    idle_states(&idle_method, 1u, &only, 1u);
+    made_up_aml_begin(&idle_scope);
+    made_up_aml_method(&idle_scope, "_CST", 0x00u, &idle_method);
+    idle_processor("CPU0", 1u, &idle_scope);
+    if (!idle_run(test))
+        return;
+    kernel_test_check(test, made_up_root_node(&idle_load, "RUNS")->value.payload == 2u, "the _CST ran twice");
+    kernel_test_check(test, idle_table.slots[0].processor != 0u && idle_table.slots[0].count == 0u,
+                      "the slot keeps its processor and publishes nothing");
+    kernel_test_check(test,
+                      idle_counts.processor_idle == 2u && idle_counts.processor_idle_changes == 1u &&
+                          idle_counts.processor_idle_failed == 1u,
+                      "two evaluations, the second for the Notify 0x81, which failed");
+    idle_close(test);
+}
+
+/**
+ * @brief FNV-1a, 32 bits, over @p length bytes, written here apart from the kernel's fold.
+ */
+static uint32_t idle_fnv(const uint8_t *bytes, uint32_t length)
+{
+    uint32_t fold = 0x811C9DC5u;
+
+    for (uint32_t byte = 0u; byte < length; ++byte)
+        fold = (fold ^ bytes[byte]) * 0x01000193u;
+    return fold;
+}
+
+/**
+ * @brief The fold of a table built here equals FNV-1a over the bytes §8.7 lists, written out by hand:
+ *        the slot count, then per slot whether it was evaluated, its count and its skipped states, then each
+ *        state's space, width, offset, access size, address, type, latency and power, never its node.
+ */
+KERNEL_TEST(the_fold_covers_every_published_field)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t table;
+    static const uint8_t bytes[] = {0x02u, 0x00u, 0x00u, 0x00u, 0x01u, 0x01u, 0x00u, 0x00u, 0x00u, 0x03u, 0x00u, 0x00u,
+                                    0x00u, 0x01u, 0x08u, 0x00u, 0x01u, 0x15u, 0x04u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                    0x00u, 0x02u, 0x00u, 0x00u, 0x00u, 0x68u, 0x00u, 0x00u, 0x00u, 0x5Eu, 0x01u, 0x00u,
+                                    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
+
+    memset(&table, 0, sizeof(table));
+    table.slot_count = 2u;
+    table.slots[0].processor = 0x1234u;
+    table.slots[0].count = 1u;
+    table.slots[0].skipped = 3u;
+    table.slots[0].states[0] = idle_port(0x415u, 1u, 2u, 0x68u, 350u);
+    kernel_test_check(
+        test, advanced_configuration_and_power_interface_processor_idle_fold(&table) == idle_fnv(bytes, sizeof(bytes)),
+        "the fold is FNV-1a over the bytes written out by hand");
 }
 
 /**
