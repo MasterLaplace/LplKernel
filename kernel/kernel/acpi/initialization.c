@@ -846,6 +846,13 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     advanced_configuration_and_power_interface_processor_idle_publish(load, machine, out_initialization, out_idle);
 }
 
+void advanced_configuration_and_power_interface_initialization_settle(InitializationLoad_t *load,
+                                                                      Initialization_t *initialization)
+{
+    if (load->table_count != initialization->tables)
+        initialization_settle(load, initialization, 0u);
+}
+
 void advanced_configuration_and_power_interface_initialization_count_failure(Initialization_t *initialization,
                                                                              uint32_t node,
                                                                              InitializationStatus_t status)

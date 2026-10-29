@@ -136,6 +136,18 @@ extern void advanced_configuration_and_power_interface_initialize_namespace(
     struct AdvancedConfigurationAndPowerInterfaceProcessorIdleTable *out_idle);
 
 /**
+ * @brief Runs the late initialisation of the tables Load and LoadTable added since the last one (§3.8),
+ *        once step 4 is over: what an evaluation of _CST in step 8 or step 9 loaded. Nothing runs when no
+ *        table was added.
+ *
+ * @param load           The load.
+ * @param initialization The counts the sequence keeps, its count of tables initialised among them.
+ */
+extern void advanced_configuration_and_power_interface_initialization_settle(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization);
+
+/**
  * @brief Counts a failed evaluation under its status, the first one kept as the one the acpi.init record
  *        names.
  *
