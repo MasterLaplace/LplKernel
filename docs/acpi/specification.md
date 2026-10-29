@@ -377,9 +377,9 @@ Run once at boot by the bootstrap processor.
    step walks only them. This is where `Load` runs on Intel clients.
 8. **Write CST_CNT to SMI_CMD** ([§5.2.9]) when it is not 0, SMI_CMD is a port the kernel may write (§5.3), and
    step 0 left the platform in ACPI mode: switched, found switched, or without a legacy mode; then `_CST` for each
-   processor object (§3.10).
-9. **Drain the Notify ring.** A Notify 0x81 on a processor, queued after its step-8 evaluation, triggers one more
-   `_CST` evaluation; every other Notify is counted and dropped.
+   processor object Linux attaches (§3.10).
+9. **Drain the Notify ring.** A Notify 0x81 on a processor, queued during or after its step-8 evaluation, triggers
+   one more `_CST` evaluation; every other Notify is counted and dropped.
 
 Steps 5 to 8 follow the order firmware depends on: Intel's `GCAP` reads the platform `_OSC` result, and on Intel
 clients `_CST` exists only after step 7.
@@ -441,18 +441,26 @@ subtrees ([§6.5.1]). `late_initializations` counts how often this does anything
 ### 3.10 What `_CST` publishes
 
 - **One `_CST` per processor object** ([§8.4.1.1]): the count, then for each state the Register descriptor
-  ([§6.4.3.7]), which is FFixedHW with the MWAIT hint, a SystemIO port read or SystemMemory, then the type, the
-  latency and the power.
+  ([§6.4.3.7]) in any space, kept in the entry, FFixedHW with the MWAIT hint or a SystemIO port read most often,
+  then the type, the latency and the power. Linux keeps only FFixedHW and SystemIO; which states to enter is
+  #298's decision.
 - **Resource templates** are read by a zero-copy iterator: Generic Register and EndTag are decoded, every other
   descriptor is skipped by its length.
 - **Binding.** Each processor object binds to the CPU slot of an Enabled MADT entry through its ACPI Processor UID:
   the `_UID` of an `ACPI0007` device, or the ProcessorID of `Processor` ([§8.4]). An unbound processor is counted,
   and so is one whose slot an object declared before it took.
+- **Presence.** Step 8 evaluates the `_CST` of a processor object Linux attaches (v7.3 `acpi_bus_attach`,
+  `acpi_processor_add`): its `_STA` present or functioning, and enabled, and no Device, Processor or ThermalZone
+  above it whose `_STA` is neither present nor functioning. A missing `_STA` reads 0x0F, one that fails reads 0 and
+  is counted; each device's `_STA` is read once. A processor kept out takes no slot, and is counted
+  (`processor_idle_absent`).
 - **Every state firmware lists is published,** type 3 included ([§8.1.4]), up to the cap of §6.1; which states to
   enter is #298's policy.
-- **A malformed package publishes no state:** a Count other than the number of sub-packages after it, a sub-package
-  of other than four elements, a Register with no Generic Register before its End Tag, or a Type, Latency or Power
-  that is no Integer of 32 bits.
+- **A faulty state is left out** and counted on its slot, as Linux skips it: a sub-package of other than four
+  elements, a Register that is no Buffer holding a Generic Register before its End Tag, or a Type, Latency or Power
+  that is no Integer of 32 bits, where Linux keeps the low 32 bits of a wider one.
+- **A malformed package publishes no state**, as Linux refuses it: no Integer Count, a Count below 1, or a Count
+  other than the number of sub-packages after it.
 - **The table is published per CPU,** as plain data the idle path reads, with one `[LPLTLM] acpi.cst` line per CPU.
   A Notify 0x81 re-evaluates it (§3.8 step 9).
 
@@ -789,7 +797,7 @@ that reaches it. The corpus runs report the peaks.
 | Loaded tables; bytes copied by `Load` | 128; 256 KiB |
 | Held mutexes per evaluation | 32 |
 | Notify ring | 64 entries; an overflow is dropped and counted |
-| States one CPU slot publishes | 8, as Linux's `ACPI_PROCESSOR_MAX_POWER`; the others are counted |
+| States one CPU slot publishes | 7, as Linux, whose table of `ACPI_PROCESSOR_MAX_POWER` (8) keeps its first entry for C0; the states after them are counted, not read |
 | Region mapping cache | 64 entries, each the pages one access touched |
 
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
