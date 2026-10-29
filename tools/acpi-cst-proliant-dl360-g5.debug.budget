@@ -1,0 +1,16 @@
+# Window W3 of the ACPI specification (§7.4) on a recorded machine: step 8 of §3.8, the evaluation of the _CST objects
+# of the HP ProLiant DL360 G5, a server whose eight processors publish their _CST, inside the ring-0 corpus test
+# the_boot_module_machine_loads, on a debug server kernel (./build.sh --server). The boot runs the same function on
+# q35's own tables first, hence skip=1. tools/acpi-corpus.sh module
+# 'Server/Hewlett-Packard/ProLiant/ProLiant DL360 G5/A8DA802364DF' writes the module. Checked by tools/instructions.sh
+# --budget tools/acpi-cst-proliant-dl360-g5.debug.budget kernel/lpl.kernel; a change that moves the count records the
+# new one.
+inside=advanced_configuration_and_power_interface_processor_idle_publish
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
+module=build/acpi-corpus/modules/Server_Hewlett-Packard_ProLiant_ProLiant_DL360_G5_A8DA802364DF.acpi
+instructions=207153
+accesses=98749
+tolerance=1

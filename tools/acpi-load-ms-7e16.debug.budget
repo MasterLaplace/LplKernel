@@ -9,6 +9,6 @@ times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
 module=build/acpi-corpus/modules/Desktop_MSI_MS-7_MS-7E16_B75C85853132.acpi
-instructions=87338457
+instructions=87338467
 accesses=43918594
 tolerance=1
