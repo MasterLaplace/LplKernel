@@ -4,10 +4,10 @@
 # (./build.sh --server), the test alone selected so that no other test changes the page allocator it starts from.
 # Checked by tools/instructions.sh --budget tools/acpi-cst.debug.budget kernel/lpl.kernel; a change that moves the
 # evaluation of _CST records the new counts. The pages the simulated host and the load take (buddy_insert_order,
-# memset) count 574,516 of them.
+# memset) count 581,484 of them.
 inside=kernel_test_body_the_window_w3_c_states_of_an_intel_and_an_amd_processor
 times=1
 append=lpl.test=advanced_configuration_and_power_interface_processor_idle.the_window_w3_c_states_of_an_intel_and_an_amd_processor
-instructions=903322
-accesses=390620
+instructions=911705
+accesses=394020
 tolerance=1
