@@ -313,16 +313,6 @@ static bool processor_idle_integer(ProcessorIdleLoad_t *load, ProcessorIdleCount
 }
 
 /**
- * @brief Whether a node is one step 8 decides the presence of above a processor object: a Device, a
- *        Processor or a ThermalZone, as the walk of step 4 does.
- */
-static bool processor_idle_is_device(const ProcessorIdleNode_t *node)
-{
-    return node->type == PROCESSOR_IDLE_NODE(DEVICE) || node->type == PROCESSOR_IDLE_NODE(PROCESSOR) ||
-           node->type == PROCESSOR_IDLE_NODE(THERMAL_ZONE);
-}
-
-/**
  * @brief The highest device above @p index whose presence step 8 has not decided, or 0, also when one above
  *        it is a device step 8 found absent, which @p out_absent then tells.
  */
@@ -340,7 +330,8 @@ static uint32_t processor_idle_undecided_above(const ProcessorIdleLoad_t *load, 
             *out_absent = true;
             return 0u;
         }
-        if (processor_idle_is_device(node) && (node->flags & PROCESSOR_IDLE_DECIDED) == 0u)
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type) &&
+            (node->flags & PROCESSOR_IDLE_DECIDED) == 0u)
             highest = index;
     }
     return highest;

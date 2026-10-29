@@ -102,15 +102,6 @@ static MachineLanguageStatus_t machine_language_charge_time(MachineLanguageServi
 }
 
 /**
- * @brief Whether @p type is an object a Notify may name: a device, a processor or a thermal zone.
- */
-static bool machine_language_receives_notifications(uint8_t type)
-{
-    return type == MACHINE_LANGUAGE_NODE(DEVICE) || type == MACHINE_LANGUAGE_NODE(PROCESSOR) ||
-           type == MACHINE_LANGUAGE_NODE(THERMAL_ZONE);
-}
-
-/**
  * @brief Whether @p node is `\_GL`, the mutex the global lock stands behind (§5.4).
  */
 static bool machine_language_is_global_lock(const MachineLanguageLoad_t *load, uint32_t node)
@@ -273,7 +264,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
 {
     MachineLanguageServices_t *services = &load->services;
 
-    if (!machine_language_receives_notifications(
+    if (!advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
             advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node)->type))
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     ++services->notifications;

@@ -339,4 +339,15 @@ advanced_configuration_and_power_interface_machine_language_namespace_creation_p
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t *name, uint32_t *out_parent,
     uint32_t *out_name);
 
+/**
+ * @brief Whether a node of type @p type is a device object (ACPI 6.6 §5.6.6): a Device, a Processor or a
+ *        ThermalZone, the objects a Notify may name and those the initialisation walks (§3.8).
+ *
+ * @param type An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_* type.
+ * @return Whether it is one.
+ */
+static inline bool advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(uint8_t type);
+
+#include <kernel/acpi/machine_language_namespace.inl>
+
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_NAMESPACE_H */

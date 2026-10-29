@@ -108,16 +108,6 @@ static uint32_t initialization_next(const InitializationLoad_t *load, uint32_t i
 }
 
 /**
- * @brief Whether a node is one the walk of step 4 initialises: a Device, a Processor or a ThermalZone,
- *        as ACPICA and uACPI walk them.
- */
-static bool initialization_is_device(const InitializationNode_t *node)
-{
-    return node->type == INITIALIZATION_NODE(DEVICE) || node->type == INITIALIZATION_NODE(PROCESSOR) ||
-           node->type == INITIALIZATION_NODE(THERMAL_ZONE);
-}
-
-/**
  * @brief Counts a failed evaluation of @p object under its status, the first one named.
  */
 static void initialization_count_failure(Initialization_t *initialization, uint32_t object,
@@ -255,7 +245,7 @@ static void initialization_find_initializations(InitializationLoad_t *load, Init
     {
         const InitializationNode_t *node = initialization_node(load, index);
 
-        if (!initialization_is_device(node))
+        if (!advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type))
             continue;
         ++initialization->devices;
         if (initialization_object(load, index, "_INI") != 0u)
@@ -380,21 +370,23 @@ static void initialization_mark_late(InitializationLoad_t *load, Initialization_
 
         if (!initialization_is_late(load, index, first, last))
             continue;
-        if (initialization_is_device(node))
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type))
         {
             ++initialization->devices;
             if (initialization_object(load, index, "_INI") != 0u)
                 initialization_mark(load, index, INITIALIZATION_HOLDS);
             if (node->type != INITIALIZATION_NODE(THERMAL_ZONE) && initialization_holds_capabilities(load, index))
                 initialization_mark(load, index, INITIALIZATION_CAPABLE);
-            *out_devices |= !initialization_is_device(initialization_node(load, parent)) ||
+            *out_devices |= !advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                                initialization_node(load, parent)->type) ||
                             !initialization_is_late(load, parent, first, last);
             continue;
         }
         *out_regions |=
             advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
                 load, index) != 0u;
-        if (!initialization_is_device(initialization_node(load, parent)))
+        if (!advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                initialization_node(load, parent)->type))
             continue;
         if (node->name == initialization_name("_INI"))
             initialization_mark(load, parent, INITIALIZATION_HOLDS);
@@ -504,7 +496,8 @@ static uint32_t initialization_highest_unwalked(const InitializationLoad_t *load
 
     for (index = initialization_node(load, index)->parent; index != 0u;
          index = initialization_node(load, index)->parent)
-        if (initialization_is_device(initialization_node(load, index)) &&
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                initialization_node(load, index)->type) &&
             (initialization_node(load, index)->flags & INITIALIZATION_WALKED) == 0u)
             highest = index;
     return highest;
@@ -550,15 +543,18 @@ static void initialization_walk_late(InitializationLoad_t *load, Initialization_
     {
         const InitializationNode_t *node = initialization_node(load, top);
 
-        if (!initialization_is_device(node) || !initialization_is_late(load, top, first, last) ||
-            (initialization_is_device(initialization_node(load, node->parent)) &&
+        if (!advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type) ||
+            !initialization_is_late(load, top, first, last) ||
+            (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                 initialization_node(load, node->parent)->type) &&
              initialization_is_late(load, node->parent, first, last)) ||
             initialization_under_absent(load, top) || initialization_reached_later(load, top, walking) ||
             !initialization_decide_above(load, initialization, top))
             continue;
         for (uint32_t index = top; index != 0u;)
         {
-            const bool below = !initialization_is_device(initialization_node(load, index)) ||
+            const bool below = !advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                                   initialization_node(load, index)->type) ||
                                initialization_initialize_device(load, initialization, index);
 
             index = initialization_next_below(load, top, index, below);
@@ -610,7 +606,8 @@ static void initialization_walk(InitializationLoad_t *load, Initialization_t *in
     {
         bool descend = true;
 
-        if (initialization_is_device(initialization_node(load, index)))
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                initialization_node(load, index)->type))
         {
             descend = initialization_initialize_device(load, initialization, index);
             if (load->table_count != initialization->tables)
