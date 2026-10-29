@@ -1,7 +1,10 @@
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
+#include <kernel/cpu/pmm.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
+
+#include <string.h>
 
 KERNEL_TEST_SUITE(boot_map, KERNEL_TEST_STAGE_INITIALIZATION);
 
@@ -12,6 +15,96 @@ KERNEL_TEST_SUITE(boot_map, KERNEL_TEST_STAGE_INITIALIZATION);
 #define BOOT_MAP_TEST_TOP_PAGE           0xFFFFF000u /**< The top page below 4 GiB, the firmware's on every PC. */
 #define BOOT_MAP_TEST_KERNEL_MAP_END                                                                                   \
     (KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE) /**< The end of the kernel's map of physical memory, 256 MiB. */
+#define BOOT_MAP_TEST_BOOT_MAP_PAGES    (BOOT_MAP_TEST_BOOT_MAP_END / PAGE_SIZE) /**< Pages boot.S maps. */
+#define BOOT_MAP_TEST_ALTERNATING_COUNT 100u  /**< Entries of the made-up map that alternates RAM and reserved. */
+#define BOOT_MAP_TEST_MAP_BYTES         4096u /**< Room for the largest made-up map, 100 entries of 24 bytes. */
+
+/**
+ * @brief One entry of a made-up memory map.
+ */
+typedef struct BootMapTestEntry {
+    uint64_t base;   /**< Its first byte. */
+    uint64_t length; /**< Its length in bytes. */
+    uint32_t type;   /**< 1 usable RAM, 2 reserved, 3 ACPI reclaimable, 4 ACPI NVS. */
+    uint32_t size;   /**< Its size field: 20, 24 with extended attributes, or below 20 when corrupt. */
+} BootMapTestEntry_t;
+
+/**
+ * @brief A made-up memory map: its entries in order, or none at all.
+ */
+typedef struct BootMapTestMap {
+    const BootMapTestEntry_t *entries; /**< Its entries, NULL for no map at all. */
+    uint32_t count;                    /**< How many. */
+} BootMapTestMap_t;
+
+static const BootMapTestEntry_t boot_map_test_q35_64[] = {
+    {0x0u,        0x9FC00u,   1u, 20u},
+    {0x9FC00u,    0x400u,     2u, 20u},
+    {0xF0000u,    0x10000u,   2u, 20u},
+    {0x100000u,   0x3EDF000u, 1u, 20u},
+    {0x3FDF000u,  0x21000u,   2u, 20u},
+    {0xFFFC0000u, 0x40000u,   2u, 20u},
+};
+static const BootMapTestEntry_t boot_map_test_q35_48[] = {
+    {0x0u,       0x9FC00u,   1u, 20u},
+    {0x100000u,  0x2EDF000u, 1u, 20u},
+    {0x2FDF000u, 0x21000u,   2u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_ram_past_64_mib[] = {
+    {0x0u,      0x9FC00u,   1u, 20u},
+    {0x100000u, 0xFF00000u, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_overlapping_ram[] = {
+    {0x100000u,  0x1F00000u, 1u, 20u},
+    {0x1000000u, 0x3000000u, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_ram_under_reserved[] = {
+    {0x100000u, 0x3F00000u, 1u, 20u},
+    {0x800000u, 0x100000u,  2u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_mid_page_bounds[] = {
+    {0x100800u,  0x1000000u, 1u, 20u},
+    {0x1100000u, 0x800u,     1u, 20u},
+    {0x1200000u, 0x2E00800u, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_split_mid_page[] = {
+    {0x100000u, 0x100800u,  1u, 20u},
+    {0x200800u, 0x1E00000u, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_crossing_4_gib[] = {
+    {0x100000u, 0x100000000ull, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_ending_at_4_gib[] = {
+    {0x100000u, 0xFFF00000u, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_above_4_gib_first[] = {
+    {0x100000000ull, 0x100000000ull, 1u, 20u},
+    {0x100000u,      0x1000000u,     1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_unsorted_acpi[] = {
+    {0x2000000u, 0x2000000u, 1u, 20u},
+    {0x100000u,  0x800000u,  1u, 20u},
+    {0x1000000u, 0x800000u,  3u, 20u},
+    {0x1800000u, 0x800000u,  4u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_extended_size[] = {
+    {0x100000u, 0x3F00000u, 1u, 24u}
+};
+static const BootMapTestEntry_t boot_map_test_corrupt_size[] = {
+    {0x0u,      0x9FC00u,   1u, 20u},
+    {0x9FC00u,  0x400u,     2u, 0u },
+    {0x100000u, 0x3F00000u, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_low_ram_only[] = {
+    {0x0u, 0x80000u, 1u, 20u}
+};
+static const BootMapTestEntry_t boot_map_test_no_entry[] = {
+    {0x0u, 0x0u, 0u, 0u}
+};
+static BootMapTestEntry_t boot_map_test_alternating[BOOT_MAP_TEST_ALTERNATING_COUNT];
+
+static uint8_t boot_map_test_map_bytes[BOOT_MAP_TEST_MAP_BYTES];
+static uint32_t boot_map_test_dropped[BOOT_MAP_TEST_BOOT_MAP_PAGES / 32u];
 
 extern MultibootInfo_t *multiboot_info;
 
@@ -58,6 +151,53 @@ static bool boot_map_test_page_is_ram(uint32_t page)
     const uint8_t *const map = boot_map_test_memory_map(&length);
 
     return boot_map_test_map_holds_ram(map, length, page);
+}
+
+/**
+ * @brief Lays @p map out as a Multiboot memory map in boot_map_test_map_bytes, each entry its size field then that
+ *        many bytes, a corrupt size moving the next entry onto its fields.
+ *
+ * @return Its length in bytes.
+ */
+static uint32_t boot_map_test_lay_out(const BootMapTestMap_t *map)
+{
+    uint32_t length = 0u;
+
+    for (uint32_t index = 0u; index < map->count; ++index)
+    {
+        const BootMapTestEntry_t *const made_up = &map->entries[index];
+        MemoryMapEntry_t entry = {.size = made_up->size,
+                                  .base_addr = made_up->base,
+                                  .length = made_up->length,
+                                  .type = made_up->type};
+
+        memset(boot_map_test_map_bytes + length, 0, sizeof(uint32_t) + 24u);
+        memcpy(boot_map_test_map_bytes + length, &entry, sizeof(entry));
+        length += sizeof(uint32_t) + made_up->size;
+    }
+    return length;
+}
+
+/**
+ * @brief Marks in boot_map_test_dropped every page of every run physical_memory_manager_boot_map_next_hole gives for
+ *        a map of @p length bytes, and says whether each run is well formed: past the first MiB, not empty, within
+ *        the boot map, after the previous one.
+ */
+static bool boot_map_test_mark_holes(const uint8_t *map, uint32_t length)
+{
+    uint32_t first = 0u;
+    uint32_t end = 0u;
+
+    memset(boot_map_test_dropped, 0, sizeof(boot_map_test_dropped));
+    for (uint32_t from = 0u; physical_memory_manager_boot_map_next_hole(map, length, from, &first, &end); from = end)
+    {
+        if (first < from || first < BOOT_MAP_TEST_FIRST_MEBIBYTE_END || end <= first ||
+            end > BOOT_MAP_TEST_BOOT_MAP_END || (first | end) & (PAGE_SIZE - 1u))
+            return false;
+        for (uint32_t page = first; page < end; page += PAGE_SIZE)
+            boot_map_test_dropped[page / PAGE_SIZE / 32u] |= 1u << (page / PAGE_SIZE % 32u);
+    }
+    return true;
 }
 
 /**
@@ -171,9 +311,82 @@ KERNEL_TEST(no_page_below_256_mib_gets_a_second_memory_type_from_a_device_window
 }
 
 /**
+ * @brief On 18 made-up memory maps, the holes physical_memory_manager_boot_map_next_hole gives are exactly the pages
+ *        between 1 and 64 MiB that no usable RAM entry holds whole, as the test reads each map itself.
+ *
+ * @details The maps: none, empty, a lone corrupt entry, q35 with 64 and 48 MiB, RAM past 64 MiB, overlapping RAM,
+ *          RAM under a reserved entry, bounds and RAM within a page, RAM split mid-page, RAM crossing and ending at
+ *          4 GiB, an entry above 4 GiB first, 100 alternating entries, unsorted RAM with ACPI memory, a 24-byte
+ *          entry, a corrupt entry before the kernel's RAM, and RAM below 1 MiB only. No boot exercises most of them:
+ *          the boots with 256 MiB or more leave nothing to unmap.
+ */
+KERNEL_TEST(the_holes_of_made_up_memory_maps_are_the_pages_no_ram_holds)
+{
+    for (uint32_t index = 0u; index < BOOT_MAP_TEST_ALTERNATING_COUNT; ++index)
+        boot_map_test_alternating[index] =
+            (BootMapTestEntry_t){0x100000u + (uint64_t) index * 0x80000u, 0x40000u, index % 3u ? 1u : 2u, 20u};
+
+    const BootMapTestMap_t maps[] = {
+        {NULL,                             0u                                                            },
+        {boot_map_test_no_entry,           0u                                                            },
+        {boot_map_test_no_entry,           1u                                                            },
+        {boot_map_test_q35_64,             sizeof(boot_map_test_q35_64) / sizeof(boot_map_test_q35_64[0])},
+        {boot_map_test_q35_48,             sizeof(boot_map_test_q35_48) / sizeof(boot_map_test_q35_48[0])},
+        {boot_map_test_ram_past_64_mib,    2u                                                            },
+        {boot_map_test_overlapping_ram,    2u                                                            },
+        {boot_map_test_ram_under_reserved, 2u                                                            },
+        {boot_map_test_mid_page_bounds,    3u                                                            },
+        {boot_map_test_split_mid_page,     2u                                                            },
+        {boot_map_test_crossing_4_gib,     1u                                                            },
+        {boot_map_test_ending_at_4_gib,    1u                                                            },
+        {boot_map_test_above_4_gib_first,  2u                                                            },
+        {boot_map_test_alternating,        BOOT_MAP_TEST_ALTERNATING_COUNT                               },
+        {boot_map_test_unsorted_acpi,      4u                                                            },
+        {boot_map_test_extended_size,      1u                                                            },
+        {boot_map_test_corrupt_size,       3u                                                            },
+        {boot_map_test_low_ram_only,       1u                                                            },
+    };
+    uint32_t agreeing = 0u;
+    uint32_t dropped = 0u;
+    uint32_t first_disagreeing = 0u;
+
+    for (uint32_t index = 0u; index < sizeof(maps) / sizeof(maps[0]); ++index)
+    {
+        const uint32_t length = boot_map_test_lay_out(&maps[index]);
+        const uint8_t *const map = maps[index].entries ? boot_map_test_map_bytes : NULL;
+        bool agrees = boot_map_test_mark_holes(map, length);
+
+        for (uint32_t page = 0u; agrees && page < BOOT_MAP_TEST_BOOT_MAP_END; page += PAGE_SIZE)
+        {
+            const bool marked = (boot_map_test_dropped[page / PAGE_SIZE / 32u] >> (page / PAGE_SIZE % 32u)) & 1u;
+            const bool expected = map && length != 0u && page >= BOOT_MAP_TEST_FIRST_MEBIBYTE_END &&
+                                  !boot_map_test_map_holds_ram(map, length, page);
+
+            dropped += marked;
+            agrees = marked == expected;
+        }
+        if (agrees)
+            ++agreeing;
+        else if (first_disagreeing == 0u)
+            first_disagreeing = index + 1u;
+    }
+
+    kernel_test_measure(test, "maps", sizeof(maps) / sizeof(maps[0]));
+    kernel_test_measure(test, "maps_agreeing", agreeing);
+    kernel_test_measure(test, "pages_dropped", dropped);
+    kernel_test_measure(test, "first_disagreeing_map_one_based", first_disagreeing);
+    kernel_test_check(test, agreeing == sizeof(maps) / sizeof(maps[0]),
+                      "each map's holes are its pages between 1 and 64 MiB that no RAM entry holds whole");
+}
+
+/**
  * @brief The boot map keeps the first mebibyte, which the kernel reads directly (VGA text, the BIOS data area,
  *        the BIOS area the root pointer is scanned in, the processor trampoline), and past it only the pages the
- *        memory map calls RAM, as Linux maps only RAM past the ISA range.
+ *        memory map calls RAM, as Linux maps only RAM past the first MiB.
+ *
+ * @details Skipped when the memory map leaves no page between 1 and 64 MiB outside RAM, as QEMU's with 256 MiB or
+ *          more: `qemu-system-i386 -machine q35 -m 64 -kernel kernel/lpl.kernel -append lpl.test=boot_map.*` runs it
+ *          on QEMU's reserved top of RAM, and 48 MiB on a hole as well.
  */
 KERNEL_TEST(the_boot_map_keeps_the_first_mebibyte_and_only_memory_past_it)
 {
@@ -182,6 +395,16 @@ KERNEL_TEST(the_boot_map_keeps_the_first_mebibyte_and_only_memory_past_it)
     if (!boot_map_test_memory_map(&length))
     {
         kernel_test_skip(test, "the bootloader gave no memory map");
+        return;
+    }
+
+    uint32_t outside_ram = 0u;
+
+    for (uint32_t page = BOOT_MAP_TEST_FIRST_MEBIBYTE_END; page < BOOT_MAP_TEST_BOOT_MAP_END; page += PAGE_SIZE)
+        outside_ram += !boot_map_test_page_is_ram(page);
+    if (outside_ram == 0u)
+    {
+        kernel_test_skip(test, "the memory map leaves no page between 1 and 64 MiB outside RAM: boot with -m 64");
         return;
     }
 
