@@ -718,7 +718,8 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     initialization_find_initializations(load, out_initialization);
     initialization_run_ini(load, out_initialization, INITIALIZATION_ROOT);
     initialization_run_ini(load, out_initialization, initialization_object(load, INITIALIZATION_ROOT, "_SB_"));
-    initialization_mark_late(load, out_initialization, declared, load->table_count, &regions, &devices);
+    if (load->table_count != declared)
+        initialization_mark_late(load, out_initialization, declared, load->table_count, &regions, &devices);
     out_initialization->tables = load->table_count;
 
     const uint32_t covered = out_initialization->tables;
