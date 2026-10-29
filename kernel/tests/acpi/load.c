@@ -630,6 +630,67 @@ KERNEL_TEST(step_eight_and_the_late_initialisation_decide_a_device_once)
 }
 
 /**
+ * @brief Step 8 records the presence it reads of a processor for the late initialisation: CPU1, declared
+ *        first, is found absent by step 8, and CPU0 present; the table CPU0's _CST loads declares a device
+ *        under each. The device under CPU0 is initialised without CPU0's _STA read again, the one under CPU1
+ *        is left alone without CPU1's.
+ */
+KERNEL_TEST(step_eight_records_the_presence_of_a_processor_for_the_late_initialisation)
+{
+    static const uint8_t present[] = {0x75u, '\\', 'B', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
+    static const uint8_t absent[] = {0x75u, '\\', 'A', 'S', 'T', 'A', 0xA4u, 0x00u};
+    static const uint8_t integer[] = {0xA4u, 0x01u};
+    static const uint8_t body[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
+                                   0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
+                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static MadeUpAml_t device;
+    static MadeUpAml_t scope;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_name_integer(&load_aml, "BSTA", 0u);
+    made_up_aml_name_integer(&load_aml, "ASTA", 0u);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_begin(&scope);
+    made_up_aml_device(&scope, "LDEV", &device);
+    made_up_aml_scope(&load_loaded, "CPU0", &scope);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 8u);
+    made_up_aml_begin(&scope);
+    made_up_aml_device(&scope, "LDV2", &device);
+    made_up_aml_scope(&load_loaded, "CPU1", &scope);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_STA", absent, sizeof(absent));
+    load_method(&device, "_CST", integer, sizeof(integer));
+    made_up_aml_processor(&load_aml, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
+    made_up_aml_begin(&device);
+    load_method(&device, "_STA", present, sizeof(present));
+    load_method(&device, "_CST", body, sizeof(body));
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 2u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+    load_madt.processors[1].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER + 1u;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test, load_integer("HC0_") == LOAD_ONES, "CPU0's _CST loads its table");
+    kernel_test_check(test, load_integer("BSTA") == 1u && load_integer("ASTA") == 1u,
+                      "CPU0's _STA and CPU1's are read once, by step 8");
+    kernel_test_check(test, load_integer("TRAC") == 0x7u,
+                      "the device under CPU0 is initialised, the one under CPU1 left alone");
+    kernel_test_check(test, load_counts.processor_idle_absent == 1u && load_idle.slots[0].count == 1u,
+                      "CPU1 is kept out, CPU0 publishes its state");
+    load_close(test);
+}
+
+/**
  * @brief A table \_SB._INI loads, before step 3, is initialised with the static ones: step 4 runs the
  *        _INI of its device, and step 7 gives its processor the capabilities, no late initialisation
  *        needed (§3.8).
