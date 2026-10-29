@@ -478,8 +478,8 @@ static void load_present_initialization(MadeUpAml_t *aml, uint8_t digit)
 /**
  * @brief Intel's pattern (§8.2): a processor's _PDC Loads its C-state table, and the HWP table only when
  *        the platform _OSC granted bit 6, which the kernel never claims. The table loaded at step 7
- *        declares a device and PCI_Config regions with a _REG in their scope: its late initialisation
- *        runs that _REG once, then the device's _STA and _INI (§3.8).
+ *        declares a device, a child device and PCI_Config regions with a _REG in their scope: its late
+ *        initialisation runs that _REG once, then the _STA and _INI of the device and of its child (§3.8).
  */
 KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
 {
@@ -488,19 +488,20 @@ KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
     static const uint8_t driver[] = {0x5Bu, 0x20u, '\\',  'C',  'S', 'T', 'R',  '\\', 'H',   'C',   '0',   '_',
                                      0xA0u, 0x16u, 0x7Bu, '\\', 'O', 'S', 'C',  'P',  0x0Au, 0x40u, 0x00u, 0x5Bu,
                                      0x20u, '\\',  'H',   'W',  'P', 'R', '\\', 'H',  'W',   '0',   '_'};
-    static const uint8_t computed_region[] = {0x5Bu, 0x80u, 'P',   'C',   'F',   '2',   0x02u,
-                                              0x72u, 0x00u, 0x00u, 0x00u, 0x0Bu, 0x00u, 0x01u};
     static MadeUpAml_t device;
 
     load_begin();
     made_up_aml_name_integer(&load_aml, "OSCP", 0u);
     made_up_aml_name_integer(&load_aml, "HC0_", 0u);
     made_up_aml_name_integer(&load_aml, "HW0_", 0u);
+    made_up_aml_begin(&load_inner);
+    load_present_initialization(&load_inner, 6u);
     made_up_aml_begin(&device);
     load_registration(&device);
     made_up_aml_region(&device, "PCFG", 0x02u, 0u, 0x100u);
-    made_up_aml_raw(&device, computed_region, sizeof(computed_region));
+    made_up_aml_region(&device, "PCF2", 0x02u, 0x100u, 0x100u);
     load_present_initialization(&device, 3u);
+    made_up_aml_device(&device, "LCHD", &load_inner);
     made_up_aml_device(&load_loaded, "LDEV", &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&load_inner);
@@ -529,8 +530,9 @@ KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
                       load_integer("HC0_") == LOAD_ONES && load_integer("HW0_") == 0u &&
                           load_integer("HWPT") == 0xDEADu && load_load.tables_loaded == 1u,
                       "the _PDC loads the C-state table, never the HWP one: the platform granted nothing");
-    kernel_test_check(test, load_integer("TRAC") == 0x213u,
-                      "the loaded table's scope gets one _REG (2, 1), then its device's _INI runs");
+    kernel_test_check(test, load_integer("TRAC") == 0x2136u,
+                      "the loaded table's scope gets one _REG (2, 1) for its two regions, then its device's _INI "
+                      "runs, then its child's");
     kernel_test_check(test,
                       load_counts.late_initializations == 1u && load_counts.tables == 2u &&
                           load_counts.registrations == 1u && load_counts.processor_capabilities == 1u &&

@@ -1673,8 +1673,7 @@ static bool machine_language_running(const MachineLanguageEvaluation_t *evaluati
  * @brief Pushes the internal frame that runs _REG (PCI_Config, 1) for a PCI_Config region a method has
  *        just created (§5.3), once the initialisation has registered, unless that _REG already runs: a
  *        _REG that creates such a region in its own scope is not called again. A _REG that does not
- *        take two arguments is not called, and counted as failed. A region the code of a table Load
- *        adds creates is registered by that table's late initialisation (§3.8), once it is declared.
+ *        take two arguments is not called, and counted as failed.
  */
 static MachineLanguageStatus_t machine_language_register_at_creation(MachineLanguageLoad_t *load, uint32_t region)
 {
@@ -1687,8 +1686,7 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
     const MachineLanguageNode_t *node =
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, method);
 
-    if (method == 0u || machine_language_frame(evaluation)->method == 0u ||
-        machine_language_running(evaluation, method))
+    if (method == 0u || machine_language_running(evaluation, method))
         return MACHINE_LANGUAGE_OK;
     if ((node->value.auxiliary & 0x7u) != 2u)
     {

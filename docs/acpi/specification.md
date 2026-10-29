@@ -405,8 +405,8 @@ clients `_CST` exists only after step 7.
 **Tables loaded at run time.** A table loaded before step 3 is initialised by steps 3 and 4 with the static ones,
 and step 7 sees its processors. A table loaded later can declare regions and devices: once the evaluation that loaded
 it returns, or once step 3 is over for a `_REG`'s, its scopes get the `_REG` of step 3, then the `_STA` and `_INI` walk
-of step 4 over its device subtrees ([§6.5.1]); steps 3 and 4 leave them to it, and a region its table-level code
-creates waits for it rather than registering at once. `late_initializations` counts how often this does anything.
+of step 4 over its device subtrees ([§6.5.1]); steps 3 and 4 leave them to it. `late_initializations` counts how
+often this does anything.
 
 ### 3.9 The static tables
 

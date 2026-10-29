@@ -51,8 +51,9 @@ acpi_helper_write_regions_record(Serial_t *serial,
 
 /**
  * @brief Writes the `[LPLTLM] acpi.init` record: what the initialisation of the boot's namespace ran
- *        and counted (§3.8 steps 2 to 9), the fold of the C-states it published, and the first evaluation
- *        that failed, by its path and status.
+ *        and counted (§3.8 steps 2 to 9), the late initialisations of the tables loaded at run time among
+ *        them, the fold of the C-states it published, and the first evaluation that failed, by its path and
+ *        status.
  */
 static void
 acpi_helper_write_initialization_record(Serial_t *serial,
@@ -83,6 +84,8 @@ acpi_helper_write_initialization_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("processor_capabilities_refused", initialization->processor_capabilities_refused);
     kernel_telemetry_write_unsigned("processor_capabilities_failed", initialization->processor_capabilities_failed);
     kernel_telemetry_write_unsigned("processors_unbound", initialization->processors_unbound);
+    kernel_telemetry_write_unsigned("tables", initialization->tables);
+    kernel_telemetry_write_unsigned("late_initializations", initialization->late_initializations);
     kernel_telemetry_write_text(
         "idle_control", advanced_configuration_and_power_interface_idle_control_name(initialization->idle_control));
     kernel_telemetry_write_unsigned("processor_idle", initialization->processor_idle);
@@ -345,6 +348,10 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("load_errors", load->load_errors);
     kernel_telemetry_write_unsigned("decode_errors", load->decode_errors);
     kernel_telemetry_write_unsigned("checksum_bad_loaded", load->checksum_bad_loaded);
+    kernel_telemetry_write_unsigned("tables_loaded", load->tables_loaded);
+    kernel_telemetry_write_unsigned("load_duplicates", load->load_duplicates);
+    kernel_telemetry_write_unsigned("load_tables_missing", load->load_tables_missing);
+    kernel_telemetry_write_unsigned("table_bytes_copied", load->table_bytes_copied);
     kernel_telemetry_write_unsigned("nodes", load->space.live_nodes);
     kernel_telemetry_write_unsigned("arena_bytes", load->space.arena_bytes);
     kernel_telemetry_write_unsigned("lookups", load->space.lookups);
