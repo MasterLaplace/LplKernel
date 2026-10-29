@@ -263,8 +263,8 @@ KERNEL_TEST(a_revision_3_fadt_prefers_its_extended_blocks)
     kernel_test_check(
         test,
         made_up_fadt_register_is(&fadt->general_purpose_event_blocks[1], MADE_UP_FADT_MEMORY, 64u, 1u, 0xFED40000u) &&
-            fadt->general_purpose_event_block_lengths[1] == 8u,
-        "an extended block without a legacy length gives the GPE length from its width");
+            fadt->general_purpose_event_block_lengths[1] == 0u,
+        "an extended block without a legacy length has a GPE length of 0, which GPE1_BLK_LEN gives it");
     kernel_test_check(test, fadt->performance_state_command == 0x80u && fadt->idle_state_command == 0x85u,
                       "PSTATE_CNT and CST_CNT are read from revision 3");
     kernel_test_check(test,

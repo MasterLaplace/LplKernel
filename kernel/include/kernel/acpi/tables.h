@@ -134,8 +134,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceFixedDescription {
     uint8_t reset_value;                            /**< RESET_VALUE: what the reset register is written. */
     uint8_t general_purpose_event_1_base;           /**< GPE1_BASE: the number of GPE1's first event. */
     uint8_t general_purpose_event_block_lengths[2]; /**< GPE0_BLK_LEN and GPE1_BLK_LEN in bytes, which a Generic
-                                                         Address Structure cannot hold past 31; the extended block's
-                                                         width when the legacy length is 0. */
+                                                         Address Structure cannot hold past 31, and which ACPI gives
+                                                         the extended block too; 0 for an absent block. */
     uint16_t system_control_interrupt;              /**< SCI_INT: the SCI's 8259 line, or its global system
                                                          interrupt on a platform without an 8259. */
     uint32_t length;                                /**< Bytes of the firmware's FADT. */
