@@ -445,4 +445,22 @@ bool paging_page_is_read_only(uint32_t virt_addr, bool *is_read_only)
     return true;
 }
 
+bool paging_get_page_table_entry(uint32_t virt_addr, PageTableEntry_t *out_entry)
+{
+    if (!current_page_directory || !out_entry)
+        return false;
+
+    const PageDirectoryEntry_t *const pde = &current_page_directory->entries[PAGE_DIRECTORY_INDEX(virt_addr)];
+
+    if (!pde->present)
+        return false;
+
+    const PageTableEntry_t *const pte = &paging_get_page_table(pde)->entries[PAGE_TABLE_INDEX(virt_addr)];
+
+    if (!pte->present)
+        return false;
+    *out_entry = *pte;
+    return true;
+}
+
 uint32_t paging_get_runtime_owned_page_table_count(void) { return page_table_runtime_owned_count; }
