@@ -435,10 +435,20 @@ functioning is walked. No `_INI` runs twice. `late_initializations` counts how o
   PM1 control block may be longer than 2 bytes ([§4.8.1.2]), and SCI_EN is read with a word access
   ([§4.8.3.2.1]). ACPICA instead rewrites each PM block's width to a fixed default.
 - **The power management timer** that `Stall` waits on (§3.3) is PM_TMR_BLK, used only when it lies, 4 bytes long, in
-  the I/O space and passes the checks Linux makes before it trusts one: each read is three reads of the port, the
-  middle one kept once the three are in order; only its 24 low bits count, whatever TMR_VAL_EXT says; it must move
-  forward ten times, each within 10,000 reads; and over one tick it must count 3.579545 MHz within 5 %. Otherwise,
-  and on a hardware-reduced platform, `Stall` spins on the tick. The boot prints one `[LPLTLM] acpi.timer` line.
+  the I/O space and passes the checks Linux makes before it trusts one, with three differences:
+  - each read is three reads of the port, the middle one kept once the three are in order, a middle one that differs
+    from two equal ones out of order too, at most 16 times; Linux reads so only on the chipsets it lists, unbounded;
+  - only its 24 low bits count, whatever TMR_VAL_EXT says; it must move forward ten times, each within 10,000 reads,
+    the ten checks back to back, where Linux waits `udelay(100 * j)` between them;
+  - over three ticks of IRQ0 it must count 3.579545 MHz within 5 %, in one of three measurements, since a tick seen
+    late spoils one; Linux measures 30 ms of PIT channel 2 by polling it, once. A clock that does not step within
+    65,536 reads leaves the timer unused (`no-reference`), and so does a timer that counts half a second before it
+    steps (`ran-ahead`).
+
+  Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which is
+  going back, is `derailed`: the wait finishes on the tick, and so do the later ones. Otherwise, and on a
+  hardware-reduced platform, `Stall` spins on the tick. The boot prints one `[LPLTLM] acpi.timer` line: the state, the
+  port, the rate when it was measured, the reads and the time the checks took, the stalls and their reads.
 - **The switch to ACPI mode** is a routine of the tables layer: SCI_EN read, enables cleared, ACPI_ENABLE written,
   a bounded poll (§3.8 step 0).
 - **The MADT.** Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for an entry whose Enabled flag is
