@@ -689,19 +689,20 @@ static void idle_present(MadeUpAml_t *aml, const char *name, uint8_t identifier,
 /**
  * @brief Step 8 evaluates the _CST of the processor objects Linux attaches (v7.3 acpi_bus_attach,
  *        acpi_processor_add): present or functioning and enabled, with no device above them neither present
- *        nor functioning; a _STA that fails reads 0, and a missing one 0x0F. A processor kept out takes no
- *        slot, and each device's _STA is read once.
+ *        nor functioning; a processor's own _STA that fails keeps it out, and a missing one reads 0x0F. A
+ *        device above whose _STA fails is walked into, as step 4 walks into it. A processor kept out takes
+ *        no slot, and each device's _STA is read once.
  */
 KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
 {
-    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 10u};
+    static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 10u, 11u};
     static const uint8_t counted_absent[] = {0x75u, '\\', 'D', '0', 'R', 'D', 0xA4u, 0x00u};
     static const uint8_t failing[] = {0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
     const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
     MadeUpAml_t device;
     MadeUpAml_t body;
 
-    idle_begin(identifiers, 9u);
+    idle_begin(identifiers, 10u);
     made_up_aml_name_integer(&idle_aml, "D0RD", 0u);
     idle_present(&idle_aml, "CPU0", 1u, 0x100u);
     idle_present(&idle_aml, "CPU1", 2u, 0x0Du);
@@ -726,6 +727,12 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     idle_processor("CPU6", 7u, &idle_scope);
     idle_present(&idle_aml, "CPU7", 8u, 0x00u);
     idle_present(&idle_aml, "CPU8", 8u, 0x100u);
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&body);
+    made_up_aml_raw(&body, failing, sizeof(failing));
+    made_up_aml_method(&device, "_STA", 0x00u, &body);
+    idle_present(&device, "CPUB", 11u, 0x100u);
+    made_up_aml_device(&idle_aml, "DEV2", &device);
     if (!idle_run(test))
         return;
     kernel_test_check(test,
@@ -733,6 +740,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
                           idle_published(7u, &only, 1u),
                       "CPU0 without _STA, CPU3 functioning and enabled, CPU5 below a functioning device, and CPU8 "
                       "publish");
+    kernel_test_check(test, idle_published(9u, &only, 1u), "CPUB, below a device whose _STA fails, publishes");
     kernel_test_check(test,
                       idle_table.slots[1].processor == 0u && idle_table.slots[2].processor == 0u &&
                           idle_table.slots[4].processor == 0u && idle_table.slots[6].processor == 0u &&
@@ -743,7 +751,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
                       "six processors kept out, CPU7 among them, which leaves its slot to CPU8");
     kernel_test_check(test, made_up_root_node(&idle_load, "D0RD")->value.payload == 1u,
                       "DEV0's _STA is read once for its two processors");
-    kernel_test_check(test, idle_counts.statuses[IDLE_STATUS(DIVIDE_BY_ZERO)] == 1u, "the _STA that fails is counted");
+    kernel_test_check(test, idle_counts.statuses[IDLE_STATUS(DIVIDE_BY_ZERO)] == 2u, "each _STA that fails is counted");
     idle_close(test);
 }
 

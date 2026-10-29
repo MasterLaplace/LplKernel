@@ -582,6 +582,54 @@ KERNEL_TEST(a_table_a_cst_loads_is_initialised_late)
 }
 
 /**
+ * @brief Step 8 and the late initialisation share the presence of a device: step 8 reads the _STA of
+ *        DEVB, above its processor, which step 4 left unread, since nothing below it holds an _INI; the table
+ *        that processor's _CST loads declares a device under DEVB, and its late initialisation reads DEVB's
+ *        _STA no more, then runs the device's _INI.
+ */
+KERNEL_TEST(step_eight_and_the_late_initialisation_decide_a_device_once)
+{
+    static const uint8_t counted[] = {0x75u, '\\', 'B', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
+    static const uint8_t body[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
+                                   0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
+                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static MadeUpAml_t device;
+    static MadeUpAml_t scope;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_name_integer(&load_aml, "BSTA", 0u);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_begin(&scope);
+    made_up_aml_device(&scope, "LDEV", &device);
+    made_up_aml_scope(&load_loaded, "DEVB", &scope);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", body, sizeof(body));
+    made_up_aml_begin(&scope);
+    load_method(&scope, "_STA", counted, sizeof(counted));
+    made_up_aml_processor(&scope, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    made_up_aml_device(&load_aml, "DEVB", &scope);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 1u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test, load_integer("HC0_") == LOAD_ONES, "the _CST of DEVB's processor loads its table");
+    kernel_test_check(test, load_integer("BSTA") == 1u, "DEVB's _STA is read once, by step 8");
+    kernel_test_check(test, load_integer("TRAC") == 0x7u && load_counts.late_initializations == 1u,
+                      "the late initialisation runs the loaded device's _INI");
+    kernel_test_check(test, load_idle.slots[0].count == 1u, "the processor publishes its state");
+    load_close(test);
+}
+
+/**
  * @brief A table \_SB._INI loads, before step 3, is initialised with the static ones: step 4 runs the
  *        _INI of its device, and step 7 gives its processor the capabilities, no late initialisation
  *        needed (§3.8).
