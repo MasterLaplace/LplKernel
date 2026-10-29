@@ -972,3 +972,23 @@ void advanced_configuration_and_power_interface_machine_language_release_global_
 {
     machine_language_release_global_lock(load);
 }
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_memory_read(
+    MachineLanguageLoad_t *load, uint64_t physical_address, uint32_t length, uint8_t *destination)
+{
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+    uint32_t offset = 0u;
+
+    while (offset < length && status == MACHINE_LANGUAGE_OK)
+    {
+        const uint64_t address = physical_address + offset;
+        const uint8_t width = (address % 4u == 0u && length - offset >= 4u) ? 4u : 1u;
+        uint32_t value = 0u;
+
+        status = machine_language_memory(load, address, width, false, &value);
+        for (uint8_t index = 0u; index < width; ++index)
+            destination[offset + index] = (uint8_t) (value >> (8u * index));
+        offset += width;
+    }
+    return status;
+}

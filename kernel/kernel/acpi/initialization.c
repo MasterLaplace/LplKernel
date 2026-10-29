@@ -84,6 +84,19 @@ static uint32_t initialization_object(InitializationLoad_t *load, uint32_t scope
 }
 
 /**
+ * @brief The node after @p index in a depth-first walk in declaration order of the subtree of @p top,
+ *        its children skipped unless @p descend holds; 0 once the walk is back at @p top.
+ */
+static uint32_t initialization_next_below(const InitializationLoad_t *load, uint32_t top, uint32_t index, bool descend)
+{
+    if (descend && initialization_node(load, index)->first_child != 0u)
+        return initialization_node(load, index)->first_child;
+    while (index != top && initialization_node(load, index)->next_sibling == 0u)
+        index = initialization_node(load, index)->parent;
+    return (index == top) ? 0u : initialization_node(load, index)->next_sibling;
+}
+
+/**
  * @brief The node after @p index in a depth-first walk in declaration order, its children skipped
  *        unless @p descend holds; 0 once the walk is back at the root.
  */
@@ -165,10 +178,10 @@ static bool initialization_scope_registered(InitializationLoad_t *load, uint32_t
 
 /**
  * @brief Runs _REG (PCI_Config, 1) once in every scope that declares a PCI_Config region and holds a
- *        _REG, at its first such region in declaration order (§3.8 step 3), then lets the regions
- *        methods create register at once.
+ *        _REG, at its first such region in declaration order (§3.8 step 3), the regions of a table past
+ *        the first @p covered apart, then lets the regions methods create register at once.
  */
-static void initialization_register(InitializationLoad_t *load, Initialization_t *initialization)
+static void initialization_register(InitializationLoad_t *load, Initialization_t *initialization, uint32_t covered)
 {
     const InitializationValue_t arguments[2] = {
         {.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
@@ -185,7 +198,8 @@ static void initialization_register(InitializationLoad_t *load, Initialization_t
             advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
                 load, index);
 
-        if (method == 0u || initialization_scope_registered(load, index))
+        if (method == 0u || initialization_node(load, index)->owner > covered ||
+            initialization_scope_registered(load, index))
             continue;
         ++initialization->registrations;
 
@@ -309,17 +323,18 @@ static bool initialization_is_system_bus(const InitializationLoad_t *load, uint3
 
 /**
  * @brief Initialises one device, processor or thermal zone (§3.8 step 4): present, its _INI runs,
- *        but for \_SB_'s; a subtree without _INI, or a device neither present nor functioning, is not
- *        walked.
+ *        but for \_SB_'s; a subtree without _INI, a device neither present nor functioning, or one a
+ *        table past the first @p covered declares, which its late initialisation walks, is not walked.
  *
  * @return Whether the walk descends into its children.
  */
 static bool initialization_initialize_device(InitializationLoad_t *load, Initialization_t *initialization,
-                                             uint32_t device)
+                                             uint32_t device, uint32_t covered)
 {
     uint64_t status = 0u;
 
-    if ((initialization_node(load, device)->flags & INITIALIZATION_HOLDS) == 0u)
+    if ((initialization_node(load, device)->flags & INITIALIZATION_HOLDS) == 0u ||
+        initialization_node(load, device)->owner > covered)
         return false;
     if (!initialization_read_status(load, initialization, device, &status))
         return true;
@@ -331,18 +346,164 @@ static bool initialization_initialize_device(InitializationLoad_t *load, Initial
 }
 
 /**
- * @brief Walks the devices, processors and thermal zones in declaration order, children after their
- *        parent (§3.8 step 4).
+ * @brief Whether @p index was declared by a table past the first @p first, which Load or LoadTable
+ *        added, and no later than the first @p last.
  */
-static void initialization_walk(InitializationLoad_t *load, Initialization_t *initialization)
+static bool initialization_is_late(const InitializationLoad_t *load, uint32_t index, uint32_t first, uint32_t last)
+{
+    const uint16_t owner = initialization_node(load, index)->owner;
+
+    return owner > first && owner <= last;
+}
+
+/**
+ * @brief Marks what the tables past the first @p first, up to the first @p last, declare, as the pre-pass
+ *        marks the static tables: each device, processor and thermal zone they declare, counted, and the
+ *        device or processor their _INI, _OSC or _PDC is declared in; tells whether they declare a
+ *        PCI_Config region with a _REG in its scope, and a device that roots one of their subtrees.
+ */
+static void initialization_mark_late(InitializationLoad_t *load, Initialization_t *initialization, uint32_t first,
+                                     uint32_t last, bool *out_regions, bool *out_devices)
+{
+    for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
+         index = initialization_next(load, index, true))
+    {
+        const InitializationNode_t *node = initialization_node(load, index);
+        const uint32_t parent = node->parent;
+
+        if (!initialization_is_late(load, index, first, last))
+            continue;
+        if (initialization_is_device(node))
+        {
+            ++initialization->devices;
+            if (initialization_object(load, index, "_INI") != 0u)
+                initialization_mark(load, index, INITIALIZATION_HOLDS);
+            if (node->type != INITIALIZATION_NODE(THERMAL_ZONE) && initialization_holds_capabilities(load, index))
+                initialization_mark(load, index, INITIALIZATION_CAPABLE);
+            *out_devices |= !initialization_is_device(initialization_node(load, parent)) ||
+                            !initialization_is_late(load, parent, first, last);
+            continue;
+        }
+        *out_regions |=
+            advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
+                load, index) != 0u;
+        if (!initialization_is_device(initialization_node(load, parent)))
+            continue;
+        if (node->name == initialization_name("_INI"))
+            initialization_mark(load, parent, INITIALIZATION_HOLDS);
+        if ((node->name == initialization_name("_OSC") || node->name == initialization_name("_PDC")) &&
+            initialization_node(load, parent)->type != INITIALIZATION_NODE(THERMAL_ZONE))
+            initialization_mark(load, parent, INITIALIZATION_CAPABLE);
+    }
+}
+
+/**
+ * @brief Runs _REG (PCI_Config, 1) in each scope of a PCI_Config region the tables past the first
+ *        @p first, up to the first @p last, declare, once per scope, as step 3 does (§3.8).
+ */
+static void initialization_register_late(InitializationLoad_t *load, Initialization_t *initialization, uint32_t first,
+                                         uint32_t last)
+{
+    const InitializationValue_t arguments[2] = {
+        {.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+         .payload =
+             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION},
+        {.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+         .payload = INITIALIZATION_CONNECT                                                                              },
+    };
+
+    for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
+         index = initialization_next(load, index, true))
+    {
+        const uint32_t method =
+            advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
+                load, index);
+
+        if (method == 0u || !initialization_is_late(load, index, first, last) ||
+            initialization_scope_registered(load, index))
+            continue;
+        ++initialization->registrations;
+
+        const InitializationStatus_t status = initialization_evaluate(load, method, arguments, 2u);
+
+        if (status != INITIALIZATION_OK)
+        {
+            ++initialization->region_registration_failed;
+            initialization_count_failure(initialization, method, status);
+        }
+    }
+}
+
+/**
+ * @brief Walks, as step 4 does, each device subtree the tables past the first @p first, up to the
+ *        first @p last, declare: from each device of theirs whose parent is not one of theirs (§3.8).
+ */
+static void initialization_walk_late(InitializationLoad_t *load, Initialization_t *initialization, uint32_t first,
+                                     uint32_t last)
+{
+    for (uint32_t top = initialization_next(load, INITIALIZATION_ROOT, true); top != 0u;
+         top = initialization_next(load, top, true))
+    {
+        const InitializationNode_t *node = initialization_node(load, top);
+
+        if (!initialization_is_device(node) || !initialization_is_late(load, top, first, last) ||
+            (initialization_is_device(initialization_node(load, node->parent)) &&
+             initialization_is_late(load, node->parent, first, last)))
+            continue;
+        for (uint32_t index = top; index != 0u;)
+        {
+            const bool descend = !initialization_is_device(initialization_node(load, index)) ||
+                                 initialization_initialize_device(load, initialization, index, last);
+
+            index = initialization_next_below(load, top, index, descend);
+        }
+    }
+}
+
+/**
+ * @brief Runs the late initialisation of the tables Load and LoadTable added since the last one, until
+ *        none is left (§3.8): marks what they declare, runs the _REG of step 3 in their scopes, then
+ *        walks their device subtrees as step 4 does; counted when it evaluates anything. Before step 3,
+ *        while initialization->tables is 0, nothing runs: steps 3 and 4 initialise them.
+ */
+static void initialization_settle(InitializationLoad_t *load, Initialization_t *initialization)
+{
+    while (initialization->tables != 0u && initialization->tables < load->table_count)
+    {
+        const uint32_t first = initialization->tables;
+        const uint32_t last = load->table_count;
+        const uint32_t evaluations =
+            initialization->registrations + initialization->status_evaluations + initialization->initializations;
+        bool regions = false;
+        bool devices = false;
+
+        initialization->tables = last;
+        initialization_mark_late(load, initialization, first, last, &regions, &devices);
+        if (regions)
+            initialization_register_late(load, initialization, first, last);
+        if (devices)
+            initialization_walk_late(load, initialization, first, last);
+        if (initialization->registrations + initialization->status_evaluations + initialization->initializations !=
+            evaluations)
+            ++initialization->late_initializations;
+    }
+}
+
+/**
+ * @brief Walks the devices, processors and thermal zones in declaration order, children after their
+ *        parent (§3.8 step 4), those of the first @p covered tables; a table Load or LoadTable adds
+ *        meanwhile gets its late initialisation once the evaluation that loaded it returns.
+ */
+static void initialization_walk(InitializationLoad_t *load, Initialization_t *initialization, uint32_t covered)
 {
     uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true);
 
     while (index != 0u)
     {
         const bool descend = !initialization_is_device(initialization_node(load, index)) ||
-                             initialization_initialize_device(load, initialization, index);
+                             initialization_initialize_device(load, initialization, index, covered);
 
+        initialization_settle(load, initialization);
         index = initialization_next(load, index, descend);
     }
 }
@@ -540,6 +701,7 @@ static void initialization_negotiate_processors(InitializationLoad_t *load, Init
             continue;
         }
         initialization_negotiate_processor(load, initialization, index, capabilities);
+        initialization_settle(load, initialization);
     }
 }
 
@@ -548,14 +710,25 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
                                                                      Initialization_t *out_initialization,
                                                                      InitializationIdle_t *out_idle)
 {
+    const uint32_t declared = load->table_count;
+    bool regions = false;
+    bool devices = false;
+
     memset(out_initialization, 0, sizeof(*out_initialization));
     initialization_find_initializations(load, out_initialization);
     initialization_run_ini(load, out_initialization, INITIALIZATION_ROOT);
     initialization_run_ini(load, out_initialization, initialization_object(load, INITIALIZATION_ROOT, "_SB_"));
-    initialization_register(load, out_initialization);
-    initialization_walk(load, out_initialization);
+    initialization_mark_late(load, out_initialization, declared, load->table_count, &regions, &devices);
+    out_initialization->tables = load->table_count;
+
+    const uint32_t covered = out_initialization->tables;
+
+    initialization_register(load, out_initialization, covered);
+    initialization_settle(load, out_initialization);
+    initialization_walk(load, out_initialization, covered);
     out_initialization->pic_mode_deferred = (initialization_object(load, INITIALIZATION_ROOT, "_PIC") != 0u) ? 1u : 0u;
     initialization_negotiate_platform(load, out_initialization);
+    initialization_settle(load, out_initialization);
     initialization_negotiate_processors(load, out_initialization, machine);
     advanced_configuration_and_power_interface_processor_idle_publish(load, machine, out_initialization, out_idle);
 }

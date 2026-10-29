@@ -1461,7 +1461,9 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(TIMER):
     case MACHINE_LANGUAGE_OPCODE(ACQUIRE):
     case MACHINE_LANGUAGE_OPCODE(RELEASE):
-    case MACHINE_LANGUAGE_OPCODE(SIGNAL): return true;
+    case MACHINE_LANGUAGE_OPCODE(SIGNAL):
+    case MACHINE_LANGUAGE_OPCODE(LOAD):
+    case MACHINE_LANGUAGE_OPCODE(LOAD_TABLE): return true;
     default: return false;
     }
 }
@@ -1671,7 +1673,8 @@ static bool machine_language_running(const MachineLanguageEvaluation_t *evaluati
  * @brief Pushes the internal frame that runs _REG (PCI_Config, 1) for a PCI_Config region a method has
  *        just created (§5.3), once the initialisation has registered, unless that _REG already runs: a
  *        _REG that creates such a region in its own scope is not called again. A _REG that does not
- *        take two arguments is not called, and counted as failed.
+ *        take two arguments is not called, and counted as failed. A region the code of a table Load
+ *        adds creates is registered by that table's late initialisation (§3.8), once it is declared.
  */
 static MachineLanguageStatus_t machine_language_register_at_creation(MachineLanguageLoad_t *load, uint32_t region)
 {
@@ -1684,7 +1687,8 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
     const MachineLanguageNode_t *node =
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, method);
 
-    if (method == 0u || machine_language_running(evaluation, method))
+    if (method == 0u || machine_language_frame(evaluation)->method == 0u ||
+        machine_language_running(evaluation, method))
         return MACHINE_LANGUAGE_OK;
     if ((node->value.auxiliary & 0x7u) != 2u)
     {
@@ -3391,6 +3395,63 @@ static MachineLanguageStatus_t machine_language_synchronize(MachineLanguageLoad_
 }
 
 /**
+ * @brief Runs Load (§5.1): True to its target and as its result once the table is added, False for a
+ *        table the load holds already; an operand that names no object, as a Buffer in a local, is a
+ *        form the kernel does not load.
+ */
+static MachineLanguageStatus_t machine_language_load_operator(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t target = machine_language_pop(evaluation);
+    MachineLanguageValue_t source = machine_language_pop(evaluation);
+    uint32_t node = 0u;
+    bool loaded = false;
+    MachineLanguageStatus_t status = machine_language_named_object(load, &source, &node);
+
+    if (status == MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH))
+        status = MACHINE_LANGUAGE_STATUS(LOAD_FORM_UNSUPPORTED);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_load_from(load, node, &loaded);
+    return machine_language_finish(load, status, machine_language_truth(load, loaded), &target);
+}
+
+/**
+ * @brief Runs LoadTable (§5.1): its first five operands must be Strings, its RootPath and ParameterPath
+ *        empty and its ParameterData Zero; True once the table is added, False when none matches or the
+ *        load holds it already.
+ */
+static MachineLanguageStatus_t machine_language_load_table_operator(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t operands[6];
+    const uint8_t *bytes[5] = {NULL, NULL, NULL, NULL, NULL};
+    uint32_t lengths[5] = {0u, 0u, 0u, 0u, 0u};
+    uint8_t scratch[8];
+    bool loaded = false;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    for (uint32_t index = 6u; index != 0u; --index)
+        operands[index - 1u] = machine_language_pop(evaluation);
+    for (uint32_t index = 0u; index < 5u && status == MACHINE_LANGUAGE_OK; ++index)
+        status = (operands[index].kind == MACHINE_LANGUAGE_VALUE(STRING)) ?
+                     advanced_configuration_and_power_interface_machine_language_value_bytes(
+                         &load->heap, &operands[index], machine_language_bits(load), scratch, &bytes[index],
+                         &lengths[index]) :
+                     MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (status == MACHINE_LANGUAGE_OK &&
+        (lengths[3] != 0u || lengths[4] != 0u || operands[5].kind != MACHINE_LANGUAGE_VALUE(INTEGER) ||
+         operands[5].payload != 0u))
+        status = MACHINE_LANGUAGE_STATUS(LOAD_FORM_UNSUPPORTED);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_load_from_directory(
+            load, bytes[0], bytes[1], bytes[2], lengths, &loaded);
+    for (uint32_t index = 0u; index < 6u; ++index)
+        machine_language_release(load, &operands[index]);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, machine_language_truth(load, loaded)) :
+                                             status;
+}
+
+/**
  * @brief Runs Store or CopyObject: the target takes the value, and Store gives it as its result.
  */
 static MachineLanguageStatus_t machine_language_transfer(MachineLanguageLoad_t *load, uint32_t opcode)
@@ -3500,6 +3561,8 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     case MACHINE_LANGUAGE_OPCODE(ACQUIRE): return machine_language_acquire(load);
     case MACHINE_LANGUAGE_OPCODE(RELEASE):
     case MACHINE_LANGUAGE_OPCODE(SIGNAL): return machine_language_synchronize(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(LOAD): return machine_language_load_operator(load);
+    case MACHINE_LANGUAGE_OPCODE(LOAD_TABLE): return machine_language_load_table_operator(load);
     default: return machine_language_compute(load, operator_.opcode);
     }
 }
@@ -3541,7 +3604,9 @@ static bool machine_language_exhausted(MachineLanguageStatus_t status)
     case MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS):
     case MACHINE_LANGUAGE_STATUS(LIMIT_FIELD_ACCESSES):
     case MACHINE_LANGUAGE_STATUS(LIMIT_TIME_REQUESTED):
-    case MACHINE_LANGUAGE_STATUS(LIMIT_HELD_MUTEXES): return true;
+    case MACHINE_LANGUAGE_STATUS(LIMIT_HELD_MUTEXES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_TABLES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES): return true;
     default: return false;
     }
 }

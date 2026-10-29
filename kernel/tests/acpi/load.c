@@ -1,0 +1,590 @@
+#include "made_up_aml.h"
+#include "made_up_table.h"
+#include "simulated_host.h"
+
+#include <kernel/acpi/initialization.h>
+#include <kernel/acpi/machine_language.h>
+#include <kernel/acpi/processor_idle.h>
+#include <kernel/testing/test.h>
+
+#include <stdint.h>
+#include <string.h>
+
+KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_load, KERNEL_TEST_STAGE_INITIALIZATION);
+
+#define LOAD_STATUS(name)         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
+#define LOAD_ORIGIN(name)         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_##name
+#define LOAD_SYSTEM_MEMORY        0x00u                 /**< The RegionSpace byte of SystemMemory. */
+#define LOAD_SYSTEM_IO            0x01u                 /**< The RegionSpace byte of SystemIO. */
+#define LOAD_TABLE_ADDRESS        0x00300000u           /**< Where the table Load reads is placed. */
+#define LOAD_OTHER_ADDRESS        0x00310000u           /**< Where a second table is placed. */
+#define LOAD_ONES                 0xFFFFFFFFFFFFFFFFull /**< True under a DSDT of revision 2. */
+#define LOAD_UNTOUCHED            0x55u                 /**< What a Name a Load must not store to holds. */
+#define LOAD_REVISION_BITS        (24u * 8u)            /**< The bits of a header before its OEM revision. */
+#define LOAD_PROCESSOR_IDENTIFIER 1u                    /**< The ACPI Processor UID of the made-up CPU slot. */
+
+static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t load_host;
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load_load;
+static AdvancedConfigurationAndPowerInterfaceInitialization_t load_counts;
+static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t load_idle;
+static AdvancedConfigurationAndPowerInterfaceMadtState_t load_madt;
+static AdvancedConfigurationAndPowerInterfaceDirectory_t load_directory;
+static uint8_t load_dsdt[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static uint8_t load_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static uint8_t load_other_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static MadeUpAml_t load_aml;
+static MadeUpAml_t load_loaded;
+static MadeUpAml_t load_body;
+static MadeUpAml_t load_inner;
+
+/**
+ * @brief Opens the simulated host and empties both builders: load_aml, the DSDT, starts with Name (TRAC, 0)
+ *        and Name (HND1, 0x55); load_loaded, the table Load reads, with Name (LDED, 0x2A).
+ */
+static void load_begin(void)
+{
+    advanced_configuration_and_power_interface_simulated_host_open(&load_host);
+    memset(&load_madt, 0, sizeof(load_madt));
+    made_up_aml_begin(&load_aml);
+    made_up_aml_name_integer(&load_aml, "TRAC", 0u);
+    made_up_aml_name_integer(&load_aml, "HND1", LOAD_UNTOUCHED);
+    made_up_aml_begin(&load_loaded);
+    made_up_aml_name_integer(&load_loaded, "LDED", 0x2Au);
+}
+
+/**
+ * @brief Writes the AML of @p aml as an SSDT in @p table and pokes it at @p address of the simulated
+ *        memory.
+ *
+ * @return Its length.
+ */
+static uint32_t load_place(const MadeUpAml_t *aml, uint8_t *table, uint64_t address)
+{
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
+        made_up_definition_block(table, "SSDT", 2u, aml->bytes, aml->length);
+
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&load_host, address, table, header->length);
+    return header->length;
+}
+
+/**
+ * @brief Appends OperationRegion (@p name, SystemMemory, @p address, @p length) to the DSDT.
+ */
+static void load_region(const char *name, uint64_t address, uint64_t length)
+{
+    made_up_aml_region(&load_aml, name, LOAD_SYSTEM_MEMORY, address, length);
+}
+
+/**
+ * @brief Appends Method (@p name) { the @p length bytes at @p body } to @p aml.
+ */
+static void load_method(MadeUpAml_t *aml, const char *name, const uint8_t *body, uint32_t length)
+{
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, body, length);
+    made_up_aml_method(aml, name, 0x00u, &load_body);
+}
+
+/**
+ * @brief Loads the DSDT written, its table-level code run.
+ */
+static bool load_run(KernelTest_t *test)
+{
+    return kernel_test_check(test, !load_aml.overflowed && !load_loaded.overflowed, "the made-up AML fits") &&
+           made_up_load_on(test, &load_load, &load_host.host, load_dsdt, 2u, load_aml.bytes, load_aml.length);
+}
+
+/**
+ * @brief Evaluates the method at @p path, which takes no argument, and gives back its status.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t load_call(const char *path)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&load_load, path, NULL, 0u, &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&load_load.heap, &load_load.space,
+                                                                              &result);
+    return status;
+}
+
+/**
+ * @brief The integer the Name at the root called @p name holds, or 0xDEAD when it holds none.
+ */
+static uint64_t load_integer(const char *name)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node = made_up_root_node(&load_load, name);
+
+    if (node == NULL || node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+        return 0xDEADu;
+    return node->value.payload;
+}
+
+/**
+ * @brief Checks that the evaluations left nothing behind, then closes the load and the host.
+ */
+static void load_close(KernelTest_t *test)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &load_load.evaluation;
+
+    kernel_test_check(test,
+                      evaluation->frame_count == 0u && evaluation->value_count == 0u &&
+                          evaluation->operator_count == 0u && evaluation->block_count == 0u &&
+                          load_load.temporary_count == 0u && load_load.declaring == 0u,
+                      "every evaluation leaves no frame, value, operator, block, temporary node or declaration behind");
+    kernel_test_check(test, load_load.heap.stale_handles == 0u, "no retain or release met a dead object");
+    advanced_configuration_and_power_interface_machine_language_close(&load_load);
+    kernel_test_check(test, load_load.space.arena_bytes == 0u, "closing gives every page back, the copies included");
+    advanced_configuration_and_power_interface_simulated_host_close(&load_host);
+}
+
+/**
+ * @brief Load from a SystemMemory region copies the table, runs it relative to the root from the copy,
+ *        and stores True; loading the same table again stores False and adds nothing (§5.1).
+ */
+KERNEL_TEST(a_load_runs_a_copy_of_its_table_and_the_same_table_again_returns_false)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t loads_again[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '2'};
+    static const uint8_t returns[] = {0xA4u, 0x0Au, 0x77u};
+    static const uint8_t zero[MADE_UP_TABLE_HEADER + 64u] = {0};
+    static MadeUpAml_t device;
+
+    load_begin();
+    load_method(&load_loaded, "LMTH", returns, sizeof(returns));
+
+    const uint32_t length = load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS);
+
+    load_region("TBLR", LOAD_TABLE_ADDRESS, length);
+    made_up_aml_name_integer(&load_aml, "HND2", LOAD_UNTOUCHED);
+    made_up_aml_begin(&device);
+    load_method(&device, "LDIT", loads, sizeof(loads));
+    load_method(&device, "LDAG", loads_again, sizeof(loads_again));
+    made_up_aml_device(&load_aml, "XDEV", &device);
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_integer("LDED") == 0xDEADu, "the table's objects do not exist before the Load");
+    kernel_test_check(test, load_call("\\XDEV.LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "Load from the region succeeds, and stores True");
+    kernel_test_check(test, load_integer("LDED") == 0x2Au,
+                      "the table's objects are created relative to the root, not the method's scope");
+    kernel_test_check(test,
+                      load_load.table_count == 2u && load_load.tables_loaded == 1u &&
+                          load_load.tables[1].origin == LOAD_ORIGIN(LOAD) &&
+                          load_load.tables[1].physical_address == LOAD_TABLE_ADDRESS &&
+                          load_load.tables[1].length == length && load_load.tables[1].pages == 1u &&
+                          load_load.tables[1].checksum_valid && load_load.table_bytes_copied == length,
+                      "the registry holds the table Load copied, its address, length, checksum and pages");
+    kernel_test_check(test,
+                      load_call("\\XDEV.LDAG") == LOAD_STATUS(OK) && load_integer("HND2") == 0u &&
+                          load_load.table_count == 2u && load_load.load_duplicates == 1u &&
+                          load_load.table_bytes_copied == length,
+                      "the same table loaded again stores False, adds nothing, and is counted");
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&load_host, LOAD_TABLE_ADDRESS, zero, length);
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &load_load, "\\LMTH", NULL, 0u, &result) == LOAD_STATUS(OK) &&
+                          result.payload == 0x77u,
+                      "a method of the table runs from the copy once the firmware's bytes are gone");
+    load_close(test);
+}
+
+/**
+ * @brief Load from a field unit reads the unit as a Buffer and loads the table it holds (§5.1).
+ */
+KERNEL_TEST(a_load_from_a_field_reads_the_unit_as_a_buffer)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'A', 'B', 'L', '\\', 'H', 'N', 'D', '1'};
+
+    load_begin();
+
+    const uint32_t length = load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS);
+    const MadeUpFieldUnit_t units[] = {
+        {"TABL", 8u * length},
+    };
+
+    load_region("TBLR", LOAD_TABLE_ADDRESS, length);
+    made_up_aml_field(&load_aml, "TBLR", 0x01u, units, 1u);
+    load_method(&load_aml, "LDFD", loads, sizeof(loads));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_call("\\LDFD") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "Load from the field succeeds, and stores True");
+    kernel_test_check(test,
+                      load_integer("LDED") == 0x2Au && load_load.tables[1].origin == LOAD_ORIGIN(LOAD) &&
+                          load_load.tables[1].physical_address == 0u && load_load.tables[1].length == length,
+                      "the table the unit holds is copied and run");
+    load_close(test);
+}
+
+/**
+ * @brief LoadTable with an empty RootPath, ParameterPath and ParameterData finds a table of the
+ *        directory by signature, OEM ID and OEM table ID, and runs it in place; a table the directory
+ *        lacks, or one loaded already, gives False (§5.1).
+ */
+KERNEL_TEST(load_table_runs_a_table_of_the_directory_in_place)
+{
+    static const uint8_t finds[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1', 0x00u, 0x0Du, 'L', 'P', 'L',
+                                    'T',   'S',   'T',   0x00u, 0x0Du, 'M',   'A',  'D', 'E',   'U',   'P', 'M', 'L',
+                                    0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x00u, '\\', 'R', 'E',   'S',   '1'};
+    static const uint8_t finds_any[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1', 0x00u, 0x0Du, 0x00u, 0x0Du,
+                                        0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x00u, '\\', 'R', 'E',   'S',   '2'};
+    static const uint8_t misses[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',   '1',   0x00u,
+                                     0x0Du, 'L',   'P',   'L',   0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u,
+                                     0x0Du, 0x00u, 0x00u, '\\',  'R',   'E',   'S',   '3'};
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = NULL;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "RES1", LOAD_UNTOUCHED);
+    made_up_aml_name_integer(&load_aml, "RES2", LOAD_UNTOUCHED);
+    made_up_aml_name_integer(&load_aml, "RES3", LOAD_UNTOUCHED);
+    load_method(&load_aml, "LTB1", finds, sizeof(finds));
+    load_method(&load_aml, "LTB2", finds_any, sizeof(finds_any));
+    load_method(&load_aml, "LTB3", misses, sizeof(misses));
+    header = made_up_definition_block(load_table, "OEM1", 2u, load_loaded.bytes, load_loaded.length);
+    if (!load_run(test))
+        return;
+    memset(&load_directory, 0, sizeof(load_directory));
+    load_directory.table_count = 1u;
+    memcpy(load_directory.tables[0].signature, "OEM1", 4u);
+    load_directory.tables[0].length = header->length;
+    load_directory.tables[0].header = header;
+    load_load.directory = &load_directory;
+    kernel_test_check(test, load_call("\\LTB3") == LOAD_STATUS(OK) && load_integer("RES3") == 0u,
+                      "an OEM ID that only starts the table's gives False: identifiers are padded with zeros");
+    kernel_test_check(test, load_load.load_tables_missing == 1u && load_load.table_count == 1u,
+                      "the table found nowhere is counted, and nothing is added");
+    kernel_test_check(test, load_call("\\LTB1") == LOAD_STATUS(OK) && load_integer("RES1") == LOAD_ONES,
+                      "LoadTable finds OEM1 by its signature, OEM ID and OEM table ID, and gives True");
+    kernel_test_check(test,
+                      load_integer("LDED") == 0x2Au && load_load.tables[1].origin == LOAD_ORIGIN(LOAD_TABLE) &&
+                          load_load.tables[1].header == header && load_load.tables[1].pages == 0u &&
+                          load_load.table_bytes_copied == 0u,
+                      "the table runs in place, from the directory's window, and is not copied");
+    kernel_test_check(test,
+                      load_call("\\LTB2") == LOAD_STATUS(OK) && load_integer("RES2") == 0u &&
+                          load_load.load_duplicates == 1u && load_load.table_count == 2u,
+                      "empty OEM identifiers match any table: OEM1 again, which the load holds, gives False");
+    load_close(test);
+}
+
+/**
+ * @brief Load from a Buffer, from a local, or while a table is declared, and LoadTable with a RootPath,
+ *        a ParameterPath or ParameterData, fail with load_form_unsupported and store nothing (§4.5).
+ */
+KERNEL_TEST(the_forms_the_kernel_does_not_load_fail_with_load_form_unsupported)
+{
+    static const uint8_t loads_buffer[] = {0x5Bu, 0x20u, '\\', 'B', 'U', 'F', 'F', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t loads_local[] = {0x70u, '\\',  'B',  'U', 'F', 'F', 0x60u, 0x5Bu,
+                                          0x20u, 0x60u, '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t with_root[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1',
+                                        0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x0Du, '\\', 0x00u,
+                                        0x0Du, 0x00u, 0x00u, '\\',  'H',   'N',   'D',  '1'};
+    static const uint8_t with_parameter[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',   '1', 0x00u,
+                                             0x0Du, 0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x0Du, 'X', 'X',
+                                             0x00u, 0x00u, '\\',  'H',   'N',   'D',   '1'};
+    static const uint8_t with_data[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1', 0x00u, 0x0Du, 0x00u, 0x0Du,
+                                        0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x01u, '\\', 'H', 'N',   'D',   '1'};
+    static const uint8_t at_table_level[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t buffer[] = {0x08u, 'B', 'U', 'F', 'F', 0x11u, 0x05u, 0x0Au, 0x24u, 0x53u, 0x53u};
+    static const char *const methods[] = {"\\LDBF", "\\LDLC", "\\LTRT", "\\LTPP", "\\LTPD"};
+
+    load_begin();
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_raw(&load_aml, buffer, sizeof(buffer));
+    load_method(&load_aml, "LDBF", loads_buffer, sizeof(loads_buffer));
+    load_method(&load_aml, "LDLC", loads_local, sizeof(loads_local));
+    load_method(&load_aml, "LTRT", with_root, sizeof(with_root));
+    load_method(&load_aml, "LTPP", with_parameter, sizeof(with_parameter));
+    load_method(&load_aml, "LTPD", with_data, sizeof(with_data));
+    made_up_aml_raw(&load_aml, at_table_level, sizeof(at_table_level));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test,
+                      load_load.evaluation.statuses[LOAD_STATUS(LOAD_FORM_UNSUPPORTED)] == 1u &&
+                          load_integer("LDED") == 0xDEADu,
+                      "a Load while a table is declared fails, counted, and loads nothing");
+    for (uint32_t index = 0u; index < sizeof(methods) / sizeof(methods[0]); ++index)
+        kernel_test_check(test, load_call(methods[index]) == LOAD_STATUS(LOAD_FORM_UNSUPPORTED),
+                          "a Load from a Buffer or a local, or a LoadTable with a path or data, fails with "
+                          "load_form_unsupported");
+    kernel_test_check(
+        test, load_integer("HND1") == LOAD_UNTOUCHED && load_load.table_count == 1u && load_load.tables_loaded == 0u,
+        "none stores a result or adds a table");
+    load_close(test);
+}
+
+/**
+ * @brief Load refuses a region of another space than SystemMemory, a table longer than its region, a
+ *        region shorter than a header and a header shorter than itself, and leaves no page taken.
+ */
+KERNEL_TEST(a_load_refuses_what_is_not_a_whole_table_of_system_memory)
+{
+    static const uint8_t from_input_output[] = {0x5Bu, 0x20u, '\\', 'I', 'O', 'R', 'G', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t from_short[] = {0x5Bu, 0x20u, '\\', 'S', 'H', 'R', 'T', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t from_tiny[] = {0x5Bu, 0x20u, '\\', 'T', 'I', 'N', 'Y', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t from_cut[] = {0x5Bu, 0x20u, '\\', 'C', 'U', 'T', 'H', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t from_integer[] = {0x5Bu, 0x20u, '\\', 'H', 'N', 'D', '1', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t cut_header[MADE_UP_TABLE_HEADER] = {'S', 'S', 'D', 'T', 0x10u};
+    static const struct {
+        const char *path;
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status;
+        const char *claim;
+    } cases[] = {
+        {"\\LDIO", LOAD_STATUS(TYPE_MISMATCH), "a SystemIO region is not loaded"                           },
+        {"\\LDSH", LOAD_STATUS(REGION_BOUNDS), "a table longer than its region is not loaded"              },
+        {"\\LDTN", LOAD_STATUS(REGION_BOUNDS), "a region shorter than a header is not loaded"              },
+        {"\\LDCT", LOAD_STATUS(REGION_BOUNDS), "a header whose length is shorter than itself is not loaded"},
+        {"\\LDIN", LOAD_STATUS(TYPE_MISMATCH), "an Integer is not loaded"                                  },
+    };
+
+    load_begin();
+
+    const uint32_t length = load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS);
+
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&load_host, LOAD_OTHER_ADDRESS, cut_header,
+                                                                          sizeof(cut_header));
+    made_up_aml_region(&load_aml, "IORG", LOAD_SYSTEM_IO, 0x80u, 0x40u);
+    load_region("SHRT", LOAD_TABLE_ADDRESS, length - 1u);
+    load_region("TINY", LOAD_TABLE_ADDRESS, MADE_UP_TABLE_HEADER - 1u);
+    load_region("CUTH", LOAD_OTHER_ADDRESS, MADE_UP_TABLE_HEADER);
+    load_method(&load_aml, "LDIO", from_input_output, sizeof(from_input_output));
+    load_method(&load_aml, "LDSH", from_short, sizeof(from_short));
+    load_method(&load_aml, "LDTN", from_tiny, sizeof(from_tiny));
+    load_method(&load_aml, "LDCT", from_cut, sizeof(from_cut));
+    load_method(&load_aml, "LDIN", from_integer, sizeof(from_integer));
+    if (!load_run(test))
+        return;
+
+    const uint32_t arena_bytes = load_load.space.arena_bytes;
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+        kernel_test_check(test, load_call(cases[index].path) == cases[index].status, cases[index].claim);
+    kernel_test_check(test,
+                      load_load.table_count == 1u && load_integer("HND1") == LOAD_UNTOUCHED &&
+                          load_load.space.arena_bytes == arena_bytes,
+                      "none adds a table, stores a result or keeps a page");
+    load_close(test);
+}
+
+/**
+ * @brief Loads stop at the caps of §6.1: the 128th table fails with limit_tables, and a table past the
+ *        256 KiB Load may copy with limit_table_bytes, neither keeping a page.
+ */
+KERNEL_TEST(table_loads_stop_at_their_limits)
+{
+    static const uint8_t loads_each[] = {0x70u, 0x00u, 0x60u, 0xA2u, 0x17u, 0x95u, 0x60u, 0x0Bu, 0x00u,
+                                         0x01u, 0x70u, 0x60u, '\\',  'O',   'R',   'E',   'V',   0x5Bu,
+                                         0x20u, '\\',  'T',   'B',   'L',   'R',   0x61u, 0x75u, 0x60u};
+    static const uint8_t loads_once[] = {0x5Bu, 0x20u, '\\', 'O', 'T', 'H', 'R', '\\', 'H', 'N', 'D', '1'};
+    const MadeUpFieldUnit_t units[] = {
+        {NULL,   LOAD_REVISION_BITS},
+        {"OREV", 32u               },
+    };
+
+    load_begin();
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_field(&load_aml, "TBLR", 0x03u, units, 2u);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_name_integer(&load_inner, "OTHR", 1u);
+    load_region("OTHR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
+    load_method(&load_aml, "LDEA", loads_each, sizeof(loads_each));
+    load_method(&load_aml, "LDON", loads_once, sizeof(loads_once));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_call("\\LDEA") == LOAD_STATUS(LIMIT_TABLES),
+                      "loading a new table each turn fails with limit_tables");
+    kernel_test_check(test,
+                      load_load.table_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
+                          load_load.tables_loaded ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES - 1u,
+                      "the load holds 128 tables: the DSDT and the 127 Load added");
+
+    const uint32_t arena_bytes = load_load.space.arena_bytes;
+
+    --load_load.table_count;
+    advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
+        &load_load.space, (void *) (uintptr_t) load_load.tables[load_load.table_count].header,
+        load_load.tables[load_load.table_count].pages);
+    load_load.table_bytes_copied =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLE_BYTES - MADE_UP_TABLE_HEADER;
+    kernel_test_check(test,
+                      load_call("\\LDON") == LOAD_STATUS(LIMIT_TABLE_BYTES) && load_integer("HND1") == LOAD_UNTOUCHED,
+                      "a table longer than the bytes Load may still copy fails with limit_table_bytes");
+    kernel_test_check(test,
+                      load_load.space.arena_bytes +
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES ==
+                          arena_bytes,
+                      "and keeps no page");
+    load_close(test);
+}
+
+/**
+ * @brief A Load a method runs belongs to that method's evaluation: its table's declaration neither
+ *        resets the While back-edges counted before it nor releases the mutexes held (§6.1).
+ */
+KERNEL_TEST(a_load_in_a_method_belongs_to_its_evaluation)
+{
+    static const uint8_t loops_around[] = {
+        0x70u, 0x00u, 0x60u, 0xA2u, 0x07u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x75u, 0x60u, 0x5Bu, 0x23u, '\\', 'M', 'U',
+        'T',   'X',   0xFFu, 0xFFu, 0x5Bu, 0x20u, '\\',  'T',   'B',   'L',   'R',   '\\',  'H',   'N',  'D', '1',
+        0xA2u, 0x07u, 0x95u, 0x60u, 0x0Au, 0x08u, 0x75u, 0x60u, 0x5Bu, 0x27u, '\\',  'M',   'U',   'T',  'X'};
+    static const uint8_t mutex[] = {0x5Bu, 0x01u, 'M', 'U', 'T', 'X', 0x00u};
+
+    load_begin();
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_raw(&load_aml, mutex, sizeof(mutex));
+    load_method(&load_aml, "LPLD", loops_around, sizeof(loops_around));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_call("\\LPLD") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "the method loads the table between two loops");
+    kernel_test_check(test, load_load.evaluation.iterations == 8u,
+                      "the evaluation counts the 8 back-edges of both loops: the Load reset none");
+    kernel_test_check(test, load_load.services.released_at_end == 0u && load_load.services.releases_ignored == 0u,
+                      "the mutex the method took before the Load is still held after it, and released by the method");
+    load_close(test);
+}
+
+/**
+ * @brief Appends Method (_REG, 2), which traces its two arguments, Arg0 then Arg1, to \TRAC.
+ */
+static void load_registration(MadeUpAml_t *aml)
+{
+    static const uint8_t body[] = {0x70u, 0x72u, 0x77u, 0x72u, 0x77u, '\\',  'T',   'R',  'A', 'C', 0x0Au, 0x10u, 0x00u,
+                                   0x68u, 0x00u, 0x0Au, 0x10u, 0x00u, 0x69u, 0x00u, '\\', 'T', 'R', 'A',   'C'};
+
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, body, sizeof(body));
+    made_up_aml_method(aml, "_REG", 0x02u, &load_body);
+}
+
+/**
+ * @brief Appends Method (_INI), which appends @p digit to \TRAC, and Method (_STA) { Return (0x0F) }.
+ */
+static void load_present_initialization(MadeUpAml_t *aml, uint8_t digit)
+{
+    const uint8_t traces[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
+                              0x00u, 0x0Au, digit, 0x00u, '\\', 'T', 'R', 'A', 'C'};
+    static const uint8_t present[] = {0xA4u, 0x0Au, 0x0Fu};
+
+    load_method(aml, "_STA", present, sizeof(present));
+    load_method(aml, "_INI", traces, sizeof(traces));
+}
+
+/**
+ * @brief Intel's pattern (§8.2): a processor's _PDC Loads its C-state table, and the HWP table only when
+ *        the platform _OSC granted bit 6, which the kernel never claims. The table loaded at step 7
+ *        declares a device and PCI_Config regions with a _REG in their scope: its late initialisation
+ *        runs that _REG once, then the device's _STA and _INI (§3.8).
+ */
+KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
+{
+    static const uint8_t platform[] = {0x8Au, 0x6Bu, 0x0Au, 0x04u, 'C', 'D', 'W', '2', 0x70u, 'C',
+                                       'D',   'W',   '2',   '\\',  'O', 'S', 'C', 'P', 0xA4u, 0x6Bu};
+    static const uint8_t driver[] = {0x5Bu, 0x20u, '\\',  'C',  'S', 'T', 'R',  '\\', 'H',   'C',   '0',   '_',
+                                     0xA0u, 0x16u, 0x7Bu, '\\', 'O', 'S', 'C',  'P',  0x0Au, 0x40u, 0x00u, 0x5Bu,
+                                     0x20u, '\\',  'H',   'W',  'P', 'R', '\\', 'H',  'W',   '0',   '_'};
+    static const uint8_t computed_region[] = {0x5Bu, 0x80u, 'P',   'C',   'F',   '2',   0x02u,
+                                              0x72u, 0x00u, 0x00u, 0x00u, 0x0Bu, 0x00u, 0x01u};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "OSCP", 0u);
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_name_integer(&load_aml, "HW0_", 0u);
+    made_up_aml_begin(&device);
+    load_registration(&device);
+    made_up_aml_region(&device, "PCFG", 0x02u, 0u, 0x100u);
+    made_up_aml_raw(&device, computed_region, sizeof(computed_region));
+    load_present_initialization(&device, 3u);
+    made_up_aml_device(&load_loaded, "LDEV", &device);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&load_inner);
+    made_up_aml_name_integer(&load_inner, "HWPT", 1u);
+    load_region("HWPR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, platform, sizeof(platform));
+    made_up_aml_method(&device, "_OSC", 0x04u, &load_body);
+    made_up_aml_scope(&load_aml, "_SB_", &device);
+    made_up_aml_begin(&device);
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, driver, sizeof(driver));
+    made_up_aml_method(&device, "_PDC", 0x01u, &load_body);
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 1u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test,
+                      load_integer("HC0_") == LOAD_ONES && load_integer("HW0_") == 0u &&
+                          load_integer("HWPT") == 0xDEADu && load_load.tables_loaded == 1u,
+                      "the _PDC loads the C-state table, never the HWP one: the platform granted nothing");
+    kernel_test_check(test, load_integer("TRAC") == 0x213u,
+                      "the loaded table's scope gets one _REG (2, 1), then its device's _INI runs");
+    kernel_test_check(test,
+                      load_counts.late_initializations == 1u && load_counts.tables == 2u &&
+                          load_counts.registrations == 1u && load_counts.processor_capabilities == 1u &&
+                          load_counts.processor_capabilities_failed == 0u,
+                      "one late initialisation covers the table, counted with the registration it ran");
+    load_close(test);
+}
+
+/**
+ * @brief A table \_SB._INI loads, before step 3, is initialised with the static ones: step 4 runs the
+ *        _INI of its device, and step 7 gives its processor the capabilities, no late initialisation
+ *        needed (§3.8).
+ */
+KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'E', 'A', 'R', 'L', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t keeps[] = {0x9Du, 0x68u, '\\', 'E', 'P', 'D', 'C'};
+    static const uint8_t identifies[] = {0x08u, '_', 'H', 'I',   'D',   0x0Du, 'A', 'C', 'P', 'I',  '0',
+                                         '0',   '0', '7', 0x00u, 0x08u, '_',   'U', 'I', 'D', 0x01u};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "EPDC", 0u);
+    made_up_aml_begin(&device);
+    made_up_aml_raw(&device, identifies, sizeof(identifies));
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, keeps, sizeof(keeps));
+    made_up_aml_method(&device, "_PDC", 0x01u, &load_body);
+    load_present_initialization(&device, 4u);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_device(&load_inner, "EPRC", &device);
+    made_up_aml_scope(&load_loaded, "_SB_", &load_inner);
+    load_region("EARL", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_INI", loads, sizeof(loads));
+    made_up_aml_scope(&load_aml, "_SB_", &device);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 1u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES && load_integer("TRAC") == 4u,
+                      "\\_SB._INI loads the table, and step 4 runs its device's _INI once");
+    kernel_test_check(test,
+                      load_counts.processor_capabilities == 1u && load_counts.processor_capabilities_legacy == 1u &&
+                          load_counts.processor_capabilities_failed == 0u &&
+                          made_up_root_node(&load_load, "EPDC")->value.kind ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                      "step 7 finds its processor, and hands it the capabilities through its _PDC");
+    kernel_test_check(test, load_counts.late_initializations == 0u && load_counts.tables == 2u,
+                      "no late initialisation runs: the table came before step 3");
+    load_close(test);
+}

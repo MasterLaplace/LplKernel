@@ -87,6 +87,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
                                                   returned no Buffer of two DWORDs. */
     uint32_t processors_unbound;             /**< Processor objects with an _OSC or a _PDC that bind to no CPU
                                                   slot, and were given nothing. */
+    uint32_t tables;                         /**< Tables the sequence initialised: those loaded before its step 3,
+                                                  then those Load and LoadTable added later, once their late
+                                                  initialisation ran. */
+    uint32_t late_initializations;           /**< Late initialisations of tables loaded at run time that evaluated
+                                                  a _REG, a _STA or an _INI (§3.8). */
     uint32_t idle_control;                   /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_* value. */
     uint32_t processor_idle;         /**< _CST evaluations of processor objects bound to a CPU slot, steps 8 and 9. */
     uint32_t processor_idle_failed;  /**< Of those, the ones that failed or gave a malformed package. */
@@ -111,7 +116,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  *        \_PIC uncalled; asks \_SB._OSC for nothing, a query then a commit; gives every processor object
  *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC; publishes the
  *        C-states of each CPU slot from its processor object's _CST; then takes the Notifies the load and
- *        the sequence raised, a _CST changed since its evaluation evaluated once more.
+ *        the sequence raised, a _CST changed since its evaluation evaluated once more. A table Load or
+ *        LoadTable adds once step 2 is over gets its late initialisation as soon as the evaluation that
+ *        loaded it returns: the _REG of step 3 in its scopes, then the _STA and _INI walk of step 4 over its
+ *        device subtrees.
  *
  * @param load               A load whose tables are decoded, its stacks free.
  * @param machine            The CPU slots, the processor features, the FADT and how step 0 ended.
