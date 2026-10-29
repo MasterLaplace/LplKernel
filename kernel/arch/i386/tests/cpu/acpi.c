@@ -13,6 +13,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_
 #define ACPI_TEST_SLAVE_PIC_MASK  0xA1u /**< The slave 8259's interrupt mask register. */
 #define ACPI_TEST_PIC_LINES       16u   /**< Lines the two 8259s hold. */
 #define ACPI_TEST_SCI_EN          0x1u  /**< SCI_EN, bit 0 of a PM1 control register. */
+#define ACPI_TEST_SHORT_STALL     50u   /**< Microseconds of a short stall, as AML asks for. */
+#define ACPI_TEST_SHORT_STALLS    10u   /**< Short stalls made in a row, 500 µs in all, well under a tick. */
 
 /**
  * @brief Whether 8259 line @p line is masked.
@@ -232,6 +234,49 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
     kernel_test_check(test, (after - before) * hertz >= 10000000u, "the clock moved by at least a tick");
     kernel_test_check(test, (after - before) * hertz <= (uint64_t) ticks * 10000000u,
                       "and by no more than the ticks that passed around the sleep");
+}
+
+/**
+ * @brief The machine host's stall waits about the microseconds asked, not whole ticks: ten stalls of
+ *        50 µs let at most one tick pass, and a stall of two and a half tick periods lets two to four
+ *        pass; each says it waited at least what it was asked and less than a tick more.
+ */
+KERNEL_TEST(the_machine_host_stall_waits_its_microseconds)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const uint32_t hertz = clock_get_tick_hz();
+
+    if (hertz == 0u)
+    {
+        kernel_test_skip(test, "no tick runs");
+        return;
+    }
+
+    const uint32_t period = 1000000u / hertz;
+    const uint32_t before = clock_get_tick_count();
+    bool each_short_held = true;
+
+    for (uint32_t stall = 0u; stall < ACPI_TEST_SHORT_STALLS; ++stall)
+    {
+        const uint32_t waited = host->stall_microseconds(host->context, ACPI_TEST_SHORT_STALL);
+
+        each_short_held = each_short_held && waited >= ACPI_TEST_SHORT_STALL && waited < period;
+    }
+
+    const uint32_t short_ticks = clock_get_tick_count() - before;
+    const uint32_t long_stall = period * 5u / 2u;
+    const uint32_t long_before = clock_get_tick_count();
+    const uint32_t long_waited = host->stall_microseconds(host->context, long_stall);
+    const uint32_t long_ticks = clock_get_tick_count() - long_before;
+
+    kernel_test_check(test, short_ticks <= 1u, "ten stalls of 50 µs let at most one tick pass");
+    kernel_test_check(test, each_short_held, "each says it waited at least 50 µs and less than a tick");
+    kernel_test_check(test, long_ticks >= 2u && long_ticks <= 4u,
+                      "a stall of two and a half tick periods lets two to four ticks pass");
+    kernel_test_check(test, long_waited >= long_stall && long_waited < long_stall + period,
+                      "and says it waited at least that, and less than a tick more");
+    kernel_test_measure(test, "short_ticks", short_ticks);
+    kernel_test_measure(test, "long_ticks", long_ticks);
 }
 
 /**
