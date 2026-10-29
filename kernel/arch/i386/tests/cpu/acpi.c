@@ -237,15 +237,16 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
 }
 
 /**
- * @brief Whether the boot's FADT names a power management timer the machine host could read: one that
- *        is neither absent nor unreachable.
+ * @brief Whether the boot's FADT names a power management timer the machine host could read: a platform
+ *        that is not hardware-reduced, whose PM_TMR_BLK lies, 4 bytes long, in the I/O space.
  */
 static bool acpi_test_firmware_names_a_timer(void)
 {
-    const uint8_t state = advanced_configuration_and_power_interface_power_management_timer()->state;
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt =
+        &advanced_configuration_and_power_interface_directory()->fixed_description;
 
-    return state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_ABSENT &&
-           state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_UNREACHABLE;
+    return fadt->present && !fadt->hardware_reduced &&
+           advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_timer_block, 4u) != 0u;
 }
 
 /**
