@@ -276,7 +276,7 @@ def main():
             commands += ["evaluate %s._CST" % path for path in candidates]
             found = acpiexec(bin_directory, work, tables, commands)
         except Stopped as stopped:
-            print("aml idle unevaluated %s" % str(stopped).rsplit(".", 1)[0])
+            print("aml idle unevaluated %s" % stopped)
             return
     published = publish(nodes, found, candidates, slot_of)
     for slot in sorted(published):

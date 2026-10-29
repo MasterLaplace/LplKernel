@@ -46,7 +46,7 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          publishes for each CPU slot with those tools/acpi/acpiexec_idle.py works out apart from the kernel's
          code: the processor objects and the slots they bind to from acpiexec's namespace and the decoded MADT,
          their states from the _CST acpiexec evaluates after the same handshake; a machine where acpiexec
-         stops before a _CST is counted apart
+         stops before an evaluation it was given is counted apart
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -295,7 +295,7 @@ idle_check() {
     done < <(reports "$1")
     rm -f "$ours" "$theirs" "$madt"
     echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots and $states states, $none" \
-        "publishing none on both sides; acpiexec stops before a _CST on $stopped"
+        "publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
     [[ "$agree" -eq $((number - stopped)) ]]
 }
 
