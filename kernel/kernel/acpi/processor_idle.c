@@ -392,7 +392,8 @@ static bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
 /**
  * @brief Publishes the _CST of the candidate @p index when it is a processor object _STA keeps in and bound to
  *        a CPU slot no earlier object took (§3.8 step 8), the Notifies queued before its evaluation taken
- *        first; counts it when _STA keeps it out or it binds to no free slot.
+ *        first; counts it when _STA keeps it out or it binds to no free slot. The tables the _STA it reads
+ *        loaded get their late initialisation first.
  */
 static void processor_idle_publish_processor(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
                                              ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table,
@@ -400,7 +401,11 @@ static void processor_idle_publish_processor(ProcessorIdleLoad_t *load, const Pr
 {
     if (!advanced_configuration_and_power_interface_processor_object(load, counts, index))
         return;
-    if (!processor_idle_present(load, counts, index))
+
+    const bool present = processor_idle_present(load, counts, index);
+
+    advanced_configuration_and_power_interface_initialization_settle(load, counts);
+    if (!present)
     {
         ++counts->processor_idle_absent;
         return;

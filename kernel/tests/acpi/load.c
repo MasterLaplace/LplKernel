@@ -582,6 +582,47 @@ KERNEL_TEST(a_table_a_cst_loads_is_initialised_late)
 }
 
 /**
+ * @brief A table that a _STA step 8 reads loads gets its late initialisation once that _STA returns (§3.8),
+ *        whatever the _STA says: CPU0's loads its table, then keeps CPU0 out.
+ */
+KERNEL_TEST(a_table_a_status_of_step_eight_loads_is_initialised_late)
+{
+    static const uint8_t status[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0', '_', 0xA4u, 0x00u};
+    static const uint8_t idle[] = {0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
+                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_device(&load_loaded, "LDEV", &device);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_STA", status, sizeof(status));
+    load_method(&device, "_CST", idle, sizeof(idle));
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 1u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test,
+                      load_integer("HC0_") == LOAD_ONES && load_idle.slots[0].processor == 0u &&
+                          load_counts.processor_idle_absent == 1u,
+                      "CPU0's _STA loads its table and keeps CPU0 out");
+    kernel_test_check(
+        test, load_integer("TRAC") == 0x7u && load_counts.late_initializations == 1u && load_counts.tables == 2u,
+        "one late initialisation runs the loaded device's _INI");
+    load_close(test);
+}
+
+/**
  * @brief A table the _CST loads when step 9 evaluates it once more gets its late initialisation too (§3.8):
  *        the _CST notifies its own processor 0x81, and loads its table on its second run.
  */
