@@ -1228,6 +1228,26 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
 }
 
 /**
+ * @brief An Alias of an object that does not exist is counted and skipped alone, and the table goes on, as
+ *        acpiexec goes on loading: the Name after it is still declared. acpiexec also creates the alias and
+ *        an Untyped node for its source; the kernel creates neither, since ACPI 6.6 §19.6.4 says the source
+ *        must already exist.
+ */
+KERNEL_TEST(an_alias_of_a_missing_object_is_skipped_alone)
+{
+    static const uint8_t aml[] = {0x06u, 'Z',   'O', 'O', '_', 'B', 'A',   'R',
+                                  '_',   0x08u, 'A', 'F', 'T', 'R', 0x0Au, 0x07u};
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.load_errors == 1u && made_up_load.decode_errors == 0u,
+                      "the missing object is the one fault, met while declaring");
+    kernel_test_check(test, made_up_node_at("BAR_") == 0u, "BAR_ is not created");
+    kernel_test_check(test, made_up_node("AFTR")->value.payload == 7u, "AFTR, after it, is declared");
+    made_up_close(test);
+}
+
+/**
  * @brief A region takes its space, offset and length; one built from an expression takes what its
  *        declaration computes when it runs; each unit of a field takes the bit the list has reached,
  *        past a reserved field, and the access an AccessAs gives.

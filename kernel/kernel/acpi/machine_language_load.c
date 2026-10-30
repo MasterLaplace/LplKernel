@@ -542,8 +542,9 @@ static void machine_language_keep_external(MachineLanguageWalk_t *walk, const Ma
 /**
  * @brief What a NameString operand of the active operator means: a Scope's target, an Alias's
  *        source then its new name, or the name a declaration creates. The declaration pass creates
- *        permanent nodes, and leaves an External it cannot place to the Externals pass, which counts
- *        it; the decoding pass creates temporary nodes in method bodies. Past the declaration pass, at
+ *        permanent nodes, counts and skips alone an Alias whose source does not exist, and leaves an
+ *        External it cannot place to the Externals pass, which counts it; the decoding pass creates
+ *        temporary nodes in method bodies. Past the declaration pass, at
  *        table level, a construct only finds the scope it opens: the decoding pass decodes the body of
  *        one it cannot find in the scope the walk is in, the Externals pass skips it.
  */
@@ -592,7 +593,11 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
         return MACHINE_LANGUAGE_OK;
     }
     if (type == MACHINE_LANGUAGE_NODE(ALIAS) && target == 0u)
-        return declaring ? MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND) : MACHINE_LANGUAGE_OK;
+    {
+        if (declaring)
+            machine_language_record_fault(walk, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND));
+        return MACHINE_LANGUAGE_OK;
+    }
     status = declaring ? machine_language_declare(walk, name, type, &active->node) :
                          machine_language_declare_temporary(walk, name, type, &active->node);
     if (status != MACHINE_LANGUAGE_OK && declaring && active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL))
