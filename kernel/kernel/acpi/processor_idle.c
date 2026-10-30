@@ -20,9 +20,9 @@
 #define PROCESSOR_IDLE_PRESENT        0x01u    /**< _STA bit 0: the device is present. */
 #define PROCESSOR_IDLE_ENABLED        0x02u    /**< _STA bit 1: the device is enabled. */
 #define PROCESSOR_IDLE_FUNCTIONING    0x08u    /**< _STA bit 3: the device works. */
-#define PROCESSOR_IDLE_NO_STATUS      0x0Fu    /**< What a device without _STA reads as (ACPI 6.6 §6.3.7). */
-#define PROCESSOR_IDLE_WALKED         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED
-#define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT
+#define PROCESSOR_IDLE_NO_STATUS      0x0Fu    /**< What Linux keeps for a ThermalZone whose _STA fails. */
+#define PROCESSOR_IDLE_DECIDED        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_DECIDED
+#define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_ABSENT
 #define PROCESSOR_IDLE_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define PROCESSOR_IDLE_FOLD_PRIME     0x01000193u /**< FNV-1a's prime. */
 
@@ -197,7 +197,7 @@ static ProcessorIdleStatus_t processor_idle_read(ProcessorIdleLoad_t *load, Proc
 /**
  * @brief Evaluates the _CST of the processor object @p processor and publishes its states in @p out_idle,
  *        none when the evaluation fails or its package is malformed, counted; then gives the tables it
- *        loaded their late initialisation.
+ *        loaded their late initialisation, as step 7 does after its failure is counted.
  */
 static void processor_idle_evaluate(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor,
                                     ProcessorIdle_t *out_idle)
@@ -215,12 +215,13 @@ static void processor_idle_evaluate(ProcessorIdleLoad_t *load, ProcessorIdleCoun
     if (status == PROCESSOR_IDLE_OK)
         status = processor_idle_read(load, counts, &result, out_idle);
     processor_idle_release(load, &result);
+    if (status != PROCESSOR_IDLE_OK)
+    {
+        ++counts->processor_idle_failed;
+        advanced_configuration_and_power_interface_initialization_count_failure(
+            counts, (object != 0u) ? object : processor, status);
+    }
     advanced_configuration_and_power_interface_initialization_settle(load, counts);
-    if (status == PROCESSOR_IDLE_OK)
-        return;
-    ++counts->processor_idle_failed;
-    advanced_configuration_and_power_interface_initialization_count_failure(counts, (object != 0u) ? object : processor,
-                                                                            status);
 }
 
 /**
@@ -313,29 +314,68 @@ static bool processor_idle_integer(ProcessorIdleLoad_t *load, ProcessorIdleCount
 }
 
 /**
+ * @brief The highest device above @p index whose presence step 8 has not decided, or 0, also when one above
+ *        it is a device step 8 found absent, which @p out_absent then tells.
+ */
+static uint32_t processor_idle_undecided_above(const ProcessorIdleLoad_t *load, uint32_t index, bool *out_absent)
+{
+    uint32_t highest = 0u;
+
+    for (index = processor_idle_node(load, index)->parent; index != 0u;
+         index = processor_idle_node(load, index)->parent)
+    {
+        const ProcessorIdleNode_t *node = processor_idle_node(load, index);
+
+        if ((node->flags & PROCESSOR_IDLE_ABSENT) != 0u)
+        {
+            *out_absent = true;
+            return 0u;
+        }
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type) &&
+            (node->flags & PROCESSOR_IDLE_DECIDED) == 0u)
+            highest = index;
+    }
+    return highest;
+}
+
+/**
+ * @brief Reads the _STA of @p device into @p out_status, step 4 being over, as Linux reads it (v7.3
+ *        acpi_scan_init_status, acpi_bus_get_status): one that fails, counted, reads 0 for a Device or a
+ *        Processor and 0x0F for a ThermalZone; then records in its node that step 8 decided it, and found it
+ *        absent when it is neither present nor functioning.
+ */
+static void processor_idle_decide(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t device,
+                                  uint64_t *out_status)
+{
+    ProcessorIdleNode_t *node = processor_idle_node(load, device);
+
+    node->flags |= PROCESSOR_IDLE_DECIDED;
+    if (!advanced_configuration_and_power_interface_initialization_read_status(load, counts, device, out_status))
+        *out_status = (node->type == PROCESSOR_IDLE_NODE(THERMAL_ZONE)) ? PROCESSOR_IDLE_NO_STATUS : 0u;
+    if ((*out_status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
+        node->flags |= PROCESSOR_IDLE_ABSENT;
+}
+
+/**
  * @brief Whether Linux would attach the processor object @p processor (v7.3 acpi_bus_attach,
- *        acpi_processor_add): no device above it absent, their presence decided as step 4 decides it and
- *        shared with the late initialisation, and its own _STA present or functioning, and enabled, a
- *        missing one reading 0x0F and one that fails keeping it out, counted. Its own presence is recorded
- *        in its node's flags, as a walk records it.
+ *        acpi_processor_add), from _STA values read once step 4 is over, as Linux reads them after every
+ *        _INI, and each read once by step 8: no device above it absent, decided from the top down; and its
+ *        own _STA present or functioning, and enabled, a missing one reading 0x0F and one that fails keeping
+ *        it out, counted.
  */
 static bool processor_idle_present(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t processor)
 {
-    const uint32_t object = processor_idle_object(load, processor, "_STA");
-    uint64_t status = PROCESSOR_IDLE_NO_STATUS;
+    bool absent = false;
+    uint64_t status = 0u;
 
-    if ((processor_idle_node(load, processor)->flags & PROCESSOR_IDLE_ABSENT) != 0u ||
-        !advanced_configuration_and_power_interface_initialization_present_above(load, counts, processor))
+    for (uint32_t device = processor_idle_undecided_above(load, processor, &absent); device != 0u;
+         device = processor_idle_undecided_above(load, processor, &absent))
+        processor_idle_decide(load, counts, device, &status);
+    if (absent)
         return false;
-    processor_idle_node(load, processor)->flags |= PROCESSOR_IDLE_WALKED;
-    if (object != 0u && !processor_idle_integer(load, counts, object, &status))
-        return false;
-    if ((status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) == 0u)
-    {
-        processor_idle_node(load, processor)->flags |= PROCESSOR_IDLE_ABSENT;
-        return false;
-    }
-    return (status & PROCESSOR_IDLE_ENABLED) != 0u;
+    processor_idle_decide(load, counts, processor, &status);
+    return (status & (PROCESSOR_IDLE_PRESENT | PROCESSOR_IDLE_FUNCTIONING)) != 0u &&
+           (status & PROCESSOR_IDLE_ENABLED) != 0u;
 }
 
 /**
@@ -350,38 +390,98 @@ static bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
 }
 
 /**
- * @brief Step 8 of §3.8: publishes the _CST of each processor object _STA keeps in and bound to a CPU slot
- *        no earlier object took, in declaration order, the Notifies queued before each evaluation taken
- *        first.
+ * @brief Publishes the _CST of the candidate @p index when it is a processor object _STA keeps in and bound to
+ *        a CPU slot no earlier object took (§3.8 step 8), the Notifies queued before its evaluation taken
+ *        first; counts it when _STA keeps it out or it binds to no free slot. The tables the _STA it reads
+ *        loaded get their late initialisation first.
+ */
+static void processor_idle_publish_processor(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
+                                             ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table,
+                                             uint32_t *changed, uint32_t index)
+{
+    if (!advanced_configuration_and_power_interface_processor_object(load, counts, index))
+        return;
+
+    const bool present = processor_idle_present(load, counts, index);
+
+    advanced_configuration_and_power_interface_initialization_settle(load, counts);
+    if (!present)
+    {
+        ++counts->processor_idle_absent;
+        return;
+    }
+
+    const uint32_t slot = advanced_configuration_and_power_interface_processor_slot(load, machine, counts, index);
+
+    if (slot == PROCESSOR_IDLE_NO_SLOT || table->slots[slot].processor != 0u)
+    {
+        ++counts->processor_idle_unbound;
+        return;
+    }
+    processor_idle_take_notifications(load, table, changed);
+    processor_idle_evaluate(load, counts, index, &table->slots[slot]);
+}
+
+/**
+ * @brief Step 8 of §3.8: publishes the _CST of each processor object the first @p tables tables declare, in
+ *        declaration order; the ones the tables loaded meanwhile declare are left to the pass after it.
  */
 static void processor_idle_publish_slots(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
-                                         ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed)
+                                         ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed,
+                                         uint32_t tables)
 {
     for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
              &load->space, PROCESSOR_IDLE_ROOT, true);
          index != 0u;
          index = advanced_configuration_and_power_interface_machine_language_namespace_next(&load->space, index, true))
+        if (processor_idle_candidate(load, index) && processor_idle_node(load, index)->owner <= tables)
+            processor_idle_publish_processor(load, machine, counts, table, changed, index);
+}
+
+/**
+ * @brief Forgets what step 8 decided of every device, so that a round of the pass after it reads their _STA
+ *        again, as Linux's scan after a table loads reads them again (v7.3 acpi_bus_attach).
+ */
+static void processor_idle_forget(ProcessorIdleLoad_t *load)
+{
+    for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
+             &load->space, PROCESSOR_IDLE_ROOT, true);
+         index != 0u;
+         index = advanced_configuration_and_power_interface_machine_language_namespace_next(&load->space, index, true))
+        processor_idle_node(load, index)->flags &= (uint8_t) ~(PROCESSOR_IDLE_DECIDED | PROCESSOR_IDLE_ABSENT);
+}
+
+/**
+ * @brief The pass of step 8 over the tables loaded since the first @p tables, as Linux scans the namespace
+ *        again once a table loads (v7.3 acpi_table_events_fn): each processor object they declare gets, in
+ *        declaration order, step 7's capabilities, then step 8's _CST, the _STA above it read again; one more
+ *        round follows a round that loaded a table.
+ */
+static void processor_idle_publish_loaded(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
+                                          ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed,
+                                          uint32_t tables)
+{
+    while (tables != load->table_count)
     {
-        if (!processor_idle_candidate(load, index) ||
-            !advanced_configuration_and_power_interface_processor_object(load, counts, index))
-            continue;
-        if (!processor_idle_present(load, counts, index))
-        {
-            ++counts->processor_idle_absent;
-            continue;
-        }
+        const uint32_t last = load->table_count;
 
-        const uint32_t slot = advanced_configuration_and_power_interface_processor_slot(load, machine, counts, index);
+        processor_idle_forget(load);
 
-        if (slot == PROCESSOR_IDLE_NO_SLOT || table->slots[slot].processor != 0u)
+        for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
+                 &load->space, PROCESSOR_IDLE_ROOT, true);
+             index != 0u; index = advanced_configuration_and_power_interface_machine_language_namespace_next(
+                              &load->space, index, true))
         {
-            ++counts->processor_idle_unbound;
-            continue;
+            const uint16_t owner = processor_idle_node(load, index)->owner;
+
+            if (owner <= tables || owner > last)
+                continue;
+            advanced_configuration_and_power_interface_initialization_negotiate(load, machine, counts, index);
+            if (processor_idle_candidate(load, index))
+                processor_idle_publish_processor(load, machine, counts, table, changed, index);
         }
-        processor_idle_take_notifications(load, table, changed);
-        processor_idle_evaluate(load, counts, index, &table->slots[slot]);
+        tables = last;
     }
-    processor_idle_take_notifications(load, table, changed);
 }
 
 bool advanced_configuration_and_power_interface_processor_object(ProcessorIdleLoad_t *load,
@@ -442,11 +542,14 @@ void advanced_configuration_and_power_interface_processor_idle_publish(Processor
                                                                        ProcessorIdleTable_t *out_table)
 {
     uint32_t changed[(PROCESSOR_IDLE_MAX_SLOTS + PROCESSOR_IDLE_SLOT_BITS - 1u) / PROCESSOR_IDLE_SLOT_BITS] = {0u};
+    const uint32_t tables = load->table_count;
 
     out_table->slot_count = (machine->madt != NULL) ? machine->madt->processor_count : 0u;
     memset(out_table->slots, 0, out_table->slot_count * sizeof(out_table->slots[0]));
     initialization->idle_control = processor_idle_claim_control(load, machine);
-    processor_idle_publish_slots(load, machine, initialization, out_table, changed);
+    processor_idle_publish_slots(load, machine, initialization, out_table, changed, tables);
+    processor_idle_publish_loaded(load, machine, initialization, out_table, changed, tables);
+    processor_idle_take_notifications(load, out_table, changed);
     for (uint32_t slot = 0u; slot < out_table->slot_count; ++slot)
     {
         if ((changed[slot / PROCESSOR_IDLE_SLOT_BITS] & (1u << (slot % PROCESSOR_IDLE_SLOT_BITS))) == 0u)

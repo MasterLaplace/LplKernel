@@ -401,6 +401,7 @@ clients `_CST` exists only after step 7.
 | 5 `\_PIC` | not called | | `pic_mode_deferred` |
 | 6 platform `_OSC` | absent, failed, or an error bit in the returned DWORD 1 | continue as if nothing was granted | `platform_capabilities`: `absent`, `failed` or `refused` |
 | 7 processor `_OSC` or `_PDC` | the evaluation's status, or an error bit in `_OSC`'s DWORD 1 | continue; that processor may have no `_CST` | `processor_capabilities_failed`, `processor_capabilities_refused` |
+| 8 a `_STA` | the evaluation's status | the processor is kept out, and so is what lies below a Device or a Processor; a ThermalZone is walked into | `status_failed` |
 | 8 a `_CST` | the evaluation's status, or a malformed package | that CPU keeps the states the kernel enters without ACPI (HLT, MWAIT C1) | `processor_idle_failed` |
 
 **Tables loaded at run time.** A table loaded before step 3 is initialised by steps 3 and 4 with the static ones,
@@ -410,7 +411,11 @@ devices that step 4 still reaches, below the device step 4 is at or below a node
 step 4; the others get the `_STA` and `_INI` walk of step 4 over their subtrees ([§6.5.1]). The devices above them
 whose `_STA` step 4 did not read, in subtrees it skipped, have it read first, from the top down, under step 4's rule,
 so that the result does not depend on where the loader is declared; nothing below a device found neither present nor
-functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything.
+functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything. A
+processor object that a table loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux
+scans the namespace again once a table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the
+capabilities of step 7, then the `_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`;
+a round that loads a table is followed by another.
 
 ### 3.9 The static tables
 
@@ -490,11 +495,15 @@ functioning is walked. No `_INI` runs twice. `late_initializations` counts how o
   and so is one whose slot an object declared before it took.
 - **Presence.** Step 8 evaluates the `_CST` of a processor object Linux attaches (v7.3 `acpi_bus_attach`,
   `acpi_processor_add`): its `_STA` present or functioning, and enabled, and no Device, Processor or ThermalZone
-  above it found absent. Step 8 decides the devices above it as the walk of step 4 does, and shares each decision
-  with step 4 and the late initialisation, so that a device's `_STA` is read once: one step 4 or a late
-  initialisation found absent keeps the processor out unread, and one whose `_STA` fails is walked into, where
-  Linux would read it as 0. The processor's own `_STA` reads 0x0F when missing, and keeps it out when it fails,
-  counted. A processor kept out takes no slot, and is counted (`processor_idle_absent`).
+  above it found neither present nor functioning. Step 8 reads these `_STA` once step 4 is over, as Linux reads them
+  when it attaches, after every `_INI`; what step 4 or a late initialisation found decides nothing here, and step 4's
+  absences still keep the late initialisation out. Step 8 decides the devices above a processor from the top down,
+  and stops at the first one absent; its walk reads each `_STA` once, and each round of the pass after it (§3.8)
+  reads them once more, as Linux's scan after a table loads does. A `_STA` that fails reads as Linux reads it (v7.3
+  `acpi_scan_init_status`, `acpi_bus_get_status`): 0 for a Device or a Processor, which keeps out what lies below it,
+  and 0x0F for a ThermalZone, which is walked into. The processor's own `_STA` reads 0x0F when missing, and keeps it
+  out when it fails. These reads are counted with step 4's (`status_evaluations`, `status_failed`). A processor kept
+  out takes no slot, and is counted (`processor_idle_absent`).
 - **Every state firmware lists is published,** type 3 included ([§8.1.4]), up to the cap of §6.1; which states to
   enter is #298's policy.
 - **A faulty state is left out** and counted on its slot, as Linux skips it: a sub-package of other than four
@@ -928,7 +937,7 @@ reads a table in kernel memory. The costs to cut are:
 | O11 | Lazy region attach, and a mapping cache keyed by physical page range: one map per distinct page range per boot | `map_calls`, `mapping_cache_hits` |
 | O12 | A field fast path for a unit inside one aligned access | `field_fast_path` / `field_accesses` |
 | O13 | The PCI address resolved once, at attach: no method evaluation per PCI field access. It assumes the kernel never renumbers bridges; hotplug or a bus reassignment brings back a per-access resolution | `internal_evaluations` |
-| O14 | No `_STA` in subtrees without `_INI` | `status_evaluations` |
+| O14 | No `_STA` in subtrees without `_INI`, but step 8's: those of the processor objects with a `_CST` and of the devices above them, once by step 8's walk and once per round of the pass after it | `status_evaluations` |
 | O15 | No lock and no atomic in the interpreter (§3.7) | CI checks that the release objects of `kernel/kernel/acpi/` hold no `lock`-prefixed instruction (`objdump -d`); W1 on the release kernel |
 | O16 | Log calls compiled out below the build's level | CI checks that the release objects call no log function below the release level (`nm`); W1 on the release kernel |
 

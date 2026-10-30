@@ -64,15 +64,21 @@
     0x04u /**< Node flag: the node, or one below it, is a device or processor with an _OSC or a _PDC, as the           \
                initialisation's pre-pass marks it (§3.8 step 7). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_ABSENT                                        \
-    0x08u /**< Node flag: step 4, a late initialisation or step 8 found the device neither present nor functioning:    \
-               what lies below it is left alone, by a late initialisation and by step 8 (§3.8, §3.10). */
+    0x08u /**< Node flag: step 4 or a late initialisation found the device neither present nor functioning: a late     \
+               initialisation leaves alone what lies below it (§3.8). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED                                        \
-    0x10u /**< Node flag: step 4, a late initialisation or step 8 decided whether the device is present, by its _STA   \
-               or without one (§3.8, §3.10). */
+    0x10u /**< Node flag: step 4 or a late initialisation decided whether the device is present, by its _STA or        \
+               without one (§3.8). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DUPLICATED                                    \
     0x20u /**< Node flag: the declaration pass refused a Device, ThermalZone, Processor, PowerResource or Method of    \
                this name as a duplicate: past it, the body of a construct naming the node is read only when that       \
                construct declared it (§5.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_DECIDED                                  \
+    0x40u /**< Node flag: step 8 decided whether the device is present, by its _STA read once step 4 was over or       \
+               without one, and reads it no more (§3.10). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_ABSENT                                   \
+    0x80u /**< Node flag: step 8 found the device neither present nor functioning: step 8 leaves alone what lies below \
+               it (§3.10). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS                                     \
     8u /**< Aliases one resolution follows before it gives up. */
 
@@ -332,5 +338,16 @@ advanced_configuration_and_power_interface_machine_language_namespace_creation_p
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t scope, const uint8_t *bytes,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t *name, uint32_t *out_parent,
     uint32_t *out_name);
+
+/**
+ * @brief Whether a node of type @p type is a device object (ACPI 6.6 §5.6.6): a Device, a Processor or a
+ *        ThermalZone, the objects a Notify may name and those the initialisation walks (§3.8).
+ *
+ * @param type An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_* type.
+ * @return Whether it is one.
+ */
+static inline bool advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(uint8_t type);
+
+#include <kernel/acpi/machine_language_namespace.inl>
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_NAMESPACE_H */

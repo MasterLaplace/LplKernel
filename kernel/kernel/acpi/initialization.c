@@ -108,16 +108,6 @@ static uint32_t initialization_next(const InitializationLoad_t *load, uint32_t i
 }
 
 /**
- * @brief Whether a node is one the walk of step 4 initialises: a Device, a Processor or a ThermalZone,
- *        as ACPICA and uACPI walk them.
- */
-static bool initialization_is_device(const InitializationNode_t *node)
-{
-    return node->type == INITIALIZATION_NODE(DEVICE) || node->type == INITIALIZATION_NODE(PROCESSOR) ||
-           node->type == INITIALIZATION_NODE(THERMAL_ZONE);
-}
-
-/**
  * @brief Counts a failed evaluation of @p object under its status, the first one named.
  */
 static void initialization_count_failure(Initialization_t *initialization, uint32_t object,
@@ -255,7 +245,7 @@ static void initialization_find_initializations(InitializationLoad_t *load, Init
     {
         const InitializationNode_t *node = initialization_node(load, index);
 
-        if (!initialization_is_device(node))
+        if (!advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type))
             continue;
         ++initialization->devices;
         if (initialization_object(load, index, "_INI") != 0u)
@@ -380,21 +370,23 @@ static void initialization_mark_late(InitializationLoad_t *load, Initialization_
 
         if (!initialization_is_late(load, index, first, last))
             continue;
-        if (initialization_is_device(node))
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type))
         {
             ++initialization->devices;
             if (initialization_object(load, index, "_INI") != 0u)
                 initialization_mark(load, index, INITIALIZATION_HOLDS);
             if (node->type != INITIALIZATION_NODE(THERMAL_ZONE) && initialization_holds_capabilities(load, index))
                 initialization_mark(load, index, INITIALIZATION_CAPABLE);
-            *out_devices |= !initialization_is_device(initialization_node(load, parent)) ||
+            *out_devices |= !advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                                initialization_node(load, parent)->type) ||
                             !initialization_is_late(load, parent, first, last);
             continue;
         }
         *out_regions |=
             advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_registration(
                 load, index) != 0u;
-        if (!initialization_is_device(initialization_node(load, parent)))
+        if (!advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                initialization_node(load, parent)->type))
             continue;
         if (node->name == initialization_name("_INI"))
             initialization_mark(load, parent, INITIALIZATION_HOLDS);
@@ -504,7 +496,8 @@ static uint32_t initialization_highest_unwalked(const InitializationLoad_t *load
 
     for (index = initialization_node(load, index)->parent; index != 0u;
          index = initialization_node(load, index)->parent)
-        if (initialization_is_device(initialization_node(load, index)) &&
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                initialization_node(load, index)->type) &&
             (initialization_node(load, index)->flags & INITIALIZATION_WALKED) == 0u)
             highest = index;
     return highest;
@@ -550,15 +543,18 @@ static void initialization_walk_late(InitializationLoad_t *load, Initialization_
     {
         const InitializationNode_t *node = initialization_node(load, top);
 
-        if (!initialization_is_device(node) || !initialization_is_late(load, top, first, last) ||
-            (initialization_is_device(initialization_node(load, node->parent)) &&
+        if (!advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(node->type) ||
+            !initialization_is_late(load, top, first, last) ||
+            (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                 initialization_node(load, node->parent)->type) &&
              initialization_is_late(load, node->parent, first, last)) ||
             initialization_under_absent(load, top) || initialization_reached_later(load, top, walking) ||
             !initialization_decide_above(load, initialization, top))
             continue;
         for (uint32_t index = top; index != 0u;)
         {
-            const bool below = !initialization_is_device(initialization_node(load, index)) ||
+            const bool below = !advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                                   initialization_node(load, index)->type) ||
                                initialization_initialize_device(load, initialization, index);
 
             index = initialization_next_below(load, top, index, below);
@@ -610,7 +606,8 @@ static void initialization_walk(InitializationLoad_t *load, Initialization_t *in
     {
         bool descend = true;
 
-        if (initialization_is_device(initialization_node(load, index)))
+        if (advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
+                initialization_node(load, index)->type))
         {
             descend = initialization_initialize_device(load, initialization, index);
             if (load->table_count != initialization->tables)
@@ -785,36 +782,44 @@ static void initialization_negotiate_processor(InitializationLoad_t *load, Initi
 }
 
 /**
- * @brief Gives every processor object with an _OSC or a _PDC that binds to a CPU slot the capabilities
- *        of its C-states, and MWAIT's when the processors implement it, in declaration order (§3.8 step
- *        7), walking only the subtrees the pre-pass marked; counts the ones that bind to none.
+ * @brief Gives @p index, when it is a processor object with an _OSC or a _PDC that binds to a CPU slot, the
+ *        capabilities of its C-states, and MWAIT's when the processors implement it, then initialises late
+ *        the tables that loaded (§3.8 step 7); counts it when it binds to none.
+ */
+static void initialization_negotiate_bound(InitializationLoad_t *load, Initialization_t *initialization,
+                                           const InitializationMachine_t *machine, uint32_t index)
+{
+    const uint8_t type = initialization_node(load, index)->type;
+
+    if ((type != INITIALIZATION_NODE(PROCESSOR) && type != INITIALIZATION_NODE(DEVICE)) ||
+        !initialization_holds_capabilities(load, index) ||
+        !advanced_configuration_and_power_interface_processor_object(load, initialization, index))
+        return;
+    if (advanced_configuration_and_power_interface_processor_slot(load, machine, initialization, index) ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_NO_SLOT)
+    {
+        ++initialization->processors_unbound;
+        return;
+    }
+    initialization_negotiate_processor(load, initialization, index,
+                                       INITIALIZATION_C_STATES |
+                                           (machine->monitor_wait ? INITIALIZATION_MONITOR_WAIT : 0u));
+    initialization_settle(load, initialization, 0u);
+}
+
+/**
+ * @brief Gives every processor object with an _OSC or a _PDC that binds to a CPU slot its capabilities, in
+ *        declaration order (§3.8 step 7), walking only the subtrees the pre-pass marked.
  */
 static void initialization_negotiate_processors(InitializationLoad_t *load, Initialization_t *initialization,
                                                 const InitializationMachine_t *machine)
 {
-    const uint32_t capabilities = INITIALIZATION_C_STATES | (machine->monitor_wait ? INITIALIZATION_MONITOR_WAIT : 0u);
-
     if (!initialization_capable(load, INITIALIZATION_ROOT))
         return;
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
          index = initialization_next(load, index, initialization_capable(load, index)))
-    {
-        const uint8_t type = initialization_node(load, index)->type;
-
-        if (!initialization_capable(load, index) ||
-            (type != INITIALIZATION_NODE(PROCESSOR) && type != INITIALIZATION_NODE(DEVICE)) ||
-            !initialization_holds_capabilities(load, index) ||
-            !advanced_configuration_and_power_interface_processor_object(load, initialization, index))
-            continue;
-        if (advanced_configuration_and_power_interface_processor_slot(load, machine, initialization, index) ==
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_NO_SLOT)
-        {
-            ++initialization->processors_unbound;
-            continue;
-        }
-        initialization_negotiate_processor(load, initialization, index, capabilities);
-        initialization_settle(load, initialization, 0u);
-    }
+        if (initialization_capable(load, index))
+            initialization_negotiate_bound(load, initialization, machine, index);
 }
 
 void advanced_configuration_and_power_interface_initialize_namespace(InitializationLoad_t *load,
@@ -846,11 +851,19 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     advanced_configuration_and_power_interface_processor_idle_publish(load, machine, out_initialization, out_idle);
 }
 
-bool advanced_configuration_and_power_interface_initialization_present_above(InitializationLoad_t *load,
-                                                                             Initialization_t *initialization,
-                                                                             uint32_t index)
+bool advanced_configuration_and_power_interface_initialization_read_status(InitializationLoad_t *load,
+                                                                           Initialization_t *initialization,
+                                                                           uint32_t device, uint64_t *out_status)
 {
-    return !initialization_under_absent(load, index) && initialization_decide_above(load, initialization, index);
+    return initialization_read_status(load, initialization, device, out_status);
+}
+
+void advanced_configuration_and_power_interface_initialization_negotiate(InitializationLoad_t *load,
+                                                                         const InitializationMachine_t *machine,
+                                                                         Initialization_t *initialization,
+                                                                         uint32_t processor)
+{
+    initialization_negotiate_bound(load, initialization, machine, processor);
 }
 
 void advanced_configuration_and_power_interface_initialization_settle(InitializationLoad_t *load,
