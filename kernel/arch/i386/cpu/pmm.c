@@ -38,6 +38,12 @@
 /** @brief Multiboot memory region type: available RAM. */
 #define MMAP_TYPE_AVAILABLE 1
 
+/** @brief Multiboot memory region type: ACPI reclaimable memory, RAM once the tables are read. */
+#define MMAP_TYPE_ACPI_RECLAIMABLE 3
+
+/** @brief Multiboot memory region type: ACPI NVS memory, which the firmware keeps. */
+#define MMAP_TYPE_ACPI_NVS 4
+
 /** @brief Minimum e820 entry payload size (bytes). */
 #define MMAP_MIN_ENTRY_SIZE 20
 
@@ -78,6 +84,9 @@ static PmmMemoryMapRange_t pmm_memory_map[PMM_MAX_MEMORY_MAP_ENTRIES];
 
 /** @brief Ranges kept in pmm_memory_map. */
 static uint32_t pmm_memory_map_count = 0u;
+
+/** @brief Entries of the boot memory map past the PMM_MAX_MEMORY_MAP_ENTRIES kept in pmm_memory_map. */
+static uint32_t pmm_memory_map_dropped = 0u;
 
 static uint32_t pmm_local_hits = 0;
 static uint32_t pmm_remote_hits = 0;
@@ -853,6 +862,36 @@ uint32_t physical_memory_manager_memory_type(uint64_t physical_address, uint64_t
     return 0u;
 }
 
+bool physical_memory_manager_type_is_memory(uint32_t type)
+{
+    return type == MMAP_TYPE_AVAILABLE || type == MMAP_TYPE_ACPI_RECLAIMABLE || type == MMAP_TYPE_ACPI_NVS;
+}
+
+bool physical_memory_manager_reaches_ram(uint64_t physical_address, uint64_t length)
+{
+    if (length == 0u || physical_address + length < physical_address)
+        return false;
+
+    const uint64_t first = physical_address & ~(uint64_t) (PAGE_SIZE - 1u);
+    const uint64_t end = physical_address + length;
+
+    for (uint32_t index = 0u; index < pmm_memory_map_count; ++index)
+    {
+        const PmmMemoryMapRange_t *range = &pmm_memory_map[index];
+        const uint64_t range_end = range->base + range->length;
+        const uint64_t low = range->base > PMM_LOW_MEMORY_LIMIT ? range->base : PMM_LOW_MEMORY_LIMIT;
+        const uint64_t ram_first = (low + PAGE_SIZE - 1u) & ~(uint64_t) (PAGE_SIZE - 1u);
+        const uint64_t ram_end = range_end & ~(uint64_t) (PAGE_SIZE - 1u);
+
+        if (range->type == MMAP_TYPE_AVAILABLE && range_end > range->base && ram_first < ram_end && ram_first < end &&
+            ram_end > first)
+            return true;
+    }
+    return false;
+}
+
+uint32_t physical_memory_manager_get_memory_map_dropped_count(void) { return pmm_memory_map_dropped; }
+
 const char *physical_memory_manager_get_strategy_name(void) { return pmm_strategy_name; }
 
 bool physical_memory_manager_debug_is_free_block(uint32_t phys_addr, uint8_t order)
@@ -982,11 +1021,14 @@ void physical_memory_manager_initialize(void)
 #endif
 
     pmm_memory_map_count = 0u;
+    pmm_memory_map_dropped = 0u;
     while (pmm_next_mmap_entry(mmap_base, mmap_length, &offset, &entry))
     {
         if (pmm_memory_map_count < PMM_MAX_MEMORY_MAP_ENTRIES)
             pmm_memory_map[pmm_memory_map_count++] =
                 (PmmMemoryMapRange_t){.base = entry->base_addr, .length = entry->length, .type = entry->type};
+        else
+            ++pmm_memory_map_dropped;
         if (entry->type == MMAP_TYPE_AVAILABLE)
         {
             uint32_t region_start, region_end;

@@ -17,8 +17,12 @@ KERNEL_TEST_SUITE(boot_map, KERNEL_TEST_STAGE_INITIALIZATION);
 #define BOOT_MAP_TEST_KERNEL_MAP_END                                                                                   \
     (KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE) /**< The end of the kernel's map of physical memory, 256 MiB. */
 #define BOOT_MAP_TEST_BOOT_MAP_PAGES    (BOOT_MAP_TEST_BOOT_MAP_END / PAGE_SIZE) /**< Pages boot.S maps. */
-#define BOOT_MAP_TEST_ALTERNATING_COUNT 100u  /**< Entries of the made-up map that alternates RAM and reserved. */
-#define BOOT_MAP_TEST_MAP_BYTES         4096u /**< Room for the largest made-up map, 100 entries of 24 bytes. */
+#define BOOT_MAP_TEST_ALTERNATING_COUNT 100u        /**< Entries of the made-up map that alternates RAM and reserved. */
+#define BOOT_MAP_TEST_MAP_BYTES         4096u       /**< Room for the largest made-up map, 100 entries of 24 bytes. */
+#define BOOT_MAP_TEST_UNCACHED_BITS     3u          /**< PCD and PWT set, PAT clear: PAT entry 3, UC. */
+#define BOOT_MAP_TEST_WINDOW_KINDS      3u          /**< A firmware window, a writable one and a device window. */
+#define BOOT_MAP_TEST_NO_ENTRY_SEARCH   0xF0000000u /**< Where the test looks for a page no map entry holds. */
+#define BOOT_MAP_TEST_NO_ENTRY_STEP     0x00100000u /**< The step of that search, 1 MiB. */
 
 /**
  * @brief One entry of a made-up memory map.
@@ -280,9 +284,40 @@ static bool boot_map_test_direct_entry(uint32_t page, PageTableEntry_t *out_entr
 }
 
 /**
+ * @brief The type of the first entry of the bootloader's memory map that holds the whole page at @p page, read as
+ *        boot_map_test_map_holds_ram reads entries, or 0 when no entry holds it whole.
+ */
+static uint32_t boot_map_test_page_type(uint32_t page)
+{
+    uint32_t length = 0u;
+    const uint8_t *const map = boot_map_test_memory_map(&length);
+
+    for (uint32_t offset = 0u; map && offset + sizeof(uint32_t) <= length;)
+    {
+        const MemoryMapEntry_t *const entry = (const MemoryMapEntry_t *) (map + offset);
+
+        if (entry->size < BOOT_MAP_TEST_ENTRY_SIZE_LEAST || entry->size > length - offset - sizeof(uint32_t))
+            return 0u;
+        if (entry->base_addr <= page && entry->base_addr + entry->length >= (uint64_t) page + PAGE_SIZE)
+            return entry->type;
+        offset += sizeof(uint32_t) + entry->size;
+    }
+    return 0u;
+}
+
+/**
+ * @brief The memory type bits a window on a page of memory map type @p type must carry past the first MiB: none,
+ *        write-back, for usable RAM (1), ACPI reclaimable (3) and ACPI NVS (4) memory; uncached for any other page.
+ */
+static uint32_t boot_map_test_expected_bits(uint32_t type)
+{
+    return (type == 1u || type == 3u || type == 4u) ? 0u : BOOT_MAP_TEST_UNCACHED_BITS;
+}
+
+/**
  * @brief Maps a one-page device window on @p page and says whether it gives the page no second memory type: in the
  *        first MiB, which the kernel's map keeps, the window has that map's memory type bits; past it, the map
- *        holds no such page and the window is uncached, PCD and PWT set and PAT clear (PAT entry 3, UC).
+ *        holds no such page and the window carries the type its memory map type gives (boot_map_test_expected_bits).
  *
  * @return 1 when it agrees, 0 when it does not, -1 when no window could be mapped.
  */
@@ -304,11 +339,125 @@ static int boot_map_test_window_agrees(uint32_t page)
     const bool agrees =
         page < BOOT_MAP_TEST_FIRST_MEBIBYTE_END ?
             direct && boot_map_test_memory_type_bits(&direct_entry) == boot_map_test_memory_type_bits(&window_entry) :
-            !direct && window_entry.cache_disable == 1u && window_entry.write_through == 1u &&
-                window_entry.page_attribute_table == 0u;
+            !direct && boot_map_test_memory_type_bits(&window_entry) ==
+                           boot_map_test_expected_bits(boot_map_test_page_type(page));
 
     kernel_vmm_unmap_device_window(window, PAGE_SIZE);
     return agrees ? 1 : 0;
+}
+
+/**
+ * @brief Maps the first @p kinds of a one-page firmware window, writable firmware window and device window on @p page,
+ *        and gives the memory type bits of each in @p out_bits, in that order; each window is unmapped before it
+ *        returns.
+ *
+ * @return false when one of them could not be mapped or read back.
+ */
+static bool boot_map_test_window_kinds_bits(uint32_t page, uint32_t kinds,
+                                            uint32_t out_bits[BOOT_MAP_TEST_WINDOW_KINDS])
+{
+    bool read = true;
+
+    for (uint32_t kind = 0u; kind < kinds; ++kind)
+    {
+        const uint32_t window = kind == 0u ? kernel_vmm_map_firmware_window(page, PAGE_SIZE) :
+                                kind == 1u ? kernel_vmm_map_firmware_writable_window(page, PAGE_SIZE) :
+                                             kernel_vmm_map_device_window(page, PAGE_SIZE);
+        PageTableEntry_t entry;
+
+        if (window == 0u)
+            return false;
+        read = read && paging_get_page_table_entry(window, &entry);
+        if (read)
+            out_bits[kind] = boot_map_test_memory_type_bits(&entry);
+        if (kind == 2u)
+            kernel_vmm_unmap_device_window(window, PAGE_SIZE);
+        else
+            kernel_vmm_unmap_firmware_window(window, PAGE_SIZE);
+    }
+    return read;
+}
+
+/**
+ * @brief Whether a device window of @p size bytes from @p physical_base is mapped; it is unmapped at once.
+ */
+static bool boot_map_test_device_window_maps(uint32_t physical_base, uint32_t size)
+{
+    const uint32_t window = kernel_vmm_map_device_window(physical_base, size);
+
+    if (window != 0u)
+        kernel_vmm_unmap_device_window(window, size);
+    return window != 0u;
+}
+
+/**
+ * @brief Checks the windows on @p page against the memory type of its memory map type: the two firmware windows always,
+ *        the device window too unless the page is usable RAM past the first MiB, where it must be refused.
+ *
+ * @return 1 when every window carries the bits boot_map_test_expected_bits gives and a refused one is refused, 0 when
+ *         one does not, -1 when a window that should map could not.
+ */
+static int boot_map_test_windows_agree(uint32_t page)
+{
+    uint32_t bits[BOOT_MAP_TEST_WINDOW_KINDS] = {0u};
+    const uint32_t type = boot_map_test_page_type(page);
+    const uint32_t expected = boot_map_test_expected_bits(type);
+    const bool refused = type == 1u && page >= BOOT_MAP_TEST_FIRST_MEBIBYTE_END;
+
+    if (!boot_map_test_window_kinds_bits(page, refused ? 2u : BOOT_MAP_TEST_WINDOW_KINDS, bits))
+        return -1;
+    if (refused && boot_map_test_device_window_maps(page, PAGE_SIZE))
+        return 0;
+    return bits[0] == expected && bits[1] == expected && (refused || bits[2] == expected) ? 1 : 0;
+}
+
+/**
+ * @brief The first and the last whole page past the first MiB of the first usable RAM entry of the bootloader's memory
+ *        map that holds one below 4 GiB, as the test reads the map.
+ *
+ * @return false when no entry does.
+ */
+static bool boot_map_test_ram_past_the_first_mebibyte(uint32_t *out_first, uint32_t *out_last)
+{
+    uint32_t length = 0u;
+    const uint8_t *const map = boot_map_test_memory_map(&length);
+
+    for (uint32_t offset = 0u; map && offset + sizeof(uint32_t) <= length;)
+    {
+        const MemoryMapEntry_t *const entry = (const MemoryMapEntry_t *) (map + offset);
+
+        if (entry->size < BOOT_MAP_TEST_ENTRY_SIZE_LEAST || entry->size > length - offset - sizeof(uint32_t))
+            return false;
+        offset += sizeof(uint32_t) + entry->size;
+
+        const uint64_t end = entry->base_addr + entry->length;
+        const uint64_t lowest = entry->base_addr > BOOT_MAP_TEST_FIRST_MEBIBYTE_END ?
+                                    (entry->base_addr + PAGE_SIZE - 1u) & ~(uint64_t) (PAGE_SIZE - 1u) :
+                                    BOOT_MAP_TEST_FIRST_MEBIBYTE_END;
+        const uint64_t top = (end < 0x100000000ull ? end : 0x100000000ull) & ~(uint64_t) (PAGE_SIZE - 1u);
+
+        if (entry->type != 1u || end <= entry->base_addr || top < lowest + PAGE_SIZE)
+            continue;
+        *out_first = (uint32_t) lowest;
+        *out_last = (uint32_t) (top - PAGE_SIZE);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief The first page at or past 0xF0000000, 1 MiB apart, that no entry of the bootloader's memory map holds whole,
+ *        or 0 when every one is held.
+ */
+static uint32_t boot_map_test_page_no_entry_holds(void)
+{
+    for (uint32_t page = BOOT_MAP_TEST_NO_ENTRY_SEARCH; page >= BOOT_MAP_TEST_NO_ENTRY_SEARCH;
+         page += BOOT_MAP_TEST_NO_ENTRY_STEP)
+    {
+        if (boot_map_test_page_type(page) == 0u)
+            return page;
+    }
+    return 0u;
 }
 
 /**
@@ -372,7 +521,7 @@ KERNEL_TEST(no_page_below_256_mib_gets_a_second_memory_type_from_a_device_window
     kernel_test_check(test, refused == 0u, "a window is mapped on each of them");
     kernel_test_check(test, agreeing == checked,
                       "in the first MiB each window has the map's memory type; past it the map holds none of them, "
-                      "and each window is uncached");
+                      "and each window has the type of the memory under it");
 }
 
 /**
@@ -478,8 +627,8 @@ KERNEL_TEST(the_boot_map_keeps_the_first_mebibyte_and_only_memory_past_it)
 }
 
 /**
- * @brief A device window on a page the kernel's map of physical memory does not map is uncached: PCD and PWT
- *        select PAT entry 3, UC.
+ * @brief A device window on the top page below 4 GiB, which the memory map calls reserved and the kernel's map of
+ *        physical memory does not map, is uncached: PCD and PWT select PAT entry 3, UC.
  */
 KERNEL_TEST(a_device_window_past_the_kernels_map_is_uncached)
 {
@@ -494,6 +643,143 @@ KERNEL_TEST(a_device_window_past_the_kernels_map_is_uncached)
                           "it is uncached");
     if (window != 0u)
         kernel_vmm_unmap_device_window(window, PAGE_SIZE);
+}
+
+/**
+ * @brief A firmware window, a writable firmware window and a device window on one page past the first MiB give it one
+ *        memory type, which the page decides and no window's kind: write-back for usable RAM, ACPI reclaimable and
+ *        ACPI NVS memory, uncached for a reserved page and for a page no entry of the memory map holds; a device
+ *        window on usable RAM is refused.
+ *
+ * @details Intel SDM vol. 3, §14.12.4: a page mapped with two memory types is undefined behaviour. A firmware window
+ *          used to be write-back whatever lay under it, and a device window uncached, so an ACPI table and an AML
+ *          region on one reserved page gave it both (SeaBIOS puts its tables in reserved memory: the DSDT at
+ *          0x3FE0040 with 64 MiB). Checked on the first and the last page past the first MiB of each entry of the
+ *          memory map below 4 GiB, as the test reads the map, and on a page no entry holds. Only a boot with more RAM
+ *          than the kernel's map of physical memory holds, 512 MiB, puts a page of memory past that map, where the
+ *          write-back comes from the memory map's type rather than from the kernel's map: the record
+ *          memory_past_the_kernels_map counts those pages.
+ */
+KERNEL_TEST(the_windows_on_one_page_give_it_one_memory_type)
+{
+    uint32_t length = 0u;
+    const uint8_t *const map = boot_map_test_memory_map(&length);
+
+    if (!map)
+    {
+        kernel_test_skip(test, "the bootloader gave no memory map");
+        return;
+    }
+
+    uint32_t checked = 0u;
+    uint32_t agreeing = 0u;
+    uint32_t refused = 0u;
+    uint32_t reserved = 0u;
+    uint32_t past_the_map = 0u;
+    uint32_t first_disagreeing = 0u;
+    PageTableEntry_t direct_entry;
+    const uint32_t no_entry = boot_map_test_page_no_entry_holds();
+
+    for (uint32_t offset = 0u; offset + sizeof(uint32_t) <= length;)
+    {
+        const MemoryMapEntry_t *const entry = (const MemoryMapEntry_t *) (map + offset);
+
+        if (entry->size < BOOT_MAP_TEST_ENTRY_SIZE_LEAST || entry->size > length - offset - sizeof(uint32_t))
+            break;
+        offset += sizeof(uint32_t) + entry->size;
+
+        const uint64_t lowest = entry->base_addr > BOOT_MAP_TEST_FIRST_MEBIBYTE_END ?
+                                    (entry->base_addr + PAGE_SIZE - 1u) & ~(uint64_t) (PAGE_SIZE - 1u) :
+                                    BOOT_MAP_TEST_FIRST_MEBIBYTE_END;
+        const uint64_t top = entry->base_addr + entry->length < 0x100000000ull ?
+                                 (entry->base_addr + entry->length) & ~(uint64_t) (PAGE_SIZE - 1u) :
+                                 0x100000000ull;
+
+        if (entry->base_addr + entry->length <= entry->base_addr || top < lowest + PAGE_SIZE)
+            continue;
+
+        const uint32_t pages[2] = {(uint32_t) lowest, (uint32_t) (top - PAGE_SIZE)};
+
+        for (uint32_t index = 0u; index < 2u; ++index)
+        {
+            const int agrees = boot_map_test_windows_agree(pages[index]);
+
+            if (agrees < 0)
+            {
+                ++refused;
+                continue;
+            }
+            ++checked;
+            reserved += boot_map_test_expected_bits(boot_map_test_page_type(pages[index])) != 0u;
+            past_the_map += boot_map_test_expected_bits(boot_map_test_page_type(pages[index])) == 0u &&
+                            !boot_map_test_direct_entry(pages[index], &direct_entry);
+            if (agrees)
+                ++agreeing;
+            else if (checked - agreeing == 1u)
+                first_disagreeing = pages[index];
+        }
+    }
+    if (no_entry != 0u)
+    {
+        const int agrees = boot_map_test_windows_agree(no_entry);
+
+        refused += agrees < 0;
+        checked += agrees >= 0;
+        agreeing += agrees > 0;
+        if (agrees == 0 && checked - agreeing == 1u)
+            first_disagreeing = no_entry;
+    }
+
+    kernel_test_measure(test, "pages_checked", checked);
+    kernel_test_measure(test, "pages_agreeing", agreeing);
+    kernel_test_measure(test, "uncached_pages_in_the_map", reserved);
+    kernel_test_measure(test, "memory_past_the_kernels_map", past_the_map);
+    kernel_test_measure_hexadecimal(test, "page_no_entry_holds", no_entry);
+    kernel_test_measure_hexadecimal(test, "first_disagreeing_page", first_disagreeing);
+    kernel_test_check(test, reserved != 0u && no_entry != 0u,
+                      "the memory map holds a page past the first MiB that is not memory, and leaves one out");
+    kernel_test_check(test, refused == 0u, "every window is mapped");
+    kernel_test_check(test, checked != 0u && agreeing == checked,
+                      "the windows on each page carry the memory type its memory map type gives, and a device "
+                      "window on usable RAM is refused");
+}
+
+/**
+ * @brief A device window that reaches usable RAM past the first MiB is refused and counted, whether it lies on a RAM
+ *        page or only crosses into one from below or out of one, as Linux refuses ioremap on System RAM; a firmware
+ *        window on the same page maps, and a device window on usable RAM in the first MiB, which the kernel's map
+ *        keeps, maps too.
+ */
+KERNEL_TEST(a_device_window_reaching_usable_ram_past_the_first_mebibyte_is_refused)
+{
+    uint32_t first = 0u;
+    uint32_t last = 0u;
+
+    if (!boot_map_test_ram_past_the_first_mebibyte(&first, &last))
+    {
+        kernel_test_skip(test, "the memory map holds no usable RAM past the first MiB");
+        return;
+    }
+
+    const uint32_t refused_before = kernel_vmm_get_device_windows_refused_count();
+    const bool on_ram = boot_map_test_device_window_maps(first, PAGE_SIZE);
+    const bool crossing_in = boot_map_test_device_window_maps(first - 1u, 2u);
+    const bool crossing_out = boot_map_test_device_window_maps(last + PAGE_SIZE - 1u, 2u);
+    const uint32_t refused = kernel_vmm_get_device_windows_refused_count() - refused_before;
+    const uint32_t firmware = kernel_vmm_map_firmware_window(first, PAGE_SIZE);
+    const bool low_ram = boot_map_test_page_type(PAGE_SIZE) == 1u;
+
+    if (firmware != 0u)
+        kernel_vmm_unmap_firmware_window(firmware, PAGE_SIZE);
+    kernel_test_measure_hexadecimal(test, "ram_page", first);
+    kernel_test_measure(test, "refused", refused);
+    kernel_test_check(test, !on_ram && !crossing_in && !crossing_out && refused == 3u,
+                      "a device window on a RAM page, one crossing into the first and one crossing out of the last "
+                      "are refused and counted");
+    kernel_test_check(test, firmware != 0u, "a firmware window on that page maps");
+    if (low_ram)
+        kernel_test_check(test, boot_map_test_device_window_maps(PAGE_SIZE, PAGE_SIZE),
+                          "a device window on usable RAM in the first MiB maps");
 }
 
 /**

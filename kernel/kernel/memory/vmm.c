@@ -13,6 +13,7 @@ static uint8_t vmm_bitmap[VMM_BITMAP_SIZE];
 static uint32_t vmm_last_search_index = 0u;
 static bool vmm_initialized = false;
 static uint32_t vmm_unmapped_range_count = 0u;
+static uint32_t vmm_device_windows_refused = 0u;
 
 static void vmm_bitmap_set(uint32_t index) { vmm_bitmap[index / 8] |= (1 << (index % 8)); }
 
@@ -47,26 +48,28 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
 }
 
 /**
- * @brief The entry @p frame gets in a window: @p pte_flags, with the memory type bits of the kernel's map
- *        of physical memory when that map holds the frame, so that no page has two memory types (Intel SDM
- *        vol. 3, §14.12.4).
+ * @brief The entry @p frame gets in a window: @p pte_flags, with the memory type the frame decides, whatever kind of
+ *        window asks, so that no page has two memory types (Intel SDM vol. 3, §14.12.4), between two windows either.
  *
- * @details That map keeps the first MiB write-back, as Linux does, and past it only RAM
- *          (physical_memory_manager_restrict_boot_mapping). A window on a page it holds is write-back too, and
- *          the MTRRs decide its effective memory type: as Linux does for 0xA0000-0xFFFFF; below it, where Linux
- *          would alias, the window takes the map's type too.
+ * @details A frame the kernel's map of physical memory holds takes that map's type. That map keeps the first MiB
+ *          write-back, as Linux does, and past it only RAM (physical_memory_manager_restrict_boot_mapping): a window
+ *          there is write-back, and the MTRRs decide its effective type, as Linux does for 0xA0000-0xFFFFF; below it,
+ *          where Linux would alias, the window takes the map's type too. Any other frame is write-back when the boot
+ *          memory map calls it memory, and uncached otherwise: a reserved page or one no entry holds, whether an ACPI
+ *          table or a device's registers lie there.
  */
 static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t pte_flags)
 {
     PageTableEntry_t direct;
+    const bool held = frame < KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE &&
+                      paging_get_page_table_entry(frame + KERNEL_VIRTUAL_BASE, &direct) &&
+                      ((uint32_t) direct.page_frame_base << 12u) == frame;
+    const bool uncached =
+        !held && !physical_memory_manager_type_is_memory(physical_memory_manager_memory_type(frame, PAGE_SIZE));
 
-    if (frame >= KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE ||
-        !paging_get_page_table_entry(frame + KERNEL_VIRTUAL_BASE, &direct) ||
-        ((uint32_t) direct.page_frame_base << 12u) != frame)
-        return pte_flags;
-    pte_flags.write_through = direct.write_through;
-    pte_flags.cache_disable = direct.cache_disable;
-    pte_flags.page_attribute_table = direct.page_attribute_table;
+    pte_flags.write_through = held ? direct.write_through : uncached;
+    pte_flags.cache_disable = held ? direct.cache_disable : uncached;
+    pte_flags.page_attribute_table = held ? direct.page_attribute_table : 0u;
     return pte_flags;
 }
 
@@ -75,8 +78,8 @@ static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t p
  *
  * @param physical_base Physical address of the window's first byte.
  * @param size          Window length in bytes.
- * @param pte_flags     The flags every page of the window gets, but the memory type of a frame the kernel's
- *                      map of physical memory holds (vmm_window_page_flags).
+ * @param pte_flags     The flags every page of the window gets, but its memory type, which the frame decides
+ *                      (vmm_window_page_flags).
  * @return The virtual address of @p physical_base, its offset within its page kept, or 0 when the
  *         window's last byte would lie past 4 GiB, no run is free or a page cannot be mapped; the run
  *         is then given back, and no frame freed.
@@ -250,8 +253,13 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count)
 
 uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size)
 {
-    const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u, .cache_disable = 1u, .write_through = 1u};
+    const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u};
 
+    if (physical_memory_manager_reaches_ram(physical_base, size))
+    {
+        ++vmm_device_windows_refused;
+        return 0u;
+    }
     return vmm_map_window(physical_base, size, pte_flags);
 }
 
@@ -274,3 +282,5 @@ uint32_t kernel_vmm_map_firmware_writable_window(uint32_t physical_base, uint32_
 }
 
 uint32_t kernel_vmm_get_unmapped_range_count(void) { return vmm_unmapped_range_count; }
+
+uint32_t kernel_vmm_get_device_windows_refused_count(void) { return vmm_device_windows_refused; }
