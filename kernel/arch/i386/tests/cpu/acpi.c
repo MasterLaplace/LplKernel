@@ -13,6 +13,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_
 #define ACPI_TEST_SLAVE_PIC_MASK  0xA1u /**< The slave 8259's interrupt mask register. */
 #define ACPI_TEST_PIC_LINES       16u   /**< Lines the two 8259s hold. */
 #define ACPI_TEST_SCI_EN          0x1u  /**< SCI_EN, bit 0 of a PM1 control register. */
+#define ACPI_TEST_SHORT_STALL     50u   /**< Microseconds of a short stall, as AML asks for. */
+#define ACPI_TEST_SHORT_STALLS    10u   /**< Short stalls made in a row, 500 µs in all, well under a tick. */
 
 /**
  * @brief Whether 8259 line @p line is masked.
@@ -235,8 +237,77 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
 }
 
 /**
- * @brief The machine host's stall spins at least the microseconds asked, and says how many it waited:
- *        for 50 µs a whole tick passes, the one it lands in not counted.
+ * @brief Whether the boot's FADT names a power management timer the machine host could read: a platform
+ *        that is not hardware-reduced, whose PM_TMR_BLK lies, 4 bytes long, in the I/O space.
+ */
+static bool acpi_test_firmware_names_a_timer(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt =
+        &advanced_configuration_and_power_interface_directory()->fixed_description;
+
+    return fadt->present && !fadt->hardware_reduced &&
+           advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_timer_block, 4u) != 0u;
+}
+
+/**
+ * @brief The power management timer the FADT names passes the boot's checks, no wait of the boot's AML
+ *        sees it derail, and the machine host's stall waits on it about the microseconds asked, not whole
+ *        ticks: ten stalls of 50 µs let at
+ *        most one tick pass, and a stall of two and a half tick periods lets two to four pass; each says
+ *        it waited at least what it was asked and less than a tick more.
+ */
+KERNEL_TEST(the_machine_host_stall_waits_its_microseconds)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
+        advanced_configuration_and_power_interface_power_management_timer();
+    const uint32_t hertz = clock_get_tick_hz();
+
+    if (hertz == 0u || !acpi_test_firmware_names_a_timer())
+    {
+        kernel_test_skip(test, "no tick runs, or the FADT names no power management timer in the I/O space");
+        return;
+    }
+    kernel_test_check(test,
+                      timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE ||
+                          timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED,
+                      "the timer the FADT names passes the boot's checks");
+    kernel_test_check(test, timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED,
+                      "and no wait of the boot's AML saw it derail since");
+    if (timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        return;
+
+    const uint32_t period = 1000000u / hertz;
+    const uint32_t before = clock_get_tick_count();
+    bool each_short_held = true;
+
+    for (uint32_t stall = 0u; stall < ACPI_TEST_SHORT_STALLS; ++stall)
+    {
+        const uint32_t waited = host->stall_microseconds(host->context, ACPI_TEST_SHORT_STALL);
+
+        each_short_held = each_short_held && waited >= ACPI_TEST_SHORT_STALL && waited < period;
+    }
+
+    const uint32_t short_ticks = clock_get_tick_count() - before;
+    const uint32_t long_stall = period * 5u / 2u;
+    const uint32_t long_before = clock_get_tick_count();
+    const uint32_t long_waited = host->stall_microseconds(host->context, long_stall);
+    const uint32_t long_ticks = clock_get_tick_count() - long_before;
+
+    kernel_test_check(test, short_ticks <= 1u, "ten stalls of 50 µs let at most one tick pass");
+    kernel_test_check(test, each_short_held, "each says it waited at least 50 µs and less than a tick");
+    kernel_test_check(test, long_ticks >= 2u && long_ticks <= 4u,
+                      "a stall of two and a half tick periods lets two to four ticks pass");
+    kernel_test_check(test, long_waited >= long_stall && long_waited < long_stall + period,
+                      "and says it waited at least that, and less than a tick more");
+    kernel_test_measure(test, "short_ticks", short_ticks);
+    kernel_test_measure(test, "long_ticks", long_ticks);
+}
+
+/**
+ * @brief Without a power management timer, the machine host's stall spins on the tick at least the
+ *        microseconds asked, and says how many it waited: for 50 µs a whole tick passes, the one it lands
+ *        in not counted.
  */
 KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
 {
@@ -244,9 +315,9 @@ KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
     const uint32_t hertz = clock_get_tick_hz();
     const uint32_t before = clock_get_tick_count();
 
-    if (hertz == 0u)
+    if (hertz == 0u || acpi_test_firmware_names_a_timer())
     {
-        kernel_test_skip(test, "no tick runs");
+        kernel_test_skip(test, "no tick runs, or the stall waits on the power management timer the FADT names");
         return;
     }
 

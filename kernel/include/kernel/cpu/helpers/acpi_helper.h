@@ -57,6 +57,15 @@ extern void write_acpi_madt_record(Serial_t *serial);
 extern void write_acpi_mode_record(Serial_t *serial);
 
 /**
+ * @brief Writes the `[LPLTLM] acpi.timer` record: whether the boot found an ACPI power management timer
+ *        that Stall waits on, its port, its rate against the kernel tick when it was measured, the reads
+ *        and the time the checks took, and the waits made on it and their reads.
+ *
+ * @param serial The port the record is written to.
+ */
+extern void write_advanced_configuration_and_power_interface_power_management_timer_record(Serial_t *serial);
+
+/**
  * @brief Writes the `[LPLTLM] acpi.aml` record: what the boot's load of the definition blocks
  *        decoded, declared and built, what waits for the interpreter, its faults, what its namespace
  *        and stacks took, and the namespace fold; then the `[LPLTLM] acpi.init` record of the

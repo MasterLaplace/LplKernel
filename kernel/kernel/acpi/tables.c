@@ -89,7 +89,23 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_FIXED_EVENT_ENABLES                                                                                       \
     0x0721u /**< PM1 enable bits TMR_EN, GBL_EN, PWRBTN_EN, SLPBTN_EN and RTC_EN; bit 14, PCIEXP_WAKE_DIS, is no event \
                enable. */
-#define ACPI_MODE_POLL_MILLISECONDS 1u /**< What the switch to ACPI mode sleeps between two reads of SCI_EN. */
+#define ACPI_MODE_POLL_MILLISECONDS 1u          /**< What the switch to ACPI mode sleeps between two reads of SCI_EN. */
+#define ACPI_TIMER_BITS             0x00FFFFFFu /**< The 24 bits of the PM timer counted, Linux's ACPI_PM_MASK. */
+#define ACPI_TIMER_HALF_RANGE       0x00800000u /**< A step of the timer past it, in a wait, is the timer going back. */
+#define ACPI_TIMER_WRAP_WINDOW      0xFFFu /**< Below it, a count lower than the last is a wrap, as Linux reads one. */
+#define ACPI_TIMER_MONOTONICITY_CHECKS                                                                                 \
+    10u                                 /**< Times the timer must move forward, Linux's ACPI_PM_MONOTONICITY_CHECKS. */
+#define ACPI_TIMER_ORDERED_TRIES  16u   /**< Triples of reads made before the middle one is kept out of order. */
+#define ACPI_TIMER_RATE_EXACT     1000u /**< The rate of a timer that counts 3.579545 MHz, in thousandths. */
+#define ACPI_TIMER_RATE_TOLERANCE 50u   /**< Thousandths the rate may stray from it: 5 %, as Linux allows. */
+#define ACPI_TIMER_RATE_WINDOW    800000u /**< The host's clock a rate is measured over, at least: 80 ms. */
+#define ACPI_TIMER_RATE_ATTEMPTS  2u      /**< Rate measurements made at most; the first within tolerance holds. */
+#define ACPI_TIMER_REFERENCE_COUNTS                                                                                    \
+    (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ /                                         \
+     2u) /**< Counts the timer makes at most while a step of the host's clock is awaited: half a second. */
+#define ACPI_HUNDRED_NANOSECONDS_PER_SECOND      10000000u /**< Units of the host's clock in a second. */
+#define ACPI_MICROSECONDS_PER_SECOND             1000000u  /**< Microseconds in a second. */
+#define ACPI_HUNDRED_NANOSECONDS_PER_MICROSECOND 10u       /**< Units of the host's clock in a microsecond. */
 
 /**
  * @brief A run of I/O ports the ACPI layer never reaches, since the kernel drives them (§5.3).
@@ -119,6 +135,10 @@ typedef struct AcpiModeRegisters {
 
 static const char *const acpi_mode_outcome_names[] = {
     "not-run", "hardware-reduced", "unreachable", "already", "no-command-port", "no-legacy-mode", "switched", "failed",
+};
+
+static const char *const acpi_timer_state_names[] = {
+    "absent", "unreachable", "stopped", "inconsistent", "no-reference", "ran-ahead", "wrong-rate", "usable", "derailed",
 };
 #define ACPI_INPUT_OUTPUT_PORTS 0x10000u /**< Ports in the I/O space. */
 
@@ -151,6 +171,7 @@ static AdvancedConfigurationAndPowerInterfaceMadtState_t acpi_madt = {.state_nam
 static AdvancedConfigurationAndPowerInterfaceDirectory_t acpi_directory;
 static bool acpi_directory_read = false;
 static AdvancedConfigurationAndPowerInterfaceModeSwitch_t acpi_mode;
+static AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t acpi_power_management_timer;
 
 static uint8_t acpi_signature_matches(const char *lhs, const char *rhs, size_t length)
 {
@@ -622,6 +643,199 @@ static void acpi_mode_wait_for_system_control_interrupt(const AdvancedConfigurat
 }
 
 /**
+ * @brief Whether three reads of the timer, in the order they were made, cannot all be right: one of
+ *        them lies between the two others the wrong way, as Linux's acpi_pm_read_verified tests them, or
+ *        the middle one differs from two that are equal, which Linux's test lets through.
+ */
+static bool acpi_timer_out_of_order(uint32_t first, uint32_t middle, uint32_t last)
+{
+    return (first > middle && first < last) || (middle > last && middle < first) || (last > first && last < middle) ||
+           (first == last && middle != first);
+}
+
+/**
+ * @brief A read of the timer that a chipset latching it badly cannot spoil: three reads of its port,
+ *        the 24 low bits of each, the middle one kept once the three are in order, or after
+ *        ACPI_TIMER_ORDERED_TRIES triples.
+ *
+ * @param reads Counts the reads of the port.
+ */
+static uint32_t acpi_timer_read(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint16_t port,
+                                uint32_t *reads)
+{
+    for (uint32_t tries = 1u;; ++tries)
+    {
+        const uint32_t first = host->port_read(host->context, port, 4u) & ACPI_TIMER_BITS;
+        const uint32_t middle = host->port_read(host->context, port, 4u) & ACPI_TIMER_BITS;
+        const uint32_t last = host->port_read(host->context, port, 4u) & ACPI_TIMER_BITS;
+
+        *reads += 3u;
+        if (!acpi_timer_out_of_order(first, middle, last) || tries == ACPI_TIMER_ORDERED_TRIES)
+            return middle;
+    }
+}
+
+/**
+ * @brief Whether the timer moves forward, ACPI_TIMER_MONOTONICITY_CHECKS times in a row, as Linux checks
+ *        it before it trusts it: each time within
+ *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS reads, to a higher
+ *        count or by a wrap.
+ *
+ * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE when it does, else STOPPED
+ *         or INCONSISTENT.
+ */
+static uint8_t acpi_timer_check_moves(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                      AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer)
+{
+    for (uint32_t check = 0u; check < ACPI_TIMER_MONOTONICITY_CHECKS; ++check)
+    {
+        const uint32_t first = acpi_timer_read(host, timer->port, &timer->check_reads);
+        uint32_t next = first;
+
+        for (uint32_t reads = 0u;
+             next == first && reads < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS;
+             ++reads)
+            next = acpi_timer_read(host, timer->port, &timer->check_reads);
+        if (next == first)
+            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_STOPPED;
+        if (next < first && next >= ACPI_TIMER_WRAP_WINDOW)
+            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_INCONSISTENT;
+    }
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
+}
+
+/**
+ * @brief Reads the host's clock, and the timer after each read, until the clock reads other than
+ *        @p from.
+ *
+ * @param out_clock What the clock read once it moved.
+ * @param out_count The timer read just after.
+ * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE once the clock moved;
+ *         RAN_AHEAD when the timer counted ACPI_TIMER_REFERENCE_COUNTS first; NO_REFERENCE when the clock
+ *         did not move within ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS
+ *         reads.
+ */
+static uint8_t acpi_timer_await_step(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                     AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint64_t from,
+                                     uint64_t *out_clock, uint32_t *out_count)
+{
+    uint32_t last = acpi_timer_read(host, timer->port, &timer->check_reads);
+    uint32_t counted = 0u;
+
+    for (uint32_t polls = 0u; polls < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS;
+         ++polls)
+    {
+        const uint64_t clock = host->clock_100ns(host->context);
+        const uint32_t count = acpi_timer_read(host, timer->port, &timer->check_reads);
+
+        if (clock != from)
+        {
+            *out_clock = clock;
+            *out_count = count;
+            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
+        }
+        counted += (count - last) & ACPI_TIMER_BITS;
+        last = count;
+        if (counted >= ACPI_TIMER_REFERENCE_COUNTS)
+            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD;
+    }
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
+}
+
+/**
+ * @brief Counts the timer from one step of the host's clock to the first step at least
+ *        ACPI_TIMER_RATE_WINDOW later, against what 3.579545 MHz counts in that time: a step seen 2 ms
+ *        late moves the measurement by 2.5 %.
+ *
+ * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE within
+ *         ACPI_TIMER_RATE_TOLERANCE of ACPI_TIMER_RATE_EXACT, WRONG_RATE past it, the state
+ *         acpi_timer_await_step gives when the clock does not step, and NO_REFERENCE when it goes back; the
+ *         ratio in thousandths, rounded, goes to the timer's rate.
+ */
+static uint8_t acpi_timer_measure_rate(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                       AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer)
+{
+    uint64_t start_clock = 0u;
+    uint64_t clock = 0u;
+    uint32_t start_count = 0u;
+    uint32_t count = 0u;
+    uint8_t state = acpi_timer_await_step(host, timer, host->clock_100ns(host->context), &start_clock, &start_count);
+
+    clock = start_clock;
+    while (state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE && clock >= start_clock &&
+           clock - start_clock < ACPI_TIMER_RATE_WINDOW)
+        state = acpi_timer_await_step(host, timer, clock, &clock, &count);
+    if (state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        return state;
+    if (clock < start_clock)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
+
+    const uint64_t expected =
+        ((clock - start_clock) * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ) /
+        ACPI_HUNDRED_NANOSECONDS_PER_SECOND;
+    const uint64_t counted = (count - start_count) & ACPI_TIMER_BITS;
+
+    timer->rate_per_mille = (uint32_t) ((counted * ACPI_TIMER_RATE_EXACT + expected / 2u) / expected);
+    if (timer->rate_per_mille < ACPI_TIMER_RATE_EXACT - ACPI_TIMER_RATE_TOLERANCE ||
+        timer->rate_per_mille > ACPI_TIMER_RATE_EXACT + ACPI_TIMER_RATE_TOLERANCE)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE;
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
+}
+
+/**
+ * @brief Measures the timer's rate up to ACPI_TIMER_RATE_ATTEMPTS times, until a measurement lies within
+ *        the tolerance: a step of the clock seen late, the host descheduled or the firmware in SMM, spoils
+ *        one measurement, not the timer.
+ *
+ * @return The state of the first measurement within the tolerance, or the first that is not a rate, or
+ *         WRONG_RATE with the last rate.
+ */
+static uint8_t acpi_timer_check_rate(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                     AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer)
+{
+    uint8_t state = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE;
+
+    for (uint32_t attempt = 0u; attempt < ACPI_TIMER_RATE_ATTEMPTS &&
+                                state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE;
+         ++attempt)
+        state = acpi_timer_measure_rate(host, timer);
+    return state;
+}
+
+/**
+ * @brief Counts a usable timer until it has counted @p target, and stops early when it derails: when it
+ *        reads the same count ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS
+ *        times in a row, or moves more than half its 24-bit range in one step, which is going back.
+ *
+ * @return What it counted; the timer is marked derailed when it stopped early.
+ */
+static uint64_t acpi_timer_count_to(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                    AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer,
+                                    uint64_t target)
+{
+    uint64_t counted = 0u;
+    uint32_t still = 0u;
+    uint32_t last = acpi_timer_read(host, timer->port, &timer->stall_reads);
+
+    while (counted < target)
+    {
+        const uint32_t now = acpi_timer_read(host, timer->port, &timer->stall_reads);
+        const uint32_t moved = (now - last) & ACPI_TIMER_BITS;
+
+        still = (moved == 0u) ? still + 1u : 0u;
+        if (still == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS ||
+            moved > ACPI_TIMER_HALF_RANGE)
+        {
+            timer->state = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED;
+            return counted;
+        }
+        counted += moved;
+        last = now;
+    }
+    return counted;
+}
+
+/**
  * @brief Whether a processor entry's flags let the processor run, now or once enabled at run time.
  */
 static bool acpi_madt_processor_usable(uint32_t flags)
@@ -970,6 +1184,84 @@ const char *advanced_configuration_and_power_interface_mode_outcome_name(uint8_t
     if (outcome >= sizeof(acpi_mode_outcome_names) / sizeof(acpi_mode_outcome_names[0]))
         return "unknown";
     return acpi_mode_outcome_names[outcome];
+}
+
+void advanced_configuration_and_power_interface_find_power_management_timer(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+    AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *out_timer)
+{
+    memset(out_timer, 0, sizeof(*out_timer));
+    if (!fadt->present || fadt->hardware_reduced || fadt->power_management_timer_block.address == 0u)
+        return;
+
+    out_timer->port = advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_timer_block,
+                                                                                   sizeof(uint32_t));
+    if (out_timer->port == 0u)
+    {
+        out_timer->state = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_UNREACHABLE;
+        return;
+    }
+
+    const uint64_t started = host->clock_100ns(host->context);
+
+    out_timer->state = acpi_timer_check_moves(host, out_timer);
+    if (out_timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        out_timer->state = acpi_timer_check_rate(host, out_timer);
+
+    const uint64_t ended = host->clock_100ns(host->context);
+    const uint64_t microseconds = (ended > started) ? (ended - started) / ACPI_HUNDRED_NANOSECONDS_PER_MICROSECOND : 0u;
+
+    out_timer->check_microseconds = (microseconds > UINT32_MAX) ? UINT32_MAX : (uint32_t) microseconds;
+}
+
+uint32_t advanced_configuration_and_power_interface_power_management_timer_stall(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds)
+{
+    if (timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE || microseconds == 0u)
+        return 0u;
+
+    const uint64_t target =
+        ((uint64_t) microseconds * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ +
+         ACPI_MICROSECONDS_PER_SECOND - 1u) /
+        ACPI_MICROSECONDS_PER_SECOND;
+
+    ++timer->stalls;
+
+    const uint64_t counted = acpi_timer_count_to(host, timer, target);
+    const uint64_t waited = (counted * ACPI_MICROSECONDS_PER_SECOND) /
+                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ;
+
+    if (waited >= microseconds)
+        return (waited > UINT32_MAX) ? UINT32_MAX : (uint32_t) waited;
+    return (uint32_t) waited + host->stall_microseconds(host->context, microseconds - (uint32_t) waited);
+}
+
+void advanced_configuration_and_power_interface_power_management_timer_initialize(void)
+{
+    advanced_configuration_and_power_interface_find_power_management_timer(
+        &advanced_configuration_and_power_interface_machine_host,
+        &advanced_configuration_and_power_interface_directory()->fixed_description, &acpi_power_management_timer);
+}
+
+uint32_t advanced_configuration_and_power_interface_power_management_timer_machine_stall(uint32_t microseconds)
+{
+    return advanced_configuration_and_power_interface_power_management_timer_stall(
+        &advanced_configuration_and_power_interface_machine_host, &acpi_power_management_timer, microseconds);
+}
+
+const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *
+advanced_configuration_and_power_interface_power_management_timer(void)
+{
+    return &acpi_power_management_timer;
+}
+
+const char *advanced_configuration_and_power_interface_power_management_timer_state_name(uint8_t state)
+{
+    if (state >= sizeof(acpi_timer_state_names) / sizeof(acpi_timer_state_names[0]))
+        return "unknown";
+    return acpi_timer_state_names[state];
 }
 
 bool advanced_configuration_and_power_interface_read_directory(

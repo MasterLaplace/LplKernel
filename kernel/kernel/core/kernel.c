@@ -387,9 +387,11 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_acpi_madt_record(&com1);
     advanced_configuration_and_power_interface_mode_initialize();
     write_acpi_mode_record(&com1);
+    advanced_configuration_and_power_interface_power_management_timer_initialize();
     advanced_configuration_and_power_interface_machine_language_initialize(
         kernel_processor_sleep_monitor_implemented());
     write_acpi_machine_language_record(&com1);
+    write_advanced_configuration_and_power_interface_power_management_timer_record(&com1);
     write_advanced_configuration_and_power_interface_processor_idle_record(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())
