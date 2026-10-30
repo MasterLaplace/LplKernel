@@ -668,9 +668,10 @@ KERNEL_TEST(a_table_a_step_nine_evaluation_loads_is_initialised_late)
 /**
  * @brief Writes a DSDT whose CPU0 has a _CST that loads a table declaring CPU1, with a _PDC and a _CST that
  *        append 1 and 2 to \TRAC: at the root, after CPU0, or in the scope of DEVZ, a device declared before
- *        CPU0, when @p in_device holds; then loads it and initialises it with the CPU slots of both.
+ *        CPU0, when @p in_device holds, whose _STA is 0 when @p absent holds; then loads it and initialises it
+ *        with the CPU slots of both.
  */
-static bool load_late_processor(KernelTest_t *test, bool in_device)
+static bool load_late_processor(KernelTest_t *test, bool in_device, bool absent)
 {
     static const uint8_t driver[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
                                      0x00u, 0x0Au, 0x01u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
@@ -699,7 +700,7 @@ static bool load_late_processor(KernelTest_t *test, bool in_device)
     {
         made_up_aml_scope(&load_loaded, "DEVZ", &scope);
         made_up_aml_begin(&scope);
-        made_up_aml_name_integer(&scope, "ZNAM", 0u);
+        made_up_aml_name_integer(&scope, absent ? "_STA" : "ZNAM", 0u);
         made_up_aml_device(&load_aml, "DEVZ", &scope);
     }
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
@@ -744,7 +745,7 @@ static void load_check_late_processor(KernelTest_t *test)
  */
 KERNEL_TEST(a_processor_a_cst_loads_gets_its_capabilities_then_its_cst)
 {
-    if (!load_late_processor(test, false))
+    if (!load_late_processor(test, false, false))
         return;
     load_check_late_processor(test);
     load_close(test);
@@ -756,9 +757,26 @@ KERNEL_TEST(a_processor_a_cst_loads_gets_its_capabilities_then_its_cst)
  */
 KERNEL_TEST(a_processor_a_cst_loads_below_a_device_step_eight_passed_publishes)
 {
-    if (!load_late_processor(test, true))
+    if (!load_late_processor(test, true, false))
         return;
     load_check_late_processor(test);
+    load_close(test);
+}
+
+/**
+ * @brief The pass after step 8 decides the presence of the processors it handles as step 8 does: CPU1, below
+ *        DEVZ, whose _STA is 0, is kept out, though step 7's capabilities reach it (§3.8, §3.10).
+ */
+KERNEL_TEST(a_processor_a_cst_loads_below_an_absent_device_is_kept_out)
+{
+    if (!load_late_processor(test, true, true))
+        return;
+    kernel_test_check(test, load_integer("HC0_") == LOAD_ONES && load_idle.slots[0].count == 1u,
+                      "CPU0's _CST loads the table that declares CPU1, and CPU0 publishes");
+    kernel_test_check(test, load_integer("TRAC") == 0x1u && load_counts.processor_capabilities == 1u,
+                      "CPU1's _PDC runs, as step 7 runs it whatever _STA says, and its _CST does not");
+    kernel_test_check(test, load_idle.slots[1].processor == 0u && load_counts.processor_idle_absent == 1u,
+                      "CPU1 is kept out, counted absent");
     load_close(test);
 }
 
