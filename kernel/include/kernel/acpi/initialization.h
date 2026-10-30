@@ -72,8 +72,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
     uint32_t region_registration_failed;    /**< Of those, the ones that failed. */
     uint32_t devices;                       /**< Devices, processors and thermal zones in the namespace. */
     uint32_t status_evaluations;            /**< _STA objects evaluated: by step 4 and the late initialisations
-                                                 only in subtrees that hold an _INI, and by step 8 once on each
-                                                 processor object with a _CST and on the devices above it. */
+                                                 only in subtrees that hold an _INI, and by step 8 on each
+                                                 processor object with a _CST and on the devices above it, once
+                                                 by its walk and once per round of the pass after it. */
     uint32_t status_failed;                 /**< Of those, the ones whose evaluation failed or gave no Integer, String
                                                  or Buffer. */
     uint32_t status_invalid;                /**< Of those, the results ACPI 6.6 calls invalid, walked as any other. */

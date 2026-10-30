@@ -722,6 +722,63 @@ KERNEL_TEST(a_processor_a_cst_loads_below_a_device_step_eight_passed_publishes)
 }
 
 /**
+ * @brief A round of the pass after step 8 reads again the _STA of the devices above its processors, as
+ *        Linux's scan after a table loads reads them again (§3.10): step 8 reads DEVB present, then the _CST
+ *        of CPU0, below it, sets the flag that makes DEVB absent and loads the table that declares CPU1 below
+ *        DEVB, which is kept out.
+ */
+KERNEL_TEST(a_round_of_the_pass_reads_again_the_devices_above_its_processors)
+{
+    static const uint8_t status[] = {0xA0u, 0x08u, '\\', 'F', 'L', 'A', 'G', 0xA4u, 0x00u, 0xA4u, 0x0Au, 0x0Fu};
+    static const uint8_t hides[] = {0x70u, 0x01u, '\\',  'F',   'L',   'A',   'G',   0x5Bu, 0x20u, '\\',  'C',
+                                    'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',   0xA4u, 0x12u, 0x20u,
+                                    0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
+                                    0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                    0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static const uint8_t traced[] = {0x70u, 0x72u, 0x77u, '\\',  'T',   'R',   'A',   'C',   0x0Au, 0x10u, 0x00u,
+                                     0x0Au, 0x02u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0xA4u, 0x12u, 0x20u,
+                                     0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
+                                     0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                     0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static MadeUpAml_t device;
+    static MadeUpAml_t scope;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_name_integer(&load_aml, "FLAG", 0u);
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", traced, sizeof(traced));
+    made_up_aml_begin(&scope);
+    made_up_aml_processor(&scope, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
+    made_up_aml_scope(&load_loaded, "DEVB", &scope);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", hides, sizeof(hides));
+    made_up_aml_begin(&scope);
+    load_method(&scope, "_STA", status, sizeof(status));
+    made_up_aml_processor(&scope, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    made_up_aml_device(&load_aml, "DEVB", &scope);
+    if (!load_run(test))
+        return;
+    load_madt.processor_count = 2u;
+    load_madt.processors[0].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER;
+    load_madt.processors[1].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER + 1u;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+    kernel_test_check(test,
+                      load_integer("FLAG") == 1u && load_integer("HC0_") == LOAD_ONES && load_idle.slots[0].count == 1u,
+                      "CPU0 publishes, its _CST having set FLAG and loaded the table of CPU1");
+    kernel_test_check(test,
+                      load_idle.slots[1].processor == 0u && load_counts.processor_idle_absent == 1u &&
+                          load_integer("TRAC") == 0u,
+                      "CPU1 is kept out, its _CST never read: DEVB is read again, absent");
+    load_close(test);
+}
+
+/**
  * @brief The pass after step 8 goes on while the tables it loads declare processor objects (§3.8): CPU0's
  *        _CST loads the table of CPU1, whose _CST loads the table of CPU2; each publishes once.
  */

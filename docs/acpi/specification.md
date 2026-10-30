@@ -415,7 +415,7 @@ functioning is walked. No `_INI` runs twice. `late_initializations` counts how o
 processor object that a table loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux
 scans the namespace again once a table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the
 capabilities of step 7, then the `_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`;
-the pass goes on while the tables it loads declare more.
+a round that loads a table is followed by another.
 
 ### 3.9 The static tables
 
@@ -495,14 +495,15 @@ the pass goes on while the tables it loads declare more.
   and so is one whose slot an object declared before it took.
 - **Presence.** Step 8 evaluates the `_CST` of a processor object Linux attaches (v7.3 `acpi_bus_attach`,
   `acpi_processor_add`): its `_STA` present or functioning, and enabled, and no Device, Processor or ThermalZone
-  above it found neither present nor functioning. Step 8 reads these `_STA` once step 4 is over, as Linux reads
-  them when it attaches, after every `_INI`; what step 4 or a late initialisation found decides nothing here, and
-  step 4's absences still keep the late initialisation out. Step 8 decides the devices above a processor from the
-  top down, stops at the first one absent, and reads each `_STA` once. A `_STA` that fails reads as Linux reads it
-  (v7.3 `acpi_scan_init_status`, `acpi_bus_get_status`): 0 for a Device or a Processor, which keeps out what lies
-  below it, and 0x0F for a ThermalZone, which is walked into. The processor's own `_STA` reads 0x0F when missing,
-  and keeps it out when it fails. These reads are counted with step 4's (`status_evaluations`, `status_failed`). A processor kept out takes
-  no slot, and is counted (`processor_idle_absent`).
+  above it found neither present nor functioning. Step 8 reads these `_STA` once step 4 is over, as Linux reads them
+  when it attaches, after every `_INI`; what step 4 or a late initialisation found decides nothing here, and step 4's
+  absences still keep the late initialisation out. Step 8 decides the devices above a processor from the top down,
+  and stops at the first one absent; its walk reads each `_STA` once, and each round of the pass after it (§3.8)
+  reads them once more, as Linux's scan after a table loads does. A `_STA` that fails reads as Linux reads it (v7.3
+  `acpi_scan_init_status`, `acpi_bus_get_status`): 0 for a Device or a Processor, which keeps out what lies below it,
+  and 0x0F for a ThermalZone, which is walked into. The processor's own `_STA` reads 0x0F when missing, and keeps it
+  out when it fails. These reads are counted with step 4's (`status_evaluations`, `status_failed`). A processor kept
+  out takes no slot, and is counted (`processor_idle_absent`).
 - **Every state firmware lists is published,** type 3 included ([§8.1.4]), up to the cap of §6.1; which states to
   enter is #298's policy.
 - **A faulty state is left out** and counted on its slot, as Linux skips it: a sub-package of other than four
@@ -936,7 +937,7 @@ reads a table in kernel memory. The costs to cut are:
 | O11 | Lazy region attach, and a mapping cache keyed by physical page range: one map per distinct page range per boot | `map_calls`, `mapping_cache_hits` |
 | O12 | A field fast path for a unit inside one aligned access | `field_fast_path` / `field_accesses` |
 | O13 | The PCI address resolved once, at attach: no method evaluation per PCI field access. It assumes the kernel never renumbers bridges; hotplug or a bus reassignment brings back a per-access resolution | `internal_evaluations` |
-| O14 | No `_STA` in subtrees without `_INI`, but step 8's: those of the processor objects with a `_CST` and of the devices above them, each once | `status_evaluations` |
+| O14 | No `_STA` in subtrees without `_INI`, but step 8's: those of the processor objects with a `_CST` and of the devices above them, once by step 8's walk and once per round of the pass after it | `status_evaluations` |
 | O15 | No lock and no atomic in the interpreter (§3.7) | CI checks that the release objects of `kernel/kernel/acpi/` hold no `lock`-prefixed instruction (`objdump -d`); W1 on the release kernel |
 | O16 | Log calls compiled out below the build's level | CI checks that the release objects call no log function below the release level (`nm`); W1 on the release kernel |
 

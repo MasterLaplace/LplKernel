@@ -434,9 +434,23 @@ static void processor_idle_publish_slots(ProcessorIdleLoad_t *load, const Proces
 }
 
 /**
+ * @brief Forgets what step 8 decided of every device, so that a round of the pass after it reads their _STA
+ *        again, as Linux's scan after a table loads reads them again (v7.3 acpi_bus_attach).
+ */
+static void processor_idle_forget(ProcessorIdleLoad_t *load)
+{
+    for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
+             &load->space, PROCESSOR_IDLE_ROOT, true);
+         index != 0u;
+         index = advanced_configuration_and_power_interface_machine_language_namespace_next(&load->space, index, true))
+        processor_idle_node(load, index)->flags &= (uint8_t) ~(PROCESSOR_IDLE_DECIDED | PROCESSOR_IDLE_ABSENT);
+}
+
+/**
  * @brief The pass of step 8 over the tables loaded since the first @p tables, as Linux scans the namespace
  *        again once a table loads (v7.3 acpi_table_events_fn): each processor object they declare gets, in
- *        declaration order, step 7's capabilities, then step 8's _CST; until no table is left.
+ *        declaration order, step 7's capabilities, then step 8's _CST, the _STA above it read again; one more
+ *        round follows a round that loaded a table.
  */
 static void processor_idle_publish_loaded(ProcessorIdleLoad_t *load, const ProcessorIdleMachine_t *machine,
                                           ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table, uint32_t *changed,
@@ -445,6 +459,8 @@ static void processor_idle_publish_loaded(ProcessorIdleLoad_t *load, const Proce
     while (tables != load->table_count)
     {
         const uint32_t last = load->table_count;
+
+        processor_idle_forget(load);
 
         for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
                  &load->space, PROCESSOR_IDLE_ROOT, true);
