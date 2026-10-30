@@ -37,7 +37,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          tools/acpi/against_acpica_fadt.py
   namespace  loads each machine of a list, or each QEMU configuration, with `test-acpi --namespace`
          and compares its namespace with the one acpiexec loads from the same tables; a machine whose
-         table-level code fails is counted and left out, until the interpreter runs what failed
+         table-level code fails is counted and left out, until the interpreter runs what failed; it also
+         sums the duplicate declarations each load refused
   closure  loads each machine of a list, or each QEMU configuration, with `test-acpi --closure`, and
          prints, for each opcode the needs path reaches on some machine, how many machines it reaches
          it on, and which when they are five or fewer: the opcodes the interpreter executes
@@ -169,7 +170,7 @@ qemu_configurations() {
 namespace_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "namespace: no acpiexec, run fetch acpica first" >&2; exit 1; }
-    local number=0 agree=0 deferred=0 waiting=0 subject ours theirs result runs=""
+    local number=0 agree=0 deferred=0 waiting=0 duplicates=0 duplicated=0 count subject ours theirs result runs=""
     local -a tables
     ours="$(mktemp)" theirs="$(mktemp)"
     while IFS= read -r subject; do
@@ -185,6 +186,13 @@ namespace_check() {
                 sed 's/^/    # /' "$ours" | tail -5
                 continue
             fi
+        fi
+        count="$(grep -o ' duplicates=[0-9]*' "$ours" | head -1 | cut -d= -f2)"
+        if [[ "${count:-0}" != 0 ]]; then
+            duplicates=$((duplicates + count))
+            duplicated=$((duplicated + 1))
+        fi
+        if [[ "$1" != qemu ]]; then
             runs+="$(grep '^aml run ' "$ours")"$'\n' || true
             if ! grep -q '^aml namespace table_level_failures=0 ' "$ours"; then
                 echo "skip $number $subject: $(head -1 "$ours" | cut -d' ' -f3)"
@@ -205,6 +213,7 @@ namespace_check() {
     rm -f "$ours" "$theirs"
     echo "# namespace: $agree of $((number - deferred)) agree with acpiexec; $deferred fail in table-level code;" \
         "$waiting nodes wait for the interpreter"
+    echo "# duplicates at load: $duplicates on $duplicated of $number"
     [[ "$1" == qemu ]] || echo "# table-level code: $(grep -o '^aml run statements=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) runs," \
         "$(grep -o ' failures=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) failed, on" \
         "$(grep -c ' failures=[1-9]' <<<"$runs") machines;" \

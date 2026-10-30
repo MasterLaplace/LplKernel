@@ -93,6 +93,13 @@ CASES = [
       block(b"DSDT", device(b"DEV0") + method(b"USE_", 0, path(b"DEV0", b"MSSD", root=True)))]),
     ("Scope (\\) opens the root, wherever it stands (§5.1)", 1, [block(b"SSDT",
         device(b"DEV0", scope(b"\\\x00", method(b"ROOT", 0))) + method(b"USE_", 0, b"ROOT"))]),
+    ("a duplicate's body is read by no pass (§5.1): a call in a second Device's body is not counted", 1,
+     [block(b"SSDT", method(b"MTHD", 0) + device(b"DEV0", b"MTHD") + device(b"DEV0", b"MTHD"))]),
+    ("a duplicate's body declares nothing (§5.1): a method a second Device declares does not exist", 0,
+     [block(b"SSDT", device(b"DEV0") + device(b"DEV0", method(b"MINE", 0))
+                     + method(b"USE_", 0, path(b"DEV0", b"MINE", root=True)))]),
+    ("a duplicate's body is read by no pass (§5.1): a call in a second Method's body is not counted", 0,
+     [block(b"SSDT", method(b"MTHD", 0) + method(b"MTHD", 0, b"MTHD"))]),
 ]
 
 

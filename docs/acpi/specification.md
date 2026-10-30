@@ -193,7 +193,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Structure | Fields | Bytes | Notes |
 |---|---|---|---|
 | **Value** (`…Value_t`) | `kind u8`, `flags u8`, `auxiliary u16`, `handle u32`, `payload u64` | 16 | Integers live in `payload`, with no allocation. Strings, buffers and packages are `handle` = object; a literal becomes one when it is evaluated. A reference is `kind` plus its target: a node; a local or an argument, with its frame's index and serial; or a package, a buffer or a string, which it holds a count on, with an element or byte index. |
-| **Node** | `name u32` (the NameSeg as an integer), `parent u32`, `first_child u32`, `next_sibling u32`, `previous_sibling u32` (circular: the first child's previous is the last), `type u8`, `flags u8`, `owner u16` (the table that declared it; a temporary is known by the context's stack), `value Value` | 40 | Declaration order is kept for walks (`_INI` order, dumps); O(1) append and O(1) unlink of temporaries. The object of a Name, Method, buffer field, mutex, Processor or PowerResource fits in `value`, with no second allocation. |
+| **Node** | `name u32` (the NameSeg as an integer), `parent u32`, `first_child u32`, `next_sibling u32`, `previous_sibling u32` (circular: the first child's previous is the last), `type u8`, `flags u8`, `owner u16` (the table that declared it; a temporary is known by the context's stack), `value Value` | 40 | Declaration order is kept for walks (`_INI` order, dumps); O(1) append and O(1) unlink of temporaries. The object of a Name, Method, buffer field, mutex, Processor or PowerResource fits in `value`, with no second allocation. A Device, ThermalZone, Processor or PowerResource a table declares keeps the offset of its opcode in `value.handle`: with `owner`, as a Method's recorded body, it names the construct that declared it (§5.1). |
 | **Hash slot** | `node u32` (0 is empty) | 4, at a load of at most 1/2, so 8 per node | One open-addressing table for the whole namespace, keyed by (parent, NameSeg): linear probing, backward-shift deletion so no tombstones, a fixed unseeded 32-bit multiplicative mix. |
 | **Object header** | `references u32` (saturating), `kind u8`, `flags u8`, `auxiliary u16`, `length u32`, padding | 16 | One allocation per string, buffer or package: the bytes, or the `length` element values, follow the header. |
 | **Region object** | `space u8`, `state u8`, `attach u8` (how far a PCI_Config attach went), `attach_flags u8`, `pci_device u32` (segment, bus, device and function, packed: those found so far while it attaches), `offset u64`, `length u64`, `mapping u32`, `attach_node u32` (the node whose object the attach reads next) | 32 | Attached lazily, at the first access. |
@@ -241,9 +241,9 @@ the loop one statement or predicate at a time (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
-declared, the load decodes each body once, running nothing: a body that would lose its place is found at boot rather
-than when firmware calls it, and the walk creates no node but the temporaries each body declares while it is
-decoded.
+declared, the load decodes each body but a duplicate's (§5.1) once, running nothing: a body that would lose its place
+is found at boot rather than when firmware calls it, and the walk creates no node but the temporaries each body
+declares while it is decoded.
 
 **The loop**, in order of precedence at each step:
 
@@ -287,7 +287,8 @@ declared; one whose parent exists is placed where it stands.
 **The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
 predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
 skipped, and declares nothing. A predicate that fails declares both its branches without running their code, counted
-(`declared_not_run`), so that a failure never takes an object out of the namespace. The decoding pass still decodes
+(`declared_not_run`), so that a failure never takes an object out of the namespace; an object both branches declare
+is the first branch's, the second's a duplicate (§5.1), as any later declaration is. The decoding pass still decodes
 the body of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its
 names resolve against objects that do not exist.
 
@@ -736,7 +737,7 @@ Each row is a decision, and has at least one test (§8).
 |---|---|---|
 | Upward search | Only a single NameSeg without prefix searches the current scope, then each parent up to the root; `\`, `^`, Dual and Multi names never search. | [§5.3] |
 | Creating a name | Only the last segment is created; the others must exist. | [§5.3] |
-| A duplicate at load | The first definition stays; the duplicate is skipped and counted. ACPI calls a collision fatal, but real firmware ships duplicate SSDTs. | [§5.3] |
+| A duplicate at load | The first definition stays; the duplicate is skipped whole and counted: no pass reads the body of a duplicate Device, ThermalZone, Processor, PowerResource or Method, so it creates no name and runs no code, as in ACPICA. A `Scope` declares nothing and opens the existing object. ACPI calls a collision fatal, but real firmware ships duplicate SSDTs. | [§5.3] |
 | A checksum that fails | A DSDT or SSDT whose header and length are sane is loaded anyway, logged and counted (`checksum_bad_loaded`). | §3.9 |
 | Table-level code | Runs in place, in order, in a frame with locals (§3.6). Single pass: a call or a field at table level sees only what is declared before it. | [§5.4.2] |
 | Region and field operands | Evaluated when the declaration runs. | [§19.6.100] |

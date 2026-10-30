@@ -1228,6 +1228,203 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
 }
 
 /**
+ * @brief A ThermalZone, a Device, a Method, a Processor and a PowerResource declared twice keep their first
+ *        definition, and the second one's body is skipped whole, as acpiexec skips it: its names are not
+ *        created, its table-level code does not run, and the decoding pass reads none of its opcodes; a
+ *        Scope still opens the existing object.
+ */
+KERNEL_TEST(a_duplicate_declaration_is_skipped_with_its_body)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'M',   'A',   'I',   'N',   0x0Au, 0x00u, 0x5Bu, 0x85u, 0x05u, 'T',   'E',   'S',   'T',   0x5Bu, 0x85u,
+        0x13u, 'T',   'E',   'S',   'T',   0x08u, 'I',   'N',   'N',   'R',   0x0Au, 0x01u, 0x70u, 0x0Au, 0x55u, 'M',
+        'A',   'I',   'N',   0x5Bu, 0x82u, 0x0Cu, 'D',   'E',   'V',   '0',   0x08u, 'A',   'A',   'A',   'A',   0x0Au,
+        0x01u, 0x5Bu, 0x82u, 0x0Du, 'D',   'E',   'V',   '0',   0x08u, 'B',   'B',   'B',   'B',   0x0Au, 0x02u, 0xA3u,
+        0x14u, 0x08u, 'M',   'T',   'H',   '0',   0x00u, 0xA4u, 0x01u, 0x14u, 0x0Du, 'M',   'T',   'H',   '0',   0x00u,
+        0x5Bu, 0x21u, 0x0Au, 0x01u, 0xA4u, 0x0Au, 0x02u, 0x5Bu, 0x83u, 0x12u, 'C',   'P',   'U',   '0',   0x01u, 0x10u,
+        0x04u, 0x00u, 0x00u, 0x06u, 0x08u, 'P',   'R',   'A',   '_',   0x0Au, 0x01u, 0x5Bu, 0x83u, 0x12u, 'C',   'P',
+        'U',   '0',   0x02u, 0x20u, 0x04u, 0x00u, 0x00u, 0x06u, 0x08u, 'P',   'R',   'B',   '_',   0x0Au, 0x02u, 0x5Bu,
+        0x84u, 0x0Fu, 'P',   'W',   'R',   '0',   0x00u, 0x00u, 0x00u, 0x08u, 'P',   'W',   'A',   '_',   0x0Au, 0x01u,
+        0x5Bu, 0x84u, 0x0Fu, 'P',   'W',   'R',   '0',   0x01u, 0x01u, 0x00u, 0x08u, 'P',   'W',   'B',   '_',   0x0Au,
+        0x02u, 0x10u, 0x0Cu, 'D',   'E',   'V',   '0',   0x08u, 'C',   'C',   'C',   'C',   0x0Au, 0x03u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_measure(test, "duplicates", made_up_load.duplicates);
+    kernel_test_check(test, made_up_load.duplicates == 5u, "the five second declarations are counted");
+    kernel_test_check(test,
+                      made_up_node_at("\x2E"
+                                      "TEST"
+                                      "INNR") == 0u &&
+                          made_up_node_at("\x2E"
+                                          "DEV0"
+                                          "BBBB") == 0u &&
+                          made_up_node_at("\x2E"
+                                          "CPU0"
+                                          "PRB_") == 0u &&
+                          made_up_node_at("\x2E"
+                                          "PWR0"
+                                          "PWB_") == 0u,
+                      "no name a second body declares exists");
+    kernel_test_check(test,
+                      made_up_node("\x2E"
+                                   "DEV0"
+                                   "AAAA")
+                                  ->value.payload == 1u &&
+                          made_up_node("\x2E"
+                                       "CPU0"
+                                       "PRA_")
+                                  ->value.payload == 1u &&
+                          made_up_node("\x2E"
+                                       "PWR0"
+                                       "PWA_")
+                                  ->value.payload == 1u,
+                      "the names the first bodies declare exist");
+    kernel_test_check(test,
+                      made_up_node("\x2E"
+                                   "DEV0"
+                                   "CCCC")
+                              ->value.payload == 3u,
+                      "a Scope opens the existing DEV0 and declares CCCC in it");
+    kernel_test_check(test, made_up_node("MAIN")->value.payload == 0u,
+                      "MAIN stays 0: the second ThermalZone's Store never runs");
+    kernel_test_check(test,
+                      (made_up_node("MTH0")->value.payload >> 32u) == 2u &&
+                          made_up_node("CPU0")->value.payload == (0x410u | (6ull << 32u) | (1ull << 40u)) &&
+                          made_up_node("PWR0")->value.auxiliary == 0u && made_up_node("PWR0")->value.payload == 0u,
+                      "MTH0, CPU0 and PWR0 keep their first definitions");
+    kernel_test_check(
+        test,
+        made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_STORE) == 0u &&
+            made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 0u &&
+            made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_STALL) == 0u &&
+            made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_RETURN) == 1u,
+        "the decoding pass reads the first Method's Return and nothing of the second bodies");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NAME) == 5u,
+                      "it reads the Names of MAIN, of the three first bodies and of the Scope");
+    made_up_close(test);
+}
+
+/**
+ * @brief A Device an SSDT declares again at the very offset the DSDT declared it is still a duplicate: the
+ *        table that declared it tells the two apart, and the SSDT's body is neither declared nor decoded.
+ */
+KERNEL_TEST(a_duplicate_at_the_same_offset_of_another_table_is_skipped)
+{
+    static const uint8_t first[] = {0x5Bu, 0x82u, 0x0Cu, 'D', 'E', 'V', '0', 0x08u, 'A', 'A', 'A', 'A', 0x0Au, 0x01u};
+    static const uint8_t second[] = {0x5Bu, 0x82u, 0x0Du, 'D', 'E', 'V',   '0',  0xA3u,
+                                     0x08u, 'B',   'B',   'B', 'B', 0x0Au, 0x02u};
+
+    if (!made_up_open(test))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", first, sizeof(first)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", second, sizeof(second)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test,
+                      made_up_load.duplicates == 1u && made_up_node_at("\x2E"
+                                                                       "DEV0"
+                                                                       "BBBB") == 0u,
+                      "the SSDT's Device is a duplicate, and BBBB is not created");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 0u &&
+                          made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NAME) == 1u,
+                      "the decoding pass reads the DSDT's body alone");
+    made_up_close(test);
+}
+
+/**
+ * @brief A Device of the name of a Name is a duplicate too: the Name stays, and the Device's body is
+ *        neither declared nor decoded.
+ */
+KERNEL_TEST(a_device_of_the_name_of_a_name_is_a_duplicate)
+{
+    static const uint8_t aml[] = {0x08u, 'N',   'D', 'E', 'V', 0x0Au, 0x01u, 0x5Bu,
+                                  0x82u, 0x06u, 'N', 'D', 'E', 'V',   0xA3u};
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 1u && made_up_node("NDEV")->value.payload == 1u,
+                      "the Device is counted as a duplicate, and NDEV stays the Name 1");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 0u,
+                      "the decoding pass reads nothing of its body");
+    made_up_close(test);
+}
+
+/**
+ * @brief A Device whose path cannot be created is not a duplicate, even inside an object that has one: the
+ *        decoding pass still decodes its body, its faults counted apart (§3.6).
+ */
+KERNEL_TEST(a_device_whose_path_names_nothing_is_still_decoded)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x05u, 'D',   'E',   'V',   '0',  0x5Bu, 0x82u, 0x05u, 'D', 'E', 'V', '0', 0x10u, 0x13u, 'D',
+        'E',   'V',   '0',   0x5Bu, 0x82u, 0x0Cu, '\\', 0x2Eu, 'N',   'O',   'P', 'E', 'X', 'X', 'X',   'X',   0xA3u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 1u && made_up_load.load_errors == 1u,
+                      "the second DEV0 is a duplicate, and \\NOPE.XXXX a fault of the declaration pass");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 1u,
+                      "the decoding pass reads the body of the Device that names nothing");
+    made_up_close(test);
+}
+
+/**
+ * @brief A duplicate that names the scope it stands in is skipped by every pass: `Scope (DEV0) { Device
+ *        (\DEV0) { Noop } }` and `Device (DEV1) { Device (^DEV1) { Noop } }`, whose names are found, are no
+ *        constructs naming nothing.
+ */
+KERNEL_TEST(a_duplicate_that_names_its_own_scope_is_skipped)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x05u, 'D',   'E',   'V',   '0', 0x10u, 0x0Eu, 'D',   'E',   'V',   '0',
+        0x5Bu, 0x82u, 0x07u, '\\',  'D',   'E',   'V', '0',   0xA3u, 0x5Bu, 0x82u, 0x0Eu, 'D',
+        'E',   'V',   '1',   0x5Bu, 0x82u, 0x07u, '^', 'D',   'E',   'V',   '1',   0xA3u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 2u && made_up_load.decode_errors == 0u,
+                      "Device (\\DEV0) and Device (^DEV1) are the two duplicates");
+    kernel_test_check(test,
+                      made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP) == 0u,
+                      "the decoding pass reads neither body");
+    made_up_close(test);
+}
+
+/**
+ * @brief The Externals pass skips a duplicate's body too: an External a second Device holds, whose parent
+ *        does not exist, is never placed, as in acpiexec, while an External outside it is.
+ */
+KERNEL_TEST(the_externals_pass_skips_a_duplicate_s_body)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x05u, 'D', 'E', 'V', '2', 0x5Bu, 0x82u, 0x12u, 'D',   'E',   'V',   '2',
+        0x15u, '\\',  0x2Eu, 'M', 'I', 'S', 'S', 'F',   'O',   'O',   '_',   0x08u, 0x00u, 0x15u,
+        '\\',  0x2Eu, 'O',   'T', 'H', 'R', 'B', 'A',   'R',   '_',   0x08u, 0x00u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_load.duplicates == 1u && made_up_node_at("\\MISS") == 0u,
+                      "the second DEV2 is a duplicate, and \\MISS is not created");
+    kernel_test_check(test,
+                      made_up_node("\\\x2E"
+                                   "OTHR"
+                                   "BAR_")
+                              ->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_EXTERNAL,
+                      "the External outside it, \\OTHR.BAR_, is placed");
+    made_up_close(test);
+}
+
+/**
  * @brief An Alias of an object that does not exist is counted and skipped alone, and the table goes on, as
  *        acpiexec goes on loading: the Name after it is still declared. acpiexec also creates the alias and
  *        an Untyped node for its source; the kernel creates neither, since ACPI 6.6 §19.6.4 says the source

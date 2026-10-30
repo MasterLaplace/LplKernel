@@ -69,6 +69,10 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED                                        \
     0x10u /**< Node flag: step 4, a late initialisation or step 8 decided whether the device is present, by its _STA   \
                or without one (§3.8, §3.10). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DUPLICATED                                    \
+    0x20u /**< Node flag: the declaration pass refused a Device, ThermalZone, Processor, PowerResource or Method of    \
+               this name as a duplicate: past it, the body of a construct naming the node is read only when that       \
+               construct declared it (§5.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_ALIAS_HOPS                                     \
     8u /**< Aliases one resolution follows before it gives up. */
 

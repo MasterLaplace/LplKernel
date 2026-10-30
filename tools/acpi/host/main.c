@@ -733,9 +733,9 @@ static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLang
                                const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, HarnessView_t view)
 {
     printf("aml namespace table_level_failures=%u table_level_code=%u values_deferred=%u load_errors=%u "
-           "decode_errors=%u\n",
+           "decode_errors=%u duplicates=%u\n",
            load->evaluation.failures, load->table_level_code, load->values_deferred, load->load_errors,
-           load->decode_errors);
+           load->decode_errors, load->duplicates);
     if (view == HARNESS_VIEW_INITIALIZATION)
         harness_print_initialization(load, directory);
     harness_print_runs(load);
