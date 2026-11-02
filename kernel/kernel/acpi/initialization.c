@@ -461,9 +461,9 @@ static bool initialization_is_below(const InitializationLoad_t *load, uint32_t i
 /**
  * @brief Whether the walk of step 4 or step 7, at @p walking, still reaches @p index, which a table loaded
  *        meanwhile declares: below @p walking, or below a node the walk has not reached yet under the lowest
- *        node above both; never once step 4 is over, @p walking 0. A @p walking step 4 does not descend
- *        into is absent, which initialization_under_absent tells first; step 7's @p walking is a node the
- *        pre-pass marked, which it descends into.
+ *        node above both; never when @p walking is 0, which the late initialisation passes once no walk
+ *        runs. A @p walking step 4 does not descend into is absent, which initialization_under_absent tells
+ *        first; step 7's @p walking is a node the pre-pass marked, which it descends into.
  */
 static bool initialization_reached_later(const InitializationLoad_t *load, uint32_t index, uint32_t walking)
 {

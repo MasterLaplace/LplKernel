@@ -419,7 +419,9 @@ table returns, in declaration order, until these evaluations load no other table
 loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux scans the namespace again once a
 table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the capabilities of step 7, then the
 `_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`; a round that loads a table is
-followed by another. The tables step 9 loads get that pass, then step 9 again for the Notifies queued since.
+followed by another. The tables step 9 loads get that pass, then step 9 again for the Notifies queued since. A
+table that adds an `_OSC` or a `_PDC` to a processor object declared already, without declaring one, gives it to
+step 7 only when step 7's walk still reaches that processor.
 
 ### 3.9 The static tables
 
