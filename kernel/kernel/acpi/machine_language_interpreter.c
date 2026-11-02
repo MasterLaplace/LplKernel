@@ -7,6 +7,8 @@
 #define MACHINE_LANGUAGE_ATTACH (MACHINE_LANGUAGE_CALL + 2u) /**< Waits for what an internal frame returns. */
 #define MACHINE_LANGUAGE_REGISTER                                                                                      \
     (MACHINE_LANGUAGE_CALL + 3u) /**< Drops what the _REG an internal frame runs for a new region returns. */
+#define MACHINE_LANGUAGE_ANSWER                                                                                        \
+    (MACHINE_LANGUAGE_CALL + 4u) /**< Hands a statement of table-level code the Integer of the term it waits for. */
 #define MACHINE_LANGUAGE_OK            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK
 #define MACHINE_LANGUAGE_OPERAND(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_##kind
 #define MACHINE_LANGUAGE_OPCODE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##name
@@ -16,6 +18,9 @@
 #define MACHINE_LANGUAGE_FORM(name)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STRING_##name
 #define MACHINE_LANGUAGE_TARGET        0x90u /**< A value that says where a result goes; auxiliary is its kind. */
 #define MACHINE_LANGUAGE_ELSE_BYTE     0xA1u /**< The byte of Else, which only an If reads. */
+#define MACHINE_LANGUAGE_ELSE_SKIPPED  0u    /**< At load, the Else after an If is stepped over: the If ran its body. */
+#define MACHINE_LANGUAGE_ELSE_RUN      1u    /**< At load, the Else runs: the If's predicate was false. */
+#define MACHINE_LANGUAGE_ELSE_NOT_RUN  2u    /**< At load, the Else is declared, not run: the predicate failed. */
 #define MACHINE_LANGUAGE_DATA_OBJECT                                                                                   \
     0x20u /**< Where a term must be a data object, as a Name's object: past every operand kind of a descriptor. */
 #define MACHINE_LANGUAGE_DEBUG_OBJECT_TYPE 16u /**< What ObjectType gives for Debug (ACPI 6.6 §19.6.97). */
@@ -88,11 +93,12 @@ typedef struct MachineLanguageLocation {
  * @brief What a block of a running frame is, and so what its end does.
  */
 typedef enum MachineLanguageRunBlock {
-    MACHINE_LANGUAGE_RUN_TERMS = 1u, /**< An Else body: its end does nothing. */
+    MACHINE_LANGUAGE_RUN_TERMS = 1u, /**< An Else body, or the TermList of a Scope, Device, Processor, PowerResource
+                                          or ThermalZone in a table's code: its end does nothing. */
     MACHINE_LANGUAGE_RUN_IF,         /**< A taken If body: its end skips an Else that follows. */
     MACHINE_LANGUAGE_RUN_WHILE,      /**< A While body: its end goes back to the While. */
     MACHINE_LANGUAGE_RUN_METHOD,     /**< A method body: its end returns. */
-    MACHINE_LANGUAGE_RUN_TABLE,      /**< The term of table-level code a run was asked for. */
+    MACHINE_LANGUAGE_RUN_TABLE,      /**< The code of a table, or the term of it a run was asked for. */
 } MachineLanguageRunBlock_t;
 
 /**
@@ -1307,6 +1313,31 @@ static MachineLanguageStatus_t machine_language_count_iteration(MachineLanguageE
 }
 
 /**
+ * @brief Counts a failure of table-level code: in the evaluation, per status, the first one kept.
+ */
+static void machine_language_count_failure(MachineLanguageEvaluation_t *evaluation, MachineLanguageStatus_t status)
+{
+    if (evaluation->failures++ == 0u)
+        evaluation->first_failure = (uint8_t) status;
+    ++evaluation->statuses[status];
+}
+
+/**
+ * @brief Takes the back-edge of a While of a table's code at load, whose body @p block was, the running
+ *        frame's pc at its predicate: once the table's budget is spent (§6.1), the failure is counted and
+ *        the code goes on past the While instead.
+ */
+static MachineLanguageStatus_t machine_language_take_table_back_edge(MachineLanguageEvaluation_t *evaluation,
+                                                                     const MachineLanguageBlock_t *block)
+{
+    if (machine_language_count_iteration(evaluation) == MACHINE_LANGUAGE_OK)
+        return MACHINE_LANGUAGE_OK;
+    machine_language_count_failure(evaluation, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS));
+    machine_language_frame(evaluation)->pc = block->end;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Moves the running frame past an Else that starts at its pc, if one does.
  */
 static MachineLanguageStatus_t machine_language_skip_else(MachineLanguageEvaluation_t *evaluation)
@@ -1353,22 +1384,32 @@ static MachineLanguageStatus_t machine_language_enter_else(MachineLanguageEvalua
 
 /**
  * @brief Ends the construct the running frame is in: a method returns, a While goes back to its
- *        predicate, an If skips the Else after it.
+ *        predicate, an If skips the Else after it; in a table's code at load, the If leaves that Else
+ *        to the next statement, and a While past the table's budget goes on past its end, the failure
+ *        counted.
  */
 static MachineLanguageStatus_t machine_language_close_block(MachineLanguageLoad_t *load)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
     const MachineLanguageBlock_t block = *machine_language_block(evaluation);
 
     if (block.kind == MACHINE_LANGUAGE_RUN_METHOD)
         return machine_language_return(load, NULL);
     --evaluation->block_count;
+    if (block.kind == MACHINE_LANGUAGE_RUN_IF && frame->declares)
+    {
+        frame->else_offset = block.end;
+        frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
+        return MACHINE_LANGUAGE_OK;
+    }
     if (block.kind == MACHINE_LANGUAGE_RUN_IF)
         return machine_language_skip_else(evaluation);
     if (block.kind != MACHINE_LANGUAGE_RUN_WHILE)
         return MACHINE_LANGUAGE_OK;
-    machine_language_frame(evaluation)->pc = block.start;
-    return machine_language_count_iteration(evaluation);
+    frame->pc = block.start;
+    return frame->declares ? machine_language_take_table_back_edge(evaluation, &block) :
+                             machine_language_count_iteration(evaluation);
 }
 
 /**
@@ -1987,13 +2028,34 @@ static MachineLanguageStatus_t machine_language_field_name(MachineLanguageLoad_t
 }
 
 /**
+ * @brief Opens a construct of the running frame, from @p start to @p end; in a table's code at load,
+ *        one past the block limit is a fault of the load, counted, and the code goes on past it (§6.2).
+ */
+static MachineLanguageStatus_t machine_language_open_construct(MachineLanguageLoad_t *load, uint8_t kind,
+                                                               uint32_t start, uint32_t end)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    const MachineLanguageStatus_t status =
+        machine_language_open(evaluation, kind, start, end, machine_language_block(evaluation)->scope);
+
+    if (status != MACHINE_LANGUAGE_STATUS(LIMIT_BLOCKS) || !frame->declares)
+        return status;
+    advanced_configuration_and_power_interface_machine_language_count_load_error(load, status);
+    frame->pc = end;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Runs the TermList of an If or a While once its predicate is on the stack: a true predicate
- *        opens the body; a false one skips it, and an If then enters the Else that follows.
+ *        opens the body; a false one skips it, and an If then enters the Else that follows, or, in a
+ *        table's code at load, lets the next statement run it.
  */
 static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *load,
                                                        const MachineLanguagePendingOperator_t *active)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
     const MachineLanguagePendingOperator_t branch = *active;
     MachineLanguageValue_t predicate = machine_language_pop(evaluation);
     uint64_t truth = 0u;
@@ -2004,11 +2066,18 @@ static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *lo
     if (status != MACHINE_LANGUAGE_OK)
         return status;
     if (truth != 0u)
-        return machine_language_open(evaluation,
-                                     (branch.opcode == MACHINE_LANGUAGE_OPCODE(WHILE)) ? MACHINE_LANGUAGE_RUN_WHILE :
-                                                                                         MACHINE_LANGUAGE_RUN_IF,
-                                     branch.start, branch.end, machine_language_block(evaluation)->scope);
-    machine_language_frame(evaluation)->pc = branch.end;
+        return machine_language_open_construct(
+            load,
+            (branch.opcode == MACHINE_LANGUAGE_OPCODE(WHILE)) ? MACHINE_LANGUAGE_RUN_WHILE : MACHINE_LANGUAGE_RUN_IF,
+            branch.start, branch.end);
+    frame->pc = branch.end;
+    if (frame->declares)
+    {
+        frame->else_offset = branch.end;
+        frame->else_rule =
+            (branch.opcode == MACHINE_LANGUAGE_OPCODE(IF)) ? MACHINE_LANGUAGE_ELSE_RUN : MACHINE_LANGUAGE_ELSE_SKIPPED;
+        return MACHINE_LANGUAGE_OK;
+    }
     return (branch.opcode == MACHINE_LANGUAGE_OPCODE(WHILE)) ? MACHINE_LANGUAGE_OK :
                                                                machine_language_enter_else(evaluation);
 }
@@ -3483,6 +3552,202 @@ static MachineLanguageStatus_t machine_language_attach_result(MachineLanguageLoa
 }
 
 /**
+ * @brief Pushes the operator that runs the term the statement of a table's code waits for, which
+ *        load->declaration names, and counts it as a run.
+ */
+static MachineLanguageStatus_t machine_language_ask(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t *declaration = &load->declaration;
+
+    if (evaluation->operator_count ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
+
+    MachineLanguagePendingOperator_t *answer = &evaluation->operators[evaluation->operator_count++];
+
+    answer->opcode = (uint16_t) MACHINE_LANGUAGE_ANSWER;
+    answer->operands_done = 0u;
+    answer->operand_count = 1u;
+    answer->start = declaration->asks;
+    answer->end = declaration->asks_end;
+    answer->node = 0u;
+    machine_language_frame(evaluation)->pc = declaration->asks;
+    ++evaluation->runs;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Hands the load the statement of a table's code the running frame is at, a statement it does not
+ *        run itself, then goes on as the load says: past the statement, into the TermList of the scope it
+ *        declared, at the term it waits for, past the construct a fault left, or past the table.
+ *
+ * @param load    The load.
+ * @param not_run Whether the statement's code is declared without running it.
+ */
+static MachineLanguageStatus_t machine_language_declare(MachineLanguageLoad_t *load, bool not_run)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    const MachineLanguageBlock_t *block = machine_language_block(evaluation);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t *declaration = &load->declaration;
+
+    advanced_configuration_and_power_interface_machine_language_declare_statement(
+        load, frame->table - 1u, block->scope, frame->statement, block->end, not_run);
+    if (declaration->asks != 0u)
+        return machine_language_ask(load);
+    if (declaration->abandons)
+    {
+        evaluation->operator_count = frame->operator_base;
+        evaluation->block_count = frame->block_base;
+        return MACHINE_LANGUAGE_OK;
+    }
+    if (declaration->leaves)
+    {
+        frame->pc = block->end;
+        --evaluation->block_count;
+        return MACHINE_LANGUAGE_OK;
+    }
+    frame->pc = (declaration->body != 0u) ? declaration->body : declaration->after;
+    return (declaration->body != 0u) ? machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TERMS, frame->statement,
+                                                             declaration->after, declaration->scope) :
+                                       MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Gives the statement of a table's code that waits for a term what the term gave, or that it
+ *        failed, in the order the statement asked.
+ */
+static void machine_language_record_answer(MachineLanguageLoad_t *load, bool known, uint64_t integer)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t *declaration = &load->declaration;
+    const uint32_t answer = declaration->answered;
+
+    if (answer == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLARATION_ANSWERS)
+        return;
+    declaration->known[answer] = known;
+    declaration->values[answer] = integer;
+    declaration->afters[answer] = machine_language_frame(&load->evaluation)->pc;
+    ++declaration->answered;
+}
+
+/**
+ * @brief Gives the statement of a table's code that waits for a term the Integer the term gave, and lets
+ *        the statement go on.
+ */
+static MachineLanguageStatus_t machine_language_answer(MachineLanguageLoad_t *load)
+{
+    MachineLanguageValue_t value = machine_language_pop(&load->evaluation);
+    uint64_t integer = 0u;
+    const MachineLanguageStatus_t status = machine_language_integer_of(load, &value, &integer);
+
+    machine_language_release(load, &value);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    machine_language_record_answer(load, true, integer);
+    return machine_language_declare(load, false);
+}
+
+/**
+ * @brief Runs a statement of a table's code at load in the interpreter, counted as a run.
+ */
+static MachineLanguageStatus_t machine_language_run_table_statement(MachineLanguageLoad_t *load)
+{
+    ++load->evaluation.runs;
+    return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
+}
+
+/**
+ * @brief Runs an Else of a table's code at load as the If before it says (§3.6): its body runs after a
+ *        false predicate, is declared without running after a failed one, and is stepped over otherwise.
+ *        One whose PkgLength does not decode is handed to the load, which counts the fault.
+ */
+static MachineLanguageStatus_t machine_language_table_else(MachineLanguageLoad_t *load, uint32_t after, uint32_t limit)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    const uint32_t start = frame->pc;
+    const uint8_t rule = (start == frame->else_offset) ? frame->else_rule : MACHINE_LANGUAGE_ELSE_SKIPPED;
+    uint32_t end = 0u;
+
+    if (rule == MACHINE_LANGUAGE_ELSE_NOT_RUN)
+        return machine_language_declare(load, true);
+    if (advanced_configuration_and_power_interface_machine_language_read_package_end(frame->code, after, limit, &end,
+                                                                                     &after) != MACHINE_LANGUAGE_OK)
+        return machine_language_declare(load, false);
+    frame->pc = (rule == MACHINE_LANGUAGE_ELSE_RUN) ? after : end;
+    return (rule == MACHINE_LANGUAGE_ELSE_RUN) ?
+               machine_language_open_construct(load, MACHINE_LANGUAGE_RUN_TERMS, start, end) :
+               MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Runs a Break or a Continue of a table's code at load: leaves the innermost While around it, past
+ *        its end or back to its predicate, a back-edge counted against the table's budget, past its end too
+ *        once the budget is spent; one outside any While does nothing.
+ */
+static MachineLanguageStatus_t machine_language_leave_table_loop(MachineLanguageLoad_t *load, bool again)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+
+    for (uint32_t index = evaluation->block_count; index > frame->block_base; --index)
+    {
+        const MachineLanguageBlock_t block = evaluation->blocks[index - 1u];
+
+        if (block.kind != MACHINE_LANGUAGE_RUN_WHILE)
+            continue;
+        evaluation->operator_count = block.pending_base;
+        evaluation->block_count = index - 1u;
+        frame->pc = again ? block.start : block.end;
+        return again ? machine_language_take_table_back_edge(evaluation, &block) : MACHINE_LANGUAGE_OK;
+    }
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Takes the next statement of a table's code at load (§3.6): the interpreter runs code, an If's
+ *        or a While's predicate included, Break and Continue, and an Else as the If before it says; it
+ *        hands the load any other statement, and one whose opcode or PkgLength does not decode.
+ */
+static MachineLanguageStatus_t machine_language_table_statement(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    const uint32_t start = frame->pc;
+    const uint32_t limit = machine_language_block(evaluation)->end;
+    uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
+    uint32_t after = 0u;
+    uint32_t end = 0u;
+
+    frame->statement = start;
+    load->declaration.asks = 0u;
+    load->declaration.answered = 0u;
+    if (advanced_configuration_and_power_interface_machine_language_starts_name(frame->code[start]))
+        return machine_language_run_table_statement(load);
+    if (advanced_configuration_and_power_interface_machine_language_read_opcode(frame->code, start, limit, &opcode,
+                                                                                &after) != MACHINE_LANGUAGE_OK)
+        return machine_language_declare(load, false);
+    switch (opcode)
+    {
+    case MACHINE_LANGUAGE_OPCODE(IF):
+    case MACHINE_LANGUAGE_OPCODE(WHILE):
+        return (advanced_configuration_and_power_interface_machine_language_read_package_end(
+                    frame->code, after, limit, &end, &after) == MACHINE_LANGUAGE_OK) ?
+                   machine_language_run_table_statement(load) :
+                   machine_language_declare(load, false);
+    case MACHINE_LANGUAGE_OPCODE(ELSE): return machine_language_table_else(load, after, limit);
+    case MACHINE_LANGUAGE_OPCODE(BREAK):
+    case MACHINE_LANGUAGE_OPCODE(CONTINUE):
+        frame->pc = after;
+        return machine_language_leave_table_loop(load, opcode == MACHINE_LANGUAGE_OPCODE(CONTINUE));
+    default:
+        return advanced_configuration_and_power_interface_machine_language_runs_at_table_level(opcode) ?
+                   machine_language_run_table_statement(load) :
+                   machine_language_declare(load, false);
+    }
+}
+
+/**
  * @brief Runs the active operator once its operands are on the stack.
  */
 static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *load,
@@ -3496,6 +3761,7 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     {
     case MACHINE_LANGUAGE_CALL: return machine_language_enter_method(load, operator_.node, operator_.operand_count);
     case MACHINE_LANGUAGE_ATTACH: return machine_language_attach_result(load, &operator_);
+    case MACHINE_LANGUAGE_ANSWER: return machine_language_answer(load);
     case MACHINE_LANGUAGE_REGISTER: {
         MachineLanguageValue_t value = machine_language_pop(evaluation);
 
@@ -3579,7 +3845,8 @@ static MachineLanguageStatus_t machine_language_step(MachineLanguageLoad_t *load
                                                                  machine_language_execute(load, active);
     if (machine_language_frame(evaluation)->pc >= machine_language_block(evaluation)->end)
         return machine_language_close_block(load);
-    return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
+    return machine_language_frame(evaluation)->declares ? machine_language_table_statement(load) :
+                                                          machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
 }
 
 /**
@@ -3699,6 +3966,43 @@ static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageL
     return status;
 }
 
+/**
+ * @brief Goes on past a failure of the code of the table frame @p base runs at load, counted (§3.6): every
+ *        frame above it dropped, the statement that failed is handed to the load, which steps over it,
+ *        or declares an If's or a While's TermList without running its code when its predicate failed;
+ *        a term a statement waits for gives it nothing, and the statement goes on.
+ */
+static MachineLanguageStatus_t machine_language_table_failure(MachineLanguageLoad_t *load, uint32_t base,
+                                                              MachineLanguageStatus_t status)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageFrame_t *frame = &evaluation->frames[base];
+    uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
+    uint32_t after = 0u;
+
+    machine_language_count_failure(evaluation, status);
+    while (evaluation->frame_count > base + 1u)
+        machine_language_drop_frame(load);
+    while (evaluation->value_count > frame->value_base)
+        machine_language_release(load, &evaluation->values[--evaluation->value_count]);
+    evaluation->operator_count = machine_language_block(evaluation)->pending_base;
+    if (load->declaration.asks != 0u)
+    {
+        machine_language_record_answer(load, false, 0u);
+        return machine_language_declare(load, false);
+    }
+    (void) advanced_configuration_and_power_interface_machine_language_read_opcode(
+        frame->code, frame->statement, machine_language_block(evaluation)->end, &opcode, &after);
+    status = machine_language_declare(load, opcode == MACHINE_LANGUAGE_OPCODE(IF) ||
+                                                opcode == MACHINE_LANGUAGE_OPCODE(WHILE));
+    if (opcode == MACHINE_LANGUAGE_OPCODE(IF) && load->declaration.closed)
+    {
+        frame->else_offset = load->declaration.after;
+        frame->else_rule = MACHINE_LANGUAGE_ELSE_NOT_RUN;
+    }
+    return status;
+}
+
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_run_table_term(
     MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit, bool value,
     uint64_t *out_integer, uint32_t *out_after)
@@ -3714,36 +4018,28 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         status = (base == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES) ?
                      MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES) :
                      MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
-        advanced_configuration_and_power_interface_machine_language_count_failure(load, status);
+        machine_language_count_failure(evaluation, status);
         return status;
-    }
-    if (evaluation->table_locals_owner != table + 1u)
-    {
-        advanced_configuration_and_power_interface_machine_language_release_table_locals(load);
-        evaluation->table_locals_serial = ++evaluation->frame_serial;
     }
 
     MachineLanguageFrame_t *frame = &evaluation->frames[evaluation->frame_count++];
 
+    memset(frame, 0, sizeof(*frame));
     frame->code = (const uint8_t *) load->tables[table].header;
     frame->pc = start;
     frame->end = limit;
-    frame->method = 0u;
     frame->scope = scope;
-    memset(frame->arguments, 0, sizeof(frame->arguments));
-    memcpy(frame->locals, evaluation->table_locals, sizeof(frame->locals));
-    memset(evaluation->table_locals, 0, sizeof(evaluation->table_locals));
     frame->value_base = (uint16_t) evaluation->value_count;
     frame->operator_base = (uint16_t) evaluation->operator_count;
     frame->block_base = (uint16_t) evaluation->block_count;
     frame->temporary_base = (uint16_t) load->temporary_count;
     frame->table = (uint16_t) (table + 1u);
-    frame->argument_count = 0u;
-    frame->saved_sync_level = 0u;
-    frame->serial = evaluation->table_locals_serial;
+    frame->serial = ++evaluation->frame_serial;
+    frame->statement = start;
+    frame->declares = !value;
     if (evaluation->frame_count > evaluation->frames_peak)
         evaluation->frames_peak = evaluation->frame_count;
-    ++evaluation->runs;
+    evaluation->runs += value ? 1u : 0u;
     status = machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TABLE, start, limit, scope);
     if (status == MACHINE_LANGUAGE_OK && value)
     {
@@ -3756,13 +4052,16 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         result->end = limit;
         result->node = 0u;
     }
-
-    const uint32_t settled_operators = frame->operator_base + (value ? 1u : 0u);
-
-    while (status == MACHINE_LANGUAGE_OK &&
+    while (status == MACHINE_LANGUAGE_OK && value &&
            !(evaluation->frame_count == base + 1u && evaluation->block_count == frame->block_base + 1u &&
-             evaluation->operator_count == settled_operators && frame->pc != start))
+             evaluation->operator_count == frame->operator_base + 1u && frame->pc != start))
         status = machine_language_step_above(load, base);
+    while (status == MACHINE_LANGUAGE_OK && !value && evaluation->block_count > frame->block_base)
+    {
+        status = machine_language_step_above(load, base);
+        if (status != MACHINE_LANGUAGE_OK)
+            status = machine_language_table_failure(load, base, status);
+    }
     if (status == MACHINE_LANGUAGE_OK && value)
         status = (evaluation->value_count > frame->value_base) ?
                      machine_language_integer_of(load, &evaluation->values[evaluation->value_count - 1u], out_integer) :
@@ -3770,38 +4069,10 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     *out_after = frame->pc;
     while (evaluation->frame_count > base + 1u)
         machine_language_drop_frame(load);
-    memcpy(evaluation->table_locals, frame->locals, sizeof(evaluation->table_locals));
-    memset(frame->locals, 0, sizeof(frame->locals));
-    evaluation->table_locals_owner = table + 1u;
     machine_language_drop_frame(load);
     if (status != MACHINE_LANGUAGE_OK)
-        advanced_configuration_and_power_interface_machine_language_count_failure(load, status);
+        machine_language_count_failure(evaluation, status);
     return status;
-}
-
-void advanced_configuration_and_power_interface_machine_language_release_table_locals(MachineLanguageLoad_t *load)
-{
-    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-
-    for (uint32_t slot = 0u; slot < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS; ++slot)
-        machine_language_release(load, &evaluation->table_locals[slot]);
-    evaluation->table_locals_owner = 0u;
-}
-
-MachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_count_back_edge(MachineLanguageLoad_t *load)
-{
-    return machine_language_count_iteration(&load->evaluation);
-}
-
-void advanced_configuration_and_power_interface_machine_language_count_failure(MachineLanguageLoad_t *load,
-                                                                               MachineLanguageStatus_t status)
-{
-    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-
-    if (evaluation->failures++ == 0u)
-        evaluation->first_failure = (uint8_t) status;
-    ++evaluation->statuses[status];
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(

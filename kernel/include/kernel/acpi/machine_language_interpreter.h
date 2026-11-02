@@ -99,6 +99,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame {
                                    (§5.2). */
     uint32_t serial; /**< Which frame this is, among all an evaluation context pushed: a reference to one of its locals
                         or arguments names it, so that one that outlives it refers to nothing. */
+    uint32_t statement;   /**< For a table's code at load, where the statement it runs starts. */
+    uint32_t else_offset; /**< For a table's code at load, where an Else would follow the last If it ended, or whose
+                               predicate it found false or failed on. */
+    uint8_t else_rule;    /**< What that Else does: stepped over, run, or declared without running its code. */
+    bool declares;        /**< Whether it runs a table's code at load, handing the load each declaration (§3.6). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame_t;
 
 /**
@@ -139,17 +144,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
     uint32_t references_built;       /**< Index results that became references: those DerefOf reads at once are not
                                           (§7.2, O8). */
     uint32_t frame_serial;           /**< The serial of the last frame pushed. */
-    uint32_t table_locals_serial;    /**< The serial every frame of the table whose locals table_locals holds shares,
-                                          so that a reference to one of them lives from a statement to the next. */
-    uint32_t table_locals_owner;     /**< The table, counted from 1, whose Local0 to Local7 table_locals holds. */
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t
-        table_locals[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS]; /**< The locals of that
-                                                                                              table's code, which
-                                                                                              last from one of its
-                                                                                              statements to the
-                                                                                              next. */
-    uint32_t frames_peak; /**< Most frames in use at once. */
-    uint32_t values_peak; /**< Most values in use at once. */
+    uint32_t frames_peak;            /**< Most frames in use at once. */
+    uint32_t values_peak;            /**< Most values in use at once. */
     uint32_t statuses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT];      /**< Failures, per
                                                                                                           status. */
     uint32_t unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes that
