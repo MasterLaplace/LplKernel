@@ -1231,6 +1231,7 @@ static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad
     frame->argument_count = (uint8_t) argument_count;
     frame->saved_sync_level = saved_sync_level;
     frame->serial = ++evaluation->frame_serial;
+    frame->declares = false;
     if (evaluation->frame_count > evaluation->frames_peak)
         evaluation->frames_peak = evaluation->frame_count;
     return machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_METHOD, body, frame->end, method);
