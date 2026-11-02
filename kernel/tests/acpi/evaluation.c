@@ -602,3 +602,61 @@ KERNEL_TEST(a_package_length_crossing_its_device_abandons_the_table)
         "the crossing PkgLength is the one fault, of the load");
     evaluation_close(test);
 }
+
+/**
+ * @brief An Else of table-level code whose PkgLength crosses the table is a fault of the load, even after a
+ *        false If, which would run it: its body is neither run nor declared.
+ */
+KERNEL_TEST(an_else_whose_package_length_crosses_the_table_is_a_fault_of_the_load)
+{
+    static const uint8_t aml[] = {0xA0u, 0x02u, 0x00u, 0xA1u, 0x3Fu, 0x08u, 'E', 'L', 'S', 'B', 0x01u};
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(
+        test,
+        made_up_root_node(&evaluation_load, "ELSB") == NULL && evaluation_load.load_errors == 1u &&
+            evaluation_load.first_load_error ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_PACKAGE_LENGTH_OUT_OF_PARENT &&
+            evaluation_load.evaluation.failures == 0u,
+        "the crossing PkgLength is the one fault, of the load, and ELSB is not declared");
+    evaluation_close(test);
+}
+
+/**
+ * @brief Only the Else right after an If whose predicate was false runs: one a statement separates from that
+ *        If is stepped over, declaring nothing.
+ */
+KERNEL_TEST(an_else_a_statement_separates_from_its_if_is_stepped_over)
+{
+    static const uint8_t aml[] = {
+        0xA0u, 0x02u, 0x00u, 0x08u, 'M', 'I', 'D', 'L', 0x01u, 0xA1u, 0x07u, 0x08u, 'E', 'L', 'S', 'O', 0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("MIDL") == 1u && made_up_root_node(&evaluation_load, "ELSO") == NULL,
+                      "If (Zero) {} Name (MIDL, One) Else { Name (ELSO, One) } declares MIDL, not ELSO");
+    evaluation_close(test);
+}
+
+/**
+ * @brief An If whose predicate fails declares its body without running it, but a fault in that body skips
+ *        the rest of it: the Else after it is then stepped over, as after any construct a fault left, and
+ *        declares nothing.
+ */
+KERNEL_TEST(a_fault_in_a_body_declared_without_running_leaves_the_else_undeclared)
+{
+    static const uint8_t aml[] = {
+        0xA0u, 0x06u, 0x85u, 0x01u, 0x00u, 0x00u, 0x02u, 0xA1u, 0x07u, 0x08u, 'E', 'L', 'S', 'F', 0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      made_up_root_node(&evaluation_load, "ELSF") == NULL && evaluation_load.declared_not_run == 0u,
+                      "If (Mod (One, Zero)) { <0x02> } Else { Name (ELSF, One) } declares no ELSF");
+    kernel_test_check(test, evaluation_load.load_errors == 1u && evaluation_load.evaluation.failures == 1u,
+                      "the predicate fails, and the byte 0x02 is a fault of the load");
+    evaluation_close(test);
+}
