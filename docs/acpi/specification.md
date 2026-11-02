@@ -284,8 +284,8 @@ it. An `External` whose parent no table has declared yet is placed by a pass of 
 declared; one whose parent exists is placed where it stands.
 
 **The loop runs table-level code, and the load declares.** The declaration pass runs a table's code in the table's
-frame: the loop runs its statements and its control flow as a method body's, and hands the load each statement that
-declares or holds data; the load declares it, gives back the TermList of a `Scope`, `Device`, `Processor`,
+frame: the loop runs its statements and its control flow as a method body's, and hands the load each run of statements
+that declare or hold data; the load declares them, gives back the TermList of a `Scope`, `Device`, `Processor`,
 `PowerResource` or `ThermalZone` to run in its scope, and waits for the loop to run an `OperationRegion`'s offset or
 length, or a `BankField`'s BankValue, that is no constant. An untaken branch is skipped, and declares nothing. A
 predicate that fails declares both its branches without running their code, counted (`declared_not_run`), so that a
