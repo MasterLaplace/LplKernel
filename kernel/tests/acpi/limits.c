@@ -306,6 +306,32 @@ KERNEL_TEST(table_level_code_nests_up_to_the_block_limit)
 }
 
 /**
+ * @brief A Device at the bottom of 511 If (One), whose bodies and the table's fill the 512 blocks of §6.1,
+ *        is declared, but its TermList is refused with limit_blocks, a fault of the load, and skipped: the
+ *        Name inside it is not declared, the Device is not declared twice, and the Name after it is.
+ */
+KERNEL_TEST(a_device_at_the_block_limit_is_declared_without_its_body)
+{
+    static const uint8_t device[] = {0x5Bu, 0x82u, 0x0Bu, 'D',   'E', 'V', 'X', 0x08u, 'I',  'N',
+                                     'N',   'R',   0x01u, 0x08u, 'A', 'F', 'T', 'D',   0x01u};
+
+    if (!limits_run_nested(test, 511u, device, sizeof(device)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node = made_up_root_node(&limits_load, "DEVX");
+
+    kernel_test_check(test, node != NULL && node->first_child == 0u && limits_integer("AFTD") == 1u,
+                      "DEVX is declared without INNR, and AFTD after it");
+    kernel_test_check(test,
+                      limits_load.load_errors == 1u &&
+                          limits_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BLOCKS &&
+                          limits_load.duplicates == 0u && limits_load.evaluation.failures == 0u,
+                      "the refused TermList is the one fault, of the load, and nothing is a duplicate");
+    limits_close(test);
+}
+
+/**
  * @brief A table-level run refuses to start when the evaluation holds 64 frames, or 256 pending
  *        operators, with limit_frames or limit_pending_operators, counted.
  */
