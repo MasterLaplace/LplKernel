@@ -820,22 +820,41 @@ static void initialization_negotiate_bound(InitializationLoad_t *load, Initializ
 
 /**
  * @brief Gives step 7's capabilities, in declaration order, to the processor objects that the tables past the
- *        first @p first declare and that step 7's walk, at @p walking, no longer reaches, until those tables
- *        load no other table (§3.8); the walk gives the others theirs. Their late initialisation marked them, so
- *        this walks only the subtrees the marks lead to, as step 7 does.
+ *        first @p first, up to the first @p last, declare and that step 7's walk, at @p walking, no longer
+ *        reaches; their late initialisation marked them, so this walks only the subtrees the marks lead to, as
+ *        step 7 does.
+ */
+static void initialization_negotiate_late(InitializationLoad_t *load, Initialization_t *initialization,
+                                          const InitializationMachine_t *machine, uint32_t first, uint32_t last,
+                                          uint32_t walking)
+{
+    for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
+         index = initialization_next(load, index, initialization_capable(load, index)))
+        if (initialization_capable(load, index) && initialization_is_late(load, index, first, last) &&
+            !initialization_reached_later(load, index, walking))
+            initialization_negotiate_bound(load, initialization, machine, index);
+}
+
+/**
+ * @brief Gives step 7's capabilities to the processor objects that the tables past the first @p first declare
+ *        behind step 7's walk, at @p walking, until those tables load no other table (§3.8); the walk gives the
+ *        others theirs. A round looks for them only when the late initialisation counted device objects past the
+ *        @p devices counted before those tables: Intel's tables, which a _PDC loads, add methods to processors
+ *        declared already.
  */
 static void initialization_negotiate_behind(InitializationLoad_t *load, Initialization_t *initialization,
-                                            const InitializationMachine_t *machine, uint32_t first, uint32_t walking)
+                                            const InitializationMachine_t *machine, uint32_t first, uint32_t devices,
+                                            uint32_t walking)
 {
     while (first != load->table_count)
     {
         const uint32_t last = load->table_count;
 
-        for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
-             index = initialization_next(load, index, initialization_capable(load, index)))
-            if (initialization_capable(load, index) && initialization_is_late(load, index, first, last) &&
-                !initialization_reached_later(load, index, walking))
-                initialization_negotiate_bound(load, initialization, machine, index);
+        if (initialization->devices != devices)
+        {
+            devices = initialization->devices;
+            initialization_negotiate_late(load, initialization, machine, first, last, walking);
+        }
         first = last;
     }
 }
@@ -853,12 +872,14 @@ static void initialization_negotiate_processors(InitializationLoad_t *load, Init
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
          index = initialization_next(load, index, initialization_capable(load, index)))
     {
-        const uint32_t tables = load->table_count;
-
         if (!initialization_capable(load, index))
             continue;
+
+        const uint32_t tables = load->table_count;
+        const uint32_t devices = initialization->devices;
+
         initialization_negotiate_bound(load, initialization, machine, index);
-        initialization_negotiate_behind(load, initialization, machine, tables, index);
+        initialization_negotiate_behind(load, initialization, machine, tables, devices, index);
     }
 }
 
