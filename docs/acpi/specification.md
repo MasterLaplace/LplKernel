@@ -290,9 +290,10 @@ that declare or hold data; the load declares them, gives back the TermList of a 
 length, or a `BankField`'s BankValue, that is no constant. An untaken branch is skipped, and declares nothing. A
 predicate that fails declares both its branches without running their code, counted (`declared_not_run`), so that a
 failure never takes an object out of the namespace; an object both branches declare is the first branch's, the second's
-a duplicate (§5.1), as any later declaration is. The decoding pass still decodes the body of a construct the declaration
-pass did not declare, but counts its faults apart (`undeclared_faults`): its names resolve against objects that do not
-exist.
+a duplicate (§5.1), as any later declaration is. A table whose frame finds the stacks full (§6.1), as one a Load at the
+bottom of a deep recursion adds, is declared the same way, the refusal counted. The decoding pass still decodes the body
+of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its names
+resolve against objects that do not exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on
