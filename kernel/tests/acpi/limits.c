@@ -260,14 +260,14 @@ KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
 }
 
 /**
- * @brief Loads a table whose code nests @p depth If (One), Name (DEEP, One) at the deepest level.
+ * @brief Loads a table whose code nests @p depth If (One), the @p length bytes at @p inner at the deepest
+ *        level.
  */
-static bool limits_run_nested(KernelTest_t *test, uint32_t depth)
+static bool limits_run_nested(KernelTest_t *test, uint32_t depth, const uint8_t *inner, uint32_t length)
 {
-    static const uint8_t name[] = {0x08u, 'D', 'E', 'E', 'P', 0x01u};
-    uint32_t start = LIMITS_AML_CAPACITY - (uint32_t) sizeof(name);
+    uint32_t start = LIMITS_AML_CAPACITY - length;
 
-    memcpy(limits_aml + start, name, sizeof(name));
+    memcpy(limits_aml + start, inner, length);
     for (uint32_t level = 0u; level < depth; ++level)
     {
         limits_aml[--start] = 0x01u;
@@ -286,12 +286,14 @@ static bool limits_run_nested(KernelTest_t *test, uint32_t depth)
  */
 KERNEL_TEST(table_level_code_nests_up_to_the_block_limit)
 {
-    if (!limits_run_nested(test, 511u))
+    static const uint8_t name[] = {0x08u, 'D', 'E', 'E', 'P', 0x01u};
+
+    if (!limits_run_nested(test, 511u, name, sizeof(name)))
         return;
     kernel_test_check(test, limits_integer("DEEP") == 1u && limits_load.load_errors == 0u,
                       "511 If (One) fill the 512 blocks: DEEP is declared");
     limits_close(test);
-    if (!limits_run_nested(test, 512u))
+    if (!limits_run_nested(test, 512u, name, sizeof(name)))
         return;
     kernel_test_check(test,
                       made_up_root_node(&limits_load, "DEEP") == NULL && limits_load.load_errors == 1u &&
@@ -310,7 +312,6 @@ KERNEL_TEST(table_level_code_nests_up_to_the_block_limit)
 KERNEL_TEST(a_table_level_run_refuses_full_stacks)
 {
     static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '_', 0x00u};
-    uint32_t after = 0u;
 
     if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
         return;
@@ -319,8 +320,8 @@ KERNEL_TEST(a_table_level_run_refuses_full_stacks)
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_run_table_term(
                           &limits_load, 0u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
-                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml), false, NULL,
-                          &after) == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FRAMES,
+                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml)) ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FRAMES,
                       "64 frames held: limit_frames");
     limits_load.evaluation.frame_count = 0u;
     limits_load.evaluation.operator_count =
@@ -328,7 +329,7 @@ KERNEL_TEST(a_table_level_run_refuses_full_stacks)
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_run_table_term(
                           &limits_load, 0u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
-                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml), false, NULL, &after) ==
+                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml)) ==
                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PENDING_OPERATORS,
                       "256 operators held: limit_pending_operators");
     limits_load.evaluation.operator_count = 0u;
@@ -338,5 +339,35 @@ KERNEL_TEST(a_table_level_run_refuses_full_stacks)
             limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PENDING_OPERATORS) ==
                 1u,
         "both refusals are counted");
+    limits_close(test);
+}
+
+/**
+ * @brief A table declared while the evaluation holds its 64 frames, as one a Load at the bottom of a deep
+ *        recursion adds, has no room for its frame: its code is declared without running, as a branch
+ *        whose predicate failed (§3.6), every name of it counted so, and the refusal counted.
+ */
+KERNEL_TEST(a_table_with_no_room_for_its_frame_is_declared_without_running)
+{
+    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '_', 0x0Au, 0x05u};
+    static const uint8_t loaded[] = {
+        0x08u, 'L', 'D', 'E',   'D',   0x01u, 0xA0u, 0x08u, 0x01u, 0x08u, 'I',
+        'N',   'I', 'F', 0x01u, 0x70u, 0x00u, 'R',   'E',   'S',   '_',
+    };
+
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
+        return;
+    limits_load.evaluation.frame_count =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &limits_load, made_up_definition_block(limits_second_table, "SSDT", 2u, loaded, sizeof(loaded)));
+    limits_load.evaluation.frame_count = 0u;
+    kernel_test_check(test, limits_integer("LDED") == 1u && limits_integer("INIF") == 1u,
+                      "LDED, and INIF in the If (One) after it, are declared");
+    kernel_test_check(test, limits_integer("RES_") == 5u && limits_load.declared_not_run == 2u,
+                      "the Store (Zero, RES_) does not run, and both names count as declared without running");
+    kernel_test_check(
+        test, limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FRAMES) == 1u,
+        "the refusal of the frame is counted");
     limits_close(test);
 }

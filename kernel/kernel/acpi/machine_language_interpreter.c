@@ -4004,8 +4004,7 @@ static MachineLanguageStatus_t machine_language_table_failure(MachineLanguageLoa
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_run_table_term(
-    MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit, bool value,
-    uint64_t *out_integer, uint32_t *out_after)
+    MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const uint32_t base = evaluation->frame_count;
@@ -4036,43 +4035,27 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     frame->table = (uint16_t) (table + 1u);
     frame->serial = ++evaluation->frame_serial;
     frame->statement = start;
-    frame->declares = !value;
+    frame->declares = true;
     if (evaluation->frame_count > evaluation->frames_peak)
         evaluation->frames_peak = evaluation->frame_count;
-    evaluation->runs += value ? 1u : 0u;
     status = machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TABLE, start, limit, scope);
-    if (status == MACHINE_LANGUAGE_OK && value)
+    if (status != MACHINE_LANGUAGE_OK)
     {
-        MachineLanguagePendingOperator_t *result = &evaluation->operators[evaluation->operator_count++];
+        machine_language_drop_frame(load);
+        machine_language_count_failure(evaluation, status);
+        return status;
+    }
+    while (evaluation->block_count > frame->block_base)
+    {
+        MachineLanguageStatus_t step = machine_language_step_above(load, base);
 
-        result->opcode = (uint16_t) MACHINE_LANGUAGE_RESULT;
-        result->operands_done = 0u;
-        result->operand_count = 1u;
-        result->start = start;
-        result->end = limit;
-        result->node = 0u;
+        while (step != MACHINE_LANGUAGE_OK && evaluation->block_count > frame->block_base)
+            step = machine_language_table_failure(load, base, step);
     }
-    while (status == MACHINE_LANGUAGE_OK && value &&
-           !(evaluation->frame_count == base + 1u && evaluation->block_count == frame->block_base + 1u &&
-             evaluation->operator_count == frame->operator_base + 1u && frame->pc != start))
-        status = machine_language_step_above(load, base);
-    while (status == MACHINE_LANGUAGE_OK && !value && evaluation->block_count > frame->block_base)
-    {
-        status = machine_language_step_above(load, base);
-        if (status != MACHINE_LANGUAGE_OK)
-            status = machine_language_table_failure(load, base, status);
-    }
-    if (status == MACHINE_LANGUAGE_OK && value)
-        status = (evaluation->value_count > frame->value_base) ?
-                     machine_language_integer_of(load, &evaluation->values[evaluation->value_count - 1u], out_integer) :
-                     MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
-    *out_after = frame->pc;
     while (evaluation->frame_count > base + 1u)
         machine_language_drop_frame(load);
     machine_language_drop_frame(load);
-    if (status != MACHINE_LANGUAGE_OK)
-        machine_language_count_failure(evaluation, status);
-    return status;
+    return MACHINE_LANGUAGE_OK;
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(

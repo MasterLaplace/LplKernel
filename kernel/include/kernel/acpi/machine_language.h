@@ -228,28 +228,25 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
 
 /**
  * @brief Runs a table's code at load in a frame of its own (§3.6): the statements from @p start to
- *        @p limit, its control flow included, each declaration handed to the load as the interpreter
- *        meets it; or, with @p value, the one term at @p start, whose Integer is wanted.
+ *        @p limit, its control flow included, each run of declarations handed to the load as the
+ *        interpreter meets it.
  *
  * @details The declaration pass calls it once per table. A statement that fails is counted in
  *          load->evaluation, never as a load error, and the code goes on past it; one whose predicate
  *          fails declares its branches without running their code (§3.6). Its locals last from one
  *          statement to the next, and go with the frame.
- * @param load        The load.
- * @param table       The table's index in the load.
- * @param scope       The node names are resolved from.
- * @param start       Where the code starts.
- * @param limit       The first offset it may not reach.
- * @param value       Whether the code is one term whose Integer is wanted.
- * @param out_integer Receives that Integer when @p value holds and the run succeeds.
- * @param out_after   Receives where the run stopped.
- * @return OK, or why the run failed or could not start: every frame it pushed is gone by then, and
- *         every temporary node it created removed.
+ * @param load  The load.
+ * @param table The table's index in the load.
+ * @param scope The node names are resolved from.
+ * @param start Where the code starts.
+ * @param limit The first offset it may not reach.
+ * @return OK once the code has run, every frame it pushed gone; LIMIT_FRAMES, LIMIT_PENDING_OPERATORS or
+ *         LIMIT_BLOCKS, counted, when the evaluation has no room for the table's frame, and nothing ran.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_run_table_term(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start,
-    uint32_t limit, bool value, uint64_t *out_integer, uint32_t *out_after);
+    uint32_t limit);
 
 /**
  * @brief Takes statements of table-level code the interpreter does not run itself, in load->declaration

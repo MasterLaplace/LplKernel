@@ -1597,16 +1597,18 @@ static MachineLanguageStatus_t machine_language_walk(MachineLanguageWalk_t *walk
 
 /**
  * @brief Runs one pass over table @p table of a load: the declaration pass hands the table's code to the
- *        interpreter, but where every branch is declared and none run; the declaration pass of a table
- *        the root table lists is an evaluation of its own (§6.1), that of a table Load or LoadTable adds
- *        belongs to the evaluation that runs it, so that @p alone is false then.
+ *        interpreter, but where every branch is declared and none run, or where the evaluation has no room
+ *        for the table's frame, whose code is then declared without running, as a branch whose predicate
+ *        failed (§3.6); the declaration pass of a table the root table lists is an evaluation of its own
+ *        (§6.1), that of a table Load or LoadTable adds belongs to the evaluation that runs it, so that
+ *        @p alone is false then.
  */
 static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                         uint32_t table, MachineLanguagePass_t pass, bool alone)
 {
     const uint32_t start = (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t);
+    const bool runs = pass == MACHINE_LANGUAGE_PASS_DECLARE && !load->declares_every_branch;
     MachineLanguageWalk_t walk;
-    uint32_t after = 0u;
 
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
@@ -1614,14 +1616,13 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
         if (alone)
             advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
     }
-    if (pass == MACHINE_LANGUAGE_PASS_DECLARE && !load->declares_every_branch)
-        (void) advanced_configuration_and_power_interface_machine_language_run_table_term(
-            load, table, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, start,
-            load->tables[table].length, false, NULL, &after);
-    else
+    if (!runs || advanced_configuration_and_power_interface_machine_language_run_table_term(
+                     load, table, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, start,
+                     load->tables[table].length) != MACHINE_LANGUAGE_OK)
     {
         machine_language_begin_walk(&walk, load, table, pass, start, load->tables[table].length,
-                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, 0u);
+                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+                                    runs ? MACHINE_LANGUAGE_BLOCK_NOT_RUN : 0u);
         (void) machine_language_walk(&walk, start, false);
     }
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
