@@ -260,6 +260,50 @@ KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
 }
 
 /**
+ * @brief Loads a table whose code nests @p depth If (One), Name (DEEP, One) at the deepest level.
+ */
+static bool limits_run_nested(KernelTest_t *test, uint32_t depth)
+{
+    static const uint8_t name[] = {0x08u, 'D', 'E', 'E', 'P', 0x01u};
+    uint32_t start = LIMITS_AML_CAPACITY - (uint32_t) sizeof(name);
+
+    memcpy(limits_aml + start, name, sizeof(name));
+    for (uint32_t level = 0u; level < depth; ++level)
+    {
+        limits_aml[--start] = 0x01u;
+        start = limits_package_length(start, LIMITS_AML_CAPACITY - start);
+        limits_aml[--start] = 0xA0u;
+    }
+    memmove(limits_aml, limits_aml + start, LIMITS_AML_CAPACITY - start);
+    return made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_aml,
+                              LIMITS_AML_CAPACITY - start);
+}
+
+/**
+ * @brief Table-level code nests 511 If (One), whose bodies and the table's fill the 512 blocks of §6.1: the
+ *        Name at the deepest level is declared. One If more is refused with limit_blocks, a fault of the
+ *        load, and its body skipped: it is not a predicate that failed, whose body would be declared.
+ */
+KERNEL_TEST(table_level_code_nests_up_to_the_block_limit)
+{
+    if (!limits_run_nested(test, 511u))
+        return;
+    kernel_test_check(test, limits_integer("DEEP") == 1u && limits_load.load_errors == 0u,
+                      "511 If (One) fill the 512 blocks: DEEP is declared");
+    limits_close(test);
+    if (!limits_run_nested(test, 512u))
+        return;
+    kernel_test_check(test,
+                      made_up_root_node(&limits_load, "DEEP") == NULL && limits_load.load_errors == 1u &&
+                          limits_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BLOCKS,
+                      "the 512th If is refused with limit_blocks, and DEEP is not declared");
+    kernel_test_check(test, limits_load.evaluation.failures == 0u && limits_load.declared_not_run == 0u,
+                      "nothing fails to run, and nothing is declared without running");
+    limits_close(test);
+}
+
+/**
  * @brief A table-level run refuses to start when the evaluation holds 64 frames, or 256 pending
  *        operators, with limit_frames or limit_pending_operators, counted.
  */

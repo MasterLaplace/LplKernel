@@ -1493,6 +1493,65 @@ KERNEL_TEST(a_region_and_its_field_units_take_their_layout)
 }
 
 /**
+ * @brief The region of @p name, the object its node holds.
+ */
+static const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *made_up_region(const char *name)
+{
+    return (const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *) (made_up_object(
+                                                                                        &made_up_node(name)->value) +
+                                                                                    1);
+}
+
+/**
+ * @brief Two regions built from expressions each take what their own declaration computes, one run per
+ *        expression: RGA_'s offset and length, then RGB_'s offset, its length a constant.
+ */
+KERNEL_TEST(regions_built_from_expressions_each_take_what_their_declaration_computes)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x80u, 'R', 'G', 'A', '_', 0x01u, 0x72u, 0x01u, 0x01u, 0x00u, 0x72u, 0x01u, 0x0Au, 0x02u, 0x00u,
+        0x5Bu, 0x80u, 'R', 'G', 'B', '_', 0x01u, 0x72u, 0x0Au, 0x02u, 0x0Au, 0x02u, 0x00u, 0x0Au, 0x08u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *first = made_up_region("RGA_");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *second = made_up_region("RGB_");
+
+    kernel_test_check(test, first->state == 1u && first->offset == 2u && first->length == 3u,
+                      "RGA_ takes the offset Add (One, One) and the length Add (One, 2)");
+    kernel_test_check(test, second->state == 1u && second->offset == 4u && second->length == 8u,
+                      "RGB_ takes the offset Add (2, 2) and the length 8");
+    kernel_test_check(test, made_up_load.values_deferred == 0u && made_up_load.evaluation.runs == 3u,
+                      "nothing waits, and the three expressions are three runs");
+    made_up_close(test);
+}
+
+/**
+ * @brief A region whose offset fails to run waits for the interpreter, the failure counted, and its length
+ *        is not run: DerefOf (Index (PKG_, 5)) is past the one element of PKG_.
+ */
+KERNEL_TEST(a_region_whose_offset_fails_waits_for_the_interpreter)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'P',   'K',   'G', '_', 0x12u, 0x03u, 0x01u, 0x00u, 0x5Bu, 0x80u, 'R',   'G',   'F',   '_',
+        0x01u, 0x83u, 0x88u, 'P', 'K', 'G',   '_',   0x0Au, 0x05u, 0x00u, 0x72u, 0x01u, 0x01u, 0x00u,
+    };
+
+    if (!made_up_load_one(test, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region = made_up_region("RGF_");
+
+    kernel_test_check(test, region->state == 0u && region->offset == 0u && made_up_load.values_deferred == 1u,
+                      "RGF_ waits for the interpreter");
+    kernel_test_check(test, made_up_load.evaluation.failures == 1u && made_up_load.evaluation.runs == 1u,
+                      "the offset's run fails, counted, and the length is not run");
+    made_up_close(test);
+}
+
+/**
  * @brief The units of an IndexField name its index and data fields, those of a BankField its region,
  *        its bank field and its BankValue.
  */
