@@ -107,6 +107,12 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_MICROSECONDS_PER_SECOND             1000000u  /**< Microseconds in a second. */
 #define ACPI_MICROSECONDS_PER_MILLISECOND        1000u     /**< Microseconds in a millisecond. */
 #define ACPI_HUNDRED_NANOSECONDS_PER_MICROSECOND 10u       /**< Units of the host's clock in a microsecond. */
+#define ACPI_TIMER_IDLE_SLACK_SHIFT                                                                                    \
+    3u /**< A sleep idles while more than a tick and an eighth of one remain, the eighth this shift of the tick: it    \
+          covers the 5 % the timer's rate may stray from the tick's, and an interrupt taken late. */
+#define ACPI_TIMER_IDLE_STILL_STEPS                                                                                    \
+    2u /**< Steps of the host's clock a sleep's idles see the timer stand still across before it derails: a whole      \
+          tick. */
 
 /**
  * @brief A run of I/O ports the ACPI layer never reaches, since the kernel drives them (§5.3).
@@ -805,24 +811,45 @@ static uint8_t acpi_timer_check_rate(const AdvancedConfigurationAndPowerInterfac
 }
 
 /**
- * @brief Counts a usable timer until it has counted @p target, and stops early when it derails: when it
- *        reads the same count ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS
- *        times in a row, or moves more than half its 24-bit range in one step, which is going back.
+ * @brief The counts of the timer in @p microseconds, rounded up.
+ */
+static uint64_t acpi_timer_counts_in(uint32_t microseconds)
+{
+    return ((uint64_t) microseconds * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ +
+            ACPI_MICROSECONDS_PER_SECOND - 1u) /
+           ACPI_MICROSECONDS_PER_SECOND;
+}
+
+/**
+ * @brief The microseconds @p counts of the timer last, rounded down.
+ */
+static uint64_t acpi_timer_microseconds_in(uint64_t counts)
+{
+    return (counts * ACPI_MICROSECONDS_PER_SECOND) /
+           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ;
+}
+
+/**
+ * @brief Counts a usable timer from its read @p last until it has counted @p target, and stops early when
+ *        it derails: when it reads the same count
+ *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS times in a row, or
+ *        moves more than half its 24-bit range in one step, which is going back.
  *
+ * @param last  The timer's last read, updated as it is read again.
+ * @param reads Counts the reads of its port.
  * @return What it counted; the timer is marked derailed when it stopped early.
  */
 static uint64_t acpi_timer_count_to(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
                                     AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer,
-                                    uint64_t target)
+                                    uint64_t target, uint32_t *last, uint32_t *reads)
 {
     uint64_t counted = 0u;
     uint32_t still = 0u;
-    uint32_t last = acpi_timer_read(host, timer->port, &timer->stall_reads);
 
     while (counted < target)
     {
-        const uint32_t now = acpi_timer_read(host, timer->port, &timer->stall_reads);
-        const uint32_t moved = (now - last) & ACPI_TIMER_BITS;
+        const uint32_t now = acpi_timer_read(host, timer->port, reads);
+        const uint32_t moved = (now - *last) & ACPI_TIMER_BITS;
 
         still = (moved == 0u) ? still + 1u : 0u;
         if (still == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS ||
@@ -832,7 +859,52 @@ static uint64_t acpi_timer_count_to(const AdvancedConfigurationAndPowerInterface
             return counted;
         }
         counted += moved;
-        last = now;
+        *last = now;
+    }
+    return counted;
+}
+
+/**
+ * @brief Gives up the processor through @p idle, reading the timer after each time, while more than
+ *        @p idle_counts and an eighth of them remain to count to @p target; stops early when the timer
+ *        derails: when it moves more than half its 24-bit range in one step, which is going back, reads the
+ *        same count ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS times in a
+ *        row, or stands still while the host's clock steps ACPI_TIMER_IDLE_STILL_STEPS times.
+ *
+ * @param last The timer's last read, updated as it is read again.
+ * @return What it counted, which may pass @p target; the timer is marked derailed when it stopped early.
+ */
+static uint64_t acpi_timer_idle_toward(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                       AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer,
+                                       uint64_t target, uint64_t idle_counts, void (*idle)(void *context),
+                                       uint32_t *last)
+{
+    const uint64_t idle_above = idle_counts + (idle_counts >> ACPI_TIMER_IDLE_SLACK_SHIFT);
+    uint64_t clock = host->clock_100ns(host->context);
+    uint64_t counted = 0u;
+    uint32_t still = 0u;
+    uint32_t still_steps = 0u;
+
+    while (counted < target && target - counted > idle_above)
+    {
+        idle(host->context);
+        ++timer->sleep_idles;
+
+        const uint32_t now = acpi_timer_read(host, timer->port, &timer->sleep_reads);
+        const uint32_t moved = (now - *last) & ACPI_TIMER_BITS;
+        const uint64_t stepped = host->clock_100ns(host->context);
+
+        still = (moved == 0u) ? still + 1u : 0u;
+        still_steps = (moved != 0u) ? 0u : still_steps + ((stepped != clock) ? 1u : 0u);
+        clock = stepped;
+        if (still == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS ||
+            still_steps == ACPI_TIMER_IDLE_STILL_STEPS || moved > ACPI_TIMER_HALF_RANGE)
+        {
+            timer->state = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED;
+            return counted;
+        }
+        counted += moved;
+        *last = now;
     }
     return counted;
 }
@@ -1224,20 +1296,42 @@ uint32_t advanced_configuration_and_power_interface_power_management_timer_stall
     if (timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE || microseconds == 0u)
         return 0u;
 
-    const uint64_t target =
-        ((uint64_t) microseconds * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ +
-         ACPI_MICROSECONDS_PER_SECOND - 1u) /
-        ACPI_MICROSECONDS_PER_SECOND;
+    uint32_t last = acpi_timer_read(host, timer->port, &timer->stall_reads);
 
     ++timer->stalls;
 
-    const uint64_t counted = acpi_timer_count_to(host, timer, target);
-    const uint64_t waited = (counted * ACPI_MICROSECONDS_PER_SECOND) /
-                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ;
+    const uint64_t waited = acpi_timer_microseconds_in(
+        acpi_timer_count_to(host, timer, acpi_timer_counts_in(microseconds), &last, &timer->stall_reads));
 
     if (waited >= microseconds)
         return (waited > UINT32_MAX) ? UINT32_MAX : (uint32_t) waited;
     return (uint32_t) waited + host->stall_microseconds(host->context, microseconds - (uint32_t) waited);
+}
+
+uint32_t advanced_configuration_and_power_interface_power_management_timer_sleep(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds,
+    uint32_t idle_microseconds, void (*idle)(void *context))
+{
+    if (timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE || microseconds == 0u)
+        return 0u;
+
+    const uint64_t target = acpi_timer_counts_in(microseconds);
+    uint32_t last = acpi_timer_read(host, timer->port, &timer->sleep_reads);
+
+    ++timer->sleeps;
+
+    uint64_t counted =
+        acpi_timer_idle_toward(host, timer, target, acpi_timer_counts_in(idle_microseconds), idle, &last);
+
+    if (timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE && counted < target)
+        counted += acpi_timer_count_to(host, timer, target - counted, &last, &timer->sleep_reads);
+
+    const uint64_t waited = acpi_timer_microseconds_in(counted);
+
+    if (waited >= microseconds)
+        return (waited > UINT32_MAX) ? UINT32_MAX : (uint32_t) waited;
+    return (uint32_t) waited + host->sleep_microseconds(host->context, microseconds - (uint32_t) waited);
 }
 
 void advanced_configuration_and_power_interface_power_management_timer_initialize(void)
@@ -1251,6 +1345,15 @@ uint32_t advanced_configuration_and_power_interface_power_management_timer_machi
 {
     return advanced_configuration_and_power_interface_power_management_timer_stall(
         &advanced_configuration_and_power_interface_machine_host, &acpi_power_management_timer, microseconds);
+}
+
+uint32_t advanced_configuration_and_power_interface_power_management_timer_machine_sleep(uint32_t microseconds,
+                                                                                         uint32_t idle_microseconds,
+                                                                                         void (*idle)(void *context))
+{
+    return advanced_configuration_and_power_interface_power_management_timer_sleep(
+        &advanced_configuration_and_power_interface_machine_host, &acpi_power_management_timer, microseconds,
+        idle_microseconds, idle);
 }
 
 const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *

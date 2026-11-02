@@ -202,22 +202,37 @@ KERNEL_TEST(the_boot_puts_the_platform_in_acpi_mode_with_its_interrupt_masked)
 }
 
 /**
- * @brief The machine host's sleep waits at least a whole tick for 1 ms, and says how many
- *        microseconds it waited, no more than the ticks that passed around it.
+ * @brief Whether the boot's FADT names a power management timer the machine host could read: a platform
+ *        that is not hardware-reduced, whose PM_TMR_BLK lies, 4 bytes long, in the I/O space.
+ */
+static bool acpi_test_firmware_names_a_timer(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt =
+        &advanced_configuration_and_power_interface_directory()->fixed_description;
+
+    return fadt->present && !fadt->hardware_reduced &&
+           advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_timer_block, 4u) != 0u;
+}
+
+/**
+ * @brief Without a power management timer, the machine host's sleep waits at least a whole tick for
+ *        1 ms, and says how many microseconds it waited, no more than the ticks that passed around it.
  */
 KERNEL_TEST(the_machine_host_sleeps_on_the_tick_and_says_how_long)
 {
     const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
     const uint32_t hertz = clock_get_tick_hz();
+
+    if (hertz == 0u || acpi_test_firmware_names_a_timer())
+    {
+        kernel_test_skip(test, "no tick runs, or the sleep waits on the power management timer the FADT names");
+        return;
+    }
+
     const uint32_t before = clock_get_tick_count();
     const uint32_t waited = host->sleep_microseconds(host->context, 1000u);
     const uint32_t ticks = clock_get_tick_count() - before;
 
-    if (hertz == 0u)
-    {
-        kernel_test_skip(test, "no tick runs");
-        return;
-    }
     kernel_test_check(test, ticks >= 2u, "a sleep of 1 ms lets a whole tick pass, the one it lands in not counted");
     kernel_test_check(test, (uint64_t) waited * hertz >= 1000000u,
                       "it says it waited at least as many microseconds as a tick lasts");
@@ -226,8 +241,8 @@ KERNEL_TEST(the_machine_host_sleeps_on_the_tick_and_says_how_long)
 }
 
 /**
- * @brief The machine host's clock counts in units of 100 ns on the tick: across a sleep of 1 ms it
- *        moves forward by at least a tick, and by no more than the ticks that passed around it.
+ * @brief The machine host's clock counts in units of 100 ns on the tick: across a sleep of two tick
+ *        periods it moves forward by at least a tick, and by no more than the ticks that passed around it.
  */
 KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
 {
@@ -241,7 +256,7 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
         kernel_test_skip(test, "no tick runs");
         return;
     }
-    (void) host->sleep_microseconds(host->context, 1000u);
+    (void) host->sleep_microseconds(host->context, 2000000u / hertz);
 
     const uint64_t after = host->clock_100ns(host->context);
     const uint32_t ticks = clock_get_tick_count() - ticks_before;
@@ -249,19 +264,6 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
     kernel_test_check(test, (after - before) * hertz >= 10000000u, "the clock moved by at least a tick");
     kernel_test_check(test, (after - before) * hertz <= (uint64_t) ticks * 10000000u,
                       "and by no more than the ticks that passed around the sleep");
-}
-
-/**
- * @brief Whether the boot's FADT names a power management timer the machine host could read: a platform
- *        that is not hardware-reduced, whose PM_TMR_BLK lies, 4 bytes long, in the I/O space.
- */
-static bool acpi_test_firmware_names_a_timer(void)
-{
-    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt =
-        &advanced_configuration_and_power_interface_directory()->fixed_description;
-
-    return fadt->present && !fadt->hardware_reduced &&
-           advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_timer_block, 4u) != 0u;
 }
 
 /**
@@ -347,8 +349,51 @@ KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
 }
 
 /**
+ * @brief The machine host's sleep waits about the microseconds asked on the power management timer, not
+ *        whole ticks: 1 ms lets at most one tick pass and says it waited 1 ms to a tick; two and a half
+ *        tick periods let two to four pass, give up the processor on the way, and say they waited that
+ *        and less than a tick more.
+ */
+KERNEL_TEST(the_machine_host_sleeps_its_microseconds_on_the_timer)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
+        advanced_configuration_and_power_interface_power_management_timer();
+    const uint32_t hertz = clock_get_tick_hz();
+
+    if (hertz == 0u || timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+    {
+        kernel_test_skip(test, "no tick runs, or no usable power management timer");
+        return;
+    }
+
+    const uint32_t period = 1000000u / hertz;
+    const uint32_t before = clock_get_tick_count();
+    const uint32_t waited = host->sleep_microseconds(host->context, 1000u);
+    const uint32_t ticks = clock_get_tick_count() - before;
+    const uint32_t idles_before = timer->sleep_idles;
+    const uint32_t long_sleep = period * 5u / 2u;
+    const uint32_t long_before = clock_get_tick_count();
+    const uint32_t long_waited = host->sleep_microseconds(host->context, long_sleep);
+    const uint32_t long_ticks = clock_get_tick_count() - long_before;
+
+    kernel_test_check(test, ticks <= 1u, "a sleep of 1 ms lets at most one tick pass");
+    kernel_test_check(test, waited >= 1000u && waited < period,
+                      "and says it waited at least 1 ms and less than a tick");
+    kernel_test_check(test, long_ticks >= 2u && long_ticks <= 4u,
+                      "a sleep of two and a half tick periods lets two to four ticks pass");
+    kernel_test_check(test, long_waited >= long_sleep && long_waited < long_sleep + period,
+                      "and says it waited at least that, and less than a tick more");
+    kernel_test_check(test, timer->sleep_idles > idles_before, "giving up the processor until a tick on the way");
+    kernel_test_check(test, timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE,
+                      "and the timer stays usable");
+    kernel_test_measure(test, "waited_us", waited);
+    kernel_test_measure(test, "long_ticks", long_ticks);
+}
+
+/**
  * @brief Evaluates SLP1 (@p sleeps) through the machine host on a made-up DSDT, and checks that its
- *        Sleep (1)s end within the bound of §5.5 on a usable power management timer, as the tick counts
+ *        Sleep (1)s end within the bound of §6.1 on a usable power management timer, as the tick counts
  *        it: at most the milliseconds requested and a tenth more, for the reads of the timer and the AML
  *        of the loop, and at least those milliseconds less the 5 % the timer's rate may stray.
  *
@@ -393,7 +438,10 @@ static void acpi_test_sleeps_end_within_their_bound(KernelTest_t *test, uint32_t
                       "it ends within the milliseconds requested and a tenth more");
     kernel_test_check(test, (ticks + 1u) * period >= requested - requested / 20u,
                       "and no sooner than those milliseconds less 5 %");
+    kernel_test_check(test, acpi_test_sleeps_load.services.sleep_waited_microseconds >= requested,
+                      "the host says it waited at least the millisecond of each");
     kernel_test_measure(test, "ticks", ticks);
+    kernel_test_measure(test, "sleep_waited_us", (uint32_t) acpi_test_sleeps_load.services.sleep_waited_microseconds);
     kernel_test_measure(test, "us_per_sleep", (uint32_t) ((ticks * period) / sleeps));
     advanced_configuration_and_power_interface_machine_language_close(&acpi_test_sleeps_load);
 }
@@ -408,8 +456,8 @@ KERNEL_TEST(three_hundred_sleeps_of_1_ms_wait_300_ms_and_a_tenth)
 }
 
 /**
- * @brief An evaluation that runs Sleep (1) until it has requested its 30 s ends within 33 s, the bound of
- *        §5.5 at the scale of the budget of §6.1.
+ * @brief An evaluation that runs Sleep (1) until it has requested its 30 s ends within 33 s: the bound of
+ *        §6.1 at the scale of its budget.
  */
 KERNEL_TEST_MANUAL(sleeps_that_fill_the_30_s_budget_end_within_it_and_a_tenth, "waits 30 s")
 {

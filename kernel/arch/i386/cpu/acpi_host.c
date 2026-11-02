@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define ACPI_HOST_MICROSECONDS_PER_SECOND 1000000u /**< Microseconds in a second. */
+
 static uint64_t acpi_host_root_system_description_pointer(void *context)
 {
     (void) context;
@@ -161,24 +163,47 @@ static void acpi_host_pci_write(void *context, uint16_t segment, uint8_t bus, ui
 
 static uint32_t acpi_host_microseconds_since(uint32_t start, uint32_t hertz)
 {
-    const uint64_t microseconds = ((uint64_t) (clock_get_tick_count() - start) * 1000000u) / hertz;
+    const uint64_t microseconds =
+        ((uint64_t) (clock_get_tick_count() - start) * ACPI_HOST_MICROSECONDS_PER_SECOND) / hertz;
 
     return (microseconds > UINT32_MAX) ? UINT32_MAX : (uint32_t) microseconds;
 }
 
-static uint32_t acpi_host_sleep_microseconds(void *context, uint32_t microseconds)
+static uint32_t acpi_host_sleep_on_tick(uint32_t microseconds)
 {
     const uint32_t hertz = clock_get_tick_hz();
     const uint32_t start = clock_get_tick_count();
     InterruptRequestDeadline_t deadline;
 
-    (void) context;
     if (hertz == 0u)
         return 0u;
     interrupt_request_deadline_start(&deadline, microseconds);
     while (!interrupt_request_deadline_passed(&deadline))
         asmutils_halt();
     return acpi_host_microseconds_since(start, hertz);
+}
+
+static void acpi_host_halt(void *context)
+{
+    (void) context;
+    asmutils_halt();
+}
+
+static bool acpi_host_timer_is_usable(void)
+{
+    return advanced_configuration_and_power_interface_power_management_timer()->state ==
+           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
+}
+
+static uint32_t acpi_host_sleep_microseconds(void *context, uint32_t microseconds)
+{
+    const uint32_t hertz = clock_get_tick_hz();
+
+    (void) context;
+    if (hertz != 0u && acpi_host_timer_is_usable())
+        return advanced_configuration_and_power_interface_power_management_timer_machine_sleep(
+            microseconds, ACPI_HOST_MICROSECONDS_PER_SECOND / hertz, acpi_host_halt);
+    return acpi_host_sleep_on_tick(microseconds);
 }
 
 static uint32_t acpi_host_stall_on_tick(uint32_t microseconds)
@@ -195,8 +220,7 @@ static uint32_t acpi_host_stall_on_tick(uint32_t microseconds)
 static uint32_t acpi_host_stall_microseconds(void *context, uint32_t microseconds)
 {
     (void) context;
-    if (advanced_configuration_and_power_interface_power_management_timer()->state ==
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+    if (acpi_host_timer_is_usable())
         return advanced_configuration_and_power_interface_power_management_timer_machine_stall(microseconds);
     return acpi_host_stall_on_tick(microseconds);
 }

@@ -340,6 +340,9 @@ void write_advanced_configuration_and_power_interface_power_management_timer_rec
     kernel_telemetry_write_unsigned("check_us", timer->check_microseconds);
     kernel_telemetry_write_unsigned("stalls", timer->stalls);
     kernel_telemetry_write_unsigned("stall_reads", timer->stall_reads);
+    kernel_telemetry_write_unsigned("sleeps", timer->sleeps);
+    kernel_telemetry_write_unsigned("sleep_reads", timer->sleep_reads);
+    kernel_telemetry_write_unsigned("sleep_idles", timer->sleep_idles);
     kernel_telemetry_end_record();
 }
 

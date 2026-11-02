@@ -246,9 +246,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         return MACHINE_LANGUAGE_OK;
     }
     ++services->stalls_slept;
-    services->sleep_waited_microseconds += host->sleep_microseconds(
-        host->context, (uint32_t) (((microseconds + MACHINE_LANGUAGE_MILLISECOND - 1u) / MACHINE_LANGUAGE_MILLISECOND) *
-                                   MACHINE_LANGUAGE_MILLISECOND));
+    services->sleep_waited_microseconds += host->sleep_microseconds(host->context, (uint32_t) microseconds);
     return MACHINE_LANGUAGE_OK;
 }
 
