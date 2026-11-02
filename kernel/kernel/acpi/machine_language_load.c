@@ -72,14 +72,14 @@ typedef struct MachineLanguageWalk {
     bool duplicate_next;      /**< Whether the next TermList the walk opens is the body of a duplicate declaration,
                                    which no pass reads (§5.1): one the declaration pass found the name of taken, or,
                                    past it, one at table level whose name another construct declared. */
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t *declaration; /**< For one statement the
-                                                                                        interpreter runs the code
-                                                                                        around, what it did; NULL
-                                                                                        for any other walk. */
-    uint8_t asked;      /**< Terms the statement at asked_for has needed the interpreter for in this walk. */
-    uint32_t asked_for; /**< The offset of the statement those terms belong to, or 0. */
-    bool closes_body;   /**< Whether a TermList the statement opened reached its end. */
-    bool abandons;      /**< Whether a fault abandoned the rest of the table. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t *declaration; /**< For the statements it
+                                                                                        takes for the interpreter,
+                                                                                        what they did; NULL for any
+                                                                                        other walk. */
+    uint8_t asked;    /**< Terms it has needed the interpreter for: it stops at the first one not answered yet,
+                           so those it has are all the first statement's that needed one. */
+    bool closes_body; /**< Whether a TermList the statement opened reached its end. */
+    bool abandons;    /**< Whether a fault abandoned the rest of the table. */
 } MachineLanguageWalk_t;
 
 /**
@@ -850,11 +850,6 @@ static MachineLanguageStatus_t machine_language_operand_integer(
 
     const uint32_t statement = machine_language_active_operator(walk)->start;
 
-    if (walk->asked_for != statement)
-    {
-        walk->asked_for = statement;
-        walk->asked = 0u;
-    }
     if (declaration->answers_for != statement)
     {
         declaration->answers_for = statement;
@@ -1536,7 +1531,6 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
     walk->duplicate_next = false;
     walk->declaration = NULL;
     walk->asked = 0u;
-    walk->asked_for = 0u;
     walk->closes_body = false;
     walk->abandons = false;
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
