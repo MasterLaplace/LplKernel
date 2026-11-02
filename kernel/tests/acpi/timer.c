@@ -822,6 +822,28 @@ KERNEL_TEST(a_timer_that_stops_while_the_clock_stands_still_derails_after_its_re
 }
 
 /**
+ * @brief An idle that outlasts the whole sleep, as one that a tick taken late ends, ends the sleep at the
+ *        read after it, without busy-waiting, and the sleep says it waited that long.
+ */
+KERNEL_TEST(an_idle_that_outlasts_a_sleep_ends_it)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_machine.idle_nanoseconds = 30u * TIMER_MILLISECOND;
+    elapsed = timer_sleep(20000u, &waited);
+
+    kernel_test_check(test, timer_machine.idles == 1u && timer_found.sleep_reads == 6u,
+                      "one idle, and one read of the timer on either side of it");
+    kernel_test_check(test, elapsed >= 30000000u && elapsed < 30010000u && waited >= 30000u && waited <= 30010u,
+                      "the sleep of 20 ms lasts the 30 ms of the idle, and says so");
+    kernel_test_check(test, timer_found.state == TIMER_STATE(USABLE) && timer_machine.host_sleeps == 0u,
+                      "the timer stays usable, and the host's own sleep is not called");
+}
+
+/**
  * @brief A sleep of nothing, and one on a timer that is not usable, wait nothing, read no port and do
  *        not idle.
  */
