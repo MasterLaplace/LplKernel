@@ -1389,7 +1389,7 @@ static MachineLanguageStatus_t machine_language_enter_else(MachineLanguageEvalua
  *        to the next statement, and a While past the table's budget goes on past its end, the failure
  *        counted.
  */
-static MachineLanguageStatus_t machine_language_close_block(MachineLanguageLoad_t *load)
+static inline MachineLanguageStatus_t machine_language_close_block(MachineLanguageLoad_t *load)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
@@ -2032,8 +2032,8 @@ static MachineLanguageStatus_t machine_language_field_name(MachineLanguageLoad_t
  * @brief Opens a construct of the running frame, from @p start to @p end; in a table's code at load,
  *        one past the block limit is a fault of the load, counted, and the code goes on past it (§6.2).
  */
-static MachineLanguageStatus_t machine_language_open_construct(MachineLanguageLoad_t *load, uint8_t kind,
-                                                               uint32_t start, uint32_t end)
+static inline MachineLanguageStatus_t machine_language_open_construct(MachineLanguageLoad_t *load, uint8_t kind,
+                                                                      uint32_t start, uint32_t end)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
