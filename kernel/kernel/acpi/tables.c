@@ -89,7 +89,7 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_FIXED_EVENT_ENABLES                                                                                       \
     0x0721u /**< PM1 enable bits TMR_EN, GBL_EN, PWRBTN_EN, SLPBTN_EN and RTC_EN; bit 14, PCIEXP_WAKE_DIS, is no event \
                enable. */
-#define ACPI_MODE_POLL_MILLISECONDS 1u          /**< What the switch to ACPI mode sleeps between two reads of SCI_EN. */
+#define ACPI_MODE_POLL_MICROSECONDS 1000u       /**< What the switch to ACPI mode sleeps between two reads of SCI_EN. */
 #define ACPI_TIMER_BITS             0x00FFFFFFu /**< The 24 bits of the PM timer counted, Linux's ACPI_PM_MASK. */
 #define ACPI_TIMER_HALF_RANGE       0x00800000u /**< A step of the timer past it, in a wait, is the timer going back. */
 #define ACPI_TIMER_WRAP_WINDOW      0xFFFu /**< Below it, a count lower than the last is a wrap, as Linux reads one. */
@@ -105,6 +105,7 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
      2u) /**< Counts the timer makes at most while a step of the host's clock is awaited: half a second. */
 #define ACPI_HUNDRED_NANOSECONDS_PER_SECOND      10000000u /**< Units of the host's clock in a second. */
 #define ACPI_MICROSECONDS_PER_SECOND             1000000u  /**< Microseconds in a second. */
+#define ACPI_MICROSECONDS_PER_MILLISECOND        1000u     /**< Microseconds in a millisecond. */
 #define ACPI_HUNDRED_NANOSECONDS_PER_MICROSECOND 10u       /**< Units of the host's clock in a microsecond. */
 
 /**
@@ -611,7 +612,7 @@ static uint32_t acpi_mode_clear_event_enables(const AdvancedConfigurationAndPowe
 }
 
 /**
- * @brief Reads SCI_EN until it reads set, the host sleeping ACPI_MODE_POLL_MILLISECONDS between two
+ * @brief Reads SCI_EN until it reads set, the host sleeping ACPI_MODE_POLL_MICROSECONDS between two
  *        reads, at most ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_POLLS times and for
  *        at most ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS.
  */
@@ -619,6 +620,8 @@ static void acpi_mode_wait_for_system_control_interrupt(const AdvancedConfigurat
                                                         const AcpiModeRegisters_t *registers,
                                                         AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_switch)
 {
+    uint64_t waited_microseconds = 0u;
+
     for (;;)
     {
         ++out_switch->polls;
@@ -634,11 +637,10 @@ static void acpi_mode_wait_for_system_control_interrupt(const AdvancedConfigurat
             return;
         }
 
-        const uint32_t slept = host->sleep_milliseconds(host->context, ACPI_MODE_POLL_MILLISECONDS);
-
-        out_switch->waited_milliseconds = (slept > UINT32_MAX - out_switch->waited_milliseconds) ?
+        waited_microseconds += host->sleep_microseconds(host->context, ACPI_MODE_POLL_MICROSECONDS);
+        out_switch->waited_milliseconds = (waited_microseconds / ACPI_MICROSECONDS_PER_MILLISECOND > UINT32_MAX) ?
                                               UINT32_MAX :
-                                              out_switch->waited_milliseconds + slept;
+                                              (uint32_t) (waited_microseconds / ACPI_MICROSECONDS_PER_MILLISECOND);
     }
 }
 

@@ -159,7 +159,14 @@ static void acpi_host_pci_write(void *context, uint16_t segment, uint8_t bus, ui
         peripheral_component_interconnect_config_write(bus, device, function, (uint8_t) offset, width, value);
 }
 
-static uint32_t acpi_host_sleep_milliseconds(void *context, uint32_t milliseconds)
+static uint32_t acpi_host_microseconds_since(uint32_t start, uint32_t hertz)
+{
+    const uint64_t microseconds = ((uint64_t) (clock_get_tick_count() - start) * 1000000u) / hertz;
+
+    return (microseconds > UINT32_MAX) ? UINT32_MAX : (uint32_t) microseconds;
+}
+
+static uint32_t acpi_host_sleep_microseconds(void *context, uint32_t microseconds)
 {
     const uint32_t hertz = clock_get_tick_hz();
     const uint32_t start = clock_get_tick_count();
@@ -168,11 +175,10 @@ static uint32_t acpi_host_sleep_milliseconds(void *context, uint32_t millisecond
     (void) context;
     if (hertz == 0u)
         return 0u;
-    interrupt_request_deadline_start(&deadline,
-                                     (milliseconds > UINT32_MAX / 1000u) ? UINT32_MAX : milliseconds * 1000u);
+    interrupt_request_deadline_start(&deadline, microseconds);
     while (!interrupt_request_deadline_passed(&deadline))
         asmutils_halt();
-    return (uint32_t) (((uint64_t) (clock_get_tick_count() - start) * 1000u) / hertz);
+    return acpi_host_microseconds_since(start, hertz);
 }
 
 static uint32_t acpi_host_stall_on_tick(uint32_t microseconds)
@@ -183,7 +189,7 @@ static uint32_t acpi_host_stall_on_tick(uint32_t microseconds)
     if (hertz == 0u)
         return 0u;
     interrupt_request_spin_microseconds(microseconds);
-    return (uint32_t) (((uint64_t) (clock_get_tick_count() - start) * 1000000u) / hertz);
+    return acpi_host_microseconds_since(start, hertz);
 }
 
 static uint32_t acpi_host_stall_microseconds(void *context, uint32_t microseconds)
@@ -240,7 +246,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .port_write = acpi_host_port_write,
     .pci_read = acpi_host_pci_read,
     .pci_write = acpi_host_pci_write,
-    .sleep_milliseconds = acpi_host_sleep_milliseconds,
+    .sleep_microseconds = acpi_host_sleep_microseconds,
     .stall_microseconds = acpi_host_stall_microseconds,
     .clock_100ns = acpi_host_clock_100ns,
     .allocate_pages = acpi_host_allocate_pages,

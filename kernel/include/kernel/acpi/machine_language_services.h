@@ -74,8 +74,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageServices {
     uint64_t time_requested_peak;             /**< The most one evaluation requested. */
     uint64_t sleep_milliseconds;              /**< Milliseconds Sleep requested, over every evaluation. */
     uint64_t stall_microseconds;              /**< Microseconds Stall requested, over every evaluation. */
-    uint64_t waited_milliseconds;             /**< Milliseconds the host's sleep said it waited, Stall's long
-                                                   waits included. */
+    uint64_t sleep_waited_microseconds;       /**< Microseconds the host's sleeps said they waited, Stall's
+                                                   long waits included. */
     uint64_t stall_waited_microseconds;       /**< Microseconds the host's busy-waits said they waited. */
     uint32_t sleeps;                          /**< Sleeps run. */
     uint32_t stalls;                          /**< Stalls run. */
