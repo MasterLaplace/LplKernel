@@ -707,7 +707,7 @@ KERNEL_TEST(a_sleep_idles_through_whole_ticks_and_busy_waits_the_rest)
     kernel_test_check(test, timer_machine.idles == long_idles, "without idling");
     kernel_test_check(test,
                       timer_found.sleeps == 2u && timer_found.sleep_idles == 2u && timer_found.stalls == 0u &&
-                          timer_found.state == TIMER_STATE(USABLE),
+                          timer_found.stall_reads == 0u && timer_found.state == TIMER_STATE(USABLE),
                       "two sleeps and their idles are counted, no busy-wait, and the timer stays usable");
     kernel_test_check(test, timer_machine.host_sleeps == 0u && timer_machine.host_stalls == 0u,
                       "without leaning on the host's own waits");
@@ -773,6 +773,56 @@ KERNEL_TEST(a_timer_that_stops_while_a_sleep_idles_derails)
                       "the host's own sleep finishing what the timer left");
     kernel_test_check(test, later_waited == 0u && later == 0u && timer_machine.reads == reads_before,
                       "and a later sleep reads the timer no more");
+}
+
+/**
+ * @brief A timer that holds each count for two reads in a row, so that every other idle reads it unmoved
+ *        across a step of the clock, still sleeps 100 ms to the end without derailing: only two steps in a
+ *        row without a move derail it.
+ */
+KERNEL_TEST(a_timer_still_across_one_step_at_a_time_stays_usable)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_machine.stutters = true;
+    timer_machine.reads = 0u;
+    timer_machine.held_nanoseconds = timer_machine.nanoseconds;
+    elapsed = timer_sleep(100000u, &waited);
+
+    kernel_test_check(test, timer_found.state == TIMER_STATE(USABLE) && timer_machine.host_sleeps == 0u,
+                      "the timer stays usable, and the host's own sleep is not called");
+    kernel_test_check(test, timer_machine.idles >= 8u, "through the idles of 100 ms");
+    kernel_test_check(test, elapsed >= 100000000u && waited >= 100000u, "the sleep lasts 100 ms, and says so");
+}
+
+/**
+ * @brief A timer that stops while interrupts other than the tick end each idle derails once the clock
+ *        has stepped twice since it last moved, a whole tick of idles, and not at the first step.
+ */
+KERNEL_TEST(a_timer_that_stops_between_two_steps_derails_at_the_second)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_after_a_step(0u);
+    timer_machine.idle_nanoseconds = TIMER_INTERRUPT;
+    timer_machine.stops_after = timer_machine.reads + 4u;
+    elapsed = timer_sleep(100000u, &waited);
+
+    kernel_test_check(test, timer_found.state == TIMER_STATE(DERAILED), "derailed once it stood still");
+    kernel_test_check(test,
+                      timer_machine.idles > 3000u &&
+                          timer_machine.idles <
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS,
+                      "after the second step of the clock, 20 ms of idles of 5 µs, before its read checks");
+    kernel_test_check(test, elapsed >= 100000000u && waited >= 100000u && timer_machine.host_sleeps == 1u,
+                      "the sleep still lasts 100 ms, the host's own sleep finishing it");
+    kernel_test_measure(test, "idles", timer_machine.idles);
 }
 
 /**

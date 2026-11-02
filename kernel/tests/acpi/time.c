@@ -16,6 +16,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_time, KERNEL_TEST_S
 static uint8_t time_table[TIME_TABLE_CAPACITY];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t time_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t time_load;
+static uint32_t (*time_host_sleep)(void *context, uint32_t microseconds);
+static uint32_t time_sleeps;
 
 /**
  * @brief Methods that sleep 60 s per turn of an endless loop (S60K), 3 s (S3K_), 3 s Arg0 times (SLPN), 70 ms until
@@ -55,6 +57,15 @@ static bool time_run(KernelTest_t *test, uint32_t tick_milliseconds)
     advanced_configuration_and_power_interface_simulated_host_open(&time_host);
     time_host.tick_milliseconds = tick_milliseconds;
     return time_load_on_host(test, 2u);
+}
+
+/**
+ * @brief The simulated host's sleep, counted in time_sleeps.
+ */
+static uint32_t time_counted_sleep(void *context, uint32_t microseconds)
+{
+    ++time_sleeps;
+    return time_host_sleep(context, microseconds);
 }
 
 /**
@@ -209,6 +220,9 @@ KERNEL_TEST(a_stall_busy_waits_up_to_255_us_and_sleeps_beyond)
 
     if (!time_run(test, 0u))
         return;
+    time_host_sleep = time_host.host.sleep_microseconds;
+    time_host.host.sleep_microseconds = time_counted_sleep;
+    time_sleeps = 0u;
     for (uint32_t index = 0u; index < sizeof(stalls) / sizeof(stalls[0]); ++index)
     {
         (void) time_evaluate("\\STAL", 1u, stalls[index], &status);
@@ -221,6 +235,7 @@ KERNEL_TEST(a_stall_busy_waits_up_to_255_us_and_sleeps_beyond)
                       time_load.services.stall_waited_microseconds == 506u &&
                           time_load.services.sleep_waited_microseconds == 1257u,
                       "it busy-waited 506 µs, then slept 256 µs and 1,001 µs");
+    kernel_test_check(test, time_sleeps == 2u, "the two beyond 255 µs asking the host to sleep");
     kernel_test_check(test,
                       time_load.services.stalls == 6u && time_load.services.long_stalls == 4u &&
                           time_load.services.stalls_slept == 2u && time_load.services.stall_microseconds == 1763u,
