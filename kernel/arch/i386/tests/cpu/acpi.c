@@ -1,3 +1,6 @@
+#include "../../../../tests/acpi/made_up_table.h"
+
+#include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/ioapic.h>
@@ -8,13 +11,25 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define ACPI_TEST_HEADER_BYTES    36u   /**< Bytes of a table header, and of a table that is nothing more. */
-#define ACPI_TEST_MASTER_PIC_MASK 0x21u /**< The master 8259's interrupt mask register. */
-#define ACPI_TEST_SLAVE_PIC_MASK  0xA1u /**< The slave 8259's interrupt mask register. */
-#define ACPI_TEST_PIC_LINES       16u   /**< Lines the two 8259s hold. */
-#define ACPI_TEST_SCI_EN          0x1u  /**< SCI_EN, bit 0 of a PM1 control register. */
-#define ACPI_TEST_SHORT_STALL     50u   /**< Microseconds of a short stall, as AML asks for. */
-#define ACPI_TEST_SHORT_STALLS    10u   /**< Short stalls made in a row, 500 µs in all, well under a tick. */
+#define ACPI_TEST_HEADER_BYTES    36u    /**< Bytes of a table header, and of a table that is nothing more. */
+#define ACPI_TEST_MASTER_PIC_MASK 0x21u  /**< The master 8259's interrupt mask register. */
+#define ACPI_TEST_SLAVE_PIC_MASK  0xA1u  /**< The slave 8259's interrupt mask register. */
+#define ACPI_TEST_PIC_LINES       16u    /**< Lines the two 8259s hold. */
+#define ACPI_TEST_SCI_EN          0x1u   /**< SCI_EN, bit 0 of a PM1 control register. */
+#define ACPI_TEST_SHORT_STALL     50u    /**< Microseconds of a short stall, as AML asks for. */
+#define ACPI_TEST_SHORT_STALLS    10u    /**< Short stalls made in a row, 500 µs in all, well under a tick. */
+#define ACPI_TEST_SLEEPS          300u   /**< Sleep (1) one evaluation runs in a row: 300 ms requested. */
+#define ACPI_TEST_BUDGET_SLEEPS   30000u /**< Sleep (1) that fill the 30 s an evaluation may request. */
+
+/**
+ * @brief Method SLP1 (1) { Store (Arg0, Local0) While (Local0) { Sleep (1) Decrement (Local0) } }.
+ */
+static const uint8_t acpi_test_sleeps_aml[] = {
+    0x14u, 0x12u, 'S',   'L',   'P',   '1',   0x01u, 0x70u, 0x68u, 0x60u,
+    0xA2u, 0x08u, 0x60u, 0x5Bu, 0x22u, 0x0Au, 0x01u, 0x76u, 0x60u,
+};
+static uint8_t acpi_test_sleeps_table[MADE_UP_TABLE_HEADER + sizeof(acpi_test_sleeps_aml)];
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t acpi_test_sleeps_load;
 
 /**
  * @brief Whether 8259 line @p line is masked.
@@ -329,4 +344,74 @@ KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
                       "it says it waited at least as many microseconds as a tick lasts");
     kernel_test_check(test, (uint64_t) waited * hertz <= (uint64_t) ticks * 1000000u,
                       "and no more than the ticks that passed around it");
+}
+
+/**
+ * @brief Evaluates SLP1 (@p sleeps) through the machine host on a made-up DSDT, and checks that its
+ *        Sleep (1)s end within the bound of §5.5 on a usable power management timer, as the tick counts
+ *        it: at most the milliseconds requested and a tenth more, for the reads of the timer and the AML
+ *        of the loop, and at least those milliseconds less the 5 % the timer's rate may stray.
+ *
+ * @details The tick counts an interval of length E as at least E less a tick and at most E and a tick:
+ *          both bounds give a tick of slack.
+ */
+static void acpi_test_sleeps_end_within_their_bound(KernelTest_t *test, uint32_t sleeps)
+{
+    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
+        advanced_configuration_and_power_interface_power_management_timer();
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = sleeps};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const uint32_t hertz = clock_get_tick_hz();
+
+    if (hertz == 0u || timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+    {
+        kernel_test_skip(test, "no tick runs, or no usable power management timer: a sleep waits whole ticks");
+        return;
+    }
+    if (!made_up_load_on(test, &acpi_test_sleeps_load, &advanced_configuration_and_power_interface_machine_host,
+                         acpi_test_sleeps_table, 2u, acpi_test_sleeps_aml, sizeof(acpi_test_sleeps_aml)))
+        return;
+
+    const uint32_t before = clock_get_tick_count();
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&acpi_test_sleeps_load, "\\SLP1",
+                                                                             &argument, 1u, &result);
+    const uint32_t ticks = clock_get_tick_count() - before;
+    const uint64_t period = 1000000u / hertz;
+    const uint64_t requested = (uint64_t) sleeps * 1000u;
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&acpi_test_sleeps_load.heap,
+                                                                              &acpi_test_sleeps_load.space, &result);
+    kernel_test_check(test,
+                      status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          acpi_test_sleeps_load.services.sleeps == sleeps &&
+                          acpi_test_sleeps_load.services.sleep_milliseconds == sleeps,
+                      "the evaluation runs Sleep (1) as many times as asked");
+    kernel_test_check(test, ticks * period <= requested + requested / 10u + period,
+                      "it ends within the milliseconds requested and a tenth more");
+    kernel_test_check(test, (ticks + 1u) * period >= requested - requested / 20u,
+                      "and no sooner than those milliseconds less 5 %");
+    kernel_test_measure(test, "ticks", ticks);
+    kernel_test_measure(test, "us_per_sleep", (uint32_t) ((ticks * period) / sleeps));
+    advanced_configuration_and_power_interface_machine_language_close(&acpi_test_sleeps_load);
+}
+
+/**
+ * @brief An evaluation that runs 300 Sleep (1) on the machine host waits about 300 ms, not 300 ticks:
+ *        each sleep waits its millisecond on the power management timer (§3.3, §5.5).
+ */
+KERNEL_TEST(three_hundred_sleeps_of_1_ms_wait_300_ms_and_a_tenth)
+{
+    acpi_test_sleeps_end_within_their_bound(test, ACPI_TEST_SLEEPS);
+}
+
+/**
+ * @brief An evaluation that runs Sleep (1) until it has requested its 30 s ends within 33 s, the bound of
+ *        §5.5 at the scale of the budget of §6.1.
+ */
+KERNEL_TEST_MANUAL(sleeps_that_fill_the_30_s_budget_end_within_it_and_a_tenth, "waits 30 s")
+{
+    acpi_test_sleeps_end_within_their_bound(test, ACPI_TEST_BUDGET_SLEEPS);
 }
