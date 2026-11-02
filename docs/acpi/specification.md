@@ -234,10 +234,9 @@ Rules:
 
 ### 3.6 Execution model
 
-**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #587 (below). The stacks are fixed
-arrays sized by the limits of §6.1, so they are never reallocated and no pointer into them goes stale. A limit reached
-is an error, never a panic. Until #587, the declaration pass walks the control flow of table-level code itself and hands
-the loop one statement or predicate at a time (below).
+**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #639 (below). The stacks are
+fixed arrays sized by the limits of §6.1, so they are never reallocated and no pointer into them goes stale. A limit
+reached is an error, never a panic. Table-level code runs in the same loop as a method body (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
@@ -277,20 +276,23 @@ and every fixed field and every NameString against the innermost end. A crossing
 inside it. The error report names the table, the offset, the opcode and the method path.
 
 **A table load is a frame.** A definition block runs as a pseudo-method whose named objects are permanent and whose
-`Local0` to `Local7` exist. Until #587, `Load` and `LoadTable` run the declaration pass of their table from their
-handler, one level of C deep, its statements on the stacks of the method that loads it: a `Load` or `LoadTable` that
+`Local0` to `Local7` exist. Until #639, `Load` and `LoadTable` run the declaration pass of their table from their
+handler, one level of C deep, its frame on the stacks of the method that loads it: a `Load` or `LoadTable` that
 table-level code runs while a table is declared fails with `load_form_unsupported`, so there is no second level.
 Declarations load in one pass and in order: table-level code sees only what was declared before
 it. An `External` whose parent no table has declared yet is placed by a pass of its own once every table is
 declared; one whose parent exists is placed where it stands.
 
-**The declaration pass keeps the structure of table-level code.** It declares, and hands each statement and each
-predicate of an `If` or a `While` to the interpreter, which runs it in the table's frame; an untaken branch is
-skipped, and declares nothing. A predicate that fails declares both its branches without running their code, counted
-(`declared_not_run`), so that a failure never takes an object out of the namespace; an object both branches declare
-is the first branch's, the second's a duplicate (§5.1), as any later declaration is. The decoding pass still decodes
-the body of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its
-names resolve against objects that do not exist.
+**The loop runs table-level code, and the load declares.** The declaration pass runs a table's code in the table's
+frame: the loop runs its statements and its control flow as a method body's, and hands the load each statement that
+declares or holds data; the load declares it, gives back the TermList of a `Scope`, `Device`, `Processor`,
+`PowerResource` or `ThermalZone` to run in its scope, and waits for the loop to run an `OperationRegion`'s offset or
+length, or a `BankField`'s BankValue, that is no constant. An untaken branch is skipped, and declares nothing. A
+predicate that fails declares both its branches without running their code, counted (`declared_not_run`), so that a
+failure never takes an object out of the namespace; an object both branches declare is the first branch's, the second's
+a duplicate (§5.1), as any later declaration is. The decoding pass still decodes the body of a construct the declaration
+pass did not declare, but counts its faults apart (`undeclared_faults`): its names resolve against objects that do not
+exist.
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on
