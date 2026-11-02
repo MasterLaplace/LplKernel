@@ -1529,6 +1529,30 @@ KERNEL_TEST(regions_built_from_expressions_each_take_what_their_declaration_comp
 }
 
 /**
+ * @brief Two regions at the same offset of two tables each take what their own declaration computes: the
+ *        SSDT's region takes nothing the DSDT's computed.
+ */
+KERNEL_TEST(regions_at_the_same_offset_of_two_tables_each_take_their_own_offset)
+{
+    static const uint8_t first[] = {0x5Bu, 0x80u, 'R', 'G', 'A', '_', 0x01u, 0x72u, 0x01u, 0x01u, 0x00u, 0x0Au, 0x04u};
+    static const uint8_t second[] = {0x5Bu, 0x80u, 'R',   'G',   'C',   '_',   0x01u, 0x72u,
+                                     0x0Au, 0x02u, 0x0Au, 0x03u, 0x00u, 0x0Au, 0x04u};
+
+    if (!made_up_open(test))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", first, sizeof(first)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", second, sizeof(second)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+    kernel_test_check(test, made_up_region("RGA_")->state == 1u && made_up_region("RGA_")->offset == 2u,
+                      "RGA_ takes the offset Add (One, One)");
+    kernel_test_check(test, made_up_region("RGC_")->state == 1u && made_up_region("RGC_")->offset == 5u,
+                      "RGC_, at the same offset of the SSDT, takes the offset Add (2, 3)");
+    made_up_close(test);
+}
+
+/**
  * @brief A region whose offset fails to run waits for the interpreter, the failure counted, and its length
  *        is not run: DerefOf (Index (PKG_, 5)) is past the one element of PKG_.
  */

@@ -76,9 +76,10 @@ typedef struct MachineLanguageWalk {
                                                                                         interpreter runs the code
                                                                                         around, what it did; NULL
                                                                                         for any other walk. */
-    uint8_t asked;    /**< Terms the statement has needed the interpreter for since the walk began. */
-    bool closes_body; /**< Whether a TermList the statement opened reached its end. */
-    bool abandons;    /**< Whether a fault abandoned the rest of the table. */
+    uint8_t asked;      /**< Terms the statement at asked_for has needed the interpreter for in this walk. */
+    uint32_t asked_for; /**< The offset of the statement those terms belong to, or 0. */
+    bool closes_body;   /**< Whether a TermList the statement opened reached its end. */
+    bool abandons;      /**< Whether a fault abandoned the rest of the table. */
 } MachineLanguageWalk_t;
 
 /**
@@ -847,6 +848,19 @@ static MachineLanguageStatus_t machine_language_operand_integer(
         machine_language_top_block(walk)->placement != 0u)
         return status;
 
+    const uint32_t statement = machine_language_active_operator(walk)->start;
+
+    if (walk->asked_for != statement)
+    {
+        walk->asked_for = statement;
+        walk->asked = 0u;
+    }
+    if (declaration->answers_for != statement)
+    {
+        declaration->answers_for = statement;
+        declaration->answered = 0u;
+    }
+
     const uint32_t answer = walk->asked++;
 
     if (answer < declaration->answered)
@@ -1507,14 +1521,24 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
 {
     MachineLanguageBlock_t *block = &load->blocks[0];
 
-    memset(walk, 0, sizeof(*walk));
     walk->load = load;
     walk->bytes = (const uint8_t *) load->tables[table].header;
     walk->table = table;
     walk->pc = start;
+    walk->pending_count = 0u;
     walk->block_count = 1u;
     walk->fault_opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
     walk->pass = pass;
+    walk->last_created = 0u;
+    walk->external_start = 0u;
+    walk->undeclared_next = false;
+    walk->undeclared_from = 0u;
+    walk->duplicate_next = false;
+    walk->declaration = NULL;
+    walk->asked = 0u;
+    walk->asked_for = 0u;
+    walk->closes_body = false;
+    walk->abandons = false;
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
     block->placement = placement;
     block->pending_base = 0u;
@@ -1556,8 +1580,7 @@ static bool machine_language_statements_end(MachineLanguageWalk_t *walk, uint32_
 
 /**
  * @brief Takes the steps of a walk, past every fault, recorded, until its first construct ends; with
- *        @p statements, until it has taken the statements from @p start the interpreter hands the load,
- *        each statement's answers forgotten once it is over.
+ *        @p statements, until it has taken the statements from @p start the interpreter hands the load.
  *
  * @return OK, or ASKS when a statement waits for a term the interpreter runs.
  */
@@ -1565,12 +1588,6 @@ static MachineLanguageStatus_t machine_language_walk(MachineLanguageWalk_t *walk
 {
     while (walk->block_count != 0u && !(statements && machine_language_statements_end(walk, start)))
     {
-        if (walk->declaration != NULL && walk->block_count == 1u && walk->pending_count == 0u)
-        {
-            walk->asked = 0u;
-            walk->declaration->answered = 0u;
-        }
-
         const MachineLanguageStatus_t status = machine_language_step(walk);
 
         if (status == MACHINE_LANGUAGE_ASKS)
@@ -2135,6 +2152,7 @@ void advanced_configuration_and_power_interface_machine_language_declare_stateme
         declaration->resumes = walk.pc;
         return;
     }
+    declaration->answers_for = 0u;
     declaration->after = (walk.block_count != 0u) ? walk.pc : limit;
     declaration->closed = walk.closes_body;
     declaration->leaves = walk.block_count == 0u && !walk.abandons;

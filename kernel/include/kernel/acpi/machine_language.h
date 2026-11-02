@@ -134,10 +134,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration 
     bool known[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLARATION_ANSWERS]; /**< Whether each gave
                                                                                                     one: false when
                                                                                                     it failed. */
-    uint8_t answered; /**< Terms answered so far, in the order the statement asked for them. */
-    bool closed;      /**< Whether the TermList of an If declared without running its code reached its end. */
-    bool leaves;      /**< Whether a fault skipped the rest of the construct the statement stands in (§6.2). */
-    bool abandons;    /**< Whether a fault abandoned the rest of the table (§6.2). */
+    uint32_t answers_for; /**< The offset of the statement the answers belong to, or 0. */
+    uint8_t answered;     /**< Terms answered so far, in the order that statement asked for them. */
+    bool closed;          /**< Whether the TermList of an If declared without running its code reached its end. */
+    bool leaves;          /**< Whether a fault skipped the rest of the construct the statement stands in (§6.2). */
+    bool abandons;        /**< Whether a fault abandoned the rest of the table (§6.2). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t;
 
 /**

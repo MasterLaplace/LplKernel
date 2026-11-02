@@ -3722,7 +3722,6 @@ static MachineLanguageStatus_t machine_language_table_statement(MachineLanguageL
 
     frame->statement = start;
     load->declaration.asks = 0u;
-    load->declaration.answered = 0u;
     if (advanced_configuration_and_power_interface_machine_language_starts_name(frame->code[start]))
         return machine_language_run_table_statement(load);
     if (advanced_configuration_and_power_interface_machine_language_read_opcode(frame->code, start, limit, &opcode,
