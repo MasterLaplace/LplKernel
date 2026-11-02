@@ -115,7 +115,7 @@ typedef void (*AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t)(
  *        the code goes on, the TermList the interpreter runs next, or the term the statement waits for.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration {
-    uint32_t after;    /**< Where table-level code goes on: past the statement, or past the TermList it opens. */
+    uint32_t after;    /**< Where table-level code goes on: past the statements, or past the TermList they open. */
     uint32_t body;     /**< Where the TermList of the Scope, Device, Processor, PowerResource or ThermalZone the
                             statement declared starts, which the interpreter runs up to after, or 0. */
     uint32_t scope;    /**< The node that TermList runs in. */
@@ -251,11 +251,13 @@ advanced_configuration_and_power_interface_machine_language_run_table_term(
     uint32_t limit, bool value, uint64_t *out_integer, uint32_t *out_after);
 
 /**
- * @brief Takes one statement of table-level code the interpreter does not run itself, in load->declaration
- *        (§3.6): a declaration, data or Noop, a statement whose decoding faults, one that failed to run and
- *        is stepped over, or, @p not_run holding, an If, a While or an Else whose code is declared without
- *        running. The statement waits for a term when load->declaration.asks is not 0 on entry, which it
- *        then goes on from with load->declaration's answers.
+ * @brief Takes statements of table-level code the interpreter does not run itself, in load->declaration
+ *        (§3.6): from @p start, a declaration, data or Noop, a statement whose decoding faults, or one that
+ *        failed to run and is stepped over, then every such statement after it up to one the interpreter
+ *        runs, the end of the construct, or the TermList of a scope it declared; or, @p not_run holding,
+ *        the one If, While or Else at @p start, whose code is declared without running. A statement waits
+ *        for a term when load->declaration.asks is not 0 on entry, which it then goes on from with
+ *        load->declaration's answers.
  *
  * @param load    The load.
  * @param table   The table's index in the load.

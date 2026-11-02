@@ -1526,6 +1526,65 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
 }
 
 /**
+ * @brief Whether a walk's first construct ends at its pc, or the statement there is one the interpreter runs:
+ *        either ends the run of declarations the walk takes for the interpreter.
+ */
+static bool machine_language_code_follows(MachineLanguageWalk_t *walk)
+{
+    const MachineLanguageBlock_t *block = machine_language_top_block(walk);
+    uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
+    uint32_t after = 0u;
+
+    if (walk->pc >= block->end ||
+        advanced_configuration_and_power_interface_machine_language_starts_name(walk->bytes[walk->pc]))
+        return true;
+    return advanced_configuration_and_power_interface_machine_language_read_opcode(
+               walk->bytes, walk->pc, block->end, &opcode, &after) == MACHINE_LANGUAGE_OK &&
+           machine_language_is_code(false, opcode);
+}
+
+/**
+ * @brief Whether a walk that takes statements for the interpreter stops at its pc: past its first statement,
+ *        once a TermList is left to the interpreter, or before a statement the interpreter runs; one that
+ *        declares without running stops past its first statement.
+ */
+static bool machine_language_statements_end(MachineLanguageWalk_t *walk, uint32_t start)
+{
+    return walk->block_count == 1u && walk->pending_count == 0u && walk->pc != start &&
+           (walk->declaration == NULL || walk->declaration->body != 0u || machine_language_code_follows(walk));
+}
+
+/**
+ * @brief Takes the steps of a walk, past every fault, recorded, until its first construct ends; with
+ *        @p statements, until it has taken the statements from @p start the interpreter hands the load,
+ *        each statement's answers forgotten once it is over.
+ *
+ * @return OK, or ASKS when a statement waits for a term the interpreter runs.
+ */
+static MachineLanguageStatus_t machine_language_walk(MachineLanguageWalk_t *walk, uint32_t start, bool statements)
+{
+    while (walk->block_count != 0u && !(statements && machine_language_statements_end(walk, start)))
+    {
+        if (walk->declaration != NULL && walk->block_count == 1u && walk->pending_count == 0u)
+        {
+            walk->asked = 0u;
+            walk->declaration->answered = 0u;
+        }
+
+        const MachineLanguageStatus_t status = machine_language_step(walk);
+
+        if (status == MACHINE_LANGUAGE_ASKS)
+            return status;
+        if (status != MACHINE_LANGUAGE_OK)
+        {
+            machine_language_record_fault(walk, status);
+            machine_language_recover(walk, status);
+        }
+    }
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Runs one pass over table @p table of a load: the declaration pass hands the table's code to the
  *        interpreter, but where every branch is declared and none run; the declaration pass of a table
  *        the root table lists is an evaluation of its own (§6.1), that of a table Load or LoadTable adds
@@ -1552,16 +1611,7 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
     {
         machine_language_begin_walk(&walk, load, table, pass, start, load->tables[table].length,
                                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, 0u);
-        while (walk.block_count != 0u)
-        {
-            const MachineLanguageStatus_t status = machine_language_step(&walk);
-
-            if (status != MACHINE_LANGUAGE_OK)
-            {
-                machine_language_record_fault(&walk, status);
-                machine_language_recover(&walk, status);
-            }
-        }
+        (void) machine_language_walk(&walk, start, false);
     }
     if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
@@ -2078,22 +2128,12 @@ void advanced_configuration_and_power_interface_machine_language_declare_stateme
     }
     declaration->asks = 0u;
     declaration->body = 0u;
-    while (walk.block_count != 0u && !(walk.block_count == 1u && walk.pending_count == 0u && walk.pc != start))
+    if (machine_language_walk(&walk, start, true) == MACHINE_LANGUAGE_ASKS)
     {
-        const MachineLanguageStatus_t status = machine_language_step(&walk);
-
-        if (status == MACHINE_LANGUAGE_ASKS)
-        {
-            declaration->waiting = load->pending[walk.pending_count - 1u];
-            --declaration->waiting.operands_done;
-            declaration->resumes = walk.pc;
-            return;
-        }
-        if (status != MACHINE_LANGUAGE_OK)
-        {
-            machine_language_record_fault(&walk, status);
-            machine_language_recover(&walk, status);
-        }
+        declaration->waiting = load->pending[walk.pending_count - 1u];
+        --declaration->waiting.operands_done;
+        declaration->resumes = walk.pc;
+        return;
     }
     declaration->after = (walk.block_count != 0u) ? walk.pc : limit;
     declaration->closed = walk.closes_body;
