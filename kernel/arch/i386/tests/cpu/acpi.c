@@ -447,8 +447,9 @@ static void acpi_test_sleeps_end_within_their_bound(KernelTest_t *test, uint32_t
 }
 
 /**
- * @brief An evaluation that runs 300 Sleep (1) on the machine host waits about 300 ms, not 300 ticks:
- *        each sleep waits its millisecond on the power management timer (§3.3, §5.5).
+ * @brief An evaluation that runs 300 Sleep (1) on the machine host waits about 300 ms, not the 600 ticks
+ *        of two whole ticks each: each sleep waits its millisecond on the power management timer (§3.3,
+ *        §5.5).
  */
 KERNEL_TEST(three_hundred_sleeps_of_1_ms_wait_300_ms_and_a_tenth)
 {

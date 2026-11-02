@@ -715,6 +715,30 @@ KERNEL_TEST(a_sleep_idles_through_whole_ticks_and_busy_waits_the_rest)
 }
 
 /**
+ * @brief A sleep counts across the wrap of the 24-bit counter inside a halt: 25 ms from 20,000 counts
+ *        before the wrap, 1 ms past a step of the clock, still last 25 ms to 25.001 ms, and the timer stays
+ *        usable.
+ */
+KERNEL_TEST(a_sleep_counts_across_the_wrap_of_24_bits_inside_a_halt)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    timer_machine.access = TIMER_FAST_ACCESS;
+    (void) timer_find();
+    timer_after_a_step(TIMER_MILLISECOND);
+    timer_place(TIMER_LOW_BITS - 20000u);
+    elapsed = timer_sleep(25000u, &waited);
+
+    kernel_test_check(test, elapsed >= 25000000u && elapsed < 25001000u, "25 ms lasts 25 ms to 25.001 ms");
+    kernel_test_check(test, waited >= 25000u && waited <= 25001u, "and says so");
+    kernel_test_check(test, timer_machine.idles == 2u, "idling twice, the first time across the wrap");
+    kernel_test_check(test, timer_found.state == TIMER_STATE(USABLE) && timer_machine.host_sleeps == 0u,
+                      "the timer stays usable, and the host's own sleep is not called");
+}
+
+/**
  * @brief A sleep idles only while more than a tick and an eighth remain: 11,250 µs never idles, and
  *        11,251 µs idles once, from the step of the clock, 5 ms past it, and 1 µs before the next.
  */
