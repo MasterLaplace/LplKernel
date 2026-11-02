@@ -240,8 +240,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
  * @param scope The node names are resolved from.
  * @param start Where the code starts.
  * @param limit The first offset it may not reach.
- * @return OK once the code has run, every frame it pushed gone; LIMIT_FRAMES, LIMIT_PENDING_OPERATORS or
- *         LIMIT_BLOCKS, counted, when the evaluation has no room for the table's frame, and nothing ran.
+ * @return OK once the code has run, or stopped at a failure it could not go past, counted, every frame it
+ *         pushed gone; LIMIT_FRAMES, LIMIT_PENDING_OPERATORS or LIMIT_BLOCKS, counted, when the evaluation has
+ *         no room for the table's frame, and nothing ran.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_run_table_term(

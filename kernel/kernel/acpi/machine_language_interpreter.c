@@ -4045,16 +4045,17 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         machine_language_count_failure(evaluation, status);
         return status;
     }
-    while (evaluation->block_count > frame->block_base)
+    while (status == MACHINE_LANGUAGE_OK && evaluation->block_count > frame->block_base)
     {
-        MachineLanguageStatus_t step = machine_language_step_above(load, base);
-
-        while (step != MACHINE_LANGUAGE_OK && evaluation->block_count > frame->block_base)
-            step = machine_language_table_failure(load, base, step);
+        status = machine_language_step_above(load, base);
+        if (status != MACHINE_LANGUAGE_OK)
+            status = machine_language_table_failure(load, base, status);
     }
     while (evaluation->frame_count > base + 1u)
         machine_language_drop_frame(load);
     machine_language_drop_frame(load);
+    if (status != MACHINE_LANGUAGE_OK)
+        machine_language_count_failure(evaluation, status);
     return MACHINE_LANGUAGE_OK;
 }
 
