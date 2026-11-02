@@ -855,10 +855,11 @@ that reaches it. The corpus runs report the peaks.
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
 back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the
 kernel asks for (§3.8); a `Load` that a method runs belongs to that method's evaluation, and resets nothing. The time
-requested also bounds the time waited: in ring 0, while the power management timer is usable, each wait ends at the
-first read of the timer that has counted its request, so an evaluation waits at most its 30 s and a read of the timer
-per wait; without one, each wait rounds up to whole ticks of 10 ms and the tick it starts in, and 30,000 `Sleep (1)`
-wait 5 to 10 min. The node and arena caps depend on the profile, and probe counts
+requested also bounds the time waited: in ring 0, while the power management timer is usable and each halt ends
+within a tick and an eighth, each wait ends at the first read of the timer that has counted its request, so an
+evaluation waits at most its 30 s and a read of the timer per wait; a halt that lasts longer, such as one a late tick
+ends, makes its wait that much longer. Without a usable timer, each wait rounds up to whole ticks of 10 ms and the
+tick it starts in: a `Stall (256)` sleeps 10 to 20 ms, and the 117,187 an evaluation may request wait 20 to 39 min. The node and arena caps depend on the profile, and probe counts
 follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
 (§8.7).
 
