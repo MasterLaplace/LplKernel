@@ -784,11 +784,11 @@ static void initialization_negotiate_processor(InitializationLoad_t *load, Initi
 
 /**
  * @brief Gives @p index, when it is a processor object with an _OSC or a _PDC that binds to a CPU slot, the
- *        capabilities of its C-states, and MWAIT's when the processors implement it, then initialises late
- *        the tables that loaded (§3.8 step 7); counts it when it binds to none.
+ *        capabilities of its C-states, and MWAIT's when the processors implement it (§3.8 step 7); counts it when
+ *        it binds to none.
  */
-static void initialization_negotiate_bound(InitializationLoad_t *load, Initialization_t *initialization,
-                                           const InitializationMachine_t *machine, uint32_t index)
+static void initialization_negotiate_slot(InitializationLoad_t *load, Initialization_t *initialization,
+                                          const InitializationMachine_t *machine, uint32_t index)
 {
     const uint8_t type = initialization_node(load, index)->type;
 
@@ -805,13 +805,24 @@ static void initialization_negotiate_bound(InitializationLoad_t *load, Initializ
     initialization_negotiate_processor(load, initialization, index,
                                        INITIALIZATION_C_STATES |
                                            (machine->monitor_wait ? INITIALIZATION_MONITOR_WAIT : 0u));
+}
+
+/**
+ * @brief Step 7 for @p index, as initialization_negotiate_slot gives it, then the late initialisation of the
+ *        tables its evaluations loaded, its _HID's and _UID's included (§3.8).
+ */
+static void initialization_negotiate_bound(InitializationLoad_t *load, Initialization_t *initialization,
+                                           const InitializationMachine_t *machine, uint32_t index)
+{
+    initialization_negotiate_slot(load, initialization, machine, index);
     initialization_settle(load, initialization, 0u);
 }
 
 /**
  * @brief Gives step 7's capabilities, in declaration order, to the processor objects that the tables past the
  *        first @p first declare and that step 7's walk, at @p walking, no longer reaches, until those tables
- *        load no other table (§3.8); the walk gives the others theirs.
+ *        load no other table (§3.8); the walk gives the others theirs. Their late initialisation marked them, so
+ *        this walks only the subtrees the marks lead to, as step 7 does.
  */
 static void initialization_negotiate_behind(InitializationLoad_t *load, Initialization_t *initialization,
                                             const InitializationMachine_t *machine, uint32_t first, uint32_t walking)
@@ -821,8 +832,9 @@ static void initialization_negotiate_behind(InitializationLoad_t *load, Initiali
         const uint32_t last = load->table_count;
 
         for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
-             index = initialization_next(load, index, true))
-            if (initialization_is_late(load, index, first, last) && !initialization_reached_later(load, index, walking))
+             index = initialization_next(load, index, initialization_capable(load, index)))
+            if (initialization_capable(load, index) && initialization_is_late(load, index, first, last) &&
+                !initialization_reached_later(load, index, walking))
                 initialization_negotiate_bound(load, initialization, machine, index);
         first = last;
     }

@@ -1126,6 +1126,40 @@ KERNEL_TEST(step_seven_goes_on_while_the_tables_loaded_behind_its_walk_declare_p
 }
 
 /**
+ * @brief A table that step 7 loads while it reads what a processor object is gets its late initialisation once
+ *        that evaluation returns, though the object binds to no CPU slot (§3.8): the _HID of CPUD, a Device with a
+ *        _PDC and no _UID, loads the table of LDEV, whose _INI runs before the _PDC of CPU0, declared after CPUD.
+ */
+KERNEL_TEST(a_table_a_hid_of_step_seven_loads_is_initialised_once_it_returns)
+{
+    static const uint8_t identifies[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0',  '_',
+                                         0xA4u, 0x0Du, 'A',  'C', 'P', 'I', '0', '0',  '0', '7', 0x00u};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 7u);
+    made_up_aml_device(&load_loaded, "LDEV", &device);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_HID", 0x00u, identifies, sizeof(identifies), 0u, false);
+    load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 9u, false);
+    made_up_aml_device(&load_aml, "CPUD", &device);
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 1u, false);
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_initialize(1u);
+    kernel_test_check(test, load_integer("HC0_") == LOAD_ONES && load_counts.processors_unbound == 1u,
+                      "CPUD's _HID loads the table, and CPUD, without a _UID, binds to no slot");
+    kernel_test_check(test, load_integer("TRAC") == 0x71u && load_counts.late_initializations == 1u,
+                      "LDEV's _INI runs once CPUD's _HID returns, before CPU0's _PDC");
+    load_close(test);
+}
+
+/**
  * @brief A processor that a table step 9 loads declares gets step 7's capabilities, then its _CST, then step 9
  *        again for the Notify 0x81 its _CST queues (§3.8): CPU0's _CST notifies CPU0 and loads, on its second
  *        run, the table of CPU1, whose _CST notifies CPU1; the Notify of CPU0's second run is dropped.
