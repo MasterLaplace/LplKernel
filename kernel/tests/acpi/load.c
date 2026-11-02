@@ -954,6 +954,222 @@ KERNEL_TEST(the_pass_after_step_eight_goes_on_while_its_tables_declare_processor
 }
 
 /**
+ * @brief Appends Method (@p name, @p arguments) to @p aml: the @p length bytes at @p before, then, when @p digit is
+ *        not 0, the append of @p digit to \TRAC, then, when @p states holds, the Return of a _CST package of one C1.
+ */
+static void load_traced_method(MadeUpAml_t *aml, const char *name, uint8_t arguments, const uint8_t *before,
+                               uint32_t length, uint8_t digit, bool states)
+{
+    const uint8_t traces[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
+                              0x00u, 0x0Au, digit, 0x00u, '\\', 'T', 'R', 'A', 'C'};
+    static const uint8_t package[] = {0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u,
+                                      0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u,
+                                      0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                      0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+
+    made_up_aml_begin(&load_body);
+    if (before != NULL)
+        made_up_aml_raw(&load_body, before, length);
+    if (digit != 0u)
+        made_up_aml_raw(&load_body, traces, sizeof(traces));
+    if (states)
+        made_up_aml_raw(&load_body, package, sizeof(package));
+    made_up_aml_method(aml, name, arguments, &load_body);
+}
+
+/**
+ * @brief Gives the made-up MADT @p count CPU slots, of UIDs 1 to @p count, then initialises the namespace loaded.
+ */
+static void load_initialize(uint32_t count)
+{
+    load_madt.processor_count = count;
+    for (uint32_t slot = 0u; slot < count; ++slot)
+        load_madt.processors[slot].processor_unique_identifier = LOAD_PROCESSOR_IDENTIFIER + slot;
+
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {.madt = &load_madt,
+                                                                                   .monitor_wait = false};
+
+    advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
+}
+
+/**
+ * @brief Writes a DSDT whose CPU0 has a _PDC that loads a table declaring CPU1, with a _PDC and a _CST that
+ *        append 1 and 2 to \TRAC: at the root, after CPU0, or, when @p behind holds, in the scope of DEVZ, a
+ *        device declared before CPU0, which step 7's walk has gone past; then loads it and initialises it with
+ *        the CPU slots of both.
+ */
+static bool load_step_seven_processor(KernelTest_t *test, bool behind)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0', '_'};
+    static MadeUpAml_t device;
+    static MadeUpAml_t scope;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    if (behind)
+    {
+        made_up_aml_begin(&scope);
+        made_up_aml_name_integer(&scope, "ZNAM", 0u);
+        made_up_aml_device(&load_aml, "DEVZ", &scope);
+    }
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 1u, false);
+    load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 2u, true);
+    made_up_aml_begin(&scope);
+    made_up_aml_processor(behind ? &scope : &load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
+    if (behind)
+        made_up_aml_scope(&load_loaded, "DEVZ", &scope);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_PDC", 0x01u, loads, sizeof(loads), 0u, false);
+    load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 0u, true);
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return false;
+    load_initialize(2u);
+    return true;
+}
+
+/**
+ * @brief Checks what step 7 and step 8 gave CPU1, which the table CPU0's _PDC loads declares: its _PDC, then its
+ *        _CST, each once, and both processors their states (§3.8).
+ */
+static void load_check_step_seven_processor(KernelTest_t *test)
+{
+    kernel_test_check(test, load_integer("HC0_") == LOAD_ONES && load_load.tables_loaded == 1u,
+                      "CPU0's _PDC loads the table that declares CPU1");
+    kernel_test_check(test, load_integer("TRAC") == 0x12u, "CPU1's _PDC runs, then its _CST, each once");
+    kernel_test_check(test,
+                      load_counts.processor_capabilities == 2u && load_counts.processor_capabilities_legacy == 2u &&
+                          load_counts.processor_capabilities_failed == 0u,
+                      "CPU0 and CPU1 are given step 7's capabilities through their _PDC, once each");
+    kernel_test_check(test,
+                      load_counts.processor_idle == 2u && load_idle.slots[0].count == 1u &&
+                          load_idle.slots[1].count == 1u && load_counts.processor_idle_unbound == 0u,
+                      "CPU0 and CPU1 publish their states");
+}
+
+/**
+ * @brief A processor that a table step 7 loads declares after the processor whose _PDC loads it is left to
+ *        step 7's walk, which gives it its capabilities once (§3.8).
+ */
+KERNEL_TEST(a_processor_a_pdc_loads_ahead_of_step_seven_gets_its_capabilities_once)
+{
+    if (!load_step_seven_processor(test, false))
+        return;
+    load_check_step_seven_processor(test);
+    load_close(test);
+}
+
+/**
+ * @brief A processor that a table step 7 loads declares below a device step 7's walk has gone past gets its
+ *        capabilities once the _PDC that loads it returns, before step 8 reads its _CST (§3.8).
+ */
+KERNEL_TEST(a_processor_a_pdc_loads_behind_step_seven_gets_its_capabilities_then_its_cst)
+{
+    if (!load_step_seven_processor(test, true))
+        return;
+    load_check_step_seven_processor(test);
+    load_close(test);
+}
+
+/**
+ * @brief Step 7 goes on while the tables loaded behind its walk declare processor objects (§3.8): CPU0's _PDC
+ *        loads the table of CPU1, whose _PDC loads the table of CPU2, both in the scope of DEVZ, declared before
+ *        CPU0; each gets its capabilities, then its _CST.
+ */
+KERNEL_TEST(step_seven_goes_on_while_the_tables_loaded_behind_its_walk_declare_processors)
+{
+    static const uint8_t first[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0', '_'};
+    static const uint8_t second[] = {0x5Bu, 0x20u, '\\', 'O', 'T', 'H', 'R', '\\', 'H', 'C', '1', '_'};
+    static MadeUpAml_t device;
+    static MadeUpAml_t scope;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_name_integer(&load_aml, "HC1_", 0u);
+    made_up_aml_begin(&scope);
+    made_up_aml_name_integer(&scope, "ZNAM", 0u);
+    made_up_aml_device(&load_aml, "DEVZ", &scope);
+    made_up_aml_begin(&load_inner);
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 3u, false);
+    load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 4u, true);
+    made_up_aml_begin(&scope);
+    made_up_aml_processor(&scope, "CPU2", LOAD_PROCESSOR_IDENTIFIER + 2u, 0u, 0u, &device);
+    made_up_aml_scope(&load_inner, "DEVZ", &scope);
+    load_region("OTHR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_PDC", 0x01u, second, sizeof(second), 1u, false);
+    load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 2u, true);
+    made_up_aml_begin(&scope);
+    made_up_aml_processor(&scope, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
+    made_up_aml_scope(&load_loaded, "DEVZ", &scope);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_PDC", 0x01u, first, sizeof(first), 0u, false);
+    load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 0u, true);
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_initialize(3u);
+    kernel_test_check(
+        test, load_integer("HC0_") == LOAD_ONES && load_integer("HC1_") == LOAD_ONES && load_load.tables_loaded == 2u,
+        "CPU0's _PDC loads CPU1's table, and CPU1's loads CPU2's");
+    kernel_test_check(test, load_integer("TRAC") == 0x1324u,
+                      "CPU1's _PDC runs, then CPU2's, then step 8 reads CPU1's _CST, then CPU2's");
+    kernel_test_check(test,
+                      load_counts.processor_capabilities == 3u && load_counts.processor_idle == 3u &&
+                          load_idle.slots[1].count == 1u && load_idle.slots[2].count == 1u,
+                      "the three processors are given their capabilities, then publish their states");
+    load_close(test);
+}
+
+/**
+ * @brief A processor that a table step 9 loads declares gets step 7's capabilities, then its _CST, then step 9
+ *        again for the Notify 0x81 its _CST queues (§3.8): CPU0's _CST notifies CPU0 and loads, on its second
+ *        run, the table of CPU1, whose _CST notifies CPU1; the Notify of CPU0's second run is dropped.
+ */
+KERNEL_TEST(a_processor_a_step_nine_evaluation_loads_gets_its_capabilities_then_its_cst)
+{
+    static const uint8_t body[] = {0x86u, '\\',  'C',   'P',   'U',   '0',   0x0Au, 0x81u, 0xA0u, 0x14u, 0x93u, '\\',
+                                   'C',   'N',   'T',   '_',   0x01u, 0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',
+                                   '\\',  'H',   'C',   '0',   '_',   0x75u, '\\',  'C',   'N',   'T',   '_',   0xA4u,
+                                   0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u,
+                                   0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+                                   0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
+    static const uint8_t notifies[] = {0x86u, '\\', 'C', 'P', 'U', '1', 0x0Au, 0x81u};
+    static MadeUpAml_t device;
+
+    load_begin();
+    made_up_aml_name_integer(&load_aml, "HC0_", 0u);
+    made_up_aml_name_integer(&load_aml, "CNT_", 0u);
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 1u, false);
+    load_traced_method(&device, "_CST", 0x00u, notifies, sizeof(notifies), 2u, true);
+    made_up_aml_processor(&load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
+    load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&device);
+    load_method(&device, "_CST", body, sizeof(body));
+    made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
+    if (!load_run(test))
+        return;
+    load_initialize(2u);
+    kernel_test_check(
+        test, load_integer("CNT_") == 2u && load_integer("HC0_") == LOAD_ONES && load_load.tables_loaded == 1u,
+        "CPU0's _CST runs twice, its second run, step 9's, loads the table of CPU1, and its Notify is dropped");
+    kernel_test_check(test, load_integer("TRAC") == 0x122u,
+                      "CPU1's _PDC runs, then its _CST, then its _CST once more for the Notify it queued");
+    kernel_test_check(test,
+                      load_counts.processor_capabilities == 1u && load_counts.processor_idle_changes == 2u &&
+                          load_counts.processor_idle == 4u,
+                      "CPU1 is given step 7's capabilities, and step 9 evaluates CPU0's _CST and CPU1's once more");
+    kernel_test_check(test, load_idle.slots[0].count == 1u && load_idle.slots[1].count == 1u,
+                      "CPU0 and CPU1 publish their states");
+    load_close(test);
+}
+
+/**
  * @brief A _CST that loads a table, then fails, is the first failure, before the _INI of the loaded device
  *        that fails in the late initialisation its return starts (§3.8): the _CST loads, then divides by
  *        zero; the loaded _INI reads a name that does not exist.

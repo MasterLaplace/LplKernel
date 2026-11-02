@@ -484,6 +484,27 @@ static void processor_idle_publish_loaded(ProcessorIdleLoad_t *load, const Proce
     }
 }
 
+/**
+ * @brief Step 9 of §3.8: takes every Notify queued, evaluates once more the _CST of each slot a Notify 0x81 marked
+ *        in @p changed, clearing its mark, then drops the Notifies these evaluations queued.
+ */
+static void processor_idle_drain(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, ProcessorIdleTable_t *table,
+                                 uint32_t *changed)
+{
+    processor_idle_take_notifications(load, table, changed);
+    for (uint32_t slot = 0u; slot < table->slot_count; ++slot)
+    {
+        const uint32_t mark = 1u << (slot % PROCESSOR_IDLE_SLOT_BITS);
+
+        if ((changed[slot / PROCESSOR_IDLE_SLOT_BITS] & mark) == 0u)
+            continue;
+        changed[slot / PROCESSOR_IDLE_SLOT_BITS] &= ~mark;
+        ++counts->processor_idle_changes;
+        processor_idle_evaluate(load, counts, table->slots[slot].processor, &table->slots[slot]);
+    }
+    advanced_configuration_and_power_interface_machine_language_drop_notifications(load);
+}
+
 bool advanced_configuration_and_power_interface_processor_object(ProcessorIdleLoad_t *load,
                                                                  ProcessorIdleCounts_t *initialization, uint32_t node)
 {
@@ -542,22 +563,18 @@ void advanced_configuration_and_power_interface_processor_idle_publish(Processor
                                                                        ProcessorIdleTable_t *out_table)
 {
     uint32_t changed[(PROCESSOR_IDLE_MAX_SLOTS + PROCESSOR_IDLE_SLOT_BITS - 1u) / PROCESSOR_IDLE_SLOT_BITS] = {0u};
-    const uint32_t tables = load->table_count;
+    uint32_t tables = load->table_count;
 
     out_table->slot_count = (machine->madt != NULL) ? machine->madt->processor_count : 0u;
     memset(out_table->slots, 0, out_table->slot_count * sizeof(out_table->slots[0]));
     initialization->idle_control = processor_idle_claim_control(load, machine);
     processor_idle_publish_slots(load, machine, initialization, out_table, changed, tables);
-    processor_idle_publish_loaded(load, machine, initialization, out_table, changed, tables);
-    processor_idle_take_notifications(load, out_table, changed);
-    for (uint32_t slot = 0u; slot < out_table->slot_count; ++slot)
+    do
     {
-        if ((changed[slot / PROCESSOR_IDLE_SLOT_BITS] & (1u << (slot % PROCESSOR_IDLE_SLOT_BITS))) == 0u)
-            continue;
-        ++initialization->processor_idle_changes;
-        processor_idle_evaluate(load, initialization, out_table->slots[slot].processor, &out_table->slots[slot]);
-    }
-    advanced_configuration_and_power_interface_machine_language_drop_notifications(load);
+        processor_idle_publish_loaded(load, machine, initialization, out_table, changed, tables);
+        tables = load->table_count;
+        processor_idle_drain(load, initialization, out_table, changed);
+    } while (tables != load->table_count);
 }
 
 uint32_t advanced_configuration_and_power_interface_processor_idle_fold(const ProcessorIdleTable_t *table)

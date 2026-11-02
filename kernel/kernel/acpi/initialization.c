@@ -459,10 +459,11 @@ static bool initialization_is_below(const InitializationLoad_t *load, uint32_t i
 }
 
 /**
- * @brief Whether the walk of step 4, at @p walking, still reaches @p index, which a table loaded
- *        meanwhile declares: below @p walking, or below a node step 4 has not reached yet under the lowest
+ * @brief Whether the walk of step 4 or step 7, at @p walking, still reaches @p index, which a table loaded
+ *        meanwhile declares: below @p walking, or below a node the walk has not reached yet under the lowest
  *        node above both; never once step 4 is over, @p walking 0. A @p walking step 4 does not descend
- *        into is absent, which initialization_under_absent tells first.
+ *        into is absent, which initialization_under_absent tells first; step 7's @p walking is a node the
+ *        pre-pass marked, which it descends into.
  */
 static bool initialization_reached_later(const InitializationLoad_t *load, uint32_t index, uint32_t walking)
 {
@@ -808,8 +809,29 @@ static void initialization_negotiate_bound(InitializationLoad_t *load, Initializ
 }
 
 /**
+ * @brief Gives step 7's capabilities, in declaration order, to the processor objects that the tables past the
+ *        first @p first declare and that step 7's walk, at @p walking, no longer reaches, until those tables
+ *        load no other table (§3.8); the walk gives the others theirs.
+ */
+static void initialization_negotiate_behind(InitializationLoad_t *load, Initialization_t *initialization,
+                                            const InitializationMachine_t *machine, uint32_t first, uint32_t walking)
+{
+    while (first != load->table_count)
+    {
+        const uint32_t last = load->table_count;
+
+        for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
+             index = initialization_next(load, index, true))
+            if (initialization_is_late(load, index, first, last) && !initialization_reached_later(load, index, walking))
+                initialization_negotiate_bound(load, initialization, machine, index);
+        first = last;
+    }
+}
+
+/**
  * @brief Gives every processor object with an _OSC or a _PDC that binds to a CPU slot its capabilities, in
- *        declaration order (§3.8 step 7), walking only the subtrees the pre-pass marked.
+ *        declaration order (§3.8 step 7), walking only the subtrees the pre-pass marked; the processors that the
+ *        tables an evaluation loads declare behind the walk get theirs once it returns.
  */
 static void initialization_negotiate_processors(InitializationLoad_t *load, Initialization_t *initialization,
                                                 const InitializationMachine_t *machine)
@@ -818,8 +840,14 @@ static void initialization_negotiate_processors(InitializationLoad_t *load, Init
         return;
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
          index = initialization_next(load, index, initialization_capable(load, index)))
-        if (initialization_capable(load, index))
-            initialization_negotiate_bound(load, initialization, machine, index);
+    {
+        const uint32_t tables = load->table_count;
+
+        if (!initialization_capable(load, index))
+            continue;
+        initialization_negotiate_bound(load, initialization, machine, index);
+        initialization_negotiate_behind(load, initialization, machine, tables, index);
+    }
 }
 
 void advanced_configuration_and_power_interface_initialize_namespace(InitializationLoad_t *load,
