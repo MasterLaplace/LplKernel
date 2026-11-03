@@ -8,8 +8,8 @@ typedef uint32_t __attribute__((may_alias)) memory_fill_word_t;
  * @brief Sets @p size bytes from @p bufptr to the low byte of @p value.
  *
  * The bytes before the first whole word are set one by one, the words after them one word at a time, and
- * the bytes left one by one. A word costs about as many instructions as a byte did, so a node or an object
- * the ACPI layer zeroes takes a quarter of them.
+ * the bytes left one by one. A word costs about as many instructions as a byte did, so a long fill takes a
+ * quarter of them.
  *
  * @return @p bufptr.
  */
