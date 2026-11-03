@@ -232,12 +232,15 @@ acpi_helper_write_services_record(Serial_t *serial,
 }
 
 /**
- * @brief Writes the counts the decoding pass fills, @p terms among them, which a load that skips bodies leaves
- *        uncounted.
+ * @brief Writes the counts the decoding pass fills, the terms of every table among them, which a load that skips
+ *        bodies, or declared no table, leaves uncounted.
  */
-static void acpi_helper_write_decoding_counts(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-                                              uint32_t terms)
+static void acpi_helper_write_decoding_counts(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
+    uint32_t terms = 0u;
+
+    for (uint32_t index = 0u; index < load->table_count; ++index)
+        terms += load->tables[index].terms;
     kernel_telemetry_write_unsigned("terms", terms);
     kernel_telemetry_write_unsigned("method_calls", load->method_calls);
     kernel_telemetry_write_unsigned("name_references", load->name_references);
@@ -366,10 +369,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load =
         advanced_configuration_and_power_interface_machine_language();
-    uint32_t terms = 0u;
 
-    for (uint32_t index = 0u; index < load->table_count; ++index)
-        terms += load->tables[index].terms;
     kernel_telemetry_begin_record(serial, "acpi.aml");
     kernel_telemetry_write_text("status",
                                 advanced_configuration_and_power_interface_machine_language_status_name(load->status));
@@ -381,8 +381,8 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("duplicates", load->duplicates);
     kernel_telemetry_write_unsigned("load_errors", load->load_errors);
     kernel_telemetry_write_unsigned("checksum_bad_loaded", load->checksum_bad_loaded);
-    if (!load->skips_bodies)
-        acpi_helper_write_decoding_counts(load, terms);
+    if (!load->skips_bodies && load->table_count != 0u)
+        acpi_helper_write_decoding_counts(load);
     kernel_telemetry_write_unsigned("nodes", load->space.live_nodes);
     kernel_telemetry_write_unsigned("arena_bytes", load->space.arena_bytes);
     kernel_telemetry_write_unsigned("lookups", load->space.lookups);

@@ -965,11 +965,13 @@ void advanced_configuration_and_power_interface_machine_language_initialize(bool
         .mode = advanced_configuration_and_power_interface_mode()->outcome,
     };
 
-    if (advanced_configuration_and_power_interface_machine_language_open(
-            &initialization_boot_load, &advanced_configuration_and_power_interface_machine_host,
-            INITIALIZATION_BOOT_MAX_NODES, INITIALIZATION_BOOT_MAX_ARENA_BYTES))
+    const bool opened = advanced_configuration_and_power_interface_machine_language_open(
+        &initialization_boot_load, &advanced_configuration_and_power_interface_machine_host,
+        INITIALIZATION_BOOT_MAX_NODES, INITIALIZATION_BOOT_MAX_ARENA_BYTES);
+
+    initialization_boot_load.skips_bodies = INITIALIZATION_SKIPS_BODIES;
+    if (opened)
     {
-        initialization_boot_load.skips_bodies = INITIALIZATION_SKIPS_BODIES;
         advanced_configuration_and_power_interface_machine_language_load_directory(
             &initialization_boot_load, advanced_configuration_and_power_interface_directory());
         advanced_configuration_and_power_interface_initialize_namespace(
