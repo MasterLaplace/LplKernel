@@ -751,7 +751,7 @@ extern const AdvancedConfigurationAndPowerInterfaceDirectory_t *
 advanced_configuration_and_power_interface_directory(void);
 
 /**
- * @brief Finds a table by its signature in a directory.
+ * @brief Finds the record of a table by its signature in a directory.
  *
  * @details A table whose checksum fails is still given out when no table with @p signature has one
  *          that holds, as ACPICA and uACPI do by default: dropping it can drop the DSDT, an SSDT
@@ -759,8 +759,20 @@ advanced_configuration_and_power_interface_directory(void);
  *
  * @param directory The directory to search.
  * @param signature Four-character signature of the table, such as "SRAT" or "DSDT".
- * @return The header of the first table with @p signature whose checksum holds, else of the first
+ * @return The record of the first table with @p signature whose checksum holds, else of the first
  *         whose checksum fails, or NULL when the directory has none.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceTable_t *
+advanced_configuration_and_power_interface_find_entry_in_directory(
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, const char *signature);
+
+/**
+ * @brief Finds a table by its signature in a directory, as
+ *        advanced_configuration_and_power_interface_find_entry_in_directory chooses it.
+ *
+ * @param directory The directory to search.
+ * @param signature Four-character signature of the table, such as "SRAT" or "DSDT".
+ * @return The header of the table that function chooses, or NULL when the directory has none.
  */
 extern const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
 advanced_configuration_and_power_interface_find_in_directory(

@@ -2030,19 +2030,6 @@ static void machine_language_declare_accepted_table(AdvancedConfigurationAndPowe
     machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE);
 }
 
-/**
- * @brief Whether the checksum of the directory's table at @p header held when the directory recorded it, which
- *        it computed over the same bytes; summed here only for a header the directory does not hold.
- */
-static bool machine_language_directory_checksum(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
-                                                const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
-{
-    for (uint32_t index = 0u; index < directory->table_count; ++index)
-        if (directory->tables[index].header == header)
-            return directory->tables[index].checksum_valid;
-    return advanced_configuration_and_power_interface_checksum_holds(header, header->length);
-}
-
 bool advanced_configuration_and_power_interface_machine_language_open(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes)
@@ -2087,11 +2074,11 @@ void advanced_configuration_and_power_interface_machine_language_declare_directo
 
     advanced_configuration_and_power_interface_machine_language_use_global_lock(
         load, fadt->hardware_reduced ? 0u : directory->firmware_control_physical_address, control_ports);
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *dsdt =
-        advanced_configuration_and_power_interface_find_in_directory(directory, "DSDT");
+    const AdvancedConfigurationAndPowerInterfaceTable_t *dsdt =
+        advanced_configuration_and_power_interface_find_entry_in_directory(directory, "DSDT");
 
-    if (machine_language_accepts_table(load, dsdt))
-        machine_language_declare_accepted_table(load, dsdt, machine_language_directory_checksum(directory, dsdt));
+    if (dsdt != NULL && machine_language_accepts_table(load, dsdt->header))
+        machine_language_declare_accepted_table(load, dsdt->header, dsdt->checksum_valid);
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceTable_t *entry = &directory->tables[index];
