@@ -193,6 +193,35 @@ KERNEL_TEST(a_load_runs_a_copy_of_its_table_and_the_same_table_again_returns_fal
 }
 
 /**
+ * @brief A table Load adds to a load that skips bodies, as a release kernel's (O2, §3.6), is declared, its method
+ *        undecoded: LMTH exists and runs, and the table counts no term; the same Load on a load that decodes bodies
+ *        counts them.
+ */
+KERNEL_TEST(a_table_load_adds_while_bodies_are_skipped_is_declared_undecoded)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t returns[] = {0xA4u, 0x0Au, 0x77u};
+
+    for (uint32_t skips = 0u; skips < 2u; ++skips)
+    {
+        load_begin();
+        load_method(&load_loaded, "LMTH", returns, sizeof(returns));
+        load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+        load_method(&load_aml, "LDIT", loads, sizeof(loads));
+        if (!load_run(test))
+            return;
+        load_load.skips_bodies = skips != 0u;
+        kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
+                          "LDIT loads the table");
+        kernel_test_check(test, load_call("\\LMTH") == LOAD_STATUS(OK), "the loaded LMTH runs");
+        kernel_test_check(test, (load_load.tables[1].terms == 0u) == (skips != 0u),
+                          skips ? "the loaded table counts no term: its body is not decoded" :
+                                  "the loaded table counts its terms: its body is decoded");
+        load_close(test);
+    }
+}
+
+/**
  * @brief Load from a field unit reads the unit as a Buffer and loads the table it holds (§5.1).
  */
 KERNEL_TEST(a_load_from_a_field_reads_the_unit_as_a_buffer)

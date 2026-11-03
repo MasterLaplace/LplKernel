@@ -1858,7 +1858,8 @@ machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguage
     machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECLARE, false);
     if (load->externals_unplaced != 0u)
         machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_EXTERNALS, false);
-    machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECODE, false);
+    if (!load->skips_bodies)
+        machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECODE, false);
     *out_added = true;
     return MACHINE_LANGUAGE_OK;
 }
@@ -2036,7 +2037,7 @@ void advanced_configuration_and_power_interface_machine_language_decode_tables(
 {
     for (uint32_t table = 0u; table < load->table_count && load->externals_unplaced != 0u; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS, true);
-    for (uint32_t table = 0u; table < load->table_count; ++table)
+    for (uint32_t table = 0u; table < load->table_count && !load->skips_bodies; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE, true);
 }
 

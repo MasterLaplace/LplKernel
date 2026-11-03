@@ -154,6 +154,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint8_t status;               /**< OK, or why the namespace could not be opened. */
     bool declares_every_branch;   /**< Whether the declaration pass declares every branch of table-level code and
                                        runs none of it, as the census oracle reads AML (§8.4); false at boot. */
+    bool skips_bodies;            /**< Whether the load decodes no method body once its tables are declared, nor
+                                       those of a table Load adds, as a release kernel loads (O2, §3.6); false in a
+                                       debug kernel and in the host tools. */
     uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
     uint32_t table_count;         /**< Tables declared. */
     uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
@@ -747,9 +750,9 @@ extern bool advanced_configuration_and_power_interface_machine_language_declare_
 
 /**
  * @brief Places the Externals the declaration pass could not, in a pass over every table declared when
- *        there is one, then runs the decoding pass: every term is decoded and counted, method bodies
- *        included, and each fault is recorded in its table and skipped as the declaration pass skips
- *        it.
+ *        there is one, then runs the decoding pass, unless the load skips bodies: every term is decoded and
+ *        counted, method bodies included, and each fault is recorded in its table and skipped as the
+ *        declaration pass skips it.
  *
  * @details An External whose path does not exist once every table is declared is placed all the
  *          same, its missing segments created as Externals with no object: firmware calls such a

@@ -231,6 +231,22 @@ acpi_helper_write_services_record(Serial_t *serial,
     kernel_telemetry_end_record();
 }
 
+/**
+ * @brief Writes the counts the decoding pass fills, @p terms among them, which a load that skips bodies leaves
+ *        uncounted.
+ */
+static void acpi_helper_write_decoding_counts(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                              uint32_t terms)
+{
+    kernel_telemetry_write_unsigned("terms", terms);
+    kernel_telemetry_write_unsigned("method_calls", load->method_calls);
+    kernel_telemetry_write_unsigned("name_references", load->name_references);
+    kernel_telemetry_write_unsigned("unresolved_names", load->unresolved_names);
+    kernel_telemetry_write_unsigned("decode_errors", load->decode_errors);
+    kernel_telemetry_write_unsigned("table_level_code", load->table_level_code);
+    kernel_telemetry_write_unsigned("undeclared_faults", load->undeclared_faults);
+}
+
 void write_acpi_tables_info(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory =
@@ -360,15 +376,13 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("tables", load->table_count);
     kernel_telemetry_write_unsigned("bytes", load->bytes);
     kernel_telemetry_write_unsigned("integer_bits", load->integer_bits);
-    kernel_telemetry_write_unsigned("terms", terms);
+    kernel_telemetry_write_text("bodies", load->skips_bodies ? "skipped" : "decoded");
     kernel_telemetry_write_unsigned("declarations", load->declarations);
     kernel_telemetry_write_unsigned("duplicates", load->duplicates);
-    kernel_telemetry_write_unsigned("method_calls", load->method_calls);
-    kernel_telemetry_write_unsigned("name_references", load->name_references);
-    kernel_telemetry_write_unsigned("unresolved_names", load->unresolved_names);
     kernel_telemetry_write_unsigned("load_errors", load->load_errors);
-    kernel_telemetry_write_unsigned("decode_errors", load->decode_errors);
     kernel_telemetry_write_unsigned("checksum_bad_loaded", load->checksum_bad_loaded);
+    if (!load->skips_bodies)
+        acpi_helper_write_decoding_counts(load, terms);
     kernel_telemetry_write_unsigned("nodes", load->space.live_nodes);
     kernel_telemetry_write_unsigned("arena_bytes", load->space.arena_bytes);
     kernel_telemetry_write_unsigned("lookups", load->space.lookups);
@@ -377,10 +391,8 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("blocks_peak", load->blocks_peak);
     kernel_telemetry_write_unsigned("objects", load->heap.objects);
     kernel_telemetry_write_unsigned("values_deferred", load->values_deferred);
-    kernel_telemetry_write_unsigned("table_level_code", load->table_level_code);
     kernel_telemetry_write_unsigned("table_level_runs", load->evaluation.runs);
     kernel_telemetry_write_unsigned("table_level_failures", load->evaluation.failures);
-    kernel_telemetry_write_unsigned("undeclared_faults", load->undeclared_faults);
     kernel_telemetry_write_unsigned("declared_not_run", load->declared_not_run);
     kernel_telemetry_write_unsigned("frames_peak", load->evaluation.frames_peak);
     kernel_telemetry_write_unsigned("values_peak", load->evaluation.values_peak);
