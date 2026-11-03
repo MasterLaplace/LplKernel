@@ -185,6 +185,57 @@ static const uint8_t predecoding_once[] = {
 };
 
 /**
+ * @brief A revision-1 STOR (Arg0) that stores its argument whole: `Local0 = 0; While (Local0 < 2)
+ *        { Local1 = Arg0; Local0++ }; Return (Local1)`.
+ */
+static const uint8_t predecoding_store_whole[] = {
+    0x14u, 0x16u, 'S',   'T',   'O',   'R',   0x01u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Au,
+    0x95u, 0x60u, 0x0Au, 0x02u, 0x70u, 0x68u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief Targets a record hands back, as UNIN: `Local0 = 0; Local1 = "7"; While (Local0 < 3) { Local0++;
+ *        If (Local0 == 2) { Local6++; Local1 = Local0 } }; Return (Local6 + Local1)`: at the second turn,
+ *        the first from records, Local6 holds nothing to step and Local1 a String to give back.
+ */
+static const uint8_t predecoding_targets[] = {
+    0x14u, 0x26u, 'U',   'N',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x0Du, 0x37u,
+    0x00u, 0x61u, 0xA2u, 0x12u, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x0Au, 0x93u,
+    0x60u, 0x0Au, 0x02u, 0x75u, 0x66u, 0x70u, 0x60u, 0x61u, 0xA4u, 0x72u, 0x66u, 0x61u, 0x00u,
+};
+
+/**
+ * @brief A Store first run from a record, as PEAK: `Local0++` three times, then `While (Local0) { Local0--;
+ *        If (Local1) { Local2 = Local0 }; Local1++ }; Return (Local2)`; nothing before its second turn holds
+ *        2 values, and the Store, its If false at the first turn, first runs at the second, from its record.
+ */
+static const uint8_t predecoding_store_peak[] = {
+    0x14u, 0x1Bu, 'P',   'E',   'A',   'K',   0x00u, 0x75u, 0x60u, 0x75u, 0x60u, 0x75u, 0x60u, 0xA2u,
+    0x0Cu, 0x60u, 0x76u, 0x60u, 0xA0u, 0x05u, 0x61u, 0x70u, 0x60u, 0x62u, 0x75u, 0x61u, 0xA4u, 0x62u,
+};
+
+/**
+ * @brief Three While that run as tight loops, as MAIN: `Local0 = 0; While (!(Local0 > 9)) { Local0 += 3 }`,
+ *        `Local1 = Local0; While (Local1 > 0) { Local1-- }`, `Local2 = 0; While (Local2 < 5) { Local2 =
+ *        Local2 + 2 }`, then `Return (Local0 + Local2)`: 12 and 6, so 18.
+ */
+static const uint8_t predecoding_tight[] = {
+    0x14u, 0x34u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Bu, 0x92u, 0x94u,
+    0x60u, 0x0Au, 0x09u, 0x72u, 0x60u, 0x0Au, 0x03u, 0x60u, 0x70u, 0x60u, 0x61u, 0xA2u, 0x06u, 0x94u,
+    0x61u, 0x00u, 0x76u, 0x61u, 0x70u, 0x00u, 0x62u, 0xA2u, 0x0Cu, 0x95u, 0x62u, 0x0Au, 0x05u, 0x70u,
+    0x72u, 0x62u, 0x0Au, 0x02u, 0x00u, 0x62u, 0xA4u, 0x72u, 0x60u, 0x62u, 0x00u,
+};
+
+/**
+ * @brief A tight loop whose body divides by zero at its fifth turn, as MODT: `Local0 = 0; While (Local0 <
+ *        10) { Local0 += 1 + (0 % (4 - Local0)) }; Return (Local0)`.
+ */
+static const uint8_t predecoding_tight_modulo[] = {
+    0x14u, 0x1Fu, 'M',   'O',   'D',   'T',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x13u, 0x95u, 0x60u, 0x0Au, 0x0Au,
+    0x72u, 0x60u, 0x72u, 0x01u, 0x85u, 0x00u, 0x74u, 0x0Au, 0x04u, 0x60u, 0x00u, 0x00u, 0x00u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
  * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
  */
 static const uint8_t predecoding_while[] = {0xA2u, 0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u};
@@ -204,6 +255,9 @@ static const uint8_t predecoding_inner_target[] = {0xA2u, 0x07u, 0x72u, 0x60u, 0
 static const uint8_t predecoding_cut_constant[] = {0xA2u, 0x04u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u};
 static const uint8_t predecoding_crossing[] = {0xA2u, 0x10u, 0x95u, 0x60u, 0x01u, 0x75u, 0x60u};
 static const uint8_t predecoding_continue[] = {0x9Fu};
+static const uint8_t predecoding_store_debug[] = {0x70u, 0x60u, 0x5Bu, 0x31u};
+static const uint8_t predecoding_add_debug[] = {0x72u, 0x60u, 0x01u, 0x5Bu, 0x31u};
+static const uint8_t predecoding_increment_name[] = {0x75u, 'N', 'A', 'M', 'E'};
 
 /**
  * @brief Runs @p path of @p aml with records off, then on, and checks that both left the same fold;
@@ -389,8 +443,9 @@ KERNEL_TEST(lnot_and_a_comparison_decode_as_one_operator)
 
 /**
  * @brief A statement no record runs stays a record the loop runs: a name in a predicate, an operator
- *        that stores to a local, a constant its PkgLength cuts, a PkgLength that passes the end of the
- *        construct around it, a Continue.
+ *        that stores to a local inside a predicate, a constant its PkgLength cuts, a PkgLength that passes
+ *        the end of the construct around it, a Continue, a Store and an operator to Debug, an Increment of
+ *        a name.
  */
 KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
 {
@@ -403,6 +458,9 @@ KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
         {predecoding_cut_constant,   sizeof(predecoding_cut_constant)  },
         {predecoding_crossing,       sizeof(predecoding_crossing)      },
         {predecoding_continue,       sizeof(predecoding_continue)      },
+        {predecoding_store_debug,    sizeof(predecoding_store_debug)   },
+        {predecoding_add_debug,      sizeof(predecoding_add_debug)     },
+        {predecoding_increment_name, sizeof(predecoding_increment_name)},
     };
     uint32_t general = 0u;
 
@@ -428,6 +486,69 @@ KERNEL_TEST(the_loop_of_window_w4_runs_from_records_as_the_loop_runs_it)
                         "fold_revision_2");
     predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 1u, "\\LOOP", PREDECODING_NO_ARGUMENT, true,
                         "fold_revision_1");
+}
+
+/**
+ * @brief A Store copies a local or an argument whole, unmasked, from a record as from the loop (§5.2):
+ *        under revision 1, STOR (0x100000001) stores its argument at its second turn, from a record, and
+ *        returns 0x100000001, not 1.
+ */
+KERNEL_TEST(a_store_from_a_record_copies_a_wide_argument_whole)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_store_whole, sizeof(predecoding_store_whole), 1u,
+                                                     "\\STOR", 0x100000001ull, true, "fold");
+
+    kernel_test_check(test, run.result == 0x100000001ull, "STOR returns its argument whole");
+}
+
+/**
+ * @brief A record hands back an Increment of a local that holds nothing, which the loop reads as 0,
+ *        counted, and a Store to a local that holds a String, which the loop gives back: UNIN returns 3,
+ *        from records as from the loop, the two statements handed back once each.
+ */
+KERNEL_TEST(a_record_hands_back_a_target_that_holds_no_integer)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_targets, sizeof(predecoding_targets), 2u,
+                                                     "\\UNIN", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 3u && run.declined == 2u, "UNIN returns 3, two statements handed back");
+}
+
+/**
+ * @brief A Store that a record runs first raises the most values the evaluation held, as the loop would:
+ *        PEAK's Store holds its source and its target, 2 values, more than anything before it.
+ */
+KERNEL_TEST(a_store_first_run_from_a_record_raises_the_values_peak)
+{
+    predecoding_compare(test, predecoding_store_peak, sizeof(predecoding_store_peak), 2u, "\\PEAK",
+                        PREDECODING_NO_ARGUMENT, true, "fold");
+}
+
+/**
+ * @brief While whose predicate compares two leaves and whose body writes a local run as tight loops, as
+ *        the loop runs them: an LNot over LGreater with an Add, a Decrement, a Store of an Add, under both
+ *        widths. The control: MAIN returns 18.
+ */
+KERNEL_TEST(while_with_a_one_statement_body_run_as_tight_loops_as_the_loop_runs_them)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight, sizeof(predecoding_tight), 2u, "\\MAIN",
+                                                     PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
+
+    predecoding_compare(test, predecoding_tight, sizeof(predecoding_tight), 1u, "\\MAIN", PREDECODING_NO_ARGUMENT, true,
+                        "fold_revision_1");
+    kernel_test_check(test, run.result == 18u, "MAIN returns 18");
+}
+
+/**
+ * @brief A tight loop whose body would divide by zero hands it back with the While's block open, and the
+ *        loop fails as it fails without records: MODT's modulo by zero is handed back, once.
+ */
+KERNEL_TEST(a_tight_loop_hands_back_a_body_that_would_fail)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight_modulo, sizeof(predecoding_tight_modulo),
+                                                     2u, "\\MODT", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.declined == 1u, "the modulo by zero handed back");
 }
 
 /**
@@ -467,13 +588,13 @@ KERNEL_TEST(breaks_continues_calls_and_returns_inside_loops_agree)
 
 /**
  * @brief A record hands back a statement whose operand holds no Integer (a String, a Buffer, a
- *        reference, an uninitialized local), so that no record of MAIN runs, and one whose modulo by
- *        zero would fail; the loop then runs them, and the failure is the loop's.
+ *        reference, an uninitialized local), so that of MAIN's records only its Increment runs, and one
+ *        whose modulo by zero would fail; the loop then runs them, and the failure is the loop's.
  */
 KERNEL_TEST(a_record_hands_back_what_holds_no_integer_or_would_fail)
 {
     const PredecodingRun_t run = predecoding_compare(test, predecoding_guards, sizeof(predecoding_guards), 2u, "\\MAIN",
-                                                     PREDECODING_NO_ARGUMENT, false, "fold_operands");
+                                                     PREDECODING_NO_ARGUMENT, true, "fold_operands");
     PredecodingRun_t failed = {0};
 
     kernel_test_check(test, run.declined != 0u, "the statements whose operands hold no Integer are handed back");
