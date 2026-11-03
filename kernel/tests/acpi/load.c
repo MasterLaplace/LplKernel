@@ -22,6 +22,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_load, KERNEL_TEST_S
 #define LOAD_UNTOUCHED            0x55u                 /**< What a Name a Load must not store to holds. */
 #define LOAD_REVISION_BITS        (24u * 8u)            /**< The bits of a header before its OEM revision. */
 #define LOAD_PROCESSOR_IDENTIFIER 1u                    /**< The ACPI Processor UID of the made-up CPU slot. */
+#define LOAD_FULL_DEPTH                                                                                                \
+    62u /**< The Arg0 of REC_ that fills the evaluation's 64 frames: the host's, then 63 of REC_'s. */
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t load_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load_load;
@@ -504,6 +506,104 @@ KERNEL_TEST(a_method_in_the_frame_a_loaded_table_ran_in_runs_as_a_method)
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *method = made_up_root_node(&load_load, "INNR");
 
     kernel_test_check(test, method != NULL && method->first_child == 0u, "INNR has no child once it has returned");
+    load_close(test);
+}
+
+/**
+ * @brief A method that the code of a loaded table calls, and that fails, fails that statement only: the table's
+ *        code goes on past it, and the Load stores True (§3.6).
+ */
+KERNEL_TEST(a_failure_in_a_method_a_loaded_table_calls_goes_on_past_its_statement)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t fails[] = {0xA4u, '\\', 'N', 'O', 'P', 'E'};
+    static const uint8_t calls[] = {0x70u, '\\', 'F', 'A', 'L', 'T', '\\', 'T', 'R', 'A', 'C'};
+
+    load_begin();
+    made_up_aml_raw(&load_loaded, calls, sizeof(calls));
+    made_up_aml_name_integer(&load_loaded, "AFTR", 7u);
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    load_method(&load_aml, "FALT", fails, sizeof(fails));
+    load_method(&load_aml, "LDIT", loads, sizeof(loads));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "the Load succeeds and stores True");
+    kernel_test_check(test,
+                      load_load.evaluation.statuses[LOAD_STATUS(NAME_NOT_FOUND)] == 1u && load_integer("TRAC") == 0u,
+                      "the statement that calls FALT fails, counted, and stores nothing");
+    kernel_test_check(test, load_integer("AFTR") == 7u, "the declaration after it is made");
+    load_close(test);
+}
+
+/**
+ * @brief A Load run where the evaluation has no room left for its table's frame declares the table's code without
+ *        running it, the failure counted: its Name exists, its Store never ran, and the Load stores True (§3.6).
+ */
+KERNEL_TEST(a_table_whose_frame_finds_no_room_is_declared_without_running)
+{
+    static const uint8_t recurses[] = {0xA0u, 0x0Au, 0x68u, 'R',   'E',   'C',   '_',  0x74u, 0x68u,
+                                       0x01u, 0x00u, 0xA1u, 0x0Du, 0x5Bu, 0x20u, '\\', 'T',   'B',
+                                       'L',   'R',   '\\',  'H',   'N',   'D',   '1'};
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t depth = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = LOAD_FULL_DEPTH};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    load_begin();
+    made_up_aml_store_integer(&load_loaded, 5u, "TRAC");
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&load_body);
+    made_up_aml_raw(&load_body, recurses, sizeof(recurses));
+    made_up_aml_method(&load_aml, "REC_", 0x01u, &load_body);
+    if (!load_run(test))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&load_load, "\\REC_", &depth, 1u, &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&load_load.heap, &load_load.space,
+                                                                              &result);
+    kernel_test_check(test, status == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "the Load at the deepest call succeeds and stores True");
+    kernel_test_check(test,
+                      load_load.evaluation.statuses[LOAD_STATUS(LIMIT_FRAMES)] == 1u && load_integer("LDED") == 0x2Au &&
+                          load_integer("TRAC") == 0u,
+                      "its table finds no frame, counted: LDED is declared, the Store to TRAC never runs");
+    load_close(test);
+}
+
+/**
+ * @brief An External of a loaded table whose parent the table declares after it is placed under that parent
+ *        once the table is declared, by the Externals pass the Load runs (§3.6).
+ */
+KERNEL_TEST(a_loaded_table_places_an_external_whose_parent_it_declares_later)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'Z', 'D', 'E', 'V', 'Z', 'I', 'N', 'T', 0x01u, 0x00u};
+    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u, 'Z', 'D', 'E', 'V'};
+
+    load_begin();
+    made_up_aml_raw(&load_loaded, external, sizeof(external));
+    made_up_aml_raw(&load_loaded, device, sizeof(device));
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    load_method(&load_aml, "LDIT", loads, sizeof(loads));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "the Load succeeds and stores True");
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &load_load.space;
+    const uint32_t zdev = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "ZDEV", 0u));
+
+    kernel_test_check(test,
+                      zdev != 0u && advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                                        space, zdev,
+                                        advanced_configuration_and_power_interface_machine_language_name_segment(
+                                            (const uint8_t *) "ZINT", 0u)) != 0u,
+                      "ZINT is placed under ZDEV");
     load_close(test);
 }
 
