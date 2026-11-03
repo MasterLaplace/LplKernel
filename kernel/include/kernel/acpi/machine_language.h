@@ -769,6 +769,9 @@ extern void advanced_configuration_and_power_interface_machine_language_decode_t
  * @brief Declares the DSDT, then every SSDT, of a directory, which LoadTable searches from then on, and
  *        gives the load the global lock of its FACS.
  *
+ * @details Each table's checksum is the one the directory computed when it recorded the table: the
+ *          load does not sum its bytes again.
+ *
  * @param load      An open load, with no table yet.
  * @param directory The directory, whose tables stay mapped until the load is closed.
  */
