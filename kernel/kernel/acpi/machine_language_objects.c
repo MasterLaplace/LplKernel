@@ -5,7 +5,9 @@
 #define MACHINE_LANGUAGE_OBJECT_ALIGNMENT 16u /**< Bytes every object starts on, and is rounded up to. */
 #define MACHINE_LANGUAGE_OBJECT_OFFSET_BITS                                                                            \
     12u /**< Bits of a handle that hold an object's offset in its run, in units of the alignment. */
-#define MACHINE_LANGUAGE_MAX_NESTED_PACKAGES 32u /**< Packages one data object nests (§6.1). */
+#define MACHINE_LANGUAGE_MAX_NESTED_PACKAGES                                                                           \
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES /**< Packages one data object      \
+                                                                                       nests (§6.1). */
 #define MACHINE_LANGUAGE_MAX_PAYLOAD_BYTES                                                                             \
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES +                                    \
      1u) /**< The largest payload: a String of the largest length and its NUL; a VarPackage of the most elements       \

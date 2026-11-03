@@ -158,6 +158,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     bool skips_bodies;            /**< Whether the load decodes no method body once its tables are declared, nor
                                        those of a table Load adds, as a release kernel loads (O2, §3.6); false in a
                                        debug kernel and in the host tools. */
+    bool general_load;            /**< Whether the declaration pass takes none of its shortcuts (§3.6): the
+                                       differential test compares them with this general path; false at boot. */
     uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
     uint32_t table_count;         /**< Tables declared. */
     uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
@@ -169,6 +171,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                              NULL. */
     uint32_t bytes;              /**< AML bytes of those tables, headers apart. */
     uint32_t declarations;       /**< Nodes the tables created. */
+    uint32_t data_stepped_over;  /**< Data objects of a Name the declaration pass built, then stepped over instead of
+                                      decoding them again (O18). */
     uint32_t duplicates;         /**< Declarations of a name that already existed, skipped. */
     uint32_t externals_unplaced; /**< Externals the declaration pass had nowhere to place, which the Externals
                                       pass places once every table is declared. */
