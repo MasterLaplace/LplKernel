@@ -1384,6 +1384,51 @@ static MachineLanguageStatus_t machine_language_enter_else(MachineLanguageEvalua
 }
 
 /**
+ * @brief Pushes the operator of the opcode at @p start, its PkgLength end or inherited limit @p end, none of its
+ *        operands decoded yet.
+ */
+static MachineLanguageStatus_t machine_language_push_pending(MachineLanguageEvaluation_t *evaluation, uint32_t opcode,
+                                                             uint32_t start, uint32_t end)
+{
+    if (evaluation->operator_count ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
+
+    MachineLanguagePendingOperator_t *pending = &evaluation->operators[evaluation->operator_count++];
+
+    pending->opcode = (uint16_t) opcode;
+    pending->operands_done = 0u;
+    pending->operand_count =
+        advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->operand_count;
+    pending->start = start;
+    pending->end = end;
+    pending->node = 0u;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Takes a back-edge of a method's While whose body ended at @p block: counts it, then pushes the While's
+ *        operator again and resumes at its predicate, past the While's opcode and PkgLength, so that the While is
+ *        not decoded again.
+ */
+static MachineLanguageStatus_t machine_language_restart_while(MachineLanguageEvaluation_t *evaluation,
+                                                              const MachineLanguageBlock_t *block)
+{
+    MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    frame->pc = block->start;
+    status = machine_language_count_iteration(evaluation);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_push_pending(evaluation, MACHINE_LANGUAGE_OPCODE(WHILE), block->start, block->end);
+    if (status == MACHINE_LANGUAGE_OK)
+        frame->pc = block->start + 1u +
+                    advanced_configuration_and_power_interface_machine_language_package_length_bytes(
+                        frame->code[block->start + 1u]);
+    return status;
+}
+
+/**
  * @brief Ends the construct the running frame is in: a method returns, a While goes back to its
  *        predicate, an If skips the Else after it; in a table's code at load, the If leaves that Else
  *        to the next statement, and a While past the table's budget goes on past its end, the failure
@@ -1408,9 +1453,10 @@ static inline MachineLanguageStatus_t machine_language_close_block(MachineLangua
         return machine_language_skip_else(evaluation);
     if (block.kind != MACHINE_LANGUAGE_RUN_WHILE)
         return MACHINE_LANGUAGE_OK;
+    if (!frame->declares)
+        return machine_language_restart_while(evaluation, &block);
     frame->pc = block.start;
-    return frame->declares ? machine_language_take_table_back_edge(evaluation, &block) :
-                             machine_language_count_iteration(evaluation);
+    return machine_language_take_table_back_edge(evaluation, &block);
 }
 
 /**
@@ -1427,10 +1473,10 @@ static MachineLanguageStatus_t machine_language_leave_loop(MachineLanguageEvalua
 
         if (block->kind != MACHINE_LANGUAGE_RUN_WHILE)
             continue;
-        frame->pc = again ? block->start : block->end;
+        frame->pc = block->end;
         evaluation->operator_count = block->pending_base;
         evaluation->block_count = index - 1u;
-        return again ? machine_language_count_iteration(evaluation) : MACHINE_LANGUAGE_OK;
+        return again ? machine_language_restart_while(evaluation, block) : MACHINE_LANGUAGE_OK;
     }
     return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
 }
@@ -1530,20 +1576,12 @@ static MachineLanguageStatus_t machine_language_push_operator(MachineLanguageEva
         if (status != MACHINE_LANGUAGE_OK)
             return status;
     }
-    if (evaluation->operator_count ==
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    MachineLanguagePendingOperator_t *pending = &evaluation->operators[evaluation->operator_count++];
+    const MachineLanguageStatus_t status = machine_language_push_pending(evaluation, opcode, start, end);
 
-    pending->opcode = (uint16_t) opcode;
-    pending->operands_done = 0u;
-    pending->operand_count = descriptor->operand_count;
-    pending->start = start;
-    pending->end = end;
-    pending->node = 0u;
-    frame->pc = after;
-    return MACHINE_LANGUAGE_OK;
+    if (status == MACHINE_LANGUAGE_OK)
+        frame->pc = after;
+    return status;
 }
 
 /**

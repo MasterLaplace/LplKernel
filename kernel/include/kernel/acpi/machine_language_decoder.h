@@ -478,6 +478,14 @@ advanced_configuration_and_power_interface_machine_language_read_package_length(
                                                                                 uint32_t *out_after);
 
 /**
+ * @brief The bytes a PkgLength encoding takes, from its first byte: 1 to 4, bits 7-6 counting those that follow.
+ *
+ * @param lead The encoding's first byte.
+ * @return Its length in bytes.
+ */
+static inline uint32_t advanced_configuration_and_power_interface_machine_language_package_length_bytes(uint8_t lead);
+
+/**
  * @brief Reads a PkgLength and gives the end of the construct it opens: the PkgLength counts its
  *        own bytes, so the end is @p offset plus its value.
  *

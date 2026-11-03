@@ -78,6 +78,11 @@ advanced_configuration_and_power_interface_machine_language_read_package_length(
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
 
+static inline uint32_t advanced_configuration_and_power_interface_machine_language_package_length_bytes(uint8_t lead)
+{
+    return 1u + ((uint32_t) lead >> 6u);
+}
+
 static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_read_package_end(const uint8_t *bytes, uint32_t offset,
                                                                              uint32_t limit, uint32_t *out_end,
