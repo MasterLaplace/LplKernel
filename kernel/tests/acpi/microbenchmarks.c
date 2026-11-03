@@ -350,18 +350,22 @@ static const uint8_t microbenchmark_loop_aml[] = {
 };
 
 /**
- * @brief The polling loop of window W4, shaped like the loops real firmware runs at boot: a DWordAcc
- *        field STS of a SystemMemory region at 0x10000, which the simulated host reads as 0, then POLL:
- *        `Local0 = 0; Local2 = 1000; While (Local0 < 1000) { Local1 = (STS & 0x10); If (Local1 == 0x10)
- *        { Break }; Local2--; Local0++ }; Return (Local0)`.
+ * @brief The polling loop of window W4, shaped like the loops real firmware runs at boot but with no Stall
+ *        nor Sleep, so that it counts the interpreter alone: STS, 8 bits of a DWordAcc field of a
+ *        SystemMemory region at 0x10000, then POLL: `Local0 = 0; Local2 = 1000; While (Local0 < 1000)
+ *        { Local1 = (STS & 0x10); If (Local1 == 0x10) { Break }; Local2--; Local0++ }; Return (Local0 +
+ *        Local2)`, which gives 1000 when every turn runs its Decrement and its Increment.
  */
 static const uint8_t microbenchmark_polling_aml[] = {
-    0x5Bu, 0x80u, 'P',   'R',   'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x01u, 0x00u, 0x0Au, 0x04u,
-    0x5Bu, 0x81u, 0x0Bu, 'P',   'R',   'E',   'G',   0x03u, 'S',   'T',   'S',   '_',   0x08u, 0x14u,
-    0x2Au, 'P',   'O',   'L',   'L',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x0Bu, 0xE8u, 0x03u, 0x62u,
-    0xA2u, 0x19u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x7Bu, 'S',   'T',   'S',   '_',   0x0Au, 0x10u,
-    0x61u, 0xA0u, 0x06u, 0x93u, 0x61u, 0x0Au, 0x10u, 0xA5u, 0x76u, 0x62u, 0x75u, 0x60u, 0xA4u, 0x60u,
+    0x5Bu, 0x80u, 'P',   'R',   'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x01u, 0x00u, 0x0Au, 0x04u, 0x5Bu,
+    0x81u, 0x0Bu, 'P',   'R',   'E',   'G',   0x03u, 'S',   'T',   'S',   '_',   0x08u, 0x14u, 0x2Du, 'P',
+    'O',   'L',   'L',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x0Bu, 0xE8u, 0x03u, 0x62u, 0xA2u, 0x19u, 0x95u,
+    0x60u, 0x0Bu, 0xE8u, 0x03u, 0x7Bu, 'S',   'T',   'S',   '_',   0x0Au, 0x10u, 0x61u, 0xA0u, 0x06u, 0x93u,
+    0x61u, 0x0Au, 0x10u, 0xA5u, 0x76u, 0x62u, 0x75u, 0x60u, 0xA4u, 0x72u, 0x60u, 0x62u, 0x00u,
 };
+
+_Static_assert(MADE_UP_TABLE_HEADER + sizeof(microbenchmark_polling_aml) <= MICROBENCHMARK_TABLE_CAPACITY,
+               "the polling loop's DSDT fits the buffer it is written in");
 
 /**
  * @brief The NameSeg of child @p index of the wide scope: 'X' and three base-36 digits.
@@ -404,7 +408,9 @@ static void microbenchmark_loop(KernelTest_t *test, uint8_t revision)
 
 /**
  * @brief Loads the polling loop as a DSDT of revision 2, evaluates POLL, and checks that it took its
- *        1,000 turns, read its field once per turn, and allocated nothing.
+ *        1,000 turns, each running its Decrement and its Increment, read its field and the host once per
+ *        turn, and allocated nothing; then sets bit 0x10 of what the host reads and evaluates POLL again,
+ *        which breaks at its first turn, no back-edge taken.
  */
 static void microbenchmark_polling(KernelTest_t *test)
 {
@@ -421,11 +427,21 @@ static void microbenchmark_polling(KernelTest_t *test)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
                           result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
                           result.payload == MICROBENCHMARK_TURNS,
-                      "the polling loop takes 1,000 turns");
+                      "the polling loop takes 1,000 turns, each stepping Local0 and Local2");
     kernel_test_check(test, microbenchmark_load.regions.field_reads == MICROBENCHMARK_TURNS,
                       "the polling loop reads its field once per turn");
+    kernel_test_check(test, microbenchmark_host.access_count == MICROBENCHMARK_TURNS,
+                      "the polling loop reads the host once per turn");
     kernel_test_check(test, microbenchmark_load.heap.objects == objects, "the polling loop allocates nothing");
     kernel_test_measure(test, "back_edges_polling", microbenchmark_load.evaluation.iterations);
+    microbenchmark_host.memory_fill = 0x10u;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &microbenchmark_load, "\\POLL", NULL, 0u, &result) ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          result.payload == MICROBENCHMARK_TURNS && microbenchmark_load.evaluation.iterations == 0u &&
+                          microbenchmark_load.regions.field_reads == MICROBENCHMARK_TURNS + 1u,
+                      "with bit 0x10 set, the polling loop breaks at its first turn");
     advanced_configuration_and_power_interface_machine_language_close(&microbenchmark_load);
     advanced_configuration_and_power_interface_simulated_host_close(&microbenchmark_host);
 }

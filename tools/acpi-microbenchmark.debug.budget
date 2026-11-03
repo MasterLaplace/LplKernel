@@ -3,13 +3,14 @@
 # under a revision-1 DSDT, then loads and evaluates a polling loop of 1,000 turns; on a debug server kernel
 # (./build.sh --server), the test alone selected so that no other test changes the page allocator it starts from.
 # Checked by tools/instructions.sh --budget tools/acpi-microbenchmark.debug.budget kernel/lpl.kernel; a change that
-# moves the interpreter's loop records the new counts. The evaluations count one by one with the same command and
-# --inside advanced_configuration_and_power_interface_machine_language_evaluate --times 1, 2 then 3: 2,074,595,
-# 4,156,198 and 11,189,004 instructions, so 2,074 per turn of the loop under revision 2 against the 200 of §7.4
-# (#584), and 7,032 per turn of the polling loop.
+# moves the interpreter's loop records the new counts. The first evaluations count together with the same command
+# and --inside advanced_configuration_and_power_interface_machine_language_evaluate --times 1, 2 then 3: 2,074,595,
+# 4,156,198 and 11,189,040 instructions, so 2,074 per turn of the loop under revision 2 against the 200 of §7.4 (#584);
+# the difference of the last two, 7,032 per turn, is the cost of the polling loop. A fourth evaluation breaks the
+# polling loop at its first turn.
 inside=kernel_test_body_the_window_w4_loop_of_a_thousand_turns
 times=1
 append=lpl.test=advanced_configuration_and_power_interface_microbenchmarks.the_window_w4_loop_of_a_thousand_turns
-instructions=14302880
-accesses=6681645
+instructions=14318487
+accesses=6689599
 tolerance=1
