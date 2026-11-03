@@ -30,11 +30,6 @@ LIBK_CPPFLAGS:=$(LIBK_CPPFLAGS) $(KERNEL_ARCH_CPPFLAGS)
 CFLAGS += -fstack-protector-strong
 LDFLAGS += -fstack-protector-strong
 
-# GCC may turn a loop that fills or copies memory into a call to memset or memcpy, which inside memset or memcpy
-# would never return: the string functions are compiled without that pass.
-string/%.o: CFLAGS += -fno-tree-loop-distribute-patterns
-string/%.o: LIBK_CFLAGS += -fno-tree-loop-distribute-patterns
-
 FREEOBJS=\
 $(ARCH_FREEOBJS) \
 math/math.o \
