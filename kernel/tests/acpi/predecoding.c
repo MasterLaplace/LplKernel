@@ -260,6 +260,16 @@ static const uint8_t predecoding_add_debug[] = {0x72u, 0x60u, 0x01u, 0x5Bu, 0x31
 static const uint8_t predecoding_increment_name[] = {0x75u, 'N', 'A', 'M', 'E'};
 
 /**
+ * @brief Statements that write a local or an argument, each at offset 0: `Local2 = Local0 + Arg1`,
+ *        `Local1 = Arg0`, `Local0 = Local0 - 1` as Subtract with a target, `Arg3++` and `Local7--`.
+ */
+static const uint8_t predecoding_store_sum[] = {0x70u, 0x72u, 0x60u, 0x69u, 0x00u, 0x62u};
+static const uint8_t predecoding_store_leaf[] = {0x70u, 0x68u, 0x61u};
+static const uint8_t predecoding_subtract[] = {0x74u, 0x60u, 0x01u, 0x60u};
+static const uint8_t predecoding_increment[] = {0x75u, 0x6Bu};
+static const uint8_t predecoding_decrement[] = {0x76u, 0x67u};
+
+/**
  * @brief Runs @p path of @p aml with records off, then on, and checks that both left the same fold;
  *        the control: no record ran with them off, and with them on, records ran unless @p runs_records
  *        says none can. The fold is measured as @p key.
@@ -439,6 +449,59 @@ KERNEL_TEST(lnot_and_a_comparison_decode_as_one_operator)
                       "LNotEqual (Arg1, 5) is one LEqual, negated");
     kernel_test_check(test, record->values_peak == 2u && record->operators_peak == 3u,
                       "the loop holds 2 values and 3 operators for it");
+}
+
+/**
+ * @brief A Store, an operator with a target, an Increment and a Decrement that write a local or an
+ *        argument decode into records: their source, their target, and what the loop holds to run them,
+ *        the source then the target as values, an operator's target as its third (§3.6).
+ */
+KERNEL_TEST(statements_that_write_a_local_or_an_argument_decode_into_records)
+{
+    const PredecodingRecord_t *sum = predecoding_build(predecoding_store_sum, sizeof(predecoding_store_sum));
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t *node = &predecoding_cache.nodes[0];
+
+    kernel_test_check(
+        test,
+        sum != NULL && sum->shape == PREDECODING_RECORD(STORE) && sum->after == 6u && sum->node_count == 1u &&
+            node->opcode == PREDECODING_OPCODE(ADD) && node->operands[1].kind == PREDECODING_OPERAND(ARGUMENT) &&
+            sum->source.kind == PREDECODING_OPERAND(RESULT) && sum->target.kind == PREDECODING_OPERAND(LOCAL) &&
+            sum->target.slot == 2u && sum->values_peak == 3u && sum->operators_peak == 2u,
+        "Local2 = Local0 + Arg1 stores an Add to Local2, holding 3 values and 2 operators");
+
+    const PredecodingRecord_t *leaf = predecoding_build(predecoding_store_leaf, sizeof(predecoding_store_leaf));
+
+    kernel_test_check(test,
+                      leaf != NULL && leaf->shape == PREDECODING_RECORD(STORE) && leaf->node_count == 0u &&
+                          leaf->source.kind == PREDECODING_OPERAND(ARGUMENT) && leaf->source.slot == 0u &&
+                          leaf->target.kind == PREDECODING_OPERAND(LOCAL) && leaf->target.slot == 1u &&
+                          leaf->values_peak == 2u && leaf->operators_peak == 1u,
+                      "Local1 = Arg0 stores Arg0 itself, holding 2 values and 1 operator");
+
+    const PredecodingRecord_t *difference = predecoding_build(predecoding_subtract, sizeof(predecoding_subtract));
+
+    kernel_test_check(test,
+                      difference != NULL && difference->shape == PREDECODING_RECORD(STORE) &&
+                          difference->node_count == 1u &&
+                          predecoding_cache.nodes[0].opcode == PREDECODING_OPCODE(SUBTRACT) &&
+                          difference->target.kind == PREDECODING_OPERAND(LOCAL) && difference->target.slot == 0u &&
+                          difference->values_peak == 3u && difference->operators_peak == 1u,
+                      "Subtract (Local0, One, Local0) writes Local0, holding 3 values and 1 operator");
+
+    const PredecodingRecord_t *up = predecoding_build(predecoding_increment, sizeof(predecoding_increment));
+
+    kernel_test_check(test,
+                      up != NULL && up->shape == PREDECODING_RECORD(INCREMENT) && up->after == 2u &&
+                          up->target.kind == PREDECODING_OPERAND(ARGUMENT) && up->target.slot == 3u &&
+                          up->values_peak == 1u && up->operators_peak == 1u,
+                      "Arg3++ steps Arg3 up, holding 1 value and 1 operator");
+
+    const PredecodingRecord_t *down = predecoding_build(predecoding_decrement, sizeof(predecoding_decrement));
+
+    kernel_test_check(test,
+                      down != NULL && down->shape == PREDECODING_RECORD(DECREMENT) &&
+                          down->target.kind == PREDECODING_OPERAND(LOCAL) && down->target.slot == 7u,
+                      "Local7-- steps Local7 down");
 }
 
 /**

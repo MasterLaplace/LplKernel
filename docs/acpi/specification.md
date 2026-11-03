@@ -206,7 +206,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 50 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. |
-| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, predicate operand `u32`, value and operator depths `u8` | 32 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant index). |
+| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8` | 36 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant index). |
 | **Record cache** | 128 records, 256 operators, 256 constants (`u64`, masked to the width), 256 hash slots (`u16`), the integer width they were built under, what running them counted | about 10 KiB, the last member of the load | Opening the load empties the slots and the counters alone, word by word: a record is one only below the count and under its own key (table, `pc`). |
 
 ### 3.5 Memory strategy
@@ -330,15 +330,18 @@ holds it, and the statements of the frame's loop run from records, each built th
 statement: a record is the shape of the statement at an offset of a table under the end of the construct around it,
 found again by its table and offset. A record runs an If, a While or a Break whose predicate is an expression of
 locals, arguments and constants, its operators the comparisons, `LNot` (over a comparison, the two as one operator)
-and the operators on two integers whose target is NullName. Every operation a record runs is one the loop calls for
-the same case. A record checks, before any effect, every condition under which the loop would do anything else (an
-operand that holds no Integer, a stack that would overflow, a modulo by zero); when one holds, it changes nothing and
-the loop decodes and runs the statement. Any other statement keeps a record that hands it to the loop. The end of a
-construct a record opened is closed as the loop closes it, a While's taking its back-edge, counted as the loop counts
-it. A cache whose records, operators or constants are full is emptied whole, and the loop of the frame it filled under
-builds no record until the frame's loop changes (§6.1); a change of integer width empties it too. Table-level code
-never runs from records. A load runs none when the boot line holds `lpl.acpi.predecoding=off` (`test-acpi
---predecoding off`), which the tests that compare the two runs use (§8.1).
+and the operators on two integers whose target is NullName. It runs a statement that writes a local or an argument:
+a Store of such an expression, or of a local or an argument copied whole, as a Store copies a value (§5.2); an
+operator on two integers whose target is a local, an argument or NullName; an Increment or a Decrement. Every
+operation a record runs is one the loop calls for the same case. A record checks, before any effect, every condition
+under which the loop would do anything else (an operand that holds no Integer, a stack that would overflow, a modulo
+by zero, a target that holds an object or a reference, an Increment of what holds no Integer); when one holds, it
+changes nothing and the loop decodes and runs the statement. Any other statement keeps a record that hands it to the
+loop. The end of a construct a record opened is closed as the loop closes it, a While's taking its back-edge, counted
+as the loop counts it. A cache whose records, operators or constants are full is emptied whole, and the loop of the
+frame it filled under builds no record until the frame's loop changes (§6.1); a change of integer width empties it
+too. Table-level code never runs from records. A load runs none when the boot line holds `lpl.acpi.predecoding=off`
+(`test-acpi --predecoding off`), which the tests that compare the two runs use (§8.1).
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on

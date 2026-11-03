@@ -242,7 +242,8 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
                                      const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     static const char *const reasons[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES] = {
-        "declined_shape", "declined_limit", "declined_operand", "declined_room", "declined_operation", "declined_full",
+        "declined_shape",     "declined_limit", "declined_operand", "declined_room",
+        "declined_operation", "declined_full",  "declined_target",
     };
     const AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache = &load->predecoding;
 

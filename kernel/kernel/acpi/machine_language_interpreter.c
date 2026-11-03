@@ -4182,14 +4182,14 @@ static bool machine_language_record_operand(const MachineLanguageLoad_t *load, c
 }
 
 /**
- * @brief Runs the operators of a record's expression in the loop's order, then gives the value of its
- *        predicate; changes nothing.
+ * @brief Runs the operators of a record's expression in the loop's order, then gives the Integer of its
+ *        source: an If's or a While's predicate, or what an operator stores; changes nothing.
  *
  * @return false, @p out_reason saying why, when an operand holds no Integer or an operator would fail.
  */
-static bool machine_language_record_predicate(const MachineLanguageLoad_t *load, const MachineLanguageFrame_t *frame,
-                                              const MachineLanguageRecord_t *record, uint64_t *out_integer,
-                                              uint8_t *out_reason)
+static bool machine_language_record_integer(const MachineLanguageLoad_t *load, const MachineLanguageFrame_t *frame,
+                                            const MachineLanguageRecord_t *record, uint64_t *out_integer,
+                                            uint8_t *out_reason)
 {
     uint64_t results[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NODES_PER_RECORD];
 
@@ -4222,6 +4222,102 @@ static bool machine_language_record_predicate(const MachineLanguageLoad_t *load,
         }
     }
     return machine_language_record_operand(load, frame, &record->source, results, out_integer);
+}
+
+/**
+ * @brief The local or the argument a record's operand names.
+ */
+static MachineLanguageValue_t *machine_language_record_local_or_argument(MachineLanguageFrame_t *frame,
+                                                                         const MachineLanguageRecordOperand_t *operand)
+{
+    return (operand->kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL)) ? &frame->locals[operand->slot] :
+                                                                       &frame->arguments[operand->slot];
+}
+
+/**
+ * @brief The value a Store's record stores: a local or an argument that holds an Integer, whole and
+ *        unmasked, as a Store copies a value (§5.2); otherwise the Integer its expression gives.
+ *
+ * @return false, @p out_reason saying why, when an operand holds no Integer or an operator would fail.
+ */
+static bool machine_language_record_value(const MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                          const MachineLanguageRecord_t *record, MachineLanguageValue_t *out_value,
+                                          uint8_t *out_reason)
+{
+    uint64_t integer = 0u;
+
+    if (record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL) ||
+        record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT))
+    {
+        const MachineLanguageValue_t *slot = machine_language_record_local_or_argument(frame, &record->source);
+
+        *out_reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
+        if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
+            return false;
+        *out_value = *slot;
+        return true;
+    }
+    if (!machine_language_record_integer(load, frame, record, &integer, out_reason))
+        return false;
+    *out_value = machine_language_integer(integer);
+    return true;
+}
+
+/**
+ * @brief Runs a Store, an operator with a target, an Increment or a Decrement from its record: its value,
+ *        then written to the local or the argument it targets as machine_language_store writes an
+ *        Integer there, in place; an operator whose target is NullName writes nothing.
+ *
+ * @return false, @p out_reason saying why, nothing changed, when an operand holds no Integer, an operator
+ *         would fail, or the target holds what is not overwritten in place, or no Integer to step.
+ */
+static bool machine_language_record_write(const MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                          const MachineLanguageRecord_t *record, uint8_t *out_reason)
+{
+    MachineLanguageValue_t value;
+    MachineLanguageValue_t *slot = NULL;
+
+    if (record->shape == MACHINE_LANGUAGE_RECORD(STORE))
+    {
+        if (!machine_language_record_value(load, frame, record, &value, out_reason))
+            return false;
+        if (record->target.kind == MACHINE_LANGUAGE_RECORD_OPERAND(NONE))
+            return true;
+        slot = machine_language_record_local_or_argument(frame, &record->target);
+    }
+    else
+    {
+        slot = machine_language_record_local_or_argument(frame, &record->target);
+        *out_reason = MACHINE_LANGUAGE_DECLINED(TARGET);
+        if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
+            return false;
+        value = machine_language_integer(machine_language_stepped(load, machine_language_mask(load, slot->payload),
+                                                                  record->shape == MACHINE_LANGUAGE_RECORD(INCREMENT)));
+    }
+    *out_reason = MACHINE_LANGUAGE_DECLINED(TARGET);
+    if (!machine_language_overwrites_in_place(slot))
+        return false;
+    machine_language_overwrite_in_place(slot, &value);
+    return true;
+}
+
+/**
+ * @brief Runs a statement that writes from its record, the frame then past it.
+ *
+ * @return false, the reason counted, when the record hands the statement back, nothing changed.
+ */
+static bool machine_language_record_statement(MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                              const MachineLanguageRecord_t *record)
+{
+    uint8_t reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
+
+    if (!machine_language_record_write(load, frame, record, &reason))
+    {
+        ++load->predecoding.declined[reason];
+        return false;
+    }
+    frame->pc = record->after;
+    return true;
 }
 
 /**
@@ -4278,7 +4374,7 @@ static bool machine_language_record_branch(MachineLanguageLoad_t *load, MachineL
     uint64_t truth = 0u;
     uint8_t reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
 
-    if (!machine_language_record_predicate(load, frame, record, &truth, &reason) ||
+    if (!machine_language_record_integer(load, frame, record, &truth, &reason) ||
         (truth != 0u &&
          evaluation->block_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS))
     {
@@ -4371,6 +4467,11 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
         {
             frame->pc = record->after;
             status = machine_language_leave_loop(evaluation, false);
+        }
+        else if (record->shape >= MACHINE_LANGUAGE_RECORD(STORE))
+        {
+            if (!machine_language_record_statement(load, frame, record))
+                break;
         }
         else if (!machine_language_record_branch(load, frame, record, &status))
             break;
