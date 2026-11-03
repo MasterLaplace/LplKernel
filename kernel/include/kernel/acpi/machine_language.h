@@ -175,7 +175,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                      decoding them again (O18). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
                                                  instead of operand by operand through the walk (O19). */
-    uint32_t duplicates;                    /**< Declarations of a name that already existed, skipped. */
+    uint32_t data_kept;          /**< Data objects of a Name the declaration pass checked, then kept in their table
+                                      unbuilt, and stepped over, until a name resolution reaches them (O20). */
+    uint32_t data_materialized;  /**< Of those, the ones a name resolution has built since. */
+    uint32_t duplicates;         /**< Declarations of a name that already existed, skipped. */
     uint32_t externals_unplaced; /**< Externals the declaration pass had nowhere to place, which the Externals
                                       pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
@@ -871,6 +874,36 @@ extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_memory_read(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint64_t physical_address, uint32_t length,
     uint8_t *destination);
+
+/**
+ * @brief Builds the data object a Name kept in its table (O20), once a name resolution reaches its node: the
+ *        Package, VarPackage or Buffer the load would have built, from the same bytes, its names read in the
+ *        node's parent and its integers as wide as when its table was declared. Any other node is left as it is.
+ *
+ * @param load  The load.
+ * @param index The node a name resolved to.
+ * @return OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object, the status of the data decoder
+ *         or TYPE_MISMATCH when its bytes no longer build one, the node keeping its data either way; OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_materialize(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t index);
+
+/**
+ * @brief Reads what a data object kept in its table (O20) holds once built, without building it: a Package's or a
+ *        VarPackage's element count, or a Buffer's length and the initialiser its bytes start with, zeros after it.
+ *
+ * @param load            The load.
+ * @param value           A node's value.
+ * @param out_length      Receives the elements of a package, the bytes of a buffer.
+ * @param out_initialiser Receives a buffer's initialiser, NULL for a package.
+ * @param out_initialised Receives the bytes of that initialiser, 0 for a package.
+ * @return false when @p value holds no kept data.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_describe_kept_data(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value, uint32_t *out_length,
+    const uint8_t **out_initialiser, uint32_t *out_initialised);
 
 /**
  * @brief Folds a load's namespace as the parity record of the specification (§8.7) does: FNV-1a,

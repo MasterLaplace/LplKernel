@@ -1164,6 +1164,19 @@ static const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *made_u
 }
 
 /**
+ * @brief The node a name written from the root resolves to, its data object built first when its Name kept it in
+ *        its table (O20), as a name resolution reaching it builds it; node 0's stand-in when it cannot be found.
+ */
+static const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *made_up_data(const char *text)
+{
+    const uint32_t index = made_up_node_at(text);
+
+    if (index != 0u)
+        (void) advanced_configuration_and_power_interface_machine_language_materialize(&made_up_load, index);
+    return made_up_node(text);
+}
+
+/**
  * @brief The header of the object a value names, or a stand-in, all zero.
  */
 static const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *
@@ -1211,13 +1224,13 @@ KERNEL_TEST(a_name_holds_the_data_object_it_declares)
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *string =
         made_up_object(&made_up_node("STR_")->value);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *buffer =
-        made_up_object(&made_up_node("BUF_")->value);
+        made_up_object(&made_up_data("BUF_")->value);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
-        made_up_object(&made_up_node("PKG_")->value);
+        made_up_object(&made_up_data("PKG_")->value);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *elements =
         (const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (package + 1);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *variable =
-        made_up_object(&made_up_node("VPK_")->value);
+        made_up_object(&made_up_data("VPK_")->value);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *variable_elements =
         (const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (variable + 1);
     static const uint8_t buffer_bytes[] = {0x01u, 0x02u, 0x00u, 0x00u};
@@ -1298,9 +1311,9 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
-        made_up_object(&made_up_node("TRN_")->value);
+        made_up_object(&made_up_data("TRN_")->value);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *buffer =
-        made_up_object(&made_up_node("BG__")->value);
+        made_up_object(&made_up_data("BG__")->value);
 
     kernel_test_check(
         test,
@@ -1312,7 +1325,7 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
                       "Buffer (2) {1, 2, 3} holds the three bytes");
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *outer =
-        made_up_object(&made_up_node("OVF_")->value);
+        made_up_object(&made_up_data("OVF_")->value);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *inner =
         made_up_object((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (outer + 1));
 
@@ -1813,7 +1826,7 @@ KERNEL_TEST(a_package_keeps_a_name_that_exists_as_a_name)
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
-        made_up_object(&made_up_node("PKN_")->value);
+        made_up_object(&made_up_data("PKN_")->value);
 
     kernel_test_check(
         test,
@@ -1845,13 +1858,17 @@ KERNEL_TEST(objects_take_the_sizes_the_specification_gives)
 }
 
 /**
- * @brief Writes @p count Names of zeroed buffers of @p size bytes, named @p letter then three digits,
- *        at @p aml.
+ * @brief Writes at @p aml `Name (SIZE, size)`, then @p count Names of zeroed buffers of SIZE bytes, named
+ *        @p letter then three digits: a size a name gives, so that the load builds each buffer, where it keeps
+ *        in its table a buffer whose size is a literal (O20).
  *
  * @return The bytes written.
  */
 static uint32_t made_up_buffers(uint8_t *aml, char letter, uint32_t count, uint16_t size)
 {
+    const uint8_t size_name[] = {0x08u, 'S', 'I', 'Z', 'E', 0x0Bu, (uint8_t) size, (uint8_t) (size >> 8u)};
+
+    memcpy(aml, size_name, sizeof(size_name));
     for (uint32_t index = 0u; index < count; ++index)
     {
         const uint8_t name[] = {
@@ -1861,27 +1878,29 @@ static uint32_t made_up_buffers(uint8_t *aml, char letter, uint32_t count, uint1
             (uint8_t) ('0' + index / 10u % 10u),
             (uint8_t) ('0' + index % 10u),
             0x11u,
-            0x04u,
-            0x0Bu,
-            (uint8_t) size,
-            (uint8_t) (size >> 8u),
+            0x05u,
+            'S',
+            'I',
+            'Z',
+            'E',
         };
 
-        memcpy(aml + index * sizeof(name), name, sizeof(name));
+        memcpy(aml + sizeof(size_name) + index * sizeof(name), name, sizeof(name));
     }
-    return count * 10u;
+    return (uint32_t) sizeof(size_name) + count * 11u;
 }
 
 /**
  * @brief An arena exhausted while a table builds its objects stops that table (§6.2), and spoils
  *        nothing: with room for the first run of objects only, the 16th buffer of 4,000 bytes in a
  *        Scope, each in a block of 4 KiB, does not fit, the Name after the Scope is never declared, and
- *        a String a second table builds afterwards lands past the buffers, never over them.
+ *        a String a second table builds afterwards lands past the buffers, never over them. A name gives
+ *        the buffers their size, so that the load builds them rather than keep them in the table (O20).
  */
 KERNEL_TEST(an_exhausted_arena_stops_the_table_and_spoils_nothing)
 {
-    static uint8_t aml[5u + 16u * 10u + 6u];
-    static const uint8_t scope[] = {0x10u, 0x44u, 0x0Au, '\\', 0x00u};
+    static uint8_t aml[5u + 8u + 16u * 11u + 6u];
+    static const uint8_t scope[] = {0x10u, 0x4Cu, 0x0Bu, '\\', 0x00u};
     static const uint8_t string[] = {0x08u, 'S', 'T', 'R', '1', 0x0Du, 'a', 'b', 'c', 0x00u};
     static const uint8_t last[] = {0x08u, 'L', 'A', 'S', 'T', 0x01u};
     const uint32_t length = (uint32_t) sizeof(scope) + made_up_buffers(aml + sizeof(scope), 'B', 16u, 0x0FA0u);
@@ -1931,11 +1950,12 @@ KERNEL_TEST(an_exhausted_arena_stops_the_table_and_spoils_nothing)
 
 /**
  * @brief The object heap holds 256 runs: a Buffer of 4,096 bytes takes a run of its own, and the one
- *        that would take the 257th is refused as limit_object_runs, not as out_of_memory.
+ *        that would take the 257th is refused as limit_object_runs, not as out_of_memory. A name gives
+ *        the buffers their size, so that the load builds them rather than keep them in the table (O20).
  */
 KERNEL_TEST(the_object_heap_refuses_a_run_past_its_last)
 {
-    static uint8_t aml[256u * 10u];
+    static uint8_t aml[8u + 256u * 11u];
     const uint32_t length = made_up_buffers(aml, 'L', 256u, 0x1000u);
 
     advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);

@@ -2466,6 +2466,27 @@ void advanced_configuration_and_power_interface_machine_language_close(
     advanced_configuration_and_power_interface_machine_language_namespace_close(&load->space);
 }
 
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_materialize(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t index)
+{
+    (void) load;
+    (void) index;
+    return MACHINE_LANGUAGE_OK;
+}
+
+bool advanced_configuration_and_power_interface_machine_language_describe_kept_data(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value, uint32_t *out_length,
+    const uint8_t **out_initialiser, uint32_t *out_initialised)
+{
+    (void) load;
+    (void) value;
+    *out_length = 0u;
+    *out_initialiser = NULL;
+    *out_initialised = 0u;
+    return false;
+}
+
 uint32_t advanced_configuration_and_power_interface_machine_language_namespace_fold(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {

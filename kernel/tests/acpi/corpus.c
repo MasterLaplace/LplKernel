@@ -142,6 +142,7 @@ static void corpus_measure_load(KernelTest_t *test)
     kernel_test_measure(test, "declarations", corpus_load.declarations);
     kernel_test_measure(test, "data_stepped_over", corpus_load.data_stepped_over);
     kernel_test_measure(test, "declarations_decoded_directly", corpus_load.declarations_decoded_directly);
+    kernel_test_measure(test, "data_kept", corpus_load.data_kept);
     kernel_test_measure(test, "duplicates", corpus_load.duplicates);
     kernel_test_measure(test, "nodes", space->live_nodes);
     kernel_test_measure(test, "objects", corpus_load.heap.objects);

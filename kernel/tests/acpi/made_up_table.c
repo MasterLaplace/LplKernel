@@ -51,9 +51,10 @@ bool made_up_load_on(KernelTest_t *test, AdvancedConfigurationAndPowerInterfaceM
 const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *
 made_up_root_node(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *name)
 {
-    return advanced_configuration_and_power_interface_machine_language_namespace_node(
-        &load->space,
-        advanced_configuration_and_power_interface_machine_language_namespace_find_child(
-            &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
-            advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)));
+    const uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u));
+
+    (void) advanced_configuration_and_power_interface_machine_language_materialize(load, index);
+    return advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
 }
