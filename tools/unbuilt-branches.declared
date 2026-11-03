@@ -31,6 +31,7 @@ kernel/arch/i386/drivers/keyboard.c | #if defined(LPL_KERNEL_KEYBOARD_LAYOUT_AZE
 kernel/include/kernel/core/console.h | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/core/console.c | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/core/console.c | #if !defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
+kernel/kernel/acpi/initialization.c | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel decodes no method body at load (§3.6), built by SMOKE_TESTS=0 or xmake -m release, on which tools/acpi-load.budget counts W1
 
 # Planned and never written.
 kernel/arch/i386/boot/boot2.o | no source | MULTIBOOT_VERSION=2 links a Multiboot 2 entry that was never written
