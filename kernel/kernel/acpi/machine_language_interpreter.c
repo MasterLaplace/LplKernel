@@ -1487,6 +1487,16 @@ static MachineLanguageStatus_t machine_language_close_table(MachineLanguageLoad_
 }
 
 /**
+ * @brief Has the next statement of a table's code at load step over the Else that starts at @p end, the end of an
+ *        If that took its body (§3.6).
+ */
+static inline void machine_language_step_over_else(MachineLanguageFrame_t *frame, uint32_t end)
+{
+    frame->else_offset = end;
+    frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
+}
+
+/**
  * @brief Ends the construct the running frame is in: a method returns, a While goes back to its
  *        predicate, an If skips the Else after it; in a table's code at load, the If leaves that Else
  *        to the next statement, a While past the table's budget goes on past its end, the failure
@@ -1503,8 +1513,7 @@ static inline MachineLanguageStatus_t machine_language_close_block(MachineLangua
     --evaluation->block_count;
     if (block.kind == MACHINE_LANGUAGE_RUN_IF && frame->declares)
     {
-        frame->else_offset = block.end;
-        frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
+        machine_language_step_over_else(frame, block.end);
         return MACHINE_LANGUAGE_OK;
     }
     if (block.kind == MACHINE_LANGUAGE_RUN_IF)
@@ -2146,8 +2155,9 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
 
 /**
  * @brief Runs the TermList of an If or a While once its predicate is on the stack: a true predicate
- *        opens the body; a false one skips it, and an If then enters the Else that follows, or, in a
- *        table's code at load, lets the next statement run it.
+ *        opens the body, and, in a table's code at load, has the Else after it stepped over however the
+ *        body ends, a fault of the load included (§6.2); a false one skips it, and an If then enters the
+ *        Else that follows, or, in a table's code at load, lets the next statement run it.
  */
 static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *load,
                                                        const MachineLanguagePendingOperator_t *active)
@@ -2164,10 +2174,14 @@ static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *lo
     if (status != MACHINE_LANGUAGE_OK)
         return status;
     if (truth != 0u)
+    {
+        if (frame->declares)
+            machine_language_step_over_else(frame, branch.end);
         return machine_language_open_construct(
             load,
             (branch.opcode == MACHINE_LANGUAGE_OPCODE(WHILE)) ? MACHINE_LANGUAGE_RUN_WHILE : MACHINE_LANGUAGE_RUN_IF,
             branch.start, branch.end);
+    }
     frame->pc = branch.end;
     if (frame->declares)
     {
