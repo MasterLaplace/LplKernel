@@ -119,6 +119,17 @@ static const uint8_t predecoding_width[] = {
 };
 
 /**
+ * @brief A statement no record runs after one that does, as ONCE: `Local0 = 0; While (Local0 < 4) { Local0 =
+ *        INCR (Local0) }; Return (Local0)`, INCR (Arg0) returning `Arg0 + 1`: at each of the three turns that
+ *        run from records, the While's record runs, then the Store of a call is handed back.
+ */
+static const uint8_t predecoding_once[] = {
+    0x14u, 0x0Bu, 'I',   'N', 'C', 'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
+    0x18u, 'O',   'N',   'C', 'E', 0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Cu, 0x95u, 0x60u,
+    0x0Au, 0x04u, 0x70u, 'I', 'N', 'C',   'R',   0x60u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
  * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
  */
 static const uint8_t predecoding_while[] = {0xA2u, 0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u};
@@ -350,6 +361,19 @@ KERNEL_TEST(a_record_hands_back_what_holds_no_integer_or_would_fail)
     predecoding_close();
     predecoding_compare(test, predecoding_guards, sizeof(predecoding_guards), 2u, "\\MODZ", PREDECODING_NO_ARGUMENT,
                         true, "fold_divide_by_zero");
+}
+
+/**
+ * @brief A statement a record hands back goes to the loop at once, counted once: ONCE's Store of a call is
+ *        handed back at each of the three turns that run from records, so 3 times, and the result is 4.
+ */
+KERNEL_TEST(a_statement_a_record_hands_back_is_counted_once)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_once, sizeof(predecoding_once), 2u, "\\ONCE",
+                                                     PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.declined == 3u, "the Store of a call is handed back once per turn, 3 times");
+    kernel_test_measure(test, "declined", run.declined);
 }
 
 /**

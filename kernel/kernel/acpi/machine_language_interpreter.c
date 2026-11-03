@@ -4387,7 +4387,8 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
 /**
  * @brief Takes the back-edge of a method's While that @p block was, then runs the While's statements from
  *        records (§3.6): the While becomes the frame's loop unless the frame's loop holds it already;
- *        when the record of the While hands it back at once, its operator is pushed as the loop pushes it.
+ *        when the record of the While hands it back at once, its operator is pushed as the loop pushes it,
+ *        and the statement the records stopped at later, unless a construct's end, is decoded at once.
  */
 static MachineLanguageStatus_t machine_language_loop_again(MachineLanguageLoad_t *load,
                                                            const MachineLanguageBlock_t *block)
@@ -4405,12 +4406,20 @@ static MachineLanguageStatus_t machine_language_loop_again(MachineLanguageLoad_t
         frame->looping_end = block->end;
     }
     status = machine_language_run_records(load, &ran);
-    return (ran || status != MACHINE_LANGUAGE_OK) ? status : machine_language_push_while(evaluation, block);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    if (!ran)
+        return machine_language_push_while(evaluation, block);
+    return (frame->pc >= machine_language_block(evaluation)->end) ?
+               MACHINE_LANGUAGE_OK :
+               machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
 }
 
 /**
  * @brief Runs the statement at the running frame's pc: a table's code hands it to the load; a method's
- *        runs from records while its pc lies in the frame's loop, else decodes it.
+ *        runs from records while its pc lies in the frame's loop, and the statement they stop at, unless a
+ *        construct's end, is decoded at once, so that a statement a record hands back is never offered to
+ *        the records twice.
  */
 static MachineLanguageStatus_t machine_language_statement(MachineLanguageLoad_t *load)
 {
@@ -4423,7 +4432,7 @@ static MachineLanguageStatus_t machine_language_statement(MachineLanguageLoad_t 
     {
         const MachineLanguageStatus_t status = machine_language_run_records(load, &ran);
 
-        if (ran || status != MACHINE_LANGUAGE_OK)
+        if (status != MACHINE_LANGUAGE_OK || frame->pc >= machine_language_block(&load->evaluation)->end)
             return status;
     }
     return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
