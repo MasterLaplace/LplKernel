@@ -323,12 +323,14 @@ static MachineLanguageStatus_t machine_language_integer_of(MachineLanguageLoad_t
 }
 
 /**
- * @brief A local or an argument read as an operand, its reference retained: an uninitialized one
- *        reads as Integer 0, counted (§5.2).
+ * @brief A local or an argument read as an operand, its reference retained: an Integer holds none; an
+ *        uninitialized one reads as Integer 0, counted (§5.2).
  */
 static MachineLanguageValue_t machine_language_read_slot(MachineLanguageLoad_t *load,
                                                          const MachineLanguageValue_t *slot)
 {
+    if (slot->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+        return *slot;
     if (slot->kind != MACHINE_LANGUAGE_VALUE(UNINITIALIZED))
     {
         machine_language_retain(load, slot);
