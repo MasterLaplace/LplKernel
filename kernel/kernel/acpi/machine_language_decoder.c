@@ -112,16 +112,12 @@ static const char
 };
 
 /**
- * @brief Whether @p byte may start a NameSeg: `A` to `Z` or `_`.
- */
-static bool machine_language_is_segment_lead(uint8_t byte) { return (byte >= 'A' && byte <= 'Z') || byte == '_'; }
-
-/**
  * @brief Whether @p byte may follow the first character of a NameSeg: `A` to `Z`, `0` to `9` or `_`.
  */
 static bool machine_language_is_segment_character(uint8_t byte)
 {
-    return machine_language_is_segment_lead(byte) || (byte >= '0' && byte <= '9');
+    return advanced_configuration_and_power_interface_machine_language_starts_segment(byte) ||
+           (byte >= '0' && byte <= '9');
 }
 
 const char *advanced_configuration_and_power_interface_machine_language_opcode_name(uint32_t opcode)
@@ -182,7 +178,8 @@ advanced_configuration_and_power_interface_machine_language_read_name_string(
     {
         const uint8_t *characters = &bytes[offset + segment * 4u];
 
-        if (!machine_language_is_segment_lead(characters[0]) || !machine_language_is_segment_character(characters[1]) ||
+        if (!advanced_configuration_and_power_interface_machine_language_starts_segment(characters[0]) ||
+            !machine_language_is_segment_character(characters[1]) ||
             !machine_language_is_segment_character(characters[2]) ||
             !machine_language_is_segment_character(characters[3]))
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;

@@ -436,6 +436,14 @@ advanced_configuration_and_power_interface_machine_language_operand_kind(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t *descriptor, uint32_t index);
 
 /**
+ * @brief Tells whether a byte may be the first character of a NameSeg: `A` to `Z` or `_`.
+ *
+ * @param byte The byte.
+ * @return true when a NameSeg may start with it.
+ */
+static inline bool advanced_configuration_and_power_interface_machine_language_starts_segment(uint8_t byte);
+
+/**
  * @brief Tells whether a byte starts a NameString: `\`, `^`, a dual or multi prefix, or the first
  *        character of a NameSeg.
  *

@@ -20,9 +20,15 @@ advanced_configuration_and_power_interface_machine_language_operand_kind(
                                                                              0xFu);
 }
 
+static inline bool advanced_configuration_and_power_interface_machine_language_starts_segment(uint8_t byte)
+{
+    return (byte >= 'A' && byte <= 'Z') || byte == '_';
+}
+
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_name(uint8_t byte)
 {
-    return byte == '\\' || byte == '^' || byte == 0x2Eu || byte == 0x2Fu || (byte >= 'A' && byte <= 'Z') || byte == '_';
+    return byte == '\\' || byte == '^' || byte == 0x2Eu || byte == 0x2Fu ||
+           advanced_configuration_and_power_interface_machine_language_starts_segment(byte);
 }
 
 static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
@@ -58,7 +64,8 @@ advanced_configuration_and_power_interface_machine_language_read_package_length(
     if (offset >= limit)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
 
-    const uint32_t follow_bytes = (uint32_t) bytes[offset] >> 6u;
+    const uint32_t follow_bytes =
+        advanced_configuration_and_power_interface_machine_language_package_length_bytes(bytes[offset]) - 1u;
 
     if (follow_bytes >= limit - offset)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
