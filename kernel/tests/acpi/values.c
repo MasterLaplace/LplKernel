@@ -503,17 +503,24 @@ KERNEL_TEST(copy_object_gives_what_it_copied_to_the_operator_that_waits_for_it)
 }
 
 /**
- * @brief An Integer stored to a local takes the place of what the local held (§5.2): a Buffer it held
- *        is given back, and a reference to a named Integer is gone through, the Integer taking the
- *        value. MSTO stores 7 over `Buffer (2) {1, 2}` in Local0 and 9 through `RefOf (INT0)` in Local1.
+ * @brief An Integer stored to a local or an argument takes the place of what it held (§5.2): a Buffer it
+ *        held is given back, and a reference to a named Integer is gone through, the Integer taking the
+ *        value. MSTO stores 7 over `Buffer (2) {1, 2}` in Local0 and 9 through `RefOf (INT0)` in Local1;
+ *        MARG stores 7 over `Buffer (2) {3, 4}` in Arg0.
  */
 KERNEL_TEST(an_integer_stored_to_a_local_frees_what_it_held_or_goes_through_it)
 {
     static const uint8_t aml[] = {
-        0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '0',   0x00u, 0x08u, 'R',   'E',
-        'S',   '1',   0x00u, 0x14u, 0x2Au, 'M',   'S',   'T',   'O',   0x00u, 0x70u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u,
-        0x02u, 0x60u, 0x70u, 0x0Au, 0x07u, 0x60u, 0x70u, 0x71u, 'I',   'N',   'T',   '0',   0x61u, 0x70u, 0x0Au, 0x09u,
-        0x61u, 0x70u, 0x60u, 'R',   'E',   'S',   '0',   0x70u, 0x83u, 0x61u, 'R',   'E',   'S',   '1',
+        0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '0',   0x00u, 0x08u,
+        'R',   'E',   'S',   '1',   0x00u, 0x14u, 0x2Au, 'M',   'S',   'T',   'O',   0x00u, 0x70u, 0x11u,
+        0x05u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x60u, 0x70u, 0x0Au, 0x07u, 0x60u, 0x70u, 0x71u, 'I',   'N',
+        'T',   '0',   0x61u, 0x70u, 0x0Au, 0x09u, 0x61u, 0x70u, 0x60u, 'R',   'E',   'S',   '0',   0x70u,
+        0x83u, 0x61u, 'R',   'E',   'S',   '1',   0x14u, 0x14u, 'M',   'A',   'R',   'G',   0x01u, 0x70u,
+        0x11u, 0x05u, 0x0Au, 0x02u, 0x03u, 0x04u, 0x68u, 0x70u, 0x0Au, 0x07u, 0x68u, 0xA4u, 0x68u,
+    };
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = 1u,
     };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
@@ -532,6 +539,47 @@ KERNEL_TEST(an_integer_stored_to_a_local_frees_what_it_held_or_goes_through_it)
                       "9 goes through the reference Local1 holds to INT0");
     kernel_test_check(test, values_load.heap.objects - values_load.heap.objects_freed == alive,
                       "the Buffer Local0 held is given back");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(&values_load, "\\MARG",
+                                                                                           &argument, 1u, &result) ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
+                          result.payload == 7u,
+                      "Arg0 holds 7 after the Buffer it held");
+    kernel_test_check(test, values_load.heap.objects - values_load.heap.objects_freed == alive,
+                      "the Buffer Arg0 held is given back");
+    values_close(test);
+}
+
+/**
+ * @brief Under revision 1, an Integer wider than 32 bits that the host gives is stored to a local whole,
+ *        as a Store copies a value (§5.2), and compared masked, as an operator reads its operands: MWID
+ *        returns `Store (Arg0, Local1)` given 0x100000001, and LEqual (Arg0, One) holds.
+ */
+KERNEL_TEST(a_wide_integer_is_stored_whole_and_compared_masked_in_revision_1)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'R',   'E',   'S',   '1',   0x00u, 0x14u, 0x13u, 'M', 'W', 'I', 'D',   0x01u,
+        0x70u, 0x68u, 0x61u, 0x70u, 0x93u, 0x68u, 0x01u, 'R',   'E', 'S', '1', 0xA4u, 0x61u,
+    };
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = 0x100000001ull,
+    };
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!values_run(test, 1u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(&values_load, "\\MWID",
+                                                                                           &argument, 1u, &result) ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK,
+                      "MWID runs");
+    kernel_test_check(test,
+                      result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
+                          result.payload == 0x100000001ull,
+                      "Store (Arg0, Local1) keeps the 64 bits the host gave");
+    kernel_test_check(test, values_integer("RES1") == 0xFFFFFFFFu, "LEqual (Arg0, One) holds under revision 1");
     values_close(test);
 }
 
