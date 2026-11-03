@@ -194,12 +194,23 @@ static uint64_t machine_language_stepped(const MachineLanguageLoad_t *load, uint
 }
 
 /**
- * @brief Whether a local or an argument takes an Integer stored to it as a whole (§5.2): it holds
+ * @brief Whether an Integer stored to a local or an argument overwrites it in place (§5.2): it holds
  *        nothing or an Integer, so no object is given back and no reference gone through.
  */
-static bool machine_language_takes_integer(const MachineLanguageValue_t *slot)
+static bool machine_language_overwrites_in_place(const MachineLanguageValue_t *slot)
 {
     return slot->kind == MACHINE_LANGUAGE_VALUE(UNINITIALIZED) || slot->kind == MACHINE_LANGUAGE_VALUE(INTEGER);
+}
+
+/**
+ * @brief Stores an Integer to a local or an argument that machine_language_overwrites_in_place accepts:
+ *        the value takes its place whole, unmasked, as a Store copies a value (§5.2), and @p value is
+ *        left Uninitialized, its place taken.
+ */
+static void machine_language_overwrite_in_place(MachineLanguageValue_t *slot, MachineLanguageValue_t *value)
+{
+    *slot = *value;
+    value->kind = MACHINE_LANGUAGE_VALUE(UNINITIALIZED);
 }
 
 /**
@@ -1080,12 +1091,14 @@ static MachineLanguageStatus_t machine_language_store(MachineLanguageLoad_t *loa
     MachineLanguageValue_t *slot = NULL;
 
     if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER) && target->kind == MACHINE_LANGUAGE_TARGET &&
-        (target->auxiliary == MACHINE_LANGUAGE_TARGET_LOCAL || target->auxiliary == MACHINE_LANGUAGE_TARGET_ARGUMENT) &&
-        machine_language_takes_integer(machine_language_slot(evaluation, target)))
+        (target->auxiliary == MACHINE_LANGUAGE_TARGET_LOCAL || target->auxiliary == MACHINE_LANGUAGE_TARGET_ARGUMENT))
     {
-        *machine_language_slot(evaluation, target) = *value;
-        value->kind = MACHINE_LANGUAGE_VALUE(UNINITIALIZED);
-        return MACHINE_LANGUAGE_OK;
+        slot = machine_language_slot(evaluation, target);
+        if (machine_language_overwrites_in_place(slot))
+        {
+            machine_language_overwrite_in_place(slot, value);
+            return MACHINE_LANGUAGE_OK;
+        }
     }
     if (machine_language_is_reference(target->kind))
         status = machine_language_store_to_reference(load, target, value, MACHINE_LANGUAGE_STORE_IN_PLACE);
