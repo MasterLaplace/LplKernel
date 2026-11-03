@@ -1887,19 +1887,18 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
         frame->pc = start + 1u;
         return machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_NONE, 0u));
     }
-    if (advanced_configuration_and_power_interface_machine_language_starts_name(frame->code[start]))
-        return element   ? machine_language_name_element(load) :
-               data_only ? MACHINE_LANGUAGE_STATUS(INVALID_OPCODE) :
-                           machine_language_name_term(load, kind);
 
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_opcode(
         frame->code, start, limit, &opcode, &after);
 
+    if (status == MACHINE_LANGUAGE_STATUS(INVALID_OPCODE) &&
+        advanced_configuration_and_power_interface_machine_language_starts_name(frame->code[start]))
+        return element   ? machine_language_name_element(load) :
+               data_only ? MACHINE_LANGUAGE_STATUS(INVALID_OPCODE) :
+                           machine_language_name_term(load, kind);
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    if (kind != MACHINE_LANGUAGE_OPERAND(NONE) && !machine_language_fits_operand(opcode, data_only))
-        return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
-    if (opcode >= MACHINE_LANGUAGE_OPCODE(LOCAL0) && opcode <= MACHINE_LANGUAGE_OPCODE(LOCAL7))
+    if (opcode >= MACHINE_LANGUAGE_OPCODE(LOCAL0) && opcode <= MACHINE_LANGUAGE_OPCODE(LOCAL7) && !data_only)
     {
         const uint32_t slot = opcode - MACHINE_LANGUAGE_OPCODE(LOCAL0);
 
@@ -1907,7 +1906,7 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
         return machine_language_deliver(load, target ? machine_language_target(MACHINE_LANGUAGE_TARGET_LOCAL, slot) :
                                                        machine_language_read_slot(load, &frame->locals[slot]));
     }
-    if (opcode >= MACHINE_LANGUAGE_OPCODE(ARGUMENT0) && opcode <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6))
+    if (opcode >= MACHINE_LANGUAGE_OPCODE(ARGUMENT0) && opcode <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6) && !data_only)
     {
         const uint32_t slot = opcode - MACHINE_LANGUAGE_OPCODE(ARGUMENT0);
 
@@ -1915,6 +1914,8 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
         return machine_language_deliver(load, target ? machine_language_target(MACHINE_LANGUAGE_TARGET_ARGUMENT, slot) :
                                                        machine_language_read_slot(load, &frame->arguments[slot]));
     }
+    if (kind != MACHINE_LANGUAGE_OPERAND(NONE) && !machine_language_fits_operand(opcode, data_only))
+        return MACHINE_LANGUAGE_STATUS(INVALID_OPCODE);
     switch (opcode)
     {
     case MACHINE_LANGUAGE_OPCODE(ZERO):
