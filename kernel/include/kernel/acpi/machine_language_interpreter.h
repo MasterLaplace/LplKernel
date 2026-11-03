@@ -100,9 +100,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame {
     uint32_t serial; /**< Which frame this is, among all an evaluation context pushed: a reference to one of its locals
                         or arguments names it, so that one that outlives it refers to nothing. */
     uint32_t statement;   /**< For a table's code at load, where the statement it runs starts. */
-    uint32_t else_offset; /**< For a table's code at load, where an Else would follow the last If it ended, or whose
-                               predicate it found false or failed on. */
-    uint8_t else_rule;    /**< What that Else does: stepped over, run, or declared without running its code. */
+    uint32_t else_offset; /**< For a table's code at load, where an Else would follow the last If whose predicate it
+                               found false or failed on, or whose body it ended. */
+    uint8_t else_rule;    /**< What that Else does: stepped over, run, or declared without running its code; stepped
+                               over holds wherever the offset points, as after a body a fault cut short. */
     bool declares;        /**< Whether it runs a table's code at load, handing the load each declaration (§3.6). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame_t;
 

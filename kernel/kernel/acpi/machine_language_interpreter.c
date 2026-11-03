@@ -1503,6 +1503,7 @@ static inline MachineLanguageStatus_t machine_language_close_block(MachineLangua
     --evaluation->block_count;
     if (block.kind == MACHINE_LANGUAGE_RUN_IF && frame->declares)
     {
+        frame->else_offset = block.end;
         frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
         return MACHINE_LANGUAGE_OK;
     }
@@ -2127,7 +2128,7 @@ static MachineLanguageStatus_t machine_language_field_name(MachineLanguageLoad_t
 /**
  * @brief Opens a construct of the running frame, from @p start to @p end; in a table's code at load,
  *        one past the block limit is a fault of the load, counted, and the code goes on past it (§6.2),
- *        past the Else after it too when it is the body of an If.
+ *        the next statement stepping over an Else, which only the body of an If can be followed by.
  */
 static inline MachineLanguageStatus_t machine_language_open_construct(MachineLanguageLoad_t *load, uint8_t kind,
                                                                       uint32_t start, uint32_t end)
@@ -2141,8 +2142,7 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
         return status;
     advanced_configuration_and_power_interface_machine_language_count_load_error(load, status);
     frame->pc = end;
-    if (kind == MACHINE_LANGUAGE_RUN_IF)
-        frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
+    frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -3752,8 +3752,8 @@ static MachineLanguageStatus_t machine_language_ask(MachineLanguageLoad_t *load)
 /**
  * @brief Hands the load the statement of a table's code the running frame is at, a statement it does not
  *        run itself, then goes on as the load says: past the statement, into the TermList of the scope it
- *        declared, at the term it waits for, past the construct a fault left, and past the Else after it
- *        when it is the body of an If, or past the table, whose frame it drops.
+ *        declared, at the term it waits for, past the construct a fault left, the next statement stepping
+ *        over the Else after it when it is the body of an If, or past the table, whose frame it drops.
  *
  * @param load    The load.
  * @param not_run Whether the statement's code is declared without running it.
@@ -4059,8 +4059,9 @@ static bool machine_language_exhausted(MachineLanguageStatus_t status)
 /**
  * @brief Goes on past a failure of the code of the table frame @p base runs at load, counted (§3.6): every
  *        frame above it dropped, the statement that failed is handed to the load, which steps over it,
- *        or declares an If's or a While's TermList without running its code when its predicate failed;
- *        a term a statement waits for gives it nothing, and the statement goes on.
+ *        or declares an If's or a While's TermList without running its code when its predicate failed, the
+ *        Else after such an If then declared the same way, or stepped over when a fault cut that TermList
+ *        short; a term a statement waits for gives it nothing, and the statement goes on.
  */
 static MachineLanguageStatus_t machine_language_table_failure(MachineLanguageLoad_t *load, uint32_t base,
                                                               MachineLanguageStatus_t status)
@@ -4085,10 +4086,10 @@ static MachineLanguageStatus_t machine_language_table_failure(MachineLanguageLoa
         frame->code, frame->statement, machine_language_block(evaluation)->end, &opcode, &after);
     status = machine_language_declare(load, opcode == MACHINE_LANGUAGE_OPCODE(IF) ||
                                                 opcode == MACHINE_LANGUAGE_OPCODE(WHILE));
-    if (opcode == MACHINE_LANGUAGE_OPCODE(IF) && load->declaration.closed)
+    if (opcode == MACHINE_LANGUAGE_OPCODE(IF))
     {
         frame->else_offset = load->declaration.after;
-        frame->else_rule = MACHINE_LANGUAGE_ELSE_NOT_RUN;
+        frame->else_rule = load->declaration.closed ? MACHINE_LANGUAGE_ELSE_NOT_RUN : MACHINE_LANGUAGE_ELSE_SKIPPED;
     }
     return status;
 }
