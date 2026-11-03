@@ -1826,7 +1826,7 @@ static bool machine_language_holds_table(const AdvancedConfigurationAndPowerInte
 /**
  * @brief Adds a table Load or LoadTable brings to the registry, then runs its passes inside the
  *        evaluation that runs the Load: its declarations, the Externals they could not place, its
- *        decoding. A table the load holds already is refused, counted.
+ *        decoding unless the load skips bodies. A table the load holds already is refused, counted.
  */
 static MachineLanguageStatus_t
 machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
@@ -1858,7 +1858,8 @@ machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguage
     machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECLARE, false);
     if (load->externals_unplaced != 0u)
         machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_EXTERNALS, false);
-    machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECODE, false);
+    if (!load->skips_bodies)
+        machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECODE, false);
     *out_added = true;
     return MACHINE_LANGUAGE_OK;
 }
@@ -2036,7 +2037,7 @@ void advanced_configuration_and_power_interface_machine_language_decode_tables(
 {
     for (uint32_t table = 0u; table < load->table_count && load->externals_unplaced != 0u; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS, true);
-    for (uint32_t table = 0u; table < load->table_count; ++table)
+    for (uint32_t table = 0u; table < load->table_count && !load->skips_bodies; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE, true);
 }
 

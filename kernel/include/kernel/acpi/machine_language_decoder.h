@@ -381,13 +381,31 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t;
 
 /**
+ * @brief The descriptor of each opcode, by descriptor index; the decoder's queries below read it.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t
+    advanced_configuration_and_power_interface_machine_language_descriptors
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT];
+
+/**
+ * @brief The descriptor index of each one-byte opcode, by its byte; the invalid index for the bytes that start no
+ *        opcode.
+ */
+extern const uint8_t advanced_configuration_and_power_interface_machine_language_one_byte_index[256];
+
+/**
+ * @brief The descriptor index of each extended opcode, by the byte after its 0x5B prefix.
+ */
+extern const uint8_t advanced_configuration_and_power_interface_machine_language_extended_index[256];
+
+/**
  * @brief The descriptor at an index.
  *
  * @param opcode A descriptor index; ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INVALID
  *               and indices past the last give the invalid descriptor, which has no operand.
  * @return The descriptor, never NULL.
  */
-extern const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t *
+static inline const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t *
 advanced_configuration_and_power_interface_machine_language_descriptor(uint32_t opcode);
 
 /**
@@ -413,9 +431,17 @@ extern const char *advanced_configuration_and_power_interface_machine_language_s
  * @param index      The operand's position, from 0.
  * @return Its kind, or ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_NONE past the last.
  */
-extern AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t
 advanced_configuration_and_power_interface_machine_language_operand_kind(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t *descriptor, uint32_t index);
+
+/**
+ * @brief Tells whether a byte may be the first character of a NameSeg: `A` to `Z` or `_`.
+ *
+ * @param byte The byte.
+ * @return true when a NameSeg may start with it.
+ */
+static inline bool advanced_configuration_and_power_interface_machine_language_starts_segment(uint8_t byte);
 
 /**
  * @brief Tells whether a byte starts a NameString: `\`, `^`, a dual or multi prefix, or the first
@@ -424,7 +450,7 @@ advanced_configuration_and_power_interface_machine_language_operand_kind(
  * @param byte The byte.
  * @return true when a NameString starts with it.
  */
-extern bool advanced_configuration_and_power_interface_machine_language_starts_name(uint8_t byte);
+static inline bool advanced_configuration_and_power_interface_machine_language_starts_name(uint8_t byte);
 
 /**
  * @brief Reads the opcode at @p offset.
@@ -437,7 +463,7 @@ extern bool advanced_configuration_and_power_interface_machine_language_starts_n
  * @return TRUNCATED when the opcode passes @p limit; INVALID_OPCODE when the bytes are no opcode,
  *         a NameString's first byte included; OK otherwise.
  */
-extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_read_opcode(const uint8_t *bytes, uint32_t offset,
                                                                         uint32_t limit, uint32_t *out_opcode,
                                                                         uint32_t *out_after);
@@ -454,10 +480,18 @@ advanced_configuration_and_power_interface_machine_language_read_opcode(const ui
  * @param out_after Receives the offset after the encoding.
  * @return TRUNCATED when the encoding passes @p limit; OK otherwise.
  */
-extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_read_package_length(const uint8_t *bytes, uint32_t offset,
                                                                                 uint32_t limit, uint32_t *out_value,
                                                                                 uint32_t *out_after);
+
+/**
+ * @brief The bytes a PkgLength encoding takes, from its first byte: 1 to 4, bits 7-6 counting those that follow.
+ *
+ * @param lead The encoding's first byte.
+ * @return Its length in bytes.
+ */
+static inline uint32_t advanced_configuration_and_power_interface_machine_language_package_length_bytes(uint8_t lead);
 
 /**
  * @brief Reads a PkgLength and gives the end of the construct it opens: the PkgLength counts its
@@ -471,7 +505,7 @@ advanced_configuration_and_power_interface_machine_language_read_package_length(
  * @return TRUNCATED when the encoding passes @p limit, or when the value is smaller than the
  *         encoding; PACKAGE_LENGTH_OUT_OF_PARENT when the end passes @p limit; OK otherwise.
  */
-extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_read_package_end(const uint8_t *bytes, uint32_t offset,
                                                                              uint32_t limit, uint32_t *out_end,
                                                                              uint32_t *out_after);
@@ -503,5 +537,7 @@ advanced_configuration_and_power_interface_machine_language_read_name_string(
  */
 extern uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes,
                                                                                          uint32_t offset);
+
+#include <kernel/acpi/machine_language_decoder.inl>
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_DECODER_H */

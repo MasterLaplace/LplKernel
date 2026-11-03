@@ -688,6 +688,102 @@ KERNEL_TEST(a_connection_buffer_is_decoded_as_a_buffer)
 }
 
 /**
+ * @brief Loads, as a DSDT, Name (VAL_, 0x2A) then BAD2, a method whose Store takes an If as an operand, with method
+ *        bodies decoded or, when @p skips holds, skipped as a release kernel loads (O2, §3.6); then evaluates BAD2.
+ *
+ * @return BAD2's status, or OK when the load does not open.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t made_up_load_bad_body(KernelTest_t *test,
+                                                                                           bool skips)
+{
+    static const uint8_t aml[] = {0x08u, 'V', 'A', 'L',   '_',   0x0Au, 0x2Au, 0x14u, 0x0Cu, 'B',
+                                  'A',   'D', '2', 0x00u, 0x70u, 0xA0u, 0x03u, 0x01u, 0xA3u, 0x60u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!made_up_open(test))
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+    made_up_load.skips_bodies = skips;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", aml, sizeof(aml)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&made_up_load, "\\BAD2", NULL, 0u,
+                                                                             &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&made_up_load.heap, &made_up_load.space,
+                                                                              &result);
+    return status;
+}
+
+/**
+ * @brief A load that skips method bodies, as a release kernel's (O2, §3.6), declares what one that decodes them
+ *        declares, and decodes no body: the fault in BAD2's body is found when BAD2 runs, not at load, and nothing
+ *        the decoding pass counts is counted.
+ */
+KERNEL_TEST(a_load_that_skips_bodies_declares_the_same_names_and_decodes_none)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t decoded = made_up_load_bad_body(test, false);
+    const uint32_t declarations = made_up_load.declarations;
+
+    kernel_test_check(test,
+                      made_up_load.decode_errors == 1u && made_up_load.tables[0].terms != 0u &&
+                          made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_STORE) == 1u,
+                      "a load that decodes bodies decodes BAD2's Store, and finds the fault in its operand");
+    kernel_test_check(test,
+                      decoded == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE,
+                      "BAD2 fails when it runs");
+    made_up_close(test);
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t skipped = made_up_load_bad_body(test, true);
+
+    kernel_test_check(test,
+                      made_up_load.decode_errors == 0u && made_up_load.tables[0].terms == 0u &&
+                          made_up_count(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_STORE) == 0u,
+                      "a load that skips bodies decodes none, and counts nothing the decoding pass counts");
+    kernel_test_check(test,
+                      made_up_load.declarations == declarations && declarations == 2u && made_up_load.load_errors == 0u,
+                      "it declares VAL_ and BAD2 as the other does");
+    kernel_test_check(test,
+                      skipped == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE,
+                      "BAD2 fails when it runs, the fault found then");
+    made_up_close(test);
+}
+
+/**
+ * @brief A load that skips method bodies still places the Externals the declaration pass could not: the DSDT's
+ *        External (\ZDEV.ZINT, IntObj) names a device the SSDT declares after it.
+ */
+KERNEL_TEST(a_load_that_skips_bodies_still_places_its_externals)
+{
+    static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'Z', 'D', 'E', 'V', 'Z', 'I', 'N', 'T', 0x01u, 0x00u};
+    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u, 'Z', 'D', 'E', 'V'};
+
+    if (!made_up_open(test))
+        return;
+    made_up_load.skips_bodies = true;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", external, sizeof(external)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", device, sizeof(device)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_load.space;
+    const uint32_t zdev = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "ZDEV", 0u));
+
+    kernel_test_check(test,
+                      zdev != 0u && advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                                        space, zdev,
+                                        advanced_configuration_and_power_interface_machine_language_name_segment(
+                                            (const uint8_t *) "ZINT", 0u)) != 0u,
+                      "ZINT is placed under ZDEV once both tables are declared");
+    kernel_test_check(test, made_up_load.load_errors == 0u, "without a fault");
+    made_up_close(test);
+}
+
+/**
  * @brief A PkgLength that passes its method's end abandons the rest of its table, an unterminated
  *        string is cut, a statement where an operand is expected is refused, and each next table loads
  *        all the same.

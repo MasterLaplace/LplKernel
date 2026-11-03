@@ -11,6 +11,6 @@ times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
 module=build/acpi-corpus/modules/Server_Hewlett-Packard_ProLiant_ProLiant_DL360_G5_A8DA802364DF.acpi
-instructions=207153
-accesses=98749
+instructions=191863
+accesses=89342
 tolerance=1

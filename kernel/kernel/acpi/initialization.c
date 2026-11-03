@@ -26,6 +26,12 @@
 #define INITIALIZATION_C_STATES        0x18u  /**< Intel's bits 3 and 4: independent C1, P and T, and C2 and C3. */
 #define INITIALIZATION_MONITOR_WAIT    0x300u /**< Intel's bits 8 and 9: MWAIT for C1, and for C2 and C3. */
 
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+#    define INITIALIZATION_SKIPS_BODIES false /**< A debug kernel decodes every method body at load (§3.6). */
+#else
+#    define INITIALIZATION_SKIPS_BODIES true /**< A release kernel decodes none (O2, §3.6). */
+#endif
+
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
 #    define INITIALIZATION_BOOT_MAX_NODES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_NODES
 #    define INITIALIZATION_BOOT_MAX_ARENA_BYTES                                                                        \
@@ -959,9 +965,12 @@ void advanced_configuration_and_power_interface_machine_language_initialize(bool
         .mode = advanced_configuration_and_power_interface_mode()->outcome,
     };
 
-    if (advanced_configuration_and_power_interface_machine_language_open(
-            &initialization_boot_load, &advanced_configuration_and_power_interface_machine_host,
-            INITIALIZATION_BOOT_MAX_NODES, INITIALIZATION_BOOT_MAX_ARENA_BYTES))
+    const bool opened = advanced_configuration_and_power_interface_machine_language_open(
+        &initialization_boot_load, &advanced_configuration_and_power_interface_machine_host,
+        INITIALIZATION_BOOT_MAX_NODES, INITIALIZATION_BOOT_MAX_ARENA_BYTES);
+
+    initialization_boot_load.skips_bodies = INITIALIZATION_SKIPS_BODIES;
+    if (opened)
     {
         advanced_configuration_and_power_interface_machine_language_load_directory(
             &initialization_boot_load, advanced_configuration_and_power_interface_directory());

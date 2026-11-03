@@ -20,7 +20,8 @@
  * skips method bodies by their PkgLength; the Externals pass, which runs only when an External had
  * nowhere to go, places those once every table is declared; the decoding pass decodes every term of
  * every table, method bodies included, so that a call takes as many arguments as the method it names
- * declares (docs/acpi/specification.md, §3.6 and §5.1).
+ * declares, unless the load skips bodies, as a release kernel's does (docs/acpi/specification.md, §3.6
+ * and §5.1).
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -154,6 +155,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint8_t status;               /**< OK, or why the namespace could not be opened. */
     bool declares_every_branch;   /**< Whether the declaration pass declares every branch of table-level code and
                                        runs none of it, as the census oracle reads AML (§8.4); false at boot. */
+    bool skips_bodies;            /**< Whether the load decodes no method body once its tables are declared, nor
+                                       those of a table Load adds, as a release kernel loads (O2, §3.6); false in a
+                                       debug kernel and in the host tools. */
     uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
     uint32_t table_count;         /**< Tables declared. */
     uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
@@ -747,9 +751,9 @@ extern bool advanced_configuration_and_power_interface_machine_language_declare_
 
 /**
  * @brief Places the Externals the declaration pass could not, in a pass over every table declared when
- *        there is one, then runs the decoding pass: every term is decoded and counted, method bodies
- *        included, and each fault is recorded in its table and skipped as the declaration pass skips
- *        it.
+ *        there is one, then runs the decoding pass, unless the load skips bodies: every term is decoded and
+ *        counted, method bodies included, and each fault is recorded in its table and skipped as the
+ *        declaration pass skips it.
  *
  * @details An External whose path does not exist once every table is declared is placed all the
  *          same, its missing segments created as Externals with no object: firmware calls such a
@@ -772,7 +776,8 @@ extern void advanced_configuration_and_power_interface_machine_language_declare_
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory);
 
 /**
- * @brief Loads the DSDT, then every SSDT, of a directory: both passes over every table.
+ * @brief Loads the DSDT, then every SSDT, of a directory: every pass over every table, the decoding pass
+ *        excepted when the load skips bodies.
  *
  * @param load      An open load, with no table yet.
  * @param directory The directory, whose tables stay mapped until the load is closed.
