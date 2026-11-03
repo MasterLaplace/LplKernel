@@ -234,9 +234,9 @@ Rules:
 
 ### 3.6 Execution model
 
-**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #639 (below). The stacks are
-fixed arrays sized by the limits of §6.1, so they are never reallocated and no pointer into them goes stale. A limit
-reached is an error, never a panic. Table-level code runs in the same loop as a method body (below).
+**One loop, explicit stacks, no C recursion.** The stacks are fixed arrays sized by the limits of §6.1, so they are
+never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic. Table-level code
+runs in the same loop as a method body (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. In a debug kernel and the
@@ -279,9 +279,12 @@ and every fixed field and every NameString against the innermost end. A crossing
 inside it. The error report names the table, the offset, the opcode and the method path.
 
 **A table load is a frame.** A definition block runs as a pseudo-method whose named objects are permanent and whose
-`Local0` to `Local7` exist. Until #639, `Load` and `LoadTable` run the declaration pass of their table from their
-handler, one level of C deep, its frame on the stacks of the method that loads it: a `Load` or `LoadTable` that
-table-level code runs while a table is declared fails with `load_form_unsupported`, so there is no second level.
+`Local0` to `Local7` exist. `Load` and `LoadTable` push their table's frame on the stacks of the evaluation that
+runs them, as a call pushes its method's, and wait for it, then place the table's Externals, decode its bodies unless
+the kernel skips them, and give True: no AML runs a level of C deep, and a failure in that frame goes on past its
+statement as in any table's code, whatever loop runs the evaluation. A table whose frame finds no room is declared
+without running, counted. A `Load` or `LoadTable` that table-level code runs while a table is declared fails with
+`load_form_unsupported`, so one table frame at most declares at a time.
 Declarations load in one pass and in order: table-level code sees only what was declared before
 it. An `External` whose parent no table has declared yet is placed by a pass of its own once every table is
 declared; one whose parent exists is placed where it stands.

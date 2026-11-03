@@ -1596,41 +1596,47 @@ static MachineLanguageStatus_t machine_language_walk(MachineLanguageWalk_t *walk
 }
 
 /**
- * @brief Runs one pass over table @p table of a load: the declaration pass hands the table's code to the
- *        interpreter, but where every branch is declared and none run, or where the evaluation has no room
- *        for the table's frame, whose code is then declared without running, as a branch whose predicate
- *        failed (§3.6); the declaration pass of a table the root table lists is an evaluation of its own
- *        (§6.1), that of a table Load or LoadTable adds belongs to the evaluation that runs it, so that
- *        @p alone is false then.
+ * @brief Walks table @p table of a load in one pass, from its first term, without running its code: the
+ *        declaration pass declares every branch where the load declares every branch, else each branch as one
+ *        whose predicate failed (§3.6).
  */
-static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-                                        uint32_t table, MachineLanguagePass_t pass, bool alone)
+static void machine_language_walk_without_running(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                                  uint32_t table, MachineLanguagePass_t pass)
 {
     const uint32_t start = (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t);
-    const bool runs = pass == MACHINE_LANGUAGE_PASS_DECLARE && !load->declares_every_branch;
+    const bool not_run = pass == MACHINE_LANGUAGE_PASS_DECLARE && !load->declares_every_branch;
     MachineLanguageWalk_t walk;
 
-    if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
+    machine_language_begin_walk(&walk, load, table, pass, start, load->tables[table].length,
+                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+                                not_run ? MACHINE_LANGUAGE_BLOCK_NOT_RUN : 0u);
+    (void) machine_language_walk(&walk, start, false);
+}
+
+/**
+ * @brief Runs one pass over table @p table of a load the root table lists: the declaration pass, an evaluation of
+ *        its own (§6.1), hands the table's code to the interpreter, but where every branch is declared and none
+ *        run, or where the evaluation has no room for the table's frame, whose code is then declared without
+ *        running (§3.6).
+ */
+static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                        uint32_t table, MachineLanguagePass_t pass)
+{
+    if (pass != MACHINE_LANGUAGE_PASS_DECLARE)
     {
-        ++load->declaring;
-        if (alone)
-            advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
+        machine_language_walk_without_running(load, table, pass);
+        return;
     }
-    if (!runs || advanced_configuration_and_power_interface_machine_language_run_table_term(
-                     load, table, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, start,
-                     load->tables[table].length) != MACHINE_LANGUAGE_OK)
-    {
-        machine_language_begin_walk(&walk, load, table, pass, start, load->tables[table].length,
-                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
-                                    runs ? MACHINE_LANGUAGE_BLOCK_NOT_RUN : 0u);
-        (void) machine_language_walk(&walk, start, false);
-    }
-    if (pass == MACHINE_LANGUAGE_PASS_DECLARE)
-    {
-        if (alone)
-            advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
-        --load->declaring;
-    }
+    ++load->declaring;
+    advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);
+    if (load->declares_every_branch ||
+        advanced_configuration_and_power_interface_machine_language_run_table_term(
+            load, table, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+            (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t),
+            load->tables[table].length) != MACHINE_LANGUAGE_OK)
+        machine_language_walk_without_running(load, table, pass);
+    advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
+    --load->declaring;
 }
 
 #define MACHINE_LANGUAGE_FOLD_OFFSET 0x811C9DC5u /**< FNV-1a's offset basis. */
@@ -1824,9 +1830,8 @@ static bool machine_language_holds_table(const AdvancedConfigurationAndPowerInte
 }
 
 /**
- * @brief Adds a table Load or LoadTable brings to the registry, then runs its passes inside the
- *        evaluation that runs the Load: its declarations, the Externals they could not place, its
- *        decoding unless the load skips bodies. A table the load holds already is refused, counted.
+ * @brief Adds a table Load or LoadTable brings to the registry, last, for the evaluation that runs the Load to run
+ *        its code in a frame of its own. A table the load holds already is refused, counted.
  */
 static MachineLanguageStatus_t
 machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
@@ -1855,11 +1860,6 @@ machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguage
     load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
     load->bytes += length - (uint32_t) sizeof(*header);
     ++load->tables_loaded;
-    machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECLARE, false);
-    if (load->externals_unplaced != 0u)
-        machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_EXTERNALS, false);
-    if (!load->skips_bodies)
-        machine_language_walk_table(load, index, MACHINE_LANGUAGE_PASS_DECODE, false);
     *out_added = true;
     return MACHINE_LANGUAGE_OK;
 }
@@ -2028,7 +2028,7 @@ bool advanced_configuration_and_power_interface_machine_language_declare_table(
     load->bytes += header->length - (uint32_t) sizeof(*header);
     if (memcmp(header->signature, "DSDT", sizeof(header->signature)) == 0 && load->integer_bits == 0u)
         load->integer_bits = (header->revision < 2u) ? 32u : 64u;
-    machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE, true);
+    machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE);
     return true;
 }
 
@@ -2036,9 +2036,9 @@ void advanced_configuration_and_power_interface_machine_language_decode_tables(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     for (uint32_t table = 0u; table < load->table_count && load->externals_unplaced != 0u; ++table)
-        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS, true);
+        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS);
     for (uint32_t table = 0u; table < load->table_count && !load->skips_bodies; ++table)
-        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE, true);
+        machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE);
 }
 
 void advanced_configuration_and_power_interface_machine_language_declare_directory(
@@ -2119,6 +2119,23 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     }
     ++load->load_tables_missing;
     return MACHINE_LANGUAGE_OK;
+}
+
+void advanced_configuration_and_power_interface_machine_language_declare_loaded_table(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table)
+{
+    ++load->declaring;
+    machine_language_walk_without_running(load, table, MACHINE_LANGUAGE_PASS_DECLARE);
+    --load->declaring;
+}
+
+void advanced_configuration_and_power_interface_machine_language_finish_loaded_table(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table)
+{
+    if (load->externals_unplaced != 0u)
+        machine_language_walk_without_running(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS);
+    if (!load->skips_bodies)
+        machine_language_walk_without_running(load, table, MACHINE_LANGUAGE_PASS_DECODE);
 }
 
 void advanced_configuration_and_power_interface_machine_language_declare_statement(

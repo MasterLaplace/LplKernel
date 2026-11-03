@@ -16,6 +16,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_peripheral_componen
 #define PCI_WORD_ACCESS  0x02u       /**< FieldFlags AccessType WordAcc. */
 #define PCI_HOST_BRIDGE  0x030AD041u /**< EisaId ("PNP0A03"), as ACPI 6.6 §19.3.4 packs it. */
 #define PCI_EXPRESS_ROOT 0x080AD041u /**< EisaId ("PNP0A08"). */
+#define PCI_MEMORY_SPACE 0x00u       /**< The RegionSpace byte of SystemMemory. */
+#define PCI_TABLE_PLACE  0x00300000u /**< Where the table a _BBN loads is placed. */
 #define PCI_STATUS(name) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
 #define PCI_ACCESS(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_##kind
 #define PCI_FUNCTION(segment, bus, device, function)                                                                   \
@@ -27,6 +29,7 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_peripheral_componen
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t pci_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t pci_load;
 static uint8_t pci_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static uint8_t pci_loaded_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
 static MadeUpAml_t pci_aml;
 static MadeUpAml_t pci_root_body;
 static MadeUpAml_t pci_bridge_body;
@@ -432,6 +435,142 @@ KERNEL_TEST(a_failing_attach_method_is_an_absent_object_and_runs_once)
                       pci_load.regions.internal_evaluations == 1u && pci_load.regions.internal_failures == 1u &&
                           pci_load.regions.pci_attachments == 1u,
                       "_BBN runs and fails once, for one attach");
+    pci_close(test);
+}
+
+/**
+ * @brief A table an attach method loads, here a _BBN's, runs in a frame above the attach's internal frame: a failure
+ *        of the table's code is the table's, which goes on past its statement, and the _BBN still returns its bus
+ *        (§3.6).
+ */
+KERNEL_TEST(a_failure_in_a_table_an_attach_method_loads_is_the_table_s)
+{
+    static const MadeUpFieldUnit_t units[] = {
+        {"VID_", 16u},
+    };
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', 0x60u, 0xA4u, 0x00u};
+    static const uint8_t fails[] = {0xA4u, '\\', 'N', 'O', 'P', 'E'};
+    static const uint8_t calls[] = {0x70u, '\\', 'F', 'A', 'L', 'T', '\\', 'V', '2', '_', '_'};
+    static const uint8_t reads[] = {0x70u, '\\', 0x2Fu, 0x03u, 'P', 'C',  'I', '0', 'D', 'E', 'V',
+                                    '_',   'V',  'I',   'D',   '_', '\\', 'V', '1', '_', '_'};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    pci_begin();
+    pci_other_space[0x00u] = 0x86u;
+    pci_other_space[0x01u] = 0x80u;
+    advanced_configuration_and_power_interface_simulated_host_add_function(&pci_host, 0u, 0u, 3u, 1u, pci_other_space);
+    made_up_aml_raw(&pci_inner, calls, sizeof(calls));
+    made_up_aml_name_integer(&pci_inner, "AFTR", 7u);
+
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
+        made_up_definition_block(pci_loaded_table, "SSDT", 2u, pci_inner.bytes, pci_inner.length);
+
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&pci_host, PCI_TABLE_PLACE, pci_loaded_table,
+                                                                          header->length);
+    made_up_aml_name_integer(&pci_aml, "V1__", 0u);
+    made_up_aml_name_integer(&pci_aml, "V2__", 0x55u);
+    made_up_aml_region(&pci_aml, "TBLR", PCI_MEMORY_SPACE, PCI_TABLE_PLACE, header->length);
+    made_up_aml_begin(&pci_method_body);
+    made_up_aml_raw(&pci_method_body, fails, sizeof(fails));
+    made_up_aml_method(&pci_aml, "FALT", 0x00u, &pci_method_body);
+    made_up_aml_begin(&pci_method_body);
+    made_up_aml_raw(&pci_method_body, reads, sizeof(reads));
+    made_up_aml_method(&pci_aml, "RDIT", 0x00u, &pci_method_body);
+    made_up_aml_begin(&pci_device_body);
+    made_up_aml_name_integer(&pci_device_body, "_ADR", 0x00030001u);
+    pci_region(&pci_device_body, "PCFG", units, 1u);
+    made_up_aml_begin(&pci_root_body);
+    made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
+    made_up_aml_begin(&pci_method_body);
+    made_up_aml_raw(&pci_method_body, loads, sizeof(loads));
+    made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
+    made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
+    made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
+    if (!pci_run(test))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&pci_load, "\\RDIT", NULL, 0u, &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&pci_load.heap, &pci_load.space, &result);
+    kernel_test_check(test, status == PCI_STATUS(OK) && pci_integer("V1__") == 0x8086u,
+                      "the read succeeds, from device 3 function 1 on the bus _BBN returns");
+    kernel_test_check(test,
+                      pci_load.regions.internal_evaluations == 1u && pci_load.regions.internal_failures == 0u &&
+                          pci_load.tables_loaded == 1u,
+                      "_BBN runs once, loads its table, and does not fail");
+    kernel_test_check(test,
+                      pci_load.evaluation.statuses[PCI_STATUS(NAME_NOT_FOUND)] == 1u && pci_integer("V2__") == 0x55u &&
+                          pci_integer("AFTR") == 7u,
+                      "the table's statement that calls FALT fails, counted, and the declaration after it is made");
+    pci_close(test);
+}
+
+/**
+ * @brief An attach in the code of a table an evaluation loads that cannot give its object absent, the value stack
+ *        full, hands its failure to the table, which goes on past its statement, counted (§3.6): the stack holds
+ *        all but three values, which the Load's target, One and 2 fill before the read of VID_ runs the failing
+ *        _BBN.
+ */
+KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_failure_to_the_table)
+{
+    static const MadeUpFieldUnit_t units[] = {
+        {"VID_", 16u},
+    };
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', 0x60u};
+    static const uint8_t fails[] = {0xA4u, '\\', 'N', 'O', 'P', 'E'};
+    static const uint8_t reads[] = {0x70u, 0x72u, 0x01u, 0x72u, 0x0Au, 0x02u, '\\', 0x2Fu, 0x03u, 'P',
+                                    'C',   'I',   '0',   'D',   'E',   'V',   '_',  'V',   'I',   'D',
+                                    '_',   0x00u, 0x00u, '\\',  'V',   '2',   '_',  '_'};
+    const uint32_t preset = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES - 3u;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    pci_begin();
+    pci_other_space[0x00u] = 0x86u;
+    pci_other_space[0x01u] = 0x80u;
+    advanced_configuration_and_power_interface_simulated_host_add_function(&pci_host, 0u, 0u, 3u, 1u, pci_other_space);
+    made_up_aml_raw(&pci_inner, reads, sizeof(reads));
+    made_up_aml_name_integer(&pci_inner, "AFTR", 7u);
+
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
+        made_up_definition_block(pci_loaded_table, "SSDT", 2u, pci_inner.bytes, pci_inner.length);
+
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&pci_host, PCI_TABLE_PLACE, pci_loaded_table,
+                                                                          header->length);
+    made_up_aml_name_integer(&pci_aml, "V2__", 0x55u);
+    made_up_aml_region(&pci_aml, "TBLR", PCI_MEMORY_SPACE, PCI_TABLE_PLACE, header->length);
+    made_up_aml_begin(&pci_method_body);
+    made_up_aml_raw(&pci_method_body, loads, sizeof(loads));
+    made_up_aml_method(&pci_aml, "LDIT", 0x00u, &pci_method_body);
+    made_up_aml_begin(&pci_device_body);
+    made_up_aml_name_integer(&pci_device_body, "_ADR", 0x00030001u);
+    pci_region(&pci_device_body, "PCFG", units, 1u);
+    made_up_aml_begin(&pci_root_body);
+    made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
+    made_up_aml_begin(&pci_method_body);
+    made_up_aml_raw(&pci_method_body, fails, sizeof(fails));
+    made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
+    made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
+    made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
+    if (!pci_run(test))
+        return;
+    pci_load.evaluation.value_count = preset;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&pci_load, "\\LDIT", NULL, 0u, &result);
+    const uint32_t left = pci_load.evaluation.value_count;
+
+    pci_load.evaluation.value_count = 0u;
+    advanced_configuration_and_power_interface_machine_language_value_release(&pci_load.heap, &pci_load.space, &result);
+    kernel_test_check(test, status == PCI_STATUS(OK) && left == preset && pci_load.declaring == 0u,
+                      "the Load succeeds, and leaves no value behind and no table declaring");
+    kernel_test_check(test, pci_load.tables_loaded == 1u && pci_load.regions.internal_failures == 1u,
+                      "the table is loaded, and the _BBN fails once");
+    kernel_test_check(test,
+                      pci_load.evaluation.failures == 1u &&
+                          pci_load.evaluation.statuses[PCI_STATUS(LIMIT_VALUES)] == 1u &&
+                          pci_integer("V2__") == 0x55u && pci_integer("AFTR") == 7u,
+                      "the table's statement fails with limit_values, counted, and the declaration after it is made");
     pci_close(test);
 }
 
