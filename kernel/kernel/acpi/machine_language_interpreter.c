@@ -175,6 +175,34 @@ static MachineLanguageValue_t machine_language_truth(const MachineLanguageLoad_t
 }
 
 /**
+ * @brief Whether LEqual, LLess or LGreater holds between two Integers already masked to the width.
+ */
+static bool machine_language_integers_compare(uint32_t opcode, uint64_t left, uint64_t right)
+{
+    return (opcode == MACHINE_LANGUAGE_OPCODE(LOGICAL_EQUAL)) ? left == right :
+           (opcode == MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS))  ? left < right :
+                                                                left > right;
+}
+
+/**
+ * @brief The Integer Increment, or Decrement when @p up is false, makes of @p integer, masked to the
+ *        width.
+ */
+static uint64_t machine_language_stepped(const MachineLanguageLoad_t *load, uint64_t integer, bool up)
+{
+    return machine_language_mask(load, up ? integer + 1u : integer - 1u);
+}
+
+/**
+ * @brief Whether a local or an argument takes an Integer stored to it as a whole (§5.2): it holds
+ *        nothing or an Integer, so no object is given back and no reference gone through.
+ */
+static bool machine_language_takes_integer(const MachineLanguageValue_t *slot)
+{
+    return slot->kind == MACHINE_LANGUAGE_VALUE(UNINITIALIZED) || slot->kind == MACHINE_LANGUAGE_VALUE(INTEGER);
+}
+
+/**
  * @brief A target value.
  */
 static MachineLanguageValue_t machine_language_target(MachineLanguageTargetKind_t kind, uint32_t handle)
@@ -1051,6 +1079,14 @@ static MachineLanguageStatus_t machine_language_store(MachineLanguageLoad_t *loa
     MachineLanguageNode_t *node = NULL;
     MachineLanguageValue_t *slot = NULL;
 
+    if (value->kind == MACHINE_LANGUAGE_VALUE(INTEGER) && target->kind == MACHINE_LANGUAGE_TARGET &&
+        (target->auxiliary == MACHINE_LANGUAGE_TARGET_LOCAL || target->auxiliary == MACHINE_LANGUAGE_TARGET_ARGUMENT) &&
+        machine_language_takes_integer(machine_language_slot(evaluation, target)))
+    {
+        *machine_language_slot(evaluation, target) = *value;
+        value->kind = MACHINE_LANGUAGE_VALUE(UNINITIALIZED);
+        return MACHINE_LANGUAGE_OK;
+    }
     if (machine_language_is_reference(target->kind))
         status = machine_language_store_to_reference(load, target, value, MACHINE_LANGUAGE_STORE_IN_PLACE);
     else if (target->kind != MACHINE_LANGUAGE_TARGET)
@@ -1500,25 +1536,44 @@ static MachineLanguageStatus_t machine_language_push_pending(MachineLanguageEval
 }
 
 /**
- * @brief Takes a back-edge of a method's While whose body ended at @p block: counts it, then pushes the While's
- *        operator again and resumes at its predicate, past the While's opcode and PkgLength, so that the While is
- *        not decoded again.
+ * @brief Takes a back-edge of a method's While whose body ended at @p block: the running frame's pc goes back to
+ *        the While, and the back-edge is counted.
  */
-static MachineLanguageStatus_t machine_language_restart_while(MachineLanguageEvaluation_t *evaluation,
-                                                              const MachineLanguageBlock_t *block)
+static MachineLanguageStatus_t machine_language_take_back_edge(MachineLanguageEvaluation_t *evaluation,
+                                                               const MachineLanguageBlock_t *block)
+{
+    machine_language_frame(evaluation)->pc = block->start;
+    return machine_language_count_iteration(evaluation);
+}
+
+/**
+ * @brief Pushes the operator of the While at the running frame's pc, which opened @p block, and resumes at its
+ *        predicate, past the While's opcode and PkgLength, so that the While is not decoded again.
+ */
+static MachineLanguageStatus_t machine_language_push_while(MachineLanguageEvaluation_t *evaluation,
+                                                           const MachineLanguageBlock_t *block)
 {
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
-    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+    const MachineLanguageStatus_t status =
+        machine_language_push_pending(evaluation, MACHINE_LANGUAGE_OPCODE(WHILE), block->start, block->end);
 
-    frame->pc = block->start;
-    status = machine_language_count_iteration(evaluation);
-    if (status == MACHINE_LANGUAGE_OK)
-        status = machine_language_push_pending(evaluation, MACHINE_LANGUAGE_OPCODE(WHILE), block->start, block->end);
     if (status == MACHINE_LANGUAGE_OK)
         frame->pc = block->start + 1u +
                     advanced_configuration_and_power_interface_machine_language_package_length_bytes(
                         frame->code[block->start + 1u]);
     return status;
+}
+
+/**
+ * @brief Takes a back-edge of a method's While whose body ended at @p block: counts it, then pushes the While's
+ *        operator again and resumes at its predicate.
+ */
+static MachineLanguageStatus_t machine_language_restart_while(MachineLanguageEvaluation_t *evaluation,
+                                                              const MachineLanguageBlock_t *block)
+{
+    const MachineLanguageStatus_t status = machine_language_take_back_edge(evaluation, block);
+
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_push_while(evaluation, block) : status;
 }
 
 /**
@@ -2417,7 +2472,7 @@ static MachineLanguageStatus_t machine_language_step_target(MachineLanguageLoad_
         return status;
     }
     return machine_language_store_and_deliver(
-        load, machine_language_integer(machine_language_mask(load, up ? integer + 1u : integer - 1u)), &target);
+        load, machine_language_integer(machine_language_stepped(load, integer, up)), &target);
 }
 
 /**
@@ -2475,6 +2530,13 @@ static MachineLanguageStatus_t machine_language_compare(MachineLanguageLoad_t *l
     MachineLanguageValue_t second = machine_language_pop(evaluation);
     MachineLanguageValue_t first = machine_language_pop(evaluation);
     int32_t order = 0;
+
+    if (first.kind == MACHINE_LANGUAGE_VALUE(INTEGER) && second.kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+        return machine_language_deliver(
+            load, machine_language_truth(
+                      load, machine_language_integers_compare(opcode, machine_language_mask(load, first.payload),
+                                                              machine_language_mask(load, second.payload))));
+
     const MachineLanguageStatus_t status = machine_language_order(load, &first, &second, &order);
 
     machine_language_release(load, &first);

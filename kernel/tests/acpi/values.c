@@ -503,6 +503,39 @@ KERNEL_TEST(copy_object_gives_what_it_copied_to_the_operator_that_waits_for_it)
 }
 
 /**
+ * @brief An Integer stored to a local takes the place of what the local held (§5.2): a Buffer it held
+ *        is given back, and a reference to a named Integer is gone through, the Integer taking the
+ *        value. MSTO stores 7 over `Buffer (2) {1, 2}` in Local0 and 9 through `RefOf (INT0)` in Local1.
+ */
+KERNEL_TEST(an_integer_stored_to_a_local_frees_what_it_held_or_goes_through_it)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '0',   0x00u, 0x08u, 'R',   'E',
+        'S',   '1',   0x00u, 0x14u, 0x2Au, 'M',   'S',   'T',   'O',   0x00u, 0x70u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u,
+        0x02u, 0x60u, 0x70u, 0x0Au, 0x07u, 0x60u, 0x70u, 0x71u, 'I',   'N',   'T',   '0',   0x61u, 0x70u, 0x0Au, 0x09u,
+        0x61u, 0x70u, 0x60u, 'R',   'E',   'S',   '0',   0x70u, 0x83u, 0x61u, 'R',   'E',   'S',   '1',
+    };
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!values_run(test, 2u, aml, sizeof(aml)))
+        return;
+
+    const uint32_t alive = values_load.heap.objects - values_load.heap.objects_freed;
+
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(&values_load, "\\MSTO", NULL,
+                                                                                           0u, &result) ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK,
+                      "MSTO runs");
+    kernel_test_check(test, values_integer("RES0") == 7u, "Local0 holds 7 after the Buffer it held");
+    kernel_test_check(test, values_integer("INT0") == 9u && values_integer("RES1") == 9u,
+                      "9 goes through the reference Local1 holds to INT0");
+    kernel_test_check(test, values_load.heap.objects - values_load.heap.objects_freed == alive,
+                      "the Buffer Local0 held is given back");
+    values_close(test);
+}
+
+/**
  * @brief Strings and buffers compare by their bytes, then by their lengths; in a mixed comparison the
  *        second operand converts to the first's type, counted (§5.2); LAnd and LOr read a Buffer's
  *        first 4 bytes, as Windows does.
