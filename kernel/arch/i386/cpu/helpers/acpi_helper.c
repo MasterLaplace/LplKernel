@@ -214,7 +214,7 @@ acpi_helper_write_services_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("stall_us", acpi_helper_saturate(services->stall_microseconds));
     kernel_telemetry_write_unsigned("long_stalls", services->long_stalls);
     kernel_telemetry_write_unsigned("stalls_slept", services->stalls_slept);
-    kernel_telemetry_write_unsigned("waited_ms", acpi_helper_saturate(services->waited_milliseconds));
+    kernel_telemetry_write_unsigned("sleep_waited_us", acpi_helper_saturate(services->sleep_waited_microseconds));
     kernel_telemetry_write_unsigned("stall_waited_us", acpi_helper_saturate(services->stall_waited_microseconds));
     kernel_telemetry_write_unsigned("time_requested_peak_us", acpi_helper_saturate(services->time_requested_peak));
     kernel_telemetry_write_unsigned("timer_reads", services->timer_reads);
@@ -340,6 +340,9 @@ void write_advanced_configuration_and_power_interface_power_management_timer_rec
     kernel_telemetry_write_unsigned("check_us", timer->check_microseconds);
     kernel_telemetry_write_unsigned("stalls", timer->stalls);
     kernel_telemetry_write_unsigned("stall_reads", timer->stall_reads);
+    kernel_telemetry_write_unsigned("sleeps", timer->sleeps);
+    kernel_telemetry_write_unsigned("sleep_reads", timer->sleep_reads);
+    kernel_telemetry_write_unsigned("sleep_idles", timer->sleep_idles);
     kernel_telemetry_end_record();
 }
 

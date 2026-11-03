@@ -16,6 +16,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_time, KERNEL_TEST_S
 static uint8_t time_table[TIME_TABLE_CAPACITY];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t time_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t time_load;
+static uint32_t (*time_host_sleep)(void *context, uint32_t microseconds);
+static uint32_t time_sleeps;
 
 /**
  * @brief Methods that sleep 60 s per turn of an endless loop (S60K), 3 s (S3K_), 3 s Arg0 times (SLPN), 70 ms until
@@ -55,6 +57,15 @@ static bool time_run(KernelTest_t *test, uint32_t tick_milliseconds)
     advanced_configuration_and_power_interface_simulated_host_open(&time_host);
     time_host.tick_milliseconds = tick_milliseconds;
     return time_load_on_host(test, 2u);
+}
+
+/**
+ * @brief The simulated host's sleep, counted in time_sleeps.
+ */
+static uint32_t time_counted_sleep(void *context, uint32_t microseconds)
+{
+    ++time_sleeps;
+    return time_host_sleep(context, microseconds);
 }
 
 /**
@@ -116,7 +127,7 @@ KERNEL_TEST(a_sleep_of_60_s_is_refused_before_it_sleeps)
     kernel_test_check(test, status == TIME_STATUS(LIMIT_TIME_REQUESTED), "S60K fails with limit_time_requested");
     kernel_test_check(test,
                       time_host.clock_100ns == 0u && time_load.services.sleeps == 0u &&
-                          time_load.services.waited_milliseconds == 0u,
+                          time_load.services.sleep_waited_microseconds == 0u,
                       "the host never slept");
     time_close();
 }
@@ -135,7 +146,7 @@ KERNEL_TEST(a_sleep_of_3_s_is_honoured_without_a_2_s_cap)
     kernel_test_check(test,
                       time_host.clock_100ns == 3000u * TIME_MILLISECOND &&
                           time_load.services.sleep_milliseconds == 3000u &&
-                          time_load.services.waited_milliseconds == 3000u && time_load.services.sleeps == 1u,
+                          time_load.services.sleep_waited_microseconds == 3000000u && time_load.services.sleeps == 1u,
                       "the host slept 3,000 ms, as requested and as counted");
     time_close();
 }
@@ -186,9 +197,10 @@ KERNEL_TEST(the_budget_counts_what_is_requested_never_what_is_waited)
             return;
         (void) time_evaluate("\\S70_", 0u, 0u, &status);
         same_turns = same_turns && status == TIME_STATUS(LIMIT_TIME_REQUESTED) && time_turns() == 428u;
-        waits_follow_the_tick = waits_follow_the_tick &&
-                                time_load.services.waited_milliseconds == hosts[index].waited_milliseconds &&
-                                time_host.clock_100ns == (uint64_t) hosts[index].waited_milliseconds * TIME_MILLISECOND;
+        waits_follow_the_tick =
+            waits_follow_the_tick &&
+            time_load.services.sleep_waited_microseconds == (uint64_t) hosts[index].waited_milliseconds * 1000u &&
+            time_host.clock_100ns == (uint64_t) hosts[index].waited_milliseconds * TIME_MILLISECOND;
         kernel_test_measure(test, "turns", (uint32_t) time_turns());
         time_close();
     }
@@ -197,8 +209,8 @@ KERNEL_TEST(the_budget_counts_what_is_requested_never_what_is_waited)
 }
 
 /**
- * @brief A Stall of up to 255 µs busy-waits that long; beyond, it sleeps the milliseconds it rounds
- *        up to; both are counted beyond 100 µs (§5.5).
+ * @brief A Stall of up to 255 µs busy-waits that long; beyond, it sleeps that long; both are counted
+ *        beyond 100 µs (§5.5).
  */
 KERNEL_TEST(a_stall_busy_waits_up_to_255_us_and_sleeps_beyond)
 {
@@ -208,19 +220,25 @@ KERNEL_TEST(a_stall_busy_waits_up_to_255_us_and_sleeps_beyond)
 
     if (!time_run(test, 0u))
         return;
+    time_host_sleep = time_host.host.sleep_microseconds;
+    time_host.host.sleep_microseconds = time_counted_sleep;
+    time_sleeps = 0u;
     for (uint32_t index = 0u; index < sizeof(stalls) / sizeof(stalls[0]); ++index)
     {
         (void) time_evaluate("\\STAL", 1u, stalls[index], &status);
         ran = ran && status == TIME_STATUS(OK);
     }
     kernel_test_check(test, ran, "every stall runs");
+    kernel_test_check(test, time_host.clock_100ns == (50u + 100u + 101u + 255u + 256u + 1001u) * TIME_MICROSECOND,
+                      "the host waited the 1,763 µs requested");
     kernel_test_check(test,
-                      time_host.clock_100ns == (50u + 100u + 101u + 255u) * TIME_MICROSECOND + 3u * TIME_MILLISECOND,
-                      "the host busy-waited 506 µs, then slept 1 ms for 256 µs and 2 ms for 1,001 µs");
+                      time_load.services.stall_waited_microseconds == 506u &&
+                          time_load.services.sleep_waited_microseconds == 1257u,
+                      "it busy-waited 506 µs, then slept 256 µs and 1,001 µs");
+    kernel_test_check(test, time_sleeps == 2u, "the two beyond 255 µs asking the host to sleep");
     kernel_test_check(test,
                       time_load.services.stalls == 6u && time_load.services.long_stalls == 4u &&
-                          time_load.services.stalls_slept == 2u && time_load.services.stall_microseconds == 1763u &&
-                          time_load.services.waited_milliseconds == 3u,
+                          time_load.services.stalls_slept == 2u && time_load.services.stall_microseconds == 1763u,
                       "six stalls, four beyond 100 µs, two of them slept, 1,763 µs requested");
     time_close();
 }
@@ -240,7 +258,7 @@ KERNEL_TEST(a_stall_past_the_budget_is_refused)
                       "30,000,001 µs are refused, and the host never waited");
     (void) time_evaluate("\\STAL", 1u, 30000000u, &status);
     kernel_test_check(test, status == TIME_STATUS(OK) && time_host.clock_100ns == 30000u * TIME_MILLISECOND,
-                      "30,000,000 µs are slept as 30,000 ms");
+                      "30,000,000 µs are slept");
     time_close();
 }
 

@@ -23,6 +23,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_power_management_ti
 #define TIMER_STUTTER       6u          /**< Port reads a stuttering timer holds each count for: two triples. */
 #define TIMER_WRAP_FIRST    20u /**< Counts before the wrap a timer starts at, fewest: it wraps in the first checks. */
 #define TIMER_WRAP_LAST     60u /**< Most: two checks of reads later, so that one of them sees the wrap inside it. */
+#define TIMER_IDLE_LONGEST  10000u /**< Microseconds of the made-up host's tick, the longest one of its idles lasts. */
+#define TIMER_INTERRUPT     1000u  /**< Nanoseconds an idle lasts that an interrupt other than the tick ends. */
+#define TIMER_UNIDLED       11250u /**< The longest sleep that never idles: a tick and an eighth. */
 #define TIMER_STATE(name)   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_##name
 
 /**
@@ -49,6 +52,10 @@ typedef struct TimerMachine {
     uint64_t held_nanoseconds;  /**< The time a stuttering timer gives the count of. */
     uint32_t host_stalls;       /**< Calls to the host's own stall. */
     uint32_t host_microseconds; /**< Microseconds the host's own stall waited. */
+    uint32_t idle_nanoseconds;  /**< How long an idle lasts; 0 for one that the next step of the clock ends. */
+    uint32_t idles;             /**< Calls to the host's idle. */
+    uint32_t host_sleeps;       /**< Calls to the host's own sleep. */
+    uint32_t host_slept;        /**< Microseconds the host's own sleep waited. */
 } TimerMachine_t;
 
 static TimerMachine_t timer_machine;
@@ -124,9 +131,39 @@ static uint32_t timer_host_stall(void *context, uint32_t microseconds)
     return microseconds;
 }
 
+/**
+ * @brief The made-up host's own sleep: it waits exactly what it is asked, and counts it.
+ */
+static uint32_t timer_host_sleep(void *context, uint32_t microseconds)
+{
+    TimerMachine_t *machine = context;
+
+    machine->nanoseconds += (uint64_t) microseconds * 1000u;
+    ++machine->host_sleeps;
+    machine->host_slept += microseconds;
+    return microseconds;
+}
+
+/**
+ * @brief The made-up host's idle: time runs to the next step of its clock, as a halt the next tick ends,
+ *        or for idle_nanoseconds, as one that another interrupt ends.
+ */
+static void timer_idle(void *context)
+{
+    TimerMachine_t *machine = context;
+    const uint64_t tick = (uint64_t) machine->tick * 100u;
+
+    ++machine->idles;
+    if (machine->idle_nanoseconds != 0u || tick == 0u)
+        machine->nanoseconds += machine->idle_nanoseconds;
+    else
+        machine->nanoseconds = (machine->nanoseconds / tick + 1u) * tick;
+}
+
 static const AdvancedConfigurationAndPowerInterfaceHost_t timer_host = {
     .context = &timer_machine,
     .port_read = timer_port_read,
+    .sleep_microseconds = timer_host_sleep,
     .stall_microseconds = timer_host_stall,
     .clock_100ns = timer_clock_100ns,
 };
@@ -189,6 +226,29 @@ static uint64_t timer_wait(uint32_t microseconds, uint32_t *out_waited)
     *out_waited = advanced_configuration_and_power_interface_power_management_timer_stall(&timer_host, &timer_found,
                                                                                           microseconds);
     return timer_machine.nanoseconds - before;
+}
+
+/**
+ * @brief Sleeps @p microseconds on the timer last found, idling through timer_idle, and gives the
+ *        nanoseconds that passed on the machine meanwhile.
+ */
+static uint64_t timer_sleep(uint32_t microseconds, uint32_t *out_waited)
+{
+    const uint64_t before = timer_machine.nanoseconds;
+
+    *out_waited = advanced_configuration_and_power_interface_power_management_timer_sleep(
+        &timer_host, &timer_found, microseconds, TIMER_IDLE_LONGEST, timer_idle);
+    return timer_machine.nanoseconds - before;
+}
+
+/**
+ * @brief Moves the made-up machine's time to @p nanoseconds past the next step of its clock.
+ */
+static void timer_after_a_step(uint64_t nanoseconds)
+{
+    const uint64_t tick = (uint64_t) timer_machine.tick * 100u;
+
+    timer_machine.nanoseconds = (timer_machine.nanoseconds / tick + 1u) * tick + nanoseconds;
 }
 
 /**
@@ -616,6 +676,272 @@ KERNEL_TEST(a_timer_that_stops_during_a_stall_derails)
         "after a bounded number of reads");
     kernel_test_check(test, later_waited == 0u && later == 0u, "and a later stall pays no such wait again");
     kernel_test_measure(test, "stall_reads", stall_reads);
+}
+
+/**
+ * @brief A sleep waits the microseconds asked as the machine's time counts them, and says so: 25 ms from
+ *        1 ms past a step of the clock idle through the two steps before the last 6 ms and busy-wait
+ *        those; 1 ms never idles.
+ */
+KERNEL_TEST(a_sleep_idles_through_whole_ticks_and_busy_waits_the_rest)
+{
+    uint32_t long_waited;
+    uint32_t short_waited;
+    uint32_t long_idles;
+    uint64_t long_sleep;
+    uint64_t short_sleep;
+
+    timer_open(0u);
+    timer_machine.access = TIMER_FAST_ACCESS;
+    (void) timer_find();
+    timer_after_a_step(TIMER_MILLISECOND);
+    long_sleep = timer_sleep(25000u, &long_waited);
+    long_idles = timer_machine.idles;
+    short_sleep = timer_sleep(1000u, &short_waited);
+
+    kernel_test_check(test, long_sleep >= 25000000u && long_sleep < 25001000u, "25 ms lasts 25 ms to 25.001 ms");
+    kernel_test_check(test, long_waited >= 25000u && long_waited <= 25001u, "and says so");
+    kernel_test_check(test, long_idles == 2u, "idling through the two steps of the clock before its last 6 ms");
+    kernel_test_check(test, short_sleep >= 1000000u && short_sleep < 1001000u, "1 ms lasts 1 ms to 1.001 ms");
+    kernel_test_check(test, short_waited >= 1000u && short_waited <= 1001u, "and says so");
+    kernel_test_check(test, timer_machine.idles == long_idles, "without idling");
+    kernel_test_check(test,
+                      timer_found.sleeps == 2u && timer_found.sleep_idles == 2u && timer_found.stalls == 0u &&
+                          timer_found.stall_reads == 0u && timer_found.state == TIMER_STATE(USABLE),
+                      "two sleeps and their idles are counted, no busy-wait, and the timer stays usable");
+    kernel_test_check(test, timer_machine.host_sleeps == 0u && timer_machine.host_stalls == 0u,
+                      "without leaning on the host's own waits");
+    kernel_test_measure(test, "sleep_reads", timer_found.sleep_reads);
+}
+
+/**
+ * @brief A sleep counts across the wrap of the 24-bit counter inside a halt: 25 ms from 20,000 counts
+ *        before the wrap, 1 ms past a step of the clock, still last 25 ms to 25.001 ms, and the timer stays
+ *        usable.
+ */
+KERNEL_TEST(a_sleep_counts_across_the_wrap_of_24_bits_inside_a_halt)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    timer_machine.access = TIMER_FAST_ACCESS;
+    (void) timer_find();
+    timer_after_a_step(TIMER_MILLISECOND);
+    timer_place(TIMER_LOW_BITS - 20000u);
+    elapsed = timer_sleep(25000u, &waited);
+
+    kernel_test_check(test, elapsed >= 25000000u && elapsed < 25001000u, "25 ms lasts 25 ms to 25.001 ms");
+    kernel_test_check(test, waited >= 25000u && waited <= 25001u, "and says so");
+    kernel_test_check(test, timer_machine.idles == 2u, "idling twice, the first time across the wrap");
+    kernel_test_check(test, timer_found.state == TIMER_STATE(USABLE) && timer_machine.host_sleeps == 0u,
+                      "the timer stays usable, and the host's own sleep is not called");
+}
+
+/**
+ * @brief A sleep idles only while more than a tick and an eighth remain: 11,250 µs never idles, and
+ *        11,251 µs idles once, from the step of the clock, 5 ms past it, and 1 µs before the next.
+ */
+KERNEL_TEST(a_sleep_idles_only_while_more_than_a_tick_and_an_eighth_remain)
+{
+    static const uint64_t phases[] = {0u, 5u * TIMER_MILLISECOND, 10u * TIMER_MILLISECOND - TIMER_ACCESS};
+    uint32_t waited;
+    bool short_never_idles = true;
+    bool long_idles_once = true;
+
+    timer_open(0u);
+    (void) timer_find();
+    for (uint32_t index = 0u; index < sizeof(phases) / sizeof(phases[0]); ++index)
+    {
+        uint32_t idles = timer_machine.idles;
+
+        timer_after_a_step(phases[index]);
+        (void) timer_sleep(TIMER_UNIDLED, &waited);
+        short_never_idles = short_never_idles && timer_machine.idles == idles && waited >= TIMER_UNIDLED;
+        idles = timer_machine.idles;
+        timer_after_a_step(phases[index]);
+        (void) timer_sleep(TIMER_UNIDLED + 1u, &waited);
+        long_idles_once = long_idles_once && timer_machine.idles == idles + 1u && waited > TIMER_UNIDLED;
+    }
+    kernel_test_check(test, short_never_idles, "11,250 µs never idles");
+    kernel_test_check(test, long_idles_once, "11,251 µs idles once");
+}
+
+/**
+ * @brief A timer that stops while a sleep idles derails once the clock has stepped twice without it
+ *        moving: the sleep still lasts what it asked, the host's own sleep finishing it, and a later
+ *        sleep reads the timer no more.
+ */
+KERNEL_TEST(a_timer_that_stops_while_a_sleep_idles_derails)
+{
+    uint32_t waited;
+    uint32_t later_waited;
+    uint64_t elapsed;
+    uint64_t later;
+    uint32_t reads_before;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_machine.stops_after = timer_machine.reads + 4u;
+    elapsed = timer_sleep(100000u, &waited);
+    reads_before = timer_machine.reads;
+    later = timer_sleep(1000u, &later_waited);
+
+    kernel_test_check(test, timer_found.state == TIMER_STATE(DERAILED), "derailed once it stood still");
+    kernel_test_check(test, timer_machine.idles == 3u,
+                      "after three idles: the one that saw it move last, then two steps of the clock");
+    kernel_test_check(test, elapsed >= 100000000u && waited >= 100000u, "the sleep still lasts 100 ms, and says so");
+    kernel_test_check(test,
+                      timer_machine.host_sleeps == 1u && timer_machine.host_slept > 99000u &&
+                          timer_machine.host_slept < 100000u,
+                      "the host's own sleep finishing what the timer left");
+    kernel_test_check(test, later_waited == 0u && later == 0u && timer_machine.reads == reads_before,
+                      "and a later sleep reads the timer no more");
+}
+
+/**
+ * @brief A timer that holds each count for two reads in a row, so that every other idle reads it unmoved
+ *        across a step of the clock, still sleeps 100 ms to the end without derailing: only two steps in a
+ *        row without a move derail it.
+ */
+KERNEL_TEST(a_timer_still_across_one_step_at_a_time_stays_usable)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_machine.stutters = true;
+    timer_machine.reads = 0u;
+    timer_machine.held_nanoseconds = timer_machine.nanoseconds;
+    elapsed = timer_sleep(100000u, &waited);
+
+    kernel_test_check(test, timer_found.state == TIMER_STATE(USABLE) && timer_machine.host_sleeps == 0u,
+                      "the timer stays usable, and the host's own sleep is not called");
+    kernel_test_check(test, timer_machine.idles >= 8u, "through the idles of 100 ms");
+    kernel_test_check(test, elapsed >= 100000000u && waited >= 100000u, "the sleep lasts 100 ms, and says so");
+}
+
+/**
+ * @brief A timer that stops while interrupts other than the tick end each idle derails once the clock
+ *        has stepped twice since it last moved, a whole tick of idles, and not at the first step.
+ */
+KERNEL_TEST(a_timer_that_stops_between_two_steps_derails_at_the_second)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_after_a_step(0u);
+    timer_machine.idle_nanoseconds = TIMER_INTERRUPT;
+    timer_machine.stops_after = timer_machine.reads + 4u;
+    elapsed = timer_sleep(100000u, &waited);
+
+    kernel_test_check(test, timer_found.state == TIMER_STATE(DERAILED), "derailed once it stood still");
+    kernel_test_check(test,
+                      timer_machine.idles > 3000u &&
+                          timer_machine.idles <
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS,
+                      "after the second step of the clock, 20 ms of idles of 5 µs, before its read checks");
+    kernel_test_check(test, elapsed >= 100000000u && waited >= 100000u && timer_machine.host_sleeps == 1u,
+                      "the sleep still lasts 100 ms, the host's own sleep finishing it");
+    kernel_test_measure(test, "idles", timer_machine.idles);
+}
+
+/**
+ * @brief A timer that goes back while a sleep idles derails at the first read after the idle: the sleep
+ *        still lasts what it asked, the host's own sleep finishing it.
+ */
+KERNEL_TEST(a_timer_that_goes_back_while_a_sleep_idles_derails)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0x00100000u);
+    (void) timer_find();
+    timer_machine.goes_back_at = timer_machine.reads + 4u;
+    timer_machine.back_by = 0x00100000u;
+    elapsed = timer_sleep(100000u, &waited);
+
+    kernel_test_check(test, timer_found.state == TIMER_STATE(DERAILED), "derailed once it went back");
+    kernel_test_check(test, timer_machine.idles == 1u, "at the first read after an idle");
+    kernel_test_check(test, elapsed >= 100000000u && waited >= 100000u, "the sleep still lasts 100 ms, and says so");
+    kernel_test_check(test, timer_machine.host_sleeps == 1u, "the host's own sleep finishing it");
+}
+
+/**
+ * @brief A timer that stops while the clock stands still and interrupts end each idle derails once it
+ *        has read the same count ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS
+ *        times in a row, instead of idling for ever.
+ */
+KERNEL_TEST(a_timer_that_stops_while_the_clock_stands_still_derails_after_its_read_checks)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_machine.tick = 0u;
+    timer_machine.idle_nanoseconds = TIMER_INTERRUPT;
+    timer_machine.stops_after = timer_machine.reads + 4u;
+    elapsed = timer_sleep(100000u, &waited);
+
+    kernel_test_check(test, timer_found.state == TIMER_STATE(DERAILED), "derailed once it stood still");
+    kernel_test_check(
+        test, timer_machine.idles == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS + 1u,
+        "after the idle that saw it move last, then its read checks");
+    kernel_test_check(test, elapsed >= 100000000u && waited >= 100000u && timer_machine.host_sleeps == 1u,
+                      "the sleep still lasts 100 ms, the host's own sleep finishing it");
+}
+
+/**
+ * @brief An idle that outlasts the whole sleep, as one that a tick taken late ends, ends the sleep at the
+ *        read after it, without busy-waiting, and the sleep says it waited that long.
+ */
+KERNEL_TEST(an_idle_that_outlasts_a_sleep_ends_it)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open(0u);
+    (void) timer_find();
+    timer_machine.idle_nanoseconds = 30u * TIMER_MILLISECOND;
+    elapsed = timer_sleep(20000u, &waited);
+
+    kernel_test_check(test, timer_machine.idles == 1u && timer_found.sleep_reads == 6u,
+                      "one idle, and one read of the timer on either side of it");
+    kernel_test_check(test, elapsed >= 30000000u && elapsed < 30010000u && waited >= 30000u && waited <= 30010u,
+                      "the sleep of 20 ms lasts the 30 ms of the idle, and says so");
+    kernel_test_check(test, timer_found.state == TIMER_STATE(USABLE) && timer_machine.host_sleeps == 0u,
+                      "the timer stays usable, and the host's own sleep is not called");
+}
+
+/**
+ * @brief A sleep of nothing, and one on a timer that is not usable, wait nothing, read no port and do
+ *        not idle.
+ */
+KERNEL_TEST(a_sleep_of_nothing_or_on_a_timer_that_is_not_usable_waits_nothing)
+{
+    uint32_t nothing_waited;
+    uint32_t unusable_waited;
+    uint64_t nothing;
+    uint64_t unusable;
+    uint32_t reads_before;
+
+    timer_open(0u);
+    (void) timer_find();
+    reads_before = timer_machine.reads;
+    nothing = timer_sleep(0u, &nothing_waited);
+    timer_found.state = TIMER_STATE(STOPPED);
+    unusable = timer_sleep(1000u, &unusable_waited);
+
+    kernel_test_check(test, nothing == 0u && nothing_waited == 0u, "a sleep of nothing waits nothing");
+    kernel_test_check(test, unusable == 0u && unusable_waited == 0u, "nor does one on a timer that is not usable");
+    kernel_test_check(test,
+                      timer_machine.reads == reads_before && timer_machine.idles == 0u &&
+                          timer_machine.host_sleeps == 0u && timer_found.sleeps == 0u,
+                      "and neither reads its port, idles, nor leans on the host's sleep");
 }
 
 /**

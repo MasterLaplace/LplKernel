@@ -395,13 +395,7 @@ static void simulated_host_pci_write(void *context, uint16_t segment, uint8_t bu
         bytes[byte] = (uint8_t) (value >> (8u * byte));
 }
 
-static uint32_t simulated_host_sleep_milliseconds(void *context, uint32_t milliseconds)
-{
-    return (uint32_t) (simulated_host_wait(context, (uint64_t) milliseconds * SIMULATED_HOST_MILLISECOND) /
-                       SIMULATED_HOST_MILLISECOND);
-}
-
-static uint32_t simulated_host_stall_microseconds(void *context, uint32_t microseconds)
+static uint32_t simulated_host_wait_microseconds(void *context, uint32_t microseconds)
 {
     return (uint32_t) (simulated_host_wait(context, (uint64_t) microseconds * SIMULATED_HOST_MICROSECOND) /
                        SIMULATED_HOST_MICROSECOND);
@@ -530,8 +524,8 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.port_write = simulated_host_port_write;
     simulated->host.pci_read = simulated_host_pci_read;
     simulated->host.pci_write = simulated_host_pci_write;
-    simulated->host.sleep_milliseconds = simulated_host_sleep_milliseconds;
-    simulated->host.stall_microseconds = simulated_host_stall_microseconds;
+    simulated->host.sleep_microseconds = simulated_host_wait_microseconds;
+    simulated->host.stall_microseconds = simulated_host_wait_microseconds;
     simulated->host.clock_100ns = simulated_host_clock_100ns;
     simulated->host.allocate_pages = simulated_host_allocate_pages;
     simulated->host.release_pages = simulated_host_release_pages;

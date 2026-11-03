@@ -11,6 +11,7 @@
 #define MACHINE_LANGUAGE_SYNC_LEVEL   0x0Fu /**< The bits of a SyncLevel. */
 #define MACHINE_LANGUAGE_LONG_STALL   100u  /**< Microseconds a Stall may last uncounted (§5.5). */
 #define MACHINE_LANGUAGE_BUSY_STALL   255u  /**< Microseconds a Stall busy-waits at most; beyond, it sleeps (§5.5). */
+#define MACHINE_LANGUAGE_MILLISECOND  1000u /**< Microseconds in a millisecond. */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t MachineLanguageLoad_t;
@@ -221,7 +222,8 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     ++services->sleeps;
     services->sleep_milliseconds += milliseconds;
     if (milliseconds != 0u)
-        services->waited_milliseconds += host->sleep_milliseconds(host->context, (uint32_t) milliseconds);
+        services->sleep_waited_microseconds +=
+            host->sleep_microseconds(host->context, (uint32_t) (milliseconds * MACHINE_LANGUAGE_MILLISECOND));
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -244,8 +246,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         return MACHINE_LANGUAGE_OK;
     }
     ++services->stalls_slept;
-    services->waited_milliseconds +=
-        host->sleep_milliseconds(host->context, (uint32_t) ((microseconds + 999u) / 1000u));
+    services->sleep_waited_microseconds += host->sleep_microseconds(host->context, (uint32_t) microseconds);
     return MACHINE_LANGUAGE_OK;
 }
 

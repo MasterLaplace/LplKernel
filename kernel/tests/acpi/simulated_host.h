@@ -184,7 +184,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedFunction {
  *          cannot be mapped, as in ring 0. Its I/O space reads as 0 but for the ports given a value,
  *          and ignores writes. Its PCI functions are those given a configuration space, and any other
  *          reads as configuration_fill and ignores writes. Every access is logged in order. Its clock
- *          is virtual, in units of 100 ns: sleep_milliseconds and stall_microseconds advance it by
+ *          is virtual, in units of 100 ns: sleep_microseconds and stall_microseconds advance it by
  *          what is asked, or, when tick_milliseconds is not 0, by the whole ticks a deadline on the
  *          kernel tick counts: those the wait rounds up to, and the one it lands in. Each read of
  *          clock_100ns gives the clock, then advances it by timer_quantum, so that a loop that polls it

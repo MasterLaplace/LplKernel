@@ -58,8 +58,9 @@ extern void write_acpi_mode_record(Serial_t *serial);
 
 /**
  * @brief Writes the `[LPLTLM] acpi.timer` record: whether the boot found an ACPI power management timer
- *        that Stall waits on, its port, its rate against the kernel tick when it was measured, the reads
- *        and the time the checks took, and the waits made on it and their reads.
+ *        that Sleep and Stall wait on, its port, its rate against the kernel tick when it was measured, the
+ *        reads and the time the checks took, the busy-waits and the sleeps made on it, their reads, and the
+ *        times the sleeps gave up the processor.
  *
  * @param serial The port the record is written to.
  */

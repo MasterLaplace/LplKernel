@@ -527,8 +527,7 @@ advanced_configuration_and_power_interface_machine_language_sleep(
 
 /**
  * @brief Runs Stall (§5.5): the microseconds are charged to the evaluation's budget first; up to
- *        255 µs the host busy-waits, beyond it sleeps the milliseconds they round up to; both are
- *        counted beyond 100 µs.
+ *        255 µs the host busy-waits them, beyond it sleeps them; both are counted beyond 100 µs.
  *
  * @param load         The load.
  * @param microseconds What AML asked for.

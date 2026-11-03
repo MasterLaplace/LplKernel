@@ -239,8 +239,11 @@ typedef struct AdvancedConfigurationAndPowerInterfacePowerManagementTimer {
                                       3.579545 MHz makes, in thousandths; 0 when not measured. */
     uint32_t check_reads;        /**< Reads of its port the checks made. */
     uint32_t check_microseconds; /**< Microseconds the checks took, as the host's clock counts them. */
-    uint32_t stalls;             /**< Waits made on it. */
-    uint32_t stall_reads;        /**< Reads of its port those waits made. */
+    uint32_t stalls;             /**< Busy-waits made on it. */
+    uint32_t stall_reads;        /**< Reads of its port those busy-waits made. */
+    uint32_t sleeps;             /**< Sleeps made on it. */
+    uint32_t sleep_reads;        /**< Reads of its port those sleeps made. */
+    uint32_t sleep_idles;        /**< Times those sleeps gave up the processor until an interrupt. */
 } AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t;
 
 /**
@@ -630,6 +633,34 @@ extern uint32_t advanced_configuration_and_power_interface_power_management_time
     AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds);
 
 /**
+ * @brief Waits on a usable power management timer until it has counted at least @p microseconds: gives
+ *        up the processor through @p idle while more than a tick and an eighth remain, then busy-waits
+ *        the rest on it.
+ *
+ * @details An idle must end at the next interrupt, a tick of @p idle_microseconds at the latest; the
+ *          timer is read after each, and the eighth of a tick covers the 5 % its rate may stray from the
+ *          tick's and an interrupt taken late. A timer that moves more than half its 24-bit range in one
+ *          step, which is going back, that reads the same count
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS times in a row,
+ *          or that does not move while the host's clock steps twice derails: it is marked derailed and no
+ *          longer waited on, and the rest of the wait goes to the host's sleep_microseconds, which must
+ *          then wait without it.
+ *
+ * @param host              The host whose I/O port and clock are read, and whose sleep finishes a wait
+ *                          the timer left.
+ * @param timer             A timer advanced_configuration_and_power_interface_find_power_management_timer
+ *                          found usable; any other is not waited on.
+ * @param microseconds      How long to wait.
+ * @param idle_microseconds A tick of the host's clock: the longest one idle lasts.
+ * @param idle              Gives up the processor until the next interrupt, given the host's context.
+ * @return The microseconds waited, at least @p microseconds; 0 for a timer that is not usable.
+ */
+extern uint32_t advanced_configuration_and_power_interface_power_management_timer_sleep(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint32_t microseconds,
+    uint32_t idle_microseconds, void (*idle)(void *context));
+
+/**
  * @brief Finds and checks this machine's power management timer, through
  *        advanced_configuration_and_power_interface_machine_host and the FADT of the boot's directory;
  *        needs the kernel tick running.
@@ -645,6 +676,19 @@ extern void advanced_configuration_and_power_interface_power_management_timer_in
  * @return The microseconds waited; 0 unless the timer is usable: never found so, or derailed since.
  */
 extern uint32_t advanced_configuration_and_power_interface_power_management_timer_machine_stall(uint32_t microseconds);
+
+/**
+ * @brief Sleeps on this machine's power management timer, as
+ *        advanced_configuration_and_power_interface_power_management_timer_sleep does, through
+ *        advanced_configuration_and_power_interface_machine_host.
+ *
+ * @param microseconds      How long to wait.
+ * @param idle_microseconds A tick of the kernel's clock: the longest one idle lasts.
+ * @param idle              Gives up the processor until the next interrupt.
+ * @return The microseconds waited; 0 unless the timer is usable: never found so, or derailed since.
+ */
+extern uint32_t advanced_configuration_and_power_interface_power_management_timer_machine_sleep(
+    uint32_t microseconds, uint32_t idle_microseconds, void (*idle)(void *context));
 
 /**
  * @brief What advanced_configuration_and_power_interface_power_management_timer_initialize found.

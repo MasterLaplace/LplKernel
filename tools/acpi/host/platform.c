@@ -130,10 +130,10 @@ static void platform_write_no_function(void *context, uint16_t segment, uint8_t 
     (void) value;
 }
 
-static uint32_t platform_sleep_without_a_clock(void *context, uint32_t milliseconds)
+static uint32_t platform_sleep_without_a_clock(void *context, uint32_t microseconds)
 {
     (void) context;
-    (void) milliseconds;
+    (void) microseconds;
     return 0u;
 }
 
@@ -179,7 +179,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .port_write = platform_write_no_port,
     .pci_read = platform_read_no_function,
     .pci_write = platform_write_no_function,
-    .sleep_milliseconds = platform_sleep_without_a_clock,
+    .sleep_microseconds = platform_sleep_without_a_clock,
     .stall_microseconds = platform_stall_without_a_clock,
     .clock_100ns = platform_no_clock,
     .allocate_pages = platform_allocate_pages,
