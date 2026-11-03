@@ -730,3 +730,27 @@ KERNEL_TEST(a_fault_in_a_body_declared_without_running_leaves_the_else_undeclare
                       "the predicate fails, and the byte 0x02 is a fault of the load");
     evaluation_close(test);
 }
+
+/**
+ * @brief A fault the load meets in the body of an If whose predicate was true skips the rest of that body, and
+ *        the Else after it is stepped over, even when an earlier turn of the While around it found that If false
+ *        and ran its Else (§3.6, §6.2).
+ */
+KERNEL_TEST(a_fault_in_a_taken_if_steps_over_its_else_after_a_turn_that_ran_it)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'C',   'N',   'T',   '2',   0x00u, 0x08u, 'E', 'L', 'S',   'C',   0x00u, 0xA2u, 0x1Eu, 0x95u, 'C', 'N',
+        'T',   '2',   0x0Au, 0x02u, 0x75u, 'C',   'N',   'T', '2', 0xA0u, 0x09u, 0x93u, 'C',   'N',   'T',   '2', 0x0Au,
+        0x02u, 0x02u, 0xA1u, 0x06u, 0x75u, 'E',   'L',   'S', 'C', 0x08u, 'A',   'F',   'T',   'R',   0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("CNT2") == 2u && evaluation_integer("AFTR") == 1u,
+                      "the While takes two turns, then AFTR is declared");
+    kernel_test_check(test, evaluation_integer("ELSC") == 1u,
+                      "the Else runs on the first turn, where the If is false, and not on the second, where it faults");
+    kernel_test_check(test, evaluation_load.load_errors == 1u && evaluation_load.evaluation.failures == 0u,
+                      "the byte 0x02 is the one fault, of the load");
+    evaluation_close(test);
+}
