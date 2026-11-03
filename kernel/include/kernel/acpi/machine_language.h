@@ -169,11 +169,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t declaring;           /**< Passes and table frames that declare: not 0 while a table is declared. */
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, or
                                                                              NULL. */
-    uint32_t bytes;              /**< AML bytes of those tables, headers apart. */
-    uint32_t declarations;       /**< Nodes the tables created. */
-    uint32_t data_stepped_over;  /**< Data objects of a Name the declaration pass built, then stepped over instead of
-                                      decoding them again (O18). */
-    uint32_t duplicates;         /**< Declarations of a name that already existed, skipped. */
+    uint32_t bytes;             /**< AML bytes of those tables, headers apart. */
+    uint32_t declarations;      /**< Nodes the tables created. */
+    uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass built, then stepped over instead of
+                                     decoding them again (O18). */
+    uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
+                                                 instead of operand by operand through the walk (O19). */
+    uint32_t duplicates;                    /**< Declarations of a name that already existed, skipped. */
     uint32_t externals_unplaced; /**< Externals the declaration pass had nowhere to place, which the Externals
                                       pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */

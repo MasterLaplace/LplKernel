@@ -142,6 +142,75 @@ static const uint8_t shortcuts_crossing[] = {
 };
 
 /**
+ * @brief Statements the declaration pass's decoder takes (O19), as iasl compiles them: `Name (N0__, One)`,
+ *        `Name (N1__, Package (2) {1, "a"})`, `Method (M0__, 0) {Return (One)}`,
+ *        `Method (M1__, 7, Serialized, 15) {Return (Arg6)}`, `OperationRegion (R0__, SystemMemory, 0x100000, 0x20)`,
+ *        `Field (R0__, ByteAcc, NoLock, Preserve) {F0__, 8, , 4, F1__, 4, Offset (4), F2__, 32}`,
+ *        `Field (R0__, AnyAcc, Lock, WriteAsZeros) {AccessAs (DWordAcc), F3__, 32}`, `Device (D0__)` holding
+ *        `Name (_HID, "LPL0001")`, `Method (_STA) {Return (0x0F)}`, `Device (D1__) {Name (_ADR, Zero)}`,
+ *        `ThermalZone (TZ1_) {}` and `Scope (^D0__) {Name (S2__, 6)}`, then `Scope (D0__) {Name (S0__, 2)}`,
+ *        `Scope (\_SB) {Device (D2__) {}}`, `Scope (\D0__.D1__) {Name (S1__, 3)}`,
+ *        `ThermalZone (TZ0_) {Method (_TMP) {Return (3000)}}`, `Device (\_SB.D3__) {}`, `Name (\_SB.N2__, 4)`,
+ *        `Method (\_SB.M2__) {}` and `Scope (\) {Name (RT__, 5)}`: 25 of them through the decoder, the
+ *        OperationRegion and the Name and the Method of a path through the walk.
+ */
+static const uint8_t shortcuts_statements[] = {
+    0x08u, 'N',   '0',   '_',   '_',   0x01u, 0x08u, 'N',   '1',   '_',   '_',   0x12u, 0x06u, 0x02u, 0x01u, 0x0Du,
+    0x61u, 0x00u, 0x14u, 0x08u, 'M',   '0',   '_',   '_',   0x00u, 0xA4u, 0x01u, 0x14u, 0x08u, 'M',   '1',   '_',
+    '_',   0xFFu, 0xA4u, 0x6Eu, 0x5Bu, 0x80u, 'R',   '0',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u,
+    0x0Au, 0x20u, 0x5Bu, 0x81u, 0x19u, 'R',   '0',   '_',   '_',   0x01u, 'F',   '0',   '_',   '_',   0x08u, 0x00u,
+    0x04u, 'F',   '1',   '_',   '_',   0x04u, 0x00u, 0x10u, 'F',   '2',   '_',   '_',   0x20u, 0x5Bu, 0x81u, 0x0Eu,
+    'R',   '0',   '_',   '_',   0x50u, 0x01u, 0x03u, 0x00u, 'F',   '3',   '_',   '_',   0x20u, 0x5Bu, 0x82u, 0x3Fu,
+    'D',   '0',   '_',   '_',   0x08u, '_',   'H',   'I',   'D',   0x0Du, 'L',   'P',   'L',   '0',   '0',   '0',
+    '1',   0x00u, 0x14u, 0x09u, '_',   'S',   'T',   'A',   0x00u, 0xA4u, 0x0Au, 0x0Fu, 0x5Bu, 0x82u, 0x0Bu, 'D',
+    '1',   '_',   '_',   0x08u, '_',   'A',   'D',   'R',   0x00u, 0x5Bu, 0x85u, 0x05u, 'T',   'Z',   '1',   '_',
+    0x10u, 0x0Du, 0x5Eu, 'D',   '0',   '_',   '_',   0x08u, 'S',   '2',   '_',   '_',   0x0Au, 0x06u, 0x10u, 0x0Cu,
+    'D',   '0',   '_',   '_',   0x08u, 'S',   '0',   '_',   '_',   0x0Au, 0x02u, 0x10u, 0x0Cu, '_',   'S',   'B',
+    '_',   0x5Bu, 0x82u, 0x05u, 'D',   '2',   '_',   '_',   0x10u, 0x11u, 0x2Eu, 'D',   '0',   '_',   '_',   'D',
+    '1',   '_',   '_',   0x08u, 'S',   '1',   '_',   '_',   0x0Au, 0x03u, 0x5Bu, 0x85u, 0x10u, 'T',   'Z',   '0',
+    '_',   0x14u, 0x0Au, '_',   'T',   'M',   'P',   0x00u, 0xA4u, 0x0Bu, 0xB8u, 0x0Bu, 0x5Bu, 0x82u, 0x0Au, 0x2Eu,
+    '_',   'S',   'B',   '_',   'D',   '3',   '_',   '_',   0x08u, 0x2Eu, '_',   'S',   'B',   '_',   'N',   '2',
+    '_',   '_',   0x0Au, 0x04u, 0x14u, 0x0Bu, 0x2Eu, '_',   'S',   'B',   '_',   'M',   '2',   '_',   '_',   0x00u,
+    0x10u, 0x0Au, 0x5Cu, 0x00u, 0x08u, 'R',   'T',   '_',   '_',   0x0Au, 0x05u,
+};
+
+/**
+ * @brief Statements the decoder hands back to the walk at their first operand whose outcome differs:
+ *        `OperationRegion (R0__, ...)` and `(R9__, ...)`, `Method (M0__, 0) {Return (One)}`, then
+ *        `Method (M0__, 1) {Return (Arg0)}` again, `Device (D0__) {Name (A0__, 1)}`, then
+ *        `Device (D0__) {Name (A1__, 2)}` again, whose body is skipped, `Device (D7__) {}`,
+ *        `Scope (D8__) {Name (X0__, 1)}` of a name never declared, `Field (NOPE, ByteAcc, NoLock, Preserve)
+ *        {G0__, 8}` of a region never declared and `Field (R0__, ...) {G1__, 8}`; then, by hand, a Name `1A__`
+ *        inside `Device (D9__)` and a Method `2M__`, whose NameSeg starts with a digit, which the NameString reader
+ *        refuses, a Method and a Field whose PkgLength ends at their name, and a Name cut by the table's end: 8 of
+ *        them through the decoder.
+ */
+static const uint8_t shortcuts_handed_back[] = {
+    0x5Bu, 0x80u, 'R',   '0',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u, 0x0Au, 0x20u, 0x5Bu, 0x80u,
+    'R',   '9',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x20u, 0x00u, 0x0Au, 0x20u, 0x14u, 0x08u, 'M',   '0',
+    '_',   '_',   0x00u, 0xA4u, 0x01u, 0x14u, 0x08u, 'M',   '0',   '_',   '_',   0x01u, 0xA4u, 0x68u, 0x5Bu, 0x82u,
+    0x0Bu, 'D',   '0',   '_',   '_',   0x08u, 'A',   '0',   '_',   '_',   0x01u, 0x5Bu, 0x82u, 0x0Cu, 'D',   '0',
+    '_',   '_',   0x08u, 'A',   '1',   '_',   '_',   0x0Au, 0x02u, 0x5Bu, 0x82u, 0x05u, 'D',   '7',   '_',   '_',
+    0x10u, 0x0Bu, 'D',   '8',   '_',   '_',   0x08u, 'X',   '0',   '_',   '_',   0x01u, 0x5Bu, 0x81u, 0x0Bu, 'N',
+    'O',   'P',   'E',   0x01u, 'G',   '0',   '_',   '_',   0x08u, 0x5Bu, 0x81u, 0x0Bu, 'R',   '0',   '_',   '_',
+    0x01u, 'G',   '1',   '_',   '_',   0x08u, 0x5Bu, 0x82u, 0x0Bu, 'D',   '9',   '_',   '_',   0x08u, '1',   'A',
+    '_',   '_',   0x01u, 0x14u, 0x06u, '2',   'M',   '_',   '_',   0x00u, 0x14u, 0x05u, 'M',   'C',   'U',   'T',
+    0x5Bu, 0x81u, 0x05u, 'R',   '0',   '_',   '_',   0x08u, 'N',   'C',   'U',   'T',
+};
+
+/**
+ * @brief Statements inside table-level code: `Name (N0__, One)`, `If (N0__) {Device (D0__) {Name (N1__, 1)}
+ *        Method (M0__) {}} Else {Name (N2__, 2)}` and `Store (2, N0__)`: through the decoder, the 4 declarations
+ *        of the code the load runs, the Else stepped over, and the 5 of both branches where it declares every
+ *        branch.
+ */
+static const uint8_t shortcuts_table_level_code[] = {
+    0x08u, 'N',   '0',   '_',   '_', 0x01u, 0xA0u, 0x19u, 'N',   '0',   '_',   '_',   0x5Bu, 0x82u, 0x0Bu, 'D',
+    '0',   '_',   '_',   0x08u, 'N', '1',   '_',   '_',   0x01u, 0x14u, 0x06u, 'M',   '0',   '_',   '_',   0x00u,
+    0xA1u, 0x08u, 0x08u, 'N',   '2', '_',   '_',   0x0Au, 0x02u, 0x70u, 0x0Au, 0x02u, 'N',   '0',   '_',   '_',
+};
+
+/**
  * @brief Prepends @p length bytes to @p backwards, or marks it overflowed when they do not fit.
  */
 static void shortcuts_prepend(ShortcutsBackwards_t *backwards, const uint8_t *bytes, uint32_t length)
@@ -278,6 +347,7 @@ static bool shortcuts_record(KernelTest_t *test, const ShortcutsCase_t *load_cas
     memcpy(out_record->statuses, load->evaluation.statuses, sizeof(out_record->statuses));
     memcpy(out_record->unimplemented, load->evaluation.unimplemented, sizeof(out_record->unimplemented));
     out_record->taken.data_stepped_over = load->data_stepped_over;
+    out_record->taken.declarations_decoded_directly = load->declarations_decoded_directly;
     advanced_configuration_and_power_interface_machine_language_close(&shortcuts_load);
     advanced_configuration_and_power_interface_simulated_host_close(&shortcuts_host);
     return true;
@@ -310,6 +380,7 @@ static const uint8_t *shortcuts_table_bytes(ShortcutsTable_t table, uint32_t *ou
 {
     switch (table)
     {
+    case SHORTCUTS_TABLE_STATEMENTS: *out_length = sizeof(shortcuts_statements); return shortcuts_statements;
     case SHORTCUTS_TABLE_DATA:
     default: *out_length = sizeof(shortcuts_constants); return shortcuts_constants;
     }
@@ -333,6 +404,7 @@ void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t
             shortcuts_change_one_byte(bytes, length, offset, every_value ? turn : offset / stride);
             out_mutations->disagreements += shortcuts_agree(test, &mutant, &taken) ? 0u : 1u;
             out_mutations->taken.data_stepped_over += taken.data_stepped_over;
+            out_mutations->taken.declarations_decoded_directly += taken.declarations_decoded_directly;
             ++out_mutations->loads;
         }
     }
@@ -410,4 +482,62 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_data_declares_the_same_bo
                       "every change declares the same with the shortcut and without");
     kernel_test_measure(test, "mutants", mutations.loads);
     kernel_test_measure(test, "data_stepped_over", mutations.taken.data_stepped_over);
+}
+
+/**
+ * @brief The declaration pass takes a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a
+ *        Field through its own decoder (O19), which hands a statement back to the walk at its first operand whose
+ *        outcome differs; a load with that decoder ends with the namespace, the faults and the counts of a load
+ *        without it, and its decoder took the statements each table's documentation counts: on statements of
+ *        every shape it takes, under revision 2 then 1, on statements it hands back, and on the declarations of
+ *        table-level code, run and declared in every branch.
+ */
+KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
+{
+    const ShortcutsCase_t cases[] = {
+        {"statements the decoder takes, under revision 2",                      shortcuts_statements,       sizeof(shortcuts_statements),       2u, NULL,
+         0u,                                                                                                                                                  false, false, true},
+        {"statements the decoder takes, under revision 1",                      shortcuts_statements,       sizeof(shortcuts_statements),       1u, NULL,
+         0u,                                                                                                                                                  false, false, true},
+        {"statements the decoder hands back",                                   shortcuts_handed_back,      sizeof(shortcuts_handed_back),      2u, NULL, 0u, false,
+         false,                                                                                                                                                             true},
+        {"the declarations of table-level code it runs",                        shortcuts_table_level_code, sizeof(shortcuts_table_level_code),
+         2u,                                                                                                                                        NULL, 0u, false, false, true},
+        {"the declarations of table-level code whose every branch it declares", shortcuts_table_level_code,
+         sizeof(shortcuts_table_level_code),                                                                                                    2u, NULL, 0u, false, true,  true},
+    };
+    const uint32_t decoded[] = {25u, 25u, 8u, 4u, 5u};
+    uint32_t decoded_directly = 0u;
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+    {
+        ShortcutsTaken_t taken;
+
+        kernel_test_check(
+            test, shortcuts_agree(test, &cases[index], &taken) && taken.declarations_decoded_directly == decoded[index],
+            cases[index].claim);
+        decoded_directly += taken.declarations_decoded_directly;
+    }
+    kernel_test_measure(test, "declarations_decoded_directly", decoded_directly);
+}
+
+/**
+ * @brief A sample of one-byte changes of the statements the decoder takes, every 16th byte changed once, to its value
+ *        with one bit flipped, to 0x00 or to 0xFF in turn, loads to the same namespace, faults and counts with the
+ *        load's shortcuts and without, in ring 0 as on the host; host_shortcuts changes every byte to each of the
+ *        three.
+ */
+KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_same_both_ways)
+{
+    ShortcutsMutations_t mutations;
+
+    shortcuts_change_bytes(test, SHORTCUTS_TABLE_STATEMENTS, SHORTCUTS_SAMPLE_STRIDE, false, &mutations);
+    kernel_test_check(test,
+                      mutations.loads == (mutations.bytes + SHORTCUTS_SAMPLE_STRIDE - 1u) / SHORTCUTS_SAMPLE_STRIDE &&
+                          mutations.taken.declarations_decoded_directly != 0u,
+                      "every change of the sample was loaded both ways, and the decoder took statements");
+    kernel_test_check(test, mutations.disagreements == 0u,
+                      "every change declares the same with the decoder and without");
+    kernel_test_measure(test, "mutants", mutations.loads);
+    kernel_test_measure(test, "declarations_decoded_directly", mutations.taken.declarations_decoded_directly);
 }
