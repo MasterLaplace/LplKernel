@@ -117,10 +117,12 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  *        after which a region a method creates gets its _REG at once; walks the devices, processors and
  *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; leaves
  *        \_PIC uncalled; asks \_SB._OSC for nothing, a query then a commit; gives every processor object
- *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC; publishes the
- *        C-states of each CPU slot from its processor object's _CST, a processor object a table loaded
- *        meanwhile declares given those capabilities first, after the others; then takes the Notifies the
- *        load and the sequence raised, a _CST changed since its evaluation evaluated once more. A table Load or
+ *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC, one that a table
+ *        loaded meanwhile declares behind that walk as soon as the evaluation that loaded it returns;
+ *        publishes the C-states of each CPU slot from its processor object's _CST, a processor object a table
+ *        loaded meanwhile declares given those capabilities first, after the others; then takes the Notifies
+ *        the load and the sequence raised, a _CST changed since its evaluation evaluated once more, the tables
+ *        these evaluations load published as the others, then their Notifies taken. A table Load or
  *        LoadTable adds once step 2 is over gets its late initialisation as soon as the evaluation that
  *        loaded it returns, or once step 3 is over for a table a _REG loaded: the _REG of step 3 in its
  *        scopes, then the _STA and _INI walk of step 4 over the device subtrees step 4 has gone past, once

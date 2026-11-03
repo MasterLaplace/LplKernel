@@ -128,7 +128,8 @@ extern uint32_t advanced_configuration_and_power_interface_processor_slot(
  *        the _CST of each processor object bound to a CPU slot, in declaration order, and publishes its
  *        states in that slot, the processor objects of the tables loaded meanwhile in a pass after the
  *        others, each given step 7's capabilities first; then takes every Notify queued, a Notify 0x81 on a
- *        processor queued after its evaluation evaluating its _CST once more, every other one dropped.
+ *        processor queued after its evaluation evaluating its _CST once more, every other one dropped; the
+ *        tables these evaluations load get that pass, then that handling of the Notifies queued since.
  *
  * @param load           A load whose namespace steps 2 to 7 initialised, its stacks free.
  * @param machine        The CPU slots, the FADT and how step 0 ended.
