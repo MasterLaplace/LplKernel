@@ -1487,16 +1487,6 @@ static MachineLanguageStatus_t machine_language_close_table(MachineLanguageLoad_
 }
 
 /**
- * @brief Has the next statement of a table's code at load step over the Else that starts at @p end, the end of an
- *        If that took its body, however that body ended (§3.6).
- */
-static inline void machine_language_step_over_else(MachineLanguageFrame_t *frame, uint32_t end)
-{
-    frame->else_offset = end;
-    frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
-}
-
-/**
  * @brief Ends the construct the running frame is in: a method returns, a While goes back to its
  *        predicate, an If skips the Else after it; in a table's code at load, the If leaves that Else
  *        to the next statement, a While past the table's budget goes on past its end, the failure
@@ -1513,7 +1503,7 @@ static inline MachineLanguageStatus_t machine_language_close_block(MachineLangua
     --evaluation->block_count;
     if (block.kind == MACHINE_LANGUAGE_RUN_IF && frame->declares)
     {
-        machine_language_step_over_else(frame, block.end);
+        frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
         return MACHINE_LANGUAGE_OK;
     }
     if (block.kind == MACHINE_LANGUAGE_RUN_IF)
@@ -2152,7 +2142,7 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
     advanced_configuration_and_power_interface_machine_language_count_load_error(load, status);
     frame->pc = end;
     if (kind == MACHINE_LANGUAGE_RUN_IF)
-        machine_language_step_over_else(frame, end);
+        frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -3788,7 +3778,7 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageLoad_t *l
     {
         frame->pc = block->end;
         if (block->kind == MACHINE_LANGUAGE_RUN_IF)
-            machine_language_step_over_else(frame, block->end);
+            frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
         --evaluation->block_count;
         return machine_language_close_table(load);
     }
