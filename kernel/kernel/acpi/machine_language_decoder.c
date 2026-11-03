@@ -36,11 +36,12 @@
 #define MACHINE_LANGUAGE_INDEX(identifier, encoding_value, ...)                                                        \
     [(encoding_value)] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##identifier,
 
-static const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t
-    machine_language_descriptors[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT] = {
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ONE_BYTE_OPCODES(MACHINE_LANGUAGE_DESCRIPTOR)
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_EXTENDED_OPCODES(
-                MACHINE_LANGUAGE_EXTENDED_DESCRIPTOR)};
+const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t
+    advanced_configuration_and_power_interface_machine_language_descriptors
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT] = {
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ONE_BYTE_OPCODES(MACHINE_LANGUAGE_DESCRIPTOR)
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_EXTENDED_OPCODES(
+                    MACHINE_LANGUAGE_EXTENDED_DESCRIPTOR)};
 
 static const char
     *const machine_language_names[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT] = {
@@ -48,10 +49,10 @@ static const char
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ONE_BYTE_OPCODES(MACHINE_LANGUAGE_NAME)
             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_EXTENDED_OPCODES(MACHINE_LANGUAGE_NAME)};
 
-static const uint8_t machine_language_one_byte_index[256] = {
+const uint8_t advanced_configuration_and_power_interface_machine_language_one_byte_index[256] = {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ONE_BYTE_OPCODES(MACHINE_LANGUAGE_INDEX)};
 
-static const uint8_t machine_language_extended_index[256] = {
+const uint8_t advanced_configuration_and_power_interface_machine_language_extended_index[256] = {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_EXTENDED_OPCODES(MACHINE_LANGUAGE_INDEX)};
 
 static const char
@@ -123,14 +124,6 @@ static bool machine_language_is_segment_character(uint8_t byte)
     return machine_language_is_segment_lead(byte) || (byte >= '0' && byte <= '9');
 }
 
-const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t *
-advanced_configuration_and_power_interface_machine_language_descriptor(uint32_t opcode)
-{
-    if (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT)
-        opcode = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INVALID;
-    return &machine_language_descriptors[opcode];
-}
-
 const char *advanced_configuration_and_power_interface_machine_language_opcode_name(uint32_t opcode)
 {
     if (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT)
@@ -143,97 +136,6 @@ const char *advanced_configuration_and_power_interface_machine_language_status_n
     if (status >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT)
         return "unknown";
     return machine_language_status_names[status];
-}
-
-AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t
-advanced_configuration_and_power_interface_machine_language_operand_kind(
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t *descriptor, uint32_t index)
-{
-    if (index >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OPERANDS)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_NONE;
-    return (
-        AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t) ((descriptor->operands >> (index * 4u)) &
-                                                                             0xFu);
-}
-
-bool advanced_configuration_and_power_interface_machine_language_starts_name(uint8_t byte)
-{
-    return byte == '\\' || byte == '^' || byte == 0x2Eu || byte == 0x2Fu || machine_language_is_segment_lead(byte);
-}
-
-AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_read_opcode(const uint8_t *bytes, uint32_t offset,
-                                                                        uint32_t limit, uint32_t *out_opcode,
-                                                                        uint32_t *out_after)
-{
-    if (offset >= limit)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
-
-    uint32_t opcode = machine_language_one_byte_index[bytes[offset]];
-    uint32_t after = offset + 1u;
-
-    if (bytes[offset] == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_EXTENDED_PREFIX)
-    {
-        if (after >= limit)
-            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
-        opcode = machine_language_extended_index[bytes[after]];
-        ++after;
-    }
-    if (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INVALID)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE;
-    *out_opcode = opcode;
-    *out_after = after;
-    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
-}
-
-AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_read_package_length(const uint8_t *bytes, uint32_t offset,
-                                                                                uint32_t limit, uint32_t *out_value,
-                                                                                uint32_t *out_after)
-{
-    if (offset >= limit)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
-
-    const uint32_t follow_bytes = (uint32_t) bytes[offset] >> 6u;
-
-    if (follow_bytes >= limit - offset)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
-    if (follow_bytes == 0u)
-    {
-        *out_value = bytes[offset] & 0x3Fu;
-        *out_after = offset + 1u;
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
-    }
-
-    uint32_t value = bytes[offset] & 0x0Fu;
-
-    for (uint32_t index = 0u; index < follow_bytes; ++index)
-        value |= (uint32_t) bytes[offset + 1u + index] << (4u + 8u * index);
-    *out_value = value;
-    *out_after = offset + 1u + follow_bytes;
-    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
-}
-
-AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_read_package_end(const uint8_t *bytes, uint32_t offset,
-                                                                             uint32_t limit, uint32_t *out_end,
-                                                                             uint32_t *out_after)
-{
-    uint32_t value = 0u;
-    uint32_t after = 0u;
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
-        advanced_configuration_and_power_interface_machine_language_read_package_length(bytes, offset, limit, &value,
-                                                                                        &after);
-
-    if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-        return status;
-    if (value < after - offset)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
-    if (value > limit - offset)
-        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_PACKAGE_LENGTH_OUT_OF_PARENT;
-    *out_end = offset + value;
-    *out_after = after;
-    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
 
 AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
