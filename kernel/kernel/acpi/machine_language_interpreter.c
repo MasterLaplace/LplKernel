@@ -1488,7 +1488,7 @@ static MachineLanguageStatus_t machine_language_close_table(MachineLanguageLoad_
 
 /**
  * @brief Has the next statement of a table's code at load step over the Else that starts at @p end, the end of an
- *        If that took its body (§3.6).
+ *        If that took its body, however that body ended (§3.6).
  */
 static inline void machine_language_step_over_else(MachineLanguageFrame_t *frame, uint32_t end)
 {
@@ -2136,7 +2136,8 @@ static MachineLanguageStatus_t machine_language_field_name(MachineLanguageLoad_t
 
 /**
  * @brief Opens a construct of the running frame, from @p start to @p end; in a table's code at load,
- *        one past the block limit is a fault of the load, counted, and the code goes on past it (§6.2).
+ *        one past the block limit is a fault of the load, counted, and the code goes on past it (§6.2),
+ *        past the Else after it too when it is the body of an If.
  */
 static inline MachineLanguageStatus_t machine_language_open_construct(MachineLanguageLoad_t *load, uint8_t kind,
                                                                       uint32_t start, uint32_t end)
@@ -2150,14 +2151,15 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
         return status;
     advanced_configuration_and_power_interface_machine_language_count_load_error(load, status);
     frame->pc = end;
+    if (kind == MACHINE_LANGUAGE_RUN_IF)
+        machine_language_step_over_else(frame, end);
     return MACHINE_LANGUAGE_OK;
 }
 
 /**
  * @brief Runs the TermList of an If or a While once its predicate is on the stack: a true predicate
- *        opens the body, and, in a table's code at load, has the Else after it stepped over however the
- *        body ends, a fault of the load included (§6.2); a false one skips it, and an If then enters the
- *        Else that follows, or, in a table's code at load, lets the next statement run it.
+ *        opens the body; a false one skips it, and an If then enters the Else that follows, or, in a
+ *        table's code at load, lets the next statement run it.
  */
 static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *load,
                                                        const MachineLanguagePendingOperator_t *active)
@@ -2174,14 +2176,10 @@ static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *lo
     if (status != MACHINE_LANGUAGE_OK)
         return status;
     if (truth != 0u)
-    {
-        if (frame->declares)
-            machine_language_step_over_else(frame, branch.end);
         return machine_language_open_construct(
             load,
             (branch.opcode == MACHINE_LANGUAGE_OPCODE(WHILE)) ? MACHINE_LANGUAGE_RUN_WHILE : MACHINE_LANGUAGE_RUN_IF,
             branch.start, branch.end);
-    }
     frame->pc = branch.end;
     if (frame->declares)
     {
@@ -3764,8 +3762,8 @@ static MachineLanguageStatus_t machine_language_ask(MachineLanguageLoad_t *load)
 /**
  * @brief Hands the load the statement of a table's code the running frame is at, a statement it does not
  *        run itself, then goes on as the load says: past the statement, into the TermList of the scope it
- *        declared, at the term it waits for, past the construct a fault left, or past the table, whose frame
- *        it drops.
+ *        declared, at the term it waits for, past the construct a fault left, and past the Else after it
+ *        when it is the body of an If, or past the table, whose frame it drops.
  *
  * @param load    The load.
  * @param not_run Whether the statement's code is declared without running it.
@@ -3789,6 +3787,8 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageLoad_t *l
     if (declaration->leaves)
     {
         frame->pc = block->end;
+        if (block->kind == MACHINE_LANGUAGE_RUN_IF)
+            machine_language_step_over_else(frame, block->end);
         --evaluation->block_count;
         return machine_language_close_table(load);
     }
