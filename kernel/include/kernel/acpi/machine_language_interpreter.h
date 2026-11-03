@@ -99,12 +99,15 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame {
                                    (§5.2). */
     uint32_t serial; /**< Which frame this is, among all an evaluation context pushed: a reference to one of its locals
                         or arguments names it, so that one that outlives it refers to nothing. */
-    uint32_t statement;   /**< For a table's code at load, where the statement it runs starts. */
-    uint32_t else_offset; /**< For a table's code at load, where an Else would follow the last If whose predicate it
-                               found false or failed on, or whose body it ended. */
-    uint8_t else_rule;    /**< What that Else does: stepped over, run, or declared without running its code; stepped
-                               over holds wherever the offset points, as after a body a fault cut short. */
-    bool declares;        /**< Whether it runs a table's code at load, handing the load each declaration (§3.6). */
+    uint32_t statement;     /**< For a table's code at load, where the statement it runs starts. */
+    uint32_t else_offset;   /**< For a table's code at load, where an Else would follow the last If whose predicate it
+                                 found false or failed on, or whose body it ended. */
+    uint8_t else_rule;      /**< What that Else does: stepped over, run, or declared without running its code; stepped
+                                 over holds wherever the offset points, as after a body a fault cut short. */
+    bool declares;          /**< Whether it runs a table's code at load, handing the load each declaration (§3.6). */
+    uint32_t looping_start; /**< Where the While of this frame known to loop starts, whose statements run from
+                                 records (§3.6). */
+    uint32_t looping_end;   /**< Where it ends; 0 while none has looped. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageFrame_t;
 
 /**
@@ -130,6 +133,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
     uint32_t block_count;            /**< Blocks in use. */
     uint32_t iterations;             /**< Back-edges the current evaluation took: a table's code and the methods it
                                           calls count as one. */
+    uint32_t back_edges;             /**< Back-edges every evaluation of the load took. */
     uint32_t field_accesses;         /**< Field accesses the current evaluation made (§6.1): each access to a
                                           region, and each read of the global lock word while taking it. */
     uint32_t runs;                   /**< Statements and predicates of table-level code run. */

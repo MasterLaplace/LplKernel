@@ -13,6 +13,7 @@ static const AdvancedConfigurationAndPowerInterfaceHost_t *platform_firmware;
 static const char *platform_module_name;
 static const uint8_t *platform_module_bytes;
 static uint32_t platform_module_length;
+static const char *platform_boot_word;
 
 static uint64_t platform_root_system_description_pointer(void *context)
 {
@@ -229,6 +230,18 @@ const char *boot_command_line_option(const char *option)
 }
 
 uint32_t boot_command_line_dropped(void) { return 0u; }
+
+bool boot_command_line_holds(const char *word)
+{
+    return platform_boot_word != NULL && strcmp(platform_boot_word, word) == 0;
+}
+
+bool advanced_configuration_and_power_interface_boot_line_holds(const char *word)
+{
+    return boot_command_line_holds(word);
+}
+
+void platform_hold_boot_word(const char *word) { platform_boot_word = word; }
 bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *out_size)
 {
     const size_t suffix_length = strlen(suffix);

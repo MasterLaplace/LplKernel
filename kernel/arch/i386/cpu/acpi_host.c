@@ -1,5 +1,6 @@
 #include <kernel/acpi/host.h>
 #include <kernel/acpi/tables.h>
+#include <kernel/boot/boot_module.h>
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/irq.h>
@@ -295,3 +296,8 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .allocate_pages = acpi_host_allocate_pages,
     .release_pages = acpi_host_release_pages,
 };
+
+bool advanced_configuration_and_power_interface_boot_line_holds(const char *word)
+{
+    return boot_command_line_holds(word);
+}

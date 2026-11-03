@@ -11,6 +11,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh idle [quick|corpus|full]
        tools/acpi-corpus.sh load [quick|corpus|full]
        tools/acpi-corpus.sh differential [quick|corpus|full] [<mutants>]
+       tools/acpi-corpus.sh predecoding [quick|corpus|full]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
        tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
@@ -68,6 +69,11 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          copies of each machine whose DSDT and SSDTs have bytes changed at random (`--mutate`), each seeded by its
          number. A load that fails the same way both ways agrees, and is listed with the first line the harness
          wrote to stderr; a run where every load fails compares nothing, and fails
+  predecoding  initialises each machine of a list with `test-acpi --loaded` twice, the statements of the
+         loops that loop run from records, then with `--predecoding off`, and compares every line the two
+         print, the namespace and `aml run namespace` (lookups, probes and back-edges) included, but `aml
+         run predecoding`, whose counts it sums: the statements records ran and handed back, per reason
+         (specification §3.6, §8.4); a machine whose two runs differ fails it
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -401,6 +407,39 @@ differential_check() {
 # Prints the sum of the counter $1 over the lines $2.
 total_of() {
     { grep -o " $1=[0-9]*" <<<"$2" || true; echo " $1=0"; } | cut -d= -f2 | paste -sd+ | bc
+}
+
+# Initialises each machine of the list $1 with records and without, and compares every line the two runs print but
+# the counts of the records, which it sums (specification §3.6, §8.4).
+predecoding_check() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local number=0 agree=0 subject on off tables counts=""
+    on="$(mktemp)" off="$(mktemp)" tables="$(mktemp -d)"
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        "$HARNESS" --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" >"$on" 2>&1 || true
+        "$HARNESS" --predecoding off --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" >"$off" 2>&1 || true
+        if ! grep -q '^aml run predecoding ' "$on"; then
+            echo "not ok $number $subject: the harness failed"
+            sed 's/^/    # /' "$on" | tail -5
+        elif diff <(grep -v '^aml run predecoding ' "$on") <(grep -v '^aml run predecoding ' "$off") >/dev/null; then
+            agree=$((agree + 1))
+            echo "ok $number $subject: $(grep '^aml run predecoding ' "$on" | cut -d' ' -f4-)"
+        else
+            echo "not ok $number $subject: the runs differ"
+            diff <(grep -v '^aml run predecoding ' "$off") <(grep -v '^aml run predecoding ' "$on") >"$tables/diff" || true
+            head -6 "$tables/diff" | sed 's/^/    # /'
+        fi
+        counts+="$(grep '^aml run predecoding \|^aml run namespace ' "$on")"$'\n'
+    done < <(reports "$1")
+    rm -rf "$on" "$off" "$tables"
+    echo -n "# predecoding: $agree of $number machines leave the same lines with records and without;"
+    for key in back_edges records_run built flushes fused_comparisons declined_shape declined_limit \
+        declined_operand declined_room declined_operation declined_full; do
+        echo -n " $key=$(total_of "$key" "$counts")"
+    done
+    echo
+    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
 }
 
 # Compares the C-states each machine of the list $1 publishes with those tools/acpi/acpiexec_idle.py works out apart from
@@ -782,6 +821,7 @@ case "${1:-}" in
     idle) known_list "${2:-corpus}"; idle_check "${2:-corpus}" ;;
     load) known_list "${2:-corpus}"; load_check "${2:-corpus}" ;;
     differential) known_list "${2:-corpus}"; differential_check "${2:-corpus}" "${3:-0}" ;;
+    predecoding) known_list "${2:-corpus}"; predecoding_check "${2:-corpus}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
     module) shift; modules "$@" ;;

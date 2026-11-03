@@ -519,6 +519,24 @@ advanced_configuration_and_power_interface_machine_language_read_package_end(con
                                                                              uint32_t *out_after);
 
 /**
+ * @brief Reads an integer constant whose opcode was read: Zero, One, Ones, or a prefix and its
+ *        little-endian bytes, as wide as the integer allows, not masked to the load's width.
+ *
+ * @param bytes       The AML.
+ * @param opcode      The descriptor of Zero, One, Ones, BytePrefix, WordPrefix, DWordPrefix or
+ *                    QWordPrefix.
+ * @param after       The offset after the opcode.
+ * @param limit       The first offset the constant may not read.
+ * @param out_integer Receives the constant: Ones as all 64 bits set.
+ * @param out_after   Receives the offset after it.
+ * @return TRUNCATED when its bytes pass @p limit; OK otherwise.
+ */
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_read_constant(const uint8_t *bytes, uint32_t opcode,
+                                                                          uint32_t after, uint32_t limit,
+                                                                          uint64_t *out_integer, uint32_t *out_after);
+
+/**
  * @brief Reads a NameString: `\` or any number of `^`, then NullName, one NameSeg, a dual path of
  *        two, or a multi path of 1 to 255.
  *

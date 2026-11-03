@@ -27,6 +27,7 @@
 #ifndef KERNEL_ACPI_HOST_H
 #define KERNEL_ACPI_HOST_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT                                                     \
@@ -108,5 +109,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
  * @brief The host the boot reads this machine's firmware through.
  */
 extern const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host;
+
+/**
+ * @brief Whether the boot command line holds @p word as a word of its own: the kernel's line in ring 0,
+ *        the one the host harness was given on the build machine.
+ *
+ * @param word A whole word, as in `lpl.acpi.predecoding=off`.
+ * @return true when a word of the line is exactly @p word.
+ */
+extern bool advanced_configuration_and_power_interface_boot_line_holds(const char *word);
 
 #endif /* KERNEL_ACPI_HOST_H */

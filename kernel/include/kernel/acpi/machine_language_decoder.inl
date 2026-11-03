@@ -116,3 +116,26 @@ advanced_configuration_and_power_interface_machine_language_read_package_end(con
     *out_after = after;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
+
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_read_constant(const uint8_t *bytes, uint32_t opcode,
+                                                                          uint32_t after, uint32_t limit,
+                                                                          uint64_t *out_integer, uint32_t *out_after)
+{
+    const uint32_t width =
+        (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_BYTE_PREFIX)        ? 1u :
+        (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_WORD_PREFIX)        ? 2u :
+        (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_DOUBLE_WORD_PREFIX) ? 4u :
+        (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_QUAD_WORD_PREFIX)   ? 8u :
+                                                                                                            0u;
+    uint64_t integer = (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ONE) ? 1u : 0u;
+
+    if (limit - after < width)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
+    for (uint32_t byte = 0u; byte < width; ++byte)
+        integer |= (uint64_t) bytes[after + byte] << (8u * byte);
+    *out_integer =
+        (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ONES) ? ~0ull : integer;
+    *out_after = after + width;
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+}

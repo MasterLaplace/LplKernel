@@ -1,0 +1,217 @@
+/**************************************************************************
+ * LplKernel - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under the MIT License.
+ * https://opensource.org/license/mit
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is free software: you can use, copy, modify, merge, publish and
+ * distribute it under the terms of the MIT License, provided this copyright
+ * notice and the permission notice are kept. See the LICENSE file.
+ *
+ * @file machine_language_predecoding.h
+ * @brief The records of pre-decoded loops: what a statement a While runs is, decoded once.
+ *
+ * Part of layer L3 of the specification (docs/acpi/specification.md, §3.6 and §6.1). A record is a fact
+ * about the bytes of a table: the statement that starts at an offset, under the end of the construct
+ * around it, has a shape the interpreter can run without decoding it again. Records are built the first
+ * time a loop that loops reaches each statement, kept in a cache of the load, and found by their table
+ * and offset; the interpreter runs them, and hands a statement back to its own loop whenever a record
+ * cannot run it as that loop would.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-11-03
+ **************************************************************************/
+
+#ifndef KERNEL_ACPI_MACHINE_LANGUAGE_PREDECODING_H
+#define KERNEL_ACPI_MACHINE_LANGUAGE_PREDECODING_H
+
+#include <kernel/acpi/machine_language_decoder.h>
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORDS                                        \
+    128u /**< Records a load keeps (§6.1); a full cache is emptied whole. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NODES                                   \
+    256u /**< Operators the records of a load hold, over every record. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_CONSTANTS                               \
+    256u /**< Constants the records of a load hold, over every record. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS                                       \
+    256u /**< Slots of the hash that finds a record by its table and offset: twice the records. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NODES_PER_RECORD                               \
+    8u /**< Operators one record's expression holds at most; a longer one is run by the interpreter's loop. */
+
+/**
+ * @brief What a record runs.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordShape {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_GENERAL = 0, /**< Nothing: the interpreter's
+                                                                                       loop runs the statement. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_WHILE = 1,   /**< A While and its predicate. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_IF = 2,      /**< An If and its predicate. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_BREAK = 3,   /**< A Break. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordShape_t;
+
+/**
+ * @brief Where an operand of a record comes from.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperandKind {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_OPERAND_NONE = 0,     /**< No operand. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_OPERAND_CONSTANT = 1, /**< A constant: index is
+                                                                                                its place among the
+                                                                                                cache's constants. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_OPERAND_LOCAL = 2, /**< A LocalX: slot is X. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_OPERAND_ARGUMENT = 3, /**< An ArgX: slot is X. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_OPERAND_RESULT = 4,   /**< What an earlier
+                                                                                                operator of the same
+                                                                                                record gives: slot is
+                                                                                                its place in the
+                                                                                                record. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperandKind_t;
+
+/**
+ * @brief Why the interpreter ran a statement a record was found for itself, counted per reason.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordDecline {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_SHAPE = 0,     /**< No record runs it. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_LIMIT = 1,     /**< The record was built
+                                                                                           under another end of the
+                                                                                           construct around it. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_OPERAND = 2,   /**< An operand held no
+                                                                                           Integer. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_ROOM = 3,      /**< A stack of the evaluation
+                                                                                           would overflow. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_OPERATION = 4, /**< An operator would fail:
+                                                                                           a modulo by zero. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_FULL = 5,      /**< The cache was full, or
+                                                                                           frozen for this loop after
+                                                                                           it was emptied. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES = 6,           /**< Reasons counted. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordDecline_t;
+
+/**
+ * @brief An operand of a record.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand {
+    uint8_t kind;   /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_OPERAND_* kind. */
+    uint8_t slot;   /**< A local's or an argument's number, or an operator's place in its record. */
+    uint16_t index; /**< A constant's place among the cache's constants. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t;
+
+/**
+ * @brief An operator of a record's expression, in the order the interpreter's loop runs them.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode {
+    uint16_t opcode;  /**< Its descriptor: a comparison, LNot, or an operator on two integers. */
+    uint8_t negated;  /**< For a comparison an LNot takes at once, 1: the two run as one (§7.2, O7). */
+    uint8_t reserved; /**< Unused, 0. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t operands[2]; /**< Its operands. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t;
+
+/**
+ * @brief The statement at an offset of a table, under the end of the construct around it, decoded
+ *        (§3.4, §3.6).
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
+    uint32_t pc;         /**< Where the statement starts in its table. */
+    uint32_t after;      /**< Where the next statement starts: for an If or a While, its body. */
+    uint32_t end;        /**< For an If or a While, its PkgLength end. */
+    uint32_t limit;      /**< The end of the construct around the statement when it was decoded. */
+    uint16_t table;      /**< Its table, counted from 1. */
+    uint16_t next;       /**< The record at after, plus 1, once found; 0 when not found yet. */
+    uint16_t first_node; /**< Its first operator among the cache's. */
+    uint8_t node_count;  /**< Its operators. */
+    uint8_t shape;       /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_* shape. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t source; /**< The predicate of an If or a
+                                                                                    While. */
+    uint8_t values_peak;    /**< Values the interpreter's loop holds on its stack for it at most. */
+    uint8_t operators_peak; /**< Operators it holds pending for it at most. */
+    uint16_t reserved;      /**< Unused, 0. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
+
+/**
+ * @brief The records of a load, and what running them counted (§3.5, §6.1). It lies past the part of
+ *        the load that opening it zeroes: opening it empties the hash and the counters alone, and a
+ *        record is one only below the count and under its own key.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding {
+    uint32_t record_count;   /**< Records built since the cache was last emptied. */
+    uint32_t node_count;     /**< Operators those records hold. */
+    uint32_t constant_count; /**< Constants those records hold. */
+    uint8_t integer_bits;    /**< The integer width the records were built under. */
+    uint32_t frozen_serial;  /**< The frame whose loop builds no record since the cache was emptied under it. */
+    uint32_t frozen_start;   /**< Where that loop starts. */
+    uint32_t records_run;    /**< Statements and predicates run from records. */
+    uint32_t declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES]; /**< Statements handed back
+                                                                                                to the interpreter's
+                                                                                                loop, per reason. */
+    uint32_t built;                                                                          /**< Records built. */
+    uint32_t flushes;           /**< Times the cache was emptied whole. */
+    uint32_t records_peak;      /**< Most records held at once. */
+    uint32_t fused_comparisons; /**< LNot and a comparison decoded as one operator (§7.2, O7). */
+    uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
+                                                                                                 per hash slot. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t
+        records[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORDS]; /**< The records. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t
+        nodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NODES]; /**< Their operators. */
+    uint64_t constants
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_CONSTANTS]; /**< Their constants, masked
+                                                                                               to the width. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t;
+
+/**
+ * @brief Empties the records and zeroes what they counted, as opening a load does; nothing else of
+ *        the cache is read before it is written.
+ *
+ * @param cache The cache.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_predecoding_open(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache);
+
+/**
+ * @brief Empties the records whole, counted when it held one, and keeps what they counted; the cache
+ *        then holds the records of @p integer_bits.
+ *
+ * @param cache        The cache.
+ * @param integer_bits The load's integer width.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_predecoding_flush(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint8_t integer_bits);
+
+/**
+ * @brief The record of the statement at @p pc of table @p table.
+ *
+ * @param cache The cache.
+ * @param table The table, counted from 1.
+ * @param pc    The statement's offset.
+ * @return The record, plus 1; 0 when the cache holds none.
+ */
+extern uint16_t advanced_configuration_and_power_interface_machine_language_record_find(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint16_t table, uint32_t pc);
+
+/**
+ * @brief Decodes the statement at @p pc of a table under @p limit, the end of the construct around it,
+ *        into a record: a While, an If or a Break whose predicate is an expression over locals,
+ *        arguments and constants, its operators the comparisons, LNot and the operators on two
+ *        integers, with no target but NullName; any other statement, or one whose decoding faults,
+ *        becomes a record the interpreter's loop runs.
+ *
+ * @param cache        The cache, whose records are of @p integer_bits.
+ * @param code         The table's bytes, header included.
+ * @param table        The table, counted from 1.
+ * @param pc           Where the statement starts; no record of the cache is at it.
+ * @param limit        The end of the construct around it.
+ * @param integer_bits The load's integer width, 32 or 64.
+ * @return The new record, plus 1; 0 when the cache has no room for it, nothing built.
+ */
+extern uint16_t advanced_configuration_and_power_interface_machine_language_record_build(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, const uint8_t *code, uint16_t table,
+    uint32_t pc, uint32_t limit, uint8_t integer_bits);
+
+#endif /* KERNEL_ACPI_MACHINE_LANGUAGE_PREDECODING_H */

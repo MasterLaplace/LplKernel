@@ -232,6 +232,34 @@ acpi_helper_write_services_record(Serial_t *serial,
 }
 
 /**
+ * @brief Writes the `[LPLTLM] acpi.predecoding` record (§3.6, §6.1): whether loops run from records, the
+ *        back-edges every evaluation took, the statements records ran, those they handed back per reason,
+ *        the records built, the times the cache was emptied, its peak, and the comparisons decoded with
+ *        their LNot.
+ */
+static void
+acpi_helper_write_predecoding_record(Serial_t *serial,
+                                     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    static const char *const reasons[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES] = {
+        "declined_shape", "declined_limit", "declined_operand", "declined_room", "declined_operation", "declined_full",
+    };
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache = &load->predecoding;
+
+    kernel_telemetry_begin_record(serial, "acpi.predecoding");
+    kernel_telemetry_write_boolean("loops", load->predecodes_loops);
+    kernel_telemetry_write_unsigned("back_edges", load->evaluation.back_edges);
+    kernel_telemetry_write_unsigned("records_run", cache->records_run);
+    for (uint32_t reason = 0u; reason < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES; ++reason)
+        kernel_telemetry_write_unsigned(reasons[reason], cache->declined[reason]);
+    kernel_telemetry_write_unsigned("built", cache->built);
+    kernel_telemetry_write_unsigned("flushes", cache->flushes);
+    kernel_telemetry_write_unsigned("records_peak", cache->records_peak);
+    kernel_telemetry_write_unsigned("fused_comparisons", cache->fused_comparisons);
+    kernel_telemetry_end_record();
+}
+
+/**
  * @brief Writes the counts the decoding pass fills, the terms of every table among them, which a load that skips
  *        bodies, or declared no table, leaves uncounted.
  */
@@ -410,6 +438,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_end_record();
     acpi_helper_write_regions_record(serial, &load->regions);
     acpi_helper_write_services_record(serial, &load->services);
+    acpi_helper_write_predecoding_record(serial, load);
     kernel_telemetry_begin_record(serial, "acpi.values");
     kernel_telemetry_write_unsigned("objects", load->heap.objects);
     kernel_telemetry_write_unsigned("objects_freed", load->heap.objects_freed);

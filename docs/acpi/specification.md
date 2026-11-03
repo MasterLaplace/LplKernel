@@ -201,11 +201,13 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Field unit object** | `kind u8` (normal, index, bank), `access u8`, `update u8`, `lock u8`, `region u32` (or the index field's node), `data_or_bank u32`, `bank_value u32`, `bit_offset u32`, `bit_length u32` | 24 | A 4 MiB field still costs 24 bytes. |
 | **Method** | in the node's `value`: `handle` = table, `payload` = body offset u32 and body length u32, `auxiliary` = MethodFlags | 0 extra | Bodies are never copied. |
 | **Buffer field** | in the node's `value`: `handle` = the buffer object, which it holds a count on, `payload` = bit offset u32 and bit length u32, `auxiliary` = access width in bytes, `flags` = reads as a Buffer (`CreateField`) | 0 extra | The object, not the node, as ACPICA and uACPI hold it: a field over a local, an `Index` or a method's buffer has no node, and `CopyObject` to the buffer's name leaves the field on the object it was made over. |
-| **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 4), `table u16`, `argument_count u8`, `serial u32` (which frame this is, so that a reference to one of its locals, its arguments or the names it creates dies with it) | 276 on i686, 280 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
+| **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 4), `table u16`, `argument_count u8`, `serial u32` (which frame this is, so that a reference to one of its locals, its arguments or the names it creates dies with it), `looping_start u32` and `looping_end u32` (the While of the frame known to loop, whose statements run from records, §3.6) | 296 on i686, 304 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
 | **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 50 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. |
+| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, predicate operand `u32`, value and operator depths `u8` | 32 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant index). |
+| **Record cache** | 128 records, 256 operators, 256 constants (`u64`, masked to the width), 256 hash slots (`u16`), the integer width they were built under, what running them counted | about 10 KiB, the last member of the load | Opening the load empties the slots and the counters alone, word by word: a record is one only below the count and under its own key (table, `pc`). |
 
 ### 3.5 Memory strategy
 
@@ -216,6 +218,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Values | strings, buffers and packages built during an evaluation | the object heap, size classes over the same page runs | when the reference count reaches 0 |
 | Kept data | a Name's Package, VarPackage or Buffer whose sizes and counts are literal constants and which builds with no interpreter and no fault (O20) | none at load: its bytes stay in the table | becomes a value when a name resolution first reaches it, then lives as one |
 | Evaluation scratch | frames, operator, block and value stacks | the evaluation context | reset at the end of each evaluation |
+| Pre-decoded records | the statements a loop that loops reached (§3.6) | the record cache of the load | emptied whole when full, when the integer width changes, and at close |
 
 Rules:
 
@@ -321,6 +324,21 @@ a duplicate (§5.1), as any later declaration is. A table whose frame finds the 
 bottom of a deep recursion adds, is declared the same way, the refusal counted. The decoding pass still decodes the body
 of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its names
 resolve against objects that do not exist.
+
+**Pre-decoded loops.** A While of a method that takes a back-edge becomes the frame's loop, unless the loop the frame has
+holds it, and the statements of the frame's loop run from records, each built the first time the loop reaches its
+statement: a record is the shape of the statement at an offset of a table under the end of the construct around it,
+found again by its table and offset. A record runs an If, a While or a Break whose predicate is an expression of
+locals, arguments and constants, its operators the comparisons, `LNot` (over a comparison, the two as one operator)
+and the operators on two integers whose target is NullName. Every operation a record runs is one the loop calls for
+the same case. A record checks, before any effect, every condition under which the loop would do anything else (an
+operand that holds no Integer, a stack that would overflow, a modulo by zero); when one holds, it changes nothing and
+the loop decodes and runs the statement. Any other statement keeps a record that hands it to the loop. The end of a
+construct a record opened is closed as the loop closes it, a While's taking its back-edge, counted as the loop counts
+it. A full cache is emptied whole, and the loop of the frame it filled under builds no record until the frame's loop
+changes (§6.1); a change of integer width empties it too. Table-level code never runs from records. A load runs none
+when the boot line holds `lpl.acpi.predecoding=off` (`test-acpi --predecoding off`), which the tests that compare the
+two runs use (§8.1).
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on
@@ -733,7 +751,8 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | `5B 2A` | Unload: decoded and refused (§4.5) | [§20.3] |
 
 **Composite comparisons.** `LNotEqual`, `LLessEqual` and `LGreaterEqual` are `LNot` followed by `LEqual`,
-`LGreater` or `LLess` ([§20.3]); the decoder fuses the pair into one operator (O7, §7.2).
+`LGreater` or `LLess` ([§20.3]); the loop runs the two, and a pre-decoded record runs them as one operator (O7,
+§7.2, §3.6).
 
 **Method invocation.** A NameString in a TermArg position that resolves to a method is a call, executed.
 
@@ -891,6 +910,7 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | States one CPU slot publishes | 7, as Linux, whose table of `ACPI_PROCESSOR_MAX_POWER` (8) keeps its first entry for C0; the states after them are counted, not read |
 | Region mapping cache | 64 entries, each the pages one access touched |
+| Pre-decoded records per load | 128 records, 256 operators and 256 constants; a full cache is emptied whole, counted, and the loop that filled it builds no more, never a failure |
 
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
 back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the
@@ -975,9 +995,9 @@ reads a table in kernel memory. The costs to cut are:
 | O2 | Skip method bodies at load by their PkgLength; a release kernel decodes none of them (§3.6) | `acpi.aml` reports `bodies=skipped`; W1 on the release kernel |
 | O3 | Integers by value; constants, `LocalX` and `ArgX` pushed without an operator record | `allocations` = 0 for an integer-only method |
 | O4 | One evaluation context, allocated once, never zeroed per evaluation | `allocations` per evaluation |
-| O5 | One hash for the whole namespace, O(1) per probe; an upward search costs at most its depth in probes | `lookup_probes` / `lookups` |
+| O5 | One hash for the whole namespace, O(1) per probe; an upward search costs at most its depth in probes | `probes` / `lookups` |
 | O6 | Direct-indexed decode tables, operand kinds packed in a `uint32_t`, one `switch` of handlers | W4 |
-| O7 | `LNot` and a comparison fused at decode | `fused_comparisons` |
+| O7 | `LNot` over a comparison decoded as one operator of a pre-decoded record (§3.6) | `fused_comparisons` |
 | O8 | `DerefOf (Index (x, i))` read without building a reference | `references_built` |
 | O10 | One allocation per string, buffer or package: header and payload | `allocations` |
 | O11 | Lazy region attach, and a mapping cache keyed by physical page range: one map per distinct page range per boot | `map_calls`, `mapping_cache_hits` |
@@ -990,13 +1010,13 @@ reads a table in kernel memory. The costs to cut are:
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list | `declarations_decoded_directly`; W1 |
 | O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it (§3.5) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
+| C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 
 | # | What | Adopt when |
 |---|---|---|
 | C1 | Cache each call site's resolved node under a namespace generation number | the lookup function's share of W2, as `instructions.sh` lists it per function, exceeds 10 % |
-| C3 | Pre-decode the body of a method that loops | the functions of a `While` body dominate a window |
 | C4 | Build a package of constants without the general evaluator | building kept data (O20) exceeds 10 % of W2 or W3, with a differential test against the general path |
 | C5 | Zero-copy string and buffer literals, kept in the table until written, materialised first when a buffer field, an `Index` or `RefOf` reference or a store target is made over one (§3.5) | the needs-path run shows that most literals are never materialised, and the copy function's share of W1 or W2 exceeds 5 % |
 
@@ -1037,6 +1057,7 @@ same work, not only reach the same result.
 | Layer | What it checks | Where it runs | Oracle |
 |---|---|---|---|
 | Made-up AML | each rule of §4 to §6, each limit, each case of §6.3 | ring 0 (`KERNEL_TEST`) and the host harness, from the same sources | the test's own expected values; parity between the two |
+| Pre-decoded and decoded runs | every made-up test, methods written at random from a fixed seed, and the corpus, with records and without (§3.6) | the host harness (`--predecoding off`), ring 0 (`lpl.acpi.predecoding=off`) | each other: every record of the tests, every fold of a made-up method run both ways, and every line `test-acpi --initialize` prints but the counts of the records |
 | Real firmware on the host | the corpus (§8.4) | host | ACPICA's `acpiexec`; the census counts; the `iasl` disassembly; the decoded table lines for the static tables |
 | Real firmware in ring 0 | one corpus machine per boot, its tables given as a Multiboot module, run through the simulated host | ring 0, debug kernel | the host harness's records on the same bytes, compared by `tools/parity.sh` |
 | QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the load's folds (namespace, opcodes decoded), against the host's on the printed bytes (§8.7) |
@@ -1135,6 +1156,9 @@ published image. The made-up ASL is ours, under MIT.
   (CFGD, 0x0076F6FF)` of the IdeaPad Z470's CPU SSDT, on the 44 machines whose `CFGD` is an NVS field. A `Load` whose
   address firmware computes in a method, or whose `PmRef` package names a table the dump lacks, reads no table and fails
   as `region_bounds`, which ends the evaluation that runs it, as ACPICA's does: an artifact of the corpus.
+- **Pre-decoded loops on the corpus.** `tools/acpi-corpus.sh predecoding <list>` initialises each machine with records
+  and without, and compares every line the harness prints, `aml run namespace` (lookups, probes and back-edges)
+  included, but `aml run predecoding`, whose sums it prints.
 
 ### 8.5 uACPI's test cases
 
