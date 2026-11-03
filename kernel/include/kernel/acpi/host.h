@@ -65,7 +65,9 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
  *          between, such as a channel of the PIT read by polling, and returns that rate in hertz, or 0
  *          when it has none; reference_read returns what the count reached since its start, at the
  *          moment of the call, or ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT once it
- *          passed what the count can hold. A host without such a count leaves both NULL.
+ *          passed what the count can hold. The count goes up and never back, from a read made right after
+ *          the start, at a rate under 1 GHz, and holds at least the 30 ms the power management timer's
+ *          check counts. A host without such a count leaves both NULL.
  *          allocate_pages gives count pages of 4 KiB, contiguous and writable, or NULL; release_pages
  *          takes them back, given the same count.
  */

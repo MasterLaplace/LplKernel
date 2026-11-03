@@ -208,21 +208,18 @@ typedef enum AdvancedConfigurationAndPowerInterfacePowerManagementTimerState {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE = 4, /**< The host has no
                                                                                              reference, or it did not
                                                                                              move within 65,536
-                                                                                             samples, went back, or
+                                                                                             samples or while the
+                                                                                             timer counted half a
+                                                                                             second, went back, or
                                                                                              ran out in both
                                                                                              measurements, so the
                                                                                              timer's rate went
                                                                                              unchecked. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD = 5,    /**< It counted half a second
-                                                                                             before the host's
-                                                                                             reference counted 30 ms:
-                                                                                             it runs far too fast or
-                                                                                             jumps, or the reference
-                                                                                             stands still and a sample
-                                                                                             of both takes more than
-                                                                                             about 7.6 µs, which these
-                                                                                             two sources cannot tell
-                                                                                             apart. */
+                                                                                             while the host's
+                                                                                             reference moved, short
+                                                                                             of 30 ms: it runs far
+                                                                                             too fast or jumps. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE = 6,   /**< It ran more than 5 % away
                                                                                              from 3.579545 MHz against
                                                                                              the host's reference. */
@@ -609,7 +606,8 @@ extern const char *advanced_configuration_and_power_interface_mode_outcome_name(
  *          between its samples. Each sample is awaited within
  *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS samples of a
  *          reference that does not move, and while the timer counts at most half a second; a reference
- *          that runs out of its range first, the processor kept from it that long, is started once more.
+ *          that runs out of its range first, the processor kept from it that long, is started once more,
+ *          and an exact timer is refused only when it runs out in both measurements.
  *
  * @param host      The host whose I/O ports and clock are read.
  * @param fadt      The platform's normalised FADT.

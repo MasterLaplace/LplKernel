@@ -424,10 +424,10 @@ KERNEL_TEST(a_timer_that_counts_3_579545_mhz_is_usable)
 }
 
 /**
- * @brief Steps of the clock seen late spoil no measurement, since none is made on the clock: a step seen
- *        1 ms late, and the steps that began both measurements seen 5 ms late, which once had an exact
- *        timer refused, leave it usable at its rate; a timer 6 % fast has the wrong rate after one
- *        measurement, 30 ms of the clock.
+ * @brief Steps of the clock seen late spoil no measurement, since the rate is no longer measured on the
+ *        clock: the steps at 10 ms and 100 ms seen 5 ms late, which began the two measurements made on it
+ *        and had an exact timer refused then, and a step seen 1 ms late, leave it usable at its rate; a
+ *        timer 6 % fast has the wrong rate after one measurement, 30 ms of the clock.
  */
 KERNEL_TEST(a_tick_seen_late_spoils_no_measurement)
 {
@@ -469,9 +469,10 @@ KERNEL_TEST(a_tick_seen_late_spoils_no_measurement)
 /**
  * @brief A pause of the processor across a read of the reference, of 100 µs, 1 ms or 20 ms, at the
  *        measurement's first sample, in its middle or at its last, moves no measurement: the sample it
- *        spreads past 75 µs is taken again, and the rate stays a thousand thousandths within a read. A pause of 60 µs
- * at the first sample, which its spread still holds, moves the rate by half of it, the sample's count being taken
- *        halfway between its two reads: 30 µs over 30 ms, a thousandth.
+ *        spreads past 75 µs is taken again, and the rate stays a thousand thousandths within a read.
+ *        A pause of 60 µs at the first sample, which its spread still holds, moves the rate by half of
+ *        it, since a sample's count is taken halfway between its two reads: 30 µs over 30 ms, a
+ *        thousandth.
  */
 KERNEL_TEST(a_pause_of_the_processor_moves_no_measurement)
 {
@@ -515,8 +516,8 @@ KERNEL_TEST(a_pause_of_the_processor_moves_no_measurement)
 
 /**
  * @brief No pause of the processor across a read of the reference, of 1 ms, 5 ms or 20 ms at the first
- *        sample, in the middle or at the last, with or without the ticks that begin the measurements seen
- *        5 ms late, lets a timer 6 % fast or slow be found usable, and an exact one always is.
+ *        sample, in the middle or at the last, lets a timer 6 % fast or slow be found usable, and an exact
+ *        one always is.
  */
 KERNEL_TEST(no_pause_lets_a_timer_six_percent_off_through)
 {
@@ -529,26 +530,22 @@ KERNEL_TEST(no_pause_lets_a_timer_six_percent_off_through)
 
     for (uint32_t from = 0u; from < sizeof(pauses_from) / sizeof(pauses_from[0]); ++from)
         for (uint32_t last = 0u; last < sizeof(pauses_last) / sizeof(pauses_last[0]); ++last)
-            for (uint32_t late = 0u; late <= 1u; ++late)
-                for (uint32_t rate = 0u; rate < sizeof(per_hundred) / sizeof(per_hundred[0]); ++rate)
-                {
-                    timer_open(0u);
-                    timer_machine.access = TIMER_MATRIX_ACCESS;
-                    timer_machine.hertz = TIMER_HERTZ * (uint64_t) per_hundred[rate] / 100u;
-                    timer_machine.pause_from = pauses_from[from];
-                    timer_machine.pause_nanoseconds = pauses_last[last];
-                    timer_machine.late_edge = (late != 0u) ? 1u : TIMER_NO_EVENT;
-                    timer_machine.second_late_edge = (late != 0u) ? 10u : TIMER_NO_EVENT;
-                    timer_machine.late_by = 5u * TIMER_MILLISECOND;
+            for (uint32_t rate = 0u; rate < sizeof(per_hundred) / sizeof(per_hundred[0]); ++rate)
+            {
+                timer_open(0u);
+                timer_machine.access = TIMER_MATRIX_ACCESS;
+                timer_machine.hertz = TIMER_HERTZ * (uint64_t) per_hundred[rate] / 100u;
+                timer_machine.pause_from = pauses_from[from];
+                timer_machine.pause_nanoseconds = pauses_last[last];
 
-                    const bool usable = timer_find() == TIMER_STATE(USABLE);
+                const bool usable = timer_find() == TIMER_STATE(USABLE);
 
-                    paused += timer_machine.pauses;
-                    off_usable += (per_hundred[rate] != 100u && usable) ? 1u : 0u;
-                    exact_refused += (per_hundred[rate] == 100u && !usable) ? 1u : 0u;
-                }
+                paused += timer_machine.pauses;
+                off_usable += (per_hundred[rate] != 100u && usable) ? 1u : 0u;
+                exact_refused += (per_hundred[rate] == 100u && !usable) ? 1u : 0u;
+            }
 
-    kernel_test_check(test, paused == 54u, "each of the 54 measurements paused once");
+    kernel_test_check(test, paused == 27u, "each of the 27 measurements paused once");
     kernel_test_check(test, off_usable == 0u, "no timer 6 % off is found usable");
     kernel_test_check(test, exact_refused == 0u, "and every exact one is");
     kernel_test_measure(test, "off_usable", off_usable);
@@ -617,8 +614,9 @@ KERNEL_TEST(a_reference_that_goes_back_leaves_the_rate_unchecked)
 }
 
 /**
- * @brief With one step of the clock seen 1 or 2 ms late at either end of either measurement, no timer
- *        8 % fast or slow is found usable, and an exact one always is.
+ * @brief With one step of the clock seen 1 or 2 ms late, at 10, 90, 100 or 180 ms, where the measurements
+ *        made on the clock began and ended, no timer 8 % fast or slow is found usable, and an exact one
+ *        always is.
  */
 KERNEL_TEST(one_tick_seen_late_lets_no_timer_eight_percent_off_through)
 {
@@ -705,16 +703,15 @@ KERNEL_TEST(a_timer_that_holds_still_goes_back_or_runs_off_rate_is_not_usable)
 
 /**
  * @brief A clock that stands still leaves the timer usable, since its rate is not measured on the clock;
- *        a reference that stands still, read fast, leaves the rate unchecked once it was read
- *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS times, while
- *        one that moves, read so fast that its 30 ms take more samples than that, is measured; read
- *        slowly, a still one lets the timer count half a second first, and reads as a timer that ran ahead,
- *        as one decoded on 8 bits or a hundred times too fast does: the timer and the reference alone
- *        cannot tell them apart. The one a hundred times too fast is found as soon as it counted that half
- *        second, 5 ms of the machine's time, since a measurement whose first sample ran ahead goes no
- *        further.
+ *        a reference that stands still leaves the rate unchecked however it is read: read fast, once it
+ *        was read ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS times,
+ *        while one that moves, read so fast that its 30 ms take more samples than that, is measured; read
+ *        slowly, once the timer counted half a second. A timer that counts half a second while the
+ *        reference moves ran ahead, as one decoded on 8 bits or a hundred times too fast does; the one a
+ *        hundred times too fast is found as soon as it counted that half second, 5 ms of the machine's
+ *        time, since a measurement whose first sample ran ahead goes no further.
  */
-KERNEL_TEST(a_still_reference_reads_as_no_reference_or_ran_ahead_by_the_cost_of_a_read)
+KERNEL_TEST(a_still_reference_reads_as_no_reference_however_it_is_read)
 {
     uint8_t still_clock;
     uint8_t still_reference;
@@ -760,7 +757,8 @@ KERNEL_TEST(a_still_reference_reads_as_no_reference_or_ran_ahead_by_the_cost_of_
                           fast_moving_reads >
                               6u * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS,
                       "one that moves is measured, over more samples than that");
-    kernel_test_check(test, slow_still_reference == TIMER_STATE(RAN_AHEAD), "a still reference read slowly: ran ahead");
+    kernel_test_check(test, slow_still_reference == TIMER_STATE(NO_REFERENCE),
+                      "a still reference read slowly: no reference");
     kernel_test_check(test,
                       slow_still_nanoseconds >= 500ull * TIMER_MILLISECOND &&
                           slow_still_nanoseconds < 1000ull * TIMER_MILLISECOND,

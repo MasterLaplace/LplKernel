@@ -752,8 +752,9 @@ static bool acpi_timer_sample(const AdvancedConfigurationAndPowerInterfaceHost_t
  * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE at that sample;
  *         ACPI_TIMER_REFERENCE_RAN_OUT when the reference passed its range first; NO_REFERENCE when it went
  *         back, or held still for
- *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS samples;
- *         RAN_AHEAD when the timer counted ACPI_TIMER_REFERENCE_COUNTS first.
+ *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS samples or while
+ *         the timer counted ACPI_TIMER_REFERENCE_COUNTS; RAN_AHEAD when the timer counted that much while the
+ *         reference moved.
  */
 static uint8_t acpi_timer_await_reference(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
                                           AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer,
@@ -763,6 +764,7 @@ static uint8_t acpi_timer_await_reference(const AdvancedConfigurationAndPowerInt
     uint32_t last_count = acpi_timer_read(host, timer->port, &timer->check_reads);
     uint32_t counted = 0u;
     uint32_t still = 0u;
+    bool moved = false;
 
     for (;;)
     {
@@ -781,11 +783,13 @@ static uint8_t acpi_timer_await_reference(const AdvancedConfigurationAndPowerInt
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
         }
         still = (reference == last_reference) ? still + 1u : 0u;
+        moved = moved || reference != from;
         counted += (count - last_count) & ACPI_TIMER_BITS;
         if (still == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS)
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
         if (counted >= ACPI_TIMER_REFERENCE_COUNTS)
-            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD;
+            return moved ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD :
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
         last_reference = reference;
         last_count = count;
     }

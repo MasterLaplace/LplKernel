@@ -12,18 +12,16 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define ACPI_TEST_HEADER_BYTES    36u    /**< Bytes of a table header, and of a table that is nothing more. */
-#define ACPI_TEST_MASTER_PIC_MASK 0x21u  /**< The master 8259's interrupt mask register. */
-#define ACPI_TEST_SLAVE_PIC_MASK  0xA1u  /**< The slave 8259's interrupt mask register. */
-#define ACPI_TEST_PIC_LINES       16u    /**< Lines the two 8259s hold. */
-#define ACPI_TEST_SCI_EN          0x1u   /**< SCI_EN, bit 0 of a PM1 control register. */
-#define ACPI_TEST_SHORT_STALL     50u    /**< Microseconds of a short stall, as AML asks for. */
-#define ACPI_TEST_SHORT_STALLS    10u    /**< Short stalls made in a row, 500 µs in all, well under a tick. */
-#define ACPI_TEST_SLEEPS          300u   /**< Sleep (1) one evaluation runs in a row: 300 ms requested. */
-#define ACPI_TEST_BUDGET_SLEEPS   30000u /**< Sleep (1) that fill the 30 s an evaluation may request. */
-#define ACPI_TEST_REFERENCE_HERTZ                                                                                      \
-    1193182u /**< What the machine host's reference, PIT channel 2, counts per second.                                 \
-              */
+#define ACPI_TEST_HEADER_BYTES    36u      /**< Bytes of a table header, and of a table that is nothing more. */
+#define ACPI_TEST_MASTER_PIC_MASK 0x21u    /**< The master 8259's interrupt mask register. */
+#define ACPI_TEST_SLAVE_PIC_MASK  0xA1u    /**< The slave 8259's interrupt mask register. */
+#define ACPI_TEST_PIC_LINES       16u      /**< Lines the two 8259s hold. */
+#define ACPI_TEST_SCI_EN          0x1u     /**< SCI_EN, bit 0 of a PM1 control register. */
+#define ACPI_TEST_SHORT_STALL     50u      /**< Microseconds of a short stall, as AML asks for. */
+#define ACPI_TEST_SHORT_STALLS    10u      /**< Short stalls made in a row, 500 µs in all, well under a tick. */
+#define ACPI_TEST_SLEEPS          300u     /**< Sleep (1) one evaluation runs in a row: 300 ms requested. */
+#define ACPI_TEST_BUDGET_SLEEPS   30000u   /**< Sleep (1) that fill the 30 s an evaluation may request. */
+#define ACPI_TEST_REFERENCE_HERTZ 1193182u /**< What PIT channel 2 counts per second. */
 #define ACPI_TEST_PAST_THE_REFERENCE                                                                                   \
     60000u /**< Microseconds of a sleep past the 54.9 ms the reference counts before it is spent. */
 #define ACPI_TEST_REFERENCE_READS 100000u /**< Reads of the reference made at most until it moves. */
@@ -277,9 +275,14 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
 }
 
 /**
- * @brief The machine host's reference, PIT channel 2, counts 1,193,182 Hz up from its start, and reads as
- *        spent after a sleep of 60 ms, past the 54.9 ms it holds; its start opens the channel's gate and
- *        keeps it from the speaker, whatever port B held before.
+ * @brief The machine host's reference, PIT channel 2, says it counts 1,193,182 Hz, counts up from its start
+ *        and reads as spent after a sleep of 60 ms, past the 54.9 ms it holds; its start, made from a port B
+ *        whose gate was closed and that sent the channel to the speaker, opens the gate and takes the
+ *        speaker off.
+ *
+ * @details QEMU counts in mode 0 whatever the gate, so the gate is checked on port B, where port B reads
+ *          back what was written to it: an emulator that returns only its status bits, as v86 does, leaves
+ *          the gate unchecked.
  */
 KERNEL_TEST(the_machine_host_reference_counts_up_then_reads_as_spent)
 {
@@ -295,6 +298,8 @@ KERNEL_TEST(the_machine_host_reference_counts_up_then_reads_as_spent)
         ACPI_TEST_PORT_B,
         (uint8_t) ((asmutils_input_byte(ACPI_TEST_PORT_B) & ~ACPI_TEST_CHANNEL_2_GATE) | ACPI_TEST_SPEAKER_DATA));
 
+    const bool reads_back = (asmutils_input_byte(ACPI_TEST_PORT_B) &
+                             (ACPI_TEST_CHANNEL_2_GATE | ACPI_TEST_SPEAKER_DATA)) == ACPI_TEST_SPEAKER_DATA;
     const uint32_t hertz = host->reference_start(host->context);
     const uint8_t port_b = asmutils_input_byte(ACPI_TEST_PORT_B);
     const uint32_t first = host->reference_read(host->context);
@@ -306,9 +311,10 @@ KERNEL_TEST(the_machine_host_reference_counts_up_then_reads_as_spent)
 
     const uint32_t spent = host->reference_read(host->context);
 
-    kernel_test_check(test, hertz == ACPI_TEST_REFERENCE_HERTZ, "it counts 1,193,182 Hz");
-    kernel_test_check(test, (port_b & (ACPI_TEST_CHANNEL_2_GATE | ACPI_TEST_SPEAKER_DATA)) == ACPI_TEST_CHANNEL_2_GATE,
-                      "its gate opened, the speaker kept from it");
+    kernel_test_check(test, hertz == ACPI_TEST_REFERENCE_HERTZ, "it says it counts 1,193,182 Hz");
+    kernel_test_check(test, (port_b & ACPI_TEST_SPEAKER_DATA) == 0u, "the speaker taken off it");
+    kernel_test_check(test, !reads_back || (port_b & ACPI_TEST_CHANNEL_2_GATE) != 0u,
+                      "its gate opened, where port B reads back what was written");
     kernel_test_check(test,
                       first != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT &&
                           later != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT && later > first,

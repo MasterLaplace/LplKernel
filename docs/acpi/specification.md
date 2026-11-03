@@ -465,16 +465,15 @@ step 7 only when step 7's walk still reaches that processor.
   - over 30 ms of the host's reference, a count no interrupt drives (§3.3), it must count 3.579545 MHz within 5 %.
     Each end of the measurement is a sample, the timer read on either side of a read of the reference, kept when
     the two reads lie within 75 µs and taken again otherwise: the samples move the measurement by 0.25 % at most,
-    and nothing between them moves it, so an exact timer is kept and one 6 % off refused however late the processor
-    runs. Linux counts the same 30 ms of PIT channel 2, but waits for its output to rise, which a processor taken
+    and nothing between them moves it, so one 6 % off is refused and an exact timer kept, unless the processor is
+    kept away past the reference's range in both measurements. Linux counts the same 30 ms of PIT channel 2, but waits for its output to rise, which a processor taken
     away at that moment sees late. The kernel's clock is no reference: its tick is an interrupt, which a busy host
     delivers milliseconds late without any read showing it. A measurement whose reference runs out of its range, the
     processor kept away that long, is made once more.
 
-  A host without a reference, or one that does not move within 65,536 samples, goes back, or runs out in both
-  measurements, leaves the timer unused (`no-reference`), and so does a timer that counts half a second before the
-  reference counts 30 ms (`ran-ahead`): a still reference whose samples take more than about 7.6 µs reads as
-  `ran-ahead` too, since these two sources cannot tell it from a timer far too fast.
+  A host without a reference, or one that does not move within 65,536 samples or while the timer counts half a
+  second, goes back, or runs out in both measurements, leaves the timer unused (`no-reference`), and so does a
+  timer that counts half a second while the reference moves short of 30 ms (`ran-ahead`).
   Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which
   is going back, is `derailed`, and so is one that stands still while the halts of a `Sleep` see the tick step
   twice: the wait finishes on the tick, and so do the later ones. A pause between two reads of
