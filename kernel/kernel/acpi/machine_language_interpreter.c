@@ -1141,10 +1141,13 @@ static MachineLanguageStatus_t machine_language_store_and_deliver(MachineLanguag
  * @brief Runs CopyObject's store, then hands what it copied to the operator waiting for it, as Store hands
  *        its result, since CopyObject is an expression (ACPI 6.6 §20.2.5.4) any TermArg may be; it takes the
  *        references the value and the target hold.
+ *
+ * @details Never inlined: machine_language_step, which takes execute and transfer inline, would then spill one
+ *          more register on every step, 25,038 more instructions in W4 (§7.4), whose loop runs no CopyObject.
  */
-static MachineLanguageStatus_t machine_language_copy_and_deliver(MachineLanguageLoad_t *load,
-                                                                 MachineLanguageValue_t value,
-                                                                 MachineLanguageValue_t *target)
+__attribute__((noinline)) static MachineLanguageStatus_t
+machine_language_copy_and_deliver(MachineLanguageLoad_t *load, MachineLanguageValue_t value,
+                                  MachineLanguageValue_t *target)
 {
     const bool used = machine_language_active(&load->evaluation) != NULL;
     MachineLanguageValue_t copied = value;
