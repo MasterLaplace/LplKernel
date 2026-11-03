@@ -81,6 +81,42 @@ KERNEL_TEST(a_method_without_return_gives_integer_zero)
 }
 
 /**
+ * @brief A LocalX or an ArgX is no data object: a package element that is one fails the evaluation with
+ *        INVALID_OPCODE.
+ */
+KERNEL_TEST(a_local_or_an_argument_as_a_package_element_is_refused)
+{
+    static const uint8_t aml[] = {0x14u, 0x0Bu, 'P', 'K', 'G', 'L', 0x00u, 0xA4u, 0x12u, 0x03u, 0x01u, 0x60u,
+                                  0x14u, 0x0Bu, 'P', 'K', 'G', 'A', 0x01u, 0xA4u, 0x12u, 0x03u, 0x01u, 0x68u};
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = 1u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t local =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&evaluation_load, "\\PKGL", NULL, 0u,
+                                                                             &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
+                                                                              &evaluation_load.space, &result);
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t passed =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&evaluation_load, "\\PKGA", &argument, 1u,
+                                                                             &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
+                                                                              &evaluation_load.space, &result);
+    kernel_test_check(test, local == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE,
+                      "Package (1) { Local0 } is refused");
+    kernel_test_check(test, passed == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE,
+                      "Package (1) { Arg0 } is refused");
+    evaluation_close(test);
+}
+
+/**
  * @brief An uninitialized local read as an operand gives Integer 0, counted (§5.2).
  */
 KERNEL_TEST(an_uninitialized_local_reads_as_integer_zero)

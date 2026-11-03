@@ -751,6 +751,39 @@ KERNEL_TEST(a_load_that_skips_bodies_declares_the_same_names_and_decodes_none)
 }
 
 /**
+ * @brief A load that skips method bodies still places the Externals the declaration pass could not: the DSDT's
+ *        External (\ZDEV.ZINT, IntObj) names a device the SSDT declares after it.
+ */
+KERNEL_TEST(a_load_that_skips_bodies_still_places_its_externals)
+{
+    static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'Z', 'D', 'E', 'V', 'Z', 'I', 'N', 'T', 0x01u, 0x00u};
+    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u, 'Z', 'D', 'E', 'V'};
+
+    if (!made_up_open(test))
+        return;
+    made_up_load.skips_bodies = true;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(0u, "DSDT", external, sizeof(external)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &made_up_load, made_up_table(1u, "SSDT", device, sizeof(device)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_load.space;
+    const uint32_t zdev = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "ZDEV", 0u));
+
+    kernel_test_check(test,
+                      zdev != 0u && advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                                        space, zdev,
+                                        advanced_configuration_and_power_interface_machine_language_name_segment(
+                                            (const uint8_t *) "ZINT", 0u)) != 0u,
+                      "ZINT is placed under ZDEV once both tables are declared");
+    kernel_test_check(test, made_up_load.load_errors == 0u, "without a fault");
+    made_up_close(test);
+}
+
+/**
  * @brief A PkgLength that passes its method's end abandons the rest of its table, an unterminated
  *        string is cut, a statement where an operand is expected is refused, and each next table loads
  *        all the same.
