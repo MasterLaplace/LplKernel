@@ -332,6 +332,34 @@ KERNEL_TEST(a_device_at_the_block_limit_is_declared_without_its_body)
 }
 
 /**
+ * @brief A taken If whose body the block limit refuses steps over the Else after it, even when an earlier turn
+ *        of the While around it found that If false and ran its Else: at the bottom of 510 If (One), the While's
+ *        body takes the 512th block, and neither the If's body nor the Else's finds one (§3.6, §6.2).
+ */
+KERNEL_TEST(a_taken_if_refused_at_the_block_limit_steps_over_its_else_after_a_turn_that_ran_it)
+{
+    static const uint8_t loop[] = {
+        0x08u, 'C',   'N',   'T',   '2',   0x00u, 0x08u, 'E', 'L',   'S',   'C',   0x00u, 0xA2u, 0x23u, 0x95u, 'C',
+        'N',   'T',   '2',   0x0Au, 0x02u, 0x75u, 'C',   'N', 'T',   '2',   0xA0u, 0x0Eu, 0x93u, 'C',   'N',   'T',
+        '2',   0x0Au, 0x02u, 0x08u, 'I',   'N',   'I',   'F', 0x01u, 0xA1u, 0x06u, 0x75u, 'E',   'L',   'S',   'C',
+    };
+
+    if (!limits_run_nested(test, 510u, loop, sizeof(loop)))
+        return;
+    kernel_test_check(test,
+                      limits_integer("CNT2") == 2u && limits_integer("ELSC") == 0u &&
+                          made_up_root_node(&limits_load, "INIF") == NULL,
+                      "the While takes two turns, and neither body runs");
+    kernel_test_check(test,
+                      limits_load.load_errors == 2u &&
+                          limits_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BLOCKS,
+                      "the Else's body on the first turn and the If's on the second are the two faults: the Else "
+                      "after the taken If is stepped over");
+    limits_close(test);
+}
+
+/**
  * @brief A table-level run refuses to start when the evaluation holds 64 frames, or 256 pending
  *        operators, with limit_frames or limit_pending_operators, counted.
  */
