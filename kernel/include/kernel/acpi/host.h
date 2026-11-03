@@ -29,6 +29,9 @@
 
 #include <stdint.h>
 
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT                                                     \
+    0xFFFFFFFFu /**< What reference_read gives once its count passed what it can hold. */
+
 /**
  * @brief What the memory at a physical address is, as the boot memory map says (§5.3).
  */
@@ -58,6 +61,11 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
  *          which may be more; stall_microseconds busy-waits at least that many microseconds and
  *          returns how many it waited, as its clock counts them;
  *          clock_100ns reads a monotonic clock in units of 100 ns, which the waits advance.
+ *          reference_start starts a count that the host advances at a fixed rate with no interrupt in
+ *          between, such as a channel of the PIT read by polling, and returns that rate in hertz, or 0
+ *          when it has none; reference_read returns what the count reached since its start, at the
+ *          moment of the call, or ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT once it
+ *          passed what the count can hold. A host without such a count leaves both NULL.
  *          allocate_pages gives count pages of 4 KiB, contiguous and writable, or NULL; release_pages
  *          takes them back, given the same count.
  */
@@ -88,8 +96,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     uint32_t (*sleep_microseconds)(void *context, uint32_t microseconds); /**< Waits; returns what it waited. */
     uint32_t (*stall_microseconds)(void *context, uint32_t microseconds); /**< Busy-waits; returns what it waited. */
     uint64_t (*clock_100ns)(void *context);                               /**< Reads the clock. */
-    void *(*allocate_pages)(void *context, uint32_t count);               /**< Gives pages of memory. */
-    void (*release_pages)(void *context, void *address, uint32_t count);  /**< Takes them back. */
+    uint32_t (*reference_start)(void *context); /**< Starts a count no interrupt drives; returns its hertz, or 0. */
+    uint32_t (*reference_read)(void *context);  /**< What that count reached since it started. */
+    void *(*allocate_pages)(void *context, uint32_t count);              /**< Gives pages of memory. */
+    void (*release_pages)(void *context, void *address, uint32_t count); /**< Takes them back. */
 } AdvancedConfigurationAndPowerInterfaceHost_t;
 
 /**
