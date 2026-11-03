@@ -80,6 +80,7 @@ static void predecoding_counts(PredecodingRun_t *run)
     for (uint32_t reason = 0u; reason < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES; ++reason)
         run->declined += cache->declined[reason];
     run->flushes = cache->flushes;
+    run->built = cache->built;
 }
 
 bool predecoding_open_empty(KernelTest_t *test, bool predecodes)
@@ -100,6 +101,19 @@ void predecoding_declare(uint8_t *table, const char *signature, uint8_t revision
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &predecoding_load, made_up_definition_block(table, signature, revision, aml, length));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&predecoding_load);
+}
+
+bool predecoding_open_booted(KernelTest_t *test, const uint8_t *aml, uint32_t length)
+{
+    advanced_configuration_and_power_interface_simulated_host_open(&predecoding_runs_host);
+    if (!kernel_test_check(
+            test,
+            advanced_configuration_and_power_interface_machine_language_open(
+                &predecoding_load, &predecoding_runs_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+            "the namespace opens"))
+        return false;
+    predecoding_declare(predecoding_runs_table, "DSDT", 2u, aml, length);
+    return true;
 }
 
 bool predecoding_open(KernelTest_t *test, uint8_t revision, const uint8_t *aml, uint32_t length, bool predecodes)

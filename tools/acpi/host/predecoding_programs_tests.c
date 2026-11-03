@@ -217,6 +217,29 @@ static void programs_write(ProgramsWriter_t *writer)
 }
 
 /**
+ * @brief The boot line, not a test, decides whether a load runs loops from records: W4's LOOP, on a load opened as
+ *        the boot left it, runs from records unless `test-acpi --predecoding off` put lpl.acpi.predecoding=off on
+ *        it. The test notes which, a remark tools/parity.sh does not compare, and CI checks that the run with
+ *        records off notes the one, and the other run the other.
+ */
+KERNEL_TEST(the_boot_line_decides_whether_loops_run_from_records)
+{
+    static const uint8_t loop[] = {
+        0x14u, 0x14u, 'L',   'O',   'O',   'P',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
+        0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u, 0xA4u, 0x60u,
+    };
+    PredecodingRun_t run = {0};
+
+    if (!predecoding_open_booted(test, loop, sizeof(loop)))
+        return;
+    predecoding_evaluate("\\LOOP", PREDECODING_NO_ARGUMENT, &run);
+    kernel_test_check(test, (run.records_run != 0u) == predecoding_load.predecodes_loops,
+                      "records run when the load runs loops from records, and only then");
+    kernel_test_note(test, (run.records_run != 0u) ? "loops run from records" : "no loop runs from records");
+    predecoding_close();
+}
+
+/**
  * @brief Methods written from a fixed seed, with While, If, Else, Break and Continue nested in loops of a
  *        few turns, operators, comparisons and LNot over locals, Arg0 (its 32 high bits set but for the
  *        first) and constants of every width, and
@@ -235,8 +258,8 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
     for (uint32_t program = 0u; program < PROGRAMS_COUNT; ++program)
     {
         const uint8_t revision = (program % 2u == 0u) ? 2u : 1u;
-        PredecodingRun_t off = {0u, 0u, 0u, 0u};
-        PredecodingRun_t on = {0u, 0u, 0u, 0u};
+        PredecodingRun_t off = {0};
+        PredecodingRun_t on = {0};
 
         programs_write(&writer);
         if (programs_method.overflowed)

@@ -41,6 +41,7 @@ typedef struct PredecodingRun {
     uint32_t records_run; /**< Statements and predicates run from records. */
     uint32_t declined;    /**< Statements the records handed back, over every reason. */
     uint32_t flushes;     /**< Times the cache was emptied. */
+    uint32_t built;       /**< Records built. */
 } PredecodingRun_t;
 
 /**
@@ -56,6 +57,17 @@ extern AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t predecoding_l
  * @return false when the namespace did not open.
  */
 extern bool predecoding_open_empty(KernelTest_t *test, bool predecodes);
+
+/**
+ * @brief Opens the load on a simulated host, records on or off as the boot line says, and declares @p aml as a
+ *        DSDT of revision 2.
+ *
+ * @param test   The test, which checks that the namespace opens.
+ * @param aml    The DSDT's AML.
+ * @param length Its length.
+ * @return false when the namespace did not open.
+ */
+extern bool predecoding_open_booted(KernelTest_t *test, const uint8_t *aml, uint32_t length);
 
 /**
  * @brief Declares @p aml in the open load as a table of @p signature and @p revision, written in @p table,
