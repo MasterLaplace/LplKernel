@@ -15,12 +15,12 @@
  * @file machine_language.h
  * @brief The AML interpreter's interface: the load of the definition blocks and what it counted.
  *
- * A load reads the DSDT and every SSDT in three passes. The declaration pass declares every named
- * object of every table, in order, and skips method bodies by their PkgLength; the Externals pass,
- * which runs only when an External had nowhere to go, places those once every table is declared;
- * the decoding pass decodes every term of every table, method bodies included, so that a call takes
- * as many arguments as the method it names declares. Nothing runs yet: table-level code is decoded and its declarations
- *made, but no predicate is evaluated (docs/acpi/specification.md, §3.6 and §5.1).
+ * A load reads the DSDT and every SSDT in three passes. The declaration pass runs the code of each
+ * table, in order, in the interpreter, which hands the load each named object it meets to declare and
+ * skips method bodies by their PkgLength; the Externals pass, which runs only when an External had
+ * nowhere to go, places those once every table is declared; the decoding pass decodes every term of
+ * every table, method bodies included, so that a call takes as many arguments as the method it names
+ * declares (docs/acpi/specification.md, §3.6 and §5.1).
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -107,6 +107,40 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
 typedef void (*AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t)(void *context, uint32_t method,
                                                                                 uint32_t opcode, uint32_t callee);
 
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLARATION_ANSWERS                                \
+    2u /**< Terms one statement of table-level code waits for at most: an OperationRegion's offset and length. */
+
+/**
+ * @brief What the load did with one statement of table-level code the interpreter handed it (§3.6): where
+ *        the code goes on, the TermList the interpreter runs next, or the term the statement waits for.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration {
+    uint32_t after;    /**< Where table-level code goes on: past the statements, or past the TermList they open. */
+    uint32_t body;     /**< Where the TermList of the Scope, Device, Processor, PowerResource or ThermalZone the
+                            statement declared starts, which the interpreter runs up to after, or 0. */
+    uint32_t scope;    /**< The node that TermList runs in. */
+    uint32_t asks;     /**< Where the term the statement waits for starts, an OperationRegion's offset or length or
+                            a BankField's BankValue that is no constant, or 0 when it waits for none. */
+    uint32_t asks_end; /**< The first offset that term may not reach. */
+    uint32_t resumes;  /**< Where the statement goes on from once the term is answered. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePendingOperator_t waiting; /**< The operator that waits. */
+    uint64_t values[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLARATION_ANSWERS]; /**< The Integer
+                                                                                                          each term
+                                                                                                          answered
+                                                                                                          gave. */
+    uint32_t afters[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLARATION_ANSWERS]; /**< Where each
+                                                                                                          of them
+                                                                                                          ended. */
+    bool known[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLARATION_ANSWERS]; /**< Whether each gave
+                                                                                                    one: false when
+                                                                                                    it failed. */
+    uint32_t answers_for; /**< The offset of the statement the answers belong to, or 0. */
+    uint8_t answered;     /**< Terms answered so far, in the order that statement asked for them. */
+    bool closed;          /**< Whether the TermList of an If declared without running its code reached its end. */
+    bool leaves;          /**< Whether a fault skipped the rest of the construct the statement stands in (§6.2). */
+    bool abandons;        /**< Whether a fault abandoned the rest of the table (§6.2). */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t;
+
 /**
  * @brief A load: its namespace, its tables, what it counted, and the stacks its passes use.
  *
@@ -164,8 +198,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                                         stack. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock_t
         blocks[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS]; /**< The block stack. */
-    uint32_t temporary_count;                                                           /**< Temporary nodes alive. */
-    uint32_t frame_count; /**< Method bodies being decoded. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t
+        declaration;          /**< The last statement of table-level code the interpreter handed the load. */
+    uint32_t temporary_count; /**< Temporary nodes alive. */
+    uint32_t frame_count;     /**< Method bodies being decoded. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t
         observer;           /**< Told of each opcode and call the decoding pass decodes, or NULL. */
     void *observer_context; /**< What the observer is given back. */
@@ -191,26 +227,66 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;
 
 /**
- * @brief Runs one term of a table's code at load, in that table's frame, whose locals last from one
- *        call to the next: a statement, or the predicate of an If or a While.
+ * @brief Runs a table's code at load in a frame of its own (§3.6): the statements from @p start to
+ *        @p limit, its control flow included, each run of declarations handed to the load as the
+ *        interpreter meets it.
  *
- * @details The declaration pass calls it for each statement of table-level code and each predicate
- *          it meets (§3.6); a failure is counted in load->evaluation, never as a load error.
- * @param load        The load, its stacks free.
- * @param table       The table's index in the load.
- * @param scope       The node names are resolved from.
- * @param start       Where the term starts.
- * @param limit       The first offset it may not reach.
- * @param value       Whether the term is a predicate, whose integer is wanted.
- * @param out_integer Receives the predicate's integer when @p value holds and the run succeeds.
- * @param out_after   Receives where the run stopped: past the term when it succeeds.
- * @return OK, or why the run failed: every frame it pushed is gone by then, and every temporary
- *         node it created removed.
+ * @details The declaration pass calls it once per table. A statement that fails is counted in
+ *          load->evaluation, never as a load error, and the code goes on past it; one whose predicate
+ *          fails declares its branches without running their code (§3.6). Its locals last from one
+ *          statement to the next, and go with the frame.
+ * @param load  The load.
+ * @param table The table's index in the load.
+ * @param scope The node names are resolved from.
+ * @param start Where the code starts.
+ * @param limit The first offset it may not reach.
+ * @return OK once the code has run, or stopped at a failure it could not go past, counted, every frame it
+ *         pushed gone; LIMIT_FRAMES, LIMIT_PENDING_OPERATORS or LIMIT_BLOCKS, counted, when the evaluation has
+ *         no room for the table's frame, and nothing ran.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_run_table_term(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start,
-    uint32_t limit, bool value, uint64_t *out_integer, uint32_t *out_after);
+    uint32_t limit);
+
+/**
+ * @brief Takes statements of table-level code the interpreter does not run itself, in load->declaration
+ *        (§3.6): from @p start, a declaration, data or Noop, a statement whose decoding faults, or one that
+ *        failed to run and is stepped over, then every such statement after it up to one the interpreter
+ *        runs, the end of the construct, or the TermList of a scope it declared; or, @p not_run holding,
+ *        the one If, While or Else at @p start, whose code is declared without running. A statement waits
+ *        for a term when load->declaration.asks is not 0 on entry, which it then goes on from with
+ *        load->declaration's answers.
+ *
+ * @param load    The load.
+ * @param table   The table's index in the load.
+ * @param scope   The node names are resolved from.
+ * @param start   Where the statement starts.
+ * @param limit   The end of the construct it stands in.
+ * @param not_run Whether its code, and that of every TermList inside it, is declared without running.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_declare_statement(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start,
+    uint32_t limit, bool not_run);
+
+/**
+ * @brief Whether the interpreter runs a statement of table-level code that starts with @p opcode: one
+ *        that is neither a declaration, data, a local, an argument nor Noop.
+ *
+ * @param opcode A descriptor index.
+ * @return true for code.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_runs_at_table_level(uint32_t opcode);
+
+/**
+ * @brief Counts a fault of the declaration or the Externals pass, the first one kept.
+ *
+ * @param load   The load.
+ * @param status The fault, not OK.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_count_load_error(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
 
 /**
  * @brief Reads a field unit (§5.3): one access per datum of its access width, in its region for a
@@ -577,17 +653,6 @@ extern void advanced_configuration_and_power_interface_machine_language_regions_
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
- * @brief Counts a While back-edge of table-level code against the budget of 2^20 that a table's code
- *        shares with the methods it calls (§6.1): a table load is one evaluation.
- *
- * @param load The load.
- * @return OK, or LIMIT_LOOP_ITERATIONS once the table's code has taken more back-edges than §6.1 allows.
- */
-extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
-advanced_configuration_and_power_interface_machine_language_count_back_edge(
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
-
-/**
  * @brief Evaluates the object an absolute path names (§3.6): a method runs with the arguments given,
  *        a named object gives its value.
  *
@@ -648,25 +713,6 @@ advanced_configuration_and_power_interface_machine_language_package_element(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *package, uint32_t element,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
-
-/**
- * @brief Releases what Local0 to Local7 of table-level code hold, once a table's code has run: its
- *        locals do not outlive the table.
- *
- * @param load The load.
- */
-extern void advanced_configuration_and_power_interface_machine_language_release_table_locals(
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
-
-/**
- * @brief Counts a failure of table-level code: in load->evaluation, per status, the first one kept.
- *
- * @param load   The load.
- * @param status Why it failed, not OK.
- */
-extern void advanced_configuration_and_power_interface_machine_language_count_failure(
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
 
 /**
  * @brief Opens a load: an empty namespace with its predefined objects, and no table.

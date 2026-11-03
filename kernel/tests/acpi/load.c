@@ -450,6 +450,35 @@ KERNEL_TEST(a_load_in_a_method_belongs_to_its_evaluation)
 }
 
 /**
+ * @brief A method that runs in the frame a loaded table's code ran in, once that table is declared, runs as
+ *        a method: the Name it declares is a temporary node, gone when it returns (§5.1), not a declaration
+ *        of table-level code.
+ */
+KERNEL_TEST(a_method_in_the_frame_a_loaded_table_ran_in_runs_as_a_method)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, 'T', 'B', 'L', 'R', 'H', 'N', 'D', '1'};
+    static const uint8_t inner[] = {0x08u, 'T', 'M', 'P', 'N', 0x0Au, 0x07u, 0xA4u, 'T', 'M', 'P', 'N'};
+    static const uint8_t outer[] = {0x70u, 'I', 'N', 'N', 'R', 'T', 'R', 'A', 'C'};
+
+    load_begin();
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    load_method(&load_aml, "LDIT", loads, sizeof(loads));
+    load_method(&load_aml, "INNR", inner, sizeof(inner));
+    load_method(&load_aml, "OUTR", outer, sizeof(outer));
+    if (!load_run(test))
+        return;
+    kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "LDIT loads the table, its code run in the frame above LDIT's");
+    kernel_test_check(test, load_call("\\OUTR") == LOAD_STATUS(OK) && load_integer("TRAC") == 7u,
+                      "INNR, called by OUTR in that same frame, returns the 7 its Name holds");
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *method = made_up_root_node(&load_load, "INNR");
+
+    kernel_test_check(test, method != NULL && method->first_child == 0u, "INNR has no child once it has returned");
+    load_close(test);
+}
+
+/**
  * @brief Appends Method (_REG, 2), which traces its two arguments, Arg0 then Arg1, to \TRAC.
  */
 static void load_registration(MadeUpAml_t *aml)

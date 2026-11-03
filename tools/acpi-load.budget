@@ -5,6 +5,6 @@
 inside=advanced_configuration_and_power_interface_machine_language_load_directory
 times=1
 machine=q35
-instructions=2347398
-accesses=1193127
+instructions=2430236
+accesses=1229136
 tolerance=1

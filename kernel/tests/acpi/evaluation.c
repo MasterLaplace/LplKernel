@@ -518,3 +518,145 @@ KERNEL_TEST(a_declaration_replacing_an_external_without_running_is_counted)
                       "EXT0 and NEW_ are both counted as declared without running");
     evaluation_close(test);
 }
+
+/**
+ * @brief A Break or a Continue of table-level code outside any While does nothing: it fails in a method,
+ *        not at table level.
+ */
+KERNEL_TEST(a_break_or_a_continue_outside_a_while_does_nothing_at_table_level)
+{
+    static const uint8_t aml[] = {0x08u, 'B', 'E', 'F', 'R', 0x01u, 0xA5u, 0x9Fu, 0x08u, 'A', 'F', 'T', 'R', 0x01u};
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("BEFR") == 1u && evaluation_integer("AFTR") == 1u,
+                      "BEFR and AFTR are both declared");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 0u && evaluation_load.load_errors == 0u,
+                      "neither the Break nor the Continue fails");
+    evaluation_close(test);
+}
+
+/**
+ * @brief An Else of table-level code runs only after an If whose predicate was false: one after a While is
+ *        stepped over, declaring nothing.
+ */
+KERNEL_TEST(an_else_after_a_while_is_stepped_over_at_table_level)
+{
+    static const uint8_t aml[] = {
+        0xA2u, 0x02u, 0x00u, 0xA1u, 0x07u, 0x08u, 'E', 'L', 'S', 'W', 0x01u, 0x08u, 'A', 'F', 'T', 'R', 0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, made_up_root_node(&evaluation_load, "ELSW") == NULL && evaluation_integer("AFTR") == 1u,
+                      "While (Zero) {} Else { Name (ELSW, One) } declares no ELSW, and AFTR after it");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A fault the load meets in the body of a While of table-level code skips the rest of that body and
+ *        leaves the loop, as it skips the rest of any construct (§6.2): the While (One) does not go back.
+ */
+KERNEL_TEST(a_fault_in_the_body_of_a_while_at_table_level_leaves_the_loop)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'C', 'N', 'T',   '_',   0x00u, 0xA2u, 0x08u, 0x01u, 0x75u, 'C',
+        'N',   'T', '_', 0x02u, 0x08u, 'A',   'F',   'T',   'R',   0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("CNT_") == 1u && evaluation_integer("AFTR") == 1u,
+                      "the body runs once, then AFTR is declared");
+    kernel_test_check(test,
+                      evaluation_load.load_errors == 1u && evaluation_load.evaluation.failures == 0u &&
+                          evaluation_load.evaluation.iterations == 0u,
+                      "the byte 0x02 is the one fault, of the load, and the loop takes no back-edge");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A PkgLength of table-level code that crosses the construct around it abandons the rest of the
+ *        table, even inside a Device (§6.2): the Name before it in the Device is declared, none after.
+ */
+KERNEL_TEST(a_package_length_crossing_its_device_abandons_the_table)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x0Eu, 'D',   'E',   'V',   'A', 0x08u, 'I', 'N', 'S',
+        'D',   0x01u, 0xA0u, 0x3Fu, 0x01u, 0x08u, 'A', 'F',   'T', 'R', 0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      made_up_root_node(&evaluation_load, "DEVA") != NULL &&
+                          made_up_root_node(&evaluation_load, "AFTR") == NULL,
+                      "DEVA is declared, AFTR is not");
+    kernel_test_check(
+        test,
+        evaluation_load.load_errors == 1u &&
+            evaluation_load.first_load_error ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_PACKAGE_LENGTH_OUT_OF_PARENT &&
+            evaluation_load.evaluation.failures == 0u,
+        "the crossing PkgLength is the one fault, of the load");
+    evaluation_close(test);
+}
+
+/**
+ * @brief An Else of table-level code whose PkgLength crosses the table is a fault of the load, even after a
+ *        false If, which would run it: its body is neither run nor declared.
+ */
+KERNEL_TEST(an_else_whose_package_length_crosses_the_table_is_a_fault_of_the_load)
+{
+    static const uint8_t aml[] = {0xA0u, 0x02u, 0x00u, 0xA1u, 0x3Fu, 0x08u, 'E', 'L', 'S', 'B', 0x01u};
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(
+        test,
+        made_up_root_node(&evaluation_load, "ELSB") == NULL && evaluation_load.load_errors == 1u &&
+            evaluation_load.first_load_error ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_PACKAGE_LENGTH_OUT_OF_PARENT &&
+            evaluation_load.evaluation.failures == 0u,
+        "the crossing PkgLength is the one fault, of the load, and ELSB is not declared");
+    evaluation_close(test);
+}
+
+/**
+ * @brief Only the Else right after an If whose predicate was false runs: one a statement separates from that
+ *        If is stepped over, declaring nothing.
+ */
+KERNEL_TEST(an_else_a_statement_separates_from_its_if_is_stepped_over)
+{
+    static const uint8_t aml[] = {
+        0xA0u, 0x02u, 0x00u, 0x08u, 'M', 'I', 'D', 'L', 0x01u, 0xA1u, 0x07u, 0x08u, 'E', 'L', 'S', 'O', 0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("MIDL") == 1u && made_up_root_node(&evaluation_load, "ELSO") == NULL,
+                      "If (Zero) {} Name (MIDL, One) Else { Name (ELSO, One) } declares MIDL, not ELSO");
+    evaluation_close(test);
+}
+
+/**
+ * @brief An If whose predicate fails declares its body without running it, but a fault in that body skips
+ *        the rest of it: the Else after it is then stepped over, as after any construct a fault left, and
+ *        declares nothing.
+ */
+KERNEL_TEST(a_fault_in_a_body_declared_without_running_leaves_the_else_undeclared)
+{
+    static const uint8_t aml[] = {
+        0xA0u, 0x06u, 0x85u, 0x01u, 0x00u, 0x00u, 0x02u, 0xA1u, 0x07u, 0x08u, 'E', 'L', 'S', 'F', 0x01u,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      made_up_root_node(&evaluation_load, "ELSF") == NULL && evaluation_load.declared_not_run == 0u,
+                      "If (Mod (One, Zero)) { <0x02> } Else { Name (ELSF, One) } declares no ELSF");
+    kernel_test_check(test, evaluation_load.load_errors == 1u && evaluation_load.evaluation.failures == 1u,
+                      "the predicate fails, and the byte 0x02 is a fault of the load");
+    evaluation_close(test);
+}
