@@ -5,10 +5,12 @@
 #include <kernel/testing/test.h>
 
 #include <stdint.h>
+#include <string.h>
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_evaluation, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define EVALUATION_TABLE_CAPACITY 512u /**< Bytes of the buffer a made-up DSDT is written in. */
+#define EVALUATION_TABLE_CAPACITY  512u /**< Bytes of the buffer a made-up DSDT is written in. */
+#define EVALUATION_LONG_LOOP_NOOPS 62u  /**< The Noops that take a While's body past 63 bytes, its PkgLength to two. */
 
 static uint8_t evaluation_table[EVALUATION_TABLE_CAPACITY];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t evaluation_host;
@@ -201,6 +203,38 @@ KERNEL_TEST(control_flow_runs_loops_branches_and_their_exits)
     kernel_test_check(test, evaluation_integer("RES1") == 1u && evaluation_integer("RES2") == 2u,
                       "M004 takes its If for 5, its Else for 6");
     kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A While whose PkgLength takes two bytes restarts at its predicate on each turn:
+ *        `While (LLess (Local0, 2)) { Increment (Local0); Noop... }` returns 2.
+ */
+KERNEL_TEST(a_while_whose_package_length_takes_two_bytes_restarts_at_its_predicate)
+{
+    static const uint8_t head[] = {0x14u, 0x40u, 0x05u, 'L',   'O',   'N',   'G',   0x00u, 0xA2u,
+                                   0x46u, 0x04u, 0x95u, 0x60u, 0x0Au, 0x02u, 0x75u, 0x60u};
+    static const uint8_t tail[] = {0xA4u, 0x60u};
+    uint8_t aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS + sizeof(tail)];
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    memcpy(aml, head, sizeof(head));
+    memset(&aml[sizeof(head)], 0xA3, EVALUATION_LONG_LOOP_NOOPS);
+    memcpy(&aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS], tail, sizeof(tail));
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&evaluation_load, "\\LONG", NULL, 0u,
+                                                                             &result);
+
+    kernel_test_check(test,
+                      status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
+                          result.payload == 2u,
+                      "the loop turns twice and LONG returns 2");
+    advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
+                                                                              &evaluation_load.space, &result);
     evaluation_close(test);
 }
 
