@@ -1019,6 +1019,7 @@ same work, not only reach the same result.
 | Real firmware in ring 0 | one corpus machine per boot, its tables given as a Multiboot module, run through the simulated host | ring 0, debug kernel | the host harness's records on the same bytes, compared by `tools/parity.sh` |
 | QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the load's folds (namespace, opcodes decoded), against the host's on the printed bytes (§8.7) |
 | QEMU's reference tables | 42 `pc` and `q35` configurations, 5 `microvm` | host | `acpiexec` |
+| The load's shortcuts | that each shortcut of §3.6 ends where the general path ends: namespace, fold, faults and counts | ring 0 and the host harness (`kernel/tests/acpi/shortcuts.c`), every one-byte change of its tables on the host (`host_shortcuts`) and a sample of them in ring 0; the corpus on the host, its bytes changed at random too (`tools/acpi-corpus.sh differential`) | the same load with `general_load`, which takes no shortcut |
 | uACPI's test cases | Windows behaviours and edge cases | host | each case's `// Expect:` line |
 | Real machines | the full path to `_CST` | ring 0 | the same machine's tables through the host harness and `acpiexec`; Linux's cpuidle states |
 

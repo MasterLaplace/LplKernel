@@ -10,6 +10,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh initialize [quick|corpus|full|qemu]
        tools/acpi-corpus.sh idle [quick|corpus|full]
        tools/acpi-corpus.sh load [quick|corpus|full]
+       tools/acpi-corpus.sh differential [quick|corpus|full] [<mutants>]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
        tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
@@ -59,6 +60,12 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          decoded MADT, their states from the _CST acpiexec evaluates after the same handshake, given the
          tables the initialisation ended with and the same presets; a machine where acpiexec stops before an
          evaluation it was given is counted apart
+  differential  loads each machine of a list twice, with the load's shortcuts and with --general-load,
+         which takes none (specification §3.6), and compares what `test-acpi --namespace` and
+         `test-acpi --initialize` print each way, line for line, and how they exit: the namespace, the faults,
+         the counts and the initialisation; with <mutants>, also that many copies of each machine whose DSDT and
+         SSDTs have bytes changed at random (`--mutate`), each seeded by its number. A load that fails the same
+         way both ways agrees, and is listed with the first line the harness wrote to stderr
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -328,6 +335,57 @@ load_check() {
     echo "# load: $agree of $((number - deferred)) machines that place tables for Load agree with acpiexec;" \
         "$deferred fail in table-level code; $loaded of the $placed tables placed were loaded"
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
+}
+
+# Loads each machine of the list $1 with the load's shortcuts and without (specification §3.6), and compares what
+# the namespace and the initialisation views print each way, and how the harness exits; with $2 mutants, also that
+# many copies of each machine whose DSDT and SSDTs have bytes changed at random, seeded by the copy's number. A load
+# that fails the same way both ways agrees, and is listed with the first line the harness wrote to stderr.
+differential_check() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local mutants="${2:-0}" number=0 agree=0 failed=0 subject seed view differences stopped exit_shortcut exit_general
+    local shortcut general errors
+    local -a mutation arguments
+    [[ "$mutants" =~ ^[0-9]+$ ]] || { usage >&2; exit 2; }
+    shortcut="$(mktemp)" general="$(mktemp)" errors="$(mktemp)"
+    while IFS= read -r subject; do
+        for seed in $(seq 0 "$mutants"); do
+            number=$((number + 1))
+            mutation=()
+            [[ "$seed" -eq 0 ]] || mutation=(--mutate "$seed")
+            differences=""
+            stopped=""
+            for view in namespace initialize; do
+                arguments=("--$view" "$LINUXHW/$subject.bin")
+                [[ "$view" == initialize ]] && arguments+=("$PRESETS")
+                exit_shortcut=0
+                exit_general=0
+                "$HARNESS" "${mutation[@]}" "${arguments[@]}" >"$shortcut" 2>/dev/null || exit_shortcut=$?
+                "$HARNESS" --general-load "${mutation[@]}" "${arguments[@]}" >"$general" 2>"$errors" ||
+                    exit_general=$?
+                if [[ "$exit_shortcut" -ne "$exit_general" ]]; then
+                    differences+="--$view exits $exit_general without the shortcuts, $exit_shortcut with them"$'\n'
+                elif [[ "$exit_general" -ne 0 && -z "$stopped" ]]; then
+                    stopped="--$view exits $exit_general both ways: $(grep -m1 . "$errors" || true)"
+                fi
+                differences+="$(diff "$general" "$shortcut" | head -5 || true)"
+            done
+            if [[ -n "$differences" ]]; then
+                echo "not ok $number $subject${mutation[*]:+ ${mutation[*]}}"
+                sed 's/^/    # /' <<<"$differences"
+                continue
+            fi
+            agree=$((agree + 1))
+            if [[ -n "$stopped" ]]; then
+                failed=$((failed + 1))
+                echo "# failed the same way both ways: $subject${mutation[*]:+ ${mutation[*]}}: $stopped"
+            fi
+        done
+    done < <(reports "$1")
+    rm -f "$shortcut" "$general" "$errors"
+    echo "# differential: $agree of $number loads agree with and without the load's shortcuts, $failed of them" \
+        "failing the same way both ways"
+    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
 }
 
 # Prints the sum of the counter $1 over the lines $2.
@@ -713,6 +771,7 @@ case "${1:-}" in
     initialize) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; initialize_check "${2:-corpus}" ;;
     idle) known_list "${2:-corpus}"; idle_check "${2:-corpus}" ;;
     load) known_list "${2:-corpus}"; load_check "${2:-corpus}" ;;
+    differential) known_list "${2:-corpus}"; differential_check "${2:-corpus}" "${3:-0}" ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
     module) shift; modules "$@" ;;
