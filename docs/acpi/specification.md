@@ -248,6 +248,11 @@ adds too, as uACPI does; ACPICA scans bodies at load only to auto-serialise them
 cost more than the declarations, and the interpreter checks every bound as it runs a body: a fault fails the term that
 meets it, and the debug boot and the corpus find the others before.
 
+**Shortcuts and the general path.** The declaration pass decodes a Name's data object once: once it has built
+the object, it steps over it instead of decoding its terms again (O18). A shortcut is taken only where it ends as the
+general path ends, with the same namespace, faults and counts; a load whose `general_load` is set takes none, and the
+differential tests compare the two (§8.1).
+
 **The loop**, in order of precedence at each step:
 
 1. If the top pending operator has all its operands, run its handler, pop it, and hand the result to the operator
@@ -967,6 +972,7 @@ reads a table in kernel memory. The costs to cut are:
 | O15 | No lock and no atomic in the interpreter (§3.7) | CI checks that the release objects of `kernel/kernel/acpi/` hold no `lock`-prefixed instruction (`objdump -d`); W1 on the release kernel |
 | O16 | Log calls compiled out below the build's level | CI checks that the release objects call no log function below the release level (`nm`); W1 on the release kernel |
 | O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
+| O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 

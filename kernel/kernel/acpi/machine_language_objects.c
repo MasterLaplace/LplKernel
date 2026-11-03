@@ -1185,7 +1185,7 @@ AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_evaluate_data(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, const MachineLanguageSource_t *source,
-    uint32_t offset, uint32_t limit, MachineLanguageValue_t *out_value, bool *out_constant)
+    uint32_t offset, uint32_t limit, MachineLanguageValue_t *out_value, bool *out_constant, uint32_t *out_after)
 {
     MachineLanguagePackageFrame_t frames[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
     uint32_t depth = 0u;
@@ -1194,6 +1194,7 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
 
     memset(out_value, 0, sizeof(*out_value));
     *out_constant = false;
+    *out_after = offset;
     for (;;)
     {
         MachineLanguageValue_t value = {0};
@@ -1281,6 +1282,7 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
         {
             *out_value = value;
             *out_constant = true;
+            *out_after = pc;
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
         }
 
