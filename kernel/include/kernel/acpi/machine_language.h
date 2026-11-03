@@ -788,9 +788,9 @@ extern void advanced_configuration_and_power_interface_machine_language_load_dir
 
 /**
  * @brief Runs Load on the object a node holds (§5.1): the table a SystemMemory region or a field unit
- *        holds is copied into the namespace arena, its checksum computed on the copy, and its objects
- *        created relative to the root, inside the evaluation that runs the Load; a table the load holds
- *        already is refused.
+ *        holds is copied into the namespace arena, its checksum computed on the copy, and added last to the
+ *        registry, for the evaluation that runs the Load to run its code; a table the load holds already is
+ *        refused.
  *
  * @param load       The load, in an evaluation.
  * @param source     The node of the region or of the field unit.
@@ -809,7 +809,8 @@ advanced_configuration_and_power_interface_machine_language_load_from(
 /**
  * @brief Runs LoadTable with an empty RootPath, ParameterPath and ParameterData (§5.1): the first table of
  *        the directory with that signature, and that OEM ID and OEM table ID unless they are empty, each
- *        compared with its field padded with zeros, runs in place as Load runs a table it copied.
+ *        compared with its field padded with zeros, is added last to the registry as Load adds a table it
+ *        copied, and runs in place.
  *
  * @param load       The load, in an evaluation.
  * @param signature  The SignatureString's bytes.
@@ -824,6 +825,27 @@ extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_load_from_directory(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const uint8_t *signature, const uint8_t *oem,
     const uint8_t *oem_table, const uint32_t lengths[3], bool *out_loaded);
+
+/**
+ * @brief Declares the code of a table Load or LoadTable added without running it, every branch as one whose
+ *        predicate failed, or every branch where the load declares every branch (§3.6): for a table whose frame
+ *        the evaluation has no room for.
+ *
+ * @param load  The load, in an evaluation.
+ * @param table The table's index in the load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_declare_loaded_table(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table);
+
+/**
+ * @brief Ends the load of a table Load or LoadTable added once its code is declared: places the Externals no table
+ *        could place yet, then decodes its method bodies unless the load skips bodies (§3.6).
+ *
+ * @param load  The load.
+ * @param table The table's index in the load.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_finish_loaded_table(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table);
 
 /**
  * @brief Reads memory through the mapping cache, as regions read it: a 4-byte access where the address
