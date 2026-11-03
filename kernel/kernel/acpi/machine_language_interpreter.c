@@ -4086,7 +4086,7 @@ static MachineLanguageStatus_t machine_language_table_failure(MachineLanguageLoa
         frame->code, frame->statement, machine_language_block(evaluation)->end, &opcode, &after);
     status = machine_language_declare(load, opcode == MACHINE_LANGUAGE_OPCODE(IF) ||
                                                 opcode == MACHINE_LANGUAGE_OPCODE(WHILE));
-    if (opcode == MACHINE_LANGUAGE_OPCODE(IF) && load->declaration.closed && evaluation->frame_count > base)
+    if (opcode == MACHINE_LANGUAGE_OPCODE(IF) && load->declaration.closed)
     {
         frame->else_offset = load->declaration.after;
         frame->else_rule = MACHINE_LANGUAGE_ELSE_NOT_RUN;
