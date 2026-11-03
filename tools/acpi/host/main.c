@@ -269,10 +269,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_TARGET]);
     printf("aml run regions field_reads=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
            "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u "
-           "field_accesses_peak=%u\n",
+           "field_accesses_peak=%u table_writes=%u\n",
            regions->field_reads, regions->field_writes, regions->map_calls, regions->mapping_cache_hits,
            regions->split_qword_accesses, regions->unaligned_accesses, regions->protected_port_accesses,
-           regions->region_lengths_rounded, regions->field_accesses_peak);
+           regions->region_lengths_rounded, regions->field_accesses_peak, regions->table_writes);
     printf("aml run global_lock acquisitions=%u waits=%u releases_signalled=%u timeouts=%u unlocked_accesses=%u "
            "facs_refused=%u\n",
            regions->global_lock_acquisitions, regions->global_lock_waits, regions->global_lock_releases_signalled,

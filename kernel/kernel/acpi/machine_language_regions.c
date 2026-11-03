@@ -8,9 +8,11 @@
 #define MACHINE_LANGUAGE_FIELD_UNIT(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FIELD_UNIT_##kind
 #define MACHINE_LANGUAGE_MAPPING(kind)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAPPING_##kind
 #define MACHINE_LANGUAGE_MEMORY(type)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_##type
-#define MACHINE_LANGUAGE_PAGE_BYTES       4096u
-#define MACHINE_LANGUAGE_SYSTEM_MEMORY    0x00u /**< The RegionSpace byte of SystemMemory. */
-#define MACHINE_LANGUAGE_SYSTEM_IO        0x01u /**< The RegionSpace byte of SystemIO. */
+#define MACHINE_LANGUAGE_TABLE_PAGE(answer)                                                                            \
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_PAGE_##answer
+#define MACHINE_LANGUAGE_PAGE_BYTES    4096u
+#define MACHINE_LANGUAGE_SYSTEM_MEMORY 0x00u /**< The RegionSpace byte of SystemMemory. */
+#define MACHINE_LANGUAGE_SYSTEM_IO     0x01u /**< The RegionSpace byte of SystemIO. */
 #define MACHINE_LANGUAGE_PCI_CONFIG                                                                                    \
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION
 #define MACHINE_LANGUAGE_UPDATE_ONES      1u            /**< UpdateRule WriteAsOnes. */
@@ -207,11 +209,69 @@ static void *machine_language_map_page(MachineLanguageLoad_t *load, uint64_t pag
 }
 
 /**
+ * @brief Whether the load reads in place the table whose firmware window is @p header: a static table, or
+ *        one LoadTable found in the directory.
+ */
+static bool machine_language_reads_in_place(const MachineLanguageLoad_t *load,
+                                            const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
+{
+    for (uint32_t index = 0u; index < load->table_count; ++index)
+        if (load->tables[index].header == header &&
+            load->tables[index].origin != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_LOAD)
+            return true;
+    return false;
+}
+
+/**
+ * @brief Whether a table of the load's directory has a byte in the @p length bytes at @p first: any of
+ *        them, or, when @p read_in_place holds, one the load reads in place.
+ */
+static bool machine_language_directory_table_within(const MachineLanguageLoad_t *load, uint64_t first, uint64_t length,
+                                                    bool read_in_place)
+{
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory = load->directory;
+
+    if (directory == NULL)
+        return false;
+    for (uint32_t index = 0u; index < directory->table_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceTable_t *table = &directory->tables[index];
+
+        if (table->physical_address < first + length && first < (uint64_t) table->physical_address + table->length &&
+            (!read_in_place || machine_language_reads_in_place(load, table->header)))
+            return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Counts a write through @p mapping that landed on the bytes of a table the load reads in place,
+ *        and empties the pre-decoded records, built from those bytes (§3.6); the mapping learns at its
+ *        first write whether its page holds a table of the directory, so that a write elsewhere pays
+ *        nothing more.
+ */
+static void machine_language_note_table_write(MachineLanguageLoad_t *load, MachineLanguageMapping_t *mapping,
+                                              uint64_t physical_address, uint8_t width)
+{
+    if (mapping->holds_table == MACHINE_LANGUAGE_TABLE_PAGE(UNKNOWN))
+        mapping->holds_table = machine_language_directory_table_within(load, mapping->physical_address,
+                                                                       MACHINE_LANGUAGE_PAGE_BYTES, false) ?
+                                   MACHINE_LANGUAGE_TABLE_PAGE(HOLDS) :
+                                   MACHINE_LANGUAGE_TABLE_PAGE(NONE);
+    if (mapping->holds_table != MACHINE_LANGUAGE_TABLE_PAGE(HOLDS) ||
+        !machine_language_directory_table_within(load, physical_address, width, true))
+        return;
+    ++load->regions.table_writes;
+    advanced_configuration_and_power_interface_machine_language_predecoding_flush(&load->predecoding,
+                                                                                  load->predecoding.integer_bits);
+}
+
+/**
  * @brief Where the cache maps the page that holds @p physical_address: an entry already made, or a
  *        new one, cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere.
  */
 static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load, uint64_t physical_address,
-                                                    uint8_t **out_address)
+                                                    MachineLanguageMapping_t **out_mapping, uint8_t **out_address)
 {
     MachineLanguageRegions_t *regions = &load->regions;
     const uint64_t first_page = physical_address & ~(uint64_t) (MACHINE_LANGUAGE_PAGE_BYTES - 1u);
@@ -225,6 +285,7 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
         {
             mapping->last_use = regions->clock;
             ++regions->mapping_cache_hits;
+            *out_mapping = mapping;
             *out_address = (uint8_t *) mapping->address + (physical_address - mapping->physical_address);
             return MACHINE_LANGUAGE_OK;
         }
@@ -243,24 +304,31 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
     mapping->address = address;
     mapping->last_use = regions->clock;
     mapping->kind = kind;
+    mapping->holds_table = MACHINE_LANGUAGE_TABLE_PAGE(UNKNOWN);
+    *out_mapping = mapping;
     *out_address = (uint8_t *) address + (physical_address - first_page);
     return MACHINE_LANGUAGE_OK;
 }
 
 /**
- * @brief One access of 1, 2 or 4 bytes, aligned on its width, to memory, through the mapping cache.
+ * @brief One access of 1, 2 or 4 bytes, aligned on its width, to memory, through the mapping cache; a
+ *        write that lands on a table the load reads in place is noted.
  */
 static MachineLanguageStatus_t machine_language_aligned_memory(MachineLanguageLoad_t *load, uint64_t physical_address,
                                                                uint8_t width, bool write, uint32_t *value)
 {
     const MachineLanguageHost_t *host = load->space.host;
+    MachineLanguageMapping_t *mapping = NULL;
     uint8_t *address = NULL;
-    const MachineLanguageStatus_t status = machine_language_map(load, physical_address, &address);
+    const MachineLanguageStatus_t status = machine_language_map(load, physical_address, &mapping, &address);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
     if (write)
+    {
         host->write_memory(host->context, address, physical_address, width, *value);
+        machine_language_note_table_write(load, mapping, physical_address, width);
+    }
     else
         *value = host->read_memory(host->context, address, physical_address, width);
     return MACHINE_LANGUAGE_OK;
