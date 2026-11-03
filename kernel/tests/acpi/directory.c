@@ -437,6 +437,33 @@ KERNEL_TEST(a_table_whose_checksum_holds_wins_over_one_that_fails)
 }
 
 /**
+ * @brief Of two tables with one signature whose checksums both fail, the first is given out, its record with it.
+ */
+KERNEL_TEST(of_two_tables_whose_checksum_fails_the_first_is_given_out)
+{
+    MadeUpFirmware_t firmware;
+
+    made_up_firmware_open(&firmware);
+    made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
+    firmware.page[MADE_UP_FIRMWARE_BOTH_OFFSET +
+                  offsetof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t, oem_table_id)] ^= 0x01u;
+    memcpy(firmware.page + MADE_UP_FIRMWARE_EXTENDED_OFFSET, "TSTA", 4u);
+
+    const bool walked = made_up_firmware_read();
+    const AdvancedConfigurationAndPowerInterfaceTable_t *entry =
+        advanced_configuration_and_power_interface_find_entry_in_directory(&made_up_firmware_directory, "TSTA");
+
+    kernel_test_check(test, walked, "the directory is read");
+    kernel_test_check(test,
+                      entry != NULL && !entry->checksum_valid &&
+                          entry->physical_address == firmware.physical + MADE_UP_FIRMWARE_BOTH_OFFSET &&
+                          advanced_configuration_and_power_interface_find_in_directory(&made_up_firmware_directory,
+                                                                                       "TSTA") == entry->header,
+                      "the first TSTA, whose checksum fails as the second's does, is the one given out");
+    made_up_firmware_release(test);
+}
+
+/**
  * @brief The FACS is the one FIRMWARE_CTRL names when it is not 0, and the one X_FIRMWARE_CTRL names
  *        otherwise, as ACPICA and uACPI choose.
  */
