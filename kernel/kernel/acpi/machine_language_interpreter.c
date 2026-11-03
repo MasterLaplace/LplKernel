@@ -10,7 +10,7 @@
 #define MACHINE_LANGUAGE_ANSWER                                                                                        \
     (MACHINE_LANGUAGE_CALL + 4u) /**< Hands a statement of table-level code the Integer of the term it waits for. */
 #define MACHINE_LANGUAGE_LOADED                                                                                        \
-    (MACHINE_LANGUAGE_CALL + 5u) /**< Waits for the frame of the table Load or LoadTable added, its node. */
+    (MACHINE_LANGUAGE_CALL + 5u) /**< Waits for the frame of the table Load or LoadTable added, its node's index. */
 #define MACHINE_LANGUAGE_OK            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK
 #define MACHINE_LANGUAGE_OPERAND(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_##kind
 #define MACHINE_LANGUAGE_OPCODE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##name
@@ -3575,19 +3575,14 @@ static MachineLanguageStatus_t machine_language_loaded(MachineLanguageLoad_t *lo
 
 /**
  * @brief Pushes the operator that waits for the frame of table @p table, with @p target below it when Load has one,
- *        then that frame (§3.6); pushes nothing when the evaluation has no room for all three.
+ *        then that frame (§3.6), in the room the operator that added the table and its operands left; pushes nothing
+ *        when the evaluation has no room for the frame.
  */
 static MachineLanguageStatus_t machine_language_push_loaded(MachineLanguageLoad_t *load, uint32_t table,
                                                             MachineLanguageValue_t *target)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
 
-    if (evaluation->operator_count ==
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
-    if (target != NULL &&
-        evaluation->value_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_VALUES);
     if (target != NULL)
         (void) machine_language_push(load, target);
 
@@ -4115,11 +4110,12 @@ static MachineLanguageStatus_t machine_language_fail_internal(MachineLanguageLoa
 
 /**
  * @brief Goes on past a failure met above frame @p base, at the innermost of what takes it: an internal operator,
- *        unless the evaluation ran out of something, or the frame of a table's code, which goes on past its
- *        statement (§3.6), or drops itself, counted, when it cannot; with neither, the failure stands.
+ *        unless the evaluation ran out of something, then, when the operator cannot take it either, or there is
+ *        none, the frame of a table's code, which goes on past its statement (§3.6), or drops itself, counted,
+ *        when it cannot; with neither, the failure stands.
  */
-static MachineLanguageStatus_t machine_language_recover(MachineLanguageLoad_t *load, uint32_t base,
-                                                        MachineLanguageStatus_t status)
+static MachineLanguageStatus_t machine_language_take_failure(MachineLanguageLoad_t *load, uint32_t base,
+                                                             MachineLanguageStatus_t status)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     uint32_t table = evaluation->frame_count;
@@ -4134,8 +4130,8 @@ static MachineLanguageStatus_t machine_language_recover(MachineLanguageLoad_t *l
            evaluation->operators[slot - 1u].opcode != MACHINE_LANGUAGE_REGISTER)
         --slot;
     if (slot > floor && !machine_language_exhausted(status))
-        return machine_language_fail_internal(load, slot);
-    if (table == base)
+        status = machine_language_fail_internal(load, slot);
+    if (status == MACHINE_LANGUAGE_OK || table == base)
         return status;
     status = machine_language_table_failure(load, table - 1u, status);
     if (status == MACHINE_LANGUAGE_OK)
@@ -4157,7 +4153,7 @@ static MachineLanguageStatus_t machine_language_step_above(MachineLanguageLoad_t
 {
     const MachineLanguageStatus_t status = machine_language_step(load);
 
-    return (status == MACHINE_LANGUAGE_OK) ? status : machine_language_recover(load, base, status);
+    return (status == MACHINE_LANGUAGE_OK) ? status : machine_language_take_failure(load, base, status);
 }
 
 /**

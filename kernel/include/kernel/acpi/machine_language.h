@@ -235,7 +235,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
  *        @p limit, its control flow included, each run of declarations handed to the load as the
  *        interpreter meets it.
  *
- * @details The declaration pass calls it once per table. A statement that fails is counted in
+ * @details The declaration pass calls it once per table the root table lists; a table Load or LoadTable adds runs
+ *          in a frame of the evaluation that runs the operator instead. A statement that fails is counted in
  *          load->evaluation, never as a load error, and the code goes on past it; one whose predicate
  *          fails declares its branches without running their code (§3.6). Its locals last from one
  *          statement to the next, and go with the frame.
@@ -827,9 +828,9 @@ advanced_configuration_and_power_interface_machine_language_load_from_directory(
     const uint8_t *oem_table, const uint32_t lengths[3], bool *out_loaded);
 
 /**
- * @brief Declares the code of a table Load or LoadTable added without running it, every branch as one whose
- *        predicate failed, or every branch where the load declares every branch (§3.6): for a table whose frame
- *        the evaluation has no room for.
+ * @brief Declares the code of a table Load or LoadTable added without running it (§3.6): every branch as one whose
+ *        predicate failed when the evaluation has no room for the table's frame, every branch where the load
+ *        declares every branch.
  *
  * @param load  The load, in an evaluation.
  * @param table The table's index in the load.

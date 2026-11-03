@@ -234,9 +234,9 @@ Rules:
 
 ### 3.6 Execution model
 
-**One loop, explicit stacks, no C recursion** but the one level `Load` adds until #639 (below). The stacks are
-fixed arrays sized by the limits of §6.1, so they are never reallocated and no pointer into them goes stale. A limit
-reached is an error, never a panic. Table-level code runs in the same loop as a method body (below).
+**One loop, explicit stacks, no C recursion.** The stacks are fixed arrays sized by the limits of §6.1, so they are
+never reallocated and no pointer into them goes stale. A limit reached is an error, never a panic. Table-level code
+runs in the same loop as a method body (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
 bodies are skipped while declarations load, by their PkgLength, and run only when called. In a debug kernel and the

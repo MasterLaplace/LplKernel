@@ -519,9 +519,9 @@ KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_f
     };
     static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', 0x60u};
     static const uint8_t fails[] = {0xA4u, '\\', 'N', 'O', 'P', 'E'};
-    static const uint8_t reads[] = {0x70u, 0x72u, 0x01u, 0x72u, 0x0Au, 0x02u, '\\', 0x2Fu, 0x03u, 'P', 'C', 'I', '0',
-                                    'D',   'E',   'V',   '_',   'V',   'I',   'D',  '_',   0x00u, 0x00u, '\\', 'V', '2',
-                                    '_',   '_'};
+    static const uint8_t reads[] = {0x70u, 0x72u, 0x01u, 0x72u, 0x0Au, 0x02u, '\\', 0x2Fu, 0x03u, 'P',
+                                    'C',   'I',   '0',   'D',   'E',   'V',   '_',  'V',   'I',   'D',
+                                    '_',   0x00u, 0x00u, '\\',  'V',   '2',   '_',  '_'};
     const uint32_t preset = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES - 3u;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
