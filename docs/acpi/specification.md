@@ -239,10 +239,12 @@ fixed arrays sized by the limits of §6.1, so they are never reallocated and no 
 reached is an error, never a panic. Table-level code runs in the same loop as a method body (below).
 
 **No parse tree.** AML runs straight from the bytes, and an untaken branch is skipped by its PkgLength. Method
-bodies are skipped while declarations load, by their PkgLength, and run only when called. Once every table is
-declared, the load decodes each body but a duplicate's (§5.1) once, running nothing: a body that would lose its place
-is found at boot rather than when firmware calls it, and the walk creates no node but the temporaries each body
-declares while it is decoded.
+bodies are skipped while declarations load, by their PkgLength, and run only when called. In a debug kernel and the
+host tools, once every table is declared, the load decodes each body but a duplicate's (§5.1) once, running nothing:
+a body that would lose its place is found at boot rather than when firmware calls it, and the walk creates no node but
+the temporaries each body declares while it is decoded. A release kernel skips that pass (O2), for the tables Load
+adds too, as ACPICA and uACPI do: it cost about as much as the declarations, and the interpreter checks every bound as
+it runs a body, so that a faulty body fails when it is called; the debug boot and the corpus find it before.
 
 **The loop**, in order of precedence at each step:
 
@@ -941,7 +943,7 @@ reads a table in kernel memory. The costs to cut are:
 | # | What | Proof: a deterministic counter or a window |
 |---|---|---|
 | O1 | Execute in place from the firmware window; never copy a method body | a method declaration allocates 0 (`allocations` at load) |
-| O2 | Skip method bodies at load by their PkgLength | `bytes_decoded_at_load` / `aml_bytes` |
+| O2 | Skip method bodies at load by their PkgLength; a release kernel decodes none of them (§3.6) | `acpi.aml` reports `bodies=skipped`; W1 on the release kernel |
 | O3 | Integers by value; constants, `LocalX` and `ArgX` pushed without an operator record | `allocations` = 0 for an integer-only method |
 | O4 | One evaluation context, allocated once, never zeroed per evaluation | `allocations` per evaluation |
 | O5 | One hash for the whole namespace, O(1) per probe; an upward search costs at most its depth in probes | `lookup_probes` / `lookups` |
