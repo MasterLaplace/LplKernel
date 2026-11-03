@@ -7,13 +7,14 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_power_management_timer, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define TIMER_PORT            0x608u      /**< Where the made-up platform's timer lies, as on QEMU's q35. */
-#define TIMER_HERTZ           3579545u    /**< What a timer counts per second, written out apart from the code. */
-#define TIMER_TICK            100000u     /**< A step of the made-up host's clock, 10 ms in units of 100 ns. */
-#define TIMER_ACCESS          1000u       /**< Nanoseconds each read of the made-up host costs. */
-#define TIMER_FAST_ACCESS     100u        /**< Nanoseconds a read costs where a wait's precision is checked. */
-#define TIMER_SLOW_ACCESS     10000u      /**< Nanoseconds a read costs on a slow bus, 40 µs a poll. */
-#define TIMER_MATRIX_ACCESS   4000u       /**< Nanoseconds a read costs where many timers are found in a row. */
+#define TIMER_PORT            0x608u   /**< Where the made-up platform's timer lies, as on QEMU's q35. */
+#define TIMER_HERTZ           3579545u /**< What a timer counts per second, written out apart from the code. */
+#define TIMER_TICK            100000u  /**< A step of the made-up host's clock, 10 ms in units of 100 ns. */
+#define TIMER_ACCESS          1000u    /**< Nanoseconds each read of the made-up host costs. */
+#define TIMER_FASTEST_ACCESS  50u    /**< Nanoseconds a read costs where 30 ms take more samples than the poll bound. */
+#define TIMER_FAST_ACCESS     100u   /**< Nanoseconds a read costs where a wait's precision is checked. */
+#define TIMER_SLOW_ACCESS     10000u /**< Nanoseconds a read costs on a slow bus, 40 µs a poll. */
+#define TIMER_MATRIX_ACCESS   4000u  /**< Nanoseconds a read costs where many timers are found in a row. */
 #define TIMER_MILLISECOND     1000000u    /**< A millisecond of the made-up machine, in nanoseconds. */
 #define TIMER_LOW_BITS        0x00FFFFFFu /**< The 24 bits every such timer runs. */
 #define TIMER_ALL_BITS        0xFFFFFFFFu /**< A timer of 32 bits, TMR_VAL_EXT set. */
@@ -28,6 +29,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_power_management_ti
 #define TIMER_UNIDLED         11250u   /**< The longest sleep that never idles: a tick and an eighth. */
 #define TIMER_REFERENCE_HERTZ 1193182u /**< What the made-up reference counts per second, as PIT channel 2 does. */
 #define TIMER_REFERENCE_RANGE 0xFFFFu  /**< Counts the made-up reference holds, 54.9 ms, as PIT channel 2 does. */
+#define TIMER_REFERENCE_BACK  1000u    /**< Counts a reference that goes back reads less. */
+#define TIMER_SHORT_PAUSE     60000u   /**< Nanoseconds of a pause that a sample's spread of 75 µs still holds. */
+#define TIMER_WIDE_PAUSE      100000u  /**< Nanoseconds of a pause just past what a sample's spread of 75 µs holds. */
 #define TIMER_STATE(name)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_##name
 
 /**
@@ -62,6 +66,7 @@ typedef struct TimerMachine {
     uint32_t reference_hertz;   /**< What its reference counts per second; 0 for a reference that is not there. */
     uint32_t reference_range;   /**< Counts the reference holds: reading more is spent. */
     bool reference_still;       /**< The reference holds still at 0. */
+    uint32_t reference_back_at; /**< The read of the reference from which it reads TIMER_REFERENCE_BACK less. */
     uint64_t reference_started; /**< The time its reference last started. */
     uint32_t reference_starts;  /**< Starts of the reference. */
     uint32_t reference_reads;   /**< Reads of the reference. */
@@ -202,7 +207,8 @@ static bool timer_pause_due(const TimerMachine_t *machine)
 
 /**
  * @brief The made-up host's reference: what it counted since it started, read after the pause that is
- *        due, if any; spent once it counted its range.
+ *        due, if any, and less TIMER_REFERENCE_BACK from reference_back_at on; spent once it counted its
+ *        range.
  */
 static uint32_t timer_reference_read(void *context)
 {
@@ -221,6 +227,8 @@ static uint32_t timer_reference_read(void *context)
         return 0u;
     if (counted >= machine->reference_range)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT;
+    if (machine->reference_back_at != TIMER_NO_EVENT && machine->reference_reads >= machine->reference_back_at)
+        counted -= TIMER_REFERENCE_BACK;
     return (uint32_t) counted;
 }
 
@@ -459,14 +467,16 @@ KERNEL_TEST(a_tick_seen_late_spoils_no_measurement)
 }
 
 /**
- * @brief A pause of the processor across a read of the reference, of 1 ms or 20 ms, at the measurement's
- *        first sample, in its middle or at its last, moves no measurement: the sample it spreads is taken
- *        again, and the rate stays a thousand thousandths within a read.
+ * @brief A pause of the processor across a read of the reference, of 100 µs, 1 ms or 20 ms, at the
+ *        measurement's first sample, in its middle or at its last, moves no measurement: the sample it
+ *        spreads past 75 µs is taken again, and the rate stays a thousand thousandths within a read. A pause of 60 µs
+ * at the first sample, which its spread still holds, moves the rate by half of it, the sample's count being taken
+ *        halfway between its two reads: 30 µs over 30 ms, a thousandth.
  */
 KERNEL_TEST(a_pause_of_the_processor_moves_no_measurement)
 {
     const uint64_t pauses_from[] = {0u, 15u * TIMER_MILLISECOND, 30u * TIMER_MILLISECOND};
-    const uint32_t pauses_last[] = {TIMER_MILLISECOND, 20u * TIMER_MILLISECOND};
+    const uint32_t pauses_last[] = {TIMER_WIDE_PAUSE, TIMER_MILLISECOND, 20u * TIMER_MILLISECOND};
     uint32_t paused = 0u;
     uint32_t moved = 0u;
     uint32_t lowest_rate = UINT32_MAX;
@@ -488,10 +498,19 @@ KERNEL_TEST(a_pause_of_the_processor_moves_no_measurement)
             highest_rate = (rate > highest_rate) ? rate : highest_rate;
         }
 
-    kernel_test_check(test, paused == 6u, "each of the six measurements paused once");
+    timer_open(0u);
+    timer_machine.pause_nanoseconds = TIMER_SHORT_PAUSE;
+
+    const uint8_t short_state = timer_find();
+    const uint32_t short_rate = timer_found.rate_per_mille;
+
+    kernel_test_check(test, paused == 9u, "each of the nine measurements paused once");
     kernel_test_check(test, moved == 0u, "and each left the timer usable, at its rate within a read");
+    kernel_test_check(test, short_state == TIMER_STATE(USABLE) && short_rate == 1001u && timer_machine.pauses == 1u,
+                      "a pause of 60 µs the first sample holds moves the rate by half of it, a thousandth");
     kernel_test_measure(test, "lowest_rate", lowest_rate);
     kernel_test_measure(test, "highest_rate", highest_rate);
+    kernel_test_measure(test, "short_rate", short_rate);
 }
 
 /**
@@ -580,6 +599,21 @@ KERNEL_TEST(a_reference_that_runs_out_is_started_once_more)
     kernel_test_check(test, not_there == TIMER_STATE(NO_REFERENCE) && not_there_reads == 0u,
                       "and so does a reference that is not there, unread");
     kernel_test_check(test, none == TIMER_STATE(NO_REFERENCE), "or a host that has none");
+}
+
+/**
+ * @brief A reference that goes back, by 1,000 counts from its thousandth read on, 7 ms into the measurement,
+ *        leaves the rate unchecked.
+ */
+KERNEL_TEST(a_reference_that_goes_back_leaves_the_rate_unchecked)
+{
+    timer_open(0u);
+    timer_machine.reference_back_at = 1000u;
+
+    const uint8_t state = timer_find();
+
+    kernel_test_check(test, state == TIMER_STATE(NO_REFERENCE) && timer_machine.reference_reads >= 1000u,
+                      "a reference that goes back: no reference");
 }
 
 /**
@@ -672,20 +706,26 @@ KERNEL_TEST(a_timer_that_holds_still_goes_back_or_runs_off_rate_is_not_usable)
 /**
  * @brief A clock that stands still leaves the timer usable, since its rate is not measured on the clock;
  *        a reference that stands still, read fast, leaves the rate unchecked once it was read
- *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS times; read
- *        slowly, it lets the timer count half a second first, and reads as a timer that ran ahead, as one
- *        decoded on 8 bits or a hundred times too fast does: the timer and the reference alone cannot tell
- *        them apart.
+ *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS times, while
+ *        one that moves, read so fast that its 30 ms take more samples than that, is measured; read
+ *        slowly, a still one lets the timer count half a second first, and reads as a timer that ran ahead,
+ *        as one decoded on 8 bits or a hundred times too fast does: the timer and the reference alone
+ *        cannot tell them apart. The one a hundred times too fast is found as soon as it counted that half
+ *        second, 5 ms of the machine's time, since a measurement whose first sample ran ahead goes no
+ *        further.
  */
 KERNEL_TEST(a_still_reference_reads_as_no_reference_or_ran_ahead_by_the_cost_of_a_read)
 {
     uint8_t still_clock;
     uint8_t still_reference;
     uint64_t still_nanoseconds;
+    uint8_t fast_moving;
+    uint32_t fast_moving_reads;
     uint8_t slow_still_reference;
     uint64_t slow_still_nanoseconds;
     uint8_t eight_bits;
     uint8_t hundredfold;
+    uint64_t hundredfold_nanoseconds;
 
     timer_open(0u);
     timer_machine.tick = 0u;
@@ -694,6 +734,10 @@ KERNEL_TEST(a_still_reference_reads_as_no_reference_or_ran_ahead_by_the_cost_of_
     timer_machine.reference_still = true;
     still_reference = timer_find();
     still_nanoseconds = timer_machine.nanoseconds;
+    timer_open(0u);
+    timer_machine.access = TIMER_FASTEST_ACCESS;
+    fast_moving = timer_find();
+    fast_moving_reads = timer_found.check_reads;
     timer_open(0u);
     timer_machine.reference_still = true;
     timer_machine.access = TIMER_SLOW_ACCESS;
@@ -705,11 +749,17 @@ KERNEL_TEST(a_still_reference_reads_as_no_reference_or_ran_ahead_by_the_cost_of_
     timer_open(0u);
     timer_machine.hertz = TIMER_HERTZ * 100ull;
     hundredfold = timer_find();
+    hundredfold_nanoseconds = timer_machine.nanoseconds;
 
     kernel_test_check(test, still_clock == TIMER_STATE(USABLE), "a still clock leaves the timer usable");
     kernel_test_check(test, still_reference == TIMER_STATE(NO_REFERENCE), "a still reference read fast: no reference");
     kernel_test_check(test, still_nanoseconds < 500ull * TIMER_MILLISECOND,
                       "found within the reads of the reference, before the timer counted half a second");
+    kernel_test_check(test,
+                      fast_moving == TIMER_STATE(USABLE) &&
+                          fast_moving_reads >
+                              6u * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS,
+                      "one that moves is measured, over more samples than that");
     kernel_test_check(test, slow_still_reference == TIMER_STATE(RAN_AHEAD), "a still reference read slowly: ran ahead");
     kernel_test_check(test,
                       slow_still_nanoseconds >= 500ull * TIMER_MILLISECOND &&
@@ -717,6 +767,8 @@ KERNEL_TEST(a_still_reference_reads_as_no_reference_or_ran_ahead_by_the_cost_of_
                       "once the timer counted half a second");
     kernel_test_check(test, eight_bits == TIMER_STATE(RAN_AHEAD), "a timer decoded on 8 bits ran ahead");
     kernel_test_check(test, hundredfold == TIMER_STATE(RAN_AHEAD), "a timer a hundred times too fast ran ahead");
+    kernel_test_check(test, hundredfold_nanoseconds < 6ull * TIMER_MILLISECOND,
+                      "as soon as it counted half a second, 5 ms of it");
 }
 
 /**

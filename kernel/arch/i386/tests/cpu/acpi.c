@@ -4,6 +4,7 @@
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/ioapic.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
@@ -20,6 +21,15 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_
 #define ACPI_TEST_SHORT_STALLS    10u    /**< Short stalls made in a row, 500 µs in all, well under a tick. */
 #define ACPI_TEST_SLEEPS          300u   /**< Sleep (1) one evaluation runs in a row: 300 ms requested. */
 #define ACPI_TEST_BUDGET_SLEEPS   30000u /**< Sleep (1) that fill the 30 s an evaluation may request. */
+#define ACPI_TEST_REFERENCE_HERTZ                                                                                      \
+    1193182u /**< What the machine host's reference, PIT channel 2, counts per second.                                 \
+              */
+#define ACPI_TEST_PAST_THE_REFERENCE                                                                                   \
+    60000u /**< Microseconds of a sleep past the 54.9 ms the reference counts before it is spent. */
+#define ACPI_TEST_REFERENCE_READS 100000u /**< Reads of the reference made at most until it moves. */
+#define ACPI_TEST_PORT_B          0x61u /**< System control port B: gates PIT channel 2 and sends it to the speaker. */
+#define ACPI_TEST_CHANNEL_2_GATE  0x01u /**< Port B bit 0: channel 2 counts. */
+#define ACPI_TEST_SPEAKER_DATA    0x02u /**< Port B bit 1: channel 2 drives the speaker. */
 
 /**
  * @brief Method SLP1 (1) { Store (Arg0, Local0) While (Local0) { Sleep (1) Decrement (Local0) } }.
@@ -264,6 +274,47 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
     kernel_test_check(test, (after - before) * hertz >= 10000000u, "the clock moved by at least a tick");
     kernel_test_check(test, (after - before) * hertz <= (uint64_t) ticks * 10000000u,
                       "and by no more than the ticks that passed around the sleep");
+}
+
+/**
+ * @brief The machine host's reference, PIT channel 2, counts 1,193,182 Hz up from its start, and reads as
+ *        spent after a sleep of 60 ms, past the 54.9 ms it holds; its start opens the channel's gate and
+ *        keeps it from the speaker, whatever port B held before.
+ */
+KERNEL_TEST(the_machine_host_reference_counts_up_then_reads_as_spent)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+
+    if (clock_get_tick_hz() == 0u)
+    {
+        kernel_test_skip(test, "no tick runs");
+        return;
+    }
+
+    asmutils_output_byte(
+        ACPI_TEST_PORT_B,
+        (uint8_t) ((asmutils_input_byte(ACPI_TEST_PORT_B) & ~ACPI_TEST_CHANNEL_2_GATE) | ACPI_TEST_SPEAKER_DATA));
+
+    const uint32_t hertz = host->reference_start(host->context);
+    const uint8_t port_b = asmutils_input_byte(ACPI_TEST_PORT_B);
+    const uint32_t first = host->reference_read(host->context);
+    uint32_t later = first;
+
+    for (uint32_t read = 0u; read < ACPI_TEST_REFERENCE_READS && later == first; ++read)
+        later = host->reference_read(host->context);
+    (void) host->sleep_microseconds(host->context, ACPI_TEST_PAST_THE_REFERENCE);
+
+    const uint32_t spent = host->reference_read(host->context);
+
+    kernel_test_check(test, hertz == ACPI_TEST_REFERENCE_HERTZ, "it counts 1,193,182 Hz");
+    kernel_test_check(test, (port_b & (ACPI_TEST_CHANNEL_2_GATE | ACPI_TEST_SPEAKER_DATA)) == ACPI_TEST_CHANNEL_2_GATE,
+                      "its gate opened, the speaker kept from it");
+    kernel_test_check(test,
+                      first != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT &&
+                          later != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT && later > first,
+                      "up from its start");
+    kernel_test_check(test, spent == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT,
+                      "and reads as spent 60 ms later");
 }
 
 /**
