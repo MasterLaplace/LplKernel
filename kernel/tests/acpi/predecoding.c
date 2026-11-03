@@ -541,14 +541,18 @@ KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
 }
 
 /**
- * @brief The loops of window W4 run from records as the loop runs them, under revision 2 and revision 1.
+ * @brief The loops of window W4 run from records as the loop runs them, under revision 2 and revision 1;
+ *        the control: the loop decodes its first turn, runs its second from its two records, which links
+ *        them, and its 998 others as a tight loop.
  */
 KERNEL_TEST(the_loop_of_window_w4_runs_from_records_as_the_loop_runs_it)
 {
-    predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 2u, "\\LOOP", PREDECODING_NO_ARGUMENT, true,
-                        "fold_revision_2");
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 2u, "\\LOOP",
+                                                     PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
+
     predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 1u, "\\LOOP", PREDECODING_NO_ARGUMENT, true,
                         "fold_revision_1");
+    kernel_test_check(test, run.tight_turns == 998u, "998 turns run as a tight loop");
 }
 
 /**
@@ -590,7 +594,8 @@ KERNEL_TEST(a_store_first_run_from_a_record_raises_the_values_peak)
 /**
  * @brief While whose predicate compares two leaves and whose body writes a local run as tight loops, as
  *        the loop runs them: an LNot over LGreater with an Add, a Decrement, a Store of an Add, under both
- *        widths. The control: MAIN returns 18.
+ *        widths. The control: MAIN returns 18, and each loop runs from its third turn as a tight loop, so
+ *        2, 10 and 1 turns.
  */
 KERNEL_TEST(while_with_a_one_statement_body_run_as_tight_loops_as_the_loop_runs_them)
 {
@@ -599,19 +604,21 @@ KERNEL_TEST(while_with_a_one_statement_body_run_as_tight_loops_as_the_loop_runs_
 
     predecoding_compare(test, predecoding_tight, sizeof(predecoding_tight), 1u, "\\MAIN", PREDECODING_NO_ARGUMENT, true,
                         "fold_revision_1");
-    kernel_test_check(test, run.result == 18u, "MAIN returns 18");
+    kernel_test_check(test, run.result == 18u && run.tight_turns == 13u, "MAIN returns 18, after 13 tight turns");
 }
 
 /**
  * @brief A tight loop whose body would divide by zero hands it back with the While's block open, and the
- *        loop fails as it fails without records: MODT's modulo by zero is handed back, once.
+ *        loop fails as it fails without records: MODT runs 2 tight turns, then its modulo by zero is
+ *        handed back, once.
  */
 KERNEL_TEST(a_tight_loop_hands_back_a_body_that_would_fail)
 {
     const PredecodingRun_t run = predecoding_compare(test, predecoding_tight_modulo, sizeof(predecoding_tight_modulo),
                                                      2u, "\\MODT", PREDECODING_NO_ARGUMENT, true, "fold");
 
-    kernel_test_check(test, run.declined == 1u, "the modulo by zero handed back");
+    kernel_test_check(test, run.tight_turns == 2u && run.declined == 1u,
+                      "two tight turns, then the modulo by zero handed back");
 }
 
 /**

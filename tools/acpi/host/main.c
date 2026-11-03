@@ -256,10 +256,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
     printf("aml run namespace lookups=%u probes=%u back_edges=%u\n", load->space.lookups, load->space.probes,
            evaluation->back_edges);
     printf("aml run predecoding records_run=%u built=%u flushes=%u records_peak=%u fused_comparisons=%u "
-           "declined_shape=%u declined_limit=%u declined_operand=%u declined_room=%u declined_operation=%u "
-           "declined_full=%u declined_target=%u\n",
+           "tight_turns=%u declined_shape=%u declined_limit=%u declined_operand=%u declined_room=%u "
+           "declined_operation=%u declined_full=%u declined_target=%u\n",
            load->predecoding.records_run, load->predecoding.built, load->predecoding.flushes,
-           load->predecoding.records_peak, load->predecoding.fused_comparisons,
+           load->predecoding.records_peak, load->predecoding.fused_comparisons, load->predecoding.tight_turns,
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_SHAPE],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_LIMIT],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_OPERAND],

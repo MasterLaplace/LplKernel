@@ -304,8 +304,8 @@ KERNEL_TEST(the_boot_line_decides_whether_loops_run_from_records)
  *        first) and constants of every width, and
  *        statements that hand records back, and While that run as tight loops, leave what the loop leaves
  *        when their loops run from records: each runs with records off, then on, under both integer
- *        widths, and both leave the same fold. The control: records ran, and were handed back, over the
- *        methods.
+ *        widths, and both leave the same fold. The control: records ran, and were handed back, and While
+ *        ran as tight loops, over the methods.
  */
 KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
 {
@@ -314,6 +314,7 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
     uint32_t written = 0u;
     uint64_t records_run = 0u;
     uint64_t declined = 0u;
+    uint64_t tight_turns = 0u;
 
     for (uint32_t program = 0u; program < PROGRAMS_COUNT; ++program)
     {
@@ -333,18 +334,23 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
         agree += (off.fold == on.fold && off.records_run == 0u) ? 1u : 0u;
         records_run += on.records_run;
         declined += on.declined;
+        tight_turns += on.tight_turns;
     }
     kernel_test_check(test, written > PROGRAMS_COUNT / 2u, "most methods fit their builder");
     kernel_test_check(test, agree == written, "every method leaves with records what it leaves without");
-    kernel_test_check(test, records_run != 0u && declined != 0u, "records ran, and were handed back");
+    kernel_test_check(test, records_run != 0u && declined != 0u && tight_turns != 0u,
+                      "records ran, and were handed back, and While ran as tight loops");
     kernel_test_measure(test, "methods", written);
     kernel_test_measure(test, "records_run", (uint32_t) records_run);
+    kernel_test_measure(test, "tight_turns", (uint32_t) tight_turns);
 }
 
 /**
  * @brief A tight loop that never ends is stopped past 2^20 back-edges (§6.1) as the loop stops it:
  *        ENDL, `Local0 = 0; While (Local0 < 1) { Local0 = 0 }`, leaves the same fold, its status
- *        included, with records and without.
+ *        included, with records and without. The control: its first turn is decoded, its
+ *        second runs from its two records, and every other one up to the failing back-edge, 2^20 - 1,
+ *        runs as a tight loop.
  */
 KERNEL_TEST(a_tight_loop_that_never_ends_is_stopped_as_the_loop_stops_it)
 {
@@ -359,5 +365,8 @@ KERNEL_TEST(a_tight_loop_that_never_ends_is_stopped_as_the_loop_stops_it)
         !predecoding_run(test, endless, sizeof(endless), 2u, "\\ENDL", PREDECODING_NO_ARGUMENT, true, &on))
         return;
     kernel_test_check(test, off.fold == on.fold, "the records leave what the loop leaves");
+    kernel_test_check(
+        test, on.tight_turns == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS - 1u,
+        "2^20 - 1 turns run as a tight loop");
     kernel_test_measure_hexadecimal(test, "fold", on.fold);
 }

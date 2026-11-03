@@ -338,10 +338,13 @@ under which the loop would do anything else (an operand that holds no Integer, a
 by zero, a target that holds an object or a reference, an Increment of what holds no Integer); when one holds, it
 changes nothing and the loop decodes and runs the statement. Any other statement keeps a record that hands it to the
 loop. The end of a construct a record opened is closed as the loop closes it, a While's taking its back-edge, counted
-as the loop counts it. A cache whose records, operators or constants are full is emptied whole, and the loop of the
-frame it filled under builds no record until the frame's loop changes (§6.1); a change of integer width empties it
-too. Table-level code never runs from records. A load runs none when the boot line holds `lpl.acpi.predecoding=off`
-(`test-acpi --predecoding off`), which the tests that compare the two runs use (§8.1).
+as the loop counts it. A While whose predicate compares two leaves and whose body is one statement a record writes
+runs as a tight loop once its two records are linked: predicate, body and back-edge, turn after turn, its block never
+opened; when the body hands its statement back, the block is opened as the loop opens it. A cache whose records,
+operators or constants are full is emptied whole, and the loop of the frame it filled under builds no record until
+the frame's loop changes (§6.1); a change of integer width empties it too. Table-level code never runs from records.
+A load runs none when the boot line holds `lpl.acpi.predecoding=off` (`test-acpi --predecoding off`), which the tests
+that compare the two runs use (§8.1).
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on

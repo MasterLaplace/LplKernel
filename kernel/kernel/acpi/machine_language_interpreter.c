@@ -4397,6 +4397,109 @@ static bool machine_language_record_branch(MachineLanguageLoad_t *load, MachineL
 }
 
 /**
+ * @brief The record of a While's body when the While runs as a tight loop (§3.6): its predicate compares
+ *        two leaves, and its body is one statement whose record, found already, writes a local or an
+ *        argument, fits the room left, and ends where the While does; NULL otherwise.
+ */
+static const MachineLanguageRecord_t *machine_language_tight_body(const MachineLanguageEvaluation_t *evaluation,
+                                                                  const MachineLanguagePredecoding_t *cache,
+                                                                  const MachineLanguageRecord_t *loop,
+                                                                  uint32_t value_room, uint32_t operator_room)
+{
+    const MachineLanguageRecordNode_t *node = &cache->nodes[loop->first_node];
+    const MachineLanguageRecord_t *body = NULL;
+
+    if (loop->node_count != 1u || loop->next == 0u || loop->next > cache->record_count ||
+        (node->opcode != MACHINE_LANGUAGE_OPCODE(LOGICAL_EQUAL) &&
+         node->opcode != MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS) &&
+         node->opcode != MACHINE_LANGUAGE_OPCODE(LOGICAL_GREATER)) ||
+        node->operands[0].kind == MACHINE_LANGUAGE_RECORD_OPERAND(RESULT) ||
+        node->operands[1].kind == MACHINE_LANGUAGE_RECORD_OPERAND(RESULT) ||
+        evaluation->block_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS)
+        return NULL;
+    body = &cache->records[loop->next - 1u];
+    if (body->pc != loop->after || body->table != loop->table || body->after != loop->end || body->limit != loop->end ||
+        body->shape < MACHINE_LANGUAGE_RECORD(STORE) || body->values_peak > value_room ||
+        body->operators_peak > operator_room)
+        return NULL;
+    return body;
+}
+
+/**
+ * @brief Runs a While that machine_language_tight_body accepts, turn after turn as its two records would
+ *        run: the predicate, the body, the back-edge, no block opened; the frame is left as the records
+ *        would leave it, the While's block open when its body is handed back.
+ *
+ * @param load          The load.
+ * @param frame         The running frame, at the While.
+ * @param loop          The While's record.
+ * @param body          Its body's record.
+ * @param inout_values  The most values the records run so far held, raised by the two records.
+ * @param inout_ran     Set when a record ran.
+ * @param out_status    Receives what a back-edge past the evaluation's budget failed with.
+ * @return true when the predicate failed, the frame past the While, or a back-edge failed; false, the
+ *         reason counted, when a record handed its statement back.
+ */
+static bool machine_language_run_tight_while(MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                             const MachineLanguageRecord_t *loop, const MachineLanguageRecord_t *body,
+                                             uint32_t *inout_values, bool *inout_ran,
+                                             MachineLanguageStatus_t *out_status)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguagePredecoding_t *cache = &load->predecoding;
+    const MachineLanguageRecordNode_t *node = &cache->nodes[loop->first_node];
+    const bool negated = node->negated != 0u;
+    uint8_t reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
+    uint32_t turns = 0u;
+    uint32_t ran = 0u;
+    uint64_t left = 0u;
+    uint64_t right = 0u;
+    bool goes_on = true;
+
+    for (;;)
+    {
+        if (!machine_language_record_operand(load, frame, &node->operands[0], NULL, &left) ||
+            !machine_language_record_operand(load, frame, &node->operands[1], NULL, &right))
+        {
+            ++cache->declined[MACHINE_LANGUAGE_DECLINED(OPERAND)];
+            frame->pc = loop->pc;
+            goes_on = false;
+            break;
+        }
+        ++ran;
+        if (machine_language_integers_compare(node->opcode, left, right) == negated)
+        {
+            frame->pc = loop->end;
+            break;
+        }
+        if (!machine_language_record_write(load, frame, body, &reason))
+        {
+            ++cache->declined[reason];
+            *out_status = machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_WHILE, loop->pc, loop->end,
+                                                machine_language_block(evaluation)->scope);
+            frame->pc = loop->after;
+            goes_on = false;
+            break;
+        }
+        ++turns;
+        *out_status = machine_language_count_iteration(evaluation);
+        if (*out_status != MACHINE_LANGUAGE_OK)
+        {
+            frame->pc = loop->pc;
+            break;
+        }
+    }
+    cache->records_run += ran + turns;
+    cache->tight_turns += turns;
+    *inout_ran = *inout_ran || ran != 0u;
+    if (ran != 0u && loop->values_peak > *inout_values)
+        *inout_values = loop->values_peak;
+    if (turns != 0u && body->values_peak > *inout_values)
+        *inout_values = body->values_peak;
+    return goes_on;
+}
+
+/**
  * @brief Runs statements of the running frame from records while its pc lies in the While of the frame
  *        known to loop (§3.6): each record runs its statement as the loop would, or hands it back, nothing
  *        changed; a construct's end the records reach is closed as the loop closes it, a While's taking
@@ -4453,6 +4556,7 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
             break;
 
         const MachineLanguageRecord_t *record = machine_language_record_at(load, frame, &block, &index, previous);
+        const MachineLanguageRecord_t *body = NULL;
 
         if (record == NULL)
             break;
@@ -4462,6 +4566,16 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
             ++cache->declined[(record->shape == MACHINE_LANGUAGE_RECORD(GENERAL)) ? MACHINE_LANGUAGE_DECLINED(SHAPE) :
                                                                                     MACHINE_LANGUAGE_DECLINED(ROOM)];
             break;
+        }
+        if (record->shape == MACHINE_LANGUAGE_RECORD(WHILE))
+            body = machine_language_tight_body(evaluation, cache, record, value_room, operator_room);
+        if (body != NULL)
+        {
+            if (!machine_language_run_tight_while(load, frame, record, body, &values_peak, out_ran, &status))
+                break;
+            previous = 0u;
+            index = 0u;
+            continue;
         }
         if (record->shape == MACHINE_LANGUAGE_RECORD(BREAK))
         {
