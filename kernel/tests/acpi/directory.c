@@ -42,6 +42,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_directory, KERNEL_T
 #define MADE_UP_FIRMWARE_FADT_FLAGS                     112u           /**< Offset of a FADT's Flags field. */
 #define MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL     184u           /**< Offset of a FADT's X_PM1b_CNT_BLK field. */
 #define MADE_UP_FIRMWARE_RSDP_VERSION_1                 20u /**< Bytes the first checksum of a root pointer covers. */
+#define MADE_UP_FIRMWARE_SELF_ADDRESS                   8u  /**< Where SELF's region address lies in its AML. */
+#define MADE_UP_FIRMWARE_SELF_BOUND                     42u /**< Where the bound of SELF's While lies in its AML. */
 
 /**
  * @brief A made-up firmware: every table in one page, which a simulated host serves.
@@ -50,6 +52,18 @@ typedef struct MadeUpFirmware {
     uint8_t *page;     /**< The page, as the test addresses it. */
     uint32_t physical; /**< Where the simulated host serves it. */
 } MadeUpFirmware_t;
+
+/**
+ * @brief A DSDT whose method rewrites its own bytes: the field BND_ over the bound of SELF's While, a byte
+ *        of a SystemMemory region whose address the test writes at MADE_UP_FIRMWARE_SELF_ADDRESS, and SELF:
+ *        `Local0 = 0; While (Local0 < 0x10) { Local0++; If (Local0 == 2) { BND_ = 4 } }; Return (Local0)`.
+ */
+static const uint8_t made_up_firmware_self[] = {
+    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu,
+    0x81u, 0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'B',   'N',   'D',   '_',   0x08u, 0x14u, 0x20u, 'S',
+    'E',   'L',   'F',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u,
+    0xA0u, 0x0Cu, 0x93u, 0x60u, 0x0Au, 0x02u, 0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
+};
 
 static uint8_t made_up_firmware_page[MADE_UP_FIRMWARE_PAGE_BYTES];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t made_up_firmware_host;
@@ -653,4 +667,57 @@ KERNEL_TEST(a_load_of_the_directory_counts_each_definition_block_whose_checksum_
         advanced_configuration_and_power_interface_machine_language_close(&load);
         made_up_firmware_release(test);
     }
+}
+
+/**
+ * @brief A write to the bytes of a table the load reads in place is counted, and empties the records built
+ *        from them (§3.6, §5.3): SELF's While reads its bound, 0x10, in the DSDT, and at its second turn
+ *        writes 4 over it through a SystemMemory field; the write is counted once, with records and
+ *        without, the records, which the loop ran from by then, are emptied once, and SELF returns the
+ *        same both ways. The simulated host keeps the pages a region writes apart from the tables it serves,
+ *        so SELF counts to 0x10 either way.
+ */
+KERNEL_TEST(a_write_to_a_table_read_in_place_empties_the_records_built_from_it)
+{
+    static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+    MadeUpFirmware_t firmware;
+    const uint32_t dsdt = MADE_UP_FIRMWARE_DSDT_64_OFFSET;
+    uint64_t results[2] = {0u, 0u};
+    uint32_t writes[2] = {0u, 0u};
+    uint32_t flushes[2] = {0u, 0u};
+
+    made_up_firmware_open(&firmware);
+    for (uint32_t predecodes = 0u; predecodes < 2u; ++predecodes)
+    {
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result = {0};
+        const uint32_t bound = firmware.physical + dsdt + MADE_UP_FIRMWARE_HEADER_BYTES + MADE_UP_FIRMWARE_SELF_BOUND;
+
+        made_up_firmware_write(&firmware, 2u, firmware.physical + dsdt);
+        made_up_firmware_table(&firmware, dsdt, "DSDT", MADE_UP_FIRMWARE_HEADER_BYTES + sizeof(made_up_firmware_self),
+                               "SIXTY4  ");
+        memcpy(firmware.page + dsdt + MADE_UP_FIRMWARE_HEADER_BYTES, made_up_firmware_self,
+               sizeof(made_up_firmware_self));
+        memcpy(firmware.page + dsdt + MADE_UP_FIRMWARE_HEADER_BYTES + MADE_UP_FIRMWARE_SELF_ADDRESS, &bound,
+               sizeof(bound));
+        made_up_firmware_seal_table(&firmware, dsdt);
+        if (!kernel_test_check(test, made_up_firmware_read(), "the directory is read") ||
+            !kernel_test_check(test,
+                               advanced_configuration_and_power_interface_machine_language_open(
+                                   &load, &made_up_firmware_host.host, 1024u, 1024u * 1024u),
+                               "the namespace opens"))
+            return;
+        load.predecodes_loops = predecodes != 0u;
+        advanced_configuration_and_power_interface_machine_language_load_directory(&load, &made_up_firmware_directory);
+        advanced_configuration_and_power_interface_machine_language_evaluate(&load, "\\SELF", NULL, 0u, &result);
+        results[predecodes] = result.payload;
+        writes[predecodes] = load.regions.table_writes;
+        flushes[predecodes] = load.predecoding.flushes;
+        advanced_configuration_and_power_interface_machine_language_close(&load);
+        made_up_firmware_release(test);
+    }
+    kernel_test_check(test, results[0] == results[1], "SELF returns the same with records and without");
+    kernel_test_check(test, writes[0] == 1u && writes[1] == 1u, "the write to the DSDT's bytes is counted once");
+    kernel_test_check(test, flushes[0] == 0u && flushes[1] == 1u, "it empties the records, once they are built");
+    kernel_test_measure(test, "result_without_records", (uint32_t) results[0]);
+    kernel_test_measure(test, "result_with_records", (uint32_t) results[1]);
 }

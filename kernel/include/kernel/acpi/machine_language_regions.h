@@ -77,6 +77,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t region_lengths_rounded;  /**< Accesses past a region's length but within it rounded up to the access
                                            width. */
     uint32_t field_accesses_peak;     /**< Most field accesses one table load made (§6.1). */
+    uint32_t table_writes;            /**< Memory writes that landed on the bytes of a definition block the load
+                                           reads in place: each empties the pre-decoded records (§3.6). */
     uint32_t space_unsupported[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES]; /**< Accesses
                                                                                                         refused, per
                                                                                                         space. */
