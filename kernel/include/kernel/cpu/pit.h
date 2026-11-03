@@ -25,6 +25,7 @@
 
 #include <kernel/lib/asmutils.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -38,5 +39,22 @@ extern void programmable_interval_timer_initialize(uint32_t target_frequency_hz)
  * @brief Return currently programmed PIT channel 0 frequency in Hertz.
  */
 extern uint32_t programmable_interval_timer_get_frequency_hz(void);
+
+/**
+ * @brief Starts PIT channel 2 counting down from 65,535, in mode 0, its gate opened and its output kept
+ *        from the speaker, as Linux does to check a clock against it.
+ *
+ * @return The rate it counts at, 1,193,182 Hz; its count lasts 54.9 ms.
+ */
+extern uint32_t programmable_interval_timer_start_channel_2(void);
+
+/**
+ * @brief Reads what PIT channel 2 counted since programmable_interval_timer_start_channel_2, from its
+ *        latched count, with no interrupt involved.
+ *
+ * @param out_counted What it counted, valid when the count has not run out.
+ * @return Whether the count has not run out: its output, read after the count, is still low.
+ */
+extern bool programmable_interval_timer_read_channel_2(uint32_t *out_counted);
 
 #endif /* KERNEL_CPU_PROGRAMMABLE_INTERVAL_TIMER_H */

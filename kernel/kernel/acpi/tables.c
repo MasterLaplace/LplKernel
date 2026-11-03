@@ -98,15 +98,21 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_TIMER_ORDERED_TRIES  16u   /**< Triples of reads made before the middle one is kept out of order. */
 #define ACPI_TIMER_RATE_EXACT     1000u /**< The rate of a timer that counts 3.579545 MHz, in thousandths. */
 #define ACPI_TIMER_RATE_TOLERANCE 50u   /**< Thousandths the rate may stray from it: 5 %, as Linux allows. */
-#define ACPI_TIMER_RATE_WINDOW    800000u /**< The host's clock a rate is measured over, at least: 80 ms. */
-#define ACPI_TIMER_RATE_ATTEMPTS  2u      /**< Rate measurements made at most; the first within tolerance holds. */
+#define ACPI_TIMER_RATE_WINDOW_MICROSECONDS                                                                            \
+    30000u /**< What the host's reference counts a rate over, at least: 30 ms, as Linux counts PIT channel 2. */
+#define ACPI_TIMER_RATE_ATTEMPTS 2u /**< Rate measurements made at most: the second when the reference ran out. */
+#define ACPI_TIMER_SAMPLE_SPREAD                                                                                       \
+    268u /**< Counts the two reads of the timer around a read of the reference may lie apart, at most: 75 µs, a       \
+            quarter of a percent of the window, so that two samples move a measurement by that much at most. */
+#define ACPI_TIMER_REFERENCE_RAN_OUT                                                                                   \
+    0xFFu /**< What a measurement gives when the reference passed its range first: measured again, then                \
+             NO_REFERENCE. */
 #define ACPI_TIMER_REFERENCE_COUNTS                                                                                    \
     (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ /                                         \
-     2u) /**< Counts the timer makes at most while a step of the host's clock is awaited: half a second. */
-#define ACPI_HUNDRED_NANOSECONDS_PER_SECOND      10000000u /**< Units of the host's clock in a second. */
-#define ACPI_MICROSECONDS_PER_SECOND             1000000u  /**< Microseconds in a second. */
-#define ACPI_MICROSECONDS_PER_MILLISECOND        1000u     /**< Microseconds in a millisecond. */
-#define ACPI_HUNDRED_NANOSECONDS_PER_MICROSECOND 10u       /**< Units of the host's clock in a microsecond. */
+     2u) /**< Counts the timer makes at most while a sample of the host's reference is awaited: half a second. */
+#define ACPI_MICROSECONDS_PER_SECOND             1000000u /**< Microseconds in a second. */
+#define ACPI_MICROSECONDS_PER_MILLISECOND        1000u    /**< Microseconds in a millisecond. */
+#define ACPI_HUNDRED_NANOSECONDS_PER_MICROSECOND 10u      /**< Units of the host's clock in a microsecond. */
 #define ACPI_TIMER_IDLE_SLACK_SHIFT                                                                                    \
     3u /**< A sleep idles while more than a tick and an eighth of one remain, the eighth this shift of the tick: it    \
           covers the 5 % the timer's rate may stray from the tick's, and an interrupt taken late. */
@@ -713,77 +719,120 @@ static uint8_t acpi_timer_check_moves(const AdvancedConfigurationAndPowerInterfa
 }
 
 /**
- * @brief Reads the host's clock, and the timer after each read, until the clock reads other than
- *        @p from.
+ * @brief Reads the timer, the host's reference, then the timer again.
  *
- * @param out_clock What the clock read once it moved.
- * @param out_count The timer read just after.
- * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE once the clock moved;
- *         RAN_AHEAD when the timer counted ACPI_TIMER_REFERENCE_COUNTS first; NO_REFERENCE when the clock
- *         did not move within ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS
- *         reads.
+ * @param out_reference What the reference counted since it started, or
+ *                      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT.
+ * @param out_count     The timer's count halfway between its two reads.
+ * @return Whether those two reads lie within ACPI_TIMER_SAMPLE_SPREAD counts of each other: the reference
+ *         was then read within half of it of @p out_count.
  */
-static uint8_t acpi_timer_await_step(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
-                                     AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer, uint64_t from,
-                                     uint64_t *out_clock, uint32_t *out_count)
+static bool acpi_timer_sample(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                              AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer,
+                              uint32_t *out_reference, uint32_t *out_count)
 {
-    uint32_t last = acpi_timer_read(host, timer->port, &timer->check_reads);
-    uint32_t counted = 0u;
+    const uint32_t before = acpi_timer_read(host, timer->port, &timer->check_reads);
 
-    for (uint32_t polls = 0u; polls < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS;
-         ++polls)
-    {
-        const uint64_t clock = host->clock_100ns(host->context);
-        const uint32_t count = acpi_timer_read(host, timer->port, &timer->check_reads);
+    *out_reference = host->reference_read(host->context);
 
-        if (clock != from)
-        {
-            *out_clock = clock;
-            *out_count = count;
-            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
-        }
-        counted += (count - last) & ACPI_TIMER_BITS;
-        last = count;
-        if (counted >= ACPI_TIMER_REFERENCE_COUNTS)
-            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD;
-    }
-    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
+    const uint32_t spread = (acpi_timer_read(host, timer->port, &timer->check_reads) - before) & ACPI_TIMER_BITS;
+
+    *out_count = (before + spread / 2u) & ACPI_TIMER_BITS;
+    return spread <= ACPI_TIMER_SAMPLE_SPREAD;
 }
 
 /**
- * @brief Counts the timer from one step of the host's clock to the first step at least
- *        ACPI_TIMER_RATE_WINDOW later, against what 3.579545 MHz counts in that time: a step seen 2 ms
- *        late moves the measurement by 2.5 %.
+ * @brief Samples the timer and the host's reference until a sample whose spread holds finds the
+ *        reference at @p target or past it.
+ *
+ * @param from          What the reference counted at the sample before, which it does not go back from.
+ * @param target        What it must have counted.
+ * @param out_reference What it had counted at that sample.
+ * @param out_count     The timer's count then.
+ * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE at that sample;
+ *         ACPI_TIMER_REFERENCE_RAN_OUT when the reference passed its range first; NO_REFERENCE when it went
+ *         back, or held still for
+ *         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS samples or while
+ *         the timer counted ACPI_TIMER_REFERENCE_COUNTS; RAN_AHEAD when the timer counted that much while the
+ *         reference moved.
+ */
+static uint8_t acpi_timer_await_reference(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                          AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer,
+                                          uint32_t from, uint32_t target, uint32_t *out_reference, uint32_t *out_count)
+{
+    uint32_t last_reference = from;
+    uint32_t last_count = acpi_timer_read(host, timer->port, &timer->check_reads);
+    uint32_t counted = 0u;
+    uint32_t still = 0u;
+    bool moved = false;
+
+    for (;;)
+    {
+        uint32_t reference = 0u;
+        uint32_t count = 0u;
+        const bool spread_holds = acpi_timer_sample(host, timer, &reference, &count);
+
+        if (reference == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT)
+            return ACPI_TIMER_REFERENCE_RAN_OUT;
+        if (reference < last_reference)
+            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
+        if (spread_holds && reference >= target)
+        {
+            *out_reference = reference;
+            *out_count = count;
+            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
+        }
+        still = (reference == last_reference) ? still + 1u : 0u;
+        moved = moved || reference != from;
+        counted += (count - last_count) & ACPI_TIMER_BITS;
+        if (still == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS)
+            return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
+        if (counted >= ACPI_TIMER_REFERENCE_COUNTS)
+            return moved ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD :
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
+        last_reference = reference;
+        last_count = count;
+    }
+}
+
+/**
+ * @brief Counts the timer from a sample of the host's reference to the first sample
+ *        ACPI_TIMER_RATE_WINDOW_MICROSECONDS of the reference later, against what 3.579545 MHz counts in
+ *        that time: the spreads of the two samples move it by a quarter of a percent at most, and an
+ *        interrupt taken late, the processor taken away or the firmware in SMM between them by nothing,
+ *        since both counts run on.
  *
  * @return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE within
- *         ACPI_TIMER_RATE_TOLERANCE of ACPI_TIMER_RATE_EXACT, WRONG_RATE past it, the state
- *         acpi_timer_await_step gives when the clock does not step, and NO_REFERENCE when it goes back; the
+ *         ACPI_TIMER_RATE_TOLERANCE of ACPI_TIMER_RATE_EXACT, WRONG_RATE past it, NO_REFERENCE when the host
+ *         has no reference, and otherwise what acpi_timer_await_reference gives when it finds no sample; the
  *         ratio in thousandths, rounded, goes to the timer's rate.
  */
 static uint8_t acpi_timer_measure_rate(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
                                        AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer)
 {
-    uint64_t start_clock = 0u;
-    uint64_t clock = 0u;
+    const uint32_t hertz = (host->reference_start != NULL) ? host->reference_start(host->context) : 0u;
+    const uint32_t window =
+        (uint32_t) (((uint64_t) hertz * ACPI_TIMER_RATE_WINDOW_MICROSECONDS) / ACPI_MICROSECONDS_PER_SECOND);
+    uint32_t start_reference = 0u;
     uint32_t start_count = 0u;
+    uint32_t reference = 0u;
     uint32_t count = 0u;
-    uint8_t state = acpi_timer_await_step(host, timer, host->clock_100ns(host->context), &start_clock, &start_count);
 
-    clock = start_clock;
-    while (state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE && clock >= start_clock &&
-           clock - start_clock < ACPI_TIMER_RATE_WINDOW)
-        state = acpi_timer_await_step(host, timer, clock, &clock, &count);
-    if (state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
-        return state;
-    if (clock < start_clock)
+    if (window == 0u)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
 
-    const uint64_t expected =
-        ((clock - start_clock) * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ) /
-        ACPI_HUNDRED_NANOSECONDS_PER_SECOND;
-    const uint64_t counted = (count - start_count) & ACPI_TIMER_BITS;
+    uint8_t state = acpi_timer_await_reference(host, timer, 0u, 0u, &start_reference, &start_count);
 
-    timer->rate_per_mille = (uint32_t) ((counted * ACPI_TIMER_RATE_EXACT + expected / 2u) / expected);
+    if (state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        state = acpi_timer_await_reference(host, timer, start_reference, start_reference + window, &reference, &count);
+    if (state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
+        return state;
+
+    const uint64_t counted = (count - start_count) & ACPI_TIMER_BITS;
+    const uint64_t expected = (uint64_t) (reference - start_reference) *
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_HERTZ;
+
+    timer->rate_per_mille = (uint32_t) ((counted * ACPI_TIMER_RATE_EXACT * hertz + expected / 2u) / expected);
     if (timer->rate_per_mille < ACPI_TIMER_RATE_EXACT - ACPI_TIMER_RATE_TOLERANCE ||
         timer->rate_per_mille > ACPI_TIMER_RATE_EXACT + ACPI_TIMER_RATE_TOLERANCE)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE;
@@ -791,22 +840,20 @@ static uint8_t acpi_timer_measure_rate(const AdvancedConfigurationAndPowerInterf
 }
 
 /**
- * @brief Measures the timer's rate up to ACPI_TIMER_RATE_ATTEMPTS times, until a measurement lies within
- *        the tolerance: a step of the clock seen late, the host descheduled or the firmware in SMM, spoils
- *        one measurement, not the timer.
+ * @brief Measures the timer's rate against the host's reference, a second time only when the reference
+ *        ran out of its range during the first, the processor kept from it that long.
  *
- * @return The state of the first measurement within the tolerance, or the first that is not a rate, or
- *         WRONG_RATE with the last rate.
+ * @return The state of the last measurement, NO_REFERENCE when its reference ran out too.
  */
 static uint8_t acpi_timer_check_rate(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
                                      AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer)
 {
-    uint8_t state = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE;
+    uint8_t state = ACPI_TIMER_REFERENCE_RAN_OUT;
 
-    for (uint32_t attempt = 0u; attempt < ACPI_TIMER_RATE_ATTEMPTS &&
-                                state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE;
-         ++attempt)
+    for (uint32_t attempt = 0u; attempt < ACPI_TIMER_RATE_ATTEMPTS && state == ACPI_TIMER_REFERENCE_RAN_OUT; ++attempt)
         state = acpi_timer_measure_rate(host, timer);
+    if (state == ACPI_TIMER_REFERENCE_RAN_OUT)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE;
     return state;
 }
 

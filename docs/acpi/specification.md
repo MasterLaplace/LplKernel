@@ -168,6 +168,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor, one access of the width asked; offsets from 0x100 and segments other than 0 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
+| `reference_start()` → its rate in hertz, or 0; `reference_read()` → what it counted since, or spent past its range: a count no interrupt drives, which the power management timer's rate is measured against (§3.9) | PIT channel 2 from 65,535 in mode 0, its latched count read by polling, spent once its output rises, 54.9 ms later | none; the timer's tests give their own |
 | `sleep_microseconds(u32)` → the microseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, on the ACPI power management timer the boot checked (§3.9), `Sleep` halts while more than a tick and an eighth remain, the eighth for the 5 % the timer's rate may stray and an interrupt taken late, then spins the rest on the timer, and `Stall` spins on it; without one, `Sleep` halts until a deadline on the tick and `Stall` spins on the tick, each rounded up to a whole tick; each returns what it waited; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
@@ -461,14 +462,18 @@ step 7 only when step 7's walk still reaches that processor.
     from two equal ones out of order too, at most 16 times; Linux reads so only on the chipsets it lists, unbounded;
   - only its 24 low bits count, whatever TMR_VAL_EXT says; it must move forward ten times, each within 10,000 reads,
     the ten checks back to back, where Linux waits `udelay(100 * j)` between them;
-  - from one step of the kernel's clock to the first at least 80 ms later, eight ticks of IRQ0, it must count
-    3.579545 MHz within 5 %, in one of two measurements; Linux measures 30 ms of PIT channel 2 by polling it, once.
-    An IRQ0 edge seen 2 ms late moves a measurement by 2.5 %: an exact timer is still kept, and one 8 % off still
-    refused, where 30 ms or 60 ms would let it through.
+  - over 30 ms of the host's reference, a count no interrupt drives (§3.3), it must count 3.579545 MHz within 5 %.
+    Each end of the measurement is a sample, the timer read on either side of a read of the reference, kept when
+    the two reads lie within 75 µs and taken again otherwise: the samples move the measurement by 0.25 % at most,
+    and nothing between them moves it, so one 6 % off is refused and an exact timer kept, unless the processor is
+    kept away past the reference's range in both measurements. Linux counts the same 30 ms of PIT channel 2, but waits for its output to rise, which a processor taken
+    away at that moment sees late. The kernel's clock is no reference: its tick is an interrupt, which a busy host
+    delivers milliseconds late without any read showing it. A measurement whose reference runs out of its range, the
+    processor kept away that long, is made once more.
 
-  A clock that does not step within 65,536 reads leaves the timer unused (`no-reference`), and so does a timer that
-  counts half a second before it steps (`ran-ahead`): a still clock whose reads, with the timer's, take more than
-  about 7.6 µs a poll reads as `ran-ahead` too, since these two sources cannot tell it from a timer far too fast.
+  A host without a reference, or one that does not move within 65,536 samples or while the timer counts half a
+  second, goes back, or runs out in both measurements, leaves the timer unused (`no-reference`), and so does a
+  timer that counts half a second while the reference moves short of 30 ms (`ran-ahead`).
   Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which
   is going back, is `derailed`, and so is one that stands still while the halts of a `Sleep` see the tick step
   twice: the wait finishes on the tick, and so do the later ones. A pause between two reads of

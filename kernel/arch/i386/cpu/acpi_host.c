@@ -4,6 +4,7 @@
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/pci.h>
+#include <kernel/cpu/pit.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
@@ -241,6 +242,22 @@ static uint64_t acpi_host_clock_100ns(void *context)
     return ((wrapped_ticks + ticks) * 10000000u) / hertz;
 }
 
+static uint32_t acpi_host_reference_start(void *context)
+{
+    (void) context;
+    return programmable_interval_timer_start_channel_2();
+}
+
+static uint32_t acpi_host_reference_read(void *context)
+{
+    uint32_t counted = 0u;
+
+    (void) context;
+    if (!programmable_interval_timer_read_channel_2(&counted))
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT;
+    return counted;
+}
+
 static void *acpi_host_allocate_pages(void *context, uint32_t count)
 {
     (void) context;
@@ -273,6 +290,8 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .sleep_microseconds = acpi_host_sleep_microseconds,
     .stall_microseconds = acpi_host_stall_microseconds,
     .clock_100ns = acpi_host_clock_100ns,
+    .reference_start = acpi_host_reference_start,
+    .reference_read = acpi_host_reference_read,
     .allocate_pages = acpi_host_allocate_pages,
     .release_pages = acpi_host_release_pages,
 };

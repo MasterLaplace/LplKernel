@@ -66,7 +66,7 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS                                  \
     10000u /**< Reads within which the power management timer must move, as Linux's ACPI_PM_READ_CHECKS. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS                              \
-    0x00010000u /**< Reads of the host's clock within which it must step once while the timer's rate is measured. */
+    0x00010000u /**< Samples within which the host's reference must move while the timer's rate is measured. */
 
 typedef struct __attribute__((packed)) {
     char signature[8];
@@ -205,23 +205,24 @@ typedef enum AdvancedConfigurationAndPowerInterfacePowerManagementTimerState {
                                                                                              for every check. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_INCONSISTENT = 3, /**< It went back, other than
                                                                                              by a wrap. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE = 4, /**< The host's clock did not
-                                                                                             step within 65,536 reads,
-                                                                                             or went back, so its rate
-                                                                                             went unchecked. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_NO_REFERENCE = 4, /**< The host has no
+                                                                                             reference, or it did not
+                                                                                             move within 65,536
+                                                                                             samples or while the
+                                                                                             timer counted half a
+                                                                                             second, went back, or
+                                                                                             ran out in both
+                                                                                             measurements, so the
+                                                                                             timer's rate went
+                                                                                             unchecked. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_RAN_AHEAD = 5,    /**< It counted half a second
-                                                                                             before the host's clock
-                                                                                             stepped: it runs far too
-                                                                                             fast or jumps, or the clock
-                                                                                             stands still and a read
-                                                                                             of both takes more than
-                                                                                             about 7.6 µs, which these
-                                                                                             two sources cannot tell
-                                                                                             apart. */
+                                                                                             while the host's
+                                                                                             reference moved, short
+                                                                                             of 30 ms: it runs far
+                                                                                             too fast or jumps. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_WRONG_RATE = 6,   /**< It ran more than 5 % away
                                                                                              from 3.579545 MHz against
-                                                                                             the host's clock, at every
-                                                                                             measurement. */
+                                                                                             the host's reference. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE = 7,       /**< Every check held. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_DERAILED = 8,     /**< Usable, then a wait saw it
                                                                                              stand still or go back:
@@ -235,7 +236,7 @@ typedef enum AdvancedConfigurationAndPowerInterfacePowerManagementTimerState {
 typedef struct AdvancedConfigurationAndPowerInterfacePowerManagementTimer {
     uint8_t state;               /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_* state. */
     uint16_t port;               /**< Its I/O port, or 0 when the FADT gives none there. */
-    uint32_t rate_per_mille;     /**< The counts it made over 80 ms of the host's clock, against the counts
+    uint32_t rate_per_mille;     /**< The counts it made over 30 ms of the host's reference, against the counts
                                       3.579545 MHz makes, in thousandths; 0 when not measured. */
     uint32_t check_reads;        /**< Reads of its port the checks made. */
     uint32_t check_microseconds; /**< Microseconds the checks took, as the host's clock counts them. */
@@ -598,10 +599,15 @@ extern const char *advanced_configuration_and_power_interface_mode_outcome_name(
  *          the chipsets that latch the counter badly; only its 24 low bits are counted, which every
  *          such timer runs, whatever TMR_VAL_EXT says. Then, ten times, it must move within
  *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS reads, forward
- *          or by a wrap. Last, from one step of the host's clock to the first at least 80 ms later, it
- *          must count 3.579545 MHz within 5 %, in one of two measurements; each step is awaited within
- *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS reads of the
- *          clock, and while the timer counts at most half a second.
+ *          or by a wrap. Last, over 30 ms of the host's reference, a count no interrupt drives, it must
+ *          count 3.579545 MHz within 5 %. Each end of that measurement is a sample: the timer read on
+ *          either side of a read of the reference, kept when the two reads lie within 75 µs, taken again
+ *          otherwise, so that the measurement is right within a quarter of a percent whatever happens
+ *          between its samples. Each sample is awaited within
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_REFERENCE_POLLS samples of a
+ *          reference that does not move, and while the timer counts at most half a second; a reference
+ *          that runs out of its range first, the processor kept from it that long, is started once more,
+ *          and an exact timer is refused only when it runs out in both measurements.
  *
  * @param host      The host whose I/O ports and clock are read.
  * @param fadt      The platform's normalised FADT.
