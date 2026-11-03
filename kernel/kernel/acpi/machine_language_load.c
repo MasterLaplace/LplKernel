@@ -1826,7 +1826,7 @@ static bool machine_language_holds_table(const AdvancedConfigurationAndPowerInte
 /**
  * @brief Adds a table Load or LoadTable brings to the registry, then runs its passes inside the
  *        evaluation that runs the Load: its declarations, the Externals they could not place, its
- *        decoding. A table the load holds already is refused, counted.
+ *        decoding unless the load skips bodies. A table the load holds already is refused, counted.
  */
 static MachineLanguageStatus_t
 machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,

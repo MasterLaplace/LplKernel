@@ -20,7 +20,8 @@
  * skips method bodies by their PkgLength; the Externals pass, which runs only when an External had
  * nowhere to go, places those once every table is declared; the decoding pass decodes every term of
  * every table, method bodies included, so that a call takes as many arguments as the method it names
- * declares (docs/acpi/specification.md, §3.6 and §5.1).
+ * declares, unless the load skips bodies, as a release kernel's does (docs/acpi/specification.md, §3.6
+ * and §5.1).
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -775,7 +776,8 @@ extern void advanced_configuration_and_power_interface_machine_language_declare_
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory);
 
 /**
- * @brief Loads the DSDT, then every SSDT, of a directory: both passes over every table.
+ * @brief Loads the DSDT, then every SSDT, of a directory: every pass over every table, the decoding pass
+ *        excepted when the load skips bodies.
  *
  * @param load      An open load, with no table yet.
  * @param directory The directory, whose tables stay mapped until the load is closed.

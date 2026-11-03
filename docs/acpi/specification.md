@@ -243,8 +243,9 @@ bodies are skipped while declarations load, by their PkgLength, and run only whe
 host tools, once every table is declared, the load decodes each body but a duplicate's (§5.1) once, running nothing:
 a body that would lose its place is found at boot rather than when firmware calls it, and the walk creates no node but
 the temporaries each body declares while it is decoded. A release kernel skips that pass (O2), for the tables Load
-adds too, as ACPICA and uACPI do: it cost about as much as the declarations, and the interpreter checks every bound as
-it runs a body, so that a faulty body fails when it is called; the debug boot and the corpus find it before.
+adds too, as uACPI does; ACPICA scans bodies at load only to auto-serialise them, which §3.7 makes needless. The pass
+cost more than the declarations, and the interpreter checks every bound as it runs a body: a fault fails the term that
+meets it, and the debug boot and the corpus find the others before.
 
 **The loop**, in order of precedence at each step:
 
