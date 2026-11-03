@@ -64,8 +64,7 @@ advanced_configuration_and_power_interface_machine_language_read_package_length(
     if (offset >= limit)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
 
-    const uint32_t follow_bytes =
-        advanced_configuration_and_power_interface_machine_language_package_length_bytes(bytes[offset]) - 1u;
+    const uint32_t follow_bytes = (uint32_t) bytes[offset] >> 6u;
 
     if (follow_bytes >= limit - offset)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
