@@ -49,7 +49,7 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageMappingKind {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageMappingKind_t;
 
 /**
- * @brief Whether the page of a mapping holds bytes of a definition block the directory lists (§5.3).
+ * @brief Whether the page of a mapping holds bytes of a table the directory lists (§5.3).
  */
 typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageTablePage {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_PAGE_UNKNOWN = 0, /**< Not asked yet: nothing
@@ -66,7 +66,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageMapping {
     void *address;             /**< Where the host mapped it: the only pointer, never folded. */
     uint32_t last_use;         /**< When it was last used, by the cache's own clock. */
     uint8_t kind;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAPPING_* kind. */
-    uint8_t holds_table;       /**< Whether its page holds bytes of a definition block of the load's directory: an
+    uint8_t holds_table;       /**< Whether its page holds bytes of a table the load's directory lists: an
                                     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_PAGE_* answer,
                                     found at the first write through it. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageMapping_t;

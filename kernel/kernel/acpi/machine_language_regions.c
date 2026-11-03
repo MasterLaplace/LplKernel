@@ -210,14 +210,13 @@ static void *machine_language_map_page(MachineLanguageLoad_t *load, uint64_t pag
 
 /**
  * @brief Whether the load reads in place the table whose firmware window is @p header: a static table, or
- *        one LoadTable found in the directory.
+ *        one LoadTable found in the directory; a copy Load made has its own bytes, never a window.
  */
 static bool machine_language_reads_in_place(const MachineLanguageLoad_t *load,
                                             const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
 {
     for (uint32_t index = 0u; index < load->table_count; ++index)
-        if (load->tables[index].header == header &&
-            load->tables[index].origin != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_LOAD)
+        if (load->tables[index].header == header)
             return true;
     return false;
 }
@@ -247,12 +246,14 @@ static bool machine_language_directory_table_within(const MachineLanguageLoad_t 
 /**
  * @brief Counts a write through @p mapping that landed on the bytes of a table the load reads in place,
  *        and empties the pre-decoded records, built from those bytes (§3.6); the mapping learns at its
- *        first write whether its page holds a table of the directory, so that a write elsewhere pays
- *        nothing more.
+ *        first write whether its page holds a table of the directory, so that a write through a page that
+ *        holds none, the common case, is one comparison of that answer.
  */
 static void machine_language_note_table_write(MachineLanguageLoad_t *load, MachineLanguageMapping_t *mapping,
                                               uint64_t physical_address, uint8_t width)
 {
+    if (mapping->holds_table == MACHINE_LANGUAGE_TABLE_PAGE(NONE))
+        return;
     if (mapping->holds_table == MACHINE_LANGUAGE_TABLE_PAGE(UNKNOWN))
         mapping->holds_table = machine_language_directory_table_within(load, mapping->physical_address,
                                                                        MACHINE_LANGUAGE_PAGE_BYTES, false) ?
