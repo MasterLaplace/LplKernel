@@ -1138,6 +1138,33 @@ static MachineLanguageStatus_t machine_language_store_and_deliver(MachineLanguag
 }
 
 /**
+ * @brief Runs CopyObject's store, then hands what it copied to the operator waiting for it, as Store hands
+ *        its result, since CopyObject is an expression (ACPI 6.6 §20.2.5.4) any TermArg may be; it takes the
+ *        references the value and the target hold.
+ */
+static MachineLanguageStatus_t machine_language_copy_and_deliver(MachineLanguageLoad_t *load,
+                                                                 MachineLanguageValue_t value,
+                                                                 MachineLanguageValue_t *target)
+{
+    const bool used = machine_language_active(&load->evaluation) != NULL;
+    MachineLanguageValue_t copied = value;
+
+    if (used)
+        machine_language_retain(load, &value);
+
+    const MachineLanguageStatus_t status = machine_language_copy_object(load, &copied, target);
+
+    if (!used)
+        return status;
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &value);
+        return status;
+    }
+    return machine_language_push(load, &value);
+}
+
+/**
  * @brief Ends an operator that stores its result: on success, the result goes to its target and to the
  *        operator waiting for it; on failure, the target is released. Takes both references.
  */
@@ -3691,7 +3718,7 @@ static MachineLanguageStatus_t machine_language_load_table_operator(MachineLangu
 }
 
 /**
- * @brief Runs Store or CopyObject: the target takes the value, and Store gives it as its result.
+ * @brief Runs Store or CopyObject: the target takes the value, and each gives it as its result.
  */
 static MachineLanguageStatus_t machine_language_transfer(MachineLanguageLoad_t *load, uint32_t opcode)
 {
@@ -3701,7 +3728,7 @@ static MachineLanguageStatus_t machine_language_transfer(MachineLanguageLoad_t *
 
     if (opcode == MACHINE_LANGUAGE_OPCODE(STORE))
         return machine_language_store_and_deliver(load, value, &target);
-    return machine_language_copy_object(load, &value, &target);
+    return machine_language_copy_and_deliver(load, value, &target);
 }
 
 /**

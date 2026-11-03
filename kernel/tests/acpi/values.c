@@ -438,6 +438,71 @@ KERNEL_TEST(a_store_to_a_local_copies_and_copy_object_replaces_the_type)
 }
 
 /**
+ * @brief CopyObject, an expression (ACPI 6.6 §20.2.5.4, §19.6.17), gives the operator that takes it as an
+ *        operand what it copied, as Store does, and gives nothing as a statement (#664):
+ *        Buffer (CopyObject (3, INT0)) holds 3 bytes; LAnd (CopyObject (Zero, INT1), One) takes its two values
+ *        from above the Package's first element, which the Package keeps; a copied Buffer lives in BUF1 and in
+ *        the operand both; 1,280 CopyObject statements in a loop leave the value stack as they found it; and a
+ *        CopyObject that fails keeps nothing of the Package it was given.
+ */
+KERNEL_TEST(copy_object_gives_what_it_copied_to_the_operator_that_waits_for_it)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x0Au, 0x08u, 'I',   'N',   'T',   '1',   0x0Au, 0x0Au, 0x08u, 'B',
+        'U',   'F',   '1',   0x0Au, 0x00u, 0x08u, 'B',   'U',   'F',   '2',   0x11u, 0x03u, 0x0Au, 0x01u, 0x08u, 'P',
+        'K',   'G',   '0',   0x0Au, 0x00u, 0x08u, 'R',   'E',   'S',   '0',   0x0Au, 0x0Au, 0x08u, 'R',   'E',   'S',
+        '1',   0x0Au, 0x00u, 0x14u, 0x2Bu, 'M',   'C',   'P',   'Y',   0x00u, 0xA4u, 0x12u, 0x23u, 0x04u, 0x0Au, 0x05u,
+        0x11u, 0x08u, 0x9Du, 0x0Au, 0x03u, 'I',   'N',   'T',   '0',   0x11u, 0x09u, 0x90u, 0x9Du, 0x00u, 'I',   'N',
+        'T',   '1',   0x01u, 0x11u, 0x0Bu, 0x9Du, 0x11u, 0x04u, 0x0Au, 0x01u, 0x02u, 'B',   'U',   'F',   '1',   0x14u,
+        0x17u, 'M',   'L',   'O',   'P',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Bu, 0x95u, 0x60u, 0x0Bu, 0x00u, 0x05u,
+        0x9Du, 0x60u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u, 0x9Du, 'M',   'C',   'P',   'Y',   'P',   'K',   'G',   '0',
+        0x9Du, 'M',   'L',   'O',   'P',   'R',   'E',   'S',   '1',   0x70u, 0x90u, 0x9Du, 0x12u, 0x02u, 0x00u, 0x88u,
+        'B',   'U',   'F',   '2',   0x00u, 0x00u, 0x01u, 'R',   'E',   'S',   '0',
+    };
+    static const uint8_t zeros[] = {0x00u, 0x00u, 0x00u};
+    static const uint8_t two[] = {0x02u};
+
+    if (!values_run(test, 2u, aml, sizeof(aml)))
+        return;
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
+        values_object("PKG0", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE);
+
+    kernel_test_check(test,
+                      package != NULL && package->length == 4u &&
+                          values_value_is_integer(values_element(package, 0u), 5u) &&
+                          values_load.heap.packages_padded == 0u,
+                      "the Package keeps 5 as its first element, and no initialiser is missing");
+    kernel_test_check(test,
+                      values_value_holds(values_element(package, 1u),
+                                         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                                         zeros, sizeof(zeros)),
+                      "Buffer (CopyObject (3, INT0)) takes 3, what CopyObject copied, as its size");
+    kernel_test_check(test,
+                      values_value_holds(values_element(package, 2u),
+                                         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                                         zeros, 0u),
+                      "LAnd (CopyObject (Zero, INT1), One) is False, a Buffer of 0 bytes");
+    kernel_test_check(test,
+                      values_value_holds(values_element(package, 3u),
+                                         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                                         zeros, 2u) &&
+                          values_buffer_is("BUF1", two, sizeof(two)),
+                      "Buffer (CopyObject (Buffer () {2}, BUF1)) holds 2 bytes, and BUF1 the Buffer it took");
+    kernel_test_check(test, values_integer("INT0") == 3u && values_integer("INT1") == 0u,
+                      "each CopyObject still copies to its Name");
+    kernel_test_check(test, values_integer("RES1") == 0x04FFu,
+                      "a loop of 1,280 CopyObject statements leaves no value behind it, and MLOP returns 0x04FF");
+    kernel_test_check(
+        test,
+        values_integer("RES0") == 0x0Au &&
+            values_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH) == 1u &&
+            values_load.evaluation.failures == 1u,
+        "CopyObject of a Package to a byte of BUF2 fails as type_mismatch, and RES0 keeps 0x0A");
+    values_close(test);
+}
+
+/**
  * @brief Strings and buffers compare by their bytes, then by their lengths; in a mixed comparison the
  *        second operand converts to the first's type, counted (§5.2); LAnd and LOr read a Buffer's
  *        first 4 bytes, as Windows does.
