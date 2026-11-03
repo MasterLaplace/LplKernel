@@ -1507,6 +1507,199 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
 }
 
 /**
+ * @brief Whether the @p limit bytes from @p offset hold a NameString of one NameSeg, as the general NameString
+ *        reader reads one: four characters of a NameSeg, the first a letter or `_`.
+ */
+static bool machine_language_holds_name_segment(const uint8_t *bytes, uint32_t offset, uint32_t limit)
+{
+    return limit - offset >= 4u &&
+           advanced_configuration_and_power_interface_machine_language_starts_segment(bytes[offset]) &&
+           advanced_configuration_and_power_interface_machine_language_continues_segment(bytes[offset + 1u]) &&
+           advanced_configuration_and_power_interface_machine_language_continues_segment(bytes[offset + 2u]) &&
+           advanced_configuration_and_power_interface_machine_language_continues_segment(bytes[offset + 3u]);
+}
+
+/**
+ * @brief Puts @p state on the walk's operator stack, as push_operator would have pushed it, its operands
+ *        taken so far included, so that the walk goes on with the rest of the statement.
+ */
+static void machine_language_hand_back(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *state)
+{
+    walk->load->pending[walk->pending_count++] = *state;
+    if (walk->pending_count > walk->load->pending_peak)
+        walk->load->pending_peak = walk->pending_count;
+}
+
+/**
+ * @brief Takes `Name (NameSeg, data)` at @p start, whose statement ends at @p limit, as the walk would: the
+ *        name declared through use_name, then the data object built and stepped over (O18); the general path
+ *        takes the rest of a statement from the first step whose outcome differs.
+ */
+static MachineLanguageStatus_t machine_language_name_statement(MachineLanguageWalk_t *walk, uint32_t start,
+                                                               uint32_t limit)
+{
+    MachineLanguagePendingOperator_t state = {
+        .opcode = (uint16_t) MACHINE_LANGUAGE_OPCODE(NAME),
+        .operands_done = 1u,
+        .operand_count = 2u,
+        .start = start,
+        .end = limit,
+    };
+    const MachineLanguageNameString_t name = {.segments = start + 1u, .segment_count = 1u};
+    uint32_t after = 0u;
+
+    walk->fault_opcode = MACHINE_LANGUAGE_OPCODE(NAME);
+    walk->pc = start + 1u;
+
+    MachineLanguageStatus_t status = machine_language_use_name(walk, &state, &name);
+
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_hand_back(walk, &state);
+        return status;
+    }
+    walk->pc = start + 5u;
+    state.operands_done = 2u;
+    if (machine_language_builds(walk, state.node))
+        status = machine_language_build_name(walk, &state, &after);
+    if (status == MACHINE_LANGUAGE_OK && machine_language_steps_over_data(walk, after))
+    {
+        ++walk->load->data_stepped_over;
+        ++walk->load->declarations_decoded_directly;
+        walk->pc = after;
+        return MACHINE_LANGUAGE_OK;
+    }
+    machine_language_hand_back(walk, &state);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(TERM_ARGUMENT)) :
+                                             status;
+}
+
+/**
+ * @brief Takes `Method (NameSeg, flags) {...}` at @p start, whose PkgLength ends at @p end and whose NameString
+ *        starts at @p name_start, as the walk would: the name declared through use_name, the flags read, the
+ *        body recorded and skipped; the general path takes the rest of a duplicate's statement, and of one whose
+ *        flags are cut.
+ */
+static MachineLanguageStatus_t machine_language_method_statement(MachineLanguageWalk_t *walk, uint32_t start,
+                                                                 uint32_t end, uint32_t name_start)
+{
+    MachineLanguagePendingOperator_t state = {
+        .opcode = (uint16_t) MACHINE_LANGUAGE_OPCODE(METHOD),
+        .operands_done = 1u,
+        .operand_count = 3u,
+        .start = start,
+        .end = end,
+    };
+    const MachineLanguageNameString_t name = {.segments = name_start, .segment_count = 1u};
+
+    walk->fault_opcode = MACHINE_LANGUAGE_OPCODE(METHOD);
+    walk->pc = name_start;
+
+    const MachineLanguageStatus_t status = machine_language_use_name(walk, &state, &name);
+
+    if (status != MACHINE_LANGUAGE_OK || walk->duplicate_next || end - (name_start + 4u) < 1u)
+    {
+        walk->pc = (status != MACHINE_LANGUAGE_OK) ? name_start : name_start + 4u;
+        machine_language_hand_back(walk, &state);
+        return status;
+    }
+    walk->pc = name_start + 5u;
+    machine_language_record_method(walk, &state);
+    walk->pc = end;
+    ++walk->load->declarations_decoded_directly;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Takes a statement whose operator @p opcode ends at @p end, whose NameString starts at @p name_start, and
+ *        whose operands are that NameString, the @p fixed bytes of a field list's FieldFlags or none, then a list
+ *        of @p kind, as the walk would: the name read and used through use_name, the fixed bytes passed, then the
+ *        operator the general path holds put on the stack and its list opened by open_list. The general path
+ *        takes the rest of a statement from the first operand whose outcome differs.
+ */
+static MachineLanguageStatus_t
+machine_language_list_statement(MachineLanguageWalk_t *walk, uint32_t opcode, uint32_t start, uint32_t end,
+                                uint32_t name_start, uint32_t fixed,
+                                AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t kind)
+{
+    MachineLanguagePendingOperator_t state = {
+        .opcode = (uint16_t) opcode,
+        .operands_done = 1u,
+        .operand_count = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->operand_count,
+        .start = start,
+        .end = end,
+    };
+    MachineLanguageNameString_t name;
+    uint32_t after = 0u;
+    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
+        walk->bytes, name_start, end, &name, &after);
+
+    walk->fault_opcode = opcode;
+    walk->pc = name_start;
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_use_name(walk, &state, &name);
+    if (status != MACHINE_LANGUAGE_OK || end - after < fixed)
+    {
+        walk->pc = (status != MACHINE_LANGUAGE_OK) ? name_start : after;
+        machine_language_hand_back(walk, &state);
+        return status;
+    }
+    walk->pc = after + fixed;
+    state.operands_done = state.operand_count;
+    machine_language_hand_back(walk, &state);
+    ++walk->load->declarations_decoded_directly;
+    return machine_language_open_list(walk, kind);
+}
+
+/**
+ * @brief Takes the statement at the walk's pc, at a statement's place: in the declaration pass, unless the load
+ *        takes no shortcut, a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope or a Field
+ *        through its own decoder (O19); any other statement, and one whose operator would not fit
+ *        the stack or whose PkgLength or NameString the general path refuses, as a term.
+ */
+static MachineLanguageStatus_t machine_language_statement(MachineLanguageWalk_t *walk)
+{
+    const uint8_t *bytes = walk->bytes;
+    const uint32_t start = walk->pc;
+    const uint32_t limit = machine_language_limit(walk);
+    uint32_t end = 0u;
+    uint32_t after = 0u;
+
+    if (walk->pass != MACHINE_LANGUAGE_PASS_DECLARE || walk->load->general_load || start >= limit ||
+        walk->pending_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PENDING_OPERATORS)
+        return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
+    if (bytes[start] == 0x08u && limit - start >= 6u && machine_language_holds_name_segment(bytes, start + 1u, limit))
+        return machine_language_name_statement(walk, start, limit);
+    if (bytes[start] == 0x14u &&
+        advanced_configuration_and_power_interface_machine_language_read_package_end(bytes, start + 1u, limit, &end,
+                                                                                     &after) == MACHINE_LANGUAGE_OK &&
+        machine_language_holds_name_segment(bytes, after, end))
+        return machine_language_method_statement(walk, start, end, after);
+    if (bytes[start] == 0x10u && advanced_configuration_and_power_interface_machine_language_read_package_end(
+                                     bytes, start + 1u, limit, &end, &after) == MACHINE_LANGUAGE_OK)
+        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(SCOPE), start, end, after, 0u,
+                                               MACHINE_LANGUAGE_OPERAND(TERM_LIST));
+    if (bytes[start] != 0x5Bu || limit - start < 2u ||
+        (bytes[start + 1u] != 0x82u && bytes[start + 1u] != 0x85u && bytes[start + 1u] != 0x81u) ||
+        advanced_configuration_and_power_interface_machine_language_read_package_end(bytes, start + 2u, limit, &end,
+                                                                                     &after) != MACHINE_LANGUAGE_OK)
+        return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
+    switch (bytes[start + 1u])
+    {
+    case 0x82u:
+        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(DEVICE), start, end, after, 0u,
+                                               MACHINE_LANGUAGE_OPERAND(TERM_LIST));
+    case 0x85u:
+        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(THERMAL_ZONE), start, end, after, 0u,
+                                               MACHINE_LANGUAGE_OPERAND(TERM_LIST));
+    case 0x81u:
+        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(FIELD), start, end, after, 1u,
+                                               MACHINE_LANGUAGE_OPERAND(FIELD_LIST));
+    default: return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
+    }
+}
+
+/**
  * @brief Takes one step of a walk: an operand of the active operator, the end of an operator or of
  *        a construct, or the next item of the construct.
  */
@@ -1534,7 +1727,7 @@ static MachineLanguageStatus_t machine_language_step(MachineLanguageWalk_t *walk
         return machine_language_package_element(walk);
     if (block->kind == MACHINE_LANGUAGE_OPERAND(FIELD_LIST))
         return machine_language_field_element(walk);
-    return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
+    return machine_language_statement(walk);
 }
 
 /**

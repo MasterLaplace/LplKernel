@@ -25,6 +25,12 @@ static inline bool advanced_configuration_and_power_interface_machine_language_s
     return (byte >= 'A' && byte <= 'Z') || byte == '_';
 }
 
+static inline bool advanced_configuration_and_power_interface_machine_language_continues_segment(uint8_t byte)
+{
+    return advanced_configuration_and_power_interface_machine_language_starts_segment(byte) ||
+           (byte >= '0' && byte <= '9');
+}
+
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_name(uint8_t byte)
 {
     return byte == '\\' || byte == '^' || byte == 0x2Eu || byte == 0x2Fu ||
