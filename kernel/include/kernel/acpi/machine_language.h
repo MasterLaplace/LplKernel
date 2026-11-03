@@ -164,7 +164,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t load_duplicates;     /**< Load and LoadTable calls refused, False returned, for a table the load holds. */
     uint32_t load_tables_missing; /**< LoadTable calls that found no table, False returned. */
     uint32_t table_bytes_copied;  /**< Bytes Load copied. */
-    uint32_t declaring;           /**< Declaration passes running, 1 while a table's code runs at load. */
+    uint32_t declaring;           /**< Passes and table frames that declare: not 0 while a table is declared. */
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, or
                                                                              NULL. */
     uint32_t bytes;              /**< AML bytes of those tables, headers apart. */
