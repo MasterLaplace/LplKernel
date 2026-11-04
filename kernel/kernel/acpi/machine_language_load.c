@@ -1631,8 +1631,7 @@ static const uint8_t machine_language_data_classes[256] = {
  *        constant: Zero, One, or a byte, word or double word constant; false for any other term, which the
  *        general path reads.
  *
- * @details Always inlined, as machine_language_data_head: a call costs 2,959 more instructions in W1 and 816 more in
- *          W3 on the MS-7E16 (§7.4).
+ * @details Always inlined, as machine_language_data_head, which calls it once per Buffer or VarPackage head.
  */
 __attribute__((always_inline)) static inline bool machine_language_data_count(const uint8_t *bytes, uint32_t offset,
                                                                               uint32_t end, uint32_t *out_count,
@@ -1659,8 +1658,9 @@ __attribute__((always_inline)) static inline bool machine_language_data_count(co
  *        PkgLength, which must end by @p end, then its size or its element count, a literal constant;
  *        @p out_end receives where the object ends, @p out_first where its initialiser or its elements start.
  *
- * @details Always inlined into the check, the reader and the description of kept data: a call costs 8,604 more
- *          instructions in W1 and 2,464 more in W3 on the MS-7E16 (§7.4).
+ * @details Always inlined into the check, the reader and the description of kept data: the check of the load and
+ *          the builder of kept data read every Buffer and package head through it, and a call costs them more than
+ *          the head they read.
  */
 __attribute__((always_inline)) static inline bool machine_language_data_head(const uint8_t *bytes, uint32_t offset,
                                                                              uint32_t end, uint8_t class,
@@ -2269,7 +2269,7 @@ static uint64_t machine_language_data_integer(const uint8_t *bytes, uint32_t pc,
  * @return Whether the bytes read so; @p out_element then holds the element.
  *
  * @details Always inlined: the builder of kept data reads every element through it, and a call, with the element
- *          written through memory, costs 9,024 more instructions in W3 on the MS-7E16 (§7.4).
+ *          written through memory, costs it more than the checks the element needs.
  */
 __attribute__((always_inline)) static inline bool machine_language_read_kept(const uint8_t *bytes, uint32_t pc,
                                                                              uint32_t end, uint32_t depth,
