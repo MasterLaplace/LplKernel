@@ -1521,7 +1521,8 @@ static bool machine_language_holds_name_segment(const uint8_t *bytes, uint32_t o
 
 /**
  * @brief Puts @p state on the walk's operator stack, as push_operator would have pushed it, its operands
- *        taken so far included, so that the walk goes on with the rest of the statement.
+ *        taken so far included, so that the walk goes on with the rest of the statement; machine_language_statement
+ *        has checked that the stack has room for it.
  */
 static void machine_language_hand_back(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *state)
 {
@@ -1654,8 +1655,12 @@ machine_language_list_statement(MachineLanguageWalk_t *walk, uint32_t opcode, ui
 /**
  * @brief Takes the statement at the walk's pc, at a statement's place: in the declaration pass, unless the load
  *        takes no shortcut, a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope or a Field
- *        through its own decoder (O19); any other statement, and one whose operator would not fit
- *        the stack or whose PkgLength or NameString the general path refuses, as a term.
+ *        through its own decoder (O19); any other statement, and one whose PkgLength or NameString the general
+ *        path refuses, as a term.
+ *
+ * @details It also takes as a term a statement that finds the operator stack full. That cannot happen today: at a
+ *          statement's place the declaration pass holds no operator pending, each construct's being popped as its
+ *          list opens. The check stays because the decoder writes the stack, when it hands a statement back.
  */
 static MachineLanguageStatus_t machine_language_statement(MachineLanguageWalk_t *walk)
 {
