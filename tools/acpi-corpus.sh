@@ -434,7 +434,7 @@ predecoding_check() {
     done < <(reports "$1")
     rm -rf "$on" "$off" "$tables"
     echo -n "# predecoding: $agree of $number machines leave the same lines with records and without;"
-    for key in back_edges records_run built flushes fused_comparisons tight_turns declined_shape declined_limit \
+    for key in back_edges records_run built flushes fused_comparisons tight_turns searches handed_back_loops declined_shape declined_limit \
         declined_operand declined_room declined_operation declined_full declined_target; do
         echo -n " $key=$(total_of "$key" "$counts")"
     done

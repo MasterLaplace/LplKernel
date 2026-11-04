@@ -30,6 +30,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_predecoding, KERNEL
 #define PREDECODING_FIND_FILLER      131u /**< A statement offset whose home slot under table 1 is that second one. */
 #define PREDECODING_SLOT_MULTIPLIER  0x9E3779B1u /**< The cache's mix of a statement's offset, written here apart. */
 #define PREDECODING_TABLE_MULTIPLIER 0x85EBCA6Bu /**< The cache's mix of a table, written here apart. */
+#define PREDECODING_SLOT_BUFFER                                                                                        \
+    51u /**< Bytes of SLOT's Buffer, which put its Increment 64 bytes past its call, in the same recent slot. */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t PredecodingCache_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t PredecodingRecord_t;
@@ -293,6 +295,181 @@ static const uint8_t predecoding_room_loop[] = {
     0xA2u, 0x1Bu, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x13u, 0x94u, 0x60u, 0x01u,
     0x70u, 0x00u, 0x61u, 0xA2u, 0x0Bu, 0x95u, 0x61u, 0x0Au, 0x04u, 0x70u, 0x72u, 0x61u, 0x01u,
     0x00u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x08u, 'F',   'S',   'E',   'V',   0x07u, 0xA4u, 0x6Eu,
+};
+
+/**
+ * @brief INCR (Arg0), which returns Arg0 + 1, then REFU: `Local0 = 0; While (Local0 < 100 && One) { Local0 = INCR
+ *        (Local0) }; Return (Local0)`, so 100: a While and a body no record runs, LAnd and a call staying for the loop,
+ *        as `While (APMS) { Stall (One) }` of the HP machines of the corpus.
+ */
+static const uint8_t predecoding_refused_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
+    0x1Au, 'R',   'E',   'F',   'U',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Eu, 0x90u, 0x95u,
+    0x60u, 0x0Au, 0x64u, 0x01u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
+ * @brief Where @p pattern first starts in @p bytes, or @p length when it does not.
+ */
+static uint32_t predecoding_offset_of(const uint8_t *bytes, uint32_t length, const uint8_t *pattern,
+                                      uint32_t pattern_length)
+{
+    for (uint32_t offset = 0u; offset + pattern_length <= length; ++offset)
+    {
+        uint32_t matched = 0u;
+
+        while (matched < pattern_length && bytes[offset + matched] == pattern[matched])
+            ++matched;
+        if (matched == pattern_length)
+            return offset;
+    }
+    return length;
+}
+
+/**
+ * @brief Writes INCR, then SLOT: `Local0 = 0; Local2 = 0; While (Local0 < 10) { Local2 = INCR (Local2); Local3 =
+ *        Buffer (51) {}; Local0++ }; Return (Local2)`, so 10: its call, which no record runs, and its Increment,
+ *        which one runs, 64 bytes apart, so that they share their offset's recent slot.
+ */
+static void predecoding_write_shared_slot(void)
+{
+    static const uint8_t increment_method[] = {0x14u, 0x0Bu, 'I',   'N',   'C',   'R',
+                                               0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u};
+    static const uint8_t start[] = {0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x62u};
+    static const uint8_t head[] = {0x95u, 0x60u, 0x0Au, 0x0Au, 0x70u, 'I', 'N', 'C', 'R', 0x62u, 0x62u, 0x70u};
+    static const uint8_t buffer_lead[] = {0x11u};
+    static const uint8_t buffer_size[] = {0x0Au, PREDECODING_SLOT_BUFFER};
+    static const uint8_t buffer_byte[] = {0x00u};
+    static const uint8_t tail[] = {0x63u, 0x75u, 0x60u};
+    static const uint8_t while_lead[] = {0xA2u};
+    static const uint8_t finish[] = {0xA4u, 0x62u};
+
+    made_up_aml_begin(&predecoding_inner);
+    made_up_aml_raw(&predecoding_inner, buffer_size, sizeof(buffer_size));
+    for (uint32_t index = 0u; index < PREDECODING_SLOT_BUFFER; ++index)
+        made_up_aml_raw(&predecoding_inner, buffer_byte, sizeof(buffer_byte));
+    made_up_aml_begin(&predecoding_outer);
+    made_up_aml_raw(&predecoding_outer, head, sizeof(head));
+    made_up_aml_construct(&predecoding_outer, buffer_lead, sizeof(buffer_lead), &predecoding_inner);
+    made_up_aml_raw(&predecoding_outer, tail, sizeof(tail));
+    made_up_aml_begin(&predecoding_body);
+    made_up_aml_raw(&predecoding_body, start, sizeof(start));
+    made_up_aml_construct(&predecoding_body, while_lead, sizeof(while_lead), &predecoding_outer);
+    made_up_aml_raw(&predecoding_body, finish, sizeof(finish));
+    made_up_aml_begin(&predecoding_method);
+    made_up_aml_raw(&predecoding_method, increment_method, sizeof(increment_method));
+    made_up_aml_method(&predecoding_method, "SLOT", 0x00u, &predecoding_body);
+}
+
+/**
+ * @brief Writes INCR, then EVIC: `Local0 = 0; Local1 = 0; While (Local0 < 10) { Local2 = INCR (Local2); Local1++;
+ *        Local4 = Buffer (51) {}; If (Local0 == 1) { Local5 = INCR (Local5) }; Local0++ }; Return (Local1)`, so 10: the
+ *        call in the If, at the second turn alone, 64 bytes past the Increment of Local1, takes its recent slot.
+ */
+static void predecoding_write_evicted(void)
+{
+    static const uint8_t increment_method[] = {0x14u, 0x0Bu, 'I',   'N',   'C',   'R',
+                                               0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u};
+    static const uint8_t start[] = {0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u};
+    static const uint8_t head[] = {0x95u, 0x60u, 0x0Au, 0x0Au, 0x70u, 'I',   'N',
+                                   'C',   'R',   0x62u, 0x62u, 0x75u, 0x61u, 0x70u};
+    static const uint8_t buffer_lead[] = {0x11u};
+    static const uint8_t buffer_size[] = {0x0Au, PREDECODING_SLOT_BUFFER};
+    static const uint8_t buffer_byte[] = {0x00u};
+    static const uint8_t tail[] = {0x64u, 0xA0u, 0x0Bu, 0x93u, 0x60u, 0x01u, 0x70u, 'I',
+                                   'N',   'C',   'R',   0x65u, 0x65u, 0x75u, 0x60u};
+    static const uint8_t while_lead[] = {0xA2u};
+    static const uint8_t finish[] = {0xA4u, 0x61u};
+
+    made_up_aml_begin(&predecoding_inner);
+    made_up_aml_raw(&predecoding_inner, buffer_size, sizeof(buffer_size));
+    for (uint32_t index = 0u; index < PREDECODING_SLOT_BUFFER; ++index)
+        made_up_aml_raw(&predecoding_inner, buffer_byte, sizeof(buffer_byte));
+    made_up_aml_begin(&predecoding_outer);
+    made_up_aml_raw(&predecoding_outer, head, sizeof(head));
+    made_up_aml_construct(&predecoding_outer, buffer_lead, sizeof(buffer_lead), &predecoding_inner);
+    made_up_aml_raw(&predecoding_outer, tail, sizeof(tail));
+    made_up_aml_begin(&predecoding_body);
+    made_up_aml_raw(&predecoding_body, start, sizeof(start));
+    made_up_aml_construct(&predecoding_body, while_lead, sizeof(while_lead), &predecoding_outer);
+    made_up_aml_raw(&predecoding_body, finish, sizeof(finish));
+    made_up_aml_begin(&predecoding_method);
+    made_up_aml_raw(&predecoding_method, increment_method, sizeof(increment_method));
+    made_up_aml_method(&predecoding_method, "EVIC", 0x00u, &predecoding_body);
+}
+
+/**
+ * @brief INCR, then LPA_: `Local0 = 0; Local1 = 0; While (Local0 < 5) { Local2 = INCR (Local2); Local1 = Local1 + 1;
+ *        Local0++ }; Return (Local1)`, so 5; as a DSDT.
+ */
+static const uint8_t predecoding_adding_table[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x21u, 'L',   'P',
+    'A',   '_',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x12u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x70u,
+    'I',   'N',   'C',   'R',   0x62u, 0x62u, 0x72u, 0x61u, 0x01u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief FILL, 12 bytes, then LPB_ at the offsets of LPA_, its Add a Subtract: so -5; as an SSDT.
+ */
+static const uint8_t predecoding_subtracting_table[] = {
+    0x08u, 'F', 'I',   'L',   'L',   0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0xA3u, 0xA3u, 0x14u, 0x21u, 'L',   'P',
+    'B',   '_', 0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x12u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x70u,
+    'I',   'N', 'C',   'R',   0x62u, 0x62u, 0x74u, 0x61u, 0x01u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief INCR, then RECU (Arg0): `Local0 = 0; Local1 = 0; While (Local0 < 4 && One) { If (Arg0 && Local0 == 3) {
+ *        Local1++ }; If (Arg0) { RECU (0) }; Local0 = INCR (Local0) }; Return (Local1)`, so 1 for RECU (1): the call
+ *        runs the same loop in a deeper frame, whose last back-edge leaves its watch behind.
+ */
+static const uint8_t predecoding_recursive_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x2Fu, 'R',
+    'E',   'C',   'U',   0x01u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x20u, 0x90u, 0x95u, 0x60u,
+    0x0Au, 0x04u, 0x01u, 0xA0u, 0x09u, 0x90u, 0x68u, 0x93u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x61u, 0xA0u, 0x07u,
+    0x68u, 'R',   'E',   'C',   'U',   0x00u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief INCR, then BRAN: `Local0 = 0; Local1 = 0; While (Local0 < 100 && One) { If (Local0 > 50 && One) { Local1++
+ *        }; Local0 = INCR (Local0) }; Return (Local1)`, so 49: a While, an If and a call no record runs, the If's body
+ *        an Increment one runs, from the 52nd turn.
+ */
+static const uint8_t predecoding_branching_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
+    0x27u, 'B',   'R',   'A',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u,
+    0x18u, 0x90u, 0x95u, 0x60u, 0x0Au, 0x64u, 0x01u, 0xA0u, 0x09u, 0x90u, 0x94u, 0x60u, 0x0Au,
+    0x32u, 0x01u, 0x75u, 0x61u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief INCR, then MIXD: `Local0 = 0; Local1 = 0; While (Local0 < 100 && One) { Local1++; Local0 = INCR (Local0) };
+ *        Return (Local1)`, so 100: a While and a call no record runs around an Increment one runs.
+ */
+static const uint8_t predecoding_mixed_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x1Fu, 'M',
+    'I',   'X',   'D',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x10u, 0x90u, 0x95u, 0x60u,
+    0x0Au, 0x64u, 0x01u, 0x75u, 0x61u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief INCR, then NEST: `Local1 = 0; While (Local1 < 3) { Local1++; Local0 = 0; While (Local0 < 10 && One) { Local0
+ *        = INCR (Local0) } }; Return (Local0)`, so 10: an outer loop records run around an inner one no record runs.
+ */
+static const uint8_t predecoding_nested_refused_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
+    0x25u, 'N',   'E',   'S',   'T',   0x00u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x19u, 0x95u, 0x61u,
+    0x0Au, 0x03u, 0x75u, 0x61u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Eu, 0x90u, 0x95u, 0x60u, 0x0Au,
+    0x0Au, 0x01u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
+ * @brief INCR, then NEXT: `Local0 = 0; While (Local0 < 100) { Local1 = INCR (Local0); Local0++ }; Return (Local1)`,
+ *        so 100: a statement no record runs, between statements records run.
+ */
+static const uint8_t predecoding_refused_statement[] = {
+    0x14u, 0x0Bu, 'I',   'N', 'C', 'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
+    0x1Au, 'N',   'E',   'X', 'T', 0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Eu, 0x95u, 0x60u,
+    0x0Au, 0x64u, 0x70u, 'I', 'N', 'C',   'R',   0x60u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
 };
 
 /**
@@ -985,4 +1162,187 @@ KERNEL_TEST(a_tight_loop_whose_body_has_no_room_is_handed_back)
             (run.status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_VALUES) ? 1u : 0u;
     }
     kernel_test_check(test, short_of_room != 0u, "a depth leaves the body no room, and the loop fails there");
+}
+
+/**
+ * @brief A statement handed back at once is searched for its record once, then handed back without a search (§3.6):
+ *        REFU's While, handed back at its back-edges, and its body, at the turns after the first, are searched once
+ *        each, and REFU returns 100 with records as without, no record run.
+ */
+KERNEL_TEST(a_statement_handed_back_at_once_is_searched_once)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_refused_loop, sizeof(predecoding_refused_loop),
+                                                     2u, "\\REFU", PREDECODING_NO_ARGUMENT, false, "fold");
+
+    kernel_test_check(test, run.result == 100u && run.declined != 0u, "REFU returns 100, its statements handed back");
+    kernel_test_check(test, run.searches == 2u, "each of the two statements is searched once");
+    kernel_test_measure(test, "searches", run.searches);
+}
+
+/**
+ * @brief A statement records reach after a statement handed back, or after a back-edge, is searched for its record
+ *        once (§3.6): NEXT's While, call and Increment are searched once each over 100 turns, its call handed back at
+ *        the 99 turns after the first, and NEXT returns 100 with records as without.
+ */
+KERNEL_TEST(a_statement_after_one_handed_back_is_searched_once)
+{
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_refused_statement, sizeof(predecoding_refused_statement), 2u, "\\NEXT",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 100u && run.declined == 99u,
+                      "NEXT returns 100, its call handed back 99 times");
+    kernel_test_check(test, run.searches == 3u, "each of the three statements is searched once");
+    kernel_test_measure(test, "searches", run.searches);
+}
+
+/**
+ * @brief Two statements whose offsets share a recent slot each find their own record (§3.6): SLOT's call, handed back
+ *        after the 9 back-edges that go on, and its Buffer at the 9 turns after the first, 18 times, its Increment run
+ *        at the 9 turns after the first and its While at the 10 back-edges, 19 records, the four statements searched
+ *        once each, and SLOT returns 10 with records as without.
+ */
+KERNEL_TEST(statements_that_share_a_recent_slot_find_their_own_records)
+{
+    static const uint8_t call[] = {0x70u, 'I', 'N', 'C', 'R', 0x62u, 0x62u};
+    static const uint8_t increment[] = {0x75u, 0x60u};
+
+    predecoding_write_shared_slot();
+    if (!kernel_test_check(test, !predecoding_method.overflowed, "the made-up AML fits"))
+        return;
+
+    const uint32_t call_offset =
+        predecoding_offset_of(predecoding_method.bytes, predecoding_method.length, call, sizeof(call));
+    const uint32_t increment_offset =
+        predecoding_offset_of(predecoding_method.bytes, predecoding_method.length, increment, sizeof(increment));
+
+    if (!kernel_test_check(test,
+                           increment_offset < predecoding_method.length && increment_offset > call_offset &&
+                               (increment_offset - call_offset) %
+                                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECENT_RECORDS ==
+                                   0u,
+                           "the premise: the call and the Increment share a recent slot"))
+        return;
+
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_method.bytes, predecoding_method.length, 2u,
+                                                     "\\SLOT", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 10u && run.records_run == 19u && run.declined == 18u,
+                      "SLOT returns 10, 19 records run and 18 statements handed back");
+    kernel_test_check(test, run.searches == 4u, "each of the four statements is searched once");
+}
+
+/**
+ * @brief A While whose statements all went to the loop for a whole turn, each going on to the next, asks its records
+ *        no more (§3.6): REFU's While goes to the loop at its first three back-edges and its body at the second and
+ *        third turns, 5 times, then its turns run without records, and REFU returns 100 with records as without.
+ */
+KERNEL_TEST(a_loop_whose_statements_all_go_to_the_loop_stops_asking)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_refused_loop, sizeof(predecoding_refused_loop),
+                                                     2u, "\\REFU", PREDECODING_NO_ARGUMENT, false, "fold");
+
+    kernel_test_check(test, run.result == 100u && run.declined == 5u && run.loops == 1u,
+                      "REFU returns 100, its statements handed back 5 times, then its loop whole");
+    kernel_test_measure(test, "declined", run.declined);
+}
+
+/**
+ * @brief A While whose turn may run a record keeps asking its records (§3.6): BRAN's If, which no record runs, decides
+ *        whether its Increment runs, which a record runs at the 49 turns from the 52nd, and MIXD's Increment runs from
+ *        a record at the 99 turns after the first; BRAN returns 49 and MIXD 100, with records as without.
+ */
+KERNEL_TEST(a_loop_whose_turn_may_run_a_record_keeps_asking)
+{
+    const PredecodingRun_t branching =
+        predecoding_compare(test, predecoding_branching_loop, sizeof(predecoding_branching_loop), 2u, "\\BRAN",
+                            PREDECODING_NO_ARGUMENT, true, "fold_branching");
+    const PredecodingRun_t mixed = predecoding_compare(test, predecoding_mixed_loop, sizeof(predecoding_mixed_loop), 2u,
+                                                       "\\MIXD", PREDECODING_NO_ARGUMENT, true, "fold_mixed");
+
+    kernel_test_check(test, branching.result == 49u && branching.records_run == 49u && branching.loops == 0u,
+                      "BRAN returns 49, its Increment run from records 49 times, its loop never handed back whole");
+    kernel_test_check(test, mixed.result == 100u && mixed.records_run == 99u && mixed.loops == 0u,
+                      "MIXD returns 100, its Increment run from records 99 times, its loop never handed back whole");
+}
+
+/**
+ * @brief A While is handed back whole only while it is the frame's loop (§3.6): NEST's inner While, the frame's loop in
+ *        its first run, is handed back whole at its third back-edge after 5 statements; in each of the two runs after
+ *        it, inside the outer loop the frame's loop has become, its While goes to the loop at its 10 back-edges and its
+ *        call at its 10 turns, and the While once more when the outer loop's records reach it, 47 times in all; the
+ *        outer While, Increment and Store run from records at its first two back-edges and its While at the third, 7
+ *        times; the five statements are searched once each, and NEST returns 10 with records as without.
+ */
+KERNEL_TEST(a_loop_is_handed_back_whole_only_while_it_is_the_frame_s_loop)
+{
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_nested_refused_loop, sizeof(predecoding_nested_refused_loop), 2u,
+                            "\\NEST", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 10u && run.declined == 47u && run.records_run == 7u && run.loops == 1u,
+                      "NEST returns 10, 47 statements handed back, 7 records run, one loop handed back whole");
+    kernel_test_check(test, run.searches == 5u, "each of the five statements is searched once");
+}
+
+/**
+ * @brief A statement evicted from its recent slot takes it back when searched (§3.6): EVIC's Increment of Local1, whose
+ *        slot the call in its If takes at the second turn, is searched once more at the third, then found in its slot
+ *        at the seven after it; the seven statements, eight searches, and EVIC returns 10 with records as without.
+ */
+KERNEL_TEST(a_record_evicted_from_its_recent_slot_takes_it_back)
+{
+    predecoding_write_evicted();
+    if (!kernel_test_check(test, !predecoding_method.overflowed, "the made-up AML fits"))
+        return;
+
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_method.bytes, predecoding_method.length, 2u,
+                                                     "\\EVIC", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 10u, "EVIC returns 10");
+    kernel_test_check(test, run.searches == 8u, "seven statements, the evicted one searched twice");
+}
+
+/**
+ * @brief A statement finds the record of its own table, never one at the same offset of another (§3.6): LPA_ of the
+ *        DSDT adds and LPB_ of the SSDT subtracts at the same offsets, and in one load they return 5 and -5, with
+ *        records as without, both after records ran.
+ */
+KERNEL_TEST(a_statement_finds_the_record_of_its_own_table)
+{
+    PredecodingRun_t runs[2][2] = {
+        {{0}, {0}},
+        {{0}, {0}}
+    };
+
+    for (uint32_t predecodes = 0u; predecodes < 2u; ++predecodes)
+    {
+        if (!predecoding_open_empty(test, predecodes != 0u))
+            return;
+        predecoding_declare(predecoding_table, "DSDT", 2u, predecoding_adding_table, sizeof(predecoding_adding_table));
+        predecoding_declare(predecoding_second_table, "SSDT", 2u, predecoding_subtracting_table,
+                            sizeof(predecoding_subtracting_table));
+        predecoding_evaluate("\\LPA_", PREDECODING_NO_ARGUMENT, &runs[predecodes][0]);
+        predecoding_evaluate("\\LPB_", PREDECODING_NO_ARGUMENT, &runs[predecodes][1]);
+        predecoding_close();
+    }
+    kernel_test_check(test, runs[0][0].result == 5u && runs[0][1].result == ~0ull - 4u, "LPA_ returns 5, LPB_ -5");
+    kernel_test_check(test, runs[1][0].fold == runs[0][0].fold && runs[1][1].fold == runs[0][1].fold,
+                      "the records leave what the loop leaves, in both tables");
+    kernel_test_check(test, runs[1][0].records_run != 0u && runs[1][1].records_run > runs[1][0].records_run,
+                      "records ran in both tables");
+    kernel_test_measure_hexadecimal(test, "fold", runs[1][1].fold);
+}
+
+/**
+ * @brief A frame's loop is handed back whole on its own turns alone, never on what a deeper frame watched (§3.6):
+ *        RECU (1) calls RECU (0), which runs the same While and leaves it watched at its last back-edge; RECU (1)'s
+ *        While, whose If may not go on, is never handed back whole, and RECU returns 1 with records as without.
+ */
+KERNEL_TEST(a_loop_is_handed_back_whole_on_its_own_frame_s_turns)
+{
+    const PredecodingRun_t run = predecoding_compare(
+        test, predecoding_recursive_loop, sizeof(predecoding_recursive_loop), 2u, "\\RECU", 1u, true, "fold");
+
+    kernel_test_check(test, run.result == 1u && run.loops == 0u, "RECU returns 1, its loop never handed back whole");
 }

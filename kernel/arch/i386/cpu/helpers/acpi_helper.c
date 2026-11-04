@@ -236,7 +236,8 @@ acpi_helper_write_services_record(Serial_t *serial,
  * @brief Writes the `[LPLTLM] acpi.predecoding` record (§3.6, §6.1): whether loops run from records, the
  *        back-edges every evaluation took, the statements records ran, those they handed back per reason,
  *        the records built, the times the cache was emptied, its peak, the comparisons decoded with their
- *        LNot, and the turns of While run as tight loops.
+ *        LNot, the turns of While run as tight loops, the statements searched in the hash, and the loops handed back
+ *        whole.
  */
 static void
 acpi_helper_write_predecoding_record(Serial_t *serial,
@@ -259,6 +260,8 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("records_peak", cache->records_peak);
     kernel_telemetry_write_unsigned("fused_comparisons", cache->fused_comparisons);
     kernel_telemetry_write_unsigned("tight_turns", cache->tight_turns);
+    kernel_telemetry_write_unsigned("searches", cache->searches);
+    kernel_telemetry_write_unsigned("handed_back_loops", cache->handed_back_loops);
     kernel_telemetry_end_record();
 }
 

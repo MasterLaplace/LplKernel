@@ -82,6 +82,8 @@ static void predecoding_counts(PredecodingRun_t *run)
     run->flushes = cache->flushes;
     run->built = cache->built;
     run->tight_turns = cache->tight_turns;
+    run->searches = cache->searches;
+    run->loops = cache->handed_back_loops;
 }
 
 bool predecoding_open_empty(KernelTest_t *test, bool predecodes)

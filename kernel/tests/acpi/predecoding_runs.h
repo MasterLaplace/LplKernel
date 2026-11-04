@@ -44,6 +44,8 @@ typedef struct PredecodingRun {
     uint32_t flushes;     /**< Times the cache was emptied. */
     uint32_t built;       /**< Records built. */
     uint32_t tight_turns; /**< Turns of While run as tight loops. */
+    uint32_t searches;    /**< Statements whose record was searched in the hash. */
+    uint32_t loops;       /**< Whiles whose statements all go to the loop, which then ask no record. */
     uint64_t result;      /**< The result's payload, whole. */
 } PredecodingRun_t;
 

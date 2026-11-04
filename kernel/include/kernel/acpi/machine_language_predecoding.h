@@ -43,6 +43,9 @@
     256u /**< Constants the records of a load hold, over every record. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS                                       \
     256u /**< Slots of the hash that finds a record by its table and offset: twice the records. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECENT_RECORDS                                     \
+    64u /**< Recent records a cache keeps, one per offset modulo this count: the last found or built at such an        \
+           offset. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NODES_PER_RECORD                               \
     8u /**< Operators one record's expression holds at most; a longer one is run by the interpreter's loop. */
 
@@ -149,7 +152,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
     uint8_t operators_peak; /**< Operators it holds pending for it at most. */
     uint8_t tight;          /**< For a While, 1 once linked to the record of a body that makes it a tight loop: its
                                  predicate compares two leaves, and its body is one statement that writes. */
-    uint8_t reserved;       /**< Unused, 0. */
+    uint8_t goes_on;        /**< For a record that runs nothing, 1 when its statement always goes on to the one after
+                                 it: a name, or an operator that opens no construct and is no Break, Continue or
+                                 Return. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**
@@ -164,6 +169,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint8_t integer_bits;    /**< The integer width the records were built under. */
     uint32_t frozen_serial;  /**< The frame whose loop builds no record since the cache was emptied under it. */
     uint32_t frozen_start;   /**< Where that loop starts. */
+    uint32_t watched_serial; /**< The frame whose loop handed every statement back at once since its last back-edge,
+                                  each going on to the next; 0 when none. */
+    uint32_t watched_start;  /**< Where that loop starts. */
     uint32_t records_run;    /**< Statements and predicates run from records. */
     uint32_t declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES]; /**< Statements handed back
                                                                                                 to the interpreter's
@@ -173,12 +181,23 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t records_peak;      /**< Most records held at once. */
     uint32_t fused_comparisons; /**< LNot and a comparison decoded as one operator (§7.2, O7). */
     uint32_t tight_turns;       /**< Turns of a While run as a tight loop (§3.6). */
+    uint32_t searches;          /**< Searches of the hash for a statement that neither a link nor its recent slot gave,
+                                     found or not. */
+    uint32_t handed_back_loops; /**< Times a frame's loop was handed back whole, its turns then asking no record. */
     union {
         uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
                                                                                                      per hash slot. */
         uint32_t slot_words[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS /
                             2u]; /**< The same slots, two to a word, as emptying writes them. */
     };
+    uint16_t
+        recent[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECENT_RECORDS]; /**< The record, plus 1,
+                                                                                              last found or built
+                                                                                              at an offset of each
+                                                                                              slot; one only below
+                                                                                              the count and under
+                                                                                              the offset's key, so
+                                                                                              never emptied. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t
         records[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORDS]; /**< The records. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t
@@ -229,7 +248,20 @@ extern void advanced_configuration_and_power_interface_machine_language_record_l
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint16_t from, uint16_t to);
 
 /**
- * @brief The record of the statement at @p pc of table @p table.
+ * @brief The record of the statement at @p pc of table @p table when it is the recent record of its offset's slot,
+ *        without a search.
+ *
+ * @param cache The cache.
+ * @param table The table, counted from 1.
+ * @param pc    The statement's offset.
+ * @return The record, plus 1; 0 when the slot holds another, or none.
+ */
+static inline uint16_t advanced_configuration_and_power_interface_machine_language_record_recent(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint16_t table, uint32_t pc);
+
+/**
+ * @brief The record of the statement at @p pc of table @p table, searched in the hash, which becomes the recent
+ *        record of its offset's slot.
  *
  * @param cache The cache.
  * @param table The table, counted from 1.
@@ -237,7 +269,7 @@ extern void advanced_configuration_and_power_interface_machine_language_record_l
  * @return The record, plus 1; 0 when the cache holds none.
  */
 extern uint16_t advanced_configuration_and_power_interface_machine_language_record_find(
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint16_t table, uint32_t pc);
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint16_t table, uint32_t pc);
 
 /**
  * @brief Decodes the statement at @p pc of a table under @p limit, the end of the construct around it,
@@ -246,7 +278,8 @@ extern uint16_t advanced_configuration_and_power_interface_machine_language_reco
  *        integers, with no target but NullName; a Store of such an expression to a local or an
  *        argument; an operator on two integers whose target is a local, an argument or NullName; an
  *        Increment or a Decrement of a local or an argument. Any other statement, or one whose decoding
- *        faults, becomes a record the interpreter's loop runs.
+ *        faults, becomes a record the interpreter's loop runs. The record becomes the recent record of its
+ *        offset's slot.
  *
  * @param cache        The cache, whose records are of @p integer_bits.
  * @param code         The table's bytes, header included.

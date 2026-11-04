@@ -4322,9 +4322,9 @@ static bool machine_language_record_statement(MachineLanguageLoad_t *load, Machi
 
 /**
  * @brief The record of the statement at the running frame's pc, found by @p index when it holds that
- *        statement's key, by the cache's hash otherwise, built when the cache holds none: NULL, the reason
- *        counted, when a record built under another end of the construct is found, or when the cache is
- *        full, which empties it and freezes the frame's loop (§6.1).
+ *        statement's key, as the recent record of its offset otherwise, searched in the cache's hash when it is
+ *        not, built when the cache holds none: NULL, the reason counted, when a record built under another end of
+ *        the construct is found, or when the cache is full, which empties it and freezes the frame's loop (§6.1).
  */
 static MachineLanguageRecord_t *machine_language_record_at(MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
                                                            const MachineLanguageBlock_t *block, uint16_t *index,
@@ -4336,7 +4336,13 @@ static MachineLanguageRecord_t *machine_language_record_at(MachineLanguageLoad_t
         cache->records[*index - 1u].table != frame->table)
     {
         *index =
-            advanced_configuration_and_power_interface_machine_language_record_find(cache, frame->table, frame->pc);
+            advanced_configuration_and_power_interface_machine_language_record_recent(cache, frame->table, frame->pc);
+        if (*index == 0u)
+        {
+            ++cache->searches;
+            *index =
+                advanced_configuration_and_power_interface_machine_language_record_find(cache, frame->table, frame->pc);
+        }
         if (*index == 0u && !(cache->frozen_serial == frame->serial && cache->frozen_start == frame->looping_start))
             *index = advanced_configuration_and_power_interface_machine_language_record_build(
                 cache, frame->code, frame->table, frame->pc, block->end, load->integer_bits);
@@ -4490,16 +4496,17 @@ static bool machine_language_run_tight_while(MachineLanguageLoad_t *load, Machin
 
 /**
  * @brief Runs statements of the running frame from records while its pc lies in the While of the frame
- *        known to loop (§3.6): each record runs its statement as the loop would, or hands it back, nothing
- *        changed; a construct's end the records reach is closed as the loop closes it, a While's taking
- *        its back-edge.
+ *        known to loop (§3.6), which ends the watch of a loop: each record runs its statement as the loop would, or
+ *        hands it back, nothing changed; a construct's end the records reach is closed as the loop closes it, a
+ *        While's taking its back-edge.
  *
  * @param load    The load.
+ * @param first   The record of the statement at the frame's pc, plus 1, when known; 0 otherwise.
  * @param out_ran Receives whether a statement or a back-edge ran.
  * @return OK; or what a back-edge past the evaluation's budget, or a function of the loop a record
  *         calls, failed with.
  */
-static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_t *load, bool *out_ran)
+static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_t *load, uint16_t first, bool *out_ran)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
@@ -4511,12 +4518,16 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
         evaluation->operator_count;
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
     uint32_t values_peak = 0u;
-    uint16_t index = 0u;
+    uint16_t index = first;
     uint16_t previous = 0u;
 
     *out_ran = false;
+    cache->watched_serial = 0u;
     if (cache->integer_bits != load->integer_bits)
+    {
         advanced_configuration_and_power_interface_machine_language_predecoding_flush(cache, load->integer_bits);
+        index = 0u;
+    }
     while (status == MACHINE_LANGUAGE_OK)
     {
         const MachineLanguageBlock_t block = *machine_language_block(evaluation);
@@ -4590,27 +4601,81 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
 }
 
 /**
+ * @brief Whether the statement at the running frame's pc goes to the loop before any record runs (§3.6): the
+ *        recent record of its offset holds it and runs nothing, whatever the end of the construct around it, the
+ *        statement counted as handed back.
+ *
+ * @param cache     The cache.
+ * @param frame     The running frame.
+ * @param out_index Receives the statement's recent record, plus 1; 0 when the slot holds another, or none.
+ * @return Whether the statement was handed back.
+ */
+static bool machine_language_records_hand_back(MachineLanguagePredecoding_t *cache, const MachineLanguageFrame_t *frame,
+                                               uint16_t *out_index)
+{
+    *out_index =
+        advanced_configuration_and_power_interface_machine_language_record_recent(cache, frame->table, frame->pc);
+    if (*out_index == 0u || cache->records[*out_index - 1u].shape != MACHINE_LANGUAGE_RECORD(GENERAL))
+        return false;
+    ++cache->declined[MACHINE_LANGUAGE_DECLINED(SHAPE)];
+    return true;
+}
+
+/**
+ * @brief Watches a While whose record hands it back at once, at a back-edge (§3.6): when it is the frame's loop and
+ *        every statement of the turn that ends went to the loop at once, each going on to the next, so will every turn
+ *        after it, and the frame's loop is left empty at the While's start, which its turns then ask no record from;
+ *        otherwise the turn that starts is watched, when the While is the frame's loop.
+ */
+static void machine_language_watch_loop(MachineLanguagePredecoding_t *cache, MachineLanguageFrame_t *frame,
+                                        const MachineLanguageBlock_t *block)
+{
+    if (frame->looping_start != block->start || frame->looping_end != block->end)
+    {
+        cache->watched_serial = 0u;
+        return;
+    }
+    if (cache->watched_serial == frame->serial && cache->watched_start == block->start)
+    {
+        frame->looping_end = block->start;
+        ++cache->handed_back_loops;
+        return;
+    }
+    cache->watched_serial = frame->serial;
+    cache->watched_start = block->start;
+}
+
+/**
  * @brief Takes the back-edge of a method's While that @p block was, then runs the While's statements from
- *        records (§3.6): the While becomes the frame's loop unless the frame's loop holds it already;
- *        when the record of the While hands it back at once, its operator is pushed as the loop pushes it,
- *        and the statement the records stopped at later, unless a construct's end, is decoded at once.
+ *        records (§3.6): a While whose statements all go to the loop, the frame's loop left empty at its start, has
+ *        its operator pushed as the loop pushes it; otherwise the While becomes the frame's loop unless the frame's
+ *        loop holds it already; when the record of the While hands it back at once, the While is watched and its
+ *        operator pushed, and the statement the records stopped at later, unless a construct's end, is decoded at once.
  */
 static MachineLanguageStatus_t machine_language_loop_again(MachineLanguageLoad_t *load,
                                                            const MachineLanguageBlock_t *block)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    uint16_t first = 0u;
     bool ran = false;
     MachineLanguageStatus_t status = machine_language_take_back_edge(evaluation, block);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
+    if (frame->looping_start == block->start && frame->looping_end == block->start)
+        return machine_language_push_while(evaluation, block);
     if (frame->looping_end == 0u || block->start < frame->looping_start || block->end > frame->looping_end)
     {
         frame->looping_start = block->start;
         frame->looping_end = block->end;
     }
-    status = machine_language_run_records(load, &ran);
+    if (machine_language_records_hand_back(&load->predecoding, frame, &first))
+    {
+        machine_language_watch_loop(&load->predecoding, frame, block);
+        return machine_language_push_while(evaluation, block);
+    }
+    status = machine_language_run_records(load, first, &ran);
     if (status != MACHINE_LANGUAGE_OK)
         return status;
     if (!ran)
@@ -4622,20 +4687,29 @@ static MachineLanguageStatus_t machine_language_loop_again(MachineLanguageLoad_t
 
 /**
  * @brief Runs the statement at the running frame's pc: a table's code hands it to the load; a method's
- *        runs from records while its pc lies in the frame's loop, and the statement they stop at, unless a
- *        construct's end, is decoded at once, so that a statement a record hands back is never offered to
- *        the records twice.
+ *        runs from records while its pc lies in the frame's loop, unless the recent record of its offset hands it
+ *        back at once, which ends the watch of a loop when the statement may not go on to the next, and the statement
+ *        they stop at, unless a construct's end, is decoded at once, so that a statement a record hands back is never
+ *        offered to the records twice.
  */
 static MachineLanguageStatus_t machine_language_statement(MachineLanguageLoad_t *load)
 {
     MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
+    uint16_t first = 0u;
     bool ran = false;
 
     if (frame->declares)
         return machine_language_table_statement(load);
     if (frame->pc - frame->looping_start < frame->looping_end - frame->looping_start && load->predecodes_loops)
     {
-        const MachineLanguageStatus_t status = machine_language_run_records(load, &ran);
+        if (machine_language_records_hand_back(&load->predecoding, frame, &first))
+        {
+            if (load->predecoding.records[first - 1u].goes_on == 0u)
+                load->predecoding.watched_serial = 0u;
+            return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
+        }
+
+        const MachineLanguageStatus_t status = machine_language_run_records(load, first, &ran);
 
         if (status != MACHINE_LANGUAGE_OK || frame->pc >= machine_language_block(&load->evaluation)->end)
             return status;

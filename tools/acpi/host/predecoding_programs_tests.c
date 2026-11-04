@@ -29,6 +29,7 @@ typedef struct ProgramsWriter {
 } ProgramsWriter_t;
 
 static MadeUpAml_t programs_bodies[PROGRAMS_MAX_DEPTH + 2u];
+static MadeUpAml_t programs_helper;
 static MadeUpAml_t programs_method;
 
 /**
@@ -101,6 +102,79 @@ static void programs_expression(ProgramsWriter_t *writer, MadeUpAml_t *aml, uint
 }
 
 static void programs_statements(ProgramsWriter_t *writer, MadeUpAml_t *aml);
+
+/**
+ * @brief Appends a call, which no record runs and which goes on to the next statement: BUMP (), which increments
+ *        GLBL, a data local set to INCR (a leaf), or LOOP (a constant), whose While runs in the callee's frame.
+ */
+static void programs_call(ProgramsWriter_t *writer, MadeUpAml_t *aml)
+{
+    const uint8_t local = (uint8_t) (PROGRAMS_LOCAL0 + programs_pick(writer, PROGRAMS_DATA_LOCALS));
+
+    switch (programs_pick(writer, 3u))
+    {
+    case 0u: made_up_aml_name(aml, "BUMP"); return;
+    case 1u:
+        programs_byte(aml, 0x70u);
+        made_up_aml_name(aml, "INCR");
+        programs_leaf(writer, aml);
+        programs_byte(aml, local);
+        return;
+    default:
+        made_up_aml_name(aml, "LOOP");
+        made_up_aml_integer(aml, 1u + programs_pick(writer, 4u));
+        return;
+    }
+}
+
+/**
+ * @brief Appends a While no record runs, whose turns all go to the loop: the counter of its depth set, then `While
+ *        (LAnd (Increment (counter) < bound, One))`, the counter stepped by the predicate itself, its body one to
+ *        three statements that go on to the next: a String stored to a data local, a Noop, or BUMP ().
+ */
+static void programs_refused_while(ProgramsWriter_t *writer, MadeUpAml_t *aml)
+{
+    static const uint8_t while_lead[] = {0xA2u};
+    MadeUpAml_t *body = &programs_bodies[writer->depth + 1u];
+    const uint8_t counter = (uint8_t) (PROGRAMS_LOCAL0 + PROGRAMS_DATA_LOCALS + writer->depth);
+    const uint8_t reset[] = {0x70u, 0x00u, counter};
+    const uint8_t predicate[] = {0x90u, 0x95u, 0x75u, counter, 0x0Au, (uint8_t) (5u + programs_pick(writer, 4u)),
+                                 0x01u};
+    const uint32_t count = 1u + programs_pick(writer, 3u);
+
+    made_up_aml_raw(aml, reset, sizeof(reset));
+    made_up_aml_begin(body);
+    made_up_aml_raw(body, predicate, sizeof(predicate));
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        const uint8_t string[] = {0x70u, 0x0Du, '7', 0x00u,
+                                  (uint8_t) (PROGRAMS_LOCAL0 + programs_pick(writer, PROGRAMS_DATA_LOCALS))};
+        const uint32_t choice = programs_pick(writer, 3u);
+
+        if (choice == 0u)
+            made_up_aml_raw(body, string, sizeof(string));
+        else if (choice == 1u)
+            programs_byte(body, 0xA3u);
+        else
+            made_up_aml_name(body, "BUMP");
+    }
+    made_up_aml_construct(aml, while_lead, sizeof(while_lead), body);
+}
+
+/**
+ * @brief Appends `If (expression) { Return (a data local) }`, which leaves the method early.
+ */
+static void programs_early_return(ProgramsWriter_t *writer, MadeUpAml_t *aml)
+{
+    static const uint8_t if_lead[] = {0xA0u};
+    MadeUpAml_t *body = &programs_bodies[writer->depth + 1u];
+    const uint8_t leave[] = {0xA4u, (uint8_t) (PROGRAMS_LOCAL0 + programs_pick(writer, PROGRAMS_DATA_LOCALS))};
+
+    made_up_aml_begin(body);
+    programs_expression(writer, body, 2u);
+    made_up_aml_raw(body, leave, sizeof(leave));
+    made_up_aml_construct(aml, if_lead, sizeof(if_lead), body);
+}
 
 /**
  * @brief Appends a While that runs as a tight loop: the counter of its depth set, compared with a constant,
@@ -198,12 +272,12 @@ static void programs_construct(ProgramsWriter_t *writer, MadeUpAml_t *aml, bool 
 
 /**
  * @brief Appends one statement: a store, a step or an operator into a data local or NullName, a construct, a While
- *        that runs as a tight loop, a Break or a Continue inside a While, or one that hands records back:
- *        a String stored to a local.
+ *        that runs as a tight loop, a Break or a Continue inside a While, one that hands records back: a String
+ *        stored to a local, a call, a While whose turns all go to the loop, or an If that returns.
  */
 static void programs_statement(ProgramsWriter_t *writer, MadeUpAml_t *aml)
 {
-    const uint32_t choice = programs_pick(writer, 13u);
+    const uint32_t choice = programs_pick(writer, 16u);
     const uint8_t local = (uint8_t) (PROGRAMS_LOCAL0 + programs_pick(writer, PROGRAMS_DATA_LOCALS));
 
     if (choice < 3u)
@@ -236,6 +310,12 @@ static void programs_statement(ProgramsWriter_t *writer, MadeUpAml_t *aml)
     }
     else if (choice == 11u)
         programs_tight_while(writer, aml);
+    else if (choice == 13u)
+        programs_call(writer, aml);
+    else if (choice == 14u)
+        programs_refused_while(writer, aml);
+    else if (choice == 15u)
+        programs_early_return(writer, aml);
     else
         programs_byte(aml, 0xA3u);
 }
@@ -252,12 +332,35 @@ static void programs_statements(ProgramsWriter_t *writer, MadeUpAml_t *aml)
 }
 
 /**
- * @brief Writes MAIN (Arg0): its data locals set to constants, then a While of a few turns whose body
- *        the writer draws, then the sum of the data locals returned.
+ * @brief Writes GLBL, an Integer, and the methods the statements call: BUMP, which increments GLBL, INCR (Arg0), which
+ *        returns Arg0 + 1, and LOOP (Arg0), which counts Arg0 turns of a While of its own.
+ */
+static void programs_write_helpers(void)
+{
+    static const uint8_t bump[] = {0x75u, 'G', 'L', 'B', 'L'};
+    static const uint8_t increment[] = {0xA4u, 0x72u, 0x68u, 0x01u, 0x00u};
+    static const uint8_t loop[] = {0x70u, 0x00u, 0x60u, 0xA2u, 0x06u, 0x95u, 0x60u, 0x68u, 0x75u, 0x60u, 0xA4u, 0x60u};
+
+    made_up_aml_name_integer(&programs_method, "GLBL", 0u);
+    made_up_aml_begin(&programs_helper);
+    made_up_aml_raw(&programs_helper, bump, sizeof(bump));
+    made_up_aml_method(&programs_method, "BUMP", 0x00u, &programs_helper);
+    made_up_aml_begin(&programs_helper);
+    made_up_aml_raw(&programs_helper, increment, sizeof(increment));
+    made_up_aml_method(&programs_method, "INCR", 0x01u, &programs_helper);
+    made_up_aml_begin(&programs_helper);
+    made_up_aml_raw(&programs_helper, loop, sizeof(loop));
+    made_up_aml_method(&programs_method, "LOOP", 0x01u, &programs_helper);
+}
+
+/**
+ * @brief Writes GLBL and the methods it calls, then MAIN (Arg0): its data locals set to constants, then a While of a
+ *        few turns whose body the writer draws, then the sum of the data locals and GLBL returned.
  */
 static void programs_write(ProgramsWriter_t *writer)
 {
-    static const uint8_t finish[] = {0xA4u, 0x72u, 0x72u, 0x60u, 0x61u, 0x00u, 0x72u, 0x62u, 0x63u, 0x00u, 0x00u};
+    static const uint8_t finish[] = {0xA4u, 0x72u, 0x72u, 0x72u, 0x60u, 0x61u, 0x00u, 0x72u, 0x62u,
+                                     0x63u, 0x00u, 0x00u, 'G',   'L',   'B',   'L',   0x00u};
     MadeUpAml_t *body = &programs_bodies[0];
 
     made_up_aml_begin(body);
@@ -272,6 +375,7 @@ static void programs_write(ProgramsWriter_t *writer)
     programs_construct(writer, body, true);
     made_up_aml_raw(body, finish, sizeof(finish));
     made_up_aml_begin(&programs_method);
+    programs_write_helpers();
     made_up_aml_method(&programs_method, "MAIN", 0x01u, body);
 }
 
@@ -299,13 +403,13 @@ KERNEL_TEST(the_boot_line_decides_whether_loops_run_from_records)
 }
 
 /**
- * @brief Methods written from a fixed seed, with While, If, Else, Break and Continue nested in loops of a
+ * @brief Methods written from a fixed seed, with While, If, Else, Break, Continue and Return nested in loops of a
  *        few turns, operators, comparisons and LNot over locals, Arg0 (its 32 high bits set but for the
- *        first) and constants of every width, and
- *        statements that hand records back, and While that run as tight loops, leave what the loop leaves
- *        when their loops run from records: each runs with records off, then on, under both integer
- *        widths, and both leave the same fold. The control: records ran, and were handed back, and While
- *        ran as tight loops, over the methods.
+ *        first) and constants of every width, calls, one into a loop of its own, statements that hand records
+ *        back, While that run as tight loops, and While whose turns all go to the loop, leave what the loop
+ *        leaves when their loops run from records: each runs with records off, then on, under both integer
+ *        widths, and both leave the same fold. The control: records ran, and were handed back, While ran as
+ *        tight loops, and loops were handed back whole, over the methods.
  */
 KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
 {
@@ -315,6 +419,7 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
     uint64_t records_run = 0u;
     uint64_t declined = 0u;
     uint64_t tight_turns = 0u;
+    uint64_t loops = 0u;
 
     for (uint32_t program = 0u; program < PROGRAMS_COUNT; ++program)
     {
@@ -335,14 +440,16 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
         records_run += on.records_run;
         declined += on.declined;
         tight_turns += on.tight_turns;
+        loops += on.loops;
     }
     kernel_test_check(test, written > PROGRAMS_COUNT / 2u, "most methods fit their builder");
     kernel_test_check(test, agree == written, "every method leaves with records what it leaves without");
-    kernel_test_check(test, records_run != 0u && declined != 0u && tight_turns != 0u,
-                      "records ran, and were handed back, and While ran as tight loops");
+    kernel_test_check(test, records_run != 0u && declined != 0u && tight_turns != 0u && loops != 0u,
+                      "records ran, and were handed back, While ran as tight loops, and loops were handed back whole");
     kernel_test_measure(test, "methods", written);
     kernel_test_measure(test, "records_run", (uint32_t) records_run);
     kernel_test_measure(test, "tight_turns", (uint32_t) tight_turns);
+    kernel_test_measure(test, "handed_back_loops", (uint32_t) loops);
 }
 
 /**
