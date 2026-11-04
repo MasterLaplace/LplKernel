@@ -15,6 +15,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_evaluation, KERNEL_
 static uint8_t evaluation_table[EVALUATION_TABLE_CAPACITY];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t evaluation_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t evaluation_load;
+static AdvancedConfigurationAndPowerInterfaceHost_t evaluation_faulty_host;
+static uint32_t evaluation_values_taken_back;
 
 /**
  * @brief Loads @p aml as a DSDT of @p revision, running its table-level code.
@@ -58,6 +60,23 @@ static void evaluation_close(KernelTest_t *test)
                       "every run leaves no frame, value, operator, block or temporary node behind");
     kernel_test_check(test, evaluation_load.heap.stale_handles == 0u, "no retain or release met a dead object");
     advanced_configuration_and_power_interface_machine_language_close(&evaluation_load);
+}
+
+/**
+ * @brief The simulated host's clock, which first takes back the value on top of the value stack: the Timer that
+ *        reads it then leaves the stack as deep as it found it, as a producer that pushes nothing would.
+ */
+static uint64_t evaluation_clock_taking_back_a_value(void *context)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &evaluation_load.evaluation;
+
+    if (evaluation->value_count != 0u)
+    {
+        advanced_configuration_and_power_interface_machine_language_value_release(
+            &evaluation_load.heap, &evaluation_load.space, &evaluation->values[--evaluation->value_count]);
+        ++evaluation_values_taken_back;
+    }
+    return evaluation_host.host.clock_100ns(context);
 }
 
 /**
@@ -858,5 +877,50 @@ KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
                       "the host's evaluation of \\_OSI (\"Windows 2015\") runs it in C, and answers Ones");
     advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
                                                                               &evaluation_load.space, &result);
+    evaluation_close(test);
+}
+
+/**
+ * @brief An operator whose frame holds fewer values than it takes is refused with operands_missing, counted, and
+ *        takes nothing below its frame, its Timer leaving the stack as deep as it found it: an Add at table level,
+ *        which would read below the value stack; an Add in M001, which would take the 0x07 of its caller; the
+ *        predicate of an If in M002 and the count of a VarPackage in M003, which would read below their frame. SEEN
+ *        counts the methods that went on past their Timer.
+ */
+KERNEL_TEST(an_operator_whose_frame_holds_fewer_values_than_it_takes_is_refused)
+{
+    static const uint8_t aml[] = {
+        0x14u, 0x14u, 'M',   '0',   '0',   '1',   0x00u, 0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 0x60u, 0x75u,
+        'S',   'E',   'E',   'N',   0xA4u, 0x60u, 0x14u, 0x11u, 'M',   '0',   '0',   '2',   0x00u, 0xA0u, 0x08u,
+        0x5Bu, 0x33u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x14u, 0x14u, 'M',   '0',   '0',   '3',
+        0x00u, 0x70u, 0x13u, 0x04u, 0x5Bu, 0x33u, 0x01u, 0x60u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u,
+        0x08u, 'R',   'E',   'S',   '1',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '2',   0x0Au, 0x05u, 0x08u,
+        'R',   'E',   'S',   '3',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '4',   0x0Au, 0x05u, 0x08u, 'S',
+        'E',   'E',   'N',   0x00u, 0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 'R',   'E',   'S',   '1',   0x70u,
+        0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '1',   0x00u, 'R',   'E',   'S',   '2',   0x70u, 0x72u, 0x0Au,
+        0x07u, 'M',   '0',   '0',   '2',   0x00u, 'R',   'E',   'S',   '3',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',
+        '0',   '0',   '3',   0x00u, 'R',   'E',   'S',   '4',   0x08u, 'A',   'F',   'T',   'R',   0x01u,
+    };
+
+    advanced_configuration_and_power_interface_simulated_host_open(&evaluation_host);
+    evaluation_faulty_host = evaluation_host.host;
+    evaluation_faulty_host.clock_100ns = evaluation_clock_taking_back_a_value;
+    evaluation_values_taken_back = 0u;
+    if (!made_up_load_on(test, &evaluation_load, &evaluation_faulty_host, evaluation_table, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_measure(test, "values_taken_back", evaluation_values_taken_back);
+    kernel_test_check(
+        test,
+        evaluation_values_taken_back == 4u &&
+            evaluation_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OPERANDS_MISSING) ==
+                4u &&
+            evaluation_load.evaluation.failures == 4u,
+        "each of the four statements fails with operands_missing, and nothing else fails");
+    kernel_test_check(test,
+                      evaluation_integer("RES1") == 5u && evaluation_integer("RES2") == 5u &&
+                          evaluation_integer("RES3") == 5u && evaluation_integer("RES4") == 5u &&
+                          evaluation_integer("AFTR") == 1u,
+                      "no Store stores, and the load goes on to AFTR");
+    kernel_test_check(test, evaluation_integer("SEEN") == 0u, "no method goes on past the operator refused");
     evaluation_close(test);
 }

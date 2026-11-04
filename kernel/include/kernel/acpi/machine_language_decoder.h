@@ -372,6 +372,10 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
                                                                                                recorded no body: its
                                                                                                PkgLength ends before
                                                                                                its flags. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OPERANDS_MISSING,    /**< An operator whose frame
+                                                                                               holds fewer values than
+                                                                                               it takes: a producer
+                                                                                               pushed none. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,               /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
