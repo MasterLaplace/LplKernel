@@ -341,19 +341,23 @@ static void machine_language_count_declaration(MachineLanguageWalk_t *walk)
 /**
  * @brief Creates the node a declaration names in the scope the walk is in, or finds the one that
  *        holds the name already: an External gives way to the object, any other existing node
- *        stays and the declaration counts as a duplicate.
+ *        stays and the declaration counts as a duplicate. A NameString of one NameSeg and no prefix
+ *        names a child of that scope, which needs no walk of prefixes and segments.
  */
 static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *walk,
                                                         const MachineLanguageNameString_t *name, uint8_t type,
                                                         uint32_t *out_index)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
-    uint32_t parent = 0u;
+    uint32_t parent = machine_language_top_block(walk)->scope;
     uint32_t segment = 0u;
-    MachineLanguageStatus_t status =
-        advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
-            &load->space, machine_language_top_block(walk)->scope, walk->bytes, name, &parent, &segment);
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
+    if (!name->root && name->parent_prefixes == 0u && name->segment_count == 1u)
+        segment = advanced_configuration_and_power_interface_machine_language_name_segment(walk->bytes, name->segments);
+    else
+        status = advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
+            &load->space, parent, walk->bytes, name, &parent, &segment);
     walk->last_created = 0u;
     if (status != MACHINE_LANGUAGE_OK)
         return status;
