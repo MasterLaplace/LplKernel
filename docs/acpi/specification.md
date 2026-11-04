@@ -1173,6 +1173,12 @@ published image. The made-up ASL is ours, under MIT.
 - **Pre-decoded loops on the corpus.** `tools/acpi-corpus.sh predecoding <list>` initialises each machine with records
   and without, and compares every line the harness prints, `aml run namespace` (lookups, probes and back-edges)
   included, but `aml run predecoding`, whose sums it prints.
+- **What the records cost on the corpus.** `tools/acpi-corpus.sh records-cost <list>` counts, under callgrind, the
+  instructions `test-acpi-cost --initialize` executes on each machine whose loops ask the records anything, with records
+  and without, the harness `xmake build test-acpi-cost` builds without sanitizers. No machine costs more than 0.5 % more
+  with records than without; the two runs print the same lines but `aml run predecoding`. It counts on the host, where
+  §1.1 judges speed in ring 0, because a boot per machine costs too much; ring 0 gives the same sign and order of
+  magnitude on the two machines it was checked on, an HP Elite x2 G4 and a conga-MA5.
 
 ### 8.5 uACPI's test cases
 
