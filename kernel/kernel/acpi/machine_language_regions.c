@@ -244,10 +244,49 @@ static bool machine_language_directory_table_within(const MachineLanguageLoad_t 
 }
 
 /**
- * @brief Counts a write through @p mapping that landed on the bytes of a table the load reads in place,
- *        and empties the pre-decoded records, built from those bytes (§3.6); the mapping learns at its
- *        first write whether its page holds a table of the directory, so that a write through a page that
- *        holds none, the common case, is one comparison of that answer.
+ * @brief Builds, from the bytes it was declared with, each data object a Name keeps in the load's table @p table
+ *        (O20, §3.5): a write is about to land on those bytes.
+ */
+static void machine_language_build_kept_data(MachineLanguageLoad_t *load, uint32_t table)
+{
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT + 1u;
+         index < load->space.node_count; ++index)
+    {
+        const MachineLanguageNode_t *node =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+
+        if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) == 0u &&
+            node->value.kind == MACHINE_LANGUAGE_VALUE(KEPT_DATA) && node->value.auxiliary == table + 1u)
+            (void) advanced_configuration_and_power_interface_machine_language_materialize(load, index);
+    }
+}
+
+/**
+ * @brief Builds the kept data of each table the load reads in place that has a byte in the @p length bytes at
+ *        @p first, before a write lands on them.
+ */
+static void machine_language_build_kept_data_within(MachineLanguageLoad_t *load, uint64_t first, uint64_t length)
+{
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory = load->directory;
+
+    for (uint32_t index = 0u; index < directory->table_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceTable_t *entry = &directory->tables[index];
+
+        if (entry->physical_address >= first + length || first >= (uint64_t) entry->physical_address + entry->length)
+            continue;
+        for (uint32_t table = 0u; table < load->table_count; ++table)
+            if (load->tables[table].header == entry->header)
+                machine_language_build_kept_data(load, table);
+    }
+}
+
+/**
+ * @brief Counts a write through @p mapping about to land on the bytes of a table the load reads in place,
+ *        empties the pre-decoded records, built from those bytes (§3.6), and builds the data the load keeps in
+ *        that table from the bytes before the write (§3.5); the mapping learns at its first write whether its
+ *        page holds a table of the directory, so that a write through a page that holds none, the common case,
+ *        is one comparison of that answer.
  */
 static void machine_language_note_table_write(MachineLanguageLoad_t *load, MachineLanguageMapping_t *mapping,
                                               uint64_t physical_address, uint8_t width)
@@ -265,6 +304,7 @@ static void machine_language_note_table_write(MachineLanguageLoad_t *load, Machi
     ++load->regions.table_writes;
     advanced_configuration_and_power_interface_machine_language_predecoding_flush(&load->predecoding,
                                                                                   load->predecoding.integer_bits);
+    machine_language_build_kept_data_within(load, physical_address, width);
 }
 
 /**
@@ -327,8 +367,8 @@ static MachineLanguageStatus_t machine_language_aligned_memory(MachineLanguageLo
         return status;
     if (write)
     {
-        host->write_memory(host->context, address, physical_address, width, *value);
         machine_language_note_table_write(load, mapping, physical_address, width);
+        host->write_memory(host->context, address, physical_address, width, *value);
     }
     else
         *value = host->read_memory(host->context, address, physical_address, width);
