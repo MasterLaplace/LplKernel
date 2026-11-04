@@ -232,32 +232,34 @@ static const uint8_t shortcuts_handed_back[] = {
 
 /**
  * @brief OperationRegions, as iasl compiles them, the decoder taking those of one NameSeg whose offset and length need
- *        no interpreter: `OperationRegion (RB__, SystemIO, Zero, One)`, `(RW__, PCI_Config, 0x40, 0x0100)`,
- *        `(RQ__, SystemMemory, 0x0000000100000000, Ones)`, then `Name (OFS_, 0x80)` and
- *        `OperationRegion (RN__, EmbeddedControl, OFS_, 2)`, and `Device (DR__) {OperationRegion (RD__, SystemMemory,
- *        0x1000, 0x10)}`; the decoder hands back to the walk at their RegionSpace `OperationRegion (RB__,
- *        SystemMemory, 0x10, 1)` again, `(RX__, SystemIO, Add (OFS_, 4), 8)`, `(RM__, SystemIO, 0x60, MLEN)` after
- *        `Method (MLEN) {Return (6)}`, and `(RU__, SystemIO, UNDF, 1)` of a name never declared; the walk takes whole
- *        `OperationRegion (\RP__, SystemIO, 0x70, 2)` and `(DR__.RE__, SystemIO, 0x72, 2)`; then, by hand, each in a
- *        Device of its own (`DS__` to `DU__`), a region whose NameSeg starts with a digit, which the NameString reader
- *        refuses, one whose RegionSpace and one whose length the Device's PkgLength cuts; and a region whose NameSeg
- *        the table's end cuts: 11 of them through the decoder, the Name, the Method and the 4 Devices among them.
+ *        no interpreter: `OperationRegion (RB__, SystemIO, Zero, One)`, `(RW__, PCI_Config, 0x40, 0x0100)`, `(RQ__,
+ *        SystemMemory, 0x0000000100000000, Ones)`, then `Name (OFS_, 0x80)`, `Name (DSDT, 0x10)`, the name the table's
+ *        first bytes spell, and `OperationRegion (RN__, EmbeddedControl, OFS_, 2)`, and `Device (DR__) {OperationRegion
+ *        (RD__, SystemMemory, 0x1000, 0x10)}`; the decoder hands back to the walk at their RegionSpace `OperationRegion
+ *        (RB__, SystemMemory, 0x10, 1)` again, `(RX__, SystemIO, Add (OFS_, 4), 8)`, `(RM__, SystemIO, 0x60, MLEN)`
+ *        after `Method (MLEN) {Return (6)}`, and `(RU__, SystemIO, UNDF, 1)` of a name never declared; the walk takes
+ *        whole `OperationRegion (\RP__, SystemIO, 0x70, 2)` and `(DR__.RE__, SystemIO, 0x72, 2)`; then, by hand, each
+ *        in a Device of its own (`DS__` to `DU__`), a region whose NameSeg starts with a digit, which the NameString
+ *        reader refuses, one whose RegionSpace and one whose length the Device's PkgLength cuts; and a region whose
+ *        NameSeg the table's end cuts: 12 of them through the decoder, the 2 Names, the Method and the 4 Devices among
+ *        them.
  */
 static const uint8_t shortcuts_regions[] = {
     0x5Bu, 0x80u, 'R',   'B',   '_',   '_',   0x01u, 0x00u, 0x01u, 0x5Bu, 0x80u, 'R',   'W',   '_',   '_',   0x02u,
     0x0Au, 0x40u, 0x0Bu, 0x00u, 0x01u, 0x5Bu, 0x80u, 'R',   'Q',   '_',   '_',   0x00u, 0x0Eu, 0x00u, 0x00u, 0x00u,
-    0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0xFFu, 0x08u, 'O',   'F',   'S',   '_',   0x0Au, 0x80u, 0x5Bu, 0x80u, 'R',
-    'N',   '_',   '_',   0x03u, 'O',   'F',   'S',   '_',   0x0Au, 0x02u, 0x5Bu, 0x82u, 0x11u, 'D',   'R',   '_',
-    '_',   0x5Bu, 0x80u, 'R',   'D',   '_',   '_',   0x00u, 0x0Bu, 0x00u, 0x10u, 0x0Au, 0x10u, 0x5Bu, 0x80u, 'R',
-    'B',   '_',   '_',   0x00u, 0x0Au, 0x10u, 0x01u, 0x5Bu, 0x80u, 'R',   'X',   '_',   '_',   0x01u, 0x72u, 'O',
-    'F',   'S',   '_',   0x0Au, 0x04u, 0x00u, 0x0Au, 0x08u, 0x14u, 0x09u, 'M',   'L',   'E',   'N',   0x00u, 0xA4u,
-    0x0Au, 0x06u, 0x5Bu, 0x80u, 'R',   'M',   '_',   '_',   0x01u, 0x0Au, 0x60u, 'M',   'L',   'E',   'N',   0x5Bu,
-    0x80u, 'R',   'U',   '_',   '_',   0x01u, 'U',   'N',   'D',   'F',   0x01u, 0x5Bu, 0x80u, 0x5Cu, 'R',   'P',
-    '_',   '_',   0x01u, 0x0Au, 0x70u, 0x0Au, 0x02u, 0x5Bu, 0x80u, 0x2Eu, 'D',   'R',   '_',   '_',   'R',   'E',
-    '_',   '_',   0x01u, 0x0Au, 0x72u, 0x0Au, 0x02u, 0x5Bu, 0x82u, 0x10u, 'D',   'S',   '_',   '_',   0x5Bu, 0x80u,
-    '3',   'R',   '_',   '_',   0x01u, 0x0Au, 0x70u, 0x0Au, 0x02u, 0x5Bu, 0x82u, 0x0Bu, 'D',   'T',   '_',   '_',
-    0x5Bu, 0x80u, 'R',   'S',   '_',   '_',   0x5Bu, 0x82u, 0x0Fu, 'D',   'U',   '_',   '_',   0x5Bu, 0x80u, 'R',
-    'L',   '_',   '_',   0x00u, 0x0Au, 0x10u, 0x0Au, 0x5Bu, 0x80u, 'R',   'Z',
+    0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0xFFu, 0x08u, 'O',   'F',   'S',   '_',   0x0Au, 0x80u, 0x08u, 'D',   'S',
+    'D',   'T',   0x0Au, 0x10u, 0x5Bu, 0x80u, 'R',   'N',   '_',   '_',   0x03u, 'O',   'F',   'S',   '_',   0x0Au,
+    0x02u, 0x5Bu, 0x82u, 0x11u, 'D',   'R',   '_',   '_',   0x5Bu, 0x80u, 'R',   'D',   '_',   '_',   0x00u, 0x0Bu,
+    0x00u, 0x10u, 0x0Au, 0x10u, 0x5Bu, 0x80u, 'R',   'B',   '_',   '_',   0x00u, 0x0Au, 0x10u, 0x01u, 0x5Bu, 0x80u,
+    'R',   'X',   '_',   '_',   0x01u, 0x72u, 'O',   'F',   'S',   '_',   0x0Au, 0x04u, 0x00u, 0x0Au, 0x08u, 0x14u,
+    0x09u, 'M',   'L',   'E',   'N',   0x00u, 0xA4u, 0x0Au, 0x06u, 0x5Bu, 0x80u, 'R',   'M',   '_',   '_',   0x01u,
+    0x0Au, 0x60u, 'M',   'L',   'E',   'N',   0x5Bu, 0x80u, 'R',   'U',   '_',   '_',   0x01u, 'U',   'N',   'D',
+    'F',   0x01u, 0x5Bu, 0x80u, 0x5Cu, 'R',   'P',   '_',   '_',   0x01u, 0x0Au, 0x70u, 0x0Au, 0x02u, 0x5Bu, 0x80u,
+    0x2Eu, 'D',   'R',   '_',   '_',   'R',   'E',   '_',   '_',   0x01u, 0x0Au, 0x72u, 0x0Au, 0x02u, 0x5Bu, 0x82u,
+    0x10u, 'D',   'S',   '_',   '_',   0x5Bu, 0x80u, '3',   'R',   '_',   '_',   0x01u, 0x0Au, 0x70u, 0x0Au, 0x02u,
+    0x5Bu, 0x82u, 0x0Bu, 'D',   'T',   '_',   '_',   0x5Bu, 0x80u, 'R',   'S',   '_',   '_',   0x5Bu, 0x82u, 0x0Fu,
+    'D',   'U',   '_',   '_',   0x5Bu, 0x80u, 'R',   'L',   '_',   '_',   0x00u, 0x0Au, 0x10u, 0x0Au, 0x5Bu, 0x80u,
+    'R',   'Z',
 };
 
 /**
@@ -835,7 +837,7 @@ KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
         {"OperationRegions, every construct walked by the declaration pass",    shortcuts_regions,
          sizeof(shortcuts_regions),                                                                                                             2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
     };
-    const uint32_t decoded[] = {26u, 26u, 15u, 4u, 5u, 11u, 11u, 11u};
+    const uint32_t decoded[] = {26u, 26u, 15u, 4u, 5u, 12u, 12u, 12u};
     uint32_t decoded_directly = 0u;
 
     for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
