@@ -16,6 +16,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_shortcuts, KERNEL_T
 #define SHORTCUTS_DEEP_DEVICES                                                                                         \
     480u /**< Devices nested around the deep case's package: with the table's own construct, 481 open, so that a       \
             package 32 deep passes the 512 of §6.1 by one, the guard's own boundary. */
+#define SHORTCUTS_NODE_CAPS                                                                                            \
+    80u /**< One past the highest node cap the statements load under, from 1, which the predefined objects alone       \
+           pass, to one that holds every name. */
 #define SHORTCUTS_SAMPLE_STRIDE                                                                                        \
     16u /**< Bytes from one changed byte to the next in the sample ring 0 loads; host_shortcuts changes every byte. */
 #define SHORTCUTS_STATUS_COUNT ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT
@@ -34,12 +37,14 @@ typedef struct ShortcutsCase {
     bool ssdt_first;     /**< Whether the SSDT is declared before the DSDT, its integers then 64 bits. */
     bool every_branch;   /**< Whether the declaration pass walks every construct itself, Device bodies included. */
     bool steps_over;     /**< Whether the load with its shortcuts must step over a data object it built. */
+    uint32_t max_nodes;  /**< The node cap the load opens with. */
 } ShortcutsCase_t;
 
 /**
  * @brief What a load ended with: what both ways must agree on, then what only the shortcuts change.
  */
 typedef struct ShortcutsRecord {
+    uint32_t opened;                                /**< 1 when the namespace opened under the case's caps, else 0. */
     uint32_t fold;                                  /**< The namespace's fold. */
     uint32_t live_nodes;                            /**< Nodes in the namespace. */
     uint32_t declarations;                          /**< Nodes the tables created. */
@@ -182,8 +187,11 @@ static const uint8_t shortcuts_statements[] = {
  *        `Scope (D8__) {Name (X0__, 1)}` of a name never declared, `Field (NOPE, ByteAcc, NoLock, Preserve)
  *        {G0__, 8}` of a region never declared and `Field (R0__, ...) {G1__, 8}`; then, by hand, a Name `1A__`
  *        inside `Device (D9__)` and a Method `2M__`, whose NameSeg starts with a digit, which the NameString reader
- *        refuses, a Method and a Field whose PkgLength ends at their name, and a Name cut by the table's end: 8 of
- *        them through the decoder.
+ *        refuses, a Method and a Field whose PkgLength ends at their name; then, each in a Device of its own
+ *        (`DA__` to `DE__`), a Method whose PkgLength ends inside its NameSeg, a Device and a Scope whose PkgLength
+ *        ends inside their NameString, `Name (NS__, Alias (NS__, ALS_))`, whose data object is a statement, and
+ *        `Field (NOPE)` whose PkgLength ends at its name and whose region was never declared; and a Name cut by the
+ *        table's end: 13 of them through the decoder, the 5 Devices among them.
  */
 static const uint8_t shortcuts_handed_back[] = {
     0x5Bu, 0x80u, 'R',   '0',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u, 0x0Au, 0x20u, 0x5Bu, 0x80u,
@@ -195,7 +203,12 @@ static const uint8_t shortcuts_handed_back[] = {
     'O',   'P',   'E',   0x01u, 'G',   '0',   '_',   '_',   0x08u, 0x5Bu, 0x81u, 0x0Bu, 'R',   '0',   '_',   '_',
     0x01u, 'G',   '1',   '_',   '_',   0x08u, 0x5Bu, 0x82u, 0x0Bu, 'D',   '9',   '_',   '_',   0x08u, '1',   'A',
     '_',   '_',   0x01u, 0x14u, 0x06u, '2',   'M',   '_',   '_',   0x00u, 0x14u, 0x05u, 'M',   'C',   'U',   'T',
-    0x5Bu, 0x81u, 0x05u, 'R',   '0',   '_',   '_',   0x08u, 'N',   'C',   'U',   'T',
+    0x5Bu, 0x81u, 0x05u, 'R',   '0',   '_',   '_',   0x5Bu, 0x82u, 0x0Bu, 'D',   'A',   '_',   '_',   0x14u, 0x03u,
+    'M',   'X',   '_',   '_',   0x5Bu, 0x82u, 0x0Cu, 'D',   'B',   '_',   '_',   0x5Bu, 0x82u, 0x03u, 'D',   'X',
+    '_',   '_',   0x5Bu, 0x82u, 0x0Bu, 'D',   'C',   '_',   '_',   0x10u, 0x04u, 0x5Cu, 'S',   'B',   '_',   0x5Bu,
+    0x82u, 0x13u, 'D',   'D',   '_',   '_',   0x08u, 'N',   'S',   '_',   '_',   0x06u, 'N',   'S',   '_',   '_',
+    'A',   'L',   'S',   '_',   0x5Bu, 0x82u, 0x0Cu, 'D',   'E',   '_',   '_',   0x5Bu, 0x81u, 0x05u, 'N',   'O',
+    'P',   'E',   0x08u, 'N',   'C',   'U',   'T',
 };
 
 /**
@@ -297,10 +310,10 @@ static void shortcuts_change_one_byte(const uint8_t *table, uint32_t length, uin
 
 /**
  * @brief Loads a case into shortcuts_load, with its shortcuts or without, its method bodies decoded as in the
- *        debug kernel and the host tools, and records what it ended with.
+ *        debug kernel and the host tools, and records what it ended with; a namespace its node cap does not let
+ *        open records that alone.
  */
-static bool shortcuts_record(KernelTest_t *test, const ShortcutsCase_t *load_case, bool general,
-                             ShortcutsRecord_t *out_record)
+static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, ShortcutsRecord_t *out_record)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = &shortcuts_load;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *dsdt =
@@ -310,15 +323,16 @@ static bool shortcuts_record(KernelTest_t *test, const ShortcutsCase_t *load_cas
             made_up_definition_block(shortcuts_ssdt, "SSDT", 2u, load_case->ssdt, load_case->ssdt_bytes) :
             NULL;
 
+    memset(out_record, 0, sizeof(*out_record));
     advanced_configuration_and_power_interface_simulated_host_open(&shortcuts_host);
-    if (!kernel_test_check(test,
-                           advanced_configuration_and_power_interface_machine_language_open(
-                               &shortcuts_load, &shortcuts_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
-                           "the namespace opens"))
+    if (!advanced_configuration_and_power_interface_machine_language_open(
+            &shortcuts_load, &shortcuts_host.host, load_case->max_nodes, MADE_UP_MAX_ARENA_BYTES))
     {
         advanced_configuration_and_power_interface_machine_language_close(&shortcuts_load);
-        return false;
+        advanced_configuration_and_power_interface_simulated_host_close(&shortcuts_host);
+        return;
     }
+    out_record->opened = 1u;
     shortcuts_load.general_load = general;
     shortcuts_load.declares_every_branch = load_case->every_branch;
     if (ssdt != NULL && load_case->ssdt_first)
@@ -327,7 +341,6 @@ static bool shortcuts_record(KernelTest_t *test, const ShortcutsCase_t *load_cas
     if (ssdt != NULL && !load_case->ssdt_first)
         (void) advanced_configuration_and_power_interface_machine_language_declare_table(&shortcuts_load, ssdt);
     advanced_configuration_and_power_interface_machine_language_decode_tables(&shortcuts_load);
-    memset(out_record, 0, sizeof(*out_record));
     out_record->fold = advanced_configuration_and_power_interface_machine_language_namespace_fold(load);
     out_record->live_nodes = load->space.live_nodes;
     out_record->declarations = load->declarations;
@@ -350,13 +363,13 @@ static bool shortcuts_record(KernelTest_t *test, const ShortcutsCase_t *load_cas
     out_record->taken.declarations_decoded_directly = load->declarations_decoded_directly;
     advanced_configuration_and_power_interface_machine_language_close(&shortcuts_load);
     advanced_configuration_and_power_interface_simulated_host_close(&shortcuts_host);
-    return true;
 }
 
 /**
  * @brief Whether a case loads to the same namespace and the same counts of what it declared with the load's
  *        shortcuts and without, the load without them taking none, and the shortcuts stepped over a data object
- *        when the case says they must; @p out_taken receives what the shortcuts took.
+ *        when the case says they must; @p out_taken receives what the shortcuts took. A case under the made-up
+ *        node cap must open its namespace; under a lower cap, both loads may fail to open it alike.
  */
 static bool shortcuts_agree(KernelTest_t *test, const ShortcutsCase_t *load_case, ShortcutsTaken_t *out_taken)
 {
@@ -365,7 +378,10 @@ static bool shortcuts_agree(KernelTest_t *test, const ShortcutsCase_t *load_case
     ShortcutsRecord_t general;
 
     memset(out_taken, 0, sizeof(*out_taken));
-    if (!shortcuts_record(test, load_case, false, &shortcut) || !shortcuts_record(test, load_case, true, &general))
+    shortcuts_record(load_case, false, &shortcut);
+    shortcuts_record(load_case, true, &general);
+    if (!kernel_test_check(test, shortcut.opened != 0u || load_case->max_nodes < MADE_UP_MAX_NODES,
+                           "the namespace opens"))
         return false;
     *out_taken = shortcut.taken;
     return memcmp(&general.taken, &none, sizeof(none)) == 0 &&
@@ -391,7 +407,7 @@ void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t
 {
     uint32_t length = 0u;
     const uint8_t *bytes = shortcuts_table_bytes(table, &length);
-    const ShortcutsCase_t mutant = {"", shortcuts_mutant, length, 2u, NULL, 0u, false, false, false};
+    const ShortcutsCase_t mutant = {"", shortcuts_mutant, length, 2u, NULL, 0u, false, false, false, MADE_UP_MAX_NODES};
 
     memset(out_mutations, 0, sizeof(*out_mutations));
     out_mutations->bytes = length;
@@ -424,18 +440,19 @@ KERNEL_TEST(a_name_s_data_object_decoded_once_declares_what_two_decodings_declar
 {
     ShortcutsCase_t cases[] = {
         {"data of every kind under revision 2",          shortcuts_constants,   sizeof(shortcuts_constants),   2u, NULL, 0u,                     false,
-         false,                                                                                                                                                true},
+         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
         {"data of every kind under revision 1",          shortcuts_constants,   sizeof(shortcuts_constants),   1u, NULL, 0u,                     false,
-         false,                                                                                                                                                true},
+         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
         {"an SSDT declared before a DSDT of revision 1", shortcuts_constants,   sizeof(shortcuts_constants),   1u,
-         shortcuts_wide,                                                                                                 sizeof(shortcuts_wide), true,  false, true},
-        {"sizes a name gives",                           shortcuts_named_sizes, sizeof(shortcuts_named_sizes), 2u, NULL, 0u,                     false, false, true},
-        {"data the decoder refuses",                     shortcuts_malformed,   sizeof(shortcuts_malformed),   2u, NULL, 0u,                     false, false,
-         true                                                                                                                                                      },
+         shortcuts_wide,                                                                                                 sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
+        {"sizes a name gives",                           shortcuts_named_sizes, sizeof(shortcuts_named_sizes), 2u, NULL, 0u,                     false, false, true,
+         MADE_UP_MAX_NODES                                                                                                                                                            },
+        {"data the decoder refuses",                     shortcuts_malformed,   sizeof(shortcuts_malformed),   2u, NULL, 0u,                     false, false, true,
+         MADE_UP_MAX_NODES                                                                                                                                                            },
         {"a PkgLength that abandons the table",          shortcuts_crossing,    sizeof(shortcuts_crossing),    2u, NULL, 0u,                     false,
-         false,                                                                                                                                                true},
-        {"a package 33 deep",                            NULL,                  0u,                            2u, NULL, 0u,                     false, false, true},
-        {"a package 32 deep inside 480 Devices",         NULL,                  0u,                            2u, NULL, 0u,                     false, true,  true},
+         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
+        {"a package 33 deep",                            NULL,                  0u,                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
+        {"a package 32 deep inside 480 Devices",         NULL,                  0u,                            2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
     };
     const uint32_t count = sizeof(cases) / sizeof(cases[0]);
     uint32_t stepped_over = 0u;
@@ -497,17 +514,17 @@ KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
 {
     const ShortcutsCase_t cases[] = {
         {"statements the decoder takes, under revision 2",                      shortcuts_statements,       sizeof(shortcuts_statements),       2u, NULL,
-         0u,                                                                                                                                                  false, false, true},
+         0u,                                                                                                                                                  false, false, true, MADE_UP_MAX_NODES},
         {"statements the decoder takes, under revision 1",                      shortcuts_statements,       sizeof(shortcuts_statements),       1u, NULL,
-         0u,                                                                                                                                                  false, false, true},
+         0u,                                                                                                                                                  false, false, true, MADE_UP_MAX_NODES},
         {"statements the decoder hands back",                                   shortcuts_handed_back,      sizeof(shortcuts_handed_back),      2u, NULL, 0u, false,
-         false,                                                                                                                                                             true},
+         false,                                                                                                                                                             true, MADE_UP_MAX_NODES},
         {"the declarations of table-level code it runs",                        shortcuts_table_level_code, sizeof(shortcuts_table_level_code),
-         2u,                                                                                                                                        NULL, 0u, false, false, true},
+         2u,                                                                                                                                        NULL, 0u, false, false, true, MADE_UP_MAX_NODES},
         {"the declarations of table-level code whose every branch it declares", shortcuts_table_level_code,
-         sizeof(shortcuts_table_level_code),                                                                                                    2u, NULL, 0u, false, true,  true},
+         sizeof(shortcuts_table_level_code),                                                                                                    2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
     };
-    const uint32_t decoded[] = {25u, 25u, 8u, 4u, 5u};
+    const uint32_t decoded[] = {25u, 25u, 13u, 4u, 5u};
     uint32_t decoded_directly = 0u;
 
     for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
@@ -520,6 +537,32 @@ KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
         decoded_directly += taken.declarations_decoded_directly;
     }
     kernel_test_measure(test, "declarations_decoded_directly", decoded_directly);
+}
+
+/**
+ * @brief The namespace full at every statement: the statements the decoder takes load under each node cap from 1 to
+ *        79 to the same namespace, faults and counts of what they declared with the load's shortcuts and without,
+ *        whether the cap refuses the predefined objects, so that neither load opens its namespace, the name of a
+ *        Name, a Method or a construct the decoder takes, or none.
+ */
+KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares_under_every_node_cap)
+{
+    uint32_t disagreements = 0u;
+    uint32_t taking = 0u;
+
+    for (uint32_t cap = 1u; cap < SHORTCUTS_NODE_CAPS; ++cap)
+    {
+        const ShortcutsCase_t load_case = {
+            "", shortcuts_statements, sizeof(shortcuts_statements), 2u, NULL, 0u, false, false, false, cap};
+        ShortcutsTaken_t taken;
+
+        disagreements += shortcuts_agree(test, &load_case, &taken) ? 0u : 1u;
+        taking += (taken.declarations_decoded_directly != 0u) ? 1u : 0u;
+    }
+    kernel_test_check(test, taking != 0u && taking < SHORTCUTS_NODE_CAPS - 1u,
+                      "some caps refuse the namespace, the others let the decoder take statements");
+    kernel_test_check(test, disagreements == 0u, "every cap declares the same with the decoder and without");
+    kernel_test_measure(test, "caps_taking_statements", taking);
 }
 
 /**
