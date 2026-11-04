@@ -1057,7 +1057,7 @@ same work, not only reach the same result.
 | Layer | What it checks | Where it runs | Oracle |
 |---|---|---|---|
 | Made-up AML | each rule of §4 to §6, each limit, each case of §6.3 | ring 0 (`KERNEL_TEST`) and the host harness, from the same sources | the test's own expected values; parity between the two |
-| Pre-decoded and decoded runs | every made-up test, methods written at random from a fixed seed, and the corpus, with records and without (§3.6) | the host harness (`--predecoding off`), ring 0 (`lpl.acpi.predecoding=off`) | each other: every record of the tests, every fold of a made-up method run both ways, and every line `test-acpi --initialize` prints but the counts of the records |
+| Pre-decoded and decoded runs | every made-up test, methods written at random from a fixed seed, and the corpus, with records and without (§3.6) | the host harness (`--predecoding off`) | each other: every record of the tests, every fold of a made-up method run both ways, and every line `test-acpi --loaded` prints but the counts of the records; ring 0 runs with records, and its parity with the host covers it |
 | Real firmware on the host | the corpus (§8.4) | host | ACPICA's `acpiexec`; the census counts; the `iasl` disassembly; the decoded table lines for the static tables |
 | Real firmware in ring 0 | one corpus machine per boot, its tables given as a Multiboot module, run through the simulated host | ring 0, debug kernel | the host harness's records on the same bytes, compared by `tools/parity.sh` |
 | QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the load's folds (namespace, opcodes decoded), against the host's on the printed bytes (§8.7) |
