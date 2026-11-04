@@ -165,12 +165,15 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
     uint32_t probes;          /**< Slots those lookups read. */
     uint32_t generation;      /**< Moves each time a node enters or leaves the hash table, and when a declaration fills
                                    an External: a name resolved from a scope finds the same node while it holds. */
+
+    uint32_t operating_system_interface; /**< The node of `\_OSI`, the method the interpreter runs in C: the one
+                                              the namespace predefines, whatever a table declares. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t;
 
 /**
  * @brief Opens an empty namespace, then creates the root and the predefined objects: the scopes
  *        `\_GPE`, `\_PR_` and `\_SI_`, the devices `\_SB_` and `\_TZ_`, the method `\_OSI` of one
- *        argument, the mutex `\_GL_`, and the names `\_OS_` and `\_REV`.
+ *        argument, whose node it keeps, the mutex `\_GL_`, and the names `\_OS_` and `\_REV`.
  *
  * @param space           Filled; closed with
  * advanced_configuration_and_power_interface_machine_language_namespace_close, even when this fails.

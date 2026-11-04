@@ -364,11 +364,11 @@ never runs from records. A load runs none when the boot line holds
 the same stacks. When an attach's frame returns, the access resumes: the name that reached it runs again; when a
 `_REG`'s returns, the method that created the region goes on at its next statement. A field unit starts
 the attach of its regions when code first names it, whatever the operator, so that a reference made to it reads it
-later. They count against the same depth limit. A failure inside an internal frame, a limit of §6.1 apart, makes the
-object it evaluates absent, counted, as ACPICA and uACPI take a failed `_ADR`, `_SEG` or `_BBN`: an attach that needs
-a field of its own region reads `region_unevaluated` there, and goes on without that object; a `_REG` that fails is
-dropped, counted. An attach that a name inside a package (§5.1) or a String path (§4.2) reaches, where no frame can
-wait, fails as `region_unevaluated` when it needs a method.
+later. They count against the same depth limit. A failure inside an internal frame, or of its call, a limit of §6.1
+apart, makes the object it evaluates absent, counted, as ACPICA and uACPI take a failed `_ADR`, `_SEG` or `_BBN`: an
+attach that needs a field of its own region reads `region_unevaluated` there, and goes on without that object; a `_REG`
+that fails is dropped, counted. An attach that a name inside a package (§5.1) or a String path (§4.2) reaches, where
+no frame can wait, fails as `region_unevaluated` when it needs a method.
 
 **Errors** carry a typed status (§6.2). In a method, an error unwinds every frame of the evaluation: temporaries
 removed, mutexes released, values dropped. At table level, a statement that fails to run is skipped, a predicate
@@ -951,6 +951,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 |---|---|---|---|
 | PkgLength crossing its parent | the evaluation fails | the rest of the table is abandoned, its objects kept, the next table loads | `pkglength_out_of_parent` |
 | Truncated operand, bad NameString | fails | the innermost enclosing construct is skipped | `truncated` |
+| A call of a method whose PkgLength ends before its flags, declared without a body | fails | construct skipped | `method_without_body` |
 | Invalid or unimplemented opcode | fails | construct skipped | `invalid_opcode`, `unimplemented_operator` |
 | Name not found when executed | fails | construct skipped | `name_not_found` |
 | A method creates a name that exists, as a `Name` in a loop | fails | a duplicate: skipped and counted (§5.1) | `name_exists`, `duplicates` |
