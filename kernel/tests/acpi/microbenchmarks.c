@@ -5,18 +5,340 @@
 #include <kernel/testing/test.h>
 
 #include <stdint.h>
+#include <string.h>
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_microbenchmarks, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define MICROBENCHMARK_TABLE_CAPACITY 64u   /**< Bytes of the buffer a made-up DSDT is written in. */
-#define MICROBENCHMARK_TURNS          1000u /**< Turns of the loop, and lookups, of window W4. */
-#define MICROBENCHMARK_SCOPE_CHILDREN 3346u /**< Children of the scope the lookups search (§7.4). */
-#define MICROBENCHMARK_MAX_NODES      4096u /**< The node cap of the load that holds that scope. */
-#define MICROBENCHMARK_NODE(type)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
+#define MICROBENCHMARK_TABLE_CAPACITY    64u   /**< Bytes of the buffer a made-up DSDT is written in. */
+#define MICROBENCHMARK_TURNS             1000u /**< Turns of the loop, and lookups, of window W4. */
+#define MICROBENCHMARK_SCOPE_CHILDREN    3346u /**< Children of the scope the lookups search (§7.4). */
+#define MICROBENCHMARK_MAX_NODES         4096u /**< The node cap of the load that holds that scope. */
+#define MICROBENCHMARK_NODE(type)        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
+#define MICROBENCHMARK_AML_CAPACITY      8192u /**< Bytes of AML a load of one kind of declaration holds. */
+#define MICROBENCHMARK_DECLARATIONS      256u  /**< Declarations most loads of one kind make. */
+#define MICROBENCHMARK_PACKAGE_COUNT     32u   /**< Names the load of packages declares. */
+#define MICROBENCHMARK_PACKAGES_PER_NAME 8u    /**< Packages each of those Names holds. */
+#define MICROBENCHMARK_FIELD_LISTS       16u   /**< Field lists the load of field units declares. */
+#define MICROBENCHMARK_UNITS_PER_LIST    16u   /**< Units each of those lists declares. */
+#define MICROBENCHMARK_LINK_BYTES        7u    /**< Bytes of `Device (LNKA) {}`. */
+#define MICROBENCHMARK_EXTERNAL_BYTES    8u    /**< Bytes of `External (\LNKA, DeviceObj)`. */
+#define MICROBENCHMARK_LAST_BYTES        6u    /**< Bytes of `Name (LAST, Zero)`. */
+
+/**
+ * @brief A kind of declaration whose load window W1 counts apart from the others (§7.4).
+ */
+typedef enum MicrobenchmarkKind {
+    MICROBENCHMARK_INTEGER_NAMES, /**< `Name (Nxxx, 0x0001xxxx)`. */
+    MICROBENCHMARK_STRING_NAMES,  /**< `Name (Nxxx, "PNP0C0F")`. */
+    MICROBENCHMARK_BUFFER_NAMES,  /**< `Name (Nxxx, ResourceTemplate () { IO (...) IRQNoFlags () {1} })`. */
+    MICROBENCHMARK_PACKAGE_NAMES, /**< `Name (Nxxx, Package () { 8 Package () { DWord, Byte, LNKA, Zero } })`, a
+                                       _PRT's shape. */
+    MICROBENCHMARK_METHODS,       /**< `Method (Mxxx, 1) { Return (Arg0) }`. */
+    MICROBENCHMARK_DEVICES,       /**< `Device (Dxxx) {}`. */
+    MICROBENCHMARK_SCOPES,        /**< `Scope (\_SB) { Name (Sxxx, Zero) }`. */
+    MICROBENCHMARK_REGIONS,       /**< `OperationRegion (Rxxx, SystemIO, 0x1xxx, 4)`. */
+    MICROBENCHMARK_FIELD_UNITS,   /**< 16 `Field (FREG, ByteAcc, NoLock, Preserve)` of 16 units of 8 bits. */
+    MICROBENCHMARK_EXTERNALS,     /**< `External (\LNKA, DeviceObj)`, of a Device the table declares first, then
+                                       `Name (LAST, Zero)`, which only a walk past every External declares. */
+} MicrobenchmarkKind_t;
+
+/**
+ * @brief The object a load of one kind of declaration declares last, and the type it must have: the load
+ *        declared the kind its table was written for.
+ */
+typedef struct MicrobenchmarkLastObject {
+    const char *scope; /**< The child of the root it lies in, or NULL for the root. */
+    const char *name;  /**< Its NameSeg. */
+    uint8_t type;      /**< The type its node must have. */
+} MicrobenchmarkLastObject_t;
+
+/**
+ * @brief The AML of a load of one kind of declaration, written here rather than by made_up_aml.c: a table of
+ *        one kind takes up to 5,632 bytes, past the 2,048 a MadeUpAml_t holds, and made_up_aml.c builds its
+ *        constructs in MadeUpAml_t locals, which a larger capacity would push past the kernel's 16 KiB frame
+ *        limit.
+ */
+typedef struct MicrobenchmarkAml {
+    uint8_t bytes[MICROBENCHMARK_AML_CAPACITY]; /**< The AML. */
+    uint32_t length;                            /**< Bytes written. */
+    bool overflowed;                            /**< Whether a write did not fit, and was dropped. */
+} MicrobenchmarkAml_t;
 
 static uint8_t microbenchmark_table[MICROBENCHMARK_TABLE_CAPACITY];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t microbenchmark_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t microbenchmark_load;
+static MicrobenchmarkAml_t microbenchmark_aml;
+static uint8_t microbenchmark_declarations_table[MADE_UP_TABLE_HEADER + MICROBENCHMARK_AML_CAPACITY];
+
+/**
+ * @brief The objects a load of each kind of declaration declares.
+ */
+static const uint32_t microbenchmark_expected_declarations[] = {
+    [MICROBENCHMARK_INTEGER_NAMES] = MICROBENCHMARK_DECLARATIONS,
+    [MICROBENCHMARK_STRING_NAMES] = MICROBENCHMARK_DECLARATIONS,
+    [MICROBENCHMARK_BUFFER_NAMES] = MICROBENCHMARK_DECLARATIONS,
+    [MICROBENCHMARK_PACKAGE_NAMES] = 1u + MICROBENCHMARK_PACKAGE_COUNT,
+    [MICROBENCHMARK_METHODS] = MICROBENCHMARK_DECLARATIONS,
+    [MICROBENCHMARK_DEVICES] = MICROBENCHMARK_DECLARATIONS,
+    [MICROBENCHMARK_SCOPES] = MICROBENCHMARK_DECLARATIONS,
+    [MICROBENCHMARK_REGIONS] = MICROBENCHMARK_DECLARATIONS,
+    [MICROBENCHMARK_FIELD_UNITS] = 1u + MICROBENCHMARK_FIELD_LISTS * MICROBENCHMARK_UNITS_PER_LIST,
+    [MICROBENCHMARK_EXTERNALS] = 2u,
+};
+
+/**
+ * @brief The bytes of AML a load of each kind of declaration holds, computed apart from the code that writes it: a
+ *        declaration takes 10 bytes as an integer Name, 14 as a String one, 22 as a Buffer one, 129 as a Name of 8
+ *        packages, 9 as a Method, 7 as a Device, 13 as a Scope and its Name, 12 as an OperationRegion, 89 as a field
+ *        list of 16 units, and 8 as an External; the region of the field lists takes 13.
+ */
+static const uint32_t microbenchmark_expected_bytes[] = {
+    [MICROBENCHMARK_INTEGER_NAMES] = MICROBENCHMARK_DECLARATIONS * 10u,
+    [MICROBENCHMARK_STRING_NAMES] = MICROBENCHMARK_DECLARATIONS * 14u,
+    [MICROBENCHMARK_BUFFER_NAMES] = MICROBENCHMARK_DECLARATIONS * 22u,
+    [MICROBENCHMARK_PACKAGE_NAMES] = MICROBENCHMARK_LINK_BYTES + MICROBENCHMARK_PACKAGE_COUNT * 129u,
+    [MICROBENCHMARK_METHODS] = MICROBENCHMARK_DECLARATIONS * 9u,
+    [MICROBENCHMARK_DEVICES] = MICROBENCHMARK_DECLARATIONS * 7u,
+    [MICROBENCHMARK_SCOPES] = MICROBENCHMARK_DECLARATIONS * 13u,
+    [MICROBENCHMARK_REGIONS] = MICROBENCHMARK_DECLARATIONS * 12u,
+    [MICROBENCHMARK_FIELD_UNITS] = 13u + MICROBENCHMARK_FIELD_LISTS * 89u,
+    [MICROBENCHMARK_EXTERNALS] = MICROBENCHMARK_LINK_BYTES +
+                                 MICROBENCHMARK_DECLARATIONS * MICROBENCHMARK_EXTERNAL_BYTES +
+                                 MICROBENCHMARK_LAST_BYTES,
+};
+
+/**
+ * @brief The object a load of each kind of declaration declares last, and the type it must have.
+ */
+static const MicrobenchmarkLastObject_t microbenchmark_last_objects[] = {
+    [MICROBENCHMARK_INTEGER_NAMES] = {NULL,   "N0FF", MICROBENCHMARK_NODE(INTEGER)         },
+    [MICROBENCHMARK_STRING_NAMES] = {NULL,   "N0FF", MICROBENCHMARK_NODE(STRING)          },
+    [MICROBENCHMARK_BUFFER_NAMES] = {NULL,   "N0FF", MICROBENCHMARK_NODE(BUFFER)          },
+    [MICROBENCHMARK_PACKAGE_NAMES] = {NULL,   "N01F", MICROBENCHMARK_NODE(PACKAGE)         },
+    [MICROBENCHMARK_METHODS] = {NULL,   "M0FF", MICROBENCHMARK_NODE(METHOD)          },
+    [MICROBENCHMARK_DEVICES] = {NULL,   "D0FF", MICROBENCHMARK_NODE(DEVICE)          },
+    [MICROBENCHMARK_SCOPES] = {"_SB_", "S0FF", MICROBENCHMARK_NODE(INTEGER)         },
+    [MICROBENCHMARK_REGIONS] = {NULL,   "R0FF", MICROBENCHMARK_NODE(OPERATION_REGION)},
+    [MICROBENCHMARK_FIELD_UNITS] = {NULL,   "F0FF", MICROBENCHMARK_NODE(FIELD_UNIT)      },
+    [MICROBENCHMARK_EXTERNALS] = {NULL,   "LAST", MICROBENCHMARK_NODE(INTEGER)         },
+};
+
+/**
+ * @brief Appends @p length bytes to @p aml, or marks it overflowed when they do not fit.
+ */
+static void microbenchmark_put(MicrobenchmarkAml_t *aml, const uint8_t *bytes, uint32_t length)
+{
+    if (length > MICROBENCHMARK_AML_CAPACITY - aml->length)
+    {
+        aml->overflowed = true;
+        return;
+    }
+    memcpy(aml->bytes + aml->length, bytes, length);
+    aml->length += length;
+}
+
+/**
+ * @brief Appends the NameSeg made of @p letter and the three hexadecimal digits of @p index.
+ */
+static void microbenchmark_put_segment(MicrobenchmarkAml_t *aml, char letter, uint32_t index)
+{
+    static const char digits[] = "0123456789ABCDEF";
+    const uint8_t segment[4] = {(uint8_t) letter, (uint8_t) digits[(index >> 8u) & 0xFu],
+                                (uint8_t) digits[(index >> 4u) & 0xFu], (uint8_t) digits[index & 0xFu]};
+
+    microbenchmark_put(aml, segment, sizeof(segment));
+}
+
+/**
+ * @brief Appends `Name (Nxxx, Package () {...})`: 8 packages of an address, a pin, LNKA and a source index.
+ */
+static void microbenchmark_put_package_name(MicrobenchmarkAml_t *aml, uint32_t index)
+{
+    static const uint8_t name[] = {0x08u};
+    static const uint8_t outer[] = {0x12u, 0x4Bu, 0x07u, 0x08u};
+    static const uint8_t inner[] = {0x12u, 0x0Eu, 0x04u, 0x0Cu};
+    static const uint8_t rest[] = {0x0Au, 0x00u, 'L', 'N', 'K', 'A', 0x00u};
+
+    microbenchmark_put(aml, name, sizeof(name));
+    microbenchmark_put_segment(aml, 'N', index);
+    microbenchmark_put(aml, outer, sizeof(outer));
+    for (uint32_t element = 0u; element < MICROBENCHMARK_PACKAGES_PER_NAME; ++element)
+    {
+        const uint8_t address[4] = {0xFFu, 0xFFu, (uint8_t) element, 0x00u};
+
+        microbenchmark_put(aml, inner, sizeof(inner));
+        microbenchmark_put(aml, address, sizeof(address));
+        microbenchmark_put(aml, rest, sizeof(rest));
+    }
+}
+
+/**
+ * @brief Appends `Field (FREG, ByteAcc, NoLock, Preserve)` of 16 units of 8 bits, Fxxx from 16 * @p index:
+ *        a PkgLength of 87, the region's name, its flags and 16 units of 5 bytes.
+ */
+static void microbenchmark_put_field_list(MicrobenchmarkAml_t *aml, uint32_t index)
+{
+    static const uint8_t field[] = {0x5Bu, 0x81u, 0x47u, 0x05u, 'F', 'R', 'E', 'G', 0x01u};
+    static const uint8_t bits[] = {0x08u};
+
+    microbenchmark_put(aml, field, sizeof(field));
+    for (uint32_t unit = 0u; unit < MICROBENCHMARK_UNITS_PER_LIST; ++unit)
+    {
+        microbenchmark_put_segment(aml, 'F', index * MICROBENCHMARK_UNITS_PER_LIST + unit);
+        microbenchmark_put(aml, bits, sizeof(bits));
+    }
+}
+
+/**
+ * @brief Appends the declaration @p index of @p kind.
+ */
+static void microbenchmark_put_declaration(MicrobenchmarkAml_t *aml, MicrobenchmarkKind_t kind, uint32_t index)
+{
+    static const uint8_t name[] = {0x08u};
+    static const uint8_t string[] = {0x0Du, 'P', 'N', 'P', '0', 'C', '0', 'F', 0x00u};
+    static const uint8_t buffer[] = {0x11u, 0x10u, 0x0Au, 0x0Du, 0x47u, 0x01u, 0x60u, 0x00u, 0x60u,
+                                     0x00u, 0x01u, 0x01u, 0x22u, 0x02u, 0x00u, 0x79u, 0x00u};
+    static const uint8_t method[] = {0x14u, 0x08u};
+    static const uint8_t method_body[] = {0x01u, 0xA4u, 0x68u};
+    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u};
+    static const uint8_t scope[] = {0x10u, 0x0Cu, '\\', '_', 'S', 'B', '_', 0x08u};
+    static const uint8_t region[] = {0x5Bu, 0x80u};
+    static const uint8_t external[] = {0x15u, '\\', 'L', 'N', 'K', 'A', 0x06u, 0x00u};
+    static const uint8_t zero[] = {0x00u};
+    const uint8_t integer[5] = {0x0Cu, (uint8_t) index, (uint8_t) (index >> 8u), 0x01u, 0x00u};
+    const uint8_t region_operands[6] = {0x01u, 0x0Bu, (uint8_t) (index * 4u), (uint8_t) (0x10u + ((index * 4u) >> 8u)),
+                                        0x0Au, 0x04u};
+
+    switch (kind)
+    {
+    case MICROBENCHMARK_INTEGER_NAMES:
+    case MICROBENCHMARK_STRING_NAMES:
+    case MICROBENCHMARK_BUFFER_NAMES:
+        microbenchmark_put(aml, name, sizeof(name));
+        microbenchmark_put_segment(aml, 'N', index);
+        if (kind == MICROBENCHMARK_INTEGER_NAMES)
+            microbenchmark_put(aml, integer, sizeof(integer));
+        else if (kind == MICROBENCHMARK_STRING_NAMES)
+            microbenchmark_put(aml, string, sizeof(string));
+        else
+            microbenchmark_put(aml, buffer, sizeof(buffer));
+        return;
+    case MICROBENCHMARK_PACKAGE_NAMES: microbenchmark_put_package_name(aml, index); return;
+    case MICROBENCHMARK_METHODS:
+        microbenchmark_put(aml, method, sizeof(method));
+        microbenchmark_put_segment(aml, 'M', index);
+        microbenchmark_put(aml, method_body, sizeof(method_body));
+        return;
+    case MICROBENCHMARK_DEVICES:
+        microbenchmark_put(aml, device, sizeof(device));
+        microbenchmark_put_segment(aml, 'D', index);
+        return;
+    case MICROBENCHMARK_SCOPES:
+        microbenchmark_put(aml, scope, sizeof(scope));
+        microbenchmark_put_segment(aml, 'S', index);
+        microbenchmark_put(aml, zero, sizeof(zero));
+        return;
+    case MICROBENCHMARK_REGIONS:
+        microbenchmark_put(aml, region, sizeof(region));
+        microbenchmark_put_segment(aml, 'R', index);
+        microbenchmark_put(aml, region_operands, sizeof(region_operands));
+        return;
+    case MICROBENCHMARK_FIELD_UNITS: microbenchmark_put_field_list(aml, index); return;
+    case MICROBENCHMARK_EXTERNALS: microbenchmark_put(aml, external, sizeof(external)); return;
+    }
+}
+
+/**
+ * @brief Writes the AML of a load of @p kind in microbenchmark_aml: the Device the packages and the
+ *        Externals name, or the region the field units lie in, then the declarations, then, after the
+ *        Externals, `Name (LAST, Zero)`.
+ */
+static void microbenchmark_write_declarations(MicrobenchmarkKind_t kind)
+{
+    static const uint8_t link[] = {0x5Bu, 0x82u, 0x05u, 'L', 'N', 'K', 'A'};
+    static const uint8_t last[] = {0x08u, 'L', 'A', 'S', 'T', 0x00u};
+    static const uint8_t field_region[] = {0x5Bu, 0x80u, 'F',   'R',   'E',   'G',  0x01u,
+                                           0x0Bu, 0x00u, 0x10u, 0x0Bu, 0x00u, 0x10u};
+    const uint32_t count = (kind == MICROBENCHMARK_PACKAGE_NAMES) ? MICROBENCHMARK_PACKAGE_COUNT :
+                           (kind == MICROBENCHMARK_FIELD_UNITS)   ? MICROBENCHMARK_FIELD_LISTS :
+                                                                    MICROBENCHMARK_DECLARATIONS;
+
+    memset(&microbenchmark_aml, 0, sizeof(microbenchmark_aml));
+    if (kind == MICROBENCHMARK_PACKAGE_NAMES || kind == MICROBENCHMARK_EXTERNALS)
+        microbenchmark_put(&microbenchmark_aml, link, sizeof(link));
+    if (kind == MICROBENCHMARK_FIELD_UNITS)
+        microbenchmark_put(&microbenchmark_aml, field_region, sizeof(field_region));
+    for (uint32_t index = 0u; index < count; ++index)
+        microbenchmark_put_declaration(&microbenchmark_aml, kind, index);
+    if (kind == MICROBENCHMARK_EXTERNALS)
+        microbenchmark_put(&microbenchmark_aml, last, sizeof(last));
+}
+
+/**
+ * @brief Whether @p load declared the object a load of @p kind declares last, with the type it must have.
+ */
+static bool microbenchmark_declared_last(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                         MicrobenchmarkKind_t kind)
+{
+    const MicrobenchmarkLastObject_t *last = &microbenchmark_last_objects[kind];
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &load->space;
+    uint32_t parent = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+
+    if (last->scope != NULL)
+        parent = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+            space, parent,
+            advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) last->scope,
+                                                                                     0u));
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(
+            space, (parent == 0u) ? 0u :
+                                    advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                                        space, parent,
+                                        advanced_configuration_and_power_interface_machine_language_name_segment(
+                                            (const uint8_t *) last->name, 0u)));
+
+    return node != NULL && node->type == last->type;
+}
+
+/**
+ * @brief Loads a DSDT of one kind of declaration as the release kernel does, its method bodies skipped,
+ *        and checks that it declares every object it holds without counting a fault.
+ */
+static void microbenchmark_declarations(KernelTest_t *test, MicrobenchmarkKind_t kind)
+{
+    microbenchmark_write_declarations(kind);
+    if (!kernel_test_check(
+            test, !microbenchmark_aml.overflowed && microbenchmark_aml.length == microbenchmark_expected_bytes[kind],
+            "the table holds the bytes of its declarations"))
+        return;
+    advanced_configuration_and_power_interface_simulated_host_open(&microbenchmark_host);
+    if (!kernel_test_check(
+            test,
+            advanced_configuration_and_power_interface_machine_language_open(
+                &microbenchmark_load, &microbenchmark_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+            "the namespace opens"))
+    {
+        advanced_configuration_and_power_interface_machine_language_close(&microbenchmark_load);
+        advanced_configuration_and_power_interface_simulated_host_close(&microbenchmark_host);
+        return;
+    }
+    microbenchmark_load.skips_bodies = true;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &microbenchmark_load, made_up_definition_block(microbenchmark_declarations_table, "DSDT", 2u,
+                                                       microbenchmark_aml.bytes, microbenchmark_aml.length));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&microbenchmark_load);
+    kernel_test_check(test,
+                      microbenchmark_load.declarations == microbenchmark_expected_declarations[kind] &&
+                          microbenchmark_load.load_errors == 0u && microbenchmark_load.values_deferred == 0u,
+                      "the load declares every object its table holds, without a fault");
+    kernel_test_check(test, microbenchmark_declared_last(&microbenchmark_load, kind),
+                      "the object declared last has the type of the kind loaded");
+    kernel_test_measure(test, "declarations", microbenchmark_load.declarations);
+    kernel_test_measure(test, "bytes", microbenchmark_aml.length);
+    advanced_configuration_and_power_interface_machine_language_close(&microbenchmark_load);
+    advanced_configuration_and_power_interface_simulated_host_close(&microbenchmark_host);
+}
 
 /**
  * @brief The loop of window W4: LOOP sets Local0 to 0, then runs
@@ -84,7 +406,11 @@ static void microbenchmark_lookups(KernelTest_t *test)
             advanced_configuration_and_power_interface_machine_language_open(
                 &microbenchmark_load, &microbenchmark_host.host, MICROBENCHMARK_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
             "the namespace opens"))
+    {
+        advanced_configuration_and_power_interface_machine_language_close(&microbenchmark_load);
+        advanced_configuration_and_power_interface_simulated_host_close(&microbenchmark_host);
         return;
+    }
     built = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
                 space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
                 advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "WIDE", 0u),
@@ -136,3 +462,65 @@ KERNEL_TEST(the_window_w4_loop_of_a_thousand_turns)
  *        scope it builds first costs more than the lookups, so it has no budget of its own.
  */
 KERNEL_TEST(a_thousand_lookups_in_a_wide_scope) { microbenchmark_lookups(test); }
+
+/**
+ * @brief Window W1 one kind of declaration at a time (§7.4): 256 `Name`s of a DWord constant, loaded as the
+ *        release kernel loads, method bodies skipped. On a debug kernel, `tools/instructions.sh --machine q35
+ *        --inside advanced_configuration_and_power_interface_machine_language_declare_table --skip 1 --times 1
+ *        --append lpl.test=advanced_configuration_and_power_interface_microbenchmarks.<test> kernel/lpl.kernel`
+ *        counts the load of the test's table alone: the boot's load of q35's DSDT is the call it skips.
+ */
+KERNEL_TEST(a_load_of_256_integer_names) { microbenchmark_declarations(test, MICROBENCHMARK_INTEGER_NAMES); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 `Name`s of a String, counted as a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_string_names) { microbenchmark_declarations(test, MICROBENCHMARK_STRING_NAMES); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 `Name`s of a 13-byte ResourceTemplate, counted as
+ *        a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_buffer_names) { microbenchmark_declarations(test, MICROBENCHMARK_BUFFER_NAMES); }
+
+/**
+ * @brief Window W1 one kind at a time: 32 `Name`s of a package of 8 packages of 4 elements, a _PRT's shape,
+ *        1,280 elements in all, counted as a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_32_names_of_eight_packages) { microbenchmark_declarations(test, MICROBENCHMARK_PACKAGE_NAMES); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 `Method`s, counted as a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_methods) { microbenchmark_declarations(test, MICROBENCHMARK_METHODS); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 empty `Device`s, each TermList handed back to the interpreter,
+ *        counted as a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_devices) { microbenchmark_declarations(test, MICROBENCHMARK_DEVICES); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 `Scope (\_SB)` that each declare one `Name`, counted as
+ *        a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_scopes) { microbenchmark_declarations(test, MICROBENCHMARK_SCOPES); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 `OperationRegion`s of constant operands, counted as
+ *        a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_operation_regions) { microbenchmark_declarations(test, MICROBENCHMARK_REGIONS); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 field units in 16 field lists, counted as
+ *        a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_field_units) { microbenchmark_declarations(test, MICROBENCHMARK_FIELD_UNITS); }
+
+/**
+ * @brief Window W1 one kind at a time: 256 `External`s of a Device the table declares, which create nothing, then
+ *        `Name (LAST, Zero)`, which a load that stops short of it would not declare; counted as
+ *        a_load_of_256_integer_names says.
+ */
+KERNEL_TEST(a_load_of_256_externals) { microbenchmark_declarations(test, MICROBENCHMARK_EXTERNALS); }
