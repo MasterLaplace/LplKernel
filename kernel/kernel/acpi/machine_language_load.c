@@ -72,10 +72,16 @@ typedef struct MachineLanguageWalk {
     uint32_t pc;                                                       /**< The next byte to decode. */
     uint32_t pending_count;                                            /**< Operators pending. */
     uint32_t block_count;                                              /**< Constructs open, the table included. */
-    uint32_t fault_opcode;                                             /**< The opcode a fault at pc belongs to. */
-    MachineLanguagePass_t pass;                                        /**< Which pass it is. */
-    uint32_t last_created;   /**< The node the last declaration created, 0 when it created none. */
-    uint32_t external_start; /**< The External the Externals pass places, by its opcode's offset, or 0. */
+    MachineLanguagePendingOperator_t *pending; /**< The load's operator stack, read through this pointer rather than
+                                                    at its place in the load, for the same reason as top. */
+    MachineLanguageBlock_t *top; /**< The construct the walk is in, the last of the load's block stack, kept as it
+                                      opens and closes so that a step reads it without computing where it lies in
+                                      the load, whose layout would then change the step's code; once every
+                                      construct is closed, it stays on the first. */
+    uint32_t fault_opcode;       /**< The opcode a fault at pc belongs to. */
+    MachineLanguagePass_t pass;  /**< Which pass it is. */
+    uint32_t last_created;       /**< The node the last declaration created, 0 when it created none. */
+    uint32_t external_start;     /**< The External the Externals pass places, by its opcode's offset, or 0. */
     MachineLanguageNameString_t external_name; /**< That External's NameString. */
     MachineLanguageFieldList_t field;          /**< The field list being read. */
     bool undeclared_next;     /**< Whether the next TermList the decoding pass opens belongs to a construct the
@@ -121,10 +127,7 @@ typedef struct MachineLanguageKeptFrame {
 /**
  * @brief The construct the walk is in.
  */
-static MachineLanguageBlock_t *machine_language_top_block(MachineLanguageWalk_t *walk)
-{
-    return &walk->load->blocks[walk->block_count - 1u];
-}
+static MachineLanguageBlock_t *machine_language_top_block(MachineLanguageWalk_t *walk) { return walk->top; }
 
 /**
  * @brief The operator on top of the stack, when it belongs to the construct the walk is in.
@@ -133,7 +136,7 @@ static MachineLanguagePendingOperator_t *machine_language_active_operator(Machin
 {
     if (walk->pending_count <= machine_language_top_block(walk)->pending_base)
         return NULL;
-    return &walk->load->pending[walk->pending_count - 1u];
+    return &walk->pending[walk->pending_count - 1u];
 }
 
 /**
@@ -267,7 +270,8 @@ static void machine_language_close_block(MachineLanguageWalk_t *walk)
     }
     if (walk->undeclared_from == walk->block_count)
         walk->undeclared_from = 0u;
-    --walk->block_count;
+    if (--walk->block_count != 0u)
+        --walk->top;
 }
 
 /**
@@ -296,7 +300,7 @@ static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguag
     {
         for (uint32_t index = walk->pending_count; index > block->pending_base; --index)
         {
-            const MachineLanguagePendingOperator_t *pending = &walk->load->pending[index - 1u];
+            const MachineLanguagePendingOperator_t *pending = &walk->pending[index - 1u];
             const uint8_t flags =
                 (pending->opcode == MACHINE_LANGUAGE_CALL) ?
                     0u :
@@ -737,7 +741,7 @@ static MachineLanguageStatus_t machine_language_push_operator(MachineLanguageWal
     if (walk->pending_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PENDING_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    MachineLanguagePendingOperator_t *pending = &walk->load->pending[walk->pending_count++];
+    MachineLanguagePendingOperator_t *pending = &walk->pending[walk->pending_count++];
 
     pending->opcode = (uint16_t) opcode;
     pending->operands_done = 0u;
@@ -788,7 +792,7 @@ static MachineLanguageStatus_t machine_language_name_term(MachineLanguageWalk_t 
     if (walk->pending_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PENDING_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    MachineLanguagePendingOperator_t *pending = &load->pending[walk->pending_count++];
+    MachineLanguagePendingOperator_t *pending = &walk->pending[walk->pending_count++];
 
     pending->opcode = MACHINE_LANGUAGE_CALL;
     pending->operands_done = 0u;
@@ -1390,7 +1394,7 @@ static MachineLanguageStatus_t
 machine_language_open_list(MachineLanguageWalk_t *walk,
                            AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t kind)
 {
-    const MachineLanguagePendingOperator_t active = walk->load->pending[walk->pending_count - 1u];
+    const MachineLanguagePendingOperator_t active = walk->pending[walk->pending_count - 1u];
     const MachineLanguageBlock_t *around = machine_language_top_block(walk);
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     uint32_t scope = around->scope;
@@ -1456,6 +1460,8 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     --walk->pending_count;
 
     MachineLanguageBlock_t *block = &walk->load->blocks[walk->block_count++];
+
+    walk->top = block;
 
     if (walk->undeclared_next && kind == MACHINE_LANGUAGE_OPERAND(TERM_LIST) && walk->undeclared_from == 0u)
         walk->undeclared_from = walk->block_count;
@@ -1832,7 +1838,7 @@ static bool machine_language_keeps_data(MachineLanguageWalk_t *walk, uint32_t in
  */
 static void machine_language_hand_back(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *state)
 {
-    walk->load->pending[walk->pending_count++] = *state;
+    walk->pending[walk->pending_count++] = *state;
     if (walk->pending_count > walk->load->pending_peak)
         walk->load->pending_peak = walk->pending_count;
 }
@@ -2078,6 +2084,8 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
     walk->pc = start;
     walk->pending_count = 0u;
     walk->block_count = 1u;
+    walk->pending = load->pending;
+    walk->top = block;
     walk->fault_opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
     walk->pass = pass;
     walk->last_created = 0u;

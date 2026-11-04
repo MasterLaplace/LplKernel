@@ -8,6 +8,6 @@
 inside=kernel_test_body_the_window_w3_c_states_of_an_intel_and_an_amd_processor
 times=1
 append=lpl.test=advanced_configuration_and_power_interface_processor_idle.the_window_w3_c_states_of_an_intel_and_an_amd_processor
-instructions=713998
-accesses=308828
+instructions=712030
+accesses=308296
 tolerance=1
