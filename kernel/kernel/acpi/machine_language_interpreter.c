@@ -31,6 +31,8 @@
     0x20u /**< Where a term must be a data object, as a Name's object: past every operand kind of a descriptor. */
 #define MACHINE_LANGUAGE_DEBUG_OBJECT_TYPE 16u /**< What ObjectType gives for Debug (ACPI 6.6 §19.6.97). */
 #define MACHINE_LANGUAGE_LOGICAL_BYTES     4u  /**< The bytes of a Buffer LAnd and LOr read, as Windows does (§5.2). */
+#define MACHINE_LANGUAGE_VALUES_BEFORE_LIST                                                                            \
+    1u /**< The values If, While, Package and VarPackage take before their list: the predicate, or the count. */
 #define MACHINE_LANGUAGE_MAX_REFERENCE_HOPS                                                                            \
     256u /**< References a dereference or a store follows: more means a cycle, since stores refuse them. */
 #define MACHINE_LANGUAGE_MAX_NAME_INDIRECTIONS 8u  /**< Names inside packages a read follows (§5.1, §6.1). */
@@ -113,6 +115,42 @@ typedef enum MachineLanguageRunBlock {
     MACHINE_LANGUAGE_RUN_TABLE,      /**< The code of a table, or the term of it a run was asked for. */
 } MachineLanguageRunBlock_t;
 
+#define MACHINE_LANGUAGE_IS_KIND(operand, kind)                                                                        \
+    (MACHINE_LANGUAGE_OPERAND(operand) == MACHINE_LANGUAGE_OPERAND(kind)) /**< Whether a descriptor's operand is of    \
+                                                                             @p kind. */
+#define MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5)                                                        \
+    (MACHINE_LANGUAGE_IS_KIND(k0, FIELD_LIST) || MACHINE_LANGUAGE_IS_KIND(k1, FIELD_LIST) ||                           \
+     MACHINE_LANGUAGE_IS_KIND(k2, FIELD_LIST) || MACHINE_LANGUAGE_IS_KIND(k3, FIELD_LIST) ||                           \
+     MACHINE_LANGUAGE_IS_KIND(k4, FIELD_LIST) ||                                                                       \
+     MACHINE_LANGUAGE_IS_KIND(k5, FIELD_LIST)) /**< Whether a descriptor's operands include a FieldList, whose names   \
+                                                  push the node they name. */
+#define MACHINE_LANGUAGE_PUSHES_NO_VALUE(operand, field_list)                                                          \
+    (MACHINE_LANGUAGE_OPERAND(operand) >= MACHINE_LANGUAGE_OPERAND(ASCII_STRING) ||                                    \
+     (MACHINE_LANGUAGE_IS_KIND(operand, NAME_STRING) && !(field_list))) /**< Whether an operand pushes no value: a     \
+                                                                           string, a list, or a NameString outside a   \
+                                                                           field list's descriptor. */
+#define MACHINE_LANGUAGE_VALUELESS_OPERANDS(field_list, k0, k1, k2, k3, k4, k5)                                        \
+    (uint8_t)(MACHINE_LANGUAGE_PUSHES_NO_VALUE(k0, field_list) + MACHINE_LANGUAGE_PUSHES_NO_VALUE(k1, field_list) +    \
+              MACHINE_LANGUAGE_PUSHES_NO_VALUE(k2, field_list) + MACHINE_LANGUAGE_PUSHES_NO_VALUE(k3, field_list) +    \
+              MACHINE_LANGUAGE_PUSHES_NO_VALUE(k4, field_list) +                                                       \
+              MACHINE_LANGUAGE_PUSHES_NO_VALUE(k5, field_list)) /**< How many of six operand kinds push no value. */
+#define MACHINE_LANGUAGE_OPERANDS_WITHOUT_VALUE(identifier, encoding_value, name, package_length, statement,           \
+                                                data_object, opens_scope, k0, k1, k2, k3, k4, k5)                      \
+    [MACHINE_LANGUAGE_OPCODE(identifier)] = MACHINE_LANGUAGE_VALUELESS_OPERANDS(                                       \
+        MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5), k0, k1, k2, k3, k4,                                   \
+        k5), /**< The entry of one descriptor in machine_language_operands_without_value. */
+
+/**
+ * @brief The operands of each operator that push no value: a NameString, but those of a field list, which push the
+ *        node they name, a string and the lists; every operand of a call and of the operators the interpreter makes
+ *        up pushes one value.
+ */
+static const uint8_t machine_language_operands_without_value[MACHINE_LANGUAGE_LOADED + 1u] = {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ONE_BYTE_OPCODES(
+        MACHINE_LANGUAGE_OPERANDS_WITHOUT_VALUE)
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_EXTENDED_OPCODES(
+            MACHINE_LANGUAGE_OPERANDS_WITHOUT_VALUE)};
+
 /**
  * @brief The frame that runs.
  */
@@ -137,6 +175,28 @@ static MachineLanguagePendingOperator_t *machine_language_active(MachineLanguage
     if (evaluation->operator_count <= machine_language_block(evaluation)->pending_base)
         return NULL;
     return &evaluation->operators[evaluation->operator_count - 1u];
+}
+
+/**
+ * @brief Whether the running frame holds at least @p count values: an operator that takes more would take a value
+ *        below the frame, as a producer that pushed none leaves it to (§6.2).
+ */
+static bool machine_language_frame_holds(const MachineLanguageEvaluation_t *evaluation, uint32_t count)
+{
+    return evaluation->value_count >= evaluation->value_floor + count;
+}
+
+/**
+ * @brief Whether the running frame holds every value @p active takes, one per operand that pushes one: at most one
+ *        per operand, so a frame that holds that many, as one almost always does, needs no look at which operands
+ *        push one.
+ */
+static bool machine_language_holds_operands(const MachineLanguageEvaluation_t *evaluation,
+                                            const MachineLanguagePendingOperator_t *active)
+{
+    return __builtin_expect(machine_language_frame_holds(evaluation, active->operand_count), 1) ||
+           machine_language_frame_holds(evaluation, (uint32_t) active->operand_count -
+                                                        machine_language_operands_without_value[active->opcode]);
 }
 
 /**
@@ -1339,6 +1399,7 @@ static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad
     memcpy(frame->arguments, &evaluation->values[evaluation->value_count],
            argument_count * sizeof(MachineLanguageValue_t));
     frame->value_base = (uint16_t) evaluation->value_count;
+    evaluation->value_floor = evaluation->value_count;
     frame->operator_base = (uint16_t) evaluation->operator_count;
     frame->block_base = (uint16_t) evaluation->block_count;
     frame->temporary_base = (uint16_t) load->temporary_count;
@@ -1383,6 +1444,7 @@ static void machine_language_drop_frame(MachineLanguageLoad_t *load)
     load->declaring -= frame->declares ? 1u : 0u;
     advanced_configuration_and_power_interface_machine_language_leave_method(load, frame->saved_sync_level);
     --evaluation->frame_count;
+    evaluation->value_floor = (evaluation->frame_count != 0u) ? machine_language_frame(evaluation)->value_base : 0u;
 }
 
 /**
@@ -1408,6 +1470,7 @@ static MachineLanguageStatus_t machine_language_push_table_frame(MachineLanguage
     frame->end = limit;
     frame->scope = scope;
     frame->value_base = (uint16_t) evaluation->value_count;
+    evaluation->value_floor = evaluation->value_count;
     frame->operator_base = (uint16_t) evaluation->operator_count;
     frame->block_base = (uint16_t) evaluation->block_count;
     frame->temporary_base = (uint16_t) load->temporary_count;
@@ -2295,6 +2358,10 @@ static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *lo
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
     const MachineLanguagePendingOperator_t branch = *active;
+
+    if (!machine_language_frame_holds(evaluation, MACHINE_LANGUAGE_VALUES_BEFORE_LIST))
+        return MACHINE_LANGUAGE_STATUS(OPERANDS_MISSING);
+
     MachineLanguageValue_t predicate = machine_language_pop(evaluation);
     uint64_t truth = 0u;
     const MachineLanguageStatus_t status = machine_language_integer_of(load, &predicate, &truth);
@@ -2348,7 +2415,11 @@ static MachineLanguageStatus_t machine_language_package_elements(MachineLanguage
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
 
     if (active->node == 0u)
+    {
+        if (!machine_language_frame_holds(evaluation, MACHINE_LANGUAGE_VALUES_BEFORE_LIST))
+            return MACHINE_LANGUAGE_STATUS(OPERANDS_MISSING);
         active->node = evaluation->value_count + 1u;
+    }
     if (machine_language_frame(evaluation)->pc < active->end)
         return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST));
     ++active->operands_done;
@@ -4075,6 +4146,8 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     const MachineLanguagePendingOperator_t operator_ = *active;
 
     --evaluation->operator_count;
+    if (!machine_language_holds_operands(evaluation, &operator_))
+        return MACHINE_LANGUAGE_STATUS(OPERANDS_MISSING);
     switch (operator_.opcode)
     {
     case MACHINE_LANGUAGE_CALL: return machine_language_enter_method(load, operator_.node, operator_.operand_count);
@@ -5053,6 +5126,7 @@ static MachineLanguageStatus_t machine_language_push_host_frame(MachineLanguageL
     frame->code = (table != 0u) ? (const uint8_t *) load->tables[table - 1u].header : NULL;
     frame->scope = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
     frame->value_base = (uint16_t) evaluation->value_count;
+    evaluation->value_floor = evaluation->value_count;
     frame->operator_base = (uint16_t) evaluation->operator_count;
     frame->block_base = (uint16_t) evaluation->block_count;
     frame->temporary_base = (uint16_t) load->temporary_count;
@@ -5175,6 +5249,8 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         status = machine_language_enter_method(load, index, argument_count);
     while (status == MACHINE_LANGUAGE_OK && evaluation->frame_count > base + 1u)
         status = machine_language_step_above(load, base);
+    if (status == MACHINE_LANGUAGE_OK && !machine_language_frame_holds(evaluation, 1u))
+        status = MACHINE_LANGUAGE_STATUS(OPERANDS_MISSING);
     if (status == MACHINE_LANGUAGE_OK)
         *out_result = machine_language_pop(evaluation);
     while (evaluation->frame_count > base + 1u)
