@@ -1017,6 +1017,7 @@ reads a table in kernel memory. The costs to cut are:
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list | `declarations_decoded_directly`; W1 |
 | O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it (§3.5) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason |
+| C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 
