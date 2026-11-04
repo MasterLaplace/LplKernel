@@ -159,8 +159,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     bool skips_bodies;            /**< Whether the load decodes no method body once its tables are declared, nor
                                        those of a table Load adds, as a release kernel loads (O2, §3.6); false in a
                                        debug kernel and in the host tools. */
-    bool general_load;            /**< Whether the declaration pass takes none of its shortcuts (§3.6): the
-                                       differential test compares them with this general path; false at boot. */
+    bool general_load;            /**< Whether the declaration pass takes none of its shortcuts (§3.6), and a kept
+                                       object is built by the general data decoder instead of the builder of kept
+                                       data (C4): the differential test compares them with this general path; false
+                                       at boot. */
     bool predecodes_loops;        /**< Whether the statements of a method's While that loops run from records
                                        (§3.6): true unless the boot line holds lpl.acpi.predecoding=off. */
     uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
