@@ -11,9 +11,8 @@
 
 KERNEL_TEST_SUITE(host_kept_data, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define KEPT_DATA_UNCHANGED   0xFFFFFFFFu /**< The offset of a byte left as it is. */
-#define KEPT_DATA_TABLE_BYTES 256u        /**< The most AML a case's table holds. */
-#define KEPT_DATA_FOLD_PRIME  0x01000193u /**< FNV-1a's prime, which the namespace's fold multiplies by. */
+#define KEPT_DATA_UNCHANGED  0xFFFFFFFFu /**< The offset of a byte left as it is. */
+#define KEPT_DATA_FOLD_PRIME 0x01000193u /**< FNV-1a's prime, which the namespace's fold multiplies by. */
 
 /**
  * @brief One byte of a definition block, set to another value after the load.
@@ -24,14 +23,14 @@ typedef struct KeptDataRewrite {
 } KeptDataRewrite_t;
 
 /**
- * @brief A definition block holding one Name's kept package, a byte whose rewrite leaves its bytes unreadable,
- *        and a byte whose rewrite leaves them readable.
+ * @brief A definition block holding one Name's kept data, a byte whose rewrite leaves its bytes unreadable, and a
+ *        byte whose rewrite leaves them readable.
  */
 typedef struct KeptDataCase {
     const char *claim;            /**< That the unreadable rewrite folds as a PkgLength past the table does. */
     const uint8_t *aml;           /**< The AML. */
     uint32_t length;              /**< Its bytes. */
-    KeptDataRewrite_t unreadable; /**< The rewrite that leaves the package unreadable. */
+    KeptDataRewrite_t unreadable; /**< The rewrite that leaves the data unreadable. */
     KeptDataRewrite_t readable;   /**< A rewrite that leaves it readable, but different. */
 } KeptDataCase_t;
 
@@ -43,23 +42,18 @@ typedef struct KeptDataCase {
  */
 static uint32_t kept_data_fold_after(const uint8_t *aml, uint32_t length, KeptDataRewrite_t rewrite, uint32_t *out_kept)
 {
-    static uint8_t table[MADE_UP_TABLE_HEADER + KEPT_DATA_TABLE_BYTES];
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
-        made_up_definition_block(table, "DSDT", 2u, aml, length);
-    const uint32_t total = MADE_UP_TABLE_HEADER + length;
-    uint8_t *copy = malloc(total);
+    uint8_t *copy = malloc(MADE_UP_TABLE_HEADER + length);
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
     uint32_t fold = 0u;
 
     if (copy == NULL)
         return 0u;
-    memcpy(copy, header, total);
     advanced_configuration_and_power_interface_simulated_host_open(&host);
     advanced_configuration_and_power_interface_machine_language_open(&load, &host.host, MADE_UP_MAX_NODES,
                                                                      MADE_UP_MAX_ARENA_BYTES);
     (void) advanced_configuration_and_power_interface_machine_language_declare_table(
-        &load, (const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) copy);
+        &load, made_up_definition_block(copy, "DSDT", 2u, aml, length));
     if (rewrite.offset != KEPT_DATA_UNCHANGED)
         copy[MADE_UP_TABLE_HEADER + rewrite.offset] = rewrite.byte;
     fold = advanced_configuration_and_power_interface_machine_language_namespace_fold(&load);
@@ -86,9 +80,9 @@ static uint32_t kept_data_unfold(uint32_t fold, uint8_t byte)
 }
 
 /**
- * @brief Checks that the kept package of @p load_case, once its unreadable rewrite is applied, folds without reading
- *        past its table, as the same package whose PkgLength, at offset 6, no longer reads within the table, and
- *        apart from the intact package and from its readable rewrite.
+ * @brief Checks that the kept data of @p load_case, once its unreadable rewrite is applied, folds without reading past
+ *        its table, as the same data whose PkgLength, at offset 6, no longer reads within the table, and apart from
+ *        the intact data and from its readable rewrite.
  */
 static void kept_data_check(KernelTest_t *test, const KeptDataCase_t *load_case)
 {
@@ -101,11 +95,11 @@ static void kept_data_check(KernelTest_t *test, const KeptDataCase_t *load_case)
     const uint32_t head_fold = kept_data_fold_after(load_case->aml, load_case->length, head, &kept);
     const uint32_t readable_fold = kept_data_fold_after(load_case->aml, load_case->length, load_case->readable, &kept);
 
-    kernel_test_check(test, kept == 1u, "the load kept the package in its table");
+    kernel_test_check(test, kept == 1u, "the load kept the data in its table");
     kernel_test_check(test, unreadable_fold == head_fold, load_case->claim);
     kernel_test_check(
         test, unreadable_fold != intact_fold && unreadable_fold != readable_fold && readable_fold != intact_fold,
-        "unreadable data folds apart from the intact package and from a change that still reads");
+        "unreadable data folds apart from the intact data and from a change that still reads");
 }
 
 /**
@@ -173,7 +167,7 @@ KERNEL_TEST(kept_data_rewritten_one_package_deeper_than_allowed_folds_as_unreada
     made_up_aml_begin(&aml);
     made_up_aml_raw(&aml, name, sizeof(name));
     made_up_aml_construct(&aml, &package, 1u, &levels[inner]);
-    if (!kernel_test_check(test, !aml.overflowed && aml.length <= KEPT_DATA_TABLE_BYTES, "the nested table fits"))
+    if (!kernel_test_check(test, !aml.overflowed, "the nested table fits"))
         return;
 
     const KeptDataCase_t deep = {
@@ -213,4 +207,72 @@ KERNEL_TEST(unreadable_kept_data_folds_as_a_count_no_object_has)
         expected = (expected ^ 0xFFu) * KEPT_DATA_FOLD_PRIME;
     kernel_test_check(test, kept_data_fold_after(aml, sizeof(aml), cut, &kept) == expected,
                       "unreadable kept data folds as the count 0xFFFFFFFF and nothing after it");
+}
+
+/**
+ * @brief Writes `Name (PKGL, Package (2) {"A...", "B..."})` into @p aml, each String @p string_bytes characters long,
+ *        its PkgLength in three bytes, none of them zero.
+ *
+ * @return The bytes written, or 0 when the package's length does not fit three PkgLength bytes without a zero.
+ */
+static uint32_t kept_data_two_long_strings(uint8_t *aml, uint32_t string_bytes)
+{
+    static const uint8_t head[] = {0x08u, 'P', 'K', 'G', 'L', 0x12u};
+    const uint32_t package_bytes = 3u + 1u + 2u * (1u + string_bytes + 1u);
+    uint32_t at = sizeof(head);
+
+    if (package_bytes >= (1u << 20) || (package_bytes & 0x0Fu) == 0u || ((package_bytes >> 4) & 0xFFu) == 0u ||
+        (package_bytes >> 12) == 0u)
+        return 0u;
+    memcpy(aml, head, sizeof(head));
+    aml[at++] = (uint8_t) (0x80u | (package_bytes & 0x0Fu));
+    aml[at++] = (uint8_t) (package_bytes >> 4);
+    aml[at++] = (uint8_t) (package_bytes >> 12);
+    aml[at++] = 0x02u;
+    for (uint8_t character = 'A'; character <= 'B'; ++character)
+    {
+        aml[at++] = 0x0Du;
+        memset(aml + at, character, string_bytes);
+        at += string_bytes;
+        aml[at++] = 0x00u;
+    }
+    return at;
+}
+
+/**
+ * @brief Kept data whose table AML rewrote past the sizes of §6.1, which machine_language_check_data refuses to keep
+ *        and the object it would build refuses to hold, each folding as unreadable data, as a PkgLength past the
+ *        table does: `Name (BUFX, Buffer (0x00000002) {0xAA})`, its size now 0x00010002;
+ *        `Name (VPKG, VarPackage (0x0002) {One})`, its count now 0x1002; `Name (PKGL, Package (2) {"A...", "B..."})`,
+ *        two Strings of 40,000 characters, the NUL of the first now 'x', which makes one String of 80,002.
+ */
+KERNEL_TEST(kept_data_rewritten_past_the_sizes_of_its_objects_folds_as_unreadable)
+{
+    static const uint8_t buffer[] = {0x08u, 'B', 'U', 'F', 'X', 0x11u, 0x07u, 0x0Cu, 0x02u, 0x00u, 0x00u, 0x00u, 0xAAu};
+    static const uint8_t package[] = {0x08u, 'V', 'P', 'K', 'G', 0x13u, 0x05u, 0x0Bu, 0x02u, 0x00u, 0x01u};
+    const uint32_t string_bytes = 40000u;
+    uint8_t *strings = malloc(16u + 2u * (string_bytes + 2u));
+    const uint32_t strings_length = (strings != NULL) ? kept_data_two_long_strings(strings, string_bytes) : 0u;
+
+    if (!kernel_test_check(test, strings_length != 0u, "the package of two long strings is written"))
+    {
+        free(strings);
+        return;
+    }
+
+    const KeptDataCase_t cases[] = {
+        {"a buffer past 64 KiB folds as a PkgLength past the table",             buffer, sizeof(buffer),  {10u, 0x01u}, {8u, 0x03u}},
+        {"a VarPackage past 4,096 elements folds as a PkgLength past the table",
+         package,                                                                        sizeof(package),
+         {9u, 0x10u},
+         {8u, 0x03u}                                                                                                               },
+        {"a string past 64 KiB folds as a PkgLength past the table",
+         strings,                                                                        strings_length,
+         {11u + string_bytes, 'x'},
+         {12u, 'C'}                                                                                                                },
+    };
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+        kept_data_check(test, &cases[index]);
+    free(strings);
 }
