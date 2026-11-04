@@ -793,7 +793,9 @@ target_end()
 -- nothing but the word `--predecoding off` gives it, so every test runs. `--boot-module <image>` and `--firmware-log <log>` give the tests the module
 -- and the firmware a debug kernel read; `--machine <dump>` walks a recorded machine's tables instead.
 -- test-acpi-cost is the same harness without the sanitizers, which valgrind cannot run under:
--- `tools/acpi-corpus.sh records-cost` counts its instructions under callgrind.
+-- `tools/acpi-corpus.sh records-cost` counts its instructions under callgrind. Under the sanitizers,
+-- undefined behaviour stops the run, as an AddressSanitizer error does, so that the suite, and every
+-- corpus run of tools/acpi-corpus.sh, which builds test-acpi, fails on it.
 -- ===========================================================================
 local function acpi_host_target(name, targetdir, sanitized)
     target(name)
@@ -806,6 +808,7 @@ local function acpi_host_target(name, targetdir, sanitized)
         if sanitized then
             set_policy("build.sanitizer.address", true)
             set_policy("build.sanitizer.undefined", true)
+            add_cflags("-fno-sanitize-recover=undefined", {force = true})
         end
         add_cflags("-Wall", "-Wextra", "-Werror", {force = true})
         add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS", "LPL_KERNEL_DEBUG_POISON", "LPL_PLUGIN_UNAVAILABLE=1")
