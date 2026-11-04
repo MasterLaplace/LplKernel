@@ -199,6 +199,63 @@ KERNEL_TEST(a_package_length_that_crosses_its_parent_is_refused)
 }
 
 /**
+ * @brief Whether ACPI's grammar lets @p byte lead a NameSeg: LeadNameChar, `A` to `Z` or `_` (ACPI 6.6 §20.2.2).
+ */
+static bool made_up_leads_segment(uint32_t byte) { return (byte >= 'A' && byte <= 'Z') || byte == '_'; }
+
+/**
+ * @brief Whether ACPI's grammar lets @p byte follow the first character of a NameSeg: NameChar, a LeadNameChar or a
+ *        DigitChar, `0` to `9` (ACPI 6.6 §20.2.2).
+ */
+static bool made_up_continues_segment(uint32_t byte)
+{
+    return made_up_leads_segment(byte) || (byte >= '0' && byte <= '9');
+}
+
+/**
+ * @brief Each of the 256 bytes may start a NameSeg exactly when ACPI's grammar makes it a LeadNameChar, and follow its
+ *        first character exactly when it makes it a NameChar; a NameString of one NameSeg whose first or last
+ *        character is that byte reads exactly then.
+ */
+KERNEL_TEST(each_byte_is_a_name_segment_character_as_the_grammar_says)
+{
+    uint32_t starts = 0u;
+    uint32_t continues = 0u;
+    uint32_t read = 0u;
+
+    for (uint32_t byte = 0u; byte <= UINT8_MAX; ++byte)
+    {
+        uint8_t first[] = {(uint8_t) byte, 'B', 'C', 'D'};
+        uint8_t last[] = {'A', 'B', 'C', (uint8_t) byte};
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t name;
+        uint32_t after = 0u;
+        const bool reads_first = advanced_configuration_and_power_interface_machine_language_read_name_string(
+                                     first, 0u, sizeof(first), &name, &after) ==
+                                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+        const bool reads_last = advanced_configuration_and_power_interface_machine_language_read_name_string(
+                                    last, 0u, sizeof(last), &name, &after) ==
+                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+        const bool prefix = byte == '\\' || byte == '^' || byte == 0x2Eu || byte == 0x2Fu || byte == 0x00u;
+
+        starts += (advanced_configuration_and_power_interface_machine_language_starts_segment((uint8_t) byte) ==
+                   made_up_leads_segment(byte)) ?
+                      1u :
+                      0u;
+        continues += (advanced_configuration_and_power_interface_machine_language_continues_segment((uint8_t) byte) ==
+                      made_up_continues_segment(byte)) ?
+                         1u :
+                         0u;
+        read +=
+            ((prefix || reads_first == made_up_leads_segment(byte)) && reads_last == made_up_continues_segment(byte)) ?
+                1u :
+                0u;
+    }
+    kernel_test_check(test, starts == 256u, "a byte starts a NameSeg exactly when it is a LeadNameChar");
+    kernel_test_check(test, continues == 256u, "a byte goes on with a NameSeg exactly when it is a NameChar");
+    kernel_test_check(test, read == 256u, "a NameSeg reads exactly when its first and last characters are those");
+}
+
+/**
  * @brief NameStrings of every prefix and length are read: the root alone, two parent prefixes, a
  *        dual path, a multi path of 255 segments; a multi path of 0 segments, a NameSeg with a
  *        lower-case character and a root followed by a parent prefix are refused.
