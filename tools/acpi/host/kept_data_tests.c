@@ -84,6 +84,12 @@ static const uint8_t kept_data_named_package[] = {
 };
 
 /**
+ * @brief `Name (PKGP, Package (1) {\\ABCD})`, a name after a root prefix.
+ */
+static const uint8_t kept_data_prefixed_name[] = {0x08u, 'P',  'K', 'G', 'P', 0x12u, 0x07u,
+                                                  0x01u, '\\', 'A', 'B', 'C', 'D'};
+
+/**
  * @brief `Name (BUFX, Buffer (0x00000002) {0xAA})`.
  */
 static const uint8_t kept_data_buffer[] = {0x08u, 'B',   'U',   'F',   'X',   0x11u, 0x07u,
@@ -417,11 +423,13 @@ static bool kept_data_builds_the_same(const uint8_t *aml, uint32_t length, KeptD
  *        general data decoder, with nothing read past the table: a rewrite after which its bytes no longer read as
  *        kept data, which the builder hands to the general data decoder, builds none of it through the builder; a
  *        rewrite after which they still read, the builder builds. The rewrites are those the fold of kept data meets,
- *        and `Name (PKGT, Package (0x31) {ABCD, ..., One, One})`, its Package opcode now 'P', which makes the object a
+ *        each case's PkgLength rewritten past the table, `Name (PKGP, Package (1) {\\ABCD})`, its B now 0x01, and
+ *        `Name (PKGT, Package (0x31) {ABCD, ..., One, One})`, its Package opcode now 'P', which makes the object a
  *        NameString, P01A, which only a package may hold.
  */
 KERNEL_TEST(kept_data_whose_table_was_rewritten_builds_through_its_builder_as_through_the_general_decoder)
 {
+    const KeptDataRewrite_t head = {6u, 0xFFu};
     const MadeUpAml_t *deep = kept_data_deep();
     uint8_t *strings = malloc(KEPT_DATA_LONG_STRINGS_CAPACITY);
     const uint32_t strings_length =
@@ -468,6 +476,10 @@ KERNEL_TEST(kept_data_whose_table_was_rewritten_builds_through_its_builder_as_th
          strings,                    strings_length,
          {11u + KEPT_DATA_LONG_STRING_BYTES, 'x'},
          {12u, 'C'}                },
+        {"a name after a prefix that is no longer one builds the same through both",
+         kept_data_prefixed_name,    sizeof(kept_data_prefixed_name),
+         {10u, 0x01u},
+         {10u, 'E'}                },
         {"a package rewritten into a NameString builds the same through both",
          kept_data_named_package,    sizeof(kept_data_named_package),
          {5u, 'P'},
@@ -478,6 +490,7 @@ KERNEL_TEST(kept_data_whose_table_was_rewritten_builds_through_its_builder_as_th
         kernel_test_check(
             test,
             kept_data_builds_the_same(cases[index].aml, cases[index].length, cases[index].unreadable, 0u) &&
+                kept_data_builds_the_same(cases[index].aml, cases[index].length, head, 0u) &&
                 kept_data_builds_the_same(cases[index].aml, cases[index].length, cases[index].readable, 1u),
             cases[index].claim);
     free(strings);
