@@ -4335,6 +4335,7 @@ static MachineLanguageRecord_t *machine_language_record_at(MachineLanguageLoad_t
     if (*index == 0u || cache->records[*index - 1u].pc != frame->pc ||
         cache->records[*index - 1u].table != frame->table)
     {
+        ++cache->searches;
         *index =
             advanced_configuration_and_power_interface_machine_language_record_find(cache, frame->table, frame->pc);
         if (*index == 0u && !(cache->frozen_serial == frame->serial && cache->frozen_start == frame->looping_start))
