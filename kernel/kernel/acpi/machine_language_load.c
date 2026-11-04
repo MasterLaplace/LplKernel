@@ -1944,6 +1944,77 @@ static MachineLanguageStatus_t machine_language_method_statement(MachineLanguage
 }
 
 /**
+ * @brief Whether the offset and the length of an OperationRegion, from @p start within @p limit, are both integers
+ *        that need no interpreter, as machine_language_build_region reads them: @p out_offset and @p out_length then
+ *        receive them, and @p out_after the offset past the length.
+ */
+static bool machine_language_region_operands(MachineLanguageWalk_t *walk, uint32_t start, uint32_t limit,
+                                             uint64_t *out_offset, uint64_t *out_length, uint32_t *out_after)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
+    uint32_t after = 0u;
+    bool offset_known = false;
+    bool length_known = false;
+
+    return advanced_configuration_and_power_interface_machine_language_evaluate_integer(
+               &walk->load->space, &source, start, limit, out_offset, &after, &offset_known) == MACHINE_LANGUAGE_OK &&
+           offset_known &&
+           advanced_configuration_and_power_interface_machine_language_evaluate_integer(
+               &walk->load->space, &source, after, limit, out_length, out_after, &length_known) ==
+               MACHINE_LANGUAGE_OK &&
+           length_known;
+}
+
+/**
+ * @brief Takes `OperationRegion (NameSeg, RegionSpace, offset, length)` at @p start, whose statement ends at @p limit,
+ *        as the walk would: the name declared through use_name, then, when the declaration pass builds the region and
+ *        its offset and length are integers that need no interpreter, the two read once and the object placed as
+ *        machine_language_build_region places it. The general path takes any other region from its RegionSpace, and
+ *        an object the arena has no room for stops the table as it does from the walk.
+ */
+static MachineLanguageStatus_t machine_language_region_statement(MachineLanguageWalk_t *walk, uint32_t start,
+                                                                 uint32_t limit)
+{
+    MachineLanguagePendingOperator_t state = {
+        .opcode = (uint16_t) MACHINE_LANGUAGE_OPCODE(OPERATION_REGION),
+        .operands_done = 1u,
+        .operand_count = 4u,
+        .start = start,
+        .end = limit,
+    };
+    const MachineLanguageNameString_t name = {.segments = start + 2u, .segment_count = 1u};
+    uint64_t offset = 0u;
+    uint64_t length = 0u;
+    uint32_t after = 0u;
+
+    walk->fault_opcode = MACHINE_LANGUAGE_OPCODE(OPERATION_REGION);
+    walk->pc = start + 2u;
+
+    MachineLanguageStatus_t status = machine_language_use_name(walk, &state, &name);
+
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_hand_back(walk, &state);
+        return status;
+    }
+    walk->pc = start + 6u;
+    if (!machine_language_builds(walk, state.node) ||
+        !machine_language_region_operands(walk, start + 7u, limit, &offset, &length, &after))
+    {
+        machine_language_hand_back(walk, &state);
+        return MACHINE_LANGUAGE_OK;
+    }
+    status = machine_language_build_fault(
+        walk, machine_language_place_region(walk, state.node, walk->bytes[start + 6u], true, offset, length));
+    if (status == MACHINE_LANGUAGE_OK)
+    {
+        walk->pc = after;
+        ++walk->load->declarations_decoded_directly;
+    }
+    return status;
+}
+
+/**
  * @brief Takes a statement whose operator @p opcode ends at @p end, whose NameString starts at @p name_start, and
  *        whose operands are that NameString, the @p fixed bytes of a field list's FieldFlags or none, then a list
  *        of @p kind, as the walk would: the name read and used through use_name, the fixed bytes passed, then the
@@ -2005,9 +2076,9 @@ machine_language_package_statement(MachineLanguageWalk_t *walk, uint32_t opcode,
 
 /**
  * @brief Takes the statement at the walk's pc, at a statement's place: in the declaration pass, unless the load
- *        takes no shortcut, a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope or a Field
- *        through its own decoder (O19); any other statement, and one whose PkgLength or NameString the general
- *        path refuses, as a term.
+ *        takes no shortcut, a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope, a Field or an
+ *        OperationRegion of one NameSeg through its own decoder (O19); any other statement, and one whose PkgLength
+ *        or NameString the general path refuses, as a term.
  *
  * @details It also takes as a term a statement that finds the operator stack full. That cannot happen today: at a
  *          statement's place the declaration pass holds no operator pending, each construct's being popped as its
@@ -2047,6 +2118,10 @@ static MachineLanguageStatus_t machine_language_statement(MachineLanguageWalk_t 
     case 0x81u:
         return machine_language_package_statement(walk, MACHINE_LANGUAGE_OPCODE(FIELD), start, 2u, limit, 1u,
                                                   MACHINE_LANGUAGE_OPERAND(FIELD_LIST));
+    case 0x80u:
+        if (machine_language_holds_name_segment(bytes, start + 2u, limit))
+            return machine_language_region_statement(walk, start, limit);
+        return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
     default: return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
     }
 }
