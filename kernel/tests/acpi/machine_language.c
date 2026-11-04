@@ -1752,11 +1752,10 @@ KERNEL_TEST(a_buffer_field_holds_its_buffer_and_bits)
                           any->flags ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BUFFER_FIELD_READS_AS_BUFFER,
                       "CF__ is 12 bits from bit 4, and reads as a Buffer");
-    kernel_test_check(
-        test,
-        advanced_configuration_and_power_interface_machine_language_object(&made_up_load.heap, buffer)->references ==
-            4u,
-        "BUF_ and its three fields hold the Buffer");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *object =
+        advanced_configuration_and_power_interface_machine_language_object(&made_up_load.heap, buffer);
+
+    kernel_test_check(test, object != NULL && object->references == 4u, "BUF_ and its three fields hold the Buffer");
     kernel_test_measure_hexadecimal(
         test, "namespace_fold",
         advanced_configuration_and_power_interface_machine_language_namespace_fold(&made_up_load));
