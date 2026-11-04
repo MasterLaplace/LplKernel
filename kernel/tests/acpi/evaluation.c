@@ -806,18 +806,20 @@ KERNEL_TEST(an_if_a_later_turn_takes_steps_over_its_else_after_a_turn_that_ran_i
 
 /**
  * @brief A Method whose PkgLength ends before its flags leaves a node without a body: calling it fails with
- *        method_without_body, counted, at table level, as an operand and from the host, and never runs `\_OSI`,
- *        which still answers when it is the node called.
+ *        method_without_body, counted, at table level, as an operand and from the host, whatever arguments the host
+ *        gives, and never runs `\_OSI`, which still answers, from AML and from the host, when it is the node called.
  */
 KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
 {
     static const uint8_t aml[] = {
-        0x14u, 0x05u, 'F',   'O',   'O', 'O',   'F', 'O',   'O',   'O', 0x08u, 'R', 'E',   'S', '_', 0x0Au,
-        0x05u, 0x70u, 0x90u, 'F',   'O', 'O',   'O', 0x01u, 'R',   'E', 'S',   '_', 0x08u, 'O', 'S', 'I',
-        '_',   0x00u, 0x70u, 0x5Cu, '_', 'O',   'S', 'I',   0x0Du, 'W', 'i',   'n', 'd',   'o', 'w', 's',
-        ' ',   '2',   '0',   '1',   '5', 0x00u, 'O', 'S',   'I',   '_', 0x08u, 'A', 'F',   'T', 'R', 0x01u,
+        0x14u, 0x05u, 'F',   'O', 'O', 'O', 'F',   'O',   'O', 'O', 0x08u, 'R',   'E',   'S',   '_',   0x0Au, 0x05u,
+        0x70u, 0x90u, 'F',   'O', 'O', 'O', 0x01u, 'R',   'E', 'S', '_',   0x08u, 'O',   'S',   'I',   '_',   0x00u,
+        0x70u, 0x5Cu, '_',   'O', 'S', 'I', 0x0Du, 'W',   'i', 'n', 'd',   'o',   'w',   's',   ' ',   '2',   '0',
+        '1',   '5',   0x00u, 'O', 'S', 'I', '_',   0x08u, 'A', 'F', 'T',   'R',   0x01u, 0x08u, 'W',   'I',   'N',
+        '_',   0x0Du, 'W',   'i', 'n', 'd', 'o',   'w',   's', ' ', '2',   '0',   '1',   '5',   0x00u,
     };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *windows = NULL;
 
     if (!evaluation_run(test, 2u, aml, sizeof(aml)))
         return;
@@ -834,10 +836,26 @@ KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
                       evaluation_integer("OSI_") == 0xFFFFFFFFFFFFFFFFull &&
                           evaluation_load.services.operating_system_queries == 1u,
                       "\\_OSI (\"Windows 2015\") answers Ones, the one query \\_OSI counts");
+    windows = made_up_root_node(&evaluation_load, "WIN_");
+    if (!kernel_test_check(test, windows != NULL, "WIN_ holds the String the host passes"))
+        return;
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_evaluate(&evaluation_load, "\\FOOO",
                                                                                            NULL, 0u, &result) ==
-                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_METHOD_WITHOUT_BODY,
-                      "the host's evaluation of \\FOOO fails with method_without_body");
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_METHOD_WITHOUT_BODY &&
+                          advanced_configuration_and_power_interface_machine_language_evaluate(
+                              &evaluation_load, "\\FOOO", &windows->value, 1u, &result) ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_METHOD_WITHOUT_BODY,
+                      "the host's evaluation of \\FOOO fails with method_without_body, with an argument or none");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &evaluation_load, "\\_OSI", &windows->value, 1u, &result) ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
+                          result.payload == 0xFFFFFFFFFFFFFFFFull &&
+                          evaluation_load.services.operating_system_queries == 2u,
+                      "the host's evaluation of \\_OSI (\"Windows 2015\") runs it in C, and answers Ones");
+    advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
+                                                                              &evaluation_load.space, &result);
     evaluation_close(test);
 }

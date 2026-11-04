@@ -439,6 +439,71 @@ KERNEL_TEST(a_failing_attach_method_is_an_absent_object_and_runs_once)
 }
 
 /**
+ * @brief Writes the tree of a_failing_attach_method_is_an_absent_object_and_runs_once with a _BBN whose PkgLength
+ *        ends before its flags, which declares it without a body; the device's code reads VID_ twice when
+ *        @p read_by_aml says so.
+ */
+static void pci_write_bodiless_bus_number(bool read_by_aml)
+{
+    static const MadeUpFieldUnit_t units[] = {
+        {"VID_", 16u},
+    };
+    static const uint8_t bodiless_bus_number[] = {0x14u, 0x05u, '_', 'B', 'B', 'N'};
+
+    pci_begin();
+    pci_other_space[0x00u] = 0x86u;
+    pci_other_space[0x01u] = 0x80u;
+    advanced_configuration_and_power_interface_simulated_host_add_function(&pci_host, 0u, 0u, 3u, 1u, pci_other_space);
+    made_up_aml_name_integer(&pci_aml, "V1__", 0u);
+    made_up_aml_name_integer(&pci_aml, "V2__", 0u);
+    made_up_aml_begin(&pci_device_body);
+    made_up_aml_name_integer(&pci_device_body, "_ADR", 0x00030001u);
+    pci_region(&pci_device_body, "PCFG", units, 1u);
+    if (read_by_aml)
+    {
+        made_up_aml_store_name(&pci_device_body, "VID_", "V1__");
+        made_up_aml_store_name(&pci_device_body, "VID_", "V2__");
+    }
+    made_up_aml_begin(&pci_root_body);
+    made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
+    made_up_aml_raw(&pci_root_body, bodiless_bus_number, sizeof(bodiless_bus_number));
+    made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
+    made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
+}
+
+/**
+ * @brief An attach method whose PkgLength ends before its flags, a _BBN declared without a body, is an absent object,
+ *        as one that fails is, whether AML or the host reads the field first: the bus is 0, and the refusal is
+ *        counted once.
+ */
+KERNEL_TEST(an_attach_method_cut_before_its_flags_is_an_absent_object)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    pci_write_bodiless_bus_number(true);
+    if (!pci_run(test))
+        return;
+    kernel_test_check(
+        test, pci_load.evaluation.failures == 0u && pci_integer("V1__") == 0x8086u && pci_integer("V2__") == 0x8086u,
+        "AML's two reads succeed, from device 3 function 1 on bus 0");
+    kernel_test_check(test, pci_load.regions.internal_evaluations == 1u && pci_load.regions.internal_failures == 1u,
+                      "AML's attach refuses _BBN once");
+    pci_close(test);
+    pci_write_bodiless_bus_number(false);
+    if (!pci_run(test))
+        return;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &pci_load, "\\PCI0.DEV_.VID_", NULL, 0u, &result) == PCI_STATUS(OK) &&
+                          result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
+                          result.payload == 0x8086u,
+                      "the host's read succeeds, from device 3 function 1 on bus 0");
+    kernel_test_check(test, pci_load.regions.internal_evaluations == 1u && pci_load.regions.internal_failures == 1u,
+                      "the host's attach refuses _BBN once");
+    pci_close(test);
+}
+
+/**
  * @brief A table an attach method loads, here a _BBN's, runs in a frame above the attach's internal frame: a failure
  *        of the table's code is the table's, which goes on past its statement, and the _BBN still returns its bus
  *        (§3.6).
