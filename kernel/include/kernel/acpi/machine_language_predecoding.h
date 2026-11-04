@@ -152,7 +152,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
     uint8_t operators_peak; /**< Operators it holds pending for it at most. */
     uint8_t tight;          /**< For a While, 1 once linked to the record of a body that makes it a tight loop: its
                                  predicate compares two leaves, and its body is one statement that writes. */
-    uint8_t reserved;       /**< Unused, 0. */
+    uint8_t goes_on;        /**< For a record that runs nothing, 1 when its statement always goes on to the one after
+                                 it: a call, a name, or an operator that opens no construct and is no Break, Continue
+                                 or Return. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**
@@ -167,6 +169,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint8_t integer_bits;    /**< The integer width the records were built under. */
     uint32_t frozen_serial;  /**< The frame whose loop builds no record since the cache was emptied under it. */
     uint32_t frozen_start;   /**< Where that loop starts. */
+    uint32_t watched_serial; /**< The frame whose loop handed every statement back at once since its last back-edge,
+                                  each going on to the next; 0 when none. */
+    uint32_t watched_start;  /**< Where that loop starts. */
     uint32_t records_run;    /**< Statements and predicates run from records. */
     uint32_t declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES]; /**< Statements handed back
                                                                                                 to the interpreter's

@@ -401,6 +401,26 @@ static void machine_language_record_decode(MachineLanguageRecordBuilder_t *build
 }
 
 /**
+ * @brief Whether the statement at @p pc, which no record runs, always goes on to the statement after it: a call or a
+ *        name, or an operator that opens no construct and is no Break, Continue or Return.
+ */
+static bool machine_language_record_goes_on(const uint8_t *code, uint32_t pc, uint32_t limit)
+{
+    uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
+    uint32_t after = 0u;
+
+    if (pc < limit && advanced_configuration_and_power_interface_machine_language_starts_name(code[pc]))
+        return true;
+    if (advanced_configuration_and_power_interface_machine_language_read_opcode(code, pc, limit, &opcode, &after) !=
+        MACHINE_LANGUAGE_OK)
+        return false;
+    return opcode != MACHINE_LANGUAGE_OPCODE(BREAK) && opcode != MACHINE_LANGUAGE_OPCODE(CONTINUE) &&
+           opcode != MACHINE_LANGUAGE_OPCODE(RETURN) &&
+           (advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_PACKAGE_LENGTH) == 0u;
+}
+
+/**
  * @brief Whether a While and the record of its body make a tight loop (§3.6): the While's predicate compares two
  *        leaves, and its body is one statement that writes and ends where the While does.
  */
@@ -446,6 +466,8 @@ void advanced_configuration_and_power_interface_machine_language_predecoding_ope
     cache->tight_turns = 0u;
     cache->searches = 0u;
     cache->handed_back_loops = 0u;
+    cache->watched_serial = 0u;
+    cache->watched_start = 0u;
 }
 
 void advanced_configuration_and_power_interface_machine_language_predecoding_flush(MachineLanguagePredecoding_t *cache,
@@ -508,6 +530,7 @@ uint16_t advanced_configuration_and_power_interface_machine_language_record_buil
     if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL) || builder.exhausted)
     {
         *record = empty;
+        record->goes_on = machine_language_record_goes_on(code, pc, limit) ? 1u : 0u;
         cache->node_count = nodes;
         cache->constant_count = constants;
     }
