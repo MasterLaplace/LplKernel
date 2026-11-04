@@ -13,8 +13,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_shortcuts, KERNEL_T
 
 #define SHORTCUTS_AML_CAPACITY 8192u /**< Bytes of AML one table of a case holds. */
 #define SHORTCUTS_DEEP_DEVICES                                                                                         \
-    481u /**< Devices nested around the deep case's package: with the table's own construct, 482 open, so that a       \
-            package 32 deep passes the 512 of §6.1. */
+    480u /**< Devices nested around the deep case's package: with the table's own construct, 481 open, so that a       \
+            package 32 deep passes the 512 of §6.1 by one, the guard's own boundary. */
 #define SHORTCUTS_SAMPLE_STRIDE                                                                                        \
     16u /**< Bytes from one changed byte to the next in the sample ring 0 loads; host_shortcuts changes every byte. */
 #define SHORTCUTS_STATUS_COUNT ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT
@@ -344,7 +344,7 @@ void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t
  *        load without it, its work (lookups, probes, the stacks' peaks) falling:
  *        on data of every kind under revision 2, then 1, an SSDT declared before the DSDT, sizes a name gives,
  *        data the decoder refuses, a PkgLength that abandons the table, a package 33 deep, which needs the
- *        interpreter, and a package 32 deep inside 481 Devices, where decoding it meets the limit of 512 open
+ *        interpreter, and a package 32 deep inside 480 Devices, where decoding it meets the limit of 512 open
  *        constructs. In every case the shortcut steps over at least one data object, in these two the Name
  *        after the deep one.
  */
@@ -363,7 +363,7 @@ KERNEL_TEST(a_name_s_data_object_decoded_once_declares_what_two_decodings_declar
         {"a PkgLength that abandons the table",          shortcuts_crossing,    sizeof(shortcuts_crossing),    2u, NULL, 0u,                     false,
          false,                                                                                                                                                true},
         {"a package 33 deep",                            NULL,                  0u,                            2u, NULL, 0u,                     false, false, true},
-        {"a package 32 deep inside 481 Devices",         NULL,                  0u,                            2u, NULL, 0u,                     false, true,  true},
+        {"a package 32 deep inside 480 Devices",         NULL,                  0u,                            2u, NULL, 0u,                     false, true,  true},
     };
     const uint32_t count = sizeof(cases) / sizeof(cases[0]);
     uint32_t stepped_over = 0u;
