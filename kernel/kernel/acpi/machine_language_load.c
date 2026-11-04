@@ -949,6 +949,39 @@ static MachineLanguageStatus_t machine_language_operand_integer(
 }
 
 /**
+ * @brief Gives node @p index a new region object of RegionSpace @p space: @p offset and @p length when @p known
+ *        holds, else none yet, the region then counted as waiting for the interpreter.
+ *
+ * @return OK, or the status allocating the object gave.
+ */
+static MachineLanguageStatus_t machine_language_place_region(MachineLanguageWalk_t *walk, uint32_t index, uint8_t space,
+                                                             bool known, uint64_t offset, uint64_t length)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
+    uint32_t handle = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION,
+        (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t), &handle);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region =
+        (AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t
+             *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1);
+    MachineLanguageNode_t *node = machine_language_node(walk, index);
+
+    region->space = space;
+    region->state = known ? 1u : 0u;
+    region->offset = known ? offset : 0u;
+    region->length = known ? length : 0u;
+    load->values_deferred += known ? 0u : 1u;
+    node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION;
+    node->value.handle = handle;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Builds an OperationRegion's object once its space is read: its offset and length start at
  *        the walk's pc, constants, or run by the interpreter for a statement whose code it runs, which
  *        the statement waits for; they wait for the interpreter otherwise.
@@ -956,13 +989,10 @@ static MachineLanguageStatus_t machine_language_operand_integer(
 static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk_t *walk,
                                                              const MachineLanguagePendingOperator_t *active)
 {
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
-    MachineLanguageNode_t *node = machine_language_node(walk, active->node);
     uint64_t offset = 0u;
     uint64_t length = 0u;
     uint32_t after = 0u;
-    uint32_t handle = 0u;
     bool constant = false;
     MachineLanguageStatus_t status =
         machine_language_operand_integer(walk, &source, walk->pc, active->end, &offset, &after, &constant);
@@ -972,24 +1002,9 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
     if (status == MACHINE_LANGUAGE_ASKS)
         return status;
     if (status == MACHINE_LANGUAGE_OK)
-        status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-            &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION,
-            (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t), &handle);
-    if (status != MACHINE_LANGUAGE_OK)
-        return machine_language_build_fault(walk, status);
-
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region =
-        (AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t
-             *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1);
-
-    region->space = walk->bytes[walk->pc - 1u];
-    region->state = constant ? 1u : 0u;
-    region->offset = constant ? offset : 0u;
-    region->length = constant ? length : 0u;
-    load->values_deferred += constant ? 0u : 1u;
-    node->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION;
-    node->value.handle = handle;
-    return MACHINE_LANGUAGE_OK;
+        status =
+            machine_language_place_region(walk, active->node, walk->bytes[walk->pc - 1u], constant, offset, length);
+    return machine_language_build_fault(walk, status);
 }
 
 /**
