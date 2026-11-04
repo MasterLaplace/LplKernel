@@ -38,9 +38,11 @@ static uint32_t machine_language_namespace_slot_pages(uint32_t slot_capacity)
 }
 
 /**
- * @brief Puts node @p index in the first empty slot of its probe sequence in @p slots.
+ * @brief Puts node @p index in the first empty slot of its probe sequence in @p slots, the generation of the
+ *        namespace moved.
  */
-static void machine_language_namespace_place(uint32_t *slots, uint32_t slot_capacity,
+static void machine_language_namespace_place(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+                                             uint32_t *slots, uint32_t slot_capacity,
                                              const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node,
                                              uint32_t index)
 {
@@ -49,6 +51,7 @@ static void machine_language_namespace_place(uint32_t *slots, uint32_t slot_capa
     while (slots[slot] != 0u)
         slot = (slot + 1u) & (slot_capacity - 1u);
     slots[slot] = index;
+    ++space->generation;
 }
 
 /**
@@ -71,7 +74,7 @@ machine_language_namespace_grow_slots(AdvancedConfigurationAndPowerInterfaceMach
             advanced_configuration_and_power_interface_machine_language_namespace_node(space, index);
 
         if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) == 0u)
-            machine_language_namespace_place(slots, capacity, node, index);
+            machine_language_namespace_place(space, slots, capacity, node, index);
     }
     advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
         space, space->slots, machine_language_namespace_slot_pages(space->slot_capacity));
@@ -111,7 +114,8 @@ static void machine_language_namespace_unlink(AdvancedConfigurationAndPowerInter
 
 /**
  * @brief Empties the slot that holds node @p index, then moves back each node of the probe run
- *        after it whose own probe sequence passes the emptied slot, so that no lookup stops early.
+ *        after it whose own probe sequence passes the emptied slot, so that no lookup stops early; the
+ *        generation of the namespace moved.
  */
 static void machine_language_namespace_unplace(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
                                                const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node,
@@ -135,6 +139,7 @@ static void machine_language_namespace_unplace(AdvancedConfigurationAndPowerInte
         }
     }
     space->slots[hole] = 0u;
+    ++space->generation;
 }
 
 /**
@@ -486,7 +491,7 @@ advanced_configuration_and_power_interface_machine_language_namespace_add_child(
                 ->next_sibling = index;
             first->previous_sibling = index;
         }
-        machine_language_namespace_place(space->slots, space->slot_capacity, node, index);
+        machine_language_namespace_place(space, space->slots, space->slot_capacity, node, index);
     }
     *out_index = index;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;

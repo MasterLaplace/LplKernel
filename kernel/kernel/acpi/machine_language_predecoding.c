@@ -17,26 +17,24 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t Machi
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t MachineLanguageRecord_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t MachineLanguageRecordNode_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t MachineLanguageRecordOperand_t;
+typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t MachineLanguageRecordName_t;
+typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t MachineLanguageNameString_t;
 
 /**
- * @brief What a record's decoding works on: the cache, the record, and the bytes it reads.
+ * @brief What a record's decoding works on: the cache, the record, the bytes it reads, and what the interpreter's
+ *        loop holds for the statement as it would run it, values on its stack and operators pending, now and at most.
  */
 typedef struct MachineLanguageRecordBuilder {
-    MachineLanguagePredecoding_t *cache; /**< Where operators and constants go. */
+    MachineLanguagePredecoding_t *cache; /**< Where operators, constants and names go. */
     MachineLanguageRecord_t *record;     /**< The record being decoded. */
     const uint8_t *code;                 /**< The table's bytes. */
     uint8_t integer_bits;                /**< The load's integer width. */
-    bool exhausted;                      /**< Whether the cache's operators or constants ran out. */
+    bool exhausted;                      /**< Whether the cache's operators, constants or names ran out. */
+    uint32_t values;                     /**< Values the loop holds now. */
+    uint32_t values_peak;                /**< Values it held at most. */
+    uint32_t operators;                  /**< Operators it holds pending now. */
+    uint32_t operators_peak;             /**< Operators it held pending at most. */
 } MachineLanguageRecordBuilder_t;
-
-/**
- * @brief What the interpreter's loop holds for a term at most, as it runs it: values on its stack and
- *        operators pending.
- */
-typedef struct MachineLanguageRecordDepth {
-    uint32_t values;    /**< Values. */
-    uint32_t operators; /**< Operators. */
-} MachineLanguageRecordDepth_t;
 
 /**
  * @brief The hash slot a statement's records start their search at.
@@ -57,8 +55,39 @@ static void machine_language_records_empty(MachineLanguagePredecoding_t *cache)
     cache->record_count = 0u;
     cache->node_count = 0u;
     cache->constant_count = 0u;
+    cache->name_count = 0u;
     cache->frozen_serial = 0u;
     cache->frozen_start = 0u;
+}
+
+/**
+ * @brief The loop pushes @p count values for the statement.
+ */
+static void machine_language_record_push_values(MachineLanguageRecordBuilder_t *builder, uint32_t count)
+{
+    builder->values += count;
+    if (builder->values > builder->values_peak)
+        builder->values_peak = builder->values;
+}
+
+/**
+ * @brief The loop pushes an operator for the statement.
+ */
+static void machine_language_record_push_operator(MachineLanguageRecordBuilder_t *builder)
+{
+    ++builder->operators;
+    if (builder->operators > builder->operators_peak)
+        builder->operators_peak = builder->operators;
+}
+
+/**
+ * @brief The loop runs an operator of @p operands values, which leaves its result: one value.
+ */
+static void machine_language_record_run_operator(MachineLanguageRecordBuilder_t *builder, uint32_t operands)
+{
+    --builder->operators;
+    builder->values -= operands;
+    machine_language_record_push_values(builder, 1u);
 }
 
 /**
@@ -129,6 +158,7 @@ static bool machine_language_record_leaf(MachineLanguageRecordBuilder_t *builder
     if (machine_language_record_frame_slot(opcode, out_operand))
     {
         *pc = after;
+        machine_language_record_push_values(builder, 1u);
         return true;
     }
     if (opcode != MACHINE_LANGUAGE_OPCODE(ZERO) && opcode != MACHINE_LANGUAGE_OPCODE(ONE) &&
@@ -145,12 +175,49 @@ static bool machine_language_record_leaf(MachineLanguageRecordBuilder_t *builder
         advanced_configuration_and_power_interface_machine_language_mask_to_width(builder->integer_bits, integer);
     out_operand->kind = MACHINE_LANGUAGE_OPERAND(CONSTANT);
     out_operand->index = (uint16_t) cache->constant_count++;
+    machine_language_record_push_values(builder, 1u);
+    return true;
+}
+
+/**
+ * @brief Decodes a NameString at @p pc read as a value into a name of the record, kept among the cache's with where
+ *        it ends and the values the loop held for the statement before reading it.
+ *
+ * @return false when the bytes hold no NameString, or the record or the cache holds no more names; the cache's, the
+ *         builder notes.
+ */
+static bool machine_language_record_name(MachineLanguageRecordBuilder_t *builder, uint32_t *pc, uint32_t limit,
+                                         MachineLanguageRecordOperand_t *out_operand)
+{
+    MachineLanguagePredecoding_t *cache = builder->cache;
+    MachineLanguageRecord_t *record = builder->record;
+    MachineLanguageNameString_t name;
+    uint32_t after = 0u;
+
+    builder->exhausted =
+        cache->name_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NAMES;
+    if (builder->exhausted ||
+        record->name_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NAMES_PER_RECORD ||
+        advanced_configuration_and_power_interface_machine_language_read_name_string(builder->code, *pc, limit, &name,
+                                                                                     &after) != MACHINE_LANGUAGE_OK)
+        return false;
+    cache->names[cache->name_count] = (MachineLanguageRecordName_t){
+        .name = name,
+        .after = after,
+        .values_before = (uint8_t) builder->values_peak,
+    };
+    if (record->name_count == 0u)
+        record->first_name = (uint16_t) cache->name_count;
+    out_operand->kind = MACHINE_LANGUAGE_OPERAND(NAME);
+    out_operand->slot = record->name_count++;
+    out_operand->index = (uint16_t) cache->name_count++;
+    *pc = after;
+    machine_language_record_push_values(builder, 1u);
     return true;
 }
 
 static bool machine_language_record_expression(MachineLanguageRecordBuilder_t *builder, uint32_t *pc, uint32_t limit,
-                                               uint32_t level, MachineLanguageRecordOperand_t *out_operand,
-                                               MachineLanguageRecordDepth_t *out_depth);
+                                               uint32_t level, MachineLanguageRecordOperand_t *out_operand);
 
 /**
  * @brief Decodes the local or the argument a statement writes, at @p pc.
@@ -200,16 +267,16 @@ static bool machine_language_record_append(MachineLanguageRecordBuilder_t *build
  *        with it (O7), any other operand an LNot of its own.
  */
 static bool machine_language_record_not(MachineLanguageRecordBuilder_t *builder, uint32_t *pc, uint32_t limit,
-                                        uint32_t level, MachineLanguageRecordOperand_t *out_operand,
-                                        MachineLanguageRecordDepth_t *out_depth)
+                                        uint32_t level, MachineLanguageRecordOperand_t *out_operand)
 {
     MachineLanguagePredecoding_t *cache = builder->cache;
     MachineLanguageRecordOperand_t operand = {0};
     MachineLanguageRecordNode_t node = {.opcode = (uint16_t) MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT)};
 
-    if (!machine_language_record_expression(builder, pc, limit, level + 1u, &operand, out_depth))
+    machine_language_record_push_operator(builder);
+    if (!machine_language_record_expression(builder, pc, limit, level + 1u, &operand))
         return false;
-    ++out_depth->operators;
+    machine_language_record_run_operator(builder, 1u);
     if (operand.kind == MACHINE_LANGUAGE_OPERAND(RESULT) && operand.slot + 1u == builder->record->node_count)
     {
         MachineLanguageRecordNode_t *last = &cache->nodes[cache->node_count - 1u];
@@ -232,26 +299,23 @@ static bool machine_language_record_not(MachineLanguageRecordBuilder_t *builder,
  */
 static bool machine_language_record_binary(MachineLanguageRecordBuilder_t *builder, uint32_t opcode, uint32_t *pc,
                                            uint32_t limit, uint32_t level, MachineLanguageRecordOperand_t *out_operand,
-                                           MachineLanguageRecordDepth_t *out_depth,
                                            MachineLanguageRecordOperand_t *target)
 {
     MachineLanguageRecordNode_t node = {.opcode = (uint16_t) opcode};
-    MachineLanguageRecordDepth_t first = {0u, 0u};
-    MachineLanguageRecordDepth_t second = {0u, 0u};
 
-    if (!machine_language_record_expression(builder, pc, limit, level + 1u, &node.operands[0], &first) ||
-        !machine_language_record_expression(builder, pc, limit, level + 1u, &node.operands[1], &second))
+    machine_language_record_push_operator(builder);
+    if (!machine_language_record_expression(builder, pc, limit, level + 1u, &node.operands[0]) ||
+        !machine_language_record_expression(builder, pc, limit, level + 1u, &node.operands[1]))
         return false;
-    out_depth->values = (first.values > 1u + second.values) ? first.values : 1u + second.values;
-    out_depth->operators = 1u + ((first.operators > second.operators) ? first.operators : second.operators);
     if (machine_language_record_computes(opcode))
     {
         if (*pc < limit && builder->code[*pc] == MACHINE_LANGUAGE_NULL_NAME)
             ++*pc;
         else if (target == NULL || !machine_language_record_target(builder, pc, limit, target))
             return false;
-        out_depth->values = (out_depth->values > 3u) ? out_depth->values : 3u;
+        machine_language_record_push_values(builder, 1u);
     }
+    machine_language_record_run_operator(builder, machine_language_record_computes(opcode) ? 3u : 2u);
     return machine_language_record_append(builder, &node, out_operand);
 }
 
@@ -263,24 +327,25 @@ static bool machine_language_record_binary(MachineLanguageRecordBuilder_t *build
  *         NullName, an operator the records do not run, or one nested too deep.
  */
 static bool machine_language_record_expression(MachineLanguageRecordBuilder_t *builder, uint32_t *pc, uint32_t limit,
-                                               uint32_t level, MachineLanguageRecordOperand_t *out_operand,
-                                               MachineLanguageRecordDepth_t *out_depth)
+                                               uint32_t level, MachineLanguageRecordOperand_t *out_operand)
 {
     uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
     uint32_t after = 0u;
 
-    out_depth->values = 1u;
-    out_depth->operators = 0u;
-    if (level > MACHINE_LANGUAGE_MAX_DEPTH || advanced_configuration_and_power_interface_machine_language_read_opcode(
-                                                  builder->code, *pc, limit, &opcode, &after) != MACHINE_LANGUAGE_OK)
+    if (level > MACHINE_LANGUAGE_MAX_DEPTH)
+        return false;
+    if (*pc < limit && advanced_configuration_and_power_interface_machine_language_starts_name(builder->code[*pc]))
+        return machine_language_record_name(builder, pc, limit, out_operand);
+    if (advanced_configuration_and_power_interface_machine_language_read_opcode(builder->code, *pc, limit, &opcode,
+                                                                                &after) != MACHINE_LANGUAGE_OK)
         return false;
     if (machine_language_record_leaf(builder, opcode, pc, after, limit, out_operand))
         return true;
     *pc = after;
     if (opcode == MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT))
-        return machine_language_record_not(builder, pc, limit, level, out_operand, out_depth);
+        return machine_language_record_not(builder, pc, limit, level, out_operand);
     if (machine_language_record_compares(opcode) || machine_language_record_computes(opcode))
-        return machine_language_record_binary(builder, opcode, pc, limit, level, out_operand, out_depth, NULL);
+        return machine_language_record_binary(builder, opcode, pc, limit, level, out_operand, NULL);
     return false;
 }
 
@@ -290,18 +355,16 @@ static bool machine_language_record_expression(MachineLanguageRecordBuilder_t *b
 static void machine_language_record_branch(MachineLanguageRecordBuilder_t *builder, uint8_t shape, uint32_t after)
 {
     MachineLanguageRecord_t *record = builder->record;
-    MachineLanguageRecordDepth_t depth = {0u, 0u};
     uint32_t end = 0u;
     uint32_t body = 0u;
 
+    machine_language_record_push_operator(builder);
     if (advanced_configuration_and_power_interface_machine_language_read_package_end(
             builder->code, after, record->limit, &end, &body) != MACHINE_LANGUAGE_OK ||
-        !machine_language_record_expression(builder, &body, end, 0u, &record->source, &depth))
+        !machine_language_record_expression(builder, &body, end, 0u, &record->source))
         return;
     record->after = body;
     record->end = end;
-    record->values_peak = (uint8_t) depth.values;
-    record->operators_peak = (uint8_t) (depth.operators + 1u);
     record->shape = shape;
 }
 
@@ -312,15 +375,14 @@ static void machine_language_record_branch(MachineLanguageRecordBuilder_t *build
 static void machine_language_record_store(MachineLanguageRecordBuilder_t *builder, uint32_t after)
 {
     MachineLanguageRecord_t *record = builder->record;
-    MachineLanguageRecordDepth_t depth = {0u, 0u};
     uint32_t pc = after;
 
-    if (!machine_language_record_expression(builder, &pc, record->limit, 0u, &record->source, &depth) ||
+    machine_language_record_push_operator(builder);
+    if (!machine_language_record_expression(builder, &pc, record->limit, 0u, &record->source) ||
         !machine_language_record_target(builder, &pc, record->limit, &record->target))
         return;
+    machine_language_record_push_values(builder, 1u);
     record->after = pc;
-    record->values_peak = (uint8_t) ((depth.values > 2u) ? depth.values : 2u);
-    record->operators_peak = (uint8_t) (depth.operators + 1u);
     record->shape = MACHINE_LANGUAGE_RECORD(STORE);
 }
 
@@ -331,15 +393,11 @@ static void machine_language_record_store(MachineLanguageRecordBuilder_t *builde
 static void machine_language_record_compute(MachineLanguageRecordBuilder_t *builder, uint32_t opcode, uint32_t after)
 {
     MachineLanguageRecord_t *record = builder->record;
-    MachineLanguageRecordDepth_t depth = {0u, 0u};
     uint32_t pc = after;
 
-    if (!machine_language_record_binary(builder, opcode, &pc, record->limit, 0u, &record->source, &depth,
-                                        &record->target))
+    if (!machine_language_record_binary(builder, opcode, &pc, record->limit, 0u, &record->source, &record->target))
         return;
     record->after = pc;
-    record->values_peak = (uint8_t) depth.values;
-    record->operators_peak = (uint8_t) depth.operators;
     record->shape = MACHINE_LANGUAGE_RECORD(STORE);
 }
 
@@ -352,11 +410,11 @@ static void machine_language_record_step(MachineLanguageRecordBuilder_t *builder
     MachineLanguageRecord_t *record = builder->record;
     uint32_t pc = after;
 
+    machine_language_record_push_operator(builder);
     if (!machine_language_record_target(builder, &pc, record->limit, &record->target))
         return;
+    machine_language_record_push_values(builder, 1u);
     record->after = pc;
-    record->values_peak = 1u;
-    record->operators_peak = 1u;
     record->shape = shape;
 }
 
@@ -421,6 +479,21 @@ static bool machine_language_record_goes_on(const uint8_t *code, uint32_t pc, ui
 }
 
 /**
+ * @brief Whether a record that reads names holds a modulo, whose divisor would be known only once a name is read,
+ *        past the record's first effect.
+ */
+static bool machine_language_record_reads_into_a_modulo(const MachineLanguagePredecoding_t *cache,
+                                                        const MachineLanguageRecord_t *record)
+{
+    if (record->name_count == 0u)
+        return false;
+    for (uint32_t index = 0u; index < record->node_count; ++index)
+        if (cache->nodes[record->first_node + index].opcode == MACHINE_LANGUAGE_OPCODE(MOD))
+            return true;
+    return false;
+}
+
+/**
  * @brief Whether a While and the record of its body make a tight loop (§3.6): the While's predicate compares two
  *        leaves, and its body is one statement that writes and ends where the While does.
  */
@@ -430,8 +503,8 @@ static bool machine_language_record_makes_tight(const MachineLanguagePredecoding
 {
     const MachineLanguageRecordNode_t *node = &cache->nodes[loop->first_node];
 
-    return loop->shape == MACHINE_LANGUAGE_RECORD(WHILE) && loop->node_count == 1u &&
-           machine_language_record_compares(node->opcode) &&
+    return loop->shape == MACHINE_LANGUAGE_RECORD(WHILE) && loop->node_count == 1u && loop->name_count == 0u &&
+           body->name_count == 0u && machine_language_record_compares(node->opcode) &&
            node->operands[0].kind != MACHINE_LANGUAGE_OPERAND(RESULT) &&
            node->operands[1].kind != MACHINE_LANGUAGE_OPERAND(RESULT) && body->after == loop->end &&
            body->limit == loop->end &&
@@ -466,6 +539,7 @@ void advanced_configuration_and_power_interface_machine_language_predecoding_ope
     cache->tight_turns = 0u;
     cache->searches = 0u;
     cache->handed_back_loops = 0u;
+    cache->stale_names = 0u;
     cache->watched_serial = 0u;
     cache->watched_start = 0u;
 }
@@ -516,6 +590,7 @@ uint16_t advanced_configuration_and_power_interface_machine_language_record_buil
     MachineLanguageRecord_t *record = &cache->records[cache->record_count];
     const uint32_t nodes = cache->node_count;
     const uint32_t constants = cache->constant_count;
+    const uint32_t names = cache->name_count;
     const MachineLanguageRecord_t empty = {
         .pc = pc,
         .limit = limit,
@@ -523,16 +598,23 @@ uint16_t advanced_configuration_and_power_interface_machine_language_record_buil
         .first_node = (uint16_t) nodes,
         .shape = MACHINE_LANGUAGE_RECORD(GENERAL),
     };
-    MachineLanguageRecordBuilder_t builder = {cache, record, code, integer_bits, false};
+    MachineLanguageRecordBuilder_t builder = {.cache = cache,
+                                              .record = record,
+                                              .code = code,
+                                              .integer_bits = integer_bits};
 
     *record = empty;
     machine_language_record_decode(&builder);
-    if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL) || builder.exhausted)
+    record->values_peak = (uint8_t) builder.values_peak;
+    record->operators_peak = (uint8_t) builder.operators_peak;
+    if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL) || builder.exhausted ||
+        machine_language_record_reads_into_a_modulo(cache, record))
     {
         *record = empty;
         record->goes_on = machine_language_record_goes_on(code, pc, limit) ? 1u : 0u;
         cache->node_count = nodes;
         cache->constant_count = constants;
+        cache->name_count = names;
     }
     if (builder.exhausted)
         return 0u;

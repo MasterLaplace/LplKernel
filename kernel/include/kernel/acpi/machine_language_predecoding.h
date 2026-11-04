@@ -31,6 +31,7 @@
 #define KERNEL_ACPI_MACHINE_LANGUAGE_PREDECODING_H
 
 #include <kernel/acpi/machine_language_decoder.h>
+#include <kernel/acpi/machine_language_namespace.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -243,6 +244,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t
         names[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NAMES]; /**< The names they read.
                                                                                               */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t
+        name_values[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NAMES_PER_RECORD]; /**< What the
+                                                                                                        record running
+                                                                                                        read by name,
+                                                                                                        in its order. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t;
 
 /**

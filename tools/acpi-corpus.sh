@@ -74,7 +74,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          loops that loop run from records, then with `--predecoding off`, and compares every line the two
          print, the namespace and `aml run namespace` (lookups, probes and back-edges) included, but `aml
          run predecoding`, whose counts it sums: the statements records ran and handed back, per reason
-         (specification §3.6, §8.4); a machine whose two runs differ fails it
+         (specification §3.6, §8.4); a machine whose two runs differ fails it, and so does a name a record read
+         that found another node than the one the record checked (`stale_names`)
   records-cost  initialises each machine of a list with `test-acpi-cost --initialize`, the harness `xmake build
          test-acpi-cost` builds without sanitizers, keeps those whose loops ask the records anything (`aml run
          predecoding` counts a statement run or handed back), and counts the instructions each executes with records
@@ -445,12 +446,13 @@ predecoding_check() {
     done < <(reports "$1")
     rm -rf "$on" "$off" "$tables"
     echo -n "# predecoding: $agree of $number machines leave the same lines with records and without;"
-    for key in back_edges records_run built flushes fused_comparisons tight_turns searches handed_back_loops declined_shape declined_limit \
-        declined_operand declined_room declined_operation declined_full declined_target; do
+    for key in back_edges records_run built flushes fused_comparisons tight_turns searches handed_back_loops stale_names \
+        declined_shape declined_limit declined_operand declined_room declined_operation declined_full declined_target \
+        declined_name; do
         echo -n " $key=$(total_of "$key" "$counts")"
     done
     echo
-    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
+    [[ "$number" -gt 0 && "$agree" -eq "$number" && "$(total_of stale_names "$counts")" -eq 0 ]]
 }
 
 # Prints the statements the records of a run ran or handed back, from its `aml run predecoding` line in file $1.

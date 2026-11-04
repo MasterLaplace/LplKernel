@@ -256,24 +256,27 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
     printf("aml run namespace lookups=%u probes=%u back_edges=%u\n", load->space.lookups, load->space.probes,
            evaluation->back_edges);
     printf("aml run predecoding records_run=%u built=%u flushes=%u records_peak=%u fused_comparisons=%u "
-           "tight_turns=%u searches=%u handed_back_loops=%u declined_shape=%u declined_limit=%u declined_operand=%u "
-           "declined_room=%u declined_operation=%u declined_full=%u declined_target=%u\n",
+           "tight_turns=%u searches=%u handed_back_loops=%u stale_names=%u declined_shape=%u declined_limit=%u "
+           "declined_operand=%u declined_room=%u declined_operation=%u declined_full=%u declined_target=%u "
+           "declined_name=%u\n",
            load->predecoding.records_run, load->predecoding.built, load->predecoding.flushes,
            load->predecoding.records_peak, load->predecoding.fused_comparisons, load->predecoding.tight_turns,
-           load->predecoding.searches, load->predecoding.handed_back_loops,
+           load->predecoding.searches, load->predecoding.handed_back_loops, load->predecoding.stale_names,
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_SHAPE],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_LIMIT],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_OPERAND],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_ROOM],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_OPERATION],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_FULL],
-           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_TARGET]);
-    printf("aml run regions field_reads=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_TARGET],
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_NAME]);
+    printf("aml run regions field_reads=%u field_fast_path=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
            "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u "
            "field_accesses_peak=%u table_writes=%u\n",
-           regions->field_reads, regions->field_writes, regions->map_calls, regions->mapping_cache_hits,
-           regions->split_qword_accesses, regions->unaligned_accesses, regions->protected_port_accesses,
-           regions->region_lengths_rounded, regions->field_accesses_peak, regions->table_writes);
+           regions->field_reads, regions->field_fast_path, regions->field_writes, regions->map_calls,
+           regions->mapping_cache_hits, regions->split_qword_accesses, regions->unaligned_accesses,
+           regions->protected_port_accesses, regions->region_lengths_rounded, regions->field_accesses_peak,
+           regions->table_writes);
     printf("aml run global_lock acquisitions=%u waits=%u releases_signalled=%u timeouts=%u unlocked_accesses=%u "
            "facs_refused=%u\n",
            regions->global_lock_acquisitions, regions->global_lock_waits, regions->global_lock_releases_signalled,

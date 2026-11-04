@@ -836,6 +836,8 @@ static MachineLanguageStatus_t machine_language_read_unit(MachineLanguageLoad_t 
     if (unit->bit_length <= integer_bits && unit->bit_offset % datum_bits + unit->bit_length <= datum_bits)
     {
         uint64_t value = 0u;
+
+        ++load->regions.field_fast_path;
         const MachineLanguageStatus_t status = machine_language_read_one_datum(load, unit, width, &value);
 
         *out_value = (MachineLanguageValue_t){.kind = MACHINE_LANGUAGE_VALUE(INTEGER), .payload = value};
@@ -970,6 +972,15 @@ advanced_configuration_and_power_interface_machine_language_field_read(MachineLa
     if (unit->lock != 0u)
         machine_language_release_global_lock(load);
     return status;
+}
+
+bool advanced_configuration_and_power_interface_machine_language_field_reads_integer(const MachineLanguageLoad_t *load,
+                                                                                     uint32_t node)
+{
+    const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
+
+    return unit != NULL && unit->access <= MACHINE_LANGUAGE_ACCESS_LAST &&
+           unit->bit_length <= ((load->integer_bits == 32u) ? 32u : 64u);
 }
 
 MachineLanguageStatus_t

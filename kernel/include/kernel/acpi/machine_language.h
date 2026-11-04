@@ -330,6 +330,17 @@ advanced_configuration_and_power_interface_machine_language_field_read(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
 
 /**
+ * @brief Whether reading a field unit gives an Integer (§5.3): it holds a unit of a valid AccessType no wider than
+ *        the load's integers.
+ *
+ * @param load The load.
+ * @param node The node.
+ * @return Whether the node's read is an Integer.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_field_reads_integer(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
  * @brief Writes a value to a field unit (§5.3): an Integer's bits, cut or zero-extended to the unit,
  *        or a String's or a Buffer's bytes in chunks of the unit's size rounded up to whole bytes, one
  *        after the other, the last one zero-extended and an empty value writing nothing; a datum the
