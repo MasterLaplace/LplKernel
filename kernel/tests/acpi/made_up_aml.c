@@ -21,22 +21,11 @@ static void made_up_aml_byte(MadeUpAml_t *aml, uint8_t byte)
  */
 static void made_up_aml_package_length(MadeUpAml_t *aml, uint32_t value, bool counts_itself)
 {
-    static const uint32_t largest[] = {0x3Fu, 0xFFFu, 0xFFFFFu, 0xFFFFFFFu};
-    uint32_t bytes = 1u;
+    uint8_t encoded[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
+    const uint32_t bytes = made_up_aml_encode_package_length(value, counts_itself, encoded);
 
-    while (bytes < 4u && value + (counts_itself ? bytes : 0u) > largest[bytes - 1u])
-        ++bytes;
-
-    const uint32_t total = value + (counts_itself ? bytes : 0u);
-
-    if (bytes == 1u)
-    {
-        made_up_aml_byte(aml, (uint8_t) total);
-        return;
-    }
-    made_up_aml_byte(aml, (uint8_t) (((bytes - 1u) << 6u) | (total & 0x0Fu)));
-    for (uint32_t index = 1u; index < bytes; ++index)
-        made_up_aml_byte(aml, (uint8_t) (total >> (4u + 8u * (index - 1u))));
+    for (uint32_t index = 0u; index < bytes; ++index)
+        made_up_aml_byte(aml, encoded[index]);
 }
 
 /**
@@ -79,6 +68,28 @@ static void made_up_aml_units(MadeUpAml_t *list, const MadeUpFieldUnit_t *units,
             made_up_aml_byte(list, 0x00u);
         made_up_aml_package_length(list, units[index].bits, false);
     }
+}
+
+uint32_t made_up_aml_encode_package_length(uint32_t value, bool counts_itself,
+                                           uint8_t out[MADE_UP_AML_PACKAGE_LENGTH_BYTES])
+{
+    static const uint32_t largest[] = {0x3Fu, 0xFFFu, 0xFFFFFu, 0xFFFFFFFu};
+    uint32_t bytes = 1u;
+
+    while (bytes < MADE_UP_AML_PACKAGE_LENGTH_BYTES && value + (counts_itself ? bytes : 0u) > largest[bytes - 1u])
+        ++bytes;
+
+    const uint32_t total = value + (counts_itself ? bytes : 0u);
+
+    if (bytes == 1u)
+    {
+        out[0] = (uint8_t) total;
+        return 1u;
+    }
+    out[0] = (uint8_t) (((bytes - 1u) << 6u) | (total & 0x0Fu));
+    for (uint32_t index = 1u; index < bytes; ++index)
+        out[index] = (uint8_t) (total >> (4u + 8u * (index - 1u)));
+    return bytes;
 }
 
 void made_up_aml_begin(MadeUpAml_t *aml)

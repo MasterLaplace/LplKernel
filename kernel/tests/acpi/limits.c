@@ -1,3 +1,4 @@
+#include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -60,20 +61,11 @@ static void limits_close(KernelTest_t *test)
  */
 static uint32_t limits_package_length(uint32_t end, uint32_t content)
 {
-    const uint32_t bytes = (content + 1u <= 0x3Fu) ? 1u : (content + 2u <= 0xFFFu) ? 2u : 3u;
-    const uint32_t total = content + bytes;
+    uint8_t encoded[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
+    const uint32_t bytes = made_up_aml_encode_package_length(content, true, encoded);
 
-    end -= bytes;
-    if (bytes == 1u)
-        limits_aml[end] = (uint8_t) total;
-    else
-    {
-        limits_aml[end] = (uint8_t) (((bytes - 1u) << 6u) | (total & 0x0Fu));
-        limits_aml[end + 1u] = (uint8_t) (total >> 4u);
-        if (bytes == 3u)
-            limits_aml[end + 2u] = (uint8_t) (total >> 12u);
-    }
-    return end;
+    memcpy(limits_aml + end - bytes, encoded, bytes);
+    return end - bytes;
 }
 
 /**

@@ -1,4 +1,5 @@
 #include "shortcuts.h"
+#include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -159,12 +160,10 @@ static void shortcuts_prepend(ShortcutsBackwards_t *backwards, const uint8_t *by
  */
 static void shortcuts_prepend_package_length(ShortcutsBackwards_t *backwards, uint32_t content)
 {
-    const uint32_t follow = (content + 1u < 0x40u) ? 0u : (content + 2u < 0x1000u) ? 1u : 2u;
-    const uint32_t total = content + 1u + follow;
-    const uint8_t encoded[3] = {(uint8_t) ((follow == 0u) ? total : ((follow << 6u) | (total & 0x0Fu))),
-                                (uint8_t) (total >> 4u), (uint8_t) (total >> 12u)};
+    uint8_t encoded[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
+    const uint32_t bytes = made_up_aml_encode_package_length(content, true, encoded);
 
-    shortcuts_prepend(backwards, encoded, 1u + follow);
+    shortcuts_prepend(backwards, encoded, bytes);
 }
 
 /**

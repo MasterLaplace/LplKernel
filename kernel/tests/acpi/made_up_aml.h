@@ -30,7 +30,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MADE_UP_AML_CAPACITY 2048u /**< Bytes of AML one made-up builder holds. */
+#define MADE_UP_AML_CAPACITY             2048u /**< Bytes of AML one made-up builder holds. */
+#define MADE_UP_AML_PACKAGE_LENGTH_BYTES 4u    /**< The most bytes a PkgLength takes. */
 
 /**
  * @brief AML being written, and whether it all fit.
@@ -48,6 +49,18 @@ typedef struct MadeUpFieldUnit {
     const char *name; /**< Four characters, or NULL. */
     uint32_t bits;    /**< Its length in bits. */
 } MadeUpFieldUnit_t;
+
+/**
+ * @brief Encodes a value in the PkgLength encoding, as AML writes it before a construct's content or a field
+ *        unit's bits, the one encoder the made-up tables share.
+ *
+ * @param value         The bytes that follow the PkgLength, or a field unit's bits.
+ * @param counts_itself Whether the value counts the PkgLength's own bytes too, as a construct's does.
+ * @param out           Receives the encoding.
+ * @return The bytes written, 1 to MADE_UP_AML_PACKAGE_LENGTH_BYTES.
+ */
+extern uint32_t made_up_aml_encode_package_length(uint32_t value, bool counts_itself,
+                                                  uint8_t out[MADE_UP_AML_PACKAGE_LENGTH_BYTES]);
 
 /**
  * @brief Empties @p aml.
