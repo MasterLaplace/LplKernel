@@ -792,7 +792,8 @@ target_end()
 -- tools/acpi/host/platform.c gives it stdout for a serial port and a boot command line that holds
 -- nothing but the word `--predecoding off` gives it, so every test runs. `--boot-module <image>` and `--firmware-log <log>` give the tests the module
 -- and the firmware a debug kernel read; `--machine <dump>` walks a recorded machine's tables instead.
--- test-acpi-cost is the same harness without the sanitizers, which valgrind cannot run under:
+-- test-acpi-cost is the same harness without the sanitizers, which valgrind cannot run under, nor the
+-- test that undefined behaviour stops the harness, which only they make true:
 -- `tools/acpi-corpus.sh records-cost` counts its instructions under callgrind. Under the sanitizers,
 -- undefined behaviour stops the run, as an AddressSanitizer error does: the CI step fails on it, and so
 -- do the runs of tools/acpi-corpus.sh, which build test-acpi, wherever they read its exit status or
@@ -815,7 +816,7 @@ local function acpi_host_target(name, targetdir, sanitized)
         add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS", "LPL_KERNEL_DEBUG_POISON", "LPL_PLUGIN_UNAVAILABLE=1")
         add_includedirs("kernel/include", "kernel/tests/acpi")
         add_files("kernel/kernel/acpi/*.c", "kernel/kernel/testing/test.c", "kernel/tests/acpi/*.c",
-                  "tools/acpi/host/*.c")
+                  sanitized and "tools/acpi/host/*.c" or "tools/acpi/host/*.c|undefined_behaviour_tests.c")
         add_ldflags("-Wl,-T," .. path.join(os.scriptdir(), "tools/acpi/host/kernel_tests.ld"), {force = true})
     target_end()
 end
