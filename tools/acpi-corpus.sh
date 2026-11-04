@@ -103,7 +103,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error. records-cost also exits 1 when valgrind is missing or xmake cannot build its
-harness, and 2 when RECORDS_TOLERANCE is no decimal number.
+harness, and 2 when RECORDS_TOLERANCE is no decimal number. Every mode also exits 1 when a sanitizer stopped
+the harness, whatever the mode made of that run, and lists the arguments of the runs it stopped.
 USAGE
 }
 
@@ -112,7 +113,7 @@ readonly CORPUS="$ROOT/build/acpi-corpus"
 readonly LINUXHW="$CORPUS/linuxhw"
 readonly LINUXHW_URL="https://github.com/linuxhw/ACPI.git"
 readonly LINUXHW_COMMIT="d6d30c6ef6f45506567f25a302c64f009d8f5f4e"
-readonly HARNESS="$ROOT/build/acpi-host/test-acpi"
+readonly HARNESS_BINARY="$ROOT/build/acpi-host/test-acpi"
 readonly PRESETS="$ROOT/tools/acpi/presets.txt"
 readonly ACPICA="$CORPUS/acpica"
 readonly ACPICA_URL="https://github.com/acpica/acpica.git"
@@ -129,6 +130,44 @@ readonly UACPI_COMMIT="c0edecef62bcac6ce3f783540099190bafadadda"
 readonly MODULES="$CORPUS/modules"
 readonly RING0_LOGS="$CORPUS/ring0"
 readonly SUITES="advanced_configuration_and_power_interface"
+readonly HARNESS_WORK="$(mktemp -d)"
+readonly HARNESS="$HARNESS_WORK/test-acpi"
+readonly SANITIZER_STOP=86
+readonly SANITIZER_STOPS="$HARNESS_WORK/stops"
+export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}exitcode=$SANITIZER_STOP"
+export UBSAN_OPTIONS="${UBSAN_OPTIONS:+$UBSAN_OPTIONS:}exitcode=$SANITIZER_STOP"
+export LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}exitcode=$SANITIZER_STOP"
+EXIT_CLEANUP=()
+
+# Writes the script every mode runs as HARNESS: it runs the harness, which exits 0, 1 or 2 on its own, and notes
+# the arguments of a run that exited with SANITIZER_STOP, the status the options above give a sanitizer's stop.
+write_harness() {
+    cat >"$HARNESS" <<WRAPPER
+#!/usr/bin/env bash
+$(printf '%q' "$HARNESS_BINARY") "\$@"
+status=\$?
+if [[ "\$status" -eq $SANITIZER_STOP ]]; then
+    printf '%s\n' "\${*@Q}" >>$(printf '%q' "$SANITIZER_STOPS")
+fi
+exit "\$status"
+WRAPPER
+    chmod +x "$HARNESS"
+}
+
+# At exit, removes what the run made to work in, and fails a run in which a sanitizer stopped the harness, with
+# the arguments of the first runs it stopped, quoted, which name the machine.
+sanitizer_stops_exit() {
+    local status=$?
+    if [[ -s "$SANITIZER_STOPS" ]]; then
+        echo "not ok: a sanitizer stopped the harness $(wc -l <"$SANITIZER_STOPS") time(s), on these arguments:"
+        head -20 "$SANITIZER_STOPS" | sed 's/^/    # /'
+        status=1
+    fi
+    rm -rf "$HARNESS_WORK" "${EXIT_CLEANUP[@]}"
+    exit "$status"
+}
+trap sanitizer_stops_exit EXIT
+write_harness
 
 # Refuses, with the usage, a list that is not quick, corpus or full.
 known_list() {
@@ -502,9 +541,9 @@ records_cost_check() {
         echo "records-cost: xmake could not build test-acpi-cost: run xmake build test-acpi-cost to see why" >&2
         return 1
     fi
-    records_cost_work="$(mktemp -d)"
-    trap 'rm -rf "$records_cost_work"' EXIT
-    local work="$records_cost_work"
+    local work
+    work="$(mktemp -d)"
+    EXIT_CLEANUP+=("$work")
     while IFS= read -r subject; do
         number=$((number + 1))
         "$harness" --initialize "$LINUXHW/$subject.bin" "$PRESETS" >"$work/probe" 2>&1 || true
