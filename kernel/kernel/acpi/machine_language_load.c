@@ -2710,6 +2710,7 @@ void advanced_configuration_and_power_interface_machine_language_declare_directo
         advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_control_blocks[1], 2u),
     };
 
+    load->directory = directory;
     advanced_configuration_and_power_interface_machine_language_use_global_lock(
         load, fadt->hardware_reduced ? 0u : directory->firmware_control_physical_address, control_ports);
     const AdvancedConfigurationAndPowerInterfaceTable_t *dsdt =
@@ -2725,7 +2726,6 @@ void advanced_configuration_and_power_interface_machine_language_declare_directo
             machine_language_accepts_table(load, entry->header))
             machine_language_declare_accepted_table(load, entry->header, entry->checksum_valid);
     }
-    load->directory = directory;
 }
 
 void advanced_configuration_and_power_interface_machine_language_load_directory(

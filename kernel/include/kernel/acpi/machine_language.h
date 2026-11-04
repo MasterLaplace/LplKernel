@@ -170,8 +170,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t load_tables_missing; /**< LoadTable calls that found no table, False returned. */
     uint32_t table_bytes_copied;  /**< Bytes Load copied. */
     uint32_t declaring;           /**< Passes and table frames that declare: not 0 while a table is declared. */
-    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, or
-                                                                             NULL. */
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, and
+                                                                             the one a memory write is checked
+                                                                             against (§5.3), or NULL. */
     uint32_t bytes;             /**< AML bytes of those tables, headers apart. */
     uint32_t declarations;      /**< Nodes the tables created. */
     uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass stepped over instead of decoding
@@ -781,8 +782,9 @@ extern void advanced_configuration_and_power_interface_machine_language_decode_t
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
- * @brief Declares the DSDT, then every SSDT, of a directory, which LoadTable searches from then on, and
- *        gives the load the global lock of its FACS.
+ * @brief Gives the load a directory, which a memory write is checked against from then on (§5.3) and
+ *        LoadTable searches once no table is declared, and the global lock of its FACS, then declares its
+ *        DSDT and every SSDT: the code of the first table already runs with the directory.
  *
  * @details Each table's checksum is the one the directory computed when it recorded the table: the
  *          load does not sum its bytes again.

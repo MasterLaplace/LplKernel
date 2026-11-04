@@ -41,7 +41,26 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_directory, KERNEL_T
 #define MADE_UP_FIRMWARE_FADT_PM1A_CONTROL              64u            /**< Offset of a FADT's PM1a_CNT_BLK field. */
 #define MADE_UP_FIRMWARE_FADT_FLAGS                     112u           /**< Offset of a FADT's Flags field. */
 #define MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL     184u           /**< Offset of a FADT's X_PM1b_CNT_BLK field. */
-#define MADE_UP_FIRMWARE_RSDP_VERSION_1                 20u /**< Bytes the first checksum of a root pointer covers. */
+#define MADE_UP_FIRMWARE_RSDP_VERSION_1                 20u  /**< Bytes the first checksum of a root pointer covers. */
+#define MADE_UP_FIRMWARE_SELF_ADDRESS                   8u   /**< Where SELF's region address lies in its AML. */
+#define MADE_UP_FIRMWARE_OTHER_ADDRESS                  35u  /**< Where the address of the region over TSTA lies. */
+#define MADE_UP_FIRMWARE_SELF_BOUND                     75u  /**< Where the bound of SELF's While lies in its AML. */
+#define MADE_UP_FIRMWARE_LATCH_BOUND                    81u  /**< Where it lies once the DSDT writes OTHR first. */
+#define MADE_UP_FIRMWARE_EVICT_BOUND                    136u /**< Where the bound of EVCT's last While lies. */
+#define MADE_UP_FIRMWARE_FIRST_ADDRESS                                                                                 \
+    8u                                              /**< Where the first region of a write test's DSDT                 \
+                                                         holds its address. */
+#define MADE_UP_FIRMWARE_SECOND_ADDRESS 34u         /**< Where the second holds it. */
+#define MADE_UP_FIRMWARE_KEPT_ELEMENT   9u          /**< Where the first element of KEPT's Package lies in its AML. */
+#define MADE_UP_FIRMWARE_KEPT_ADDRESS   20u         /**< Where the address of the region over it lies. */
+#define MADE_UP_FIRMWARE_ELSEWHERE      0x800u      /**< A byte of the page that no table holds. */
+#define MADE_UP_FIRMWARE_FAR_PAGE       0x00800000u /**< A page apart from the firmware's. */
+#define MADE_UP_FIRMWARE_UNALIGNED_DSDT                                                                                \
+    0x603u /**< A DSDT whose first byte no DWord access starts                                                         \
+                at, three bytes past MADE_UP_FIRMWARE_DSDT_64_OFFSET. */
+#define MADE_UP_FIRMWARE_SELF_RESULT                                                                                   \
+    4u /**< What SELF returns once its write over its bound is                                                         \
+            read: the loop stops at 4. */
 
 /**
  * @brief A made-up firmware: every table in one page, which a simulated host serves.
@@ -51,9 +70,130 @@ typedef struct MadeUpFirmware {
     uint32_t physical; /**< Where the simulated host serves it. */
 } MadeUpFirmware_t;
 
+/**
+ * @brief A DSDT whose method rewrites its own bytes: the field BND_ over the bound of SELF's While and the
+ *        field OTHR over a byte of TSTA, which the directory lists and the load does not read, each a byte of
+ *        a SystemMemory region whose address the test writes, at MADE_UP_FIRMWARE_SELF_ADDRESS and
+ *        MADE_UP_FIRMWARE_OTHER_ADDRESS; then SELF: `OTHR = One; Local0 = 0; While (Local0 < 0x10)
+ *        { Local0++; If (Local0 == 2) { BND_ = 4 } }; Return (Local0)`.
+ */
+static const uint8_t made_up_firmware_self[] = {
+    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u,
+    0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'B',   'N',   'D',   '_',   0x08u, 0x5Bu, 0x80u, 'T',   'S',   'T',
+    'R',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'T',   'S',   'T',   'R',
+    0x01u, 'O',   'T',   'H',   'R',   0x08u, 0x14u, 0x26u, 'S',   'E',   'L',   'F',   0x00u, 0x70u, 0x01u, 'O',
+    'T',   'H',   'R',   0x70u, 0x00u, 0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u, 0xA0u, 0x0Cu,
+    0x93u, 0x60u, 0x0Au, 0x02u, 0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
+};
+
+/**
+ * @brief A DSDT that keeps a Package in its table and rewrites it: `Name (PKG0, Package () {0x11, 0x22})`, kept unbuilt
+ *        (O20), BYT0, the byte of a SystemMemory region over that Package's first element, whose address the test
+ *        writes at MADE_UP_FIRMWARE_KEPT_ADDRESS, then KEPT: `BYT0 = 0x99; Return (DerefOf (PKG0 [0]))`.
+ */
+static const uint8_t made_up_firmware_kept[] = {
+    0x08u, 'P',   'K',   'G',   '0',   0x12u, 0x06u, 0x02u, 0x0Au, 0x11u, 0x0Au, 0x22u, 0x5Bu, 0x80u, 'T',   'R',
+    'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'T',   'R',   'E',
+    'G',   0x01u, 'B',   'Y',   'T',   '0',   0x08u, 0x14u, 0x16u, 'K',   'E',   'P',   'T',   0x00u, 0x70u, 0x0Au,
+    0x99u, 'B',   'Y',   'T',   '0',   0xA4u, 0x83u, 0x88u, 'P',   'K',   'G',   '0',   0x00u, 0x00u,
+};
+
+/**
+ * @brief SELF's DSDT, whose table-level code writes OTHR, over a byte of TSTA, before SELF is declared: `OTHR =
+ *        One` runs while the DSDT is declared, the first write through the firmware's page.
+ */
+static const uint8_t made_up_firmware_latch[] = {
+    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu,
+    0x81u, 0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'B',   'N',   'D',   '_',   0x08u, 0x5Bu, 0x80u, 'T',
+    'S',   'T',   'R',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'T',
+    'S',   'T',   'R',   0x01u, 'O',   'T',   'H',   'R',   0x08u, 0x70u, 0x01u, 'O',   'T',   'H',   'R',
+    0x14u, 0x26u, 'S',   'E',   'L',   'F',   0x00u, 0x70u, 0x01u, 'O',   'T',   'H',   'R',   0x70u, 0x00u,
+    0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u, 0xA0u, 0x0Cu, 0x93u, 0x60u, 0x0Au, 0x02u,
+    0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
+};
+
+/**
+ * @brief A DSDT whose method maps 64 pages before it writes its own bytes: BND_ over the bound of EVCT's last
+ *        While, FARW a byte of a page apart, each a byte of a SystemMemory region whose address the test writes;
+ *        TOUC (Arg0) reads a byte at Arg0 through a region of its own; EVCT: `FARW = One; Local1 = 0; While (Local1
+ *        < 63) { TOUC (0x01000000 + Local1 * 0x1000); Local1++ }; Local0 = 0; While (Local0 < 0x10) { Local0++;
+ *        If (Local0 == 2) { BND_ = 4 } }; Return (Local0)`: the write over BND_ takes the mapping of FARW's page,
+ *        the least recently used of the 64 the cache holds.
+ */
+static const uint8_t made_up_firmware_evict[] = {
+    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu,
+    'T',   'B',   'L',   'B',   0x01u, 'B',   'N',   'D',   '_',   0x08u, 0x5Bu, 0x80u, 'F',   'A',   'R',   'R',
+    0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'F',   'A',   'R',   'R',   0x01u, 'F',
+    'A',   'R',   'W',   0x08u, 0x14u, 0x21u, 'T',   'O',   'U',   'C',   0x09u, 0x5Bu, 0x80u, 'S',   'C',   'A',
+    'N',   0x00u, 0x68u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'S',   'C',   'A',   'N',   0x01u, 'S',   'C',   'N',   'B',
+    0x08u, 0xA4u, 'S',   'C',   'N',   'B',   0x14u, 0x43u, 0x04u, 'E',   'V',   'C',   'T',   0x00u, 0x70u, 0x01u,
+    'F',   'A',   'R',   'W',   0x70u, 0x00u, 0x61u, 0xA2u, 0x18u, 0x95u, 0x61u, 0x0Au, 0x3Fu, 'T',   'O',   'U',
+    'C',   0x72u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x01u, 0x77u, 0x61u, 0x0Bu, 0x00u, 0x10u, 0x00u, 0x00u, 0x75u, 0x61u,
+    0x70u, 0x00u, 0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u, 0xA0u, 0x0Cu, 0x93u, 0x60u, 0x0Au,
+    0x02u, 0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
+};
+
+/**
+ * @brief A DSDT that writes One to five bytes or words whose addresses the test writes, each through a
+ *        SystemMemory region of its own and a method: BEFO by WBEF, FRST by WFRS, LAST by WLST and AFTE by WAFT,
+ *        bytes, and DWRD by WDWD, a DWordAcc unit of 32 bits.
+ */
+static const uint8_t made_up_firmware_edges[] = {
+    0x5Bu, 0x80u, 'B',   'E',   'F',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu,
+    'B',   'E',   'F',   'R',   0x01u, 'B',   'E',   'F',   'O',   0x08u, 0x5Bu, 0x80u, 'F',   'R',   'S',   'R',
+    0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'F',   'R',   'S',   'R',   0x01u, 'F',
+    'R',   'S',   'T',   0x08u, 0x5Bu, 0x80u, 'L',   'S',   'T',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u,
+    0x01u, 0x5Bu, 0x81u, 0x0Bu, 'L',   'S',   'T',   'R',   0x01u, 'L',   'A',   'S',   'T',   0x08u, 0x5Bu, 0x80u,
+    'A',   'F',   'T',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'A',   'F',
+    'T',   'R',   0x01u, 'A',   'F',   'T',   'E',   0x08u, 0x5Bu, 0x80u, 'D',   'W',   'R',   'R',   0x00u, 0x0Cu,
+    0x78u, 0x56u, 0x34u, 0x12u, 0x0Au, 0x04u, 0x5Bu, 0x81u, 0x0Bu, 'D',   'W',   'R',   'R',   0x03u, 'D',   'W',
+    'R',   'D',   0x20u, 0x14u, 0x0Cu, 'W',   'B',   'E',   'F',   0x00u, 0x70u, 0x01u, 'B',   'E',   'F',   'O',
+    0x14u, 0x0Cu, 'W',   'F',   'R',   'S',   0x00u, 0x70u, 0x01u, 'F',   'R',   'S',   'T',   0x14u, 0x0Cu, 'W',
+    'L',   'S',   'T',   0x00u, 0x70u, 0x01u, 'L',   'A',   'S',   'T',   0x14u, 0x0Cu, 'W',   'A',   'F',   'T',
+    0x00u, 0x70u, 0x01u, 'A',   'F',   'T',   'E',   0x14u, 0x0Cu, 'W',   'D',   'W',   'D',   0x00u, 0x70u, 0x01u,
+    'D',   'W',   'R',   'D',
+};
+
+/**
+ * @brief A DSDT whose LDTB runs `LoadTable ("TSTA", "", "", "", "", Zero); OTHR = One; Return (Zero)`, OTHR a byte
+ *        of a SystemMemory region whose address the test writes.
+ */
+static const uint8_t made_up_firmware_load_table[] = {
+    0x5Bu, 0x80u, 'T',   'S',   'T',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u,
+    0x0Bu, 'T',   'S',   'T',   'R',   0x01u, 'O',   'T',   'H',   'R',   0x08u, 0x14u, 0x1Fu, 'L',   'D',
+    'T',   'B',   0x00u, 0x5Bu, 0x1Fu, 0x0Du, 'T',   'S',   'T',   'A',   0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u,
+    0x0Du, 0x00u, 0x0Du, 0x00u, 0x00u, 0x70u, 0x01u, 'O',   'T',   'H',   'R',   0xA4u, 0x00u,
+};
+
+/**
+ * @brief A DSDT of a write test: its AML, where it lies in the firmware's page, and the physical address each of
+ *        its regions is given, at the offsets of its AML that hold one.
+ */
+typedef struct MadeUpWriteTable {
+    const uint8_t *aml;        /**< Its AML. */
+    uint32_t length;           /**< Its length. */
+    uint32_t offset;           /**< Where it lies in the page, which the long FADT's X_DSDT names. */
+    const uint32_t *places;    /**< Where its AML holds the address of each region, a DWordConst. */
+    const uint32_t *addresses; /**< The address each of them is given. */
+    uint32_t count;            /**< How many. */
+} MadeUpWriteTable_t;
+
+/**
+ * @brief What one load of a write test left.
+ */
+typedef struct MadeUpWriteRun {
+    uint64_t result;       /**< What the method evaluated returned. */
+    uint32_t table_writes; /**< Writes counted on the bytes of a table the load reads in place. */
+    uint32_t flushes;      /**< Times the records were emptied. */
+    uint32_t map_calls;    /**< Pages the mapping cache asked the host to map. */
+} MadeUpWriteRun_t;
+
 static uint8_t made_up_firmware_page[MADE_UP_FIRMWARE_PAGE_BYTES];
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t made_up_firmware_host;
 static AdvancedConfigurationAndPowerInterfaceDirectory_t made_up_firmware_directory;
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t made_up_firmware_load;
+static void (*made_up_firmware_host_write)(void *context, void *address, uint64_t physical_address, uint8_t width,
+                                           uint32_t value);
 
 /**
  * @brief Sets the byte at @p checksum_offset so that the @p length bytes at @p bytes sum to zero.
@@ -301,6 +441,120 @@ static bool made_up_firmware_declares(AdvancedConfigurationAndPowerInterfaceMach
                &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
                advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)) !=
            0u;
+}
+
+/**
+ * @brief The simulated host's memory write, made through to the firmware's page too, so that a write over a
+ *        table's bytes changes the bytes the load reads in place, as it would on a machine; the simulated host
+ *        alone keeps what a region writes apart from the ranges it serves.
+ */
+static void made_up_firmware_write_through(void *context, void *address, uint64_t physical_address, uint8_t width,
+                                           uint32_t value)
+{
+    made_up_firmware_host_write(context, address, physical_address, width, value);
+    for (uint8_t offset = 0u; offset < width; ++offset)
+        if (physical_address + offset >= MADE_UP_FIRMWARE_PHYSICAL_ADDRESS &&
+            physical_address + offset < MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_PAGE_BYTES)
+            made_up_firmware_page[physical_address + offset - MADE_UP_FIRMWARE_PHYSICAL_ADDRESS] =
+                (uint8_t) (value >> (8u * offset));
+}
+
+/**
+ * @brief Writes the made-up firmware with @p table as its DSDT, served through a host whose writes go through to
+ *        the page when @p through holds, reads its directory, then loads it, records on when @p predecodes holds.
+ *
+ * @return false, the host closed, when the directory is not read or the namespace does not open.
+ */
+static bool made_up_firmware_load_writes(KernelTest_t *test, const MadeUpWriteTable_t *table, bool through,
+                                         bool predecodes)
+{
+    MadeUpFirmware_t firmware;
+
+    made_up_firmware_open(&firmware);
+    made_up_firmware_host_write = made_up_firmware_host.host.write_memory;
+    if (through)
+        made_up_firmware_host.host.write_memory = made_up_firmware_write_through;
+    made_up_firmware_write(&firmware, 2u, firmware.physical + table->offset);
+    made_up_firmware_table(&firmware, table->offset, "DSDT", MADE_UP_FIRMWARE_HEADER_BYTES + table->length, "SIXTY4  ");
+    memcpy(firmware.page + table->offset + MADE_UP_FIRMWARE_HEADER_BYTES, table->aml, table->length);
+    for (uint32_t index = 0u; index < table->count; ++index)
+        memcpy(firmware.page + table->offset + MADE_UP_FIRMWARE_HEADER_BYTES + table->places[index],
+               &table->addresses[index], sizeof(table->addresses[index]));
+    made_up_firmware_seal_table(&firmware, table->offset);
+    if (!kernel_test_check(test, made_up_firmware_read(), "the directory is read") ||
+        !kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &made_up_firmware_load, &made_up_firmware_host.host, 1024u, 1024u * 1024u),
+                           "the namespace opens"))
+    {
+        advanced_configuration_and_power_interface_simulated_host_close(&made_up_firmware_host);
+        return false;
+    }
+    made_up_firmware_load.predecodes_loops = predecodes;
+    advanced_configuration_and_power_interface_machine_language_load_directory(&made_up_firmware_load,
+                                                                               &made_up_firmware_directory);
+    return true;
+}
+
+/**
+ * @brief Closes the load of a write test, releases the directory and closes the host, every page it took for
+ *        a write given back.
+ */
+static void made_up_firmware_unload_writes(KernelTest_t *test)
+{
+    advanced_configuration_and_power_interface_machine_language_close(&made_up_firmware_load);
+    made_up_firmware_release(test);
+    advanced_configuration_and_power_interface_simulated_host_close(&made_up_firmware_host);
+}
+
+/**
+ * @brief Loads @p table, its writes made through to the page, records on when @p predecodes holds, evaluates
+ *        @p path, and gives what it left.
+ *
+ * @return false when the load could not be made.
+ */
+static bool made_up_firmware_run_writes(KernelTest_t *test, const MadeUpWriteTable_t *table, const char *path,
+                                        bool predecodes, MadeUpWriteRun_t *out_run)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result = {0};
+
+    if (!made_up_firmware_load_writes(test, table, true, predecodes))
+        return false;
+    advanced_configuration_and_power_interface_machine_language_evaluate(&made_up_firmware_load, path, NULL, 0u,
+                                                                         &result);
+    out_run->result = result.payload;
+    out_run->table_writes = made_up_firmware_load.regions.table_writes;
+    out_run->flushes = made_up_firmware_load.predecoding.flushes;
+    out_run->map_calls = made_up_firmware_load.regions.map_calls;
+    made_up_firmware_unload_writes(test);
+    return true;
+}
+
+/**
+ * @brief Runs @p path of @p table without records, then with them, and checks that SELF's write over its bound,
+ *        made at the second turn, is read both ways: the loop stops at 4, the write is counted once, and empties
+ *        the records it finds built.
+ *
+ * @return What the run with records left.
+ */
+static MadeUpWriteRun_t made_up_firmware_check_bound_write(KernelTest_t *test, const MadeUpWriteTable_t *table,
+                                                           const char *path)
+{
+    MadeUpWriteRun_t runs[2] = {
+        {0u, 0u, 0u, 0u},
+        {0u, 0u, 0u, 0u}
+    };
+
+    if (!made_up_firmware_run_writes(test, table, path, false, &runs[0]) ||
+        !made_up_firmware_run_writes(test, table, path, true, &runs[1]))
+        return runs[1];
+    kernel_test_check(test, runs[0].result == MADE_UP_FIRMWARE_SELF_RESULT && runs[1].result == runs[0].result,
+                      "the loop reads the new bound and stops at 4, with records as without");
+    kernel_test_check(test, runs[0].table_writes == 1u && runs[1].table_writes == 1u,
+                      "the write over the bound is counted once, with records as without");
+    kernel_test_check(test, runs[0].flushes == 0u && runs[1].flushes == 1u, "it empties the records, once built");
+    kernel_test_measure(test, "result_with_records", (uint32_t) runs[1].result);
+    return runs[1];
 }
 
 /**
@@ -653,4 +907,182 @@ KERNEL_TEST(a_load_of_the_directory_counts_each_definition_block_whose_checksum_
         advanced_configuration_and_power_interface_machine_language_close(&load);
         made_up_firmware_release(test);
     }
+}
+
+/**
+ * @brief A write to the bytes of a table the load reads in place is counted, and empties the records built
+ *        from them (§3.6, §5.3): SELF's While reads its bound, 0x10, in the DSDT, and at its second turn
+ *        writes 4 over it through a SystemMemory field, with the host's writes made through to the firmware's
+ *        page; the loop then stops at 4, with records as without, the write is counted once, its write over
+ *        TSTA, a table the load does not read, never, and the records, which the loop ran from by then, are
+ *        emptied once.
+ */
+KERNEL_TEST(a_write_to_a_table_read_in_place_empties_the_records_built_from_it)
+{
+    const uint32_t places[] = {MADE_UP_FIRMWARE_SELF_ADDRESS, MADE_UP_FIRMWARE_OTHER_ADDRESS};
+    const uint32_t addresses[] = {
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
+            MADE_UP_FIRMWARE_SELF_BOUND,
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_BOTH_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES - 1u,
+    };
+    const MadeUpWriteTable_t table = {
+        made_up_firmware_self, sizeof(made_up_firmware_self), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+
+    made_up_firmware_check_bound_write(test, &table, "\\SELF");
+}
+
+/**
+ * @brief A write the code of a table makes while the table is declared is checked against the directory too
+ *        (§5.3): the DSDT's table-level code writes OTHR, over TSTA, before SELF runs; the page still learns that
+ *        it holds the DSDT, and SELF's write over its bound is counted, with records as without.
+ */
+KERNEL_TEST(a_write_the_code_of_a_table_makes_as_it_is_declared_is_checked)
+{
+    const uint32_t places[] = {MADE_UP_FIRMWARE_SELF_ADDRESS, MADE_UP_FIRMWARE_OTHER_ADDRESS};
+    const uint32_t addresses[] = {
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
+            MADE_UP_FIRMWARE_LATCH_BOUND,
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_BOTH_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES - 1u,
+    };
+    const MadeUpWriteTable_t table = {
+        made_up_firmware_latch, sizeof(made_up_firmware_latch), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+
+    made_up_firmware_check_bound_write(test, &table, "\\SELF");
+}
+
+/**
+ * @brief A page learns from its first write whether it holds a table, wherever in the page that write lands
+ *        (§5.3): SELF writes OTHR, at 0x800 of the firmware's page, which no table holds, before its write over
+ *        its bound, which is still counted, with records as without.
+ */
+KERNEL_TEST(a_first_write_elsewhere_in_a_page_still_learns_its_tables)
+{
+    const uint32_t places[] = {MADE_UP_FIRMWARE_SELF_ADDRESS, MADE_UP_FIRMWARE_OTHER_ADDRESS};
+    const uint32_t addresses[] = {
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
+            MADE_UP_FIRMWARE_SELF_BOUND,
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_ELSEWHERE,
+    };
+    const MadeUpWriteTable_t table = {
+        made_up_firmware_self, sizeof(made_up_firmware_self), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+
+    made_up_firmware_check_bound_write(test, &table, "\\SELF");
+}
+
+/**
+ * @brief A mapping the cache takes again for another page learns that page's tables again (§5.3): EVCT writes
+ *        FARW, in a page that holds none, then reads 63 other pages, which fills the cache's 64 mappings, then
+ *        writes over its bound, through the mapping FARW's page had; that write is counted, with records as
+ *        without. The control: 65 pages were mapped.
+ */
+KERNEL_TEST(a_mapping_taken_again_learns_the_tables_of_its_new_page)
+{
+    const uint32_t places[] = {MADE_UP_FIRMWARE_FIRST_ADDRESS, MADE_UP_FIRMWARE_SECOND_ADDRESS};
+    const uint32_t addresses[] = {
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
+            MADE_UP_FIRMWARE_EVICT_BOUND,
+        MADE_UP_FIRMWARE_FAR_PAGE,
+    };
+    const MadeUpWriteTable_t table = {
+        made_up_firmware_evict, sizeof(made_up_firmware_evict), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+    const MadeUpWriteRun_t run = made_up_firmware_check_bound_write(test, &table, "\\EVCT");
+
+    kernel_test_check(test,
+                      run.map_calls == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_MAPPINGS + 1u,
+                      "65 pages were mapped, the last through the mapping of the first");
+}
+
+/**
+ * @brief A write is counted when one of its bytes lands on a table the load reads in place, and only then
+ *        (§5.3): with the DSDT three bytes past a DWord boundary, a byte written just before its first byte is
+ *        not counted, one on its first byte is, one on its last byte is, one just after it is not, and a DWord
+ *        written at the boundary, whose last byte alone lands on the DSDT, is. The writes stay apart from the
+ *        page, so that the one over the DSDT's last byte, in WDWD's code, leaves that code as it is.
+ */
+KERNEL_TEST(a_write_is_counted_when_one_of_its_bytes_lands_on_a_table)
+{
+    static const char *const methods[] = {"\\WBEF", "\\WFRS", "\\WLST", "\\WAFT", "\\WDWD"};
+    static const uint32_t expected[] = {0u, 1u, 1u, 0u, 1u};
+    const uint32_t places[] = {8u, 34u, 60u, 86u, 112u};
+    const uint32_t dsdt = MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_UNALIGNED_DSDT;
+    const uint32_t end = dsdt + MADE_UP_FIRMWARE_HEADER_BYTES + (uint32_t) sizeof(made_up_firmware_edges);
+    const uint32_t addresses[] = {dsdt - 1u, dsdt, end - 1u, end, dsdt - 3u};
+    const MadeUpWriteTable_t table = {
+        made_up_firmware_edges, sizeof(made_up_firmware_edges), MADE_UP_FIRMWARE_UNALIGNED_DSDT, places, addresses, 5u};
+    uint32_t agree = 0u;
+
+    if (!made_up_firmware_load_writes(test, &table, false, true))
+        return;
+    for (uint32_t index = 0u; index < sizeof(methods) / sizeof(methods[0]); ++index)
+    {
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result = {0};
+        const uint32_t before = made_up_firmware_load.regions.table_writes;
+
+        advanced_configuration_and_power_interface_machine_language_evaluate(&made_up_firmware_load, methods[index],
+                                                                             NULL, 0u, &result);
+        agree += (made_up_firmware_load.regions.table_writes - before == expected[index]) ? 1u : 0u;
+    }
+    kernel_test_check(test, agree == sizeof(methods) / sizeof(methods[0]),
+                      "the bytes before and after the DSDT are not counted; its first, its last and a DWord over its "
+                      "first are");
+    kernel_test_measure(test, "table_writes", made_up_firmware_load.regions.table_writes);
+    made_up_firmware_unload_writes(test);
+}
+
+/**
+ * @brief A write to a table LoadTable found in the directory is counted, the load reading that table in place
+ *        (§5.3): LDTB loads TSTA, then writes the last byte of its header.
+ */
+KERNEL_TEST(a_write_to_a_table_load_table_found_is_counted)
+{
+    const uint32_t places[] = {MADE_UP_FIRMWARE_FIRST_ADDRESS};
+    const uint32_t addresses[] = {
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_BOTH_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES - 1u,
+    };
+    const MadeUpWriteTable_t table = {made_up_firmware_load_table,
+                                      sizeof(made_up_firmware_load_table),
+                                      MADE_UP_FIRMWARE_DSDT_64_OFFSET,
+                                      places,
+                                      addresses,
+                                      1u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result = {0};
+    uint32_t tables = 0u;
+
+    if (!made_up_firmware_load_writes(test, &table, true, true))
+        return;
+    tables = made_up_firmware_load.table_count;
+    advanced_configuration_and_power_interface_machine_language_evaluate(&made_up_firmware_load, "\\LDTB", NULL, 0u,
+                                                                         &result);
+    kernel_test_check(test, made_up_firmware_load.table_count == tables + 1u, "LoadTable reads TSTA in place");
+    kernel_test_check(test, made_up_firmware_load.regions.table_writes == 1u, "the write over TSTA is counted");
+    made_up_firmware_unload_writes(test);
+}
+
+/**
+ * @brief A Name's data the load keeps in its table is built from the bytes it was declared with before a write lands
+ *        on them (O20, §3.5, §5.3): KEPT writes 0x99 over the first element of PKG0's Package, kept unbuilt, through
+ *        the firmware's page, then reads that element: 0x11, the Package built before the write.
+ */
+KERNEL_TEST(kept_data_is_built_before_a_write_lands_on_its_table)
+{
+    const uint32_t places[] = {MADE_UP_FIRMWARE_KEPT_ADDRESS};
+    const uint32_t addresses[] = {
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
+            MADE_UP_FIRMWARE_KEPT_ELEMENT,
+    };
+    const MadeUpWriteTable_t table = {
+        made_up_firmware_kept, sizeof(made_up_firmware_kept), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 1u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result = {0};
+
+    if (!made_up_firmware_load_writes(test, &table, true, true))
+        return;
+    kernel_test_check(test, made_up_firmware_load.data_kept == 1u && made_up_firmware_load.data_materialized == 0u,
+                      "the premise: the load keeps PKG0's Package in its table, unbuilt");
+    advanced_configuration_and_power_interface_machine_language_evaluate(&made_up_firmware_load, "\\KEPT", NULL, 0u,
+                                                                         &result);
+    kernel_test_check(test, made_up_firmware_load.regions.table_writes == 1u, "the write over PKG0's bytes is counted");
+    kernel_test_check(test, result.payload == 0x11u,
+                      "PKG0's first element is 0x11, the Package built from the bytes before the write");
+    kernel_test_measure(test, "first_element", (uint32_t) result.payload);
+    made_up_firmware_unload_writes(test);
 }

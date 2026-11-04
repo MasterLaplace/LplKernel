@@ -218,7 +218,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Values | strings, buffers and packages built during an evaluation | the object heap, size classes over the same page runs | when the reference count reaches 0 |
 | Kept data | a Name's Package, VarPackage or Buffer whose sizes and counts are literal constants and which builds with no interpreter and no fault (O20) | none at load: its bytes stay in the table | becomes a value when a name resolution first reaches it, then lives as one |
 | Evaluation scratch | frames, operator, block and value stacks | the evaluation context | reset at the end of each evaluation |
-| Pre-decoded records | the statements a loop that loops reached (§3.6) | the record cache of the load | emptied whole when its records, its operators or its constants are full, when the integer width changes, and when the load is opened again |
+| Pre-decoded records | the statements a loop that loops reached (§3.6) | the record cache of the load | emptied whole when its records, its operators or its constants are full, when the integer width changes, when a write lands on a table read in place (§5.3), and when the load is opened again |
 
 Rules:
 
@@ -325,8 +325,8 @@ bottom of a deep recursion adds, is declared the same way, the refusal counted. 
 of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its names
 resolve against objects that do not exist.
 
-**Pre-decoded loops.** A While of a method that takes a back-edge becomes the frame's loop, unless the loop the frame has
-holds it, and the statements of the frame's loop run from records, each built the first time the loop reaches its
+**Pre-decoded loops.** A While of a method that takes a back-edge becomes the frame's loop, unless the loop the frame
+has holds it, and the statements of the frame's loop run from records, each built the first time the loop reaches its
 statement: a record is the shape of the statement at an offset of a table under the end of the construct around it,
 found again by its table and offset. A record runs an If, a While or a Break whose predicate is an expression of
 locals, arguments and constants, its operators the comparisons, `LNot` (over a comparison, the two as one operator)
@@ -342,9 +342,9 @@ as the loop counts it. A While whose predicate compares two leaves and whose bod
 runs as a tight loop once its two records are linked: predicate, body and back-edge, turn after turn, its block never
 opened; when the body hands its statement back, the block is opened as the loop opens it. A cache whose records,
 operators or constants are full is emptied whole, and the loop of the frame it filled under builds no record until
-the frame's loop changes (§6.1); a change of integer width empties it too. Table-level code never runs from records.
-A load runs none when the boot line holds `lpl.acpi.predecoding=off` (`test-acpi --predecoding off`), which the tests
-that compare the two runs use (§8.1).
+the frame's loop changes (§6.1); a change of integer width empties it too, and so does a write to the bytes of a
+table read in place (§5.3). Table-level code never runs from records. A load runs none when the boot line holds
+`lpl.acpi.predecoding=off` (`test-acpi --predecoding off`), which the tests that compare the two runs use (§8.1).
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on
@@ -861,6 +861,7 @@ Each row is a decision, and has at least one test (§8).
 | Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIC and PCI itself, and AML must not race it; the PIT, the RTC and CMOS follow once `_OSI` asks, as on Windows, and the other ports the kernel drives, COM1 and the keyboard controller, are not protected. | |
 | PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. The header type is read once, at attach, and only the first byte of an access is checked, as Windows does. | |
 | Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is a firmware window, anything else a device window. Every window takes the memory type its page decides, never its kind's, since a page with two types is a memory-type conflict: where the kernel's map of memory holds the page, that map's type; elsewhere write-back where the first 64 entries of the boot memory map say RAM, ACPI NVS or reclaim memory, and uncached for any other page, an ACPI table in reserved memory included. That map holds only RAM, but in the first MiB, which it keeps write-back as Linux does: a window there takes that type, and the MTRRs decide. | [§5.5.2.4.1] |
+| Writes to a table's bytes | A SystemMemory write that lands on the bytes of a table the load reads in place, a static table or one `LoadTable` found in the directory, empties the pre-decoded records (§3.6), built from those bytes; the loop reads them again. Each host access of such a write that lands on the table is counted (`table_writes`): a `QWordAcc` datum is two, a datum made byte by byte one per byte that lands. Before such a write lands, each data object the load keeps in that table (O20, §3.5) is built from the bytes it was declared with, so that a Name's data is the one its table declared. The load holds its directory before it runs the code of its first table, so that a write that code makes is checked too. A mapping learns at its first write whether its page holds a table the directory lists: a write through a page that holds none is one comparison of that answer, and one through a page that holds some compares its bytes with each table of the directory, and those of a table it lands on with each table the load holds, at most 64 + 64 × 128 = 8,256 comparisons. A copy `Load` made is the kernel's, out of any region's reach. | |
 | 64-bit data on i686 | A `QWordAcc` datum is two 32-bit host accesses, low then high, which the field engine makes itself; one access on x86-64. The simulated host sees the same order. `split_qword_accesses` counts them. | |
 
 ### 5.4 The Windows identity real firmware expects
@@ -1015,7 +1016,7 @@ reads a table in kernel memory. The costs to cut are:
 | O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list | `declarations_decoded_directly`; W1 |
-| O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it (§3.5) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
+| O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it or a write is about to land on its table's bytes (§3.5, §5.3) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
 

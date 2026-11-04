@@ -49,6 +49,16 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageMappingKind {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageMappingKind_t;
 
 /**
+ * @brief Whether the page of a mapping holds bytes of a table the directory lists (§5.3).
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageTablePage {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_PAGE_UNKNOWN = 0, /**< Not asked yet: nothing
+                                                                                           was written through it. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_PAGE_HOLDS = 1,   /**< It holds some. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_PAGE_NONE = 2,    /**< It holds none. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageTablePage_t;
+
+/**
  * @brief The page one access touched, mapped once (§5.3).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageMapping {
@@ -56,6 +66,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageMapping {
     void *address;             /**< Where the host mapped it: the only pointer, never folded. */
     uint32_t last_use;         /**< When it was last used, by the cache's own clock. */
     uint8_t kind;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAPPING_* kind. */
+    uint8_t holds_table;       /**< Whether its page holds bytes of a table the load's directory lists: an
+                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_PAGE_* answer,
+                                    found at the first write through it. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageMapping_t;
 
 /**
@@ -77,6 +90,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t region_lengths_rounded;  /**< Accesses past a region's length but within it rounded up to the access
                                            width. */
     uint32_t field_accesses_peak;     /**< Most field accesses one table load made (§6.1). */
+    uint32_t table_writes;            /**< Memory writes that landed on the bytes of a definition block the load
+                                           reads in place: each empties the pre-decoded records (§3.6). */
     uint32_t space_unsupported[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES]; /**< Accesses
                                                                                                         refused, per
                                                                                                         space. */
