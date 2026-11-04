@@ -792,23 +792,32 @@ target_end()
 -- tools/acpi/host/platform.c gives it stdout for a serial port and a boot command line that holds
 -- nothing but the word `--predecoding off` gives it, so every test runs. `--boot-module <image>` and `--firmware-log <log>` give the tests the module
 -- and the firmware a debug kernel read; `--machine <dump>` walks a recorded machine's tables instead.
+-- test-acpi-cost is the same harness without the sanitizers, which valgrind cannot run under:
+-- `tools/acpi-corpus.sh records-cost` counts its instructions under callgrind.
 -- ===========================================================================
-target("test-acpi")
-    set_kind("binary")
-    set_plat(os.host())
-    set_arch(os.arch())
-    set_toolchains("gcc")
-    set_default(false)
-    set_targetdir("build/acpi-host")
-    set_policy("build.sanitizer.address", true)
-    set_policy("build.sanitizer.undefined", true)
-    add_cflags("-Wall", "-Wextra", "-Werror", {force = true})
-    add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS", "LPL_KERNEL_DEBUG_POISON", "LPL_PLUGIN_UNAVAILABLE=1")
-    add_includedirs("kernel/include", "kernel/tests/acpi")
-    add_files("kernel/kernel/acpi/*.c", "kernel/kernel/testing/test.c", "kernel/tests/acpi/*.c",
-              "tools/acpi/host/*.c")
-    add_ldflags("-Wl,-T," .. path.join(os.scriptdir(), "tools/acpi/host/kernel_tests.ld"), {force = true})
-target_end()
+local function acpi_host_target(name, targetdir, sanitized)
+    target(name)
+        set_kind("binary")
+        set_plat(os.host())
+        set_arch(os.arch())
+        set_toolchains("gcc")
+        set_default(false)
+        set_targetdir(targetdir)
+        if sanitized then
+            set_policy("build.sanitizer.address", true)
+            set_policy("build.sanitizer.undefined", true)
+        end
+        add_cflags("-Wall", "-Wextra", "-Werror", {force = true})
+        add_defines("LPL_KERNEL_ENABLE_SMOKE_TESTS", "LPL_KERNEL_DEBUG_POISON", "LPL_PLUGIN_UNAVAILABLE=1")
+        add_includedirs("kernel/include", "kernel/tests/acpi")
+        add_files("kernel/kernel/acpi/*.c", "kernel/kernel/testing/test.c", "kernel/tests/acpi/*.c",
+                  "tools/acpi/host/*.c")
+        add_ldflags("-Wl,-T," .. path.join(os.scriptdir(), "tools/acpi/host/kernel_tests.ld"), {force = true})
+    target_end()
+end
+
+acpi_host_target("test-acpi", "build/acpi-host", true)
+acpi_host_target("test-acpi-cost", "build/acpi-cost", false)
 
 -- ===========================================================================
 -- Tasks: ISO image (GRUB) and QEMU boot, using the xmake-built kernel.
