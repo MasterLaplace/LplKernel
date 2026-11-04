@@ -885,8 +885,9 @@ KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
  *        takes nothing below its frame, each Timer leaving the stack as deep as it found it: an Add at table level,
  *        which would read below the value stack; an Add in M001, which would take the 0x07 of its caller; the
  *        predicate of an If in M002, whose body only reads Timer; the count of a VarPackage in M003; and in M004 a
- *        BankField, whose region and bank names push a value each. SEEN counts the methods that went on past their
- *        Timer, timer_reads an If body that ran, packages_padded a VarPackage built from a count below its frame.
+ *        BankField, whose region and bank names push a value each, followed by a Timer. SEEN counts the methods that
+ *        went on past their Timer, timer_reads a Timer after the refusal, packages_padded a VarPackage built from a
+ *        count below its frame.
  */
 KERNEL_TEST(an_operator_whose_frame_holds_fewer_values_than_it_takes_is_refused)
 {
@@ -894,18 +895,18 @@ KERNEL_TEST(an_operator_whose_frame_holds_fewer_values_than_it_takes_is_refused)
         0x14u, 0x14u, 'M',   '0',   '0',   '1',   0x00u, 0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 0x60u, 0x75u, 'S',
         'E',   'E',   'N',   0xA4u, 0x60u, 0x14u, 0x0Eu, 'M',   '0',   '0',   '2',   0x00u, 0xA0u, 0x05u, 0x5Bu, 0x33u,
         0x5Bu, 0x33u, 0xA4u, 0x00u, 0x14u, 0x14u, 'M',   '0',   '0',   '3',   0x00u, 0x70u, 0x13u, 0x04u, 0x5Bu, 0x33u,
-        0x01u, 0x60u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x14u, 0x20u, 'M',   '0',   '0',   '4',   0x00u,
+        0x01u, 0x60u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x14u, 0x22u, 'M',   '0',   '0',   '4',   0x00u,
         0x5Bu, 0x87u, 0x11u, 'R',   'E',   'G',   '0',   'B',   'N',   'K',   '0',   0x5Bu, 0x33u, 0x01u, 'F',   'L',
-        'D',   '4',   0x08u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x5Bu, 0x80u, 'R',   'E',   'G',   '0',
-        0x00u, 0x0Cu, 0x00u, 0x00u, 0x04u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',   'G',   '0',   0x01u,
-        'B',   'N',   'K',   '0',   0x08u, 0x08u, 'R',   'E',   'S',   '1',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',
-        '2',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '3',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '4',   0x0Au,
-        0x05u, 0x08u, 'R',   'E',   'S',   '5',   0x0Au, 0x05u, 0x08u, 'S',   'E',   'E',   'N',   0x00u, 0x70u, 0x72u,
-        0x01u, 0x5Bu, 0x33u, 0x00u, 'R',   'E',   'S',   '1',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '1',
-        0x00u, 'R',   'E',   'S',   '2',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '2',   0x00u, 'R',   'E',
-        'S',   '3',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '3',   0x00u, 'R',   'E',   'S',   '4',   0x70u,
-        0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '4',   0x00u, 'R',   'E',   'S',   '5',   0x08u, 'A',   'F',   'T',
-        'R',   0x01u,
+        'D',   '4',   0x08u, 0x5Bu, 0x33u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x5Bu, 0x80u, 'R',   'E',
+        'G',   '0',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x04u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',   'G',
+        '0',   0x01u, 'B',   'N',   'K',   '0',   0x08u, 0x08u, 'R',   'E',   'S',   '1',   0x0Au, 0x05u, 0x08u, 'R',
+        'E',   'S',   '2',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '3',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',
+        '4',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '5',   0x0Au, 0x05u, 0x08u, 'S',   'E',   'E',   'N',   0x00u,
+        0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 'R',   'E',   'S',   '1',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',
+        '0',   '1',   0x00u, 'R',   'E',   'S',   '2',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '2',   0x00u,
+        'R',   'E',   'S',   '3',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '3',   0x00u, 'R',   'E',   'S',
+        '4',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '4',   0x00u, 'R',   'E',   'S',   '5',   0x08u, 'A',
+        'F',   'T',   'R',   0x01u,
     };
 
     advanced_configuration_and_power_interface_simulated_host_open(&evaluation_host);
