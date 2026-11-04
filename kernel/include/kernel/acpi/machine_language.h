@@ -330,7 +330,8 @@ advanced_configuration_and_power_interface_machine_language_field_read(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
 
 /**
- * @brief Whether reading a field unit gives an Integer (§5.3): it holds a unit of a valid AccessType no wider than
+ * @brief Whether reading a field unit gives an Integer (§5.3) and writes nothing: it holds a unit of a Field, never
+ *        of an IndexField or a BankField, whose read writes its index or its bank, of a valid AccessType, no wider than
  *        the load's integers.
  *
  * @param load The load.

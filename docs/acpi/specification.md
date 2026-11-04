@@ -337,10 +337,11 @@ operator on two integers whose target is a local, an argument or NullName; an In
 operation a record runs is one the loop calls for the same case. A record checks, before any effect, every condition
 under which the loop would do anything else (an operand that holds no Integer, a stack that would overflow, a modulo
 by zero, a target that holds an object or a reference, an Increment of what holds no Integer); when one holds, it
-changes nothing and the loop decodes and runs the statement. A name a record reads names an Integer, or a field unit
-whose read gives an Integer (§5.3) and whose PCI_Config regions wait for no attach: the record checks it before any
-effect, from the node it checked last while the namespace's generation, which moves each time a node enters or leaves
-the hash, and the scope hold, then reads its names in the loop's order, each resolved as the loop resolves it, counted.
+changes nothing and the loop decodes and runs the statement. A name a record reads names an Integer, or a unit of a
+Field (never of an IndexField or a BankField, whose read writes a register) whose read gives an Integer (§5.3) and
+whose PCI_Config regions wait for no attach: the record checks it before any effect, from the node it checked last
+while the namespace's generation, which moves each time a node enters or leaves the hash and when a declaration fills
+an External, and the scope hold, then reads its names in the loop's order, each resolved as the loop resolves it, counted.
 Nothing hands the statement back after that: a read that fails fails as it fails in the loop, and a resolution that
 finds another node than the checked one is counted (`stale_names`). A record that reads a name holds no modulo and runs
 as no tight loop. Any other statement keeps a record that hands it to the

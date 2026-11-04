@@ -163,8 +163,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
     uint32_t max_arena_bytes; /**< The arena cap. */
     uint32_t lookups;         /**< Lookups of a child by name. */
     uint32_t probes;          /**< Slots those lookups read. */
-    uint32_t generation;      /**< Moves each time a node enters or leaves the hash table: a name resolved from a scope
-                                   finds the same node while it holds. */
+    uint32_t generation;      /**< Moves each time a node enters or leaves the hash table, and when a declaration fills
+                                   an External: a name resolved from a scope finds the same node while it holds. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t;
 
 /**

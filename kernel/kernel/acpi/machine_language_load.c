@@ -346,6 +346,7 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
         if (node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) && type != MACHINE_LANGUAGE_NODE(EXTERNAL))
         {
             node->type = type;
+            ++load->space.generation;
             node->owner = (uint16_t) (walk->table + 1u);
             memset(&node->value, 0, sizeof(node->value));
             machine_language_count_declaration(walk);

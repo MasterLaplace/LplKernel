@@ -979,7 +979,8 @@ bool advanced_configuration_and_power_interface_machine_language_field_reads_int
 {
     const MachineLanguageFieldUnit_t *unit = machine_language_unit(load, node);
 
-    return unit != NULL && unit->access <= MACHINE_LANGUAGE_ACCESS_LAST &&
+    return unit != NULL && unit->kind == MACHINE_LANGUAGE_FIELD_UNIT(NORMAL) &&
+           unit->access <= MACHINE_LANGUAGE_ACCESS_LAST &&
            unit->bit_length <= ((load->integer_bits == 32u) ? 32u : 64u);
 }
 
