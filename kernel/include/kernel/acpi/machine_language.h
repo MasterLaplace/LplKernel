@@ -903,7 +903,8 @@ advanced_configuration_and_power_interface_machine_language_memory_read(
 /**
  * @brief Builds the data object a Name kept in its table (O20), once a name resolution reaches its node: the
  *        Package, VarPackage or Buffer the load would have built, from the same bytes, its names read in the
- *        node's parent and its integers as wide as when its table was declared. Any other node is left as it is.
+ *        node's parent and its integers as wide as when its table was declared, by a builder of its own (C4), or
+ *        by the general data decoder when the load's general_load is set. Any other node is left as it is.
  *
  * @param load  The load.
  * @param index The node a name resolved to.
