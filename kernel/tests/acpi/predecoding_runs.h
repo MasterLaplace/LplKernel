@@ -37,16 +37,20 @@
  *        and handed back.
  */
 typedef struct PredecodingRun {
-    uint32_t fold;        /**< The status, the result and everything the load counted, as FNV-1a. */
-    uint32_t status;      /**< The evaluation's status. */
-    uint32_t records_run; /**< Statements and predicates run from records. */
-    uint32_t declined;    /**< Statements the records handed back, over every reason. */
-    uint32_t flushes;     /**< Times the cache was emptied. */
-    uint32_t built;       /**< Records built. */
-    uint32_t tight_turns; /**< Turns of While run as tight loops. */
-    uint32_t searches;    /**< Statements whose record was searched in the hash. */
-    uint32_t loops;       /**< Whiles whose statements all go to the loop, which then ask no record. */
-    uint64_t result;      /**< The result's payload, whole. */
+    uint32_t fold;            /**< The status, the result and everything the load counted, as FNV-1a. */
+    uint32_t status;          /**< The evaluation's status. */
+    uint32_t records_run;     /**< Statements and predicates run from records. */
+    uint32_t declined;        /**< Statements the records handed back, over every reason. */
+    uint32_t declined_names;  /**< Of those, the ones handed back for a name they read. */
+    uint32_t stale_names;     /**< Names whose counted resolution found another node than their record checked. */
+    uint32_t flushes;         /**< Times the cache was emptied. */
+    uint32_t built;           /**< Records built. */
+    uint32_t tight_turns;     /**< Turns of While run as tight loops. */
+    uint32_t searches;        /**< Statements whose record was searched in the hash. */
+    uint32_t loops;           /**< Whiles whose statements all go to the loop, which then ask no record. */
+    uint32_t field_reads;     /**< Field unit reads. */
+    uint32_t field_fast_path; /**< Of those, the ones one datum held whole (O12). */
+    uint64_t result;          /**< The result's payload, whole. */
 } PredecodingRun_t;
 
 /**
@@ -102,6 +106,15 @@ extern bool predecoding_open(KernelTest_t *test, uint8_t revision, const uint8_t
                              bool predecodes);
 
 /**
+ * @brief Writes @p length bytes at @p address of the simulated host's memory, as a table Load reads.
+ *
+ * @param address Where they go.
+ * @param bytes   The bytes.
+ * @param length  How many.
+ */
+extern void predecoding_poke(uint64_t address, const void *bytes, uint32_t length);
+
+/**
  * @brief Closes the load and its simulated host.
  */
 extern void predecoding_close(void);
@@ -110,7 +123,8 @@ extern void predecoding_close(void);
  * @brief Evaluates @p path in the open load, with one Integer argument unless @p argument is
  *        PREDECODING_NO_ARGUMENT, and folds what it left: its status and result, everything the
  *        evaluations counted, the namespace's lookups, probes and nodes, the heap's objects, the field
- *        accesses and the namespace itself; then what the records ran and handed back.
+ *        accesses, every access the host saw and the namespace itself; then what the records ran and
+ *        handed back.
  *
  * @param path     An absolute path.
  * @param argument The argument, or PREDECODING_NO_ARGUMENT.

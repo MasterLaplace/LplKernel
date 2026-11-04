@@ -4173,6 +4173,7 @@ static bool machine_language_record_operand(const MachineLanguageLoad_t *load, c
     case MACHINE_LANGUAGE_RECORD_OPERAND(RESULT): *out_integer = results[operand->slot]; return true;
     case MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL): slot = &frame->locals[operand->slot]; break;
     case MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT): slot = &frame->arguments[operand->slot]; break;
+    case MACHINE_LANGUAGE_RECORD_OPERAND(NAME):
     case MACHINE_LANGUAGE_RECORD_OPERAND(NONE): return false;
     }
     if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
