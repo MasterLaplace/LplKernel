@@ -270,8 +270,9 @@ data object is a Package, a VarPackage or a Buffer that would build with no inte
 counts literal constants, is checked without being built, its padded and cut packages counted, and kept in its table
 (O20): the node takes the object's type, and the walk steps over it as O18 does. Any other data object, one a name
 sizes included, is built as before. A kept object is built by a builder of its own (C4), which decodes each element
-straight into its package, the check having proven every size, count and lead byte; a load whose `general_load` is set
-builds it with the general data decoder.
+straight into its package and reads each byte again as the check read it, since AML can rewrite its table after the
+load: bytes that no longer read as kept data, and the kept objects of a load whose `general_load` is set, are built by
+the general data decoder, whose status a failure then gives.
 
 **The loop**, in order of precedence at each step:
 
@@ -1036,7 +1037,7 @@ reads a table in kernel memory. The costs to cut are:
 | O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it or a write is about to land on its table's bytes (§3.5, §5.3) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
-| C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them (§3.6) | `data_built_directly`; W2 and W3 on the MS-7E16 |
+| C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them; bytes rewritten since the load that no longer read as kept data are built by the decoder (§3.6) | `data_built_directly`; W2 and W3 on the MS-7E16 |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 
