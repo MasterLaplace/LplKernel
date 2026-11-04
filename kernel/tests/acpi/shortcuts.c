@@ -803,12 +803,11 @@ static bool shortcuts_reach(KernelTest_t *test, bool general, ShortcutsReached_t
 }
 
 /**
- * @brief Every name resolution that reaches a data object kept in its table builds it before anything reads or
- *        writes it (O20), and each method returns what it returns where the load builds every object: a Store to a
- *        Buffer never read then its byte 1 (0x12), a RefOf then a DerefOf of a Package (3), a package element that
- *        names a kept Package (0x22), a DerefOf of a path String (0x33), a Store to an element, which the next
- *        method still reads (7, 7), and the SizeOf of a Buffer (2). The load keeps the 7 objects, and the methods
- *        build each once.
+ * @brief Every name resolution that reads or writes a data object kept in its table builds it first (O20), and each
+ *        method returns what it returns where the load builds every object: a Store to a Buffer never read then its
+ *        byte 1 (0x12), a RefOf then a DerefOf of a Package (3), a package element that names a kept Package (0x22), a
+ *        DerefOf of a path String (0x33), a Store to an element, which the next method still reads (7, 7), and the
+ *        SizeOf of a Buffer (2). The load keeps the 7 objects, and the methods build each once.
  */
 KERNEL_TEST(a_name_resolution_builds_the_kept_data_it_reaches)
 {

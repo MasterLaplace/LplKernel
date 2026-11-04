@@ -227,11 +227,11 @@ Rules:
 - **No reference chain is propagated.** A reference holds one count on its direct target, not on the whole chain.
 - **Cycles are refused at store time.** A store that would make an object reach itself fails with
   `reference_cycle`, after an iterative walk with a bounded work list.
-- **Kept data takes memory when a name first reaches it, not at load.** Every name resolution, of the interpreter,
-  of a host evaluation, of a table-level buffer field or of a PCI_Config attach, builds a kept object before anything
-  reads or writes it, from the same bytes, with the integer width its table was declared with. An arena exhausted then
-  fails that evaluation with `out_of_memory`, the object still kept, and stops no table but the one a buffer field
-  declares over it.
+- **Kept data takes memory when a name first reaches it, not at load.** Every name resolution that reads or writes the
+  value, of the interpreter, of a host evaluation, of a table-level buffer field or of a PCI_Config attach, builds a
+  kept object first, from the same bytes, with the integer width its table was declared with; a field list, which reads
+  only a node's type, already its object's, builds nothing. An arena exhausted then fails that evaluation with
+  `out_of_memory`, the object still kept, and stops no table but the one a buffer field declares over it.
 - **Literals become objects when evaluated.** Candidate C5 (§7.3) would keep them in the table until written; if it
   is adopted, a buffer field, an `Index` or `RefOf` reference or a store target made over a literal materialises
   it first, and `literal_materialised[cause]` counts why.
