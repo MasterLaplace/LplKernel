@@ -1653,6 +1653,25 @@ machine_language_list_statement(MachineLanguageWalk_t *walk, uint32_t opcode, ui
 }
 
 /**
+ * @brief Takes a Scope, a Device, a ThermalZone or a Field, @p opcode, whose operator of @p lead bytes starts at
+ *        @p start, its PkgLength read within @p limit, through machine_language_list_statement with @p fixed bytes
+ *        after its NameString and a list of @p kind; one whose PkgLength the general path refuses, as a term.
+ */
+static MachineLanguageStatus_t
+machine_language_package_statement(MachineLanguageWalk_t *walk, uint32_t opcode, uint32_t start, uint32_t lead,
+                                   uint32_t limit, uint32_t fixed,
+                                   AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t kind)
+{
+    uint32_t end = 0u;
+    uint32_t after = 0u;
+
+    if (advanced_configuration_and_power_interface_machine_language_read_package_end(
+            walk->bytes, start + lead, limit, &end, &after) != MACHINE_LANGUAGE_OK)
+        return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
+    return machine_language_list_statement(walk, opcode, start, end, after, fixed, kind);
+}
+
+/**
  * @brief Takes the statement at the walk's pc, at a statement's place: in the declaration pass, unless the load
  *        takes no shortcut, a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope or a Field
  *        through its own decoder (O19); any other statement, and one whose PkgLength or NameString the general
@@ -1680,26 +1699,22 @@ static MachineLanguageStatus_t machine_language_statement(MachineLanguageWalk_t 
                                                                                      &after) == MACHINE_LANGUAGE_OK &&
         machine_language_holds_name_segment(bytes, after, end))
         return machine_language_method_statement(walk, start, end, after);
-    if (bytes[start] == 0x10u && advanced_configuration_and_power_interface_machine_language_read_package_end(
-                                     bytes, start + 1u, limit, &end, &after) == MACHINE_LANGUAGE_OK)
-        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(SCOPE), start, end, after, 0u,
-                                               MACHINE_LANGUAGE_OPERAND(TERM_LIST));
-    if (bytes[start] != 0x5Bu || limit - start < 2u ||
-        (bytes[start + 1u] != 0x82u && bytes[start + 1u] != 0x85u && bytes[start + 1u] != 0x81u) ||
-        advanced_configuration_and_power_interface_machine_language_read_package_end(bytes, start + 2u, limit, &end,
-                                                                                     &after) != MACHINE_LANGUAGE_OK)
+    if (bytes[start] == 0x10u)
+        return machine_language_package_statement(walk, MACHINE_LANGUAGE_OPCODE(SCOPE), start, 1u, limit, 0u,
+                                                  MACHINE_LANGUAGE_OPERAND(TERM_LIST));
+    if (bytes[start] != 0x5Bu || limit - start < 2u)
         return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
     switch (bytes[start + 1u])
     {
     case 0x82u:
-        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(DEVICE), start, end, after, 0u,
-                                               MACHINE_LANGUAGE_OPERAND(TERM_LIST));
+        return machine_language_package_statement(walk, MACHINE_LANGUAGE_OPCODE(DEVICE), start, 2u, limit, 0u,
+                                                  MACHINE_LANGUAGE_OPERAND(TERM_LIST));
     case 0x85u:
-        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(THERMAL_ZONE), start, end, after, 0u,
-                                               MACHINE_LANGUAGE_OPERAND(TERM_LIST));
+        return machine_language_package_statement(walk, MACHINE_LANGUAGE_OPCODE(THERMAL_ZONE), start, 2u, limit, 0u,
+                                                  MACHINE_LANGUAGE_OPERAND(TERM_LIST));
     case 0x81u:
-        return machine_language_list_statement(walk, MACHINE_LANGUAGE_OPCODE(FIELD), start, end, after, 1u,
-                                               MACHINE_LANGUAGE_OPERAND(FIELD_LIST));
+        return machine_language_package_statement(walk, MACHINE_LANGUAGE_OPCODE(FIELD), start, 2u, limit, 1u,
+                                                  MACHINE_LANGUAGE_OPERAND(FIELD_LIST));
     default: return machine_language_term(walk, MACHINE_LANGUAGE_OPERAND(NONE));
     }
 }
