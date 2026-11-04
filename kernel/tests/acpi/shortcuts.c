@@ -487,10 +487,11 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_data_declares_the_same_bo
 /**
  * @brief The declaration pass takes a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a
  *        Field through its own decoder (O19), which hands a statement back to the walk at its first operand whose
- *        outcome differs; a load with that decoder ends with the namespace, the faults and the counts of a load
- *        without it, and its decoder took the statements each table's documentation counts: on statements of
- *        every shape it takes, under revision 2 then 1, on statements it hands back, and on the declarations of
- *        table-level code, run and declared in every branch.
+ *        outcome differs; a load with that decoder ends with the namespace, the faults and the counts of what it
+ *        declared of a load without it, its work (lookups, probes, the stacks' peaks) falling, and its decoder took
+ *        the statements each table's documentation counts: on statements of every shape it takes, under revision 2
+ *        then 1, on statements it hands back, and on the declarations of table-level code, run and declared in every
+ *        branch.
  */
 KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
 {
@@ -523,9 +524,9 @@ KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
 
 /**
  * @brief A sample of one-byte changes of the statements the decoder takes, every 16th byte changed once, to its value
- *        with one bit flipped, to 0x00 or to 0xFF in turn, loads to the same namespace, faults and counts with the
- *        load's shortcuts and without, in ring 0 as on the host; host_shortcuts changes every byte to each of the
- *        three.
+ *        with one bit flipped, to 0x00 or to 0xFF in turn, loads to the same namespace, faults and counts of what it
+ *        declared with the load's shortcuts and without, in ring 0 as on the host; host_shortcuts changes every byte
+ *        to each of the three.
  */
 KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_same_both_ways)
 {

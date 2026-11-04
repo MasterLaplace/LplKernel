@@ -27,8 +27,9 @@ KERNEL_TEST(every_one_byte_change_of_a_table_of_data_declares_the_same_both_ways
 
 /**
  * @brief Every byte of the statements the decoder takes changed to its value with one bit flipped, to 0x00 and to
- *        0xFF, each change loading to the same namespace, faults and counts with the load's shortcuts and without:
- *        the decoder holds wherever it takes a statement or hands it back. Ring 0 loads a sample of these changes.
+ *        0xFF, each change loading to the same namespace, faults and counts of what it declared with the load's
+ *        shortcuts and without: the decoder holds for each byte changed to each of three values, whether it takes the
+ *        statement or hands it back. Ring 0 loads a sample of these changes.
  */
 KERNEL_TEST(every_one_byte_change_of_a_table_of_statements_declares_the_same_both_ways)
 {
