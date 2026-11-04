@@ -15,6 +15,8 @@ KERNEL_TEST_SUITE(host_kept_data, KERNEL_TEST_STAGE_INITIALIZATION);
 
 #define KEPT_DATA_UNCHANGED  0xFFFFFFFFu /**< The offset of a byte left as it is. */
 #define KEPT_DATA_FOLD_PRIME 0x01000193u /**< FNV-1a's prime, which the namespace's fold multiplies by. */
+#define KEPT_DATA_OPCODE                                                                                               \
+    5u /**< Where the data a Name keeps starts in each definition block below, past its NameOp and its NameSeg. */
 #define KEPT_DATA_LONG_STRING_BYTES                                                                                    \
     40000u /**< The characters of each String of kept_data_two_long_strings, two of which pass 64 KiB. */
 #define KEPT_DATA_LONG_STRINGS_CAPACITY                                                                                \
@@ -39,6 +41,16 @@ typedef struct KeptDataCase {
     KeptDataRewrite_t unreadable; /**< The rewrite that leaves the data unreadable. */
     KeptDataRewrite_t readable;   /**< A rewrite that leaves it readable, but different. */
 } KeptDataCase_t;
+
+/**
+ * @brief A definition block whose kept data each one-byte rewrite must build the same way through both builders.
+ */
+typedef struct KeptDataSweep {
+    const char *claim;  /**< That every rewrite builds the same both ways. */
+    const uint8_t *aml; /**< The AML. */
+    uint32_t length;    /**< Its bytes. */
+    uint8_t revision;   /**< The DSDT's revision: below 2, every integer is 32 bits. */
+} KeptDataSweep_t;
 
 /**
  * @brief What building the data a load kept ended with: what the builder of kept data and the general data decoder
@@ -88,6 +100,32 @@ static const uint8_t kept_data_named_package[] = {
  */
 static const uint8_t kept_data_prefixed_name[] = {0x08u, 'P',  'K', 'G', 'P', 0x12u, 0x07u,
                                                   0x01u, '\\', 'A', 'B', 'C', 'D'};
+
+/**
+ * @brief `Name (PKGR, Package (10) {0x12, "ab", Buffer (3) {1, 2}, Package (2) {ABCD, \\_SB_}, 0x12345678,
+ *        VarPackage (2) {One, Ones}, AB__.CD__, ^XYZW, AAAABBBBCCCC, 0x0807060504030201})`: an element of each kind,
+ *        a name without prefix and a name after each prefix, the last a MultiNamePrefix of three NameSegs.
+ */
+static const uint8_t kept_data_every_kind[] = {
+    0x08u, 'P',   'K',   'G',   'R',   0x12u, 0x4Bu, 0x04u, 0x0Au, 0x0Au, 0x12u, 0x0Du, 'a',   'b', 0x00u, 0x11u, 0x05u,
+    0x0Au, 0x03u, 0x01u, 0x02u, 0x12u, 0x0Bu, 0x02u, 'A',   'B',   'C',   'D',   '\\',  '_',   'S', 'B',   '_',   0x0Cu,
+    0x78u, 0x56u, 0x34u, 0x12u, 0x13u, 0x05u, 0x0Au, 0x02u, 0x01u, 0xFFu, 0x2Eu, 'A',   'B',   '_', '_',   'C',   'D',
+    '_',   '_',   '^',   'X',   'Y',   'Z',   'W',   0x2Fu, 0x03u, 'A',   'A',   'A',   'A',   'B', 'B',   'B',   'B',
+    'C',   'C',   'C',   'C',   0x0Eu, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u, 0x07u, 0x08u,
+};
+
+/**
+ * @brief `Name (BUFR, Buffer (0x0010) {1, 2, 3})`, shorter than its size.
+ */
+static const uint8_t kept_data_short_buffer[] = {0x08u, 'B',   'U',   'F',   'R',   0x11u, 0x07u,
+                                                 0x0Bu, 0x10u, 0x00u, 0x01u, 0x02u, 0x03u};
+
+/**
+ * @brief `Name (VPKR, VarPackage (3) {Package (2) {One, "x"}, 0x1234})`, padded, a Package among its elements.
+ */
+static const uint8_t kept_data_nested_variable_package[] = {0x08u, 'V',   'P',   'K',   'R',   0x13u, 0x0Du,
+                                                            0x0Au, 0x03u, 0x12u, 0x06u, 0x02u, 0x01u, 0x0Du,
+                                                            'x',   0x00u, 0x0Bu, 0x34u, 0x12u};
 
 /**
  * @brief `Name (BUFX, Buffer (0x00000002) {0xAA})`.
@@ -354,15 +392,16 @@ KERNEL_TEST(kept_data_rewritten_past_the_sizes_of_its_objects_folds_as_unreadabl
 }
 
 /**
- * @brief Loads the definition block @p aml from a copy of exactly its size, so that the address sanitizer catches a
- *        read past its end, with the load's shortcuts, so that it keeps its data; applies @p rewrite after the load,
- *        then builds every kept object as a name reaching it does: through the general data decoder when @p general
- *        holds, through the builder of kept data otherwise. @p out_built receives what that ended with.
+ * @brief Loads the definition block @p aml, a DSDT of revision @p revision, from a copy of exactly its size, so that
+ *        the address sanitizer catches a read past its end, with the load's shortcuts, so that it keeps its data;
+ *        applies @p rewrite after the load, then builds every kept object as a name reaching it does: through the
+ *        general data decoder when @p general holds, through the builder of kept data otherwise. @p out_built receives
+ *        what that ended with.
  *
  * @return Whether the copy could be made.
  */
-static bool kept_data_build_after(const uint8_t *aml, uint32_t length, KeptDataRewrite_t rewrite, bool general,
-                                  KeptDataBuilt_t *out_built)
+static bool kept_data_build_after(const uint8_t *aml, uint32_t length, uint8_t revision, KeptDataRewrite_t rewrite,
+                                  bool general, KeptDataBuilt_t *out_built)
 {
     uint8_t *copy = malloc(MADE_UP_TABLE_HEADER + length);
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
@@ -376,7 +415,7 @@ static bool kept_data_build_after(const uint8_t *aml, uint32_t length, KeptDataR
     advanced_configuration_and_power_interface_machine_language_open(&load, &host.host, MADE_UP_MAX_NODES,
                                                                      MADE_UP_MAX_ARENA_BYTES);
     (void) advanced_configuration_and_power_interface_machine_language_declare_table(
-        &load, made_up_definition_block(copy, "DSDT", 2u, aml, length));
+        &load, made_up_definition_block(copy, "DSDT", revision, aml, length));
     if (rewrite.offset != KEPT_DATA_UNCHANGED)
         copy[MADE_UP_TABLE_HEADER + rewrite.offset] = rewrite.byte;
     load.general_load = general;
@@ -412,8 +451,8 @@ static bool kept_data_builds_the_same(const uint8_t *aml, uint32_t length, KeptD
     KeptDataBuilt_t direct;
     KeptDataBuilt_t general;
 
-    return kept_data_build_after(aml, length, rewrite, false, &direct) &&
-           kept_data_build_after(aml, length, rewrite, true, &general) && direct.kept == 1u &&
+    return kept_data_build_after(aml, length, 2u, rewrite, false, &direct) &&
+           kept_data_build_after(aml, length, 2u, rewrite, true, &general) && direct.kept == 1u &&
            memcmp(&direct, &general, offsetof(KeptDataBuilt_t, built_directly)) == 0 && general.built_directly == 0u &&
            direct.built_directly == built_directly;
 }
@@ -494,4 +533,82 @@ KERNEL_TEST(kept_data_whose_table_was_rewritten_builds_through_its_builder_as_th
                 kept_data_builds_the_same(cases[index].aml, cases[index].length, cases[index].readable, 1u),
             cases[index].claim);
     free(strings);
+}
+
+/**
+ * @brief Counts the rewrites of one byte of the kept data of @p sweep, from its opcode to the table's end, to each of
+ *        the 256 values, that do not build the same through the builder of kept data as through the general data
+ *        decoder, as kept_data_builds_the_same compares them. @p out_rewrites receives how many rewrites it built,
+ *        @p out_built_directly how many of them the builder built itself.
+ *
+ * @return The rewrites that built differently, or whose copy could not be made.
+ */
+static uint32_t kept_data_one_byte_rewrites_that_differ(const KeptDataSweep_t *sweep, uint32_t *out_rewrites,
+                                                        uint32_t *out_built_directly)
+{
+    uint32_t differ = 0u;
+
+    *out_rewrites = 0u;
+    *out_built_directly = 0u;
+    for (uint32_t offset = KEPT_DATA_OPCODE; offset < sweep->length; ++offset)
+        for (uint32_t byte = 0u; byte <= UINT8_MAX; ++byte)
+        {
+            const KeptDataRewrite_t rewrite = {offset, (uint8_t) byte};
+            KeptDataBuilt_t direct;
+            KeptDataBuilt_t general;
+            const bool built =
+                kept_data_build_after(sweep->aml, sweep->length, sweep->revision, rewrite, false, &direct) &&
+                kept_data_build_after(sweep->aml, sweep->length, sweep->revision, rewrite, true, &general);
+
+            differ += (!built || direct.kept != 1u ||
+                       memcmp(&direct, &general, offsetof(KeptDataBuilt_t, built_directly)) != 0 ||
+                       general.built_directly != 0u) ?
+                          1u :
+                          0u;
+            ++*out_rewrites;
+            *out_built_directly += direct.built_directly;
+        }
+    return differ;
+}
+
+/**
+ * @brief Every rewrite of one byte of kept data, from its opcode to the table's end, to each of the 256 values,
+ *        builds the same through the builder of kept data (C4) as through the general data decoder, with nothing read
+ *        past the table, under a DSDT of revision 2 then 1: an element of each kind with a name after each prefix, a
+ *        Buffer shorter than its size, and a padded VarPackage that holds a Package. Of each, some rewrites the
+ *        builder builds itself, and the others it hands to the general data decoder.
+ */
+KERNEL_TEST(every_one_byte_rewrite_of_kept_data_builds_the_same_through_its_builder_and_the_general_decoder)
+{
+    const KeptDataSweep_t sweeps[] = {
+        {"each rewrite of an element of each kind builds the same both ways under revision 2",           kept_data_every_kind,
+         sizeof(kept_data_every_kind),                                                                                                                                    2u},
+        {"each rewrite of an element of each kind builds the same both ways under revision 1",           kept_data_every_kind,
+         sizeof(kept_data_every_kind),                                                                                                                                    1u},
+        {"each rewrite of a Buffer shorter than its size builds the same both ways under revision 2",
+         kept_data_short_buffer,                                                                                               sizeof(kept_data_short_buffer),            2u},
+        {"each rewrite of a Buffer shorter than its size builds the same both ways under revision 1",
+         kept_data_short_buffer,                                                                                               sizeof(kept_data_short_buffer),            1u},
+        {"each rewrite of a VarPackage that holds a Package builds the same both ways under revision 2",
+         kept_data_nested_variable_package,                                                                                    sizeof(kept_data_nested_variable_package), 2u},
+        {"each rewrite of a VarPackage that holds a Package builds the same both ways under revision 1",
+         kept_data_nested_variable_package,                                                                                    sizeof(kept_data_nested_variable_package), 1u},
+    };
+    uint32_t rewrites = 0u;
+    uint32_t built_directly = 0u;
+
+    for (uint32_t index = 0u; index < sizeof(sweeps) / sizeof(sweeps[0]); ++index)
+    {
+        uint32_t built = 0u;
+        uint32_t made = 0u;
+
+        kernel_test_check(test, kept_data_one_byte_rewrites_that_differ(&sweeps[index], &made, &built) == 0u,
+                          sweeps[index].claim);
+        kernel_test_check(test, built != 0u && built < made,
+                          "the builder builds some rewrites and hands the others to the general data decoder");
+        rewrites += made;
+        built_directly += built;
+    }
+    kernel_test_measure(test, "rewrites", rewrites);
+    kernel_test_measure(test, "built_directly", built_directly);
 }
