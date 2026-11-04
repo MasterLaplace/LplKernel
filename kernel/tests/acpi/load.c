@@ -428,11 +428,15 @@ KERNEL_TEST(table_loads_stop_at_their_limits)
         return;
     kernel_test_check(test, load_call("\\LDEA") == LOAD_STATUS(LIMIT_TABLES),
                       "loading a new table each turn fails with limit_tables");
-    kernel_test_check(test,
-                      load_load.table_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
-                          load_load.tables_loaded ==
-                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES - 1u,
-                      "the load holds 128 tables: the DSDT and the 127 Load added");
+    if (!kernel_test_check(
+            test,
+            load_load.table_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
+                load_load.tables_loaded == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES - 1u,
+            "the load holds 128 tables: the DSDT and the 127 Load added"))
+    {
+        load_close(test);
+        return;
+    }
 
     const uint32_t arena_bytes = load_load.space.arena_bytes;
 
