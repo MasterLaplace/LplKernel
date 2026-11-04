@@ -806,19 +806,23 @@ static MachineLanguageStatus_t machine_language_build_fault(MachineLanguageWalk_
 
 /**
  * @brief Builds a Name's object from its data object, which starts at the walk's pc; one that needs
- *        the interpreter is counted and left Uninitialized.
+ *        the interpreter is counted and left Uninitialized. @p out_after receives the offset past the data
+ *        object once it is built, and 0 when it is not.
  */
 static MachineLanguageStatus_t machine_language_build_name(MachineLanguageWalk_t *walk,
-                                                           const MachineLanguagePendingOperator_t *active)
+                                                           const MachineLanguagePendingOperator_t *active,
+                                                           uint32_t *out_after)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
     MachineLanguageNode_t *node = machine_language_node(walk, active->node);
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value;
     bool constant = false;
+    uint32_t after = 0u;
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_evaluate_data(
-        &load->heap, &load->space, &source, walk->pc, active->end, &value, &constant);
+        &load->heap, &load->space, &source, walk->pc, active->end, &value, &constant, &after);
 
+    *out_after = 0u;
     if (status != MACHINE_LANGUAGE_OK)
         return machine_language_build_fault(walk, status);
     if (!constant)
@@ -827,8 +831,26 @@ static MachineLanguageStatus_t machine_language_build_name(MachineLanguageWalk_t
     {
         node->value = value;
         node->type = advanced_configuration_and_power_interface_machine_language_node_type_of_value(value.kind);
+        *out_after = after;
     }
     return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Whether the declaration pass steps over a Name's data object it has just built, which ends at
+ *        @p after, instead of decoding it a second time (O18): unless the load takes no shortcut, and only while
+ *        the walk has room for every package the object could nest, so that decoding it could meet no limit.
+ *
+ * @details The operator stack needs no such check. A Name is a statement, read only at a statement's place, where the
+ *          declaration pass holds no operator below its own; decoding as terms a data object it could build holds at
+ *          most one operator more at a time, a Buffer's, each package's being popped as its list opens: nowhere near
+ *          the 256 of §6.1.
+ */
+static bool machine_language_steps_over_data(const MachineLanguageWalk_t *walk, uint32_t after)
+{
+    return after != 0u && !walk->load->general_load &&
+           walk->block_count + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES <=
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS;
 }
 
 /**
@@ -1466,7 +1488,17 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
     default:
         if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u &&
             machine_language_builds(walk, active->node))
-            status = machine_language_build_name(walk, active);
+        {
+            uint32_t data_end = 0u;
+
+            status = machine_language_build_name(walk, active, &data_end);
+            if (status == MACHINE_LANGUAGE_OK && machine_language_steps_over_data(walk, data_end))
+            {
+                ++walk->load->data_stepped_over;
+                walk->pc = data_end;
+                return MACHINE_LANGUAGE_OK;
+            }
+        }
         else if (active->opcode == MACHINE_LANGUAGE_OPCODE(OPERATION_REGION) && active->operands_done == 3u &&
                  machine_language_builds(walk, active->node))
             status = machine_language_build_region(walk, active);

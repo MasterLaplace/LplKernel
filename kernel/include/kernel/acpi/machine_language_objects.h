@@ -41,6 +41,8 @@
     4096u /**< An object this large or larger gets pages of its own. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES                                   \
     (64u * 1024u) /**< The largest string or buffer (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES                                \
+    32u /**< Packages one data object nests (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PACKAGE_ELEMENTS                               \
     255u /**< Elements of a Package (ACPI 6.6 §19.3.5). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS                      \
@@ -463,7 +465,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageSource {
  *        of names, which stay names until read (§5.1).
  *
  * @details A Package with fewer initialisers than elements is padded with Uninitialized, one with
- *          more keeps the first; packages nest up to 32 deep.
+ *          more keeps the first; packages nest up to
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES deep.
  * @param heap         The heap the objects go to.
  * @param space        The namespace whose arena gives the pages.
  * @param source       Where the object is read from.
@@ -471,6 +474,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageSource {
  * @param limit        The first offset it may not reach.
  * @param out_value    Receives the value, Uninitialized when the object needs the interpreter.
  * @param out_constant Receives whether it needed none.
+ * @param out_after    Receives the offset past the object when it needed none, @p offset otherwise.
  * @return TRUNCATED, PACKAGE_LENGTH_OUT_OF_PARENT or INVALID_OPCODE when the bytes are malformed;
  *         OUT_OF_MEMORY when the heap cannot hold the object, or LIMIT_PACKAGE_ELEMENTS and
  *         LIMIT_BUFFER_BYTES past the caps of §6.1; OK otherwise, the object needing the
@@ -481,7 +485,7 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t *source, uint32_t offset, uint32_t limit,
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value, bool *out_constant);
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value, bool *out_constant, uint32_t *out_after);
 
 /**
  * @brief Reads an integer that needs no interpreter: an integer constant, or a name whose node

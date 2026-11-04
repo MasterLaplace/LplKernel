@@ -43,7 +43,104 @@
     "                                    status, then the result's type and value, and each opcode run but not\n"      \
     "                                    executed\n"                                                                   \
     "       test-acpi --write-module <dump> <image>  writes the firmware an acpidump text file gives, as this\n"       \
-    "                                    harness serves it, as an image: the Multiboot module of a debug kernel\n"
+    "                                    harness serves it, as an image: the Multiboot module of a debug kernel\n"     \
+    "       test-acpi [--general-load] [--mutate <seed>] <form above>  with --general-load, every load takes\n"        \
+    "                                    none of its shortcuts (specification §3.6); with --mutate, a dump's DSDT\n"  \
+    "                                    and SSDTs have bytes changed at random, seeded by <seed>, before loading;\n"  \
+    "                                    tools/acpi-corpus.sh differential compares the two loads\n"
+
+static bool harness_general_load;      /**< Whether --general-load asks every load to take none of its shortcuts. */
+static bool harness_mutates;           /**< Whether --mutate asks to change bytes of a dump's AML before it loads. */
+static uint32_t harness_mutation_seed; /**< The seed --mutate gives. */
+
+/**
+ * @brief Opens @p load on @p host with the server profile's caps, without its shortcuts when --general-load
+ *        asks.
+ *
+ * @return Whether the namespace opened.
+ */
+static bool harness_open_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                              const AdvancedConfigurationAndPowerInterfaceHost_t *host)
+{
+    if (!advanced_configuration_and_power_interface_machine_language_open(
+            load, host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+        return false;
+    load->general_load = harness_general_load;
+    return true;
+}
+
+/**
+ * @brief The next state of a xorshift32 generator.
+ */
+static uint32_t harness_next_random(uint32_t state)
+{
+    state ^= state << 13u;
+    state ^= state >> 17u;
+    state ^= state << 5u;
+    return state;
+}
+
+/**
+ * @brief Changes bytes of the AML of each DSDT and SSDT of @p directory, past its header, when --mutate asks:
+ *        one in every 1,024 and at least one, at offsets and to values a xorshift32 generator seeded by the
+ *        option draws, then prints how many.
+ */
+static void harness_mutate_tables(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
+{
+    uint32_t state = harness_mutation_seed * 0x9E3779B1u + 1u;
+    uint32_t changed = 0u;
+
+    if (!harness_mutates)
+        return;
+    for (uint32_t index = 0u; index < directory->table_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceTable_t *table = &directory->tables[index];
+        const uint32_t header = (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t);
+        uint8_t *bytes = (uint8_t *) (uintptr_t) table->header;
+
+        if ((memcmp(table->signature, "DSDT", 4u) != 0 && memcmp(table->signature, "SSDT", 4u) != 0) ||
+            table->length <= header)
+            continue;
+        for (uint32_t change = 0u; change <= (table->length - header) / 1024u; ++change)
+        {
+            state = harness_next_random(state);
+            const uint32_t offset = header + state % (table->length - header);
+
+            state = harness_next_random(state);
+            bytes[offset] = (uint8_t) (state >> 24u);
+            ++changed;
+        }
+    }
+    printf("aml mutate seed=%u bytes=%u\n", harness_mutation_seed, changed);
+}
+
+/**
+ * @brief Reads the options that come before the form of a run: --general-load, and --mutate with its seed.
+ *
+ * @return The arguments those options took.
+ */
+static int harness_read_load_options(int argc, char **argv)
+{
+    int used = 0;
+
+    for (;;)
+    {
+        if (argc - used >= 2 && strcmp(argv[1 + used], "--general-load") == 0)
+        {
+            harness_general_load = true;
+            used += 1;
+        }
+        else if (argc - used >= 3 && strcmp(argv[1 + used], "--mutate") == 0)
+        {
+            harness_mutates = true;
+            harness_mutation_seed = (uint32_t) strtoul(argv[2 + used], NULL, 10);
+            used += 2;
+        }
+        else
+            return used;
+    }
+}
 
 /**
  * @brief Prints the directory of @p directory: its counts and the FACS, then one line per table.
@@ -226,9 +323,7 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
 {
     static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
 
-    if (!advanced_configuration_and_power_interface_machine_language_open(
-            &load, directory->host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+    if (!harness_open_load(&load, directory->host))
     {
         printf("aml read=0 status=%s\n",
                advanced_configuration_and_power_interface_machine_language_status_name(load.status));
@@ -876,11 +971,8 @@ static int harness_dump_namespace(const char *path, HarnessView_t view, const ch
         fprintf(stderr, "test-acpi: %s: no directory could be read\n", path);
     else
     {
-        if (advanced_configuration_and_power_interface_machine_language_open(
-                &load, &machine.simulated.host,
-                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES) &&
-            harness_observe(&load, view))
+        harness_mutate_tables(&directory);
+        if (harness_open_load(&load, &machine.simulated.host) && harness_observe(&load, view))
         {
             if (view == HARNESS_VIEW_INITIALIZATION)
             {
@@ -949,9 +1041,7 @@ static int harness_dump_tables_namespace(int count, char **paths, HarnessView_t 
 
     advanced_configuration_and_power_interface_simulated_host_open(&simulated);
     if (count <= (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
-        advanced_configuration_and_power_interface_machine_language_open(
-            &load, &simulated.host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+        harness_open_load(&load, &simulated.host))
     {
         status = harness_observe(&load, view) ? 0 : 1;
         for (int index = 0; index < count && status == 0; ++index)
@@ -1026,9 +1116,7 @@ static int harness_evaluate(const char *path, int count, char **paths)
 
     advanced_configuration_and_power_interface_simulated_host_open(&simulated);
     if (count <= (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
-        advanced_configuration_and_power_interface_machine_language_open(
-            &load, &simulated.host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+        harness_open_load(&load, &simulated.host))
     {
         status = 0;
         for (int index = 0; index < count && status == 0; ++index)
@@ -1220,7 +1308,10 @@ int main(int argc, char **argv)
     const char *module_path = NULL;
     const char *log_path = NULL;
     HarnessView_t view = HARNESS_VIEW_NAMESPACE;
+    const int options = harness_read_load_options(argc, argv);
 
+    argc -= options;
+    argv += options;
     if (argc == 3 && strcmp(argv[1], "--machine") == 0)
         return harness_walk_machine(argv[2]);
     if (argc == 3 && harness_view(argv[1], "", &view))
