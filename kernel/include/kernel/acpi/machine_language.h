@@ -700,8 +700,8 @@ extern void advanced_configuration_and_power_interface_machine_language_regions_
  *                       back with advanced_configuration_and_power_interface_machine_language_value_release.
  * @return TRUNCATED for a path that does not start at the root or is malformed; NAME_NOT_FOUND for one
  *         that names nothing; TYPE_MISMATCH for the wrong number of arguments or an object that is no
- *         data; METHOD_WITHOUT_BODY for a method whose declaration recorded no body, `\_OSI` included; why
- *         the method failed otherwise, every frame it pushed gone by then; OK on success.
+ *         data; METHOD_WITHOUT_BODY for a method whose declaration recorded no body, whatever the arguments;
+ *         why the method failed otherwise, every frame it pushed gone by then; OK on success.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_evaluate(
@@ -721,8 +721,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate(
  * @param out_result     Receives the result, which the caller gives back with
  *                       advanced_configuration_and_power_interface_machine_language_value_release.
  * @return TYPE_MISMATCH for the wrong number of arguments or an object that is no data; METHOD_WITHOUT_BODY
- *         for a method whose declaration recorded no body, `\_OSI` included; why the method failed otherwise,
- *         every frame it pushed gone by then; OK on success.
+ *         for a method whose declaration recorded no body, whatever the arguments; why the method failed
+ *         otherwise, every frame it pushed gone by then; OK on success.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_evaluate_node(

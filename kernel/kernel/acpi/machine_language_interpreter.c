@@ -5038,22 +5038,19 @@ static MachineLanguageStatus_t machine_language_step_above(MachineLanguageLoad_t
 
 /**
  * @brief Pushes the frame a host-initiated evaluation runs from: no code of its own, in the scope of
- *        the root, given the table of the method it calls; a method whose declaration recorded no body,
- *        `\_OSI` included, has none, and is refused with METHOD_WITHOUT_BODY.
+ *        the root, given the table of the method it calls, or 0 for one without a body, `\_OSI` included.
  */
 static MachineLanguageStatus_t machine_language_push_host_frame(MachineLanguageLoad_t *load, uint16_t table)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
 
-    if (table == 0u)
-        return MACHINE_LANGUAGE_STATUS(METHOD_WITHOUT_BODY);
     if (evaluation->frame_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES)
         return MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES);
 
     MachineLanguageFrame_t *frame = &evaluation->frames[evaluation->frame_count++];
 
     memset(frame, 0, sizeof(*frame));
-    frame->code = (const uint8_t *) load->tables[table - 1u].header;
+    frame->code = (table != 0u) ? (const uint8_t *) load->tables[table - 1u].header : NULL;
     frame->scope = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
     frame->value_base = (uint16_t) evaluation->value_count;
     frame->operator_base = (uint16_t) evaluation->operator_count;
@@ -5067,7 +5064,8 @@ static MachineLanguageStatus_t machine_language_push_host_frame(MachineLanguageL
 
 /**
  * @brief Attaches the PCI_Config regions a unit the host reads reaches: each method an attach waits
- *        for runs in an internal frame above a host frame, until the attach needs no more.
+ *        for runs in an internal frame above a host frame, until the attach needs no more; one whose call
+ *        fails, as one without a body does, is an absent object, as it is when AML reads the unit (§3.6).
  */
 static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageLoad_t *load, uint32_t unit)
 {
@@ -5086,6 +5084,8 @@ static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageL
                       ->value.handle);
         if (status == MACHINE_LANGUAGE_OK)
             status = machine_language_push_attach(load, region, method, 0u, 0u);
+        if (status != MACHINE_LANGUAGE_OK && evaluation->operator_count > slot)
+            status = machine_language_take_failure(load, base, status);
         while (status == MACHINE_LANGUAGE_OK && evaluation->operator_count > slot)
             status = machine_language_step_above(load, base);
         while (evaluation->frame_count > base)
@@ -5139,6 +5139,8 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     }
     if (node->type != MACHINE_LANGUAGE_NODE(METHOD))
         return machine_language_read_node(load, index, out_result);
+    if (node->value.handle == 0u && index != load->space.operating_system_interface)
+        return MACHINE_LANGUAGE_STATUS(METHOD_WITHOUT_BODY);
     if (argument_count != (node->value.auxiliary & 0x7u))
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     if (base == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES)
@@ -5174,8 +5176,9 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         status = machine_language_step_above(load, base);
     if (status == MACHINE_LANGUAGE_OK)
         *out_result = machine_language_pop(evaluation);
-    while (evaluation->frame_count > base)
+    while (evaluation->frame_count > base + 1u)
         machine_language_drop_frame(load);
+    machine_language_drop_frame(load);
     advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
     return status;
 }

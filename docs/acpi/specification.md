@@ -951,7 +951,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 |---|---|---|---|
 | PkgLength crossing its parent | the evaluation fails | the rest of the table is abandoned, its objects kept, the next table loads | `pkglength_out_of_parent` |
 | Truncated operand, bad NameString | fails | the innermost enclosing construct is skipped | `truncated` |
-| A call of a method whose PkgLength ends before its flags, declared without a body; the host's evaluation of `\_OSI`, which only AML calls | fails | construct skipped | `method_without_body` |
+| A call of a method whose PkgLength ends before its flags, declared without a body | fails | construct skipped | `method_without_body` |
 | Invalid or unimplemented opcode | fails | construct skipped | `invalid_opcode`, `unimplemented_operator` |
 | Name not found when executed | fails | construct skipped | `name_not_found` |
 | A method creates a name that exists, as a `Name` in a loop | fails | a duplicate: skipped and counted (§5.1) | `name_exists`, `duplicates` |
