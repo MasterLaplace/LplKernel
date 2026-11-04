@@ -4353,7 +4353,7 @@ static MachineLanguageRecord_t *machine_language_record_at(MachineLanguageLoad_t
             return NULL;
         }
         if (previous != 0u)
-            cache->records[previous - 1u].next = *index;
+            advanced_configuration_and_power_interface_machine_language_record_link(cache, previous, *index);
     }
     if (cache->records[*index - 1u].limit == block->end)
         return &cache->records[*index - 1u];
@@ -4397,30 +4397,19 @@ static bool machine_language_record_branch(MachineLanguageLoad_t *load, MachineL
 }
 
 /**
- * @brief The record of a While's body when the While runs as a tight loop (§3.6): its predicate compares
- *        two leaves, and its body is one statement whose record, found already, writes a local or an
- *        argument, fits the room left, and ends where the While does; NULL otherwise.
+ * @brief The record of a While's body when the While runs as a tight loop now (§3.6): the While was linked to a body
+ *        that makes it one, and the body fits the room the stacks have left, which changes from one call to the
+ *        next, as a block would, were the body handed back; NULL otherwise.
  */
 static const MachineLanguageRecord_t *machine_language_tight_body(const MachineLanguageEvaluation_t *evaluation,
                                                                   const MachineLanguagePredecoding_t *cache,
                                                                   const MachineLanguageRecord_t *loop,
                                                                   uint32_t value_room, uint32_t operator_room)
 {
-    const MachineLanguageRecordNode_t *node = &cache->nodes[loop->first_node];
-    const MachineLanguageRecord_t *body = NULL;
+    const MachineLanguageRecord_t *body = &cache->records[loop->next - 1u];
 
-    if (loop->node_count != 1u || loop->next == 0u || loop->next > cache->record_count ||
-        (node->opcode != MACHINE_LANGUAGE_OPCODE(LOGICAL_EQUAL) &&
-         node->opcode != MACHINE_LANGUAGE_OPCODE(LOGICAL_LESS) &&
-         node->opcode != MACHINE_LANGUAGE_OPCODE(LOGICAL_GREATER)) ||
-        node->operands[0].kind == MACHINE_LANGUAGE_RECORD_OPERAND(RESULT) ||
-        node->operands[1].kind == MACHINE_LANGUAGE_RECORD_OPERAND(RESULT) ||
+    if (loop->tight == 0u || body->values_peak > value_room || body->operators_peak > operator_room ||
         evaluation->block_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS)
-        return NULL;
-    body = &cache->records[loop->next - 1u];
-    if (body->pc != loop->after || body->table != loop->table || body->after != loop->end || body->limit != loop->end ||
-        body->shape < MACHINE_LANGUAGE_RECORD(STORE) || body->values_peak > value_room ||
-        body->operators_peak > operator_room)
         return NULL;
     return body;
 }
@@ -4567,7 +4556,7 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
                                                                                     MACHINE_LANGUAGE_DECLINED(ROOM)];
             break;
         }
-        if (record->shape == MACHINE_LANGUAGE_RECORD(WHILE))
+        if (record->tight != 0u)
             body = machine_language_tight_body(evaluation, cache, record, value_room, operator_room);
         if (body != NULL)
         {
@@ -4582,7 +4571,7 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
             frame->pc = record->after;
             status = machine_language_leave_loop(evaluation, false);
         }
-        else if (record->shape >= MACHINE_LANGUAGE_RECORD(STORE))
+        else if (advanced_configuration_and_power_interface_machine_language_record_writes(record->shape))
         {
             if (!machine_language_record_statement(load, frame, record))
                 break;

@@ -401,6 +401,24 @@ static void machine_language_record_decode(MachineLanguageRecordBuilder_t *build
 }
 
 /**
+ * @brief Whether a While and the record of its body make a tight loop (§3.6): the While's predicate compares two
+ *        leaves, and its body is one statement that writes and ends where the While does.
+ */
+static bool machine_language_record_makes_tight(const MachineLanguagePredecoding_t *cache,
+                                                const MachineLanguageRecord_t *loop,
+                                                const MachineLanguageRecord_t *body)
+{
+    const MachineLanguageRecordNode_t *node = &cache->nodes[loop->first_node];
+
+    return loop->shape == MACHINE_LANGUAGE_RECORD(WHILE) && loop->node_count == 1u &&
+           machine_language_record_compares(node->opcode) &&
+           node->operands[0].kind != MACHINE_LANGUAGE_OPERAND(RESULT) &&
+           node->operands[1].kind != MACHINE_LANGUAGE_OPERAND(RESULT) && body->after == loop->end &&
+           body->limit == loop->end &&
+           advanced_configuration_and_power_interface_machine_language_record_writes(body->shape);
+}
+
+/**
  * @brief Puts the record just built in the hash.
  */
 static void machine_language_record_insert(MachineLanguagePredecoding_t *cache, uint16_t index)
@@ -433,6 +451,15 @@ void advanced_configuration_and_power_interface_machine_language_predecoding_flu
     cache->flushes += (cache->record_count != 0u) ? 1u : 0u;
     machine_language_records_empty(cache);
     cache->integer_bits = integer_bits;
+}
+
+void advanced_configuration_and_power_interface_machine_language_record_link(MachineLanguagePredecoding_t *cache,
+                                                                             uint16_t from, uint16_t to)
+{
+    MachineLanguageRecord_t *record = &cache->records[from - 1u];
+
+    record->next = to;
+    record->tight = machine_language_record_makes_tight(cache, record, &cache->records[to - 1u]) ? 1u : 0u;
 }
 
 uint16_t

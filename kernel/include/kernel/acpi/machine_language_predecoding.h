@@ -147,7 +147,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
                                                                                     Decrement writes, or none. */
     uint8_t values_peak;    /**< Values the interpreter's loop holds on its stack for it at most. */
     uint8_t operators_peak; /**< Operators it holds pending for it at most. */
-    uint16_t reserved;      /**< Unused, 0. */
+    uint8_t tight;          /**< For a While, 1 once linked to the record of a body that makes it a tight loop: its
+                                 predicate compares two leaves, and its body is one statement that writes. */
+    uint8_t reserved;       /**< Unused, 0. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**
@@ -206,6 +208,27 @@ extern void advanced_configuration_and_power_interface_machine_language_predecod
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint8_t integer_bits);
 
 /**
+ * @brief Whether a record writes a local, an argument or NullName: a Store, an operator with a target, an
+ *        Increment or a Decrement.
+ *
+ * @param shape An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_* shape.
+ * @return Whether it is one of those three.
+ */
+static inline bool advanced_configuration_and_power_interface_machine_language_record_writes(uint8_t shape);
+
+/**
+ * @brief Links record @p from to record @p to, the record of the statement where @p from leaves the frame's pc,
+ *        and decides once whether @p from, a While, runs as a tight loop with @p to as its body (§3.6): its
+ *        predicate compares two leaves, and its body is one statement that writes and ends where the While does.
+ *
+ * @param cache The cache.
+ * @param from  The record linked, plus 1.
+ * @param to    The record it leads to, plus 1.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_record_link(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint16_t from, uint16_t to);
+
+/**
  * @brief The record of the statement at @p pc of table @p table.
  *
  * @param cache The cache.
@@ -237,5 +260,7 @@ extern uint16_t advanced_configuration_and_power_interface_machine_language_reco
 extern uint16_t advanced_configuration_and_power_interface_machine_language_record_build(
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, const uint8_t *code, uint16_t table,
     uint32_t pc, uint32_t limit, uint8_t integer_bits);
+
+#include <kernel/acpi/machine_language_predecoding.inl>
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_PREDECODING_H */
