@@ -1485,13 +1485,13 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
         if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u &&
             machine_language_builds(walk, active->node))
         {
-            uint32_t after = 0u;
+            uint32_t data_end = 0u;
 
-            status = machine_language_build_name(walk, active, &after);
-            if (status == MACHINE_LANGUAGE_OK && machine_language_steps_over_data(walk, after))
+            status = machine_language_build_name(walk, active, &data_end);
+            if (status == MACHINE_LANGUAGE_OK && machine_language_steps_over_data(walk, data_end))
             {
                 ++walk->load->data_stepped_over;
-                walk->pc = after;
+                walk->pc = data_end;
                 return MACHINE_LANGUAGE_OK;
             }
         }

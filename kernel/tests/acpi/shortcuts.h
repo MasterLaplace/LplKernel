@@ -69,7 +69,7 @@ typedef struct ShortcutsMutations {
  * @param every_value   Whether each byte takes the three values, or one.
  * @param out_mutations Receives the table's length, the loads, the disagreements and what the shortcuts took.
  */
-void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t stride, bool every_value,
-                            ShortcutsMutations_t *out_mutations);
+extern void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t stride, bool every_value,
+                                   ShortcutsMutations_t *out_mutations);
 
 #endif /* KERNEL_TESTS_ACPI_SHORTCUTS_H */
