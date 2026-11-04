@@ -218,7 +218,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Values | strings, buffers and packages built during an evaluation | the object heap, size classes over the same page runs | when the reference count reaches 0 |
 | Kept data | a Name's Package, VarPackage or Buffer whose sizes and counts are literal constants and which builds with no interpreter and no fault (O20) | none at load: its bytes stay in the table | becomes a value when a name resolution first reaches it, then lives as one |
 | Evaluation scratch | frames, operator, block and value stacks | the evaluation context | reset at the end of each evaluation |
-| Pre-decoded records | the statements a loop that loops reached (§3.6) | the record cache of the load | emptied whole when full, when the integer width changes, and at close |
+| Pre-decoded records | the statements a loop that loops reached (§3.6) | the record cache of the load | emptied whole when its records, its operators or its constants are full, when the integer width changes, and when the load is opened again |
 
 Rules:
 
@@ -335,10 +335,10 @@ the same case. A record checks, before any effect, every condition under which t
 operand that holds no Integer, a stack that would overflow, a modulo by zero); when one holds, it changes nothing and
 the loop decodes and runs the statement. Any other statement keeps a record that hands it to the loop. The end of a
 construct a record opened is closed as the loop closes it, a While's taking its back-edge, counted as the loop counts
-it. A full cache is emptied whole, and the loop of the frame it filled under builds no record until the frame's loop
-changes (§6.1); a change of integer width empties it too. Table-level code never runs from records. A load runs none
-when the boot line holds `lpl.acpi.predecoding=off` (`test-acpi --predecoding off`), which the tests that compare the
-two runs use (§8.1).
+it. A cache whose records, operators or constants are full is emptied whole, and the loop of the frame it filled under
+builds no record until the frame's loop changes (§6.1); a change of integer width empties it too. Table-level code
+never runs from records. A load runs none when the boot line holds `lpl.acpi.predecoding=off` (`test-acpi
+--predecoding off`), which the tests that compare the two runs use (§8.1).
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
 `_REG` when a method creates a PCI_Config region after step 3 of §3.8) are pushed as frames marked "internal" on
@@ -910,7 +910,7 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | States one CPU slot publishes | 7, as Linux, whose table of `ACPI_PROCESSOR_MAX_POWER` (8) keeps its first entry for C0; the states after them are counted, not read |
 | Region mapping cache | 64 entries, each the pages one access touched |
-| Pre-decoded records per load | 128 records, 256 operators and 256 constants; a full cache is emptied whole, counted, and the loop that filled it builds no more, never a failure |
+| Pre-decoded records per load | 128 records, 256 operators and 256 constants; a cache whose records, operators or constants are full is emptied whole, counted, and the loop that filled it builds no more, never a failure |
 
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
 back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the

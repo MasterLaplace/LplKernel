@@ -212,7 +212,8 @@ extern uint16_t advanced_configuration_and_power_interface_machine_language_reco
  * @param pc           Where the statement starts; no record of the cache is at it.
  * @param limit        The end of the construct around it.
  * @param integer_bits The load's integer width, 32 or 64.
- * @return The new record, plus 1; 0 when the cache has no room for it, nothing built.
+ * @return The new record, plus 1; 0 when the cache has no room for it, its records, its operators or its
+ *         constants full, nothing built.
  */
 extern uint16_t advanced_configuration_and_power_interface_machine_language_record_build(
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, const uint8_t *code, uint16_t table,

@@ -24,6 +24,7 @@ typedef struct MachineLanguageRecordBuilder {
     MachineLanguageRecord_t *record;     /**< The record being decoded. */
     const uint8_t *code;                 /**< The table's bytes. */
     uint8_t integer_bits;                /**< The load's integer width. */
+    bool exhausted;                      /**< Whether the cache's operators or constants ran out. */
 } MachineLanguageRecordBuilder_t;
 
 /**
@@ -92,7 +93,8 @@ static bool machine_language_record_computes(uint32_t opcode)
  * @brief Decodes a leaf of an expression whose opcode was read: a local, an argument, or a constant,
  *        masked to the width and kept among the cache's constants.
  *
- * @return false when the opcode is no leaf, a constant's bytes pass @p limit, or the constants are full.
+ * @return false when the opcode is no leaf, a constant's bytes pass @p limit, or the constants are full,
+ *         which the builder notes.
  */
 static bool machine_language_record_leaf(MachineLanguageRecordBuilder_t *builder, uint32_t opcode, uint32_t *pc,
                                          uint32_t after, uint32_t limit, MachineLanguageRecordOperand_t *out_operand)
@@ -119,9 +121,10 @@ static bool machine_language_record_leaf(MachineLanguageRecordBuilder_t *builder
         opcode != MACHINE_LANGUAGE_OPCODE(WORD_PREFIX) && opcode != MACHINE_LANGUAGE_OPCODE(DOUBLE_WORD_PREFIX) &&
         opcode != MACHINE_LANGUAGE_OPCODE(QUAD_WORD_PREFIX))
         return false;
-    if (cache->constant_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_CONSTANTS ||
-        advanced_configuration_and_power_interface_machine_language_read_constant(builder->code, opcode, after, limit,
-                                                                                  &integer, pc) != MACHINE_LANGUAGE_OK)
+    builder->exhausted =
+        cache->constant_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_CONSTANTS;
+    if (builder->exhausted || advanced_configuration_and_power_interface_machine_language_read_constant(
+                                  builder->code, opcode, after, limit, &integer, pc) != MACHINE_LANGUAGE_OK)
         return false;
     cache->constants[cache->constant_count] =
         advanced_configuration_and_power_interface_machine_language_mask_to_width(builder->integer_bits, integer);
@@ -137,7 +140,7 @@ static bool machine_language_record_expression(MachineLanguageRecordBuilder_t *b
 /**
  * @brief Appends an operator to the record, its result the expression's operand.
  *
- * @return false when the record or the cache holds no more operators.
+ * @return false when the record or the cache holds no more operators; the cache's, the builder notes.
  */
 static bool machine_language_record_append(MachineLanguageRecordBuilder_t *builder,
                                            const MachineLanguageRecordNode_t *node,
@@ -146,8 +149,10 @@ static bool machine_language_record_append(MachineLanguageRecordBuilder_t *build
     MachineLanguagePredecoding_t *cache = builder->cache;
     MachineLanguageRecord_t *record = builder->record;
 
-    if (record->node_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NODES_PER_RECORD ||
-        cache->node_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NODES)
+    builder->exhausted =
+        cache->node_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NODES;
+    if (builder->exhausted ||
+        record->node_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NODES_PER_RECORD)
         return false;
     cache->nodes[cache->node_count++] = *node;
     out_operand->kind = MACHINE_LANGUAGE_OPERAND(RESULT);
@@ -360,16 +365,18 @@ uint16_t advanced_configuration_and_power_interface_machine_language_record_buil
         .first_node = (uint16_t) nodes,
         .shape = MACHINE_LANGUAGE_RECORD(GENERAL),
     };
-    MachineLanguageRecordBuilder_t builder = {cache, record, code, integer_bits};
+    MachineLanguageRecordBuilder_t builder = {cache, record, code, integer_bits, false};
 
     *record = empty;
     machine_language_record_decode(&builder);
-    if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL))
+    if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL) || builder.exhausted)
     {
         *record = empty;
         cache->node_count = nodes;
         cache->constant_count = constants;
     }
+    if (builder.exhausted)
+        return 0u;
     for (uint32_t node = nodes; node < cache->node_count; ++node)
         cache->fused_comparisons += cache->nodes[node].negated;
     ++cache->record_count;
