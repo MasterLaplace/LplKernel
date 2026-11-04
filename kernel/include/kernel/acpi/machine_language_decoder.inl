@@ -28,13 +28,14 @@ static inline uint64_t advanced_configuration_and_power_interface_machine_langua
 
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_segment(uint8_t byte)
 {
-    return (byte >= 'A' && byte <= 'Z') || byte == '_';
+    return (advanced_configuration_and_power_interface_machine_language_segment_characters[byte] &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_LEAD) != 0u;
 }
 
 static inline bool advanced_configuration_and_power_interface_machine_language_continues_segment(uint8_t byte)
 {
-    return advanced_configuration_and_power_interface_machine_language_starts_segment(byte) ||
-           (byte >= '0' && byte <= '9');
+    return (advanced_configuration_and_power_interface_machine_language_segment_characters[byte] &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER) != 0u;
 }
 
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_name(uint8_t byte)
@@ -144,4 +145,11 @@ advanced_configuration_and_power_interface_machine_language_read_constant(const 
         (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ONES) ? ~0ull : integer;
     *out_after = after + width;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+}
+
+static inline uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes,
+                                                                                                uint32_t offset)
+{
+    return (uint32_t) bytes[offset] | ((uint32_t) bytes[offset + 1u] << 8u) | ((uint32_t) bytes[offset + 2u] << 16u) |
+           ((uint32_t) bytes[offset + 3u] << 24u);
 }

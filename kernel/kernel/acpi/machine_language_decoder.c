@@ -27,6 +27,10 @@
                                         0u)),                                                                          \
     },
 
+#define MACHINE_LANGUAGE_LEAD_NAME_CHARACTER                                                                           \
+    (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_LEAD |                                        \
+     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER) /**< A LeadNameChar. */
+
 #define MACHINE_LANGUAGE_EXTENDED_DESCRIPTOR(identifier, encoding_value, ...)                                          \
     MACHINE_LANGUAGE_DESCRIPTOR(identifier, 0x5B00u | (encoding_value), __VA_ARGS__)
 
@@ -35,6 +39,46 @@
 
 #define MACHINE_LANGUAGE_INDEX(identifier, encoding_value, ...)                                                        \
     [(encoding_value)] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##identifier,
+
+const uint8_t advanced_configuration_and_power_interface_machine_language_segment_characters[256] = {
+    ['A'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['B'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['C'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['D'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['E'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['F'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['G'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['H'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['I'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['J'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['K'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['L'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['M'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['N'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['O'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['P'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['Q'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['R'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['S'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['T'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['U'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['V'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['W'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['X'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['Y'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['Z'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['_'] = MACHINE_LANGUAGE_LEAD_NAME_CHARACTER,
+    ['0'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['1'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['2'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['3'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['4'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['5'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['6'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['7'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['8'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+    ['9'] = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER,
+};
 
 const AdvancedConfigurationAndPowerInterfaceMachineLanguageDescriptor_t
     advanced_configuration_and_power_interface_machine_language_descriptors
@@ -183,10 +227,4 @@ advanced_configuration_and_power_interface_machine_language_read_name_string(
     *out_name = name;
     *out_after = offset + segment_count * 4u;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
-}
-
-uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes, uint32_t offset)
-{
-    return (uint32_t) bytes[offset] | ((uint32_t) bytes[offset + 1u] << 8u) | ((uint32_t) bytes[offset + 2u] << 16u) |
-           ((uint32_t) bytes[offset + 3u] << 24u);
 }

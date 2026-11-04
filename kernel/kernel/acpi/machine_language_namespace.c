@@ -348,16 +348,6 @@ void advanced_configuration_and_power_interface_machine_language_namespace_close
     space->node_count = 0u;
 }
 
-AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *
-advanced_configuration_and_power_interface_machine_language_namespace_node(
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t index)
-{
-    if (index == 0u || index >= space->node_count)
-        return NULL;
-    return &space->runs[index / ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN]
-                       [index % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN];
-}
-
 uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_child(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name)
 {
@@ -466,12 +456,20 @@ advanced_configuration_and_power_interface_machine_language_namespace_add_child(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
         advanced_configuration_and_power_interface_machine_language_namespace_node(space, index);
 
-    memset(node, 0, sizeof(*node));
     ++space->live_nodes;
     node->name = name;
     node->parent = parent;
+    node->first_child = 0u;
+    node->next_sibling = 0u;
+    node->previous_sibling = 0u;
     node->type = type;
+    node->flags = 0u;
     node->owner = owner;
+    node->value.kind = 0u;
+    node->value.flags = 0u;
+    node->value.auxiliary = 0u;
+    node->value.handle = 0u;
+    node->value.payload = 0u;
     if (parent != 0u)
     {
         AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *parent_node =

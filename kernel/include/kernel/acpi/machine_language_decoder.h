@@ -391,6 +391,18 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString {
     bool root;               /**< Whether it starts at the root, with `\`. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t;
 
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_LEAD                                       \
+    0x01u /**< The bit of a byte a NameSeg may start with. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER                                  \
+    0x02u /**< The bit of a byte that may follow the first of a NameSeg. */
+
+/**
+ * @brief What each byte may be in a NameSeg, by its value (ACPI 6.6 §20.2.2): SEGMENT_LEAD for `A` to `Z` and `_`,
+ *        SEGMENT_CHARACTER for those and `0` to `9`, nothing for the others; the queries of NameSeg characters below
+ *        read it, one load where they compared ranges.
+ */
+extern const uint8_t advanced_configuration_and_power_interface_machine_language_segment_characters[256];
+
 /**
  * @brief The descriptor of each opcode, by descriptor index; the decoder's queries below read it.
  */
@@ -582,8 +594,8 @@ advanced_configuration_and_power_interface_machine_language_read_name_string(
  * @param offset Where the NameSeg starts; the caller has checked its 4 bytes.
  * @return The NameSeg.
  */
-extern uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes,
-                                                                                         uint32_t offset);
+static inline uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes,
+                                                                                                uint32_t offset);
 
 #include <kernel/acpi/machine_language_decoder.inl>
 
