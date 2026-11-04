@@ -287,7 +287,8 @@ extern uint32_t advanced_configuration_and_power_interface_machine_language_name
  * @param name      The NameSeg, as an integer.
  * @param type      An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_* value.
  * @param owner     The table that declares it, counted from 1, or 0.
- * @details It takes the index of the node removed last, when there is one.
+ * @details It takes the index of the node removed last, when there is one, and writes each field of the node,
+ *          so that nothing the removed node held remains.
  * @param out_index Receives the new node's index.
  * @return LIMIT_NAMESPACE_NODES when the node cap is reached; OUT_OF_MEMORY when the host gives no
  *         pages or the arena cap is reached; OK otherwise.
