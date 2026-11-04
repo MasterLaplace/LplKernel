@@ -429,6 +429,7 @@ static void machine_language_record_insert(MachineLanguagePredecoding_t *cache, 
     while (cache->slots[slot] != 0u)
         slot = (slot + 1u) % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS;
     cache->slots[slot] = index;
+    cache->recent[record->pc % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECENT_RECORDS] = index;
 }
 
 void advanced_configuration_and_power_interface_machine_language_predecoding_open(MachineLanguagePredecoding_t *cache)
@@ -463,9 +464,8 @@ void advanced_configuration_and_power_interface_machine_language_record_link(Mac
     record->tight = machine_language_record_makes_tight(cache, record, &cache->records[to - 1u]) ? 1u : 0u;
 }
 
-uint16_t
-advanced_configuration_and_power_interface_machine_language_record_find(const MachineLanguagePredecoding_t *cache,
-                                                                        uint16_t table, uint32_t pc)
+uint16_t advanced_configuration_and_power_interface_machine_language_record_find(MachineLanguagePredecoding_t *cache,
+                                                                                 uint16_t table, uint32_t pc)
 {
     for (uint32_t slot = machine_language_record_slot(table, pc);;
          slot = (slot + 1u) % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS)
@@ -475,7 +475,10 @@ advanced_configuration_and_power_interface_machine_language_record_find(const Ma
         if (index == 0u || index > cache->record_count)
             return 0u;
         if (cache->records[index - 1u].pc == pc && cache->records[index - 1u].table == table)
+        {
+            cache->recent[pc % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECENT_RECORDS] = index;
             return index;
+        }
     }
 }
 
