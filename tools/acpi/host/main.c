@@ -44,6 +44,9 @@
     "                                    executed\n"                                                                   \
     "       test-acpi --write-module <dump> <image>  writes the firmware an acpidump text file gives, as this\n"       \
     "                                    harness serves it, as an image: the Multiboot module of a debug kernel\n"     \
+    "       test-acpi --predecoding off ...  any of the above with the boot line lpl.acpi.predecoding=off: the\n"      \
+    "                                    statements of loops that loop are decoded at each turn, never run from\n"     \
+    "                                    records, so that the two runs compare\n"                                      \
     "       test-acpi [--general-load] [--mutate <seed>] <form above>  with --general-load, every load takes\n"        \
     "                                    none of its shortcuts (specification §3.6); with --mutate, a dump's DSDT\n"  \
     "                                    and SSDTs have bytes changed at random, seeded by <seed>, before loading;\n"  \
@@ -250,6 +253,19 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            evaluation->runs, evaluation->failures, evaluation->implicit_returns, evaluation->uninitialized_operands,
            evaluation->frames_peak, evaluation->values_peak, load->declared_not_run, evaluation->mixed_type_comparisons,
            evaluation->forbidden_conversions, load->heap.objects, load->heap.objects_freed);
+    printf("aml run namespace lookups=%u probes=%u back_edges=%u\n", load->space.lookups, load->space.probes,
+           evaluation->back_edges);
+    printf("aml run predecoding records_run=%u built=%u flushes=%u records_peak=%u fused_comparisons=%u "
+           "declined_shape=%u declined_limit=%u declined_operand=%u declined_room=%u declined_operation=%u "
+           "declined_full=%u\n",
+           load->predecoding.records_run, load->predecoding.built, load->predecoding.flushes,
+           load->predecoding.records_peak, load->predecoding.fused_comparisons,
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_SHAPE],
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_LIMIT],
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_OPERAND],
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_ROOM],
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_OPERATION],
+           load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_FULL]);
     printf("aml run regions field_reads=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
            "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u "
            "field_accesses_peak=%u\n",
@@ -1344,6 +1360,13 @@ int main(int argc, char **argv)
 
     argc -= options;
     argv += options;
+    if (argc >= 3 && strcmp(argv[1], "--predecoding") == 0 && strcmp(argv[2], "off") == 0)
+    {
+        platform_hold_boot_word("lpl.acpi.predecoding=off");
+        argv[2] = argv[0];
+        argv += 2;
+        argc -= 2;
+    }
     if (argc == 3 && strcmp(argv[1], "--machine") == 0)
         return harness_walk_machine(argv[2]);
     if (argc == 3 && harness_view(argv[1], "", &view))

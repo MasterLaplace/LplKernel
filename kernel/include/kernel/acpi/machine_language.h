@@ -35,6 +35,7 @@
 #include <kernel/acpi/machine_language_interpreter.h>
 #include <kernel/acpi/machine_language_namespace.h>
 #include <kernel/acpi/machine_language_objects.h>
+#include <kernel/acpi/machine_language_predecoding.h>
 #include <kernel/acpi/machine_language_regions.h>
 #include <kernel/acpi/machine_language_services.h>
 #include <kernel/acpi/tables.h>
@@ -160,6 +161,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                        debug kernel and in the host tools. */
     bool general_load;            /**< Whether the declaration pass takes none of its shortcuts (§3.6): the
                                        differential test compares them with this general path; false at boot. */
+    bool predecodes_loops;        /**< Whether the statements of a method's While that loops run from records
+                                       (§3.6): true unless the boot line holds lpl.acpi.predecoding=off. */
     uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
     uint32_t table_count;         /**< Tables declared. */
     uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
@@ -237,6 +240,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                        accesses counted. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageServices_t services;     /**< What the operating system
                                                                                        services hold and counted. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t
+        predecoding; /**< The records of the loops that loop: last, past what opening the load zeroes. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;
 
 /**

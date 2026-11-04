@@ -1,5 +1,6 @@
 #include <kernel/acpi/machine_language.h>
 
+#include <stddef.h>
 #include <string.h>
 
 #define MACHINE_LANGUAGE_CALL          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
@@ -2669,7 +2670,9 @@ bool advanced_configuration_and_power_interface_machine_language_open(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes)
 {
-    memset(load, 0, sizeof(*load));
+    memset(load, 0, offsetof(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t, predecoding));
+    advanced_configuration_and_power_interface_machine_language_predecoding_open(&load->predecoding);
+    load->predecodes_loops = !advanced_configuration_and_power_interface_boot_line_holds("lpl.acpi.predecoding=off");
     load->status = (uint8_t) advanced_configuration_and_power_interface_machine_language_namespace_open(
         &load->space, host, max_nodes, max_arena_bytes);
     if (load->status == MACHINE_LANGUAGE_OK)

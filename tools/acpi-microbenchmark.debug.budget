@@ -4,13 +4,13 @@
 # (./build.sh --server), the test alone selected so that no other test changes the page allocator it starts from.
 # Checked by tools/instructions.sh --budget tools/acpi-microbenchmark.debug.budget kernel/lpl.kernel; a change that
 # moves the interpreter's loop records the new counts. The first evaluations count together with the same command
-# and --inside advanced_configuration_and_power_interface_machine_language_evaluate --times 1, 2 then 3: 1,841,450,
-# 3,696,915 and 10,165,505 instructions, so 1,841.5 per turn of the loop under revision 2 against the 200 of §7.4 (#584);
-# the difference of the last two, 6,468.6 per turn, is the cost of the polling loop. A fourth evaluation breaks the
+# and --inside advanced_configuration_and_power_interface_machine_language_evaluate --times 1, 2 then 3: 1,143,419,
+# 2,293,848 and 7,521,787 instructions, so 1,143.4 per turn of the loop under revision 2 against the 200 of §7.4 (#584);
+# the difference of the last two, 5,227.9 per turn, is the cost of the polling loop. A fourth evaluation breaks the
 # polling loop at its first turn.
 inside=kernel_test_body_the_window_w4_loop_of_a_thousand_turns
 times=1
 append=lpl.test=advanced_configuration_and_power_interface_microbenchmarks.the_window_w4_loop_of_a_thousand_turns
-instructions=12839962
-accesses=6120623
+instructions=10190774
+accesses=4865166
 tolerance=1

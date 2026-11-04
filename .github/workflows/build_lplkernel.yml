@@ -199,9 +199,19 @@ jobs:
 
     - name: The ACPI tests on the host
       run: |
-        set -e
+        set -eo pipefail
         xmake build -y test-acpi
-        build/acpi-host/test-acpi
+        build/acpi-host/test-acpi | tee acpi-host.log
+
+    - name: The same tests with no loop run from records, which must print the same records
+      run: |
+        set -e
+        build/acpi-host/test-acpi --predecoding off > acpi-host-decoded.log
+        tools/parity.sh acpi-host.log acpi-host-decoded.log
+        witness='host_predecoding_programs.the_boot_line_decides_whether_loops_run_from_records:'
+        grep -q "$witness loops run from records" acpi-host.log || { echo "no loop ran from records"; exit 1; }
+        grep -q "$witness no loop runs from records" acpi-host-decoded.log ||
+            { echo "loops still ran from records with --predecoding off"; exit 1; }
 
     - name: The quick list of recorded machines
       run: |
