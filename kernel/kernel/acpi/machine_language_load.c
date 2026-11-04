@@ -840,13 +840,17 @@ static MachineLanguageStatus_t machine_language_build_name(MachineLanguageWalk_t
  * @brief Whether the declaration pass steps over a Name's data object it has just built, which ends at
  *        @p after, instead of decoding it a second time (O18): unless the load takes no shortcut, and only while
  *        the walk has room for every package the object could nest, so that decoding it could meet no limit.
+ *
+ * @details The operator stack needs no such check. A Name is a statement, read only at a statement's place, where the
+ *          declaration pass holds no operator below its own; decoding as terms a data object it could build holds at
+ *          most one operator more at a time, a Buffer's, each package's being popped as its list opens: nowhere near
+ *          the 256 of §6.1.
  */
 static bool machine_language_steps_over_data(const MachineLanguageWalk_t *walk, uint32_t after)
 {
     return after != 0u && !walk->load->general_load &&
            walk->block_count + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES <=
-               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS &&
-           walk->pending_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_PENDING_OPERATORS;
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS;
 }
 
 /**
