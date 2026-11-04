@@ -115,23 +115,30 @@ typedef enum MachineLanguageRunBlock {
     MACHINE_LANGUAGE_RUN_TABLE,      /**< The code of a table, or the term of it a run was asked for. */
 } MachineLanguageRunBlock_t;
 
-#define MACHINE_LANGUAGE_IS_KIND(operand, kind) (MACHINE_LANGUAGE_OPERAND(operand) == MACHINE_LANGUAGE_OPERAND(kind))
+#define MACHINE_LANGUAGE_IS_KIND(operand, kind)                                                                        \
+    (MACHINE_LANGUAGE_OPERAND(operand) == MACHINE_LANGUAGE_OPERAND(kind)) /**< Whether a descriptor's operand is of    \
+                                                                             @p kind. */
 #define MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5)                                                        \
     (MACHINE_LANGUAGE_IS_KIND(k0, FIELD_LIST) || MACHINE_LANGUAGE_IS_KIND(k1, FIELD_LIST) ||                           \
      MACHINE_LANGUAGE_IS_KIND(k2, FIELD_LIST) || MACHINE_LANGUAGE_IS_KIND(k3, FIELD_LIST) ||                           \
-     MACHINE_LANGUAGE_IS_KIND(k4, FIELD_LIST) || MACHINE_LANGUAGE_IS_KIND(k5, FIELD_LIST))
+     MACHINE_LANGUAGE_IS_KIND(k4, FIELD_LIST) ||                                                                       \
+     MACHINE_LANGUAGE_IS_KIND(k5, FIELD_LIST)) /**< Whether a descriptor ends with a FieldList, whose names push the   \
+                                                   node they name. */
 #define MACHINE_LANGUAGE_PUSHES_NO_VALUE(operand, field_list)                                                          \
     (MACHINE_LANGUAGE_OPERAND(operand) >= MACHINE_LANGUAGE_OPERAND(ASCII_STRING) ||                                    \
-     (MACHINE_LANGUAGE_IS_KIND(operand, NAME_STRING) && !(field_list)))
+     (MACHINE_LANGUAGE_IS_KIND(operand, NAME_STRING) && !(field_list))) /**< Whether an operand pushes no value: a     \
+                                                                           string, a list, or a NameString outside a   \
+                                                                           field list's descriptor. */
+#define MACHINE_LANGUAGE_VALUELESS_OPERANDS(field_list, k0, k1, k2, k3, k4, k5)                                        \
+    (uint8_t)(MACHINE_LANGUAGE_PUSHES_NO_VALUE(k0, field_list) + MACHINE_LANGUAGE_PUSHES_NO_VALUE(k1, field_list) +    \
+              MACHINE_LANGUAGE_PUSHES_NO_VALUE(k2, field_list) + MACHINE_LANGUAGE_PUSHES_NO_VALUE(k3, field_list) +    \
+              MACHINE_LANGUAGE_PUSHES_NO_VALUE(k4, field_list) +                                                       \
+              MACHINE_LANGUAGE_PUSHES_NO_VALUE(k5, field_list)) /**< How many of six operand kinds push no value. */
 #define MACHINE_LANGUAGE_OPERANDS_WITHOUT_VALUE(identifier, encoding_value, name, package_length, statement,           \
                                                 data_object, opens_scope, k0, k1, k2, k3, k4, k5)                      \
-    [MACHINE_LANGUAGE_OPCODE(identifier)] =                                                                            \
-        (uint8_t) (MACHINE_LANGUAGE_PUSHES_NO_VALUE(k0, MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5)) +     \
-                   MACHINE_LANGUAGE_PUSHES_NO_VALUE(k1, MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5)) +     \
-                   MACHINE_LANGUAGE_PUSHES_NO_VALUE(k2, MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5)) +     \
-                   MACHINE_LANGUAGE_PUSHES_NO_VALUE(k3, MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5)) +     \
-                   MACHINE_LANGUAGE_PUSHES_NO_VALUE(k4, MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5)) +     \
-                   MACHINE_LANGUAGE_PUSHES_NO_VALUE(k5, MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5))),
+    [MACHINE_LANGUAGE_OPCODE(identifier)] = MACHINE_LANGUAGE_VALUELESS_OPERANDS(                                       \
+        MACHINE_LANGUAGE_HAS_FIELD_LIST(k0, k1, k2, k3, k4, k5), k0, k1, k2, k3, k4,                                   \
+        k5), /**< The entry of one descriptor in machine_language_operands_without_value. */
 
 /**
  * @brief The operands of each operator that push no value: a NameString, but those of a field list, which push the
@@ -5242,6 +5249,8 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         status = machine_language_enter_method(load, index, argument_count);
     while (status == MACHINE_LANGUAGE_OK && evaluation->frame_count > base + 1u)
         status = machine_language_step_above(load, base);
+    if (status == MACHINE_LANGUAGE_OK && !machine_language_frame_holds(evaluation, 1u))
+        status = MACHINE_LANGUAGE_STATUS(OPERANDS_MISSING);
     if (status == MACHINE_LANGUAGE_OK)
         *out_result = machine_language_pop(evaluation);
     while (evaluation->frame_count > base + 1u)
