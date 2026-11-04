@@ -28,13 +28,14 @@ static inline uint64_t advanced_configuration_and_power_interface_machine_langua
 
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_segment(uint8_t byte)
 {
-    return (byte >= 'A' && byte <= 'Z') || byte == '_';
+    return (advanced_configuration_and_power_interface_machine_language_segment_characters[byte] &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_LEAD) != 0u;
 }
 
 static inline bool advanced_configuration_and_power_interface_machine_language_continues_segment(uint8_t byte)
 {
-    return advanced_configuration_and_power_interface_machine_language_starts_segment(byte) ||
-           (byte >= '0' && byte <= '9');
+    return (advanced_configuration_and_power_interface_machine_language_segment_characters[byte] &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER) != 0u;
 }
 
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_name(uint8_t byte)

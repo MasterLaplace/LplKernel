@@ -1574,11 +1574,12 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
  */
 static bool machine_language_holds_name_segment(const uint8_t *bytes, uint32_t offset, uint32_t limit)
 {
+    const uint8_t *characters = advanced_configuration_and_power_interface_machine_language_segment_characters;
+
     return limit - offset >= 4u &&
            advanced_configuration_and_power_interface_machine_language_starts_segment(bytes[offset]) &&
-           advanced_configuration_and_power_interface_machine_language_continues_segment(bytes[offset + 1u]) &&
-           advanced_configuration_and_power_interface_machine_language_continues_segment(bytes[offset + 2u]) &&
-           advanced_configuration_and_power_interface_machine_language_continues_segment(bytes[offset + 3u]);
+           (characters[bytes[offset + 1u]] & characters[bytes[offset + 2u]] & characters[bytes[offset + 3u]] &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER) != 0u;
 }
 
 /**
