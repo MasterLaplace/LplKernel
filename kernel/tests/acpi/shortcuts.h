@@ -35,14 +35,16 @@
  * @brief The tables whose bytes the changes reach.
  */
 typedef enum ShortcutsTable {
-    SHORTCUTS_TABLE_DATA, /**< Names of every kind of constant data. */
+    SHORTCUTS_TABLE_DATA,       /**< Names of every kind of constant data. */
+    SHORTCUTS_TABLE_STATEMENTS, /**< Statements of every shape the declaration pass's decoder takes (O19). */
 } ShortcutsTable_t;
 
 /**
  * @brief What only the load's shortcuts change: what each of them took.
  */
 typedef struct ShortcutsTaken {
-    uint32_t data_stepped_over; /**< Data objects of a Name stepped over (O18). */
+    uint32_t data_stepped_over;             /**< Data objects of a Name stepped over (O18). */
+    uint32_t declarations_decoded_directly; /**< Statements the declaration pass's decoder took (O19). */
 } ShortcutsTaken_t;
 
 /**

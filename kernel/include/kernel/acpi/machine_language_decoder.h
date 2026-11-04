@@ -444,6 +444,14 @@ advanced_configuration_and_power_interface_machine_language_operand_kind(
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_segment(uint8_t byte);
 
 /**
+ * @brief Tells whether a byte may follow the first character of a NameSeg: `A` to `Z`, `0` to `9` or `_`.
+ *
+ * @param byte The byte.
+ * @return true when a NameSeg may go on with it.
+ */
+static inline bool advanced_configuration_and_power_interface_machine_language_continues_segment(uint8_t byte);
+
+/**
  * @brief Tells whether a byte starts a NameString: `\`, `^`, a dual or multi prefix, or the first
  *        character of a NameSeg.
  *

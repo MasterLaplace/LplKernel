@@ -252,7 +252,11 @@ meets it, and the debug boot and the corpus find the others before.
 the object, it steps over it instead of decoding its terms again (O18). A shortcut is taken only where it ends as the
 general path ends, with the same namespace, faults and counts of what it declared; its work (lookups, probes, the
 stacks' peaks) falls. A load whose `general_load` is set takes none, and the differential tests compare the two
-(§8.1).
+(§8.1). At a statement's place, the declaration pass takes a Name or a Method of one NameSeg, a Device, a ThermalZone,
+a Scope and a Field through a decoder of its own (O19), which reads the operator, its PkgLength and its NameString and
+declares or resolves the name as the walk would. It takes a Name whose data object it has built and a Method whose body
+it records whole; any other statement it gives back to the walk as the operator the walk would hold at that point, and
+the walk takes the rest: the content of its list, or the operand whose outcome differs.
 
 **The loop**, in order of precedence at each step:
 
@@ -974,6 +978,7 @@ reads a table in kernel memory. The costs to cut are:
 | O16 | Log calls compiled out below the build's level | CI checks that the release objects call no log function below the release level (`nm`); W1 on the release kernel |
 | O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
+| O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list | `declarations_decoded_directly`; W1 |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 

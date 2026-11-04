@@ -111,15 +111,6 @@ static const char
         [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLE_BYTES] = "limit_table_bytes",
 };
 
-/**
- * @brief Whether @p byte may follow the first character of a NameSeg: `A` to `Z`, `0` to `9` or `_`.
- */
-static bool machine_language_is_segment_character(uint8_t byte)
-{
-    return advanced_configuration_and_power_interface_machine_language_starts_segment(byte) ||
-           (byte >= '0' && byte <= '9');
-}
-
 const char *advanced_configuration_and_power_interface_machine_language_opcode_name(uint32_t opcode)
 {
     if (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT)
@@ -179,9 +170,9 @@ advanced_configuration_and_power_interface_machine_language_read_name_string(
         const uint8_t *characters = &bytes[offset + segment * 4u];
 
         if (!advanced_configuration_and_power_interface_machine_language_starts_segment(characters[0]) ||
-            !machine_language_is_segment_character(characters[1]) ||
-            !machine_language_is_segment_character(characters[2]) ||
-            !machine_language_is_segment_character(characters[3]))
+            !advanced_configuration_and_power_interface_machine_language_continues_segment(characters[1]) ||
+            !advanced_configuration_and_power_interface_machine_language_continues_segment(characters[2]) ||
+            !advanced_configuration_and_power_interface_machine_language_continues_segment(characters[3]))
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TRUNCATED;
     }
     name.segments = offset;
