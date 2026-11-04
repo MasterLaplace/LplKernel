@@ -1654,7 +1654,7 @@ static inline MachineLanguageStatus_t machine_language_close_block(MachineLangua
  * @brief Runs a Break or a Continue: leaves the innermost While of the running frame, past its end
  *        or back to its predicate.
  */
-static MachineLanguageStatus_t machine_language_leave_loop(MachineLanguageEvaluation_t *evaluation, bool again)
+static inline MachineLanguageStatus_t machine_language_leave_loop(MachineLanguageEvaluation_t *evaluation, bool again)
 {
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
 
