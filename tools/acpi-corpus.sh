@@ -62,10 +62,11 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          evaluation it was given is counted apart
   differential  loads each machine of a list twice, with the load's shortcuts and with --general-load,
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
-         `test-acpi --initialize` print each way, line for line, and how they exit: the namespace, the faults,
-         the counts and the initialisation; with <mutants>, also that many copies of each machine whose DSDT and
-         SSDTs have bytes changed at random (`--mutate`), each seeded by its number. A load that fails the same
-         way both ways agrees, and is listed with the first line the harness wrote to stderr
+         `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
+         namespace, the faults, the counts and the initialisation; with <mutants>, also that many copies of each
+         machine whose DSDT and SSDTs have bytes changed at random (`--mutate`), each seeded by its number. A load
+         that fails the same way both ways agrees, and is listed with the first line the harness wrote to stderr;
+         a run where every load fails compares nothing, and fails
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -338,16 +339,18 @@ load_check() {
 }
 
 # Loads each machine of the list $1 with the load's shortcuts and without (specification §3.6), and compares what
-# the namespace and the initialisation views print each way, and how the harness exits; with $2 mutants, also that
-# many copies of each machine whose DSDT and SSDTs have bytes changed at random, seeded by the copy's number. A load
-# that fails the same way both ways agrees, and is listed with the first line the harness wrote to stderr.
+# the namespace and the initialisation views print each way, what the harness writes to stderr, a sanitizer's report
+# included, its process numbers and addresses apart, and how it exits; with $2 mutants, also that many copies of each
+# machine whose DSDT and SSDTs have bytes changed at random, seeded by the copy's number. A load that fails the same way
+# both ways agrees, and is listed with the first line the harness wrote to stderr; a run where every load fails
+# compares nothing, and fails.
 differential_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local mutants="${2:-0}" number=0 agree=0 failed=0 subject seed view differences stopped exit_shortcut exit_general
-    local shortcut general errors
+    local shortcut general errors shortcut_errors printed written
     local -a mutation arguments
     [[ "$mutants" =~ ^[0-9]+$ ]] || { usage >&2; exit 2; }
-    shortcut="$(mktemp)" general="$(mktemp)" errors="$(mktemp)"
+    shortcut="$(mktemp)" general="$(mktemp)" errors="$(mktemp)" shortcut_errors="$(mktemp)"
     while IFS= read -r subject; do
         for seed in $(seq 0 "$mutants"); do
             number=$((number + 1))
@@ -360,19 +363,23 @@ differential_check() {
                 [[ "$view" == initialize ]] && arguments+=("$PRESETS")
                 exit_shortcut=0
                 exit_general=0
-                "$HARNESS" "${mutation[@]}" "${arguments[@]}" >"$shortcut" 2>/dev/null || exit_shortcut=$?
+                "$HARNESS" "${mutation[@]}" "${arguments[@]}" >"$shortcut" 2>"$shortcut_errors" || exit_shortcut=$?
                 "$HARNESS" --general-load "${mutation[@]}" "${arguments[@]}" >"$general" 2>"$errors" ||
                     exit_general=$?
+                sed -i -E 's/==[0-9]+==/==/g; s/0x[0-9a-f]+/0x/g' "$errors" "$shortcut_errors"
                 if [[ "$exit_shortcut" -ne "$exit_general" ]]; then
                     differences+="--$view exits $exit_general without the shortcuts, $exit_shortcut with them"$'\n'
                 elif [[ "$exit_general" -ne 0 && -z "$stopped" ]]; then
                     stopped="--$view exits $exit_general both ways: $(grep -m1 . "$errors" || true)"
                 fi
-                differences+="$(diff "$general" "$shortcut" | head -5 || true)"
+                printed="$(diff "$general" "$shortcut" | head -5 || true)"
+                written="$(diff "$errors" "$shortcut_errors" | head -5 | sed 's/^/stderr /' || true)"
+                [[ -z "$printed" ]] || differences+="$printed"$'\n'
+                [[ -z "$written" ]] || differences+="$written"$'\n'
             done
             if [[ -n "$differences" ]]; then
                 echo "not ok $number $subject${mutation[*]:+ ${mutation[*]}}"
-                sed 's/^/    # /' <<<"$differences"
+                sed 's/^/    # /' <<<"${differences%$'\n'}"
                 continue
             fi
             agree=$((agree + 1))
@@ -382,10 +389,10 @@ differential_check() {
             fi
         done
     done < <(reports "$1")
-    rm -f "$shortcut" "$general" "$errors"
+    rm -f "$shortcut" "$general" "$errors" "$shortcut_errors"
     echo "# differential: $agree of $number loads agree with and without the load's shortcuts, $failed of them" \
         "failing the same way both ways"
-    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
+    [[ "$number" -gt 0 && "$agree" -eq "$number" && "$failed" -lt "$number" ]]
 }
 
 # Prints the sum of the counter $1 over the lines $2.
