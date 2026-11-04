@@ -2159,6 +2159,8 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
 
 #define MACHINE_LANGUAGE_FOLD_OFFSET 0x811C9DC5u /**< FNV-1a's offset basis. */
 #define MACHINE_LANGUAGE_FOLD_PRIME  0x01000193u /**< FNV-1a's prime. */
+#define MACHINE_LANGUAGE_FOLD_UNREADABLE                                                                               \
+    0xFFFFFFFFu /**< What kept data whose bytes no longer read as data folds as: a count or a length no object has. */
 
 /**
  * @brief Folds @p width little-endian bytes of @p value into @p fold.
@@ -2191,10 +2193,23 @@ static uint32_t machine_language_fold_zeros(uint32_t fold, uint32_t length)
 }
 
 /**
+ * @brief Folds, after @p fold, kept data whose bytes no longer read as data within its table: the count or length
+ *        MACHINE_LANGUAGE_FOLD_UNREADABLE and nothing after it, wherever the bytes stopped reading.
+ */
+static uint32_t machine_language_fold_unreadable(uint32_t fold)
+{
+    return machine_language_fold_unsigned(fold, MACHINE_LANGUAGE_FOLD_UNREADABLE, 4u);
+}
+
+/**
  * @brief Folds a data object kept in its table (O20) as machine_language_fold_value folds the object it builds
  *        into, from the bytes machine_language_check_data vouched for: an Integer masked to its width, a String's
  *        or a Buffer's length and bytes, zeros past a Buffer's initialiser, a Package's count and each element it
- *        keeps, none past its count, a name as its path bytes.
+ *        keeps, none past its count, a name as its path bytes. AML can rewrite its table after the load: bytes that
+ *        no longer read as data within it, an object or a name cut by the end of the table or of its package, a byte
+ *        that starts no data object, packages nested past the levels of §6.1, a String or a Buffer past its bytes or a
+ *        VarPackage past its elements in §6.1, which machine_language_check_data refuses as the object would, fold as
+ *        machine_language_fold_unreadable folds them, and nothing past the table is read.
  */
 static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                            uint32_t fold,
@@ -2209,6 +2224,7 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
     uint32_t ends[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
     uint32_t counts[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
     uint32_t seen[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
+    const uint32_t before = fold;
     uint32_t depth = 0u;
     uint32_t hidden = 0u;
     uint32_t pc = (uint32_t) value->payload;
@@ -2235,6 +2251,9 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
 
         if ((class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
         {
+            if (end - pc < class)
+                return machine_language_fold_unreadable(before);
+
             uint64_t integer = (lead == 0xFFu) ? UINT64_MAX : (lead == 0x01u) ? 1u : 0u;
 
             for (uint32_t byte = 1u; byte < class; ++byte)
@@ -2248,7 +2267,7 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
 
             if (advanced_configuration_and_power_interface_machine_language_read_name_string(
                     bytes, pc, end, &name, &first) != MACHINE_LANGUAGE_OK)
-                return fold;
+                return machine_language_fold_unreadable(before);
             fold = folds ? machine_language_fold_bytes(fold, bytes + pc, first - pc) : fold;
             pc = first;
         }
@@ -2258,6 +2277,8 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
             pc = first;
             while (pc < end && bytes[pc] != 0x00u)
                 ++pc;
+            if (pc == end || pc - first > MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
+                return machine_language_fold_unreadable(before);
             if (folds)
             {
                 fold = machine_language_fold_unsigned(fold, pc - first, 4u);
@@ -2265,13 +2286,15 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
             }
             ++pc;
         }
-        else if (!machine_language_data_head(bytes, pc, end, class, &object_end, &first, &count))
-            return fold;
+        else if (class == 0u || !machine_language_data_head(bytes, pc, end, class, &object_end, &first, &count))
+            return machine_language_fold_unreadable(before);
         else if (class == MACHINE_LANGUAGE_DATA_BUFFER)
         {
             const uint32_t initialised = object_end - first;
             const uint32_t length = (count > initialised) ? count : initialised;
 
+            if (length > MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
+                return machine_language_fold_unreadable(before);
             if (folds)
             {
                 fold = machine_language_fold_unsigned(fold, length, 4u);
@@ -2280,6 +2303,9 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
             }
             pc = object_end;
         }
+        else if (depth == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES ||
+                 count > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS)
+            return machine_language_fold_unreadable(before);
         else
         {
             fold = folds ? machine_language_fold_unsigned(fold, count, 4u) : fold;

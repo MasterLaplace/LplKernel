@@ -81,6 +81,16 @@ typedef struct ShortcutsBackwards {
     bool overflowed;                       /**< Whether a write did not fit, and was dropped. */
 } ShortcutsBackwards_t;
 
+/**
+ * @brief What the methods of shortcuts_reach ran returned in one load, and what its kept data became.
+ */
+typedef struct ShortcutsReached {
+    uint8_t statuses[7];        /**< Each method's status, M0__ to M6__ in turn. */
+    uint64_t results[7];        /**< The Integer each returned. */
+    uint32_t data_kept;         /**< Data objects the load kept in their table. */
+    uint32_t data_materialized; /**< Of those, the ones the methods' name resolutions built. */
+} ShortcutsReached_t;
+
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t shortcuts_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t shortcuts_load;
 static uint8_t shortcuts_dsdt[MADE_UP_TABLE_HEADER + SHORTCUTS_AML_CAPACITY];
@@ -265,6 +275,15 @@ static const uint8_t shortcuts_reached[] = {
 static const uint8_t shortcuts_too_large[] = {
     0x08u, 'B', 'I', 'G', '_', 0x11u, 0x04u, 0x0Bu, 0x00u, 0x80u, 0x08u, 'I', 'N',   'T', '_', 0x0Au, 0x05u, 0x14u,
     0x0Cu, 'M', 'B', 'I', 'G', 0x00u, 0xA4u, 0x87u, 'B',   'I',   'G',   '_', 0x08u, 'L', 'A', 'S',   'T',   0x01u,
+};
+
+/**
+ * @brief A table-level buffer field over a Buffer too large for an arena with no room left, then a name:
+ *        `Name (BIG_, Buffer (0x8000) {})`, `CreateByteField (BIG_, Zero, BYT_)` and `Name (LAST, One)`.
+ */
+static const uint8_t shortcuts_field_too_large[] = {
+    0x08u, 'B', 'I',   'G', '_', 0x11u, 0x04u, 0x0Bu, 0x00u, 0x80u, 0x8Cu, 'B', 'I',
+    'G',   '_', 0x00u, 'B', 'Y', 'T',   '_',   0x08u, 'L',   'A',   'S',   'T', 0x01u,
 };
 
 /**
@@ -454,6 +473,125 @@ static bool shortcuts_agree(KernelTest_t *test, const ShortcutsCase_t *load_case
     return memcmp(&general.taken, &none, sizeof(none)) == 0 &&
            memcmp(&shortcut, &general, offsetof(ShortcutsRecord_t, taken)) == 0 &&
            (!load_case->steps_over || out_taken->data_stepped_over != 0u);
+}
+
+/**
+ * @brief Opens shortcuts_load on a fresh simulated host, its arena capped at @p arena bytes, with the load's shortcuts
+ *        or, when @p general holds, without.
+ */
+static bool shortcuts_open(KernelTest_t *test, bool general, uint32_t arena)
+{
+    advanced_configuration_and_power_interface_simulated_host_open(&shortcuts_host);
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &shortcuts_load, &shortcuts_host.host, MADE_UP_MAX_NODES, arena),
+                           "the namespace opens"))
+    {
+        advanced_configuration_and_power_interface_machine_language_close(&shortcuts_load);
+        advanced_configuration_and_power_interface_simulated_host_close(&shortcuts_host);
+        return false;
+    }
+    shortcuts_load.general_load = general;
+    return true;
+}
+
+/**
+ * @brief Gives shortcuts_load's pages back, then closes its simulated host.
+ */
+static void shortcuts_close(void)
+{
+    advanced_configuration_and_power_interface_machine_language_close(&shortcuts_load);
+    advanced_configuration_and_power_interface_simulated_host_close(&shortcuts_host);
+}
+
+/**
+ * @brief Declares the @p length bytes of @p aml in shortcuts_load as a DSDT of revision 2.
+ */
+static void shortcuts_declare(const uint8_t *aml, uint32_t length)
+{
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &shortcuts_load, made_up_definition_block(shortcuts_dsdt, "DSDT", 2u, aml, length));
+}
+
+/**
+ * @brief Loads shortcuts_reached into shortcuts_load, with the load's shortcuts or without, then evaluates its
+ *        methods in turn and records what they returned.
+ */
+static bool shortcuts_reach(KernelTest_t *test, bool general, ShortcutsReached_t *out_reached)
+{
+    static const char *const methods[] = {"\\M0__", "\\M1__", "\\M2__", "\\M3__", "\\M4__", "\\M5__", "\\M6__"};
+
+    memset(out_reached, 0, sizeof(*out_reached));
+    if (!shortcuts_open(test, general, MADE_UP_MAX_ARENA_BYTES))
+        return false;
+    shortcuts_declare(shortcuts_reached, sizeof(shortcuts_reached));
+    for (uint32_t method = 0u; method < sizeof(methods) / sizeof(methods[0]); ++method)
+    {
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+        out_reached->statuses[method] = (uint8_t) advanced_configuration_and_power_interface_machine_language_evaluate(
+            &shortcuts_load, methods[method], NULL, 0u, &result);
+        out_reached->results[method] =
+            (result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER) ?
+                result.payload :
+                UINT64_MAX;
+        advanced_configuration_and_power_interface_machine_language_value_release(&shortcuts_load.heap,
+                                                                                  &shortcuts_load.space, &result);
+    }
+    out_reached->data_kept = shortcuts_load.data_kept;
+    out_reached->data_materialized = shortcuts_load.data_materialized;
+    shortcuts_close();
+    return true;
+}
+
+/**
+ * @brief Writes into shortcuts_backwards the case of a table whose package nests @p depth deep inside @p devices
+ *        nested Devices, named @p name, with `Name (TOP_, Package (1) {One})` after them.
+ *
+ * @return Whether it fits the buffer.
+ */
+static bool shortcuts_nested_case(KernelTest_t *test, ShortcutsCase_t *load_case, const char *name, uint32_t depth,
+                                  uint32_t devices)
+{
+    shortcuts_write_nested(&shortcuts_backwards, name, depth, devices);
+    if (!kernel_test_check(test, !shortcuts_backwards.overflowed, "the nested table fits its buffer"))
+        return false;
+    load_case->dsdt = shortcuts_backwards.bytes + shortcuts_backwards.start;
+    load_case->dsdt_bytes = SHORTCUTS_AML_CAPACITY - shortcuts_backwards.start;
+    return true;
+}
+
+/**
+ * @brief The value of the node at the root of shortcuts_load named @p name, or NULL when there is none.
+ */
+static const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *shortcuts_root_value(const char *name)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(
+            &shortcuts_load.space,
+            advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                &shortcuts_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+                advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)));
+
+    return (node != NULL) ? &node->value : NULL;
+}
+
+/**
+ * @brief Whether the node at the root of shortcuts_load named @p name keeps data that reads, unbuilt, as
+ *        @p length elements or bytes, the first @p initialised of them those of @p initialiser.
+ */
+static bool shortcuts_reads_as(const char *name, uint32_t length, const uint8_t *initialiser, uint32_t initialised)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value = shortcuts_root_value(name);
+    uint32_t read_length = 0u;
+    const uint8_t *read_initialiser = NULL;
+    uint32_t read_initialised = 0u;
+
+    return value != NULL &&
+           advanced_configuration_and_power_interface_machine_language_describe_kept_data(
+               &shortcuts_load, value, &read_length, &read_initialiser, &read_initialised) &&
+           read_length == length && read_initialised == initialised &&
+           (initialised == 0u || memcmp(read_initialiser, initialiser, initialised) == 0);
 }
 
 /**
@@ -657,23 +795,6 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_s
 }
 
 /**
- * @brief Writes into shortcuts_backwards the case of a table whose package nests @p depth deep inside @p devices
- *        nested Devices, named @p name, with `Name (TOP_, Package (1) {One})` after them.
- *
- * @return Whether it fits the buffer.
- */
-static bool shortcuts_nested_case(KernelTest_t *test, ShortcutsCase_t *load_case, const char *name, uint32_t depth,
-                                  uint32_t devices)
-{
-    shortcuts_write_nested(&shortcuts_backwards, name, depth, devices);
-    if (!kernel_test_check(test, !shortcuts_backwards.overflowed, "the nested table fits its buffer"))
-        return false;
-    load_case->dsdt = shortcuts_backwards.bytes + shortcuts_backwards.start;
-    load_case->dsdt_bytes = SHORTCUTS_AML_CAPACITY - shortcuts_backwards.start;
-    return true;
-}
-
-/**
  * @brief A Name's constant Package, VarPackage or Buffer stays in its table until a name resolution reaches it
  *        (O20), and a load that keeps it ends with the namespace, the faults and the counts of a load that builds it,
  *        then, once every kept object is built, the same fold and the same packages padded and cut: the declaration
@@ -724,91 +845,11 @@ KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_
 }
 
 /**
- * @brief Opens shortcuts_load on a fresh simulated host, its arena capped at @p arena bytes, with the load's shortcuts
- *        or, when @p general holds, without.
- */
-static bool shortcuts_open(KernelTest_t *test, bool general, uint32_t arena)
-{
-    advanced_configuration_and_power_interface_simulated_host_open(&shortcuts_host);
-    if (!kernel_test_check(test,
-                           advanced_configuration_and_power_interface_machine_language_open(
-                               &shortcuts_load, &shortcuts_host.host, MADE_UP_MAX_NODES, arena),
-                           "the namespace opens"))
-    {
-        advanced_configuration_and_power_interface_machine_language_close(&shortcuts_load);
-        advanced_configuration_and_power_interface_simulated_host_close(&shortcuts_host);
-        return false;
-    }
-    shortcuts_load.general_load = general;
-    return true;
-}
-
-/**
- * @brief Gives shortcuts_load's pages back, then closes its simulated host.
- */
-static void shortcuts_close(void)
-{
-    advanced_configuration_and_power_interface_machine_language_close(&shortcuts_load);
-    advanced_configuration_and_power_interface_simulated_host_close(&shortcuts_host);
-}
-
-/**
- * @brief Declares the @p length bytes of @p aml in shortcuts_load as a DSDT of revision 2.
- */
-static void shortcuts_declare(const uint8_t *aml, uint32_t length)
-{
-    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
-        &shortcuts_load, made_up_definition_block(shortcuts_dsdt, "DSDT", 2u, aml, length));
-}
-
-/**
- * @brief What the methods of shortcuts_reached returned in one load, and what its kept data became.
- */
-typedef struct ShortcutsReached {
-    uint8_t statuses[7];        /**< Each method's status, M0__ to M6__ in turn. */
-    uint64_t results[7];        /**< The Integer each returned. */
-    uint32_t data_kept;         /**< Data objects the load kept in their table. */
-    uint32_t data_materialized; /**< Of those, the ones the methods' name resolutions built. */
-} ShortcutsReached_t;
-
-/**
- * @brief Loads shortcuts_reached into shortcuts_load, with the load's shortcuts or without, then evaluates its
- *        methods in turn and records what they returned.
- */
-static bool shortcuts_reach(KernelTest_t *test, bool general, ShortcutsReached_t *out_reached)
-{
-    static const char *const methods[] = {"\\M0__", "\\M1__", "\\M2__", "\\M3__", "\\M4__", "\\M5__", "\\M6__"};
-
-    memset(out_reached, 0, sizeof(*out_reached));
-    if (!shortcuts_open(test, general, MADE_UP_MAX_ARENA_BYTES))
-        return false;
-    shortcuts_declare(shortcuts_reached, sizeof(shortcuts_reached));
-    for (uint32_t method = 0u; method < sizeof(methods) / sizeof(methods[0]); ++method)
-    {
-        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
-
-        out_reached->statuses[method] = (uint8_t) advanced_configuration_and_power_interface_machine_language_evaluate(
-            &shortcuts_load, methods[method], NULL, 0u, &result);
-        out_reached->results[method] =
-            (result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER) ?
-                result.payload :
-                UINT64_MAX;
-        advanced_configuration_and_power_interface_machine_language_value_release(&shortcuts_load.heap,
-                                                                                  &shortcuts_load.space, &result);
-    }
-    out_reached->data_kept = shortcuts_load.data_kept;
-    out_reached->data_materialized = shortcuts_load.data_materialized;
-    shortcuts_close();
-    return true;
-}
-
-/**
- * @brief Every name resolution that reaches a data object kept in its table builds it before anything reads or
- *        writes it (O20), and each method returns what it returns where the load builds every object: a Store to a
- *        Buffer never read then its byte 1 (0x12), a RefOf then a DerefOf of a Package (3), a package element that
- *        names a kept Package (0x22), a DerefOf of a path String (0x33), a Store to an element, which the next
- *        method still reads (7, 7), and the SizeOf of a Buffer (2). The load keeps the 7 objects, and the methods
- *        build each once.
+ * @brief Every name resolution that reads or writes a data object kept in its table builds it first (O20), and each
+ *        method returns what it returns where the load builds every object: a Store to a Buffer never read then its
+ *        byte 1 (0x12), a RefOf then a DerefOf of a Package (3), a package element that names a kept Package (0x22), a
+ *        DerefOf of a path String (0x33), a Store to an element, which the next method still reads (7, 7), and the
+ *        SizeOf of a Buffer (2). The load keeps the 7 objects, and the methods build each once.
  */
 KERNEL_TEST(a_name_resolution_builds_the_kept_data_it_reaches)
 {
@@ -883,36 +924,38 @@ KERNEL_TEST(a_kept_object_that_no_longer_fits_fails_the_evaluation_that_reaches_
 }
 
 /**
- * @brief The value of the node at the root of shortcuts_load named @p name, or NULL when there is none.
+ * @brief A table-level buffer field over kept data that no longer fits stops its table, as an exhausted arena stops any
+ *        table (O20, §6.2): with no more than 16 KiB past the namespace's own pages, `Name (BIG_, Buffer (0x8000) {})`
+ *        is kept, `CreateByteField (BIG_, Zero, BYT_)` fails to build it with out_of_memory, BYT_ declared without an
+ *        object, and `Name (LAST, One)` after it is not declared; BIG_ stays kept.
  */
-static const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *shortcuts_root_value(const char *name)
+KERNEL_TEST(a_buffer_field_over_kept_data_that_no_longer_fits_stops_its_table)
 {
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
-        advanced_configuration_and_power_interface_machine_language_namespace_node(
-            &shortcuts_load.space,
-            advanced_configuration_and_power_interface_machine_language_namespace_find_child(
-                &shortcuts_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
-                advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)));
+    uint32_t arena = 0u;
 
-    return (node != NULL) ? &node->value : NULL;
-}
+    if (!shortcuts_open(test, false, MADE_UP_MAX_ARENA_BYTES))
+        return;
+    arena = shortcuts_load.space.arena_bytes;
+    shortcuts_close();
+    if (!shortcuts_open(test, false, arena + SHORTCUTS_KEPT_ARENA_BYTES))
+        return;
+    shortcuts_declare(shortcuts_field_too_large, sizeof(shortcuts_field_too_large));
 
-/**
- * @brief Whether the node at the root of shortcuts_load named @p name keeps data that reads, unbuilt, as
- *        @p length elements or bytes, the first @p initialised of them those of @p initialiser.
- */
-static bool shortcuts_reads_as(const char *name, uint32_t length, const uint8_t *initialiser, uint32_t initialised)
-{
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value = shortcuts_root_value(name);
-    uint32_t read_length = 0u;
-    const uint8_t *read_initialiser = NULL;
-    uint32_t read_initialised = 0u;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *big = shortcuts_root_value("BIG_");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *field = shortcuts_root_value("BYT_");
 
-    return value != NULL &&
-           advanced_configuration_and_power_interface_machine_language_describe_kept_data(
-               &shortcuts_load, value, &read_length, &read_initialiser, &read_initialised) &&
-           read_length == length && read_initialised == initialised &&
-           (initialised == 0u || memcmp(read_initialiser, initialiser, initialised) == 0);
+    kernel_test_check(test,
+                      shortcuts_load.load_errors == 1u &&
+                          shortcuts_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY,
+                      "the buffer field's out_of_memory is the load's one fault");
+    kernel_test_check(test, field != NULL && field->handle == 0u && shortcuts_root_value("LAST") == NULL,
+                      "the table stops there: BYT_ is declared without an object, and LAST is not declared");
+    kernel_test_check(test,
+                      shortcuts_load.data_kept == 1u && shortcuts_load.data_materialized == 0u && big != NULL &&
+                          big->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_KEPT_DATA,
+                      "BIG_ stays kept, never built");
+    shortcuts_close();
 }
 
 /**

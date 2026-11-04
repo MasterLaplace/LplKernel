@@ -227,11 +227,11 @@ Rules:
 - **No reference chain is propagated.** A reference holds one count on its direct target, not on the whole chain.
 - **Cycles are refused at store time.** A store that would make an object reach itself fails with
   `reference_cycle`, after an iterative walk with a bounded work list.
-- **Kept data takes memory when a name first reaches it, not at load.** Every name resolution, of the interpreter,
-  of a host evaluation, of a table-level buffer field or of a PCI_Config attach, builds a kept object before anything
-  reads or writes it, from the same bytes, with the integer width its table was declared with. An arena exhausted then
-  fails that evaluation with `out_of_memory`, the object still kept, and stops no table but the one a buffer field
-  declares over it.
+- **Kept data takes memory when a name first reaches it, not at load.** Every name resolution that reads or writes the
+  value, of the interpreter, of a host evaluation, of a table-level buffer field or of a PCI_Config attach, builds a
+  kept object first, from the same bytes, with the integer width its table was declared with; a field list, which reads
+  only a node's type, already its object's, builds nothing. An arena exhausted then fails that evaluation with
+  `out_of_memory`, the object still kept, and stops no table but the one a buffer field declares over it.
 - **Literals become objects when evaluated.** Candidate C5 (§7.3) would keep them in the table until written; if it
   is adopted, a buffer field, an `Index` or `RefOf` reference or a store target made over a literal materialises
   it first, and `literal_materialised[cause]` counts why.
@@ -828,7 +828,7 @@ Each row is a decision, and has at least one test (§8).
 | Unresolved names | An error only when executed: in methods they sit behind `CondRefOf` or capability bits. | |
 | An `Alias` whose source does not exist | Counted as `name_not_found` and skipped alone: neither the alias nor its source is created, and the table goes on. ACPI says the source must already exist; `acpiexec` creates the alias and an Untyped node for its source. | [§19.6.4] |
 | Names inside packages | Kept as a lazy path with its scope, resolved when the element is read, at most 8 indirections, then `name_resolution_loop`. Resolving at creation would make the result depend on the order tables load in. | [§19.6.102] |
-| Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted once, when the Name is declared. | [§19.6.102] |
+| Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted where they are built: once for a Name's data object, when it is declared, kept or built; each time a method builds one. | [§19.6.102] |
 | Orphan data and `Noop` at table level | Evaluated and dropped. | [§5.4.2] |
 | Objects a method creates | Temporary: removed at the method's exit, even when created with a full path elsewhere. A second creation of the same name in the same frame (a `Name` inside a `While` body) is an error. | [§5.5.2.3], [§19.6.150] |
 | `Load` | From a SystemMemory region or a field that holds the whole table: the table is copied (§3.5), its checksum computed on the copy, its objects created relative to the root; True goes to its target and is its result. A table already loaded, compared over its whole length as ACPICA does, is refused: where ACPICA fails the evaluation, `Load` gives False. | [§19.6.77] |
@@ -1225,7 +1225,7 @@ folded. FNV-1a, 32 bits, offset `0x811C9DC5`, prime `0x01000193`, over little-en
 
 | Record | Folds, in order |
 |---|---|
-| `namespace` | a depth-first walk in declaration order; per node: depth `u8`, name `u32`, type `u8`, then Integer `u64`; String or Buffer `u32` length and bytes; Package `u32` count and each element the same way (a lazy name as its path bytes; kept data as the object it builds into); Method flags `u8` and body length `u32`; Region space `u8`, offset `u64`, length `u64`; field unit kind, bit offset `u32`, bit length `u32`, access, update `u8`; Processor id `u8`, block address `u32`, block length `u8` |
+| `namespace` | a depth-first walk in declaration order; per node: depth `u8`, name `u32`, type `u8`, then Integer `u64`; String or Buffer `u32` length and bytes; Package `u32` count and each element the same way (a lazy name as its path bytes; kept data as the object it builds into, or, once AML has rewritten its table so that its bytes no longer read as data within it or within the sizes of §6.1, as the `u32` `0xFFFFFFFF`, a count or a length no object has, and nothing after it); Method flags `u8` and body length `u32`; Region space `u8`, offset `u64`, length `u64`; field unit kind, bit offset `u32`, bit length `u32`, access, update `u8`; Processor id `u8`, block address `u32`, block length `u8` |
 | `evaluations` | per evaluated path in a fixed list: status `u16`, then the result as above |
 | `work` | opcodes executed per opcode (`u32` each, in descriptor order), lookups, probes, allocations, bytes decoded, map calls |
 

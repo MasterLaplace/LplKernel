@@ -469,7 +469,8 @@ static bool machine_language_frame_runs(const MachineLanguageEvaluation_t *evalu
 
 /**
  * @brief Builds the data object a Name kept in its table (O20) once a name resolution reaches its node @p index, as
- *        every resolution does before anything reads or writes the node's value.
+ *        every resolution that reads or writes the node's value does first; a field list, which reads only a node's
+ *        type, already the type of its object, builds nothing.
  */
 static MachineLanguageStatus_t machine_language_reach(MachineLanguageLoad_t *load, uint32_t index)
 {
@@ -2001,7 +2002,8 @@ static MachineLanguageStatus_t machine_language_wait_for_attach(MachineLanguageL
  *        a SimpleName; a target position names the object; anywhere else the object gives its value.
  *        The SimpleName of a CondRefOf that names nothing, or only an External, gives a missing target.
  *        A field unit attaches its PCI_Config regions first: when that needs a method, the name waits
- *        for its internal frame and runs again after it.
+ *        for its internal frame and runs again after it. Kept data is built here, on the node already
+ *        found, not through machine_language_reach, whose second lookup of the node every name term would pay.
  */
 static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t *load, uint32_t kind)
 {
@@ -2252,9 +2254,6 @@ static MachineLanguageStatus_t machine_language_field_name(MachineLanguageLoad_t
     if (advanced_configuration_and_power_interface_machine_language_namespace_resolve(
             &load->space, machine_language_block(evaluation)->scope, frame->code, &name, &node) != MACHINE_LANGUAGE_OK)
         return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
-    status = machine_language_reach(load, node);
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
     frame->pc = after;
     return machine_language_deliver(load, machine_language_integer(node));
 }
