@@ -179,12 +179,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                      them as terms: built (O18), or kept in their table (O20). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
                                                  instead of operand by operand through the walk (O19). */
-    uint32_t data_kept;          /**< Data objects of a Name the declaration pass checked, then kept in their table
-                                      unbuilt, and stepped over, until a name resolution reaches them (O20). */
-    uint32_t data_materialized;  /**< Of those, the ones a name resolution has built since. */
-    uint32_t duplicates;         /**< Declarations of a name that already existed, skipped. */
-    uint32_t externals_unplaced; /**< Externals the declaration pass had nowhere to place, which the Externals
-                                      pass places once every table is declared. */
+    uint32_t data_kept;           /**< Data objects of a Name the declaration pass checked, then kept in their table
+                                       unbuilt, and stepped over, until a name resolution reaches them (O20). */
+    uint32_t data_materialized;   /**< Of those, the ones a name resolution has built since. */
+    uint32_t data_built_directly; /**< Of those, the ones the builder of kept data built (C4), not the general data
+                                       decoder, which a load whose general_load is set uses. */
+    uint32_t duplicates;          /**< Declarations of a name that already existed, skipped. */
+    uint32_t externals_unplaced;  /**< Externals the declaration pass had nowhere to place, which the Externals
+                                       pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;     /**< The first of them. */
     uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
