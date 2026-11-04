@@ -1630,9 +1630,13 @@ static const uint8_t machine_language_data_classes[256] = {
  * @brief Reads a Buffer's size or a VarPackage's element count at @p offset, before @p end, when it is a literal
  *        constant: Zero, One, or a byte, word or double word constant; false for any other term, which the
  *        general path reads.
+ *
+ * @details Always inlined, as machine_language_data_head: a call costs 2,959 more instructions in W1 and 816 more in
+ *          W3 on the MS-7E16 (§7.4).
  */
-static bool machine_language_data_count(const uint8_t *bytes, uint32_t offset, uint32_t end, uint32_t *out_count,
-                                        uint32_t *out_after)
+__attribute__((always_inline)) static inline bool machine_language_data_count(const uint8_t *bytes, uint32_t offset,
+                                                                              uint32_t end, uint32_t *out_count,
+                                                                              uint32_t *out_after)
 {
     if (offset >= end)
         return false;
@@ -1654,9 +1658,14 @@ static bool machine_language_data_count(const uint8_t *bytes, uint32_t offset, u
  * @brief Reads the head of the Buffer, Package or VarPackage of class @p class whose opcode is at @p offset: its
  *        PkgLength, which must end by @p end, then its size or its element count, a literal constant;
  *        @p out_end receives where the object ends, @p out_first where its initialiser or its elements start.
+ *
+ * @details Always inlined into the check, the reader and the description of kept data: a call costs 8,604 more
+ *          instructions in W1 and 2,464 more in W3 on the MS-7E16 (§7.4).
  */
-static bool machine_language_data_head(const uint8_t *bytes, uint32_t offset, uint32_t end, uint8_t class,
-                                       uint32_t *out_end, uint32_t *out_first, uint32_t *out_count)
+__attribute__((always_inline)) static inline bool machine_language_data_head(const uint8_t *bytes, uint32_t offset,
+                                                                             uint32_t end, uint8_t class,
+                                                                             uint32_t *out_end, uint32_t *out_first,
+                                                                             uint32_t *out_count)
 {
     if (advanced_configuration_and_power_interface_machine_language_read_package_end(bytes, offset + 1u, end, out_end,
                                                                                      out_first) != MACHINE_LANGUAGE_OK)
@@ -2258,9 +2267,14 @@ static uint64_t machine_language_data_integer(const uint8_t *bytes, uint32_t pc,
  *        Buffer within 64 KiB, a package within 4,096 elements and the levels of §6.1. Nothing past @p end is read.
  *
  * @return Whether the bytes read so; @p out_element then holds the element.
+ *
+ * @details Always inlined: the builder of kept data reads every element through it, and a call, with the element
+ *          written through memory, costs 9,024 more instructions in W3 on the MS-7E16 (§7.4).
  */
-static inline bool machine_language_read_kept(const uint8_t *bytes, uint32_t pc, uint32_t end, uint32_t depth,
-                                              uint64_t mask, MachineLanguageKeptElement_t *out_element)
+__attribute__((always_inline)) static inline bool machine_language_read_kept(const uint8_t *bytes, uint32_t pc,
+                                                                             uint32_t end, uint32_t depth,
+                                                                             uint64_t mask,
+                                                                             MachineLanguageKeptElement_t *out_element)
 {
     const uint8_t class = machine_language_data_classes[bytes[pc]];
     MachineLanguageNameString_t name;
