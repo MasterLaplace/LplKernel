@@ -419,7 +419,21 @@ static bool machine_language_frame_runs(const MachineLanguageEvaluation_t *evalu
 }
 
 /**
- * @brief The node a name a package element holds resolves to, from the scope it was read in.
+ * @brief Builds the data object a Name kept in its table (O20) once a name resolution reaches its node @p index, as
+ *        every resolution does before anything reads or writes the node's value.
+ */
+static MachineLanguageStatus_t machine_language_reach(MachineLanguageLoad_t *load, uint32_t index)
+{
+    const MachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+
+    return (node->value.kind == MACHINE_LANGUAGE_VALUE(KEPT_DATA)) ?
+               advanced_configuration_and_power_interface_machine_language_materialize(load, index) :
+               MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief The node a name a package element holds resolves to, from the scope it was read in, its kept data built.
  */
 static MachineLanguageStatus_t machine_language_resolve_element_name(MachineLanguageLoad_t *load,
                                                                      const MachineLanguageValue_t *name_reference,
@@ -429,13 +443,13 @@ static MachineLanguageStatus_t machine_language_resolve_element_name(MachineLang
         &load->tables[name_reference->auxiliary - 1u];
     MachineLanguageNameString_t name;
     uint32_t after = 0u;
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
+    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
         (const uint8_t *) table->header, (uint32_t) name_reference->payload, table->length, &name, &after);
 
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
-    return advanced_configuration_and_power_interface_machine_language_namespace_resolve(
-        &load->space, name_reference->handle, (const uint8_t *) table->header, &name, out_node);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_namespace_resolve(
+            &load->space, name_reference->handle, (const uint8_t *) table->header, &name, out_node);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_reach(load, *out_node) : status;
 }
 
 /**
@@ -818,6 +832,8 @@ static MachineLanguageStatus_t machine_language_copy_into(MachineLanguageLoad_t 
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
+    if (object == NULL)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
 
     const uint32_t copied = (length < object->length) ? length : object->length;
 
@@ -864,6 +880,8 @@ static MachineLanguageStatus_t machine_language_write_byte(MachineLanguageLoad_t
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
+    if (object == NULL)
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     if (byte->payload >= object->length)
         return MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE);
     if (length != 0u)
@@ -1905,6 +1923,12 @@ static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t 
     const MachineLanguageNode_t *node =
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
 
+    if (node->value.kind == MACHINE_LANGUAGE_VALUE(KEPT_DATA))
+    {
+        status = advanced_configuration_and_power_interface_machine_language_materialize(load, index);
+        if (status != MACHINE_LANGUAGE_OK)
+            return status;
+    }
     if (node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) && machine_language_asks_existence(evaluation))
         return machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_MISSING, 0u));
     if (node->type == MACHINE_LANGUAGE_NODE(FIELD_UNIT))
@@ -2121,6 +2145,9 @@ static MachineLanguageStatus_t machine_language_field_name(MachineLanguageLoad_t
     if (advanced_configuration_and_power_interface_machine_language_namespace_resolve(
             &load->space, machine_language_block(evaluation)->scope, frame->code, &name, &node) != MACHINE_LANGUAGE_OK)
         return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
+    status = machine_language_reach(load, node);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
     frame->pc = after;
     return machine_language_deliver(load, machine_language_integer(node));
 }
@@ -2945,10 +2972,10 @@ static MachineLanguageStatus_t machine_language_resolve_path(MachineLanguageLoad
             spelled, 0u, spelled_length, &name, &after);
     if (status == MACHINE_LANGUAGE_OK && after != spelled_length)
         status = MACHINE_LANGUAGE_STATUS(TRUNCATED);
-    if (status != MACHINE_LANGUAGE_OK)
-        return status;
-    return advanced_configuration_and_power_interface_machine_language_namespace_resolve(&load->space, scope, spelled,
-                                                                                         &name, out_node);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_namespace_resolve(
+            &load->space, scope, spelled, &name, out_node);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_reach(load, *out_node) : status;
 }
 
 /**
@@ -4248,6 +4275,9 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
     memset(out_result, 0, sizeof(*out_result));
+    status = machine_language_reach(load, index);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
     if (node->type == MACHINE_LANGUAGE_NODE(FIELD_UNIT))
     {
         advanced_configuration_and_power_interface_machine_language_begin_evaluation(load);

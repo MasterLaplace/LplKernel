@@ -490,6 +490,39 @@ static const char *harness_buffer_name(const AdvancedConfigurationAndPowerInterf
 }
 
 /**
+ * @brief Prints a Buffer's length and its first 12 bytes, as ACPICA's namespace dump does: @p initialised bytes of
+ *        @p initialiser, then zeros up to @p length.
+ */
+static void harness_print_buffer(uint32_t length, const uint8_t *initialiser, uint32_t initialised)
+{
+    printf("Buffer Len %.2X", length);
+    if (length != 0u)
+        fputs(" =", stdout);
+    for (uint32_t byte = 0u; byte < length && byte < 12u; ++byte)
+        printf(" %2.2X", (byte < initialised) ? initialiser[byte] : 0u);
+}
+
+/**
+ * @brief Prints a data object a Name kept in its table (O20) as the object it builds into, without building it,
+ *        so that printing the namespace leaves it to the evaluations that reach it.
+ */
+static void harness_print_kept_data(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node)
+{
+    uint32_t length = 0u;
+    const uint8_t *initialiser = NULL;
+    uint32_t initialised = 0u;
+
+    if (!advanced_configuration_and_power_interface_machine_language_describe_kept_data(load, &node->value, &length,
+                                                                                        &initialiser, &initialised))
+        fputs("Untyped", stdout);
+    else if (node->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_BUFFER)
+        harness_print_buffer(length, initialiser, initialised);
+    else
+        printf("Package Elements %.2X", length);
+}
+
+/**
  * @brief Prints one node's type and value as ACPICA's namespace dump does, its addresses apart.
  */
 static void harness_print_node_value(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
@@ -501,6 +534,9 @@ static void harness_print_node_value(const AdvancedConfigurationAndPowerInterfac
 
     switch (node->value.kind)
     {
+    case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_KEPT_DATA:
+        harness_print_kept_data(load, node);
+        return;
     case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER:
         printf("Integer = %016llX", (unsigned long long) node->value.payload);
         return;
@@ -509,11 +545,7 @@ static void harness_print_node_value(const AdvancedConfigurationAndPowerInterfac
         harness_print_string((const char *) (object + 1), object->length);
         return;
     case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER:
-        printf("Buffer Len %.2X", object->length);
-        if (object->length != 0u)
-            fputs(" =", stdout);
-        for (uint32_t byte = 0u; byte < object->length && byte < 12u; ++byte)
-            printf(" %2.2X", ((const uint8_t *) (object + 1))[byte]);
+        harness_print_buffer(object->length, (const uint8_t *) (object + 1), object->length);
         return;
     case ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE:
         printf("Package Elements %.2X", object->length);

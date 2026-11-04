@@ -171,8 +171,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                              NULL. */
     uint32_t bytes;             /**< AML bytes of those tables, headers apart. */
     uint32_t declarations;      /**< Nodes the tables created. */
-    uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass built, then stepped over instead of
-                                     decoding them again (O18). */
+    uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass stepped over instead of decoding
+                                     them as terms: built (O18), or kept in their table (O20). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
                                                  instead of operand by operand through the walk (O19). */
     uint32_t data_kept;          /**< Data objects of a Name the declaration pass checked, then kept in their table
@@ -353,7 +353,8 @@ advanced_configuration_and_power_interface_machine_language_field_write(
  * @param result     What the method the previous call named returned, or NULL.
  * @param out_method The method, without arguments, whose result the attach waits for, or 0 once the
  *                   region is attached.
- * @return OK; TYPE_MISMATCH when @p region holds no PCI_Config region.
+ * @return OK; TYPE_MISMATCH when @p region holds no PCI_Config region; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when an
+ *         object it reads, its data kept in its table (O20), cannot be built.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_attach(
@@ -912,7 +913,8 @@ extern bool advanced_configuration_and_power_interface_machine_language_describe
  *        Package's count and each element the same way, a name element as its path bytes; a
  *        method's flags and body length; a region's space, offset and length; a field unit's kind,
  *        bit offset, bit length, access and update rule; a Processor's ID, block address and block
- *        length. Nothing that holds an address or an index is folded.
+ *        length. A data object kept in its table folds as the object it builds into. Nothing that holds an
+ *        address or an index is folded.
  *
  * @param load A load whose tables are decoded.
  * @return The fold.

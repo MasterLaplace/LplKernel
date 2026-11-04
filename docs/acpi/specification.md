@@ -194,7 +194,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Structure | Fields | Bytes | Notes |
 |---|---|---|---|
 | **Value** (`…Value_t`) | `kind u8`, `flags u8`, `auxiliary u16`, `handle u32`, `payload u64` | 16 | Integers live in `payload`, with no allocation. Strings, buffers and packages are `handle` = object; a literal becomes one when it is evaluated. A reference is `kind` plus its target: a node; a local or an argument, with its frame's index and serial; or a package, a buffer or a string, which it holds a count on, with an element or byte index. |
-| **Node** | `name u32` (the NameSeg as an integer), `parent u32`, `first_child u32`, `next_sibling u32`, `previous_sibling u32` (circular: the first child's previous is the last), `type u8`, `flags u8`, `owner u16` (the table that declared it; a temporary is known by the context's stack), `value Value` | 40 | Declaration order is kept for walks (`_INI` order, dumps); O(1) append and O(1) unlink of temporaries. The object of a Name, Method, buffer field, mutex, Processor or PowerResource fits in `value`, with no second allocation. A Device, ThermalZone, Processor or PowerResource a table declares keeps the offset of its opcode in `value.handle`: with `owner`, as a Method's recorded body, it names the construct that declared it (§5.1). |
+| **Node** | `name u32` (the NameSeg as an integer), `parent u32`, `first_child u32`, `next_sibling u32`, `previous_sibling u32` (circular: the first child's previous is the last), `type u8`, `flags u8`, `owner u16` (the table that declared it; a temporary is known by the context's stack), `value Value` | 40 | Declaration order is kept for walks (`_INI` order, dumps); O(1) append and O(1) unlink of temporaries. The object of a Name, Method, buffer field, mutex, Processor or PowerResource fits in `value`, with no second allocation. A Name's constant Package or Buffer kept in its table (O20) holds in `value` the table and the offset of its opcode, and no object. A Device, ThermalZone, Processor or PowerResource a table declares keeps the offset of its opcode in `value.handle`: with `owner`, as a Method's recorded body, it names the construct that declared it (§5.1). |
 | **Hash slot** | `node u32` (0 is empty) | 4, at a load of at most 1/2, so 8 per node | One open-addressing table for the whole namespace, keyed by (parent, NameSeg): linear probing, backward-shift deletion so no tombstones, a fixed unseeded 32-bit multiplicative mix. |
 | **Object header** | `references u32` (saturating), `kind u8`, `flags u8`, `auxiliary u16`, `length u32`, padding | 16 | One allocation per string, buffer or package: the bytes, or the `length` element values, follow the header. |
 | **Region object** | `space u8`, `state u8`, `attach u8` (how far a PCI_Config attach went), `attach_flags u8`, `pci_device u32` (segment, bus, device and function, packed: those found so far while it attaches), `offset u64`, `length u64`, `mapping u32`, `attach_node u32` (the node whose object the attach reads next) | 32 | Attached lazily, at the first access. |
@@ -214,6 +214,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Permanent | the nodes a table load creates, their objects, the tables `Load` copies | the namespace arena: 64 KiB runs of pages from `kernel_vmm_alloc_pages`, up to a profile cap (§6.1); never the kernel heap, so the World's heap never competes | never (no `Unload`) |
 | Temporary | the nodes a method creates (`Name`, `CreateXField`, `OperationRegion`, `Field`, a nested `Method`) | the node arena's free list; their indices are pushed on the context's temporary-node stack | at frame exit, in reverse order: O(1) unlink each, no namespace walk |
 | Values | strings, buffers and packages built during an evaluation | the object heap, size classes over the same page runs | when the reference count reaches 0 |
+| Kept data | a Name's Package, VarPackage or Buffer whose sizes and counts are literal constants and which builds with no interpreter and no fault (O20) | none at load: its bytes stay in the table | becomes a value when a name resolution first reaches it, then lives as one |
 | Evaluation scratch | frames, operator, block and value stacks | the evaluation context | reset at the end of each evaluation |
 
 Rules:
@@ -223,6 +224,11 @@ Rules:
 - **No reference chain is propagated.** A reference holds one count on its direct target, not on the whole chain.
 - **Cycles are refused at store time.** A store that would make an object reach itself fails with
   `reference_cycle`, after an iterative walk with a bounded work list.
+- **Kept data takes memory when a name first reaches it, not at load.** Every name resolution, of the interpreter,
+  of a host evaluation, of a table-level buffer field or of a PCI_Config attach, builds a kept object before anything
+  reads or writes it, from the same bytes, with the integer width its table was declared with. An arena exhausted then
+  fails that evaluation with `out_of_memory`, the object still kept, and stops no table but the one a buffer field
+  declares over it.
 - **Literals become objects when evaluated.** Candidate C5 (§7.3) would keep them in the table until written; if it
   is adopted, a buffer field, an `Index` or `RefOf` reference or a store target made over a literal materialises
   it first, and `literal_materialised[cause]` counts why.
@@ -256,7 +262,11 @@ stacks' peaks) falls. A load whose `general_load` is set takes none, and the dif
 a Scope and a Field through a decoder of its own (O19), which reads the operator, its PkgLength and its NameString and
 declares or resolves the name as the walk would. It takes a Name whose data object it has built and a Method whose body
 it records whole; any other statement it gives back to the walk as the operator the walk would hold at that point, and
-the walk takes the rest: the content of its list, or the operand whose outcome differs.
+the walk takes the rest: the content of its list, or the operand whose outcome differs. A Name of one NameSeg whose
+data object is a Package, a VarPackage or a Buffer that would build with no interpreter and no fault, its sizes and
+counts literal constants, is checked without being built, its padded and cut packages counted, and kept in its table
+(O20): the node takes the object's type, and the walk steps over it as O18 does. Any other data object, one a name
+sizes included, is built as before.
 
 **The loop**, in order of precedence at each step:
 
@@ -787,7 +797,7 @@ Each row is a decision, and has at least one test (§8).
 | Unresolved names | An error only when executed: in methods they sit behind `CondRefOf` or capability bits. | |
 | An `Alias` whose source does not exist | Counted as `name_not_found` and skipped alone: neither the alias nor its source is created, and the table goes on. ACPI says the source must already exist; `acpiexec` creates the alias and an Untyped node for its source. | [§19.6.4] |
 | Names inside packages | Kept as a lazy path with its scope, resolved when the element is read, at most 8 indirections, then `name_resolution_loop`. Resolving at creation would make the result depend on the order tables load in. | [§19.6.102] |
-| Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted. | [§19.6.102] |
+| Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted once, when the Name is declared. | [§19.6.102] |
 | Orphan data and `Noop` at table level | Evaluated and dropped. | [§5.4.2] |
 | Objects a method creates | Temporary: removed at the method's exit, even when created with a full path elsewhere. A second creation of the same name in the same frame (a `Name` inside a `While` body) is an error. | [§5.5.2.3], [§19.6.150] |
 | `Load` | From a SystemMemory region or a field that holds the whole table: the table is copied (§3.5), its checksum computed on the copy, its objects created relative to the root; True goes to its target and is its result. A table already loaded, compared over its whole length as ACPICA does, is refused: where ACPICA fails the evaluation, `Load` gives False. | [§19.6.77] |
@@ -917,7 +927,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | A `Load` or `LoadTable` form outside §1.4 | fails | construct skipped | `load_form_unsupported` |
 | Protected port or PCI header | not a fault: zero read, write dropped | same | counted only |
 | A PCI function the attach cannot reach (§4.4) | not a fault: all ones read, write dropped | same | counted only |
-| Arena exhausted | fails | the table load stops | `out_of_memory` |
+| Arena exhausted | fails | the table load stops; a data object kept in its table (§3.5) fails the evaluation that first reaches it | `out_of_memory` |
 
 At definition-block level, "construct skipped" means: a statement that fails to run is skipped, a predicate that
 fails declares both branches without running them (§3.6), and a fault in the declaration pass's own decoding skips
@@ -979,15 +989,15 @@ reads a table in kernel memory. The costs to cut are:
 | O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list | `declarations_decoded_directly`; W1 |
+| O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it (§3.5) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 
 | # | What | Adopt when |
 |---|---|---|
 | C1 | Cache each call site's resolved node under a namespace generation number | the lookup function's share of W2, as `instructions.sh` lists it per function, exceeds 10 % |
-| C2 | Keep a `Name`'s constant package or buffer as AML until its first read | the package-building function's share of W1 exceeds 25 % on a corpus machine |
 | C3 | Pre-decode the body of a method that loops | the functions of a `While` body dominate a window |
-| C4 | Build a package of constants without the general evaluator | as C2, with a differential test against the general path |
+| C4 | Build a package of constants without the general evaluator | building kept data (O20) exceeds 10 % of W2 or W3, with a differential test against the general path |
 | C5 | Zero-copy string and buffer literals, kept in the table until written, materialised first when a buffer field, an `Index` or `RefOf` reference or a store target is made over one (§3.5) | the needs-path run shows that most literals are never materialised, and the copy function's share of W1 or W2 exceeds 5 % |
 
 ### 7.4 Measurement windows and budgets
@@ -1031,7 +1041,7 @@ same work, not only reach the same result.
 | Real firmware in ring 0 | one corpus machine per boot, its tables given as a Multiboot module, run through the simulated host | ring 0, debug kernel | the host harness's records on the same bytes, compared by `tools/parity.sh` |
 | QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the load's folds (namespace, opcodes decoded), against the host's on the printed bytes (§8.7) |
 | QEMU's reference tables | 42 `pc` and `q35` configurations, 5 `microvm` | host | `acpiexec` |
-| The load's shortcuts | that each shortcut of §3.6 ends where the general path ends: namespace, fold, faults and counts of what it declared, not its work (lookups, probes, the stacks' peaks), which falls | ring 0 and the host harness (`kernel/tests/acpi/shortcuts.c`), every one-byte change of its tables on the host (`host_shortcuts`) and a sample of them in ring 0; the corpus on the host, its bytes changed at random too (`tools/acpi-corpus.sh differential`) | the same load with `general_load`, which takes no shortcut |
+| The load's shortcuts | that each shortcut of §3.6 ends where the general path ends: namespace, fold, faults and counts of what it declared, not its work (lookups, probes, the stacks' peaks), which falls; the fold again once every kept object is built, and what a method returns that reaches one | ring 0 and the host harness (`kernel/tests/acpi/shortcuts.c`), every one-byte change of its tables on the host (`host_shortcuts`) and a sample of them in ring 0; the corpus on the host, its bytes changed at random too (`tools/acpi-corpus.sh differential`) | the same load with `general_load`, which takes no shortcut |
 | uACPI's test cases | Windows behaviours and edge cases | host | each case's `// Expect:` line |
 | Real machines | the full path to `_CST` | ring 0 | the same machine's tables through the host harness and `acpiexec`; Linux's cpuidle states |
 
@@ -1171,7 +1181,7 @@ folded. FNV-1a, 32 bits, offset `0x811C9DC5`, prime `0x01000193`, over little-en
 
 | Record | Folds, in order |
 |---|---|
-| `namespace` | a depth-first walk in declaration order; per node: depth `u8`, name `u32`, type `u8`, then Integer `u64`; String or Buffer `u32` length and bytes; Package `u32` count and each element the same way (a lazy name as its path bytes); Method flags `u8` and body length `u32`; Region space `u8`, offset `u64`, length `u64`; field unit kind, bit offset `u32`, bit length `u32`, access, update `u8`; Processor id `u8`, block address `u32`, block length `u8` |
+| `namespace` | a depth-first walk in declaration order; per node: depth `u8`, name `u32`, type `u8`, then Integer `u64`; String or Buffer `u32` length and bytes; Package `u32` count and each element the same way (a lazy name as its path bytes; kept data as the object it builds into); Method flags `u8` and body length `u32`; Region space `u8`, offset `u64`, length `u64`; field unit kind, bit offset `u32`, bit length `u32`, access, update `u8`; Processor id `u8`, block address `u32`, block length `u8` |
 | `evaluations` | per evaluated path in a fixed list: status `u16`, then the result as above |
 | `work` | opcodes executed per opcode (`u32` each, in descriptor order), lookups, probes, allocations, bytes decoded, map calls |
 
