@@ -806,8 +806,9 @@ KERNEL_TEST(an_if_a_later_turn_takes_steps_over_its_else_after_a_turn_that_ran_i
 
 /**
  * @brief A Method whose PkgLength ends before its flags leaves a node without a body: calling it fails with
- *        method_without_body, counted, at table level, as an operand and from the host, whatever arguments the host
- *        gives, and never runs `\_OSI`, which still answers, from AML and from the host, when it is the node called.
+ *        method_without_body, counted at table level and as an operand, returned uncounted to the host whatever
+ *        arguments it gives, as its other refusals before the call are, and never runs `\_OSI`, which still answers,
+ *        from AML and from the host, when it is the node called.
  */
 KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
 {
