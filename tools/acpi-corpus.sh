@@ -66,7 +66,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
          `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
          namespace, the faults, the counts and the initialisation, the objects allocated and freed apart, which
-         data a Name keeps in its table until it is read moves by construction; with <mutants>, also that many
+         data a Name keeps in its table until it is read moves by construction, and the namespace's lookups and
+         probes apart, which the shortcuts save; with <mutants>, also that many
          copies of each machine whose DSDT and SSDTs have bytes changed at random (`--mutate`), each seeded by its
          number. A load that fails the same way both ways agrees, and is listed with the first line the harness
          wrote to stderr; a run where every load fails compares nothing, and fails
@@ -386,7 +387,8 @@ differential_check() {
                 "$HARNESS" --general-load "${mutation[@]}" "${arguments[@]}" >"$general" 2>"$errors" ||
                     exit_general=$?
                 sed -i -E 's/==[0-9]+==/==/g; s/0x[0-9a-f]+/0x/g' "$errors" "$shortcut_errors"
-                sed -i -E 's/ objects=[0-9]+ objects_freed=[0-9]+$//' "$shortcut" "$general"
+                sed -i -E 's/ objects=[0-9]+ objects_freed=[0-9]+$//; s/^(aml run namespace) lookups=[0-9]+ probes=[0-9]+/\1/' \
+                    "$shortcut" "$general"
                 if [[ "$exit_shortcut" -ne "$exit_general" ]]; then
                     differences+="--$view exits $exit_general without the shortcuts, $exit_shortcut with them"$'\n'
                 elif [[ "$exit_general" -ne 0 && -z "$stopped" ]]; then
