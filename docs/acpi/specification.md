@@ -1176,7 +1176,7 @@ published image. The made-up ASL is ours, under MIT.
 - **What the records cost on the corpus.** `tools/acpi-corpus.sh records-cost <list>` counts, under callgrind, the
   instructions `test-acpi --initialize` executes on each machine whose loops ask the records anything, with records and
   without, from a harness built without sanitizers (`test-acpi-cost`). No machine costs more than 0.5 % more with
-  records than without; the two runs print the same lines.
+  records than without; the two runs print the same lines but `aml run predecoding`.
 
 ### 8.5 uACPI's test cases
 

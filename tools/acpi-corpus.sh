@@ -12,7 +12,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh load [quick|corpus|full]
        tools/acpi-corpus.sh differential [quick|corpus|full] [<mutants>]
        tools/acpi-corpus.sh predecoding [quick|corpus|full]
-       tools/acpi-corpus.sh records-cost [quick|corpus|full]
+       tools/acpi-corpus.sh records-cost [corpus|full]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
        tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
@@ -75,14 +75,15 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          print, the namespace and `aml run namespace` (lookups, probes and back-edges) included, but `aml
          run predecoding`, whose counts it sums: the statements records ran and handed back, per reason
          (specification §3.6, §8.4); a machine whose two runs differ fails it
-  records-cost  initialises each machine of a list with `test-acpi --initialize`, keeps those whose loops ask
-         the records anything (`aml run predecoding` counts a statement run or handed back), and counts the
-         instructions each executes with records and with `--predecoding off`, under callgrind, from the harness
-         `xmake build test-acpi-cost` builds without sanitizers; it prints one line per machine and the totals,
-         and fails when a machine costs more with records than without by more than RECORDS_TOLERANCE percent
-         (0.5), when the two runs of a machine print different lines but `aml run predecoding`, or when no
-         machine of the list asks the records anything. It needs valgrind (`apt install valgrind`), or the one
-         VALGRIND names
+  records-cost  initialises each machine of a list with `test-acpi-cost --initialize`, the harness `xmake build
+         test-acpi-cost` builds without sanitizers, keeps those whose loops ask the records anything (`aml run
+         predecoding` counts a statement run or handed back), and counts the instructions each executes with records
+         and with `--predecoding off`, under callgrind; it prints one line per machine and the totals. A machine fails
+         it when it costs more with records than without by more than RECORDS_TOLERANCE percent (0.5), when its two
+         runs print different lines but `aml run predecoding`, when the harness prints no count of the records on it
+         or exits other than 0 under callgrind, or when callgrind counts nothing; so does a list on which the harness
+         prints no count, or where no machine asks the records anything. It needs valgrind (`apt install valgrind`),
+         or the one VALGRIND names; quick is no list for it, none of its machines asking the records anything
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -99,7 +100,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          stay in build/acpi-corpus/ring0/. BOOT_SECONDS (300) bounds each boot
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
-missing, 2 on a usage error.
+missing, 2 on a usage error. records-cost also exits 1 when valgrind is missing or xmake cannot build its
+harness, and 2 when RECORDS_TOLERANCE is no decimal number.
 USAGE
 }
 
@@ -462,49 +464,81 @@ callgrind_total() {
     [[ -s "$1" ]] && grep -m1 '^summary:' "$1" | cut -d' ' -f2
 }
 
-# Counts, under callgrind, the instructions `test-acpi --initialize` executes on each machine of the list $1 whose
+# Prints the last lines of each file named that exists, as remarks.
+records_cost_tail() {
+    local file
+    for file in "$@"; do
+        [[ -s "$file" ]] && tail -n 3 "$file" | sed "s|^|    # $(basename "$file"): |"
+    done
+    return 0
+}
+
+# Prints the percentage by which $1 passes $2, to four decimals.
+records_cost_percent() {
+    awk -v on="$1" -v off="$2" 'BEGIN { printf "%+.4f%%", 100 * (on - off) / off }'
+}
+
+# Counts, under callgrind, the instructions `test-acpi-cost --initialize` executes on each machine of the list $1 whose
 # loops ask the records anything, with records and without, and fails when a machine costs more with them than
 # RECORDS_TOLERANCE percent above without, when its two runs differ, when the harness or callgrind fails on it, or
-# when no machine asks the records anything (specification §3.6, §8.4).
+# when no machine is compared (specification §3.6, §8.4).
 records_cost_check() {
     local valgrind="${VALGRIND:-valgrind}" tolerance="${RECORDS_TOLERANCE:-0.5}" harness="$ROOT/build/acpi-cost/test-acpi-cost"
-    local number=0 measured=0 above=0 differ=0 failed=0 total_on=0 total_off=0 subject on off verdict work
+    local number=0 line=0 printed=0 measured=0 above=0 differ=0 failed=0 total_on=0 total_off=0
+    local subject on off on_status off_status verdict
+    if [[ ! "$tolerance" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "records-cost: RECORDS_TOLERANCE=$tolerance is no decimal number of percent" >&2
+        return 2
+    fi
     if ! command -v "$valgrind" >/dev/null 2>&1; then
         echo "records-cost: no valgrind ($valgrind): install it, or name it in VALGRIND" >&2
         return 1
     fi
-    (cd "$ROOT" && xmake build -q test-acpi-cost)
-    if [[ ! -x "$harness" ]]; then
-        echo "records-cost: xmake built no $harness" >&2
+    if ! (cd "$ROOT" && xmake build -q test-acpi-cost) || [[ ! -x "$harness" ]]; then
+        echo "records-cost: xmake could not build test-acpi-cost: run xmake build test-acpi-cost to see why" >&2
         return 1
     fi
-    work="$(mktemp -d)"
+    records_cost_work="$(mktemp -d)"
+    trap 'rm -rf "$records_cost_work"' EXIT
+    local work="$records_cost_work"
     while IFS= read -r subject; do
         number=$((number + 1))
         "$harness" --initialize "$LINUXHW/$subject.bin" "$PRESETS" >"$work/probe" 2>&1 || true
         if ! grep -q '^aml run predecoding ' "$work/probe"; then
-            echo "not ok - $subject: the harness printed no count of the records"
+            line=$((line + 1))
+            echo "not ok $line $subject: the harness printed no count of the records"
             failed=$((failed + 1))
             continue
         fi
+        printed=$((printed + 1))
         [[ "$(records_asked "$work/probe")" -gt 0 ]] || continue
         measured=$((measured + 1))
-        rm -f "$work/on.callgrind" "$work/off.callgrind"
+        line=$((line + 1))
+        rm -f "$work/on.callgrind" "$work/off.callgrind" "$work/on.log" "$work/off.log"
+        on_status=0
+        off_status=0
         "$valgrind" --tool=callgrind --log-file="$work/on.log" --callgrind-out-file="$work/on.callgrind" \
-            "$harness" --initialize "$LINUXHW/$subject.bin" "$PRESETS" >"$work/on" 2>&1 || true
+            "$harness" --initialize "$LINUXHW/$subject.bin" "$PRESETS" >"$work/on" 2>&1 || on_status=$?
         "$valgrind" --tool=callgrind --log-file="$work/off.log" --callgrind-out-file="$work/off.callgrind" \
-            "$harness" --predecoding off --initialize "$LINUXHW/$subject.bin" "$PRESETS" >"$work/off" 2>&1 || true
+            "$harness" --predecoding off --initialize "$LINUXHW/$subject.bin" "$PRESETS" >"$work/off" 2>&1 ||
+            off_status=$?
         on="$(callgrind_total "$work/on.callgrind" || true)"
         off="$(callgrind_total "$work/off.callgrind" || true)"
         if [[ -z "$on" || -z "$off" ]]; then
-            echo "not ok $measured $subject: callgrind counted nothing"
-            sed 's/^/    # /' "$work/on.log" "$work/off.log" | tail -5
+            echo "not ok $line $subject: callgrind counted nothing"
+            records_cost_tail "$work/on.log" "$work/off.log" "$work/on"
+            failed=$((failed + 1))
+            continue
+        fi
+        if [[ "$on_status" -ne 0 || "$off_status" -ne 0 ]]; then
+            echo "not ok $line $subject: the harness exited $on_status with records and $off_status without, under callgrind"
+            records_cost_tail "$work/on" "$work/off"
             failed=$((failed + 1))
             continue
         fi
         if ! diff -q <(grep -v '^aml run predecoding ' "$work/on") <(grep -v '^aml run predecoding ' "$work/off") \
             >/dev/null; then
-            echo "not ok $measured $subject: the runs with records and without print different lines"
+            echo "not ok $line $subject: the runs with records and without print different lines"
             diff <(grep -v '^aml run predecoding ' "$work/off") <(grep -v '^aml run predecoding ' "$work/on") |
                 head -5 | sed 's/^/    # /' || true
             differ=$((differ + 1))
@@ -517,16 +551,20 @@ records_cost_check() {
             verdict="not ok"
             above=$((above + 1))
         fi
-        echo "$verdict $measured $subject: on=$on off=$off on-off=$((on - off))" \
-            "($(awk -v on="$on" -v off="$off" 'BEGIN { printf "%+.3f%%", 100 * (on - off) / off }'))"
+        echo "$verdict $line $subject: on=$on off=$off on-off=$((on - off)) ($(records_cost_percent "$on" "$off"))"
     done < <(reports "$1")
-    rm -rf "$work"
+    if [[ "$printed" -eq 0 ]]; then
+        echo "records-cost: the harness printed no count of the records on any of the $number machines of the list:" \
+            "nothing compared" >&2
+        return 1
+    fi
     if [[ "$measured" -eq 0 ]]; then
         echo "records-cost: no machine of the $number of the list asks the records anything: nothing compared" >&2
         return 1
     fi
-    echo "# records-cost: $measured of $number machines ask the records; on=$total_on off=$total_off" \
-        "($(awk -v on="$total_on" -v off="$total_off" 'BEGIN { if (off > 0) printf "%+.4f%%", 100 * (on - off) / off }'));" \
+    local share=""
+    [[ "$total_off" -gt 0 ]] && share=" ($(records_cost_percent "$total_on" "$total_off"))"
+    echo "# records-cost: $measured of $number machines ask the records; on=$total_on off=$total_off$share;" \
         "above +$tolerance%: $above; runs that differ: $differ; failed: $failed"
     [[ "$above" -eq 0 && "$differ" -eq 0 && "$failed" -eq 0 ]]
 }
@@ -911,7 +949,11 @@ case "${1:-}" in
     load) known_list "${2:-corpus}"; load_check "${2:-corpus}" ;;
     differential) known_list "${2:-corpus}"; differential_check "${2:-corpus}" "${3:-0}" ;;
     predecoding) known_list "${2:-corpus}"; predecoding_check "${2:-corpus}" ;;
-    records-cost) known_list "${2:-corpus}"; records_cost_check "${2:-corpus}" ;;
+    records-cost)
+        case "${2:-corpus}" in
+            corpus | full) records_cost_check "${2:-corpus}" ;;
+            *) usage >&2; exit 2 ;;
+        esac ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
     module) shift; modules "$@" ;;
