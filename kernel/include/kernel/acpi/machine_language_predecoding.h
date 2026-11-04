@@ -154,8 +154,12 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t flushes;           /**< Times the cache was emptied whole. */
     uint32_t records_peak;      /**< Most records held at once. */
     uint32_t fused_comparisons; /**< LNot and a comparison decoded as one operator (§7.2, O7). */
-    uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
-                                                                                                 per hash slot. */
+    union {
+        uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
+                                                                                                     per hash slot. */
+        uint32_t slot_words[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS /
+                            2u]; /**< The same slots, two to a word, as emptying writes them. */
+    };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t
         records[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORDS]; /**< The records. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t

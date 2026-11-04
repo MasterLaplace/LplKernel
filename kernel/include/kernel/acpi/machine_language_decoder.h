@@ -537,6 +537,16 @@ advanced_configuration_and_power_interface_machine_language_read_constant(const 
                                                                           uint64_t *out_integer, uint32_t *out_after);
 
 /**
+ * @brief An integer masked to an integer width, as the interpreter's loop masks what it reads.
+ *
+ * @param integer_bits The width: 32, or 64 for any other value.
+ * @param integer      The integer.
+ * @return Its low 32 bits under a width of 32; the integer whole otherwise.
+ */
+static inline uint64_t advanced_configuration_and_power_interface_machine_language_mask_to_width(uint8_t integer_bits,
+                                                                                                 uint64_t integer);
+
+/**
  * @brief Reads a NameString: `\` or any number of `^`, then NullName, one NameSeg, a dual path of
  *        two, or a multi path of 1 to 255.
  *

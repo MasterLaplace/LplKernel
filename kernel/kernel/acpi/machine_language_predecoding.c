@@ -49,23 +49,13 @@ static uint32_t machine_language_record_slot(uint16_t table, uint32_t pc)
  */
 static void machine_language_records_empty(MachineLanguagePredecoding_t *cache)
 {
-    uint32_t *slots = (uint32_t *) cache->slots;
-
-    for (uint32_t word = 0u; word < sizeof(cache->slots) / sizeof(uint32_t); ++word)
-        slots[word] = 0u;
+    for (uint32_t word = 0u; word < sizeof(cache->slot_words) / sizeof(cache->slot_words[0]); ++word)
+        cache->slot_words[word] = 0u;
     cache->record_count = 0u;
     cache->node_count = 0u;
     cache->constant_count = 0u;
     cache->frozen_serial = 0u;
     cache->frozen_start = 0u;
-}
-
-/**
- * @brief Masks a constant to the load's integer width, as the interpreter's loop masks one it reads.
- */
-static uint64_t machine_language_record_mask(uint8_t integer_bits, uint64_t integer)
-{
-    return (integer_bits == 32u) ? (integer & 0xFFFFFFFFull) : integer;
 }
 
 /**
@@ -133,7 +123,8 @@ static bool machine_language_record_leaf(MachineLanguageRecordBuilder_t *builder
         advanced_configuration_and_power_interface_machine_language_read_constant(builder->code, opcode, after, limit,
                                                                                   &integer, pc) != MACHINE_LANGUAGE_OK)
         return false;
-    cache->constants[cache->constant_count] = machine_language_record_mask(builder->integer_bits, integer);
+    cache->constants[cache->constant_count] =
+        advanced_configuration_and_power_interface_machine_language_mask_to_width(builder->integer_bits, integer);
     out_operand->kind = MACHINE_LANGUAGE_OPERAND(CONSTANT);
     out_operand->index = (uint16_t) cache->constant_count++;
     return true;

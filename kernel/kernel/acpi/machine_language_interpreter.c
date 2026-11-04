@@ -161,7 +161,7 @@ static uint8_t machine_language_bits(const MachineLanguageLoad_t *load)
  */
 static uint64_t machine_language_mask(const MachineLanguageLoad_t *load, uint64_t integer)
 {
-    return (load->integer_bits == 32u) ? (integer & 0xFFFFFFFFull) : integer;
+    return advanced_configuration_and_power_interface_machine_language_mask_to_width(load->integer_bits, integer);
 }
 
 /**
@@ -4165,14 +4165,15 @@ static bool machine_language_record_operand(const MachineLanguageLoad_t *load, c
 {
     const MachineLanguageValue_t *slot = NULL;
 
-    switch (operand->kind)
+    switch ((AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperandKind_t) operand->kind)
     {
     case MACHINE_LANGUAGE_RECORD_OPERAND(CONSTANT):
         *out_integer = load->predecoding.constants[operand->index];
         return true;
     case MACHINE_LANGUAGE_RECORD_OPERAND(RESULT): *out_integer = results[operand->slot]; return true;
     case MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL): slot = &frame->locals[operand->slot]; break;
-    default: slot = &frame->arguments[operand->slot]; break;
+    case MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT): slot = &frame->arguments[operand->slot]; break;
+    case MACHINE_LANGUAGE_RECORD_OPERAND(NONE): return false;
     }
     if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
         return false;

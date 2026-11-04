@@ -20,6 +20,12 @@ advanced_configuration_and_power_interface_machine_language_operand_kind(
                                                                              0xFu);
 }
 
+static inline uint64_t advanced_configuration_and_power_interface_machine_language_mask_to_width(uint8_t integer_bits,
+                                                                                                 uint64_t integer)
+{
+    return (integer_bits == 32u) ? (integer & 0xFFFFFFFFull) : integer;
+}
+
 static inline bool advanced_configuration_and_power_interface_machine_language_starts_segment(uint8_t byte)
 {
     return (byte >= 'A' && byte <= 'Z') || byte == '_';
