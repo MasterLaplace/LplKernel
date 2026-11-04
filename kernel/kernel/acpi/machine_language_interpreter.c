@@ -2002,7 +2002,8 @@ static MachineLanguageStatus_t machine_language_wait_for_attach(MachineLanguageL
  *        a SimpleName; a target position names the object; anywhere else the object gives its value.
  *        The SimpleName of a CondRefOf that names nothing, or only an External, gives a missing target.
  *        A field unit attaches its PCI_Config regions first: when that needs a method, the name waits
- *        for its internal frame and runs again after it.
+ *        for its internal frame and runs again after it. Kept data is built here, on the node already
+ *        found, not through machine_language_reach, whose second lookup of the node every name term would pay.
  */
 static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t *load, uint32_t kind)
 {
