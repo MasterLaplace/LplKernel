@@ -293,8 +293,9 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            load->services.released_at_end, load->services.held_peak,
            (unsigned long long) load->services.time_requested_peak, load->services.signals,
            load->services.notifications, load->services.notifications_dropped, load->services.notification_peak);
-    printf("aml run tables loaded=%u duplicates=%u missing=%u bytes_copied=%u\n", load->tables_loaded,
-           load->load_duplicates, load->load_tables_missing, load->table_bytes_copied);
+    printf("aml run tables loaded=%u duplicates=%u missing=%u bytes_copied=%u data_built_directly=%u\n",
+           load->tables_loaded, load->load_duplicates, load->load_tables_missing, load->table_bytes_copied,
+           load->data_built_directly);
     printf("aml run pci attachments=%u internal_evaluations=%u internal_failures=%u protected_writes=%u "
            "lost_accesses=%u ecam_accesses=%u registrations=%u registration_failures=%u\n",
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
