@@ -278,6 +278,15 @@ static const uint8_t shortcuts_too_large[] = {
 };
 
 /**
+ * @brief A table-level buffer field over a Buffer too large for an arena with no room left, then a name:
+ *        `Name (BIG_, Buffer (0x8000) {})`, `CreateByteField (BIG_, Zero, BYT_)` and `Name (LAST, One)`.
+ */
+static const uint8_t shortcuts_field_too_large[] = {
+    0x08u, 'B', 'I',   'G', '_', 0x11u, 0x04u, 0x0Bu, 0x00u, 0x80u, 0x8Cu, 'B', 'I',
+    'G',   '_', 0x00u, 'B', 'Y', 'T',   '_',   0x08u, 'L',   'A',   'S',   'T', 0x01u,
+};
+
+/**
  * @brief Prepends @p length bytes to @p backwards, or marks it overflowed when they do not fit.
  */
 static void shortcuts_prepend(ShortcutsBackwards_t *backwards, const uint8_t *bytes, uint32_t length)
@@ -911,6 +920,41 @@ KERNEL_TEST(a_kept_object_that_no_longer_fits_fails_the_evaluation_that_reaches_
                           result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER &&
                           result.payload == 5u,
                       "the namespace stays whole, and INT_ still reads 5");
+    shortcuts_close();
+}
+
+/**
+ * @brief A table-level buffer field over kept data that no longer fits stops its table, as an exhausted arena stops any
+ *        table (O20, §6.2): with no more than 16 KiB past the namespace's own pages, `Name (BIG_, Buffer (0x8000) {})`
+ *        is kept, `CreateByteField (BIG_, Zero, BYT_)` fails to build it with out_of_memory, BYT_ declared without an
+ *        object, and `Name (LAST, One)` after it is not declared; BIG_ stays kept.
+ */
+KERNEL_TEST(a_buffer_field_over_kept_data_that_no_longer_fits_stops_its_table)
+{
+    uint32_t arena = 0u;
+
+    if (!shortcuts_open(test, false, MADE_UP_MAX_ARENA_BYTES))
+        return;
+    arena = shortcuts_load.space.arena_bytes;
+    shortcuts_close();
+    if (!shortcuts_open(test, false, arena + SHORTCUTS_KEPT_ARENA_BYTES))
+        return;
+    shortcuts_declare(shortcuts_field_too_large, sizeof(shortcuts_field_too_large));
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *big = shortcuts_root_value("BIG_");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *field = shortcuts_root_value("BYT_");
+
+    kernel_test_check(test,
+                      shortcuts_load.load_errors == 1u &&
+                          shortcuts_load.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY,
+                      "the buffer field's out_of_memory is the load's one fault");
+    kernel_test_check(test, field != NULL && field->handle == 0u && shortcuts_root_value("LAST") == NULL,
+                      "the table stops there: BYT_ is declared without an object, and LAST is not declared");
+    kernel_test_check(test,
+                      shortcuts_load.data_kept == 1u && shortcuts_load.data_materialized == 0u && big != NULL &&
+                          big->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_KEPT_DATA,
+                      "BIG_ stays kept, never built");
     shortcuts_close();
 }
 
