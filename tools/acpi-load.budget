@@ -1,11 +1,11 @@
 # Window W1 of the ACPI specification (§7.4): the load of q35's boot tables on a release server kernel
 # (SMOKE_TESTS=0 ./build.sh --server), which declares their names and decodes no method body (§3.6). Checked by
 # tools/instructions.sh --budget tools/acpi-load.budget kernel/lpl.kernel; a change that moves the load records the
-# new counts. The acpi.aml record of the boot this window counts holds 252 declarations: 2,437 instructions
+# new counts. The acpi.aml record of the boot this window counts holds 252 declarations: 2,436 instructions
 # each, against the 300 of §7.4 (#584).
 inside=advanced_configuration_and_power_interface_machine_language_load_directory
 times=1
 machine=q35
-instructions=614212
-accesses=305808
+instructions=613878
+accesses=305907
 tolerance=1
