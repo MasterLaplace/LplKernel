@@ -49,6 +49,8 @@
     4096u /**< Elements of a VarPackage (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BUFFER_FIELD_READS_AS_BUFFER                       \
     0x01u /**< Value flag of a buffer field CreateField made: it reads as a Buffer at any length (§5.2). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_KEPT_DATA_32_BIT_INTEGERS                          \
+    0x01u /**< Value flag of kept data: its integers are 32 bits, the width its table was declared with. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_VISITED                                     \
     0x40u /**< Header flag the walk that looks for a reference cycle sets on a Package it met, and clears after. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OBJECT_SIZE_CLASSES                                \
@@ -104,6 +106,17 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageValueKind {
                                                                                                object, which it holds
                                                                                                a reference on, payload
                                                                                                the byte. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_KEPT_DATA = 0x89,      /**< A Name's Package,
+                                                                                               VarPackage or Buffer kept
+                                                                                               in its table until a name
+                                                                                               resolution reaches it
+                                                                                               (O20): auxiliary is its
+                                                                                               table, counted from 1,
+                                                                                               payload the offset of its
+                                                                                               opcode, handle 0, since it
+                                                                                               holds no object; its names
+                                                                                               are read in its node's
+                                                                                               parent. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageValueKind_t;
 
 /**
@@ -472,6 +485,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageSource {
  * @param source       Where the object is read from.
  * @param offset       Where it starts.
  * @param limit        The first offset it may not reach.
+ * @param counts       Whether the packages it pads or cuts are counted in @p heap: false when it builds a data object
+ *                     the load kept, and counted, at load (O20).
  * @param out_value    Receives the value, Uninitialized when the object needs the interpreter.
  * @param out_constant Receives whether it needed none.
  * @param out_after    Receives the offset past the object when it needed none, @p offset otherwise.
@@ -485,7 +500,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t *source, uint32_t offset, uint32_t limit,
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value, bool *out_constant, uint32_t *out_after);
+    bool counts, AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value, bool *out_constant,
+    uint32_t *out_after);
 
 /**
  * @brief Reads an integer that needs no interpreter: an integer constant, or a name whose node

@@ -85,7 +85,8 @@ extern bool made_up_load_on(KernelTest_t *test, AdvancedConfigurationAndPowerInt
                             const uint8_t *aml, uint32_t length);
 
 /**
- * @brief The node at the root named @p name.
+ * @brief The node at the root named @p name, its data object built first when its Name kept it in its table (O20),
+ *        as a name resolution reaching it builds it.
  *
  * @param load The load.
  * @param name Four characters.

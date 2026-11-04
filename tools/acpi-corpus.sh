@@ -63,10 +63,11 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
   differential  loads each machine of a list twice, with the load's shortcuts and with --general-load,
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
          `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
-         namespace, the faults, the counts and the initialisation; with <mutants>, also that many copies of each
-         machine whose DSDT and SSDTs have bytes changed at random (`--mutate`), each seeded by its number. A load
-         that fails the same way both ways agrees, and is listed with the first line the harness wrote to stderr;
-         a run where every load fails compares nothing, and fails
+         namespace, the faults, the counts and the initialisation, the objects allocated and freed apart, which
+         data a Name keeps in its table until it is read moves by construction; with <mutants>, also that many
+         copies of each machine whose DSDT and SSDTs have bytes changed at random (`--mutate`), each seeded by its
+         number. A load that fails the same way both ways agrees, and is listed with the first line the harness
+         wrote to stderr; a run where every load fails compares nothing, and fails
   uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
          `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
@@ -339,7 +340,8 @@ load_check() {
 }
 
 # Loads each machine of the list $1 with the load's shortcuts and without (specification §3.6), and compares what
-# the namespace and the initialisation views print each way, what the harness writes to stderr, a sanitizer's report
+# the namespace and the initialisation views print each way, the objects the heap allocated and freed apart, which the
+# data a Name keeps in its table (O20) moves by construction, what the harness writes to stderr, a sanitizer's report
 # included, its process numbers and addresses apart, and how it exits; with $2 mutants, also that many copies of each
 # machine whose DSDT and SSDTs have bytes changed at random, seeded by the copy's number. A load that fails the same way
 # both ways agrees, and is listed with the first line the harness wrote to stderr; a run where every load fails
@@ -367,6 +369,7 @@ differential_check() {
                 "$HARNESS" --general-load "${mutation[@]}" "${arguments[@]}" >"$general" 2>"$errors" ||
                     exit_general=$?
                 sed -i -E 's/==[0-9]+==/==/g; s/0x[0-9a-f]+/0x/g' "$errors" "$shortcut_errors"
+                sed -i -E 's/ objects=[0-9]+ objects_freed=[0-9]+$//' "$shortcut" "$general"
                 if [[ "$exit_shortcut" -ne "$exit_general" ]]; then
                     differences+="--$view exits $exit_general without the shortcuts, $exit_shortcut with them"$'\n'
                 elif [[ "$exit_general" -ne 0 && -z "$stopped" ]]; then

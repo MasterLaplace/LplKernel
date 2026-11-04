@@ -3,12 +3,12 @@
 # under a revision-1 DSDT; on a debug server kernel (./build.sh --server), the test alone selected so that no other
 # test changes the page allocator it starts from. Checked by
 # tools/instructions.sh --budget tools/acpi-microbenchmark.debug.budget kernel/lpl.kernel; a change that moves the
-# interpreter's loop records the new counts. The two evaluations alone count 4,154,242 instructions, 2,073,617 under
+# interpreter's loop records the new counts. The two evaluations alone count 4,146,483 instructions, 2,069,793 under
 # revision 2 (the same command with --inside advanced_configuration_and_power_interface_machine_language_evaluate
-# --times 1, then 2): 2,073 per turn, against the 200 of §7.4 (#584).
+# --times 1, then 2): 2,069 per turn, against the 200 of §7.4 (#584).
 inside=kernel_test_body_the_window_w4_loop_of_a_thousand_turns
 times=1
 append=lpl.test=advanced_configuration_and_power_interface_microbenchmarks.the_window_w4_loop_of_a_thousand_turns
-instructions=5697428
-accesses=2578974
+instructions=5689882
+accesses=2617226
 tolerance=1

@@ -391,6 +391,8 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("blocks_peak", load->blocks_peak);
     kernel_telemetry_write_unsigned("objects", load->heap.objects);
     kernel_telemetry_write_unsigned("values_deferred", load->values_deferred);
+    kernel_telemetry_write_unsigned("data_kept", load->data_kept);
+    kernel_telemetry_write_unsigned("data_materialized", load->data_materialized);
     kernel_telemetry_write_unsigned("table_level_runs", load->evaluation.runs);
     kernel_telemetry_write_unsigned("table_level_failures", load->evaluation.failures);
     kernel_telemetry_write_unsigned("declared_not_run", load->declared_not_run);

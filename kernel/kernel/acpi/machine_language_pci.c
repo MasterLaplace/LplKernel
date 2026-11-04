@@ -52,6 +52,7 @@ typedef enum MachineLanguageFound {
     MACHINE_LANGUAGE_FOUND_NOTHING = 0, /**< No such object, or one the attach does not read. */
     MACHINE_LANGUAGE_FOUND_VALUE = 1,   /**< A value, data or what a method returned. */
     MACHINE_LANGUAGE_FOUND_METHOD = 2,  /**< A method, whose result the attach waits for. */
+    MACHINE_LANGUAGE_FOUND_FAULT = 3,   /**< Data its Name kept in its table (O20), which the heap could not hold. */
 } MachineLanguageFound_t;
 
 /**
@@ -176,14 +177,16 @@ static uint32_t machine_language_pci_step_name(uint8_t attach)
 
 /**
  * @brief Reads the object the region's step names: @p result when a method gave it, else the child of
- *        attach_node, a value at once or a method to evaluate without arguments. A device the walk
- *        down to the region reaches must be a Device; anything else, an External or a method that
- *        takes arguments is nothing.
+ *        attach_node, a value at once, built first when its Name kept it in its table (O20), or a method to
+ *        evaluate without arguments. A device the walk down to the region reaches must be a Device; anything
+ *        else, an External or a method that takes arguments is nothing. A kept object the heap cannot hold is a
+ *        fault, whose status @p out_status receives.
  */
 static MachineLanguageFound_t machine_language_pci_read_step(MachineLanguageLoad_t *load,
                                                              const MachineLanguageRegion_t *region,
                                                              const MachineLanguageValue_t *result,
-                                                             MachineLanguageValue_t *out_value, uint32_t *out_method)
+                                                             MachineLanguageValue_t *out_value, uint32_t *out_method,
+                                                             MachineLanguageStatus_t *out_status)
 {
     const MachineLanguageNode_t *at = machine_language_pci_node(load, region->attach_node);
     uint32_t child = 0u;
@@ -209,6 +212,9 @@ static MachineLanguageFound_t machine_language_pci_read_step(MachineLanguageLoad
         *out_method = child;
         return MACHINE_LANGUAGE_FOUND_METHOD;
     }
+    *out_status = advanced_configuration_and_power_interface_machine_language_materialize(load, child);
+    if (*out_status != MACHINE_LANGUAGE_OK)
+        return MACHINE_LANGUAGE_FOUND_FAULT;
     *out_value = node->value;
     return MACHINE_LANGUAGE_FOUND_VALUE;
 }
@@ -509,11 +515,13 @@ advanced_configuration_and_power_interface_machine_language_peripheral_component
     while (region->attach != MACHINE_LANGUAGE_ATTACH_DONE)
     {
         MachineLanguageValue_t value = {0};
-        const MachineLanguageFound_t found = machine_language_pci_read_step(load, region, result, &value, out_method);
+        MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+        const MachineLanguageFound_t found =
+            machine_language_pci_read_step(load, region, result, &value, out_method, &status);
 
         result = NULL;
-        if (found == MACHINE_LANGUAGE_FOUND_METHOD)
-            return MACHINE_LANGUAGE_OK;
+        if (found == MACHINE_LANGUAGE_FOUND_METHOD || found == MACHINE_LANGUAGE_FOUND_FAULT)
+            return status;
         machine_language_pci_advance(load, region_node, region,
                                      (found == MACHINE_LANGUAGE_FOUND_VALUE) ? &value : NULL);
     }
