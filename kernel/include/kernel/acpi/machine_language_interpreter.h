@@ -129,6 +129,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
                                                                                                       open. */
     uint32_t frame_count;            /**< Frames in use. */
     uint32_t value_count;            /**< Values in use. */
+    uint32_t value_floor;            /**< The running frame's value_base: the values below it are its callers'. */
     uint32_t operator_count;         /**< Operators in use. */
     uint32_t block_count;            /**< Blocks in use. */
     uint32_t iterations;             /**< Back-edges the current evaluation took: a table's code and the methods it
