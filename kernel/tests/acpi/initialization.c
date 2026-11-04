@@ -713,6 +713,57 @@ KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
 }
 
 /**
+ * @brief A _REG whose SyncLevel keeps it from running at a region's creation, refused with mutex_order, takes back
+ *        the two arguments it was given: the method that created the region still has the whole value stack, as it
+ *        has before the initialisation, when no _REG is called, which a VarPackage and its count fill (§5.3, §6.1).
+ */
+KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back)
+{
+    static const uint8_t mutex[] = {0x5Bu, 0x01u, 'M', 'T', 'X', 'A', 0x01u};
+    static const uint8_t traces[] = {0x70u, 0x01u, '\\', 'T', 'R', 'A', 'C'};
+    static const uint8_t creates[] = {0x5Bu, 0x23u, '\\', 'M', 'T', 'X', 'A',   0xFFu, 0xFFu, 0x5Bu,
+                                      0x80u, '^',   'D',  'Y', 'N', 'R', 0x02u, 0x00u, 0x0Au, 0x10u,
+                                      0x5Bu, 0x27u, '\\', 'M', 'T', 'X', 'A',   0xA4u};
+    static const uint8_t variable_package = 0x13u;
+    static const uint8_t one = 0x01u;
+    static MadeUpAml_t elements;
+    static MadeUpAml_t creator;
+    const uint32_t initialisers = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES - 1u;
+    const uint8_t count[] = {0x0Bu, (uint8_t) initialisers, (uint8_t) (initialisers >> 8u)};
+
+    initialization_begin();
+    made_up_aml_raw(&initialization_aml, mutex, sizeof(mutex));
+    made_up_aml_begin(&elements);
+    made_up_aml_raw(&elements, count, sizeof(count));
+    for (uint32_t element = 0u; element < initialisers; ++element)
+        made_up_aml_raw(&elements, &one, 1u);
+    made_up_aml_begin(&creator);
+    made_up_aml_raw(&creator, creates, sizeof(creates));
+    made_up_aml_construct(&creator, &variable_package, 1u, &elements);
+    made_up_aml_begin(&initialization_inner);
+    initialization_method(&initialization_inner, "_REG", 0x0Au, traces, sizeof(traces));
+    made_up_aml_method(&initialization_inner, "MKRG", 0x00u, &creator);
+    initialization_device(&initialization_aml, "RDEV", 0u, &initialization_inner);
+    if (!kernel_test_check(test, !elements.overflowed && !creator.overflowed, "the VarPackage fits") ||
+        !initialization_run(test, false))
+        return;
+    kernel_test_check(test,
+                      initialization_call("\\RDEV.MKRG") == INITIALIZATION_STATUS(OK) &&
+                          initialization_load.evaluation.values_peak ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES,
+                      "before the initialisation no _REG is called, and the VarPackage and its count fill the stack");
+    advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,
+                                                                    &initialization_counts, &initialization_idle);
+    kernel_test_check(test, initialization_call("\\RDEV.MKRG") == INITIALIZATION_STATUS(OK),
+                      "after it, the method whose region's _REG was refused still has the whole stack");
+    kernel_test_check(test,
+                      initialization_integer("TRAC") == 0u && initialization_load.regions.pci_registrations == 1u &&
+                          initialization_load.regions.pci_registration_failures == 1u,
+                      "_REG did not run: its call was refused, and counted as failed");
+    initialization_close(test);
+}
+
+/**
  * @brief A _REG that creates a PCI_Config region in its own scope is not called again for it, whether
  *        a region's creation or AML called it: the method that called it still succeeds, and the trace
  *        holds one _REG per call.
