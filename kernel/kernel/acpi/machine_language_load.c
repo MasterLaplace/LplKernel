@@ -1969,8 +1969,9 @@ static bool machine_language_region_operands(MachineLanguageWalk_t *walk, uint32
  * @brief Takes `OperationRegion (NameSeg, RegionSpace, offset, length)` at @p start, whose statement ends at @p limit,
  *        as the walk would: the name declared through use_name, then, when the declaration pass builds the region and
  *        its offset and length are integers that need no interpreter, the two read once and the object placed as
- *        machine_language_build_region places it. The general path takes any other region from its RegionSpace, and
- *        an object the arena has no room for stops the table as it does from the walk.
+ *        machine_language_build_region places it. The general path takes any other region from the first operand
+ *        whose outcome differs, its NameString when the name cannot be used and its RegionSpace otherwise; an object
+ *        the arena has no room for stops the table, and one the heap refuses otherwise is counted, as from the walk.
  */
 static MachineLanguageStatus_t machine_language_region_statement(MachineLanguageWalk_t *walk, uint32_t start,
                                                                  uint32_t limit)

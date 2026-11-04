@@ -257,23 +257,24 @@ adds too, as uACPI does; ACPICA scans bodies at load only to auto-serialise them
 cost more than the declarations, and the interpreter checks every bound as it runs a body: a fault fails the term that
 meets it, and the debug boot and the corpus find the others before.
 
-**Shortcuts and the general path.** The declaration pass decodes a Name's data object once: once it has built
-the object, it steps over it instead of decoding its terms again (O18). A shortcut is taken only where it ends as the
+**Shortcuts and the general path.** The declaration pass decodes a Name's data object once: once it has built the
+object, it steps over it instead of decoding its terms again (O18). A shortcut is taken only where it ends as the
 general path ends, with the same namespace, faults and counts of what it declared; its work (lookups, probes, the
-stacks' peaks) falls. A load whose `general_load` is set takes none, and the differential tests compare the two
-(§8.1). At a statement's place, the declaration pass takes a Name or a Method of one NameSeg, a Device, a ThermalZone, a
-Scope, a Field and an OperationRegion of one NameSeg through a decoder of its own (O19), which reads the operator, its
-PkgLength and its NameString and declares or resolves the name as the walk would. It takes a Name whose data object it
-has built, a Method whose body it records whole, and an OperationRegion whose object it builds from an offset and a
-length that need no interpreter; any other statement it gives back to the walk as the operator the walk would hold at
-that point, and the walk takes the rest: the content of its list, or the operand whose outcome differs. A Name of one
-NameSeg whose data object is a Package, a VarPackage or a Buffer that would build with no interpreter and no fault, its
-sizes and counts literal constants, is checked without being built, its padded and cut packages counted, and kept in its
-table (O20): the node takes the object's type, and the walk steps over it as O18 does. Any other data object, one a name
-sizes included, is built as before. A kept object is built by a builder of its own (C4), which decodes each element
-straight into its package and reads each byte again as the check read it, since AML can rewrite its table after the
-load: bytes that no longer read as kept data, and the kept objects of a load whose `general_load` is set, are built by
-the general data decoder, whose status a failure then gives.
+stacks' peaks) falls, but for the name of an OperationRegion's offset or length that holds no Integer, which the decoder
+resolves before it gives the region back and the walk resolves again. A load whose `general_load` is set takes none, and
+the differential tests compare the two (§8.1). At a statement's place, the declaration pass takes a Name or a Method of
+one NameSeg, a Device, a ThermalZone, a Scope, a Field and an OperationRegion of one NameSeg through a decoder of its
+own (O19), which reads the operator, its PkgLength and its NameString and declares or resolves the name as the walk
+would. It takes a Name whose data object it has built, a Method whose body it records whole, and an OperationRegion
+whose object it builds from an offset and a length that need no interpreter; any other statement it gives back to the
+walk as the operator the walk would hold at that point, and the walk takes the rest: the content of its list, or the
+operand whose outcome differs. A Name of one NameSeg whose data object is a Package, a VarPackage or a Buffer that would
+build with no interpreter and no fault, its sizes and counts literal constants, is checked without being built, its
+padded and cut packages counted, and kept in its table (O20): the node takes the object's type, and the walk steps over
+it as O18 does. Any other data object, one a name sizes included, is built as before. A kept object is built by a
+builder of its own (C4), which decodes each element straight into its package and reads each byte again as the check
+read it, since AML can rewrite its table after the load: bytes that no longer read as kept data, and the kept objects of
+a load whose `general_load` is set, are built by the general data decoder, whose status a failure then gives.
 
 **The loop**, in order of precedence at each step:
 
