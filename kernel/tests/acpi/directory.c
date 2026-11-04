@@ -51,6 +51,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_directory, KERNEL_T
     8u                                              /**< Where the first region of a write test's DSDT                 \
                                                          holds its address. */
 #define MADE_UP_FIRMWARE_SECOND_ADDRESS 34u         /**< Where the second holds it. */
+#define MADE_UP_FIRMWARE_KEPT_ELEMENT   9u          /**< Where the first element of KEPT's Package lies in its AML. */
+#define MADE_UP_FIRMWARE_KEPT_ADDRESS   20u         /**< Where the address of the region over it lies. */
 #define MADE_UP_FIRMWARE_ELSEWHERE      0x800u      /**< A byte of the page that no table holds. */
 #define MADE_UP_FIRMWARE_FAR_PAGE       0x00800000u /**< A page apart from the firmware's. */
 #define MADE_UP_FIRMWARE_UNALIGNED_DSDT                                                                                \
@@ -82,6 +84,18 @@ static const uint8_t made_up_firmware_self[] = {
     0x01u, 'O',   'T',   'H',   'R',   0x08u, 0x14u, 0x26u, 'S',   'E',   'L',   'F',   0x00u, 0x70u, 0x01u, 'O',
     'T',   'H',   'R',   0x70u, 0x00u, 0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u, 0xA0u, 0x0Cu,
     0x93u, 0x60u, 0x0Au, 0x02u, 0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
+};
+
+/**
+ * @brief A DSDT that keeps a Package in its table and rewrites it: `Name (PKG0, Package () {0x11, 0x22})`, kept unbuilt
+ *        (O20), BYT0, the byte of a SystemMemory region over that Package's first element, whose address the test
+ *        writes at MADE_UP_FIRMWARE_KEPT_ADDRESS, then KEPT: `BYT0 = 0x99; Return (DerefOf (PKG0 [0]))`.
+ */
+static const uint8_t made_up_firmware_kept[] = {
+    0x08u, 'P',   'K',   'G',   '0',   0x12u, 0x06u, 0x02u, 0x0Au, 0x11u, 0x0Au, 0x22u, 0x5Bu, 0x80u, 'T',   'R',
+    'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'T',   'R',   'E',
+    'G',   0x01u, 'B',   'Y',   'T',   '0',   0x08u, 0x14u, 0x16u, 'K',   'E',   'P',   'T',   0x00u, 0x70u, 0x0Au,
+    0x99u, 'B',   'Y',   'T',   '0',   0xA4u, 0x83u, 0x88u, 'P',   'K',   'G',   '0',   0x00u, 0x00u,
 };
 
 /**
@@ -1041,5 +1055,34 @@ KERNEL_TEST(a_write_to_a_table_load_table_found_is_counted)
                                                                          &result);
     kernel_test_check(test, made_up_firmware_load.table_count == tables + 1u, "LoadTable reads TSTA in place");
     kernel_test_check(test, made_up_firmware_load.regions.table_writes == 1u, "the write over TSTA is counted");
+    made_up_firmware_unload_writes(test);
+}
+
+/**
+ * @brief A Name's data the load keeps in its table is built from the bytes it was declared with before a write lands
+ *        on them (O20, §3.5, §5.3): KEPT writes 0x99 over the first element of PKG0's Package, kept unbuilt, through
+ *        the firmware's page, then reads that element: 0x11, the Package built before the write.
+ */
+KERNEL_TEST(kept_data_is_built_before_a_write_lands_on_its_table)
+{
+    const uint32_t places[] = {MADE_UP_FIRMWARE_KEPT_ADDRESS};
+    const uint32_t addresses[] = {
+        MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
+            MADE_UP_FIRMWARE_KEPT_ELEMENT,
+    };
+    const MadeUpWriteTable_t table = {
+        made_up_firmware_kept, sizeof(made_up_firmware_kept), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 1u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result = {0};
+
+    if (!made_up_firmware_load_writes(test, &table, true, true))
+        return;
+    kernel_test_check(test, made_up_firmware_load.data_kept == 1u && made_up_firmware_load.data_materialized == 0u,
+                      "the premise: the load keeps PKG0's Package in its table, unbuilt");
+    advanced_configuration_and_power_interface_machine_language_evaluate(&made_up_firmware_load, "\\KEPT", NULL, 0u,
+                                                                         &result);
+    kernel_test_check(test, made_up_firmware_load.regions.table_writes == 1u, "the write over PKG0's bytes is counted");
+    kernel_test_check(test, result.payload == 0x11u,
+                      "PKG0's first element is 0x11, the Package built from the bytes before the write");
+    kernel_test_measure(test, "first_element", (uint32_t) result.payload);
     made_up_firmware_unload_writes(test);
 }
