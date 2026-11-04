@@ -1998,6 +1998,38 @@ static bool machine_language_identifier_matches(const char *field, const uint8_t
     return true;
 }
 
+/**
+ * @brief Whether @p load can take the definition block at @p header: one is there, at least as long as its
+ *        header, and the registry of loaded tables has room for it.
+ */
+static bool machine_language_accepts_table(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                           const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
+{
+    return load->table_count != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
+           header != NULL && header->length >= sizeof(*header);
+}
+
+/**
+ * @brief Records the definition block at @p header, which the load accepts, as a table whose checksum holds
+ *        when @p checksum_valid says so, counted when it does not, then runs its declaration pass.
+ */
+static void machine_language_declare_accepted_table(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                                    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header,
+                                                    bool checksum_valid)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load->tables[load->table_count];
+
+    memset(table, 0, sizeof(*table));
+    table->header = header;
+    table->length = header->length;
+    table->checksum_valid = checksum_valid;
+    load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
+    load->bytes += header->length - (uint32_t) sizeof(*header);
+    if (memcmp(header->signature, "DSDT", sizeof(header->signature)) == 0 && load->integer_bits == 0u)
+        load->integer_bits = (header->revision < 2u) ? 32u : 64u;
+    machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE);
+}
+
 bool advanced_configuration_and_power_interface_machine_language_open(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes)
@@ -2014,21 +2046,10 @@ bool advanced_configuration_and_power_interface_machine_language_declare_table(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
 {
-    if (load->table_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES || header == NULL ||
-        header->length < sizeof(*header))
+    if (!machine_language_accepts_table(load, header))
         return false;
-
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load->tables[load->table_count];
-
-    memset(table, 0, sizeof(*table));
-    table->header = header;
-    table->length = header->length;
-    table->checksum_valid = advanced_configuration_and_power_interface_checksum_holds(header, header->length);
-    load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
-    load->bytes += header->length - (uint32_t) sizeof(*header);
-    if (memcmp(header->signature, "DSDT", sizeof(header->signature)) == 0 && load->integer_bits == 0u)
-        load->integer_bits = (header->revision < 2u) ? 32u : 64u;
-    machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE);
+    machine_language_declare_accepted_table(
+        load, header, advanced_configuration_and_power_interface_checksum_holds(header, header->length));
     return true;
 }
 
@@ -2053,13 +2074,18 @@ void advanced_configuration_and_power_interface_machine_language_declare_directo
 
     advanced_configuration_and_power_interface_machine_language_use_global_lock(
         load, fadt->hardware_reduced ? 0u : directory->firmware_control_physical_address, control_ports);
-    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
-        load, advanced_configuration_and_power_interface_find_in_directory(directory, "DSDT"));
+    const AdvancedConfigurationAndPowerInterfaceTable_t *dsdt =
+        advanced_configuration_and_power_interface_find_entry_in_directory(directory, "DSDT");
+
+    if (dsdt != NULL && machine_language_accepts_table(load, dsdt->header))
+        machine_language_declare_accepted_table(load, dsdt->header, dsdt->checksum_valid);
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
-        if (memcmp(directory->tables[index].signature, "SSDT", sizeof(directory->tables[index].signature)) == 0)
-            (void) advanced_configuration_and_power_interface_machine_language_declare_table(
-                load, directory->tables[index].header);
+        const AdvancedConfigurationAndPowerInterfaceTable_t *entry = &directory->tables[index];
+
+        if (memcmp(entry->signature, "SSDT", sizeof(entry->signature)) == 0 &&
+            machine_language_accepts_table(load, entry->header))
+            machine_language_declare_accepted_table(load, entry->header, entry->checksum_valid);
     }
     load->directory = directory;
 }

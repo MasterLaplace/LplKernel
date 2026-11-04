@@ -966,6 +966,7 @@ reads a table in kernel memory. The costs to cut are:
 | O14 | No `_STA` in subtrees without `_INI`, but step 8's: those of the processor objects with a `_CST` and of the devices above them, once by step 8's walk and once per round of the pass after it | `status_evaluations` |
 | O15 | No lock and no atomic in the interpreter (§3.7) | CI checks that the release objects of `kernel/kernel/acpi/` hold no `lock`-prefixed instruction (`objdump -d`); W1 on the release kernel |
 | O16 | Log calls compiled out below the build's level | CI checks that the release objects call no log function below the release level (`nm`); W1 on the release kernel |
+| O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 

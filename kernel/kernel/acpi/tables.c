@@ -1518,13 +1518,13 @@ const AdvancedConfigurationAndPowerInterfaceDirectory_t *advanced_configuration_
     return &acpi_directory;
 }
 
-const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_and_power_interface_find_in_directory(
+const AdvancedConfigurationAndPowerInterfaceTable_t *advanced_configuration_and_power_interface_find_entry_in_directory(
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, const char *signature)
 {
     if (directory == NULL || signature == NULL)
         return NULL;
 
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *checksum_fails = NULL;
+    const AdvancedConfigurationAndPowerInterfaceTable_t *checksum_fails = NULL;
 
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
@@ -1533,11 +1533,20 @@ const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_
         if (!acpi_signature_matches(table->signature, signature, 4u))
             continue;
         if (table->checksum_valid)
-            return table->header;
+            return table;
         if (checksum_fails == NULL)
-            checksum_fails = table->header;
+            checksum_fails = table;
     }
     return checksum_fails;
+}
+
+const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *advanced_configuration_and_power_interface_find_in_directory(
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, const char *signature)
+{
+    const AdvancedConfigurationAndPowerInterfaceTable_t *entry =
+        advanced_configuration_and_power_interface_find_entry_in_directory(directory, signature);
+
+    return (entry != NULL) ? entry->header : NULL;
 }
 
 const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *

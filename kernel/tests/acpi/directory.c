@@ -276,6 +276,34 @@ static uint16_t made_up_firmware_control_port(uint32_t index)
 }
 
 /**
+ * @brief Writes AML at the end of the table at @p offset, which grows by @p length bytes, then seals it;
+ *        with @p corrupt, its checksum is then made to fail.
+ */
+static void made_up_firmware_append_aml(const MadeUpFirmware_t *firmware, uint32_t offset, const uint8_t *aml,
+                                        uint32_t length, bool corrupt)
+{
+    AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
+        (AdvancedConfigurationAndPowerInterfaceSdtHeader_t *) (firmware->page + offset);
+
+    memcpy(firmware->page + offset + header->length, aml, length);
+    header->length += length;
+    made_up_firmware_seal_table(firmware, offset);
+    header->checksum ^= corrupt ? 0x01u : 0x00u;
+}
+
+/**
+ * @brief Whether @p load declared a child of the root named @p name.
+ */
+static bool made_up_firmware_declares(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                      const char *name)
+{
+    return advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+               &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+               advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)) !=
+           0u;
+}
+
+/**
  * @brief A root pointer of revision 2 that names an XSDT has the XSDT walked: its 64-bit entries,
  *        and X_DSDT for the DSDT.
  */
@@ -405,6 +433,33 @@ KERNEL_TEST(a_table_whose_checksum_holds_wins_over_one_that_fails)
     kernel_test_check(test, walked, "the directory is read");
     kernel_test_check(test, table != NULL && memcmp(table->oem_table_id, "EXTENDED", sizeof(table->oem_table_id)) == 0,
                       "the second TSTA, whose checksum holds, is the one given out");
+    made_up_firmware_release(test);
+}
+
+/**
+ * @brief Of two tables with one signature whose checksums both fail, the first is given out, its record with it.
+ */
+KERNEL_TEST(of_two_tables_whose_checksum_fails_the_first_is_given_out)
+{
+    MadeUpFirmware_t firmware;
+
+    made_up_firmware_open(&firmware);
+    made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
+    firmware.page[MADE_UP_FIRMWARE_BOTH_OFFSET +
+                  offsetof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t, oem_table_id)] ^= 0x01u;
+    memcpy(firmware.page + MADE_UP_FIRMWARE_EXTENDED_OFFSET, "TSTA", 4u);
+
+    const bool walked = made_up_firmware_read();
+    const AdvancedConfigurationAndPowerInterfaceTable_t *entry =
+        advanced_configuration_and_power_interface_find_entry_in_directory(&made_up_firmware_directory, "TSTA");
+
+    kernel_test_check(test, walked, "the directory is read");
+    kernel_test_check(test,
+                      entry != NULL && !entry->checksum_valid &&
+                          entry->physical_address == firmware.physical + MADE_UP_FIRMWARE_BOTH_OFFSET &&
+                          advanced_configuration_and_power_interface_find_in_directory(&made_up_firmware_directory,
+                                                                                       "TSTA") == entry->header,
+                      "the first TSTA, whose checksum fails as the second's does, is the one given out");
     made_up_firmware_release(test);
 }
 
@@ -554,6 +609,47 @@ KERNEL_TEST(a_load_takes_its_global_lock_from_the_facs_unless_the_platform_is_ha
         kernel_test_check(test, load.regions.global_lock_address == ((pass == 0u) ? (uint64_t) facs + 16u : 0u),
                           (pass == 0u) ? "the FACS's GlobalLock word is the load's global lock" :
                                          "a hardware-reduced platform gives the load no global lock");
+        advanced_configuration_and_power_interface_machine_language_close(&load);
+        made_up_firmware_release(test);
+    }
+}
+
+/**
+ * @brief A load of the directory declares a definition block whose checksum fails all the same, and
+ *        counts it once in checksum_bad_loaded (§5.1): the DSDT, then an SSDT, fail in turn, and a
+ *        firmware whose blocks all hold counts none.
+ */
+KERNEL_TEST(a_load_of_the_directory_counts_each_definition_block_whose_checksum_fails)
+{
+    static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+    static const uint8_t dsdt_aml[] = {0x08u, 'D', 'N', 'A', 'M', 0x01u};
+    static const uint8_t ssdt_aml[] = {0x08u, 'S', 'N', 'A', 'M', 0x01u};
+    static const char *const claims[] = {
+        "a DSDT whose checksum fails is declared and counted once",
+        "an SSDT whose checksum fails is declared and counted once",
+        "a firmware whose definition blocks all hold counts none",
+    };
+    MadeUpFirmware_t firmware;
+
+    for (uint32_t pass = 0u; pass < 3u; ++pass)
+    {
+        made_up_firmware_open(&firmware);
+        made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
+        made_up_firmware_append_aml(&firmware, MADE_UP_FIRMWARE_DSDT_64_OFFSET, dsdt_aml, sizeof(dsdt_aml), pass == 0u);
+        memcpy(firmware.page + MADE_UP_FIRMWARE_EXTENDED_OFFSET, "SSDT", 4u);
+        made_up_firmware_append_aml(&firmware, MADE_UP_FIRMWARE_EXTENDED_OFFSET, ssdt_aml, sizeof(ssdt_aml),
+                                    pass == 1u);
+        if (!kernel_test_check(test, made_up_firmware_read(), "the directory is read") ||
+            !kernel_test_check(test,
+                               advanced_configuration_and_power_interface_machine_language_open(
+                                   &load, &made_up_firmware_host.host, 1024u, 1024u * 1024u),
+                               "the namespace opens"))
+            return;
+        advanced_configuration_and_power_interface_machine_language_load_directory(&load, &made_up_firmware_directory);
+        kernel_test_check(test,
+                          load.table_count == 2u && load.checksum_bad_loaded == ((pass < 2u) ? 1u : 0u) &&
+                              made_up_firmware_declares(&load, "DNAM") && made_up_firmware_declares(&load, "SNAM"),
+                          claims[pass]);
         advanced_configuration_and_power_interface_machine_language_close(&load);
         made_up_firmware_release(test);
     }
