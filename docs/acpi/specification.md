@@ -1225,7 +1225,7 @@ folded. FNV-1a, 32 bits, offset `0x811C9DC5`, prime `0x01000193`, over little-en
 
 | Record | Folds, in order |
 |---|---|
-| `namespace` | a depth-first walk in declaration order; per node: depth `u8`, name `u32`, type `u8`, then Integer `u64`; String or Buffer `u32` length and bytes; Package `u32` count and each element the same way (a lazy name as its path bytes; kept data as the object it builds into, or, once AML has rewritten its table so that its bytes no longer read as data within it, as the `u32` `0xFFFFFFFF`, a count or a length no object has, and nothing after it); Method flags `u8` and body length `u32`; Region space `u8`, offset `u64`, length `u64`; field unit kind, bit offset `u32`, bit length `u32`, access, update `u8`; Processor id `u8`, block address `u32`, block length `u8` |
+| `namespace` | a depth-first walk in declaration order; per node: depth `u8`, name `u32`, type `u8`, then Integer `u64`; String or Buffer `u32` length and bytes; Package `u32` count and each element the same way (a lazy name as its path bytes; kept data as the object it builds into, or, once AML has rewritten its table so that its bytes no longer read as data within it or within the sizes of §6.1, as the `u32` `0xFFFFFFFF`, a count or a length no object has, and nothing after it); Method flags `u8` and body length `u32`; Region space `u8`, offset `u64`, length `u64`; field unit kind, bit offset `u32`, bit length `u32`, access, update `u8`; Processor id `u8`, block address `u32`, block length `u8` |
 | `evaluations` | per evaluated path in a fixed list: status `u16`, then the result as above |
 | `work` | opcodes executed per opcode (`u32` each, in descriptor order), lookups, probes, allocations, bytes decoded, map calls |
 

@@ -2207,8 +2207,9 @@ static uint32_t machine_language_fold_unreadable(uint32_t fold)
  *        or a Buffer's length and bytes, zeros past a Buffer's initialiser, a Package's count and each element it
  *        keeps, none past its count, a name as its path bytes. AML can rewrite its table after the load: bytes that
  *        no longer read as data within it, an object or a name cut by the end of the table or of its package, a byte
- *        that starts no data object, packages nested past the levels of §6.1, fold as machine_language_fold_unreadable
- *        folds them, and nothing past the table is read.
+ *        that starts no data object, packages nested past the levels of §6.1, a String or a Buffer past its bytes or a
+ *        VarPackage past its elements in §6.1, which machine_language_check_data refuses as the object would, fold as
+ *        machine_language_fold_unreadable folds them, and nothing past the table is read.
  */
 static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                            uint32_t fold,
@@ -2276,7 +2277,7 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
             pc = first;
             while (pc < end && bytes[pc] != 0x00u)
                 ++pc;
-            if (pc == end)
+            if (pc == end || pc - first > MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
                 return machine_language_fold_unreadable(before);
             if (folds)
             {
@@ -2292,6 +2293,8 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
             const uint32_t initialised = object_end - first;
             const uint32_t length = (count > initialised) ? count : initialised;
 
+            if (length > MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
+                return machine_language_fold_unreadable(before);
             if (folds)
             {
                 fold = machine_language_fold_unsigned(fold, length, 4u);
@@ -2300,7 +2303,8 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
             }
             pc = object_end;
         }
-        else if (depth == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES)
+        else if (depth == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES ||
+                 count > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS)
             return machine_language_fold_unreadable(before);
         else
         {
