@@ -80,6 +80,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t mapping_count;                                                                 /**< Entries in use. */
     uint32_t clock;                   /**< Ticks once per access, for the least recently used entry. */
     uint32_t field_reads;             /**< Field unit reads begun, a failed one included. */
+    uint32_t field_fast_path;         /**< Of those, the reads of a unit one datum of its access width holds whole,
+                                           read without assembling its bits (§7.2, O12). */
     uint32_t field_writes;            /**< Field unit writes begun, a failed one included. */
     uint32_t map_calls;               /**< Maps the cache asked the host for. */
     uint32_t mapping_cache_hits;      /**< Accesses the cache already mapped. */

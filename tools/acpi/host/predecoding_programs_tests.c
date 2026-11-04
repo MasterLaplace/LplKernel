@@ -12,11 +12,13 @@ KERNEL_TEST_SUITE(host_predecoding_programs, KERNEL_TEST_STAGE_INITIALIZATION);
 #define PROGRAMS_MAX_DEPTH      3u          /**< Constructs nested inside the method's outer While. */
 #define PROGRAMS_MAX_STATEMENTS 4u          /**< Statements one TermList holds at most. */
 #define PROGRAMS_DATA_LOCALS                                                                                           \
-    4u                           /**< Local0 to Local3 hold data; Local4 to Local7 count the turns of                  \
-                                      the While at each depth, which nothing else writes. */
-#define PROGRAMS_LOCAL0    0x60u /**< The byte of Local0. */
-#define PROGRAMS_ARGUMENT0 0x68u /**< The byte of Arg0. */
-#define PROGRAMS_NULL_NAME 0x00u /**< The byte of NullName. */
+    4u                                  /**< Local0 to Local3 hold data; Local4 to Local7 count the turns of           \
+                                             the While at each depth, which nothing else writes. */
+#define PROGRAMS_LOCAL0        0x60u    /**< The byte of Local0. */
+#define PROGRAMS_ARGUMENT0     0x68u    /**< The byte of Arg0. */
+#define PROGRAMS_NULL_NAME     0x00u    /**< The byte of NullName. */
+#define PROGRAMS_DWORD_ACCESS  0x03u    /**< FieldFlags DWordAcc, NoLock, Preserve. */
+#define PROGRAMS_FIELD_ADDRESS 0x10000u /**< Where the SystemMemory region of FLD0 lies. */
 
 /**
  * @brief What writes a method: the xorshift state, the depth of the construct being written and whether
@@ -49,19 +51,22 @@ static uint32_t programs_pick(ProgramsWriter_t *writer, uint32_t bound)
 static void programs_byte(MadeUpAml_t *aml, uint8_t byte) { made_up_aml_raw(aml, &byte, 1u); }
 
 /**
- * @brief Appends a leaf: a data local, Arg0, or a constant of every width, 0 and Ones included.
+ * @brief Appends a leaf: a data local, Arg0, a constant of every width, 0 and Ones included, the Integer NAMI,
+ *        or the field FLD0.
  */
 static void programs_leaf(ProgramsWriter_t *writer, MadeUpAml_t *aml)
 {
     static const uint64_t constants[] = {0u, 1u, 2u, 3u, 5u, 7u, 0x10u, 0xFFu, 0xFFFFFFFFu, 0x100000000ull, ~0ull};
-    const uint32_t choice = programs_pick(writer, 6u);
+    const uint32_t choice = programs_pick(writer, 8u);
 
     if (choice < PROGRAMS_DATA_LOCALS)
         programs_byte(aml, (uint8_t) (PROGRAMS_LOCAL0 + choice));
     else if (choice == PROGRAMS_DATA_LOCALS)
         programs_byte(aml, PROGRAMS_ARGUMENT0);
-    else
+    else if (choice == PROGRAMS_DATA_LOCALS + 1u)
         made_up_aml_integer(aml, constants[programs_pick(writer, sizeof(constants) / sizeof(constants[0]))]);
+    else
+        made_up_aml_name(aml, (choice == PROGRAMS_DATA_LOCALS + 2u) ? "NAMI" : "FLD0");
 }
 
 /**
@@ -273,11 +278,12 @@ static void programs_construct(ProgramsWriter_t *writer, MadeUpAml_t *aml, bool 
 /**
  * @brief Appends one statement: a store, a step or an operator into a data local or NullName, a construct, a While
  *        that runs as a tight loop, a Break or a Continue inside a While, one that hands records back: a String
- *        stored to a local, a call, a While whose turns all go to the loop, or an If that returns.
+ *        stored to a local, a call, a While whose turns all go to the loop, or an If that returns, or a data local
+ *        stored to the field FLD0.
  */
 static void programs_statement(ProgramsWriter_t *writer, MadeUpAml_t *aml)
 {
-    const uint32_t choice = programs_pick(writer, 16u);
+    const uint32_t choice = programs_pick(writer, 17u);
     const uint8_t local = (uint8_t) (PROGRAMS_LOCAL0 + programs_pick(writer, PROGRAMS_DATA_LOCALS));
 
     if (choice < 3u)
@@ -310,6 +316,12 @@ static void programs_statement(ProgramsWriter_t *writer, MadeUpAml_t *aml)
     }
     else if (choice == 11u)
         programs_tight_while(writer, aml);
+    else if (choice == 12u)
+    {
+        programs_byte(aml, 0x70u);
+        programs_byte(aml, local);
+        made_up_aml_name(aml, "FLD0");
+    }
     else if (choice == 13u)
         programs_call(writer, aml);
     else if (choice == 14u)
@@ -354,13 +366,15 @@ static void programs_write_helpers(void)
 }
 
 /**
- * @brief Writes GLBL and the methods it calls, then MAIN (Arg0): its data locals set to constants, then a While of a
- *        few turns whose body the writer draws, then the sum of the data locals and GLBL returned.
+ * @brief Writes GLBL and the methods it calls, NAMI, an Integer that holds 5, and FLD0, the first byte of a DWordAcc
+ *        field of a SystemMemory region, then MAIN (Arg0): its data locals set to leaves, then a While of a few turns
+ *        whose body the writer draws, then the sum of the data locals and GLBL returned.
  */
 static void programs_write(ProgramsWriter_t *writer)
 {
     static const uint8_t finish[] = {0xA4u, 0x72u, 0x72u, 0x72u, 0x60u, 0x61u, 0x00u, 0x72u, 0x62u,
                                      0x63u, 0x00u, 0x00u, 'G',   'L',   'B',   'L',   0x00u};
+    static const MadeUpFieldUnit_t field = {"FLD0", 8u};
     MadeUpAml_t *body = &programs_bodies[0];
 
     made_up_aml_begin(body);
@@ -376,6 +390,9 @@ static void programs_write(ProgramsWriter_t *writer)
     made_up_aml_raw(body, finish, sizeof(finish));
     made_up_aml_begin(&programs_method);
     programs_write_helpers();
+    made_up_aml_name_integer(&programs_method, "NAMI", 5u);
+    made_up_aml_region(&programs_method, "PREG", 0x00u, PROGRAMS_FIELD_ADDRESS, 4u);
+    made_up_aml_field(&programs_method, "PREG", PROGRAMS_DWORD_ACCESS, &field, 1u);
     made_up_aml_method(&programs_method, "MAIN", 0x01u, body);
 }
 
@@ -405,11 +422,12 @@ KERNEL_TEST(the_boot_line_decides_whether_loops_run_from_records)
 /**
  * @brief Methods written from a fixed seed, with While, If, Else, Break, Continue and Return nested in loops of a
  *        few turns, operators, comparisons and LNot over locals, Arg0 (its 32 high bits set but for the
- *        first) and constants of every width, calls, one into a loop of its own, statements that hand records
- *        back, While that run as tight loops, and While whose turns all go to the loop, leave what the loop
- *        leaves when their loops run from records: each runs with records off, then on, under both integer
- *        widths, and both leave the same fold. The control: records ran, and were handed back, While ran as
- *        tight loops, and loops were handed back whole, over the methods.
+ *        first), constants of every width, calls, one into a loop of its own, an Integer and a field read by name,
+ *        the field written as the loops turn, statements that hand records back, While that run as tight loops, and
+ * While whose turns all go to the loop, leave what the loop leaves when their loops run from records: each runs with
+ * records off, then on, under both integer widths, and both leave the same fold. The control: records ran, and were
+ * handed back, While ran as tight loops, loops were handed back whole, over the methods, and every name a record read
+ * found the node it checked.
  */
 KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
 {
@@ -436,7 +454,7 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
             !predecoding_run(test, programs_method.bytes, programs_method.length, revision, "\\MAIN",
                              program * 0x100000001ull, true, &on))
             return;
-        agree += (off.fold == on.fold && off.records_run == 0u) ? 1u : 0u;
+        agree += (off.fold == on.fold && off.records_run == 0u && on.stale_names == 0u) ? 1u : 0u;
         records_run += on.records_run;
         declined += on.declined;
         tight_turns += on.tight_turns;

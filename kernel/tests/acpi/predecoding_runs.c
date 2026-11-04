@@ -25,9 +25,31 @@ static uint32_t predecoding_fold_word(uint32_t fold, uint64_t word)
 }
 
 /**
+ * @brief Folds every access the simulated host logged: its kind, width, port or offset, value and address.
+ */
+static uint32_t predecoding_fold_accesses(uint32_t fold)
+{
+    const uint32_t logged =
+        (predecoding_runs_host.access_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES) ?
+            predecoding_runs_host.access_count :
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES;
+
+    fold = predecoding_fold_word(fold, predecoding_runs_host.access_count);
+    for (uint32_t index = 0u; index < logged; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &predecoding_runs_host.accesses[index];
+
+        fold = predecoding_fold_word(fold, ((uint64_t) access->kind << 48u) | ((uint64_t) access->width << 40u) |
+                                               ((uint64_t) access->port << 32u) | access->value);
+        fold = predecoding_fold_word(fold, access->address);
+    }
+    return fold;
+}
+
+/**
  * @brief Folds what an evaluation left: its status and result, everything the evaluations of the load
  *        counted, the namespace's lookups, probes and nodes, the heap's objects, the field accesses,
- *        and the namespace itself.
+ *        every access the host saw, and the namespace itself.
  */
 static uint32_t predecoding_fold(AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status,
                                  const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *result)
@@ -56,6 +78,7 @@ static uint32_t predecoding_fold(AdvancedConfigurationAndPowerInterfaceMachineLa
         predecoding_load.heap.objects,
         predecoding_load.heap.objects_freed,
         predecoding_load.regions.field_reads,
+        predecoding_load.regions.field_fast_path,
         predecoding_load.regions.field_writes,
         advanced_configuration_and_power_interface_machine_language_namespace_fold(&predecoding_load),
     };
@@ -65,7 +88,7 @@ static uint32_t predecoding_fold(AdvancedConfigurationAndPowerInterfaceMachineLa
         fold = predecoding_fold_word(fold, words[index]);
     for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT; ++index)
         fold = predecoding_fold_word(fold, evaluation->statuses[index]);
-    return fold;
+    return predecoding_fold_accesses(fold);
 }
 
 /**
@@ -79,11 +102,15 @@ static void predecoding_counts(PredecodingRun_t *run)
     run->declined = 0u;
     for (uint32_t reason = 0u; reason < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES; ++reason)
         run->declined += cache->declined[reason];
+    run->declined_names = cache->declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_NAME];
+    run->stale_names = cache->stale_names;
     run->flushes = cache->flushes;
     run->built = cache->built;
     run->tight_turns = cache->tight_turns;
     run->searches = cache->searches;
     run->loops = cache->handed_back_loops;
+    run->field_reads = predecoding_load.regions.field_reads;
+    run->field_fast_path = predecoding_load.regions.field_fast_path;
 }
 
 bool predecoding_open_empty(KernelTest_t *test, bool predecodes)
@@ -125,6 +152,12 @@ bool predecoding_open(KernelTest_t *test, uint8_t revision, const uint8_t *aml, 
         return false;
     predecoding_declare(predecoding_runs_table, "DSDT", revision, aml, length);
     return true;
+}
+
+void predecoding_poke(uint64_t address, const void *bytes, uint32_t length)
+{
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&predecoding_runs_host, address, bytes,
+                                                                          length);
 }
 
 void predecoding_close(void)

@@ -54,6 +54,8 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t Machi
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t MachineLanguageRecord_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t MachineLanguageRecordNode_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t MachineLanguageRecordOperand_t;
+typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t MachineLanguageRecordName_t;
+typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t MachineLanguageNamespace_t;
 
 /**
  * @brief Where a target value sends a result.
@@ -4172,6 +4174,7 @@ static bool machine_language_record_operand(const MachineLanguageLoad_t *load, c
     case MACHINE_LANGUAGE_RECORD_OPERAND(RESULT): *out_integer = results[operand->slot]; return true;
     case MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL): slot = &frame->locals[operand->slot]; break;
     case MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT): slot = &frame->arguments[operand->slot]; break;
+    case MACHINE_LANGUAGE_RECORD_OPERAND(NAME): slot = &load->predecoding.name_values[operand->slot]; break;
     case MACHINE_LANGUAGE_RECORD_OPERAND(NONE): return false;
     }
     if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
@@ -4234,7 +4237,7 @@ static MachineLanguageValue_t *machine_language_record_local_or_argument(Machine
 }
 
 /**
- * @brief The value a Store's record stores: a local or an argument that holds an Integer, whole and
+ * @brief The value a Store's record stores: a local, an argument or a name read that holds an Integer, whole and
  *        unmasked, as a Store copies a value (§5.2); otherwise the Integer its expression gives.
  *
  * @return false, @p out_reason saying why, when an operand holds no Integer or an operator would fail.
@@ -4246,9 +4249,12 @@ static bool machine_language_record_value(const MachineLanguageLoad_t *load, Mac
     uint64_t integer = 0u;
 
     if (record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL) ||
-        record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT))
+        record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT) ||
+        record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(NAME))
     {
-        const MachineLanguageValue_t *slot = machine_language_record_local_or_argument(frame, &record->source);
+        const MachineLanguageValue_t *slot = (record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(NAME)) ?
+                                                 &load->predecoding.name_values[record->source.slot] :
+                                                 machine_language_record_local_or_argument(frame, &record->source);
 
         *out_reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
         if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
@@ -4317,6 +4323,155 @@ static bool machine_language_record_statement(MachineLanguageLoad_t *load, Machi
     }
     frame->pc = record->after;
     return true;
+}
+
+/**
+ * @brief Whether a name a record reads names what the record reads as an Integer: an object that is no method and no
+ *        field unit and holds an Integer, or a field unit whose read gives an Integer and whose PCI_Config regions
+ *        wait for no attach.
+ */
+static bool machine_language_names_an_integer(const MachineLanguageLoad_t *load, uint32_t index)
+{
+    const MachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+
+    if (node->type == MACHINE_LANGUAGE_NODE(FIELD_UNIT))
+        return advanced_configuration_and_power_interface_machine_language_field_reads_integer(load, index) &&
+               advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_unattached_region(
+                   load, index) == 0u;
+    return node->type != MACHINE_LANGUAGE_NODE(METHOD) && node->value.kind == MACHINE_LANGUAGE_VALUE(INTEGER);
+}
+
+/**
+ * @brief The node a name of a record names from @p scope: the one the name's entry checked, while the namespace's
+ *        generation and the scope hold; otherwise resolved again, counted nowhere, and kept in the entry.
+ *
+ * @return 0 when the name names nothing.
+ */
+static uint32_t machine_language_record_name_node(MachineLanguageLoad_t *load, const uint8_t *code,
+                                                  MachineLanguageRecordName_t *entry, uint32_t scope)
+{
+    MachineLanguageNamespace_t *space = &load->space;
+    const uint32_t lookups = space->lookups;
+    const uint32_t probes = space->probes;
+    uint32_t index = 0u;
+
+    if (entry->node != 0u && entry->generation == space->generation && entry->scope == scope)
+        return entry->node;
+
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_namespace_resolve(space, scope, code, &entry->name,
+                                                                                      &index);
+
+    space->lookups = lookups;
+    space->probes = probes;
+    entry->node = (status == MACHINE_LANGUAGE_OK) ? index : 0u;
+    entry->generation = space->generation;
+    entry->scope = scope;
+    return entry->node;
+}
+
+/**
+ * @brief Whether a local or an argument a record's operand reads holds an Integer, as every operand of a record that
+ *        reads names must before the record reads one; any other operand passes.
+ */
+static bool machine_language_record_operand_holds(const MachineLanguageFrame_t *frame,
+                                                  const MachineLanguageRecordOperand_t *operand)
+{
+    if (operand->kind != MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL) &&
+        operand->kind != MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT))
+        return true;
+    return ((operand->kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL)) ? frame->locals[operand->slot] :
+                                                                        frame->arguments[operand->slot])
+               .kind == MACHINE_LANGUAGE_VALUE(INTEGER);
+}
+
+/**
+ * @brief Whether a record that reads names runs its statement once it has read them (§3.6), checked before any
+ *        effect: each name names an object read as an Integer, each local or argument operand holds an Integer, a
+ *        Store's target takes an Integer in place, and an If or a While finds room for its block.
+ *
+ * @return false, @p out_reason saying why, when the loop must run the statement.
+ */
+static bool machine_language_record_names_hold(MachineLanguageLoad_t *load, const MachineLanguageFrame_t *frame,
+                                               const MachineLanguageRecord_t *record, uint32_t scope,
+                                               uint8_t *out_reason)
+{
+    MachineLanguagePredecoding_t *cache = &load->predecoding;
+
+    *out_reason = MACHINE_LANGUAGE_DECLINED(NAME);
+    for (uint32_t name = 0u; name < record->name_count; ++name)
+    {
+        const uint32_t index =
+            machine_language_record_name_node(load, frame->code, &cache->names[record->first_name + name], scope);
+
+        if (index == 0u || !machine_language_names_an_integer(load, index))
+            return false;
+    }
+    *out_reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
+    if (!machine_language_record_operand_holds(frame, &record->source))
+        return false;
+    for (uint32_t index = 0u; index < record->node_count; ++index)
+    {
+        const MachineLanguageRecordNode_t *node = &cache->nodes[record->first_node + index];
+
+        if (!machine_language_record_operand_holds(frame, &node->operands[0]) ||
+            !machine_language_record_operand_holds(frame, &node->operands[1]))
+            return false;
+    }
+    *out_reason = MACHINE_LANGUAGE_DECLINED(TARGET);
+    if (record->target.kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL) ||
+        record->target.kind == MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT))
+    {
+        const MachineLanguageValue_t *slot = (record->target.kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL)) ?
+                                                 &frame->locals[record->target.slot] :
+                                                 &frame->arguments[record->target.slot];
+
+        if (!machine_language_overwrites_in_place(slot))
+            return false;
+    }
+    *out_reason = MACHINE_LANGUAGE_DECLINED(ROOM);
+    return (record->shape != MACHINE_LANGUAGE_RECORD(WHILE) && record->shape != MACHINE_LANGUAGE_RECORD(IF)) ||
+           load->evaluation.block_count !=
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS;
+}
+
+/**
+ * @brief Reads the names of a record in the loop's order (§3.6): each resolved as the loop resolves it, counted, the
+ *        node the record checked read whatever that resolution found, a difference counted as a stale name; the
+ *        record's first effect, after which nothing hands its statement back.
+ *
+ * @return OK; or what a read failed with, the frame's pc past the name and the values peak at what the loop held
+ *         before reading it, as the loop leaves them.
+ */
+static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguageLoad_t *load,
+                                                                  MachineLanguageFrame_t *frame,
+                                                                  const MachineLanguageRecord_t *record, uint32_t scope)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguagePredecoding_t *cache = &load->predecoding;
+
+    for (uint32_t name = 0u; name < record->name_count; ++name)
+    {
+        const MachineLanguageRecordName_t *entry = &cache->names[record->first_name + name];
+        uint32_t index = 0u;
+
+        if (advanced_configuration_and_power_interface_machine_language_namespace_resolve(
+                &load->space, scope, frame->code, &entry->name, &index) != MACHINE_LANGUAGE_OK ||
+            index != entry->node)
+            ++cache->stale_names;
+
+        const MachineLanguageStatus_t status = machine_language_read_node(load, entry->node, &cache->name_values[name]);
+
+        if (status != MACHINE_LANGUAGE_OK)
+        {
+            frame->pc = entry->after;
+            if (evaluation->value_count + entry->values_before > evaluation->values_peak)
+                evaluation->values_peak = evaluation->value_count + entry->values_before;
+            return status;
+        }
+    }
+    return MACHINE_LANGUAGE_OK;
 }
 
 /**
@@ -4565,6 +4720,19 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
             ++cache->declined[(record->shape == MACHINE_LANGUAGE_RECORD(GENERAL)) ? MACHINE_LANGUAGE_DECLINED(SHAPE) :
                                                                                     MACHINE_LANGUAGE_DECLINED(ROOM)];
             break;
+        }
+        if (record->name_count != 0u)
+        {
+            uint8_t reason = MACHINE_LANGUAGE_DECLINED(NAME);
+
+            if (!machine_language_record_names_hold(load, frame, record, block.scope, &reason))
+            {
+                ++cache->declined[reason];
+                break;
+            }
+            status = machine_language_record_read_names(load, frame, record, block.scope);
+            if (status != MACHINE_LANGUAGE_OK)
+                break;
         }
         if (record->tight != 0u)
             body = machine_language_tight_body(evaluation, cache, record, value_room, operator_room);

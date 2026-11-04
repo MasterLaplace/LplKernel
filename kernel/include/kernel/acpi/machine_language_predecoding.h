@@ -31,6 +31,7 @@
 #define KERNEL_ACPI_MACHINE_LANGUAGE_PREDECODING_H
 
 #include <kernel/acpi/machine_language_decoder.h>
+#include <kernel/acpi/machine_language_namespace.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -48,6 +49,10 @@
            offset. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NODES_PER_RECORD                               \
     8u /**< Operators one record's expression holds at most; a longer one is run by the interpreter's loop. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NAMES                                   \
+    64u /**< Names the records of a load read, over every record. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NAMES_PER_RECORD                               \
+    4u /**< Names one record reads at most; a statement that reads more is run by the interpreter's loop. */
 
 /**
  * @brief What a record runs: the shapes from STORE on write a local or an argument.
@@ -82,6 +87,11 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperandK
                                                                                                 record gives: slot is
                                                                                                 its place in the
                                                                                                 record. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_OPERAND_NAME = 5, /**< A name read as a value:
+                                                                                            slot is its place among
+                                                                                            the record's names, index
+                                                                                            its place among the
+                                                                                            cache's. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperandKind_t;
 
 /**
@@ -106,7 +116,13 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordDecline 
                                                                                            object to give back or a
                                                                                            reference to go through,
                                                                                            or no Integer to step. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES = 7,           /**< Reasons counted. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_NAME = 7,      /**< A name it reads named no
+                                                                                           object, a method, an
+                                                                                           object whose read gives no
+                                                                                           Integer, or a field unit
+                                                                                           whose PCI_Config region
+                                                                                           waits for its attach. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES = 8,           /**< Reasons counted. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordDecline_t;
 
 /**
@@ -117,6 +133,20 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperan
     uint8_t slot;   /**< A local's or an argument's number, or an operator's place in its record. */
     uint16_t index; /**< A constant's place among the cache's constants. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t;
+
+/**
+ * @brief A name a record reads, and what the record knows of it: the node it named when it was last
+ *        checked, which holds while the namespace's generation and the scope do not change.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName {
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t name; /**< Its NameString, in its table. */
+    uint32_t after;        /**< Where its NameString ends: the pc the loop leaves when reading it fails. */
+    uint32_t node;         /**< The node it named when last checked, or 0. */
+    uint32_t generation;   /**< The namespace's generation when it was checked. */
+    uint32_t scope;        /**< The scope it was resolved from. */
+    uint8_t values_before; /**< Values the loop held for its statement at most before reading it. */
+    uint8_t reserved[3];   /**< Unused, 0. */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t;
 
 /**
  * @brief An operator of a record's expression, in the order the interpreter's loop runs them.
@@ -153,8 +183,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
     uint8_t tight;          /**< For a While, 1 once linked to the record of a body that makes it a tight loop: its
                                  predicate compares two leaves, and its body is one statement that writes. */
     uint8_t goes_on;        /**< For a record that runs nothing, 1 when its statement always goes on to the one after
-                                 it: a name, or an operator that opens no construct and is no Break, Continue or
-                                 Return. */
+                                 it: a call, a name, or an operator that opens no construct and is no Break, Continue
+                                 or Return. */
+    uint16_t first_name;    /**< Its first name among the cache's. */
+    uint8_t name_count;     /**< The names it reads, in the order the loop reads them. */
+    uint8_t reserved;       /**< Unused, 0. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**
@@ -166,6 +199,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t record_count;   /**< Records built since the cache was last emptied. */
     uint32_t node_count;     /**< Operators those records hold. */
     uint32_t constant_count; /**< Constants those records hold. */
+    uint32_t name_count;     /**< Names those records read. */
     uint8_t integer_bits;    /**< The integer width the records were built under. */
     uint32_t frozen_serial;  /**< The frame whose loop builds no record since the cache was emptied under it. */
     uint32_t frozen_start;   /**< Where that loop starts. */
@@ -184,6 +218,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t searches;          /**< Searches of the hash for a statement that neither a link nor its recent slot gave,
                                      found or not. */
     uint32_t handed_back_loops; /**< Times a frame's loop was handed back whole, its turns then asking no record. */
+    uint32_t stale_names;       /**< Names whose counted resolution found another node than the one their record
+                                     checked: 0 unless a change of the namespace escaped its generation. */
     union {
         uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
                                                                                                      per hash slot. */
@@ -205,6 +241,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint64_t constants
         [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_CONSTANTS]; /**< Their constants, masked
                                                                                                to the width. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t
+        names[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NAMES]; /**< The names they read.
+                                                                                              */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t
+        name_values[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NAMES_PER_RECORD]; /**< What the
+                                                                                                        record running
+                                                                                                        read by name,
+                                                                                                        in its order. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t;
 
 /**

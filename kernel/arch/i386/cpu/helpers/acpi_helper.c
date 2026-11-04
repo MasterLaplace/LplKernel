@@ -23,6 +23,7 @@ acpi_helper_write_regions_record(Serial_t *serial,
         refused += regions->space_unsupported[space];
     kernel_telemetry_begin_record(serial, "acpi.regions");
     kernel_telemetry_write_unsigned("field_reads", regions->field_reads);
+    kernel_telemetry_write_unsigned("field_fast_path", regions->field_fast_path);
     kernel_telemetry_write_unsigned("field_writes", regions->field_writes);
     kernel_telemetry_write_unsigned("map_calls", regions->map_calls);
     kernel_telemetry_write_unsigned("mapping_cache_hits", regions->mapping_cache_hits);
@@ -245,7 +246,7 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
 {
     static const char *const reasons[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES] = {
         "declined_shape",     "declined_limit", "declined_operand", "declined_room",
-        "declined_operation", "declined_full",  "declined_target",
+        "declined_operation", "declined_full",  "declined_target",  "declined_name",
     };
     const AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache = &load->predecoding;
 
@@ -262,6 +263,7 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("tight_turns", cache->tight_turns);
     kernel_telemetry_write_unsigned("searches", cache->searches);
     kernel_telemetry_write_unsigned("handed_back_loops", cache->handed_back_loops);
+    kernel_telemetry_write_unsigned("stale_names", cache->stale_names);
     kernel_telemetry_end_record();
 }
 
