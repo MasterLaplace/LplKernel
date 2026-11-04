@@ -1281,8 +1281,8 @@ static MachineLanguageStatus_t machine_language_open(MachineLanguageEvaluation_t
 }
 
 /**
- * @brief Runs `\_OSI`, the one method without a body, in C: it takes its argument from the top of the
- *        value stack and gives its caller the answer as a method's result (§5.4).
+ * @brief Runs `\_OSI`, which the namespace predefines without a body, in C: it takes its argument from the top of
+ *        the value stack and gives its caller the answer as a method's result (§5.4).
  */
 static MachineLanguageStatus_t machine_language_operating_system_interface(MachineLanguageLoad_t *load)
 {
@@ -1299,7 +1299,8 @@ static MachineLanguageStatus_t machine_language_operating_system_interface(Machi
 
 /**
  * @brief Pushes a frame for a method whose arguments are the top @p argument_count values, which it
- *        takes with their references.
+ *        takes with their references; runs `\_OSI`, told by its node, in C; refuses a method whose
+ *        declaration recorded no body with METHOD_WITHOUT_BODY.
  */
 static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad_t *load, uint32_t method,
                                                              uint32_t argument_count)
@@ -1310,8 +1311,10 @@ static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad
 
     if (node->type != MACHINE_LANGUAGE_NODE(METHOD))
         return MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND);
-    if (node->value.handle == 0u)
+    if (method == load->space.operating_system_interface)
         return machine_language_operating_system_interface(load);
+    if (node->value.handle == 0u)
+        return MACHINE_LANGUAGE_STATUS(METHOD_WITHOUT_BODY);
     if (evaluation->frame_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES)
         return MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES);
 
@@ -5035,12 +5038,15 @@ static MachineLanguageStatus_t machine_language_step_above(MachineLanguageLoad_t
 
 /**
  * @brief Pushes the frame a host-initiated evaluation runs from: no code of its own, in the scope of
- *        the root, given the table of the method it calls.
+ *        the root, given the table of the method it calls; a method whose declaration recorded no body,
+ *        `\_OSI` included, has none, and is refused with METHOD_WITHOUT_BODY.
  */
 static MachineLanguageStatus_t machine_language_push_host_frame(MachineLanguageLoad_t *load, uint16_t table)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
 
+    if (table == 0u)
+        return MACHINE_LANGUAGE_STATUS(METHOD_WITHOUT_BODY);
     if (evaluation->frame_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES)
         return MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES);
 
@@ -5168,9 +5174,8 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         status = machine_language_step_above(load, base);
     if (status == MACHINE_LANGUAGE_OK)
         *out_result = machine_language_pop(evaluation);
-    while (evaluation->frame_count > base + 1u)
+    while (evaluation->frame_count > base)
         machine_language_drop_frame(load);
-    machine_language_drop_frame(load);
     advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
     return status;
 }

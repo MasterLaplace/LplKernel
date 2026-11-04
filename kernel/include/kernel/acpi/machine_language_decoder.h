@@ -369,9 +369,11 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
                                                                                                 allows. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_METHOD_WITHOUT_BODY, /**< A call of a method
                                                                                                whose declaration
-                                                                                               recorded no body: its
-                                                                                               PkgLength ends before
-                                                                                               its flags. */
+                                                                                               recorded no body, its
+                                                                                               PkgLength ending before
+                                                                                               its flags; the host's
+                                                                                               evaluation of \_OSI,
+                                                                                               which only AML calls. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,               /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 

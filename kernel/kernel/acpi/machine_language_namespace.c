@@ -326,8 +326,10 @@ advanced_configuration_and_power_interface_machine_language_namespace_open(
         return status;
     status = machine_language_namespace_predefine(
         space, "_OSI", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD, &index);
-    if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-        advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->value.auxiliary = 1u;
+    if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        return status;
+    advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->value.auxiliary = 1u;
+    space->operating_system_interface = index;
     return status;
 }
 
