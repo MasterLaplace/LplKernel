@@ -183,7 +183,7 @@ static MachineLanguagePendingOperator_t *machine_language_active(MachineLanguage
  */
 static bool machine_language_frame_holds(const MachineLanguageEvaluation_t *evaluation, uint32_t count)
 {
-    return evaluation->value_count - evaluation->value_floor >= count;
+    return evaluation->value_count >= evaluation->value_floor + count;
 }
 
 /**
