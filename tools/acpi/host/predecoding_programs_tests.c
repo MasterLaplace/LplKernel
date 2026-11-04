@@ -315,6 +315,7 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
     uint64_t records_run = 0u;
     uint64_t declined = 0u;
     uint64_t tight_turns = 0u;
+    uint64_t loops = 0u;
 
     for (uint32_t program = 0u; program < PROGRAMS_COUNT; ++program)
     {
@@ -335,14 +336,16 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
         records_run += on.records_run;
         declined += on.declined;
         tight_turns += on.tight_turns;
+        loops += on.loops;
     }
     kernel_test_check(test, written > PROGRAMS_COUNT / 2u, "most methods fit their builder");
     kernel_test_check(test, agree == written, "every method leaves with records what it leaves without");
-    kernel_test_check(test, records_run != 0u && declined != 0u && tight_turns != 0u,
-                      "records ran, and were handed back, and While ran as tight loops");
+    kernel_test_check(test, records_run != 0u && declined != 0u && tight_turns != 0u && loops != 0u,
+                      "records ran, and were handed back, While ran as tight loops, and loops were handed back whole");
     kernel_test_measure(test, "methods", written);
     kernel_test_measure(test, "records_run", (uint32_t) records_run);
     kernel_test_measure(test, "tight_turns", (uint32_t) tight_turns);
+    kernel_test_measure(test, "handed_back_loops", (uint32_t) loops);
 }
 
 /**

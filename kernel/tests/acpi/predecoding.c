@@ -309,6 +309,24 @@ static const uint8_t predecoding_refused_loop[] = {
 };
 
 /**
+ * @brief Where @p pattern first starts in @p bytes, or @p length when it does not.
+ */
+static uint32_t predecoding_offset_of(const uint8_t *bytes, uint32_t length, const uint8_t *pattern,
+                                      uint32_t pattern_length)
+{
+    for (uint32_t offset = 0u; offset + pattern_length <= length; ++offset)
+    {
+        uint32_t matched = 0u;
+
+        while (matched < pattern_length && bytes[offset + matched] == pattern[matched])
+            ++matched;
+        if (matched == pattern_length)
+            return offset;
+    }
+    return length;
+}
+
+/**
  * @brief Writes INCR, then SLOT: `Local0 = 0; Local2 = 0; While (Local0 < 10) { Local2 = INCR (Local2); Local3 =
  *        Buffer (51) {}; Local0++ }; Return (Local2)`, so 10: its call, which no record runs, and its Increment,
  *        which one runs, 64 bytes apart, so that they share their offset's recent slot.
@@ -1186,8 +1204,24 @@ KERNEL_TEST(a_statement_after_one_handed_back_is_searched_once)
  */
 KERNEL_TEST(statements_that_share_a_recent_slot_find_their_own_records)
 {
+    static const uint8_t call[] = {0x70u, 'I', 'N', 'C', 'R', 0x62u, 0x62u};
+    static const uint8_t increment[] = {0x75u, 0x60u};
+
     predecoding_write_shared_slot();
     if (!kernel_test_check(test, !predecoding_method.overflowed, "the made-up AML fits"))
+        return;
+
+    const uint32_t call_offset =
+        predecoding_offset_of(predecoding_method.bytes, predecoding_method.length, call, sizeof(call));
+    const uint32_t increment_offset =
+        predecoding_offset_of(predecoding_method.bytes, predecoding_method.length, increment, sizeof(increment));
+
+    if (!kernel_test_check(test,
+                           increment_offset < predecoding_method.length && increment_offset > call_offset &&
+                               (increment_offset - call_offset) %
+                                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECENT_RECORDS ==
+                                   0u,
+                           "the premise: the call and the Increment share a recent slot"))
         return;
 
     const PredecodingRun_t run = predecoding_compare(test, predecoding_method.bytes, predecoding_method.length, 2u,
@@ -1237,10 +1271,10 @@ KERNEL_TEST(a_loop_whose_turn_may_run_a_record_keeps_asking)
  *        its first run, is handed back whole at its third back-edge after 5 statements; in each of the two runs after
  *        it, inside the outer loop the frame's loop has become, its While goes to the loop at its 10 back-edges and its
  *        call at its 10 turns, and the While once more when the outer loop's records reach it, 47 times in all; the
- * outer While, Increment and Store run from records at its first two back-edges and its While at the third, 7 times;
- * the five statements are searched once each, and NEST returns 10 with records as without.
+ *        outer While, Increment and Store run from records at its first two back-edges and its While at the third, 7
+ *        times; the five statements are searched once each, and NEST returns 10 with records as without.
  */
-KERNEL_TEST(a_loop_inside_the_frame_s_loop_is_never_handed_back_whole)
+KERNEL_TEST(a_loop_is_handed_back_whole_only_while_it_is_the_frame_s_loop)
 {
     const PredecodingRun_t run =
         predecoding_compare(test, predecoding_nested_refused_loop, sizeof(predecoding_nested_refused_loop), 2u,
