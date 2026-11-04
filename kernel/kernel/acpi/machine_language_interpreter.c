@@ -5065,7 +5065,8 @@ static MachineLanguageStatus_t machine_language_push_host_frame(MachineLanguageL
 /**
  * @brief Attaches the PCI_Config regions a unit the host reads reaches: each method an attach waits
  *        for runs in an internal frame above a host frame, until the attach needs no more; one whose call
- *        fails, as one without a body does, is an absent object, as it is when AML reads the unit (§3.6).
+ *        fails, as one without a body does, a limit apart, is an absent object, as it is when AML reads the
+ *        unit (§3.6).
  */
 static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageLoad_t *load, uint32_t unit)
 {
