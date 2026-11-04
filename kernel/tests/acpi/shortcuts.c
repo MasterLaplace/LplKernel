@@ -121,13 +121,14 @@ static const uint8_t shortcuts_named_sizes[] = {
 
 /**
  * @brief Data the decoder refuses: a package of an OperationRegion opcode, a package whose String has no NUL,
- *        and a duplicate Name whose package is the first's.
+ *        and a duplicate Name whose package is the first's; then `Name (OK__, Package (1) {One})` and
+ *        `Name (L0__, Package (1) {Local0})`, whose Local0 is no data object.
  */
 static const uint8_t shortcuts_malformed[] = {
-    0x08u, 'M', '0', '_',   '_',   0x12u, 0x08u, 0x01u, 0x5Bu, 0x80u, 'R',   'G',   'N',   '_',
-    0x08u, 'M', '1', '_',   '_',   0x12u, 0x06u, 0x01u, 0x0Du, 'a',   'b',   'c',   0x08u, 'D',
-    'U',   'P', '_', 0x00u, 0x08u, 'D',   'U',   'P',   '_',   0x12u, 0x08u, 0x01u, 0x5Bu, 0x80u,
-    'R',   'G', 'N', '_',   0x08u, 'O',   'K',   '_',   '_',   0x12u, 0x03u, 0x01u, 0x01u,
+    0x08u, 'M', '0', '_',   '_',   0x12u, 0x08u, 0x01u, 0x5Bu, 0x80u, 'R',   'G', 'N',   '_',   0x08u, 'M',
+    '1',   '_', '_', 0x12u, 0x06u, 0x01u, 0x0Du, 'a',   'b',   'c',   0x08u, 'D', 'U',   'P',   '_',   0x00u,
+    0x08u, 'D', 'U', 'P',   '_',   0x12u, 0x08u, 0x01u, 0x5Bu, 0x80u, 'R',   'G', 'N',   '_',   0x08u, 'O',
+    'K',   '_', '_', 0x12u, 0x03u, 0x01u, 0x01u, 0x08u, 'L',   '0',   '_',   '_', 0x12u, 0x03u, 0x01u, 0x60u,
 };
 
 /**
