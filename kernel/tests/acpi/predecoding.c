@@ -607,6 +607,26 @@ static const uint8_t predecoding_name_path[] = {
 };
 
 /**
+ * @brief A revision-1 MASK (Arg0) that copies its argument whole into the Integer WIDE, then compares it in a loop:
+ *        `CopyObject (Arg0, WIDE); Local0 = 0; Local1 = 0; While (Local0 < 2) { If (WIDE == 1) { Local1++ };
+ *        Local0++ }; Return (Local1)`: WIDE is masked to 32 bits where the comparison reads it.
+ */
+static const uint8_t predecoding_named_masked[] = {
+    0x08u, 'W',   'I',   'D',   'E',   0x00u, 0x14u, 0x26u, 'M',   'A',   'S',   'K',   0x01u, 0x9Du, 0x68u,
+    'W',   'I',   'D',   'E',   0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x11u, 0x95u, 0x60u, 0x0Au,
+    0x02u, 0xA0u, 0x09u, 0x93u, 'W',   'I',   'D',   'E',   0x01u, 0x75u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief A While whose predicate reads a name and whose body steps a local, as TIGN: LIMT holds 5; `Local0 = 0;
+ *        While (Local0 < LIMT) { Local0++ }; Return (Local0)`: never a tight loop, each turn resolving LIMT.
+ */
+static const uint8_t predecoding_tight_name[] = {
+    0x08u, 'L',   'I',   'M',   'T',   0x0Au, 0x05u, 0x14u, 0x15u, 'T', 'I',   'G',   'N',   0x00u, 0x70u,
+    0x00u, 0x60u, 0xA2u, 0x09u, 0x95u, 0x60u, 'L',   'I',   'M',   'T', 0x75u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
  * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
  */
 static const uint8_t predecoding_while[] = {0xA2u, 0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u};
@@ -1678,4 +1698,29 @@ KERNEL_TEST(a_record_hands_back_a_field_whose_region_waits_for_its_attach)
 
     kernel_test_check(test, run.declined == 1u && run.declined_names == 1u,
                       "the first read of VID0 is handed back, for its attach");
+}
+
+/**
+ * @brief A record masks an Integer it reads by name where an operator reads it, as the loop masks it (§5.2): under
+ *        revision 1, MASK (0x100000001) finds WIDE equal to 1 at both turns, the second from its record, and returns
+ *        2, with records as without, nothing handed back.
+ */
+KERNEL_TEST(a_name_an_operator_reads_is_masked_as_the_loop_masks_it)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_named_masked, sizeof(predecoding_named_masked),
+                                                     1u, "\\MASK", 0x100000001ull, true, "fold");
+
+    kernel_test_check(test, run.result == 2u && run.declined == 0u, "MASK returns 2, nothing handed back");
+}
+
+/**
+ * @brief A While whose predicate reads a name never runs as a tight loop, which would resolve that name once (§3.6):
+ *        TIGN returns 5 with records as without, its lookups counted at each turn. The control: no tight turn.
+ */
+KERNEL_TEST(a_while_whose_predicate_reads_a_name_is_no_tight_loop)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight_name, sizeof(predecoding_tight_name), 2u,
+                                                     "\\TIGN", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 5u && run.tight_turns == 0u, "TIGN returns 5, no tight turn");
 }
