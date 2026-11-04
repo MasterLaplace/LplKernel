@@ -260,6 +260,7 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("fused_comparisons", cache->fused_comparisons);
     kernel_telemetry_write_unsigned("tight_turns", cache->tight_turns);
     kernel_telemetry_write_unsigned("searches", cache->searches);
+    kernel_telemetry_write_unsigned("handed_back_loops", cache->handed_back_loops);
     kernel_telemetry_end_record();
 }
 

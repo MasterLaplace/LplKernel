@@ -445,6 +445,7 @@ void advanced_configuration_and_power_interface_machine_language_predecoding_ope
     cache->fused_comparisons = 0u;
     cache->tight_turns = 0u;
     cache->searches = 0u;
+    cache->handed_back_loops = 0u;
 }
 
 void advanced_configuration_and_power_interface_machine_language_predecoding_flush(MachineLanguagePredecoding_t *cache,

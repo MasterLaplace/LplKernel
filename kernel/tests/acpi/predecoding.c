@@ -344,6 +344,39 @@ static void predecoding_write_shared_slot(void)
 }
 
 /**
+ * @brief INCR, then BRAN: `Local0 = 0; Local1 = 0; While (Local0 < 100 && One) { If (Local0 > 50 && One) { Local1++
+ *        }; Local0 = INCR (Local0) }; Return (Local1)`, so 49: a While, an If and a call no record runs, the If's body
+ *        an Increment one runs, from the 52nd turn.
+ */
+static const uint8_t predecoding_branching_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
+    0x27u, 'B',   'R',   'A',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u,
+    0x18u, 0x90u, 0x95u, 0x60u, 0x0Au, 0x64u, 0x01u, 0xA0u, 0x09u, 0x90u, 0x94u, 0x60u, 0x0Au,
+    0x32u, 0x01u, 0x75u, 0x61u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief INCR, then MIXD: `Local0 = 0; Local1 = 0; While (Local0 < 100 && One) { Local1++; Local0 = INCR (Local0) };
+ *        Return (Local1)`, so 100: a While and a call no record runs around an Increment one runs.
+ */
+static const uint8_t predecoding_mixed_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x1Fu, 'M',
+    'I',   'X',   'D',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x10u, 0x90u, 0x95u, 0x60u,
+    0x0Au, 0x64u, 0x01u, 0x75u, 0x61u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief INCR, then NEST: `Local1 = 0; While (Local1 < 3) { Local1++; Local0 = 0; While (Local0 < 10 && One) { Local0
+ *        = INCR (Local0) } }; Return (Local0)`, so 10: an outer loop records run around an inner one no record runs.
+ */
+static const uint8_t predecoding_nested_refused_loop[] = {
+    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
+    0x25u, 'N',   'E',   'S',   'T',   0x00u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x19u, 0x95u, 0x61u,
+    0x0Au, 0x03u, 0x75u, 0x61u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Eu, 0x90u, 0x95u, 0x60u, 0x0Au,
+    0x0Au, 0x01u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
  * @brief INCR, then NEXT: `Local0 = 0; While (Local0 < 100) { Local1 = INCR (Local0); Local0++ }; Return (Local1)`,
  *        so 100: a statement no record runs, between statements records run.
  */
@@ -1095,4 +1128,57 @@ KERNEL_TEST(statements_that_share_a_recent_slot_find_their_own_records)
     kernel_test_check(test, run.result == 10u && run.records_run == 19u && run.declined == 18u,
                       "SLOT returns 10, 19 records run and 18 statements handed back");
     kernel_test_check(test, run.searches == 4u, "each of the four statements is searched once");
+}
+
+/**
+ * @brief A While whose statements all went to the loop for a whole turn, each going on to the next, asks its records
+ *        no more (§3.6): REFU's While goes to the loop at its first three back-edges and its body at the second and
+ *        third turns, 5 times, then its turns run without records, and REFU returns 100 with records as without.
+ */
+KERNEL_TEST(a_loop_whose_statements_all_go_to_the_loop_stops_asking)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_refused_loop, sizeof(predecoding_refused_loop),
+                                                     2u, "\\REFU", PREDECODING_NO_ARGUMENT, false, "fold");
+
+    kernel_test_check(test, run.result == 100u && run.declined == 5u && run.loops == 1u,
+                      "REFU returns 100, its statements handed back 5 times, then its loop whole");
+    kernel_test_measure(test, "declined", run.declined);
+}
+
+/**
+ * @brief A While whose turn may run a record keeps asking its records (§3.6): BRAN's If, which no record runs, decides
+ *        whether its Increment runs, which a record runs at the 49 turns from the 52nd, and MIXD's Increment runs from
+ *        a record at the 99 turns after the first; BRAN returns 49 and MIXD 100, with records as without.
+ */
+KERNEL_TEST(a_loop_whose_turn_may_run_a_record_keeps_asking)
+{
+    const PredecodingRun_t branching =
+        predecoding_compare(test, predecoding_branching_loop, sizeof(predecoding_branching_loop), 2u, "\\BRAN",
+                            PREDECODING_NO_ARGUMENT, true, "fold_branching");
+    const PredecodingRun_t mixed = predecoding_compare(test, predecoding_mixed_loop, sizeof(predecoding_mixed_loop), 2u,
+                                                       "\\MIXD", PREDECODING_NO_ARGUMENT, true, "fold_mixed");
+
+    kernel_test_check(test, branching.result == 49u && branching.records_run == 49u && branching.loops == 0u,
+                      "BRAN returns 49, its Increment run from records 49 times, its loop never handed back whole");
+    kernel_test_check(test, mixed.result == 100u && mixed.records_run == 99u && mixed.loops == 0u,
+                      "MIXD returns 100, its Increment run from records 99 times, its loop never handed back whole");
+}
+
+/**
+ * @brief A While is handed back whole only while it is the frame's loop (§3.6): NEST's inner While, the frame's loop in
+ *        its first run, is handed back whole at its third back-edge after 5 statements; in each of the two runs after
+ *        it, inside the outer loop the frame's loop has become, its While goes to the loop at its 10 back-edges and its
+ *        call at its 10 turns, and the While once more when the outer loop's records reach it, 47 times in all; the
+ * outer While, Increment and Store run from records at its first two back-edges and its While at the third, 7 times;
+ * the five statements are searched once each, and NEST returns 10 with records as without.
+ */
+KERNEL_TEST(a_loop_inside_the_frame_s_loop_is_never_handed_back_whole)
+{
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_nested_refused_loop, sizeof(predecoding_nested_refused_loop), 2u,
+                            "\\NEST", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 10u && run.declined == 47u && run.records_run == 7u && run.loops == 1u,
+                      "NEST returns 10, 47 statements handed back, 7 records run, one loop handed back whole");
+    kernel_test_check(test, run.searches == 5u, "each of the five statements is searched once");
 }

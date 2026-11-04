@@ -177,6 +177,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t fused_comparisons; /**< LNot and a comparison decoded as one operator (§7.2, O7). */
     uint32_t tight_turns;       /**< Turns of a While run as a tight loop (§3.6). */
     uint32_t searches;          /**< Statements whose record was searched in the hash, no link leading to it. */
+    uint32_t handed_back_loops; /**< Whiles whose statements all go to the loop, whose turns then ask no record. */
     union {
         uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
                                                                                                      per hash slot. */
