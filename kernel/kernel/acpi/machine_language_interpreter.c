@@ -2005,7 +2005,8 @@ static bool machine_language_running(const MachineLanguageEvaluation_t *evaluati
  * @brief Pushes the internal frame that runs _REG (PCI_Config, 1) for a PCI_Config region a method has
  *        just created (§5.3), once the initialisation has registered, unless that _REG already runs: a
  *        _REG that creates such a region in its own scope is not called again. A _REG that does not
- *        take two arguments is not called, and counted as failed.
+ *        take two arguments is not called, and counted as failed; one whose call is refused, as its
+ *        SyncLevel can refuse it, takes its two arguments back off the stack.
  */
 static MachineLanguageStatus_t machine_language_register_at_creation(MachineLanguageLoad_t *load, uint32_t region)
 {
@@ -2042,11 +2043,16 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
     MachineLanguageValue_t space = machine_language_integer(
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION);
     MachineLanguageValue_t connected = machine_language_integer(1u);
+    const uint32_t values = evaluation->value_count;
     MachineLanguageStatus_t status = machine_language_push(load, &space);
 
     if (status == MACHINE_LANGUAGE_OK)
         status = machine_language_push(load, &connected);
-    return (status == MACHINE_LANGUAGE_OK) ? machine_language_enter_method(load, method, 2u) : status;
+    if (status == MACHINE_LANGUAGE_OK)
+        status = machine_language_enter_method(load, method, 2u);
+    while (evaluation->value_count > values)
+        machine_language_release(load, &evaluation->values[--evaluation->value_count]);
+    return status;
 }
 
 /**
