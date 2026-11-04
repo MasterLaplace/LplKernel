@@ -38,6 +38,7 @@
  */
 typedef struct PredecodingRun {
     uint32_t fold;        /**< The status, the result and everything the load counted, as FNV-1a. */
+    uint32_t status;      /**< The evaluation's status. */
     uint32_t records_run; /**< Statements and predicates run from records. */
     uint32_t declined;    /**< Statements the records handed back, over every reason. */
     uint32_t flushes;     /**< Times the cache was emptied. */

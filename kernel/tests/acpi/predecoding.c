@@ -236,6 +236,66 @@ static const uint8_t predecoding_tight_modulo[] = {
 };
 
 /**
+ * @brief Tight loops whose body runs first in a call deeper than the one that linked it, as PKTL: `Local0 = INNR ();
+ *        Return (Local0 + (1 + (1 + INNR ())))`, INNR running `Local0 = 0; Local1 = 0; While (Local0 < 3) { While
+ *        (Local1 < Local0) { Local1 += 1 }; Local0++ }; Return (Local1)`: the second call enters its tight loops at
+ *        once, their records linked by the first, two values deeper, so 6.
+ */
+static const uint8_t predecoding_deeper_tight[] = {
+    0x14u, 0x1Fu, 'I',   'N',   'N',   'R',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x10u,
+    0x95u, 0x60u, 0x0Au, 0x03u, 0xA2u, 0x08u, 0x95u, 0x61u, 0x60u, 0x72u, 0x61u, 0x01u, 0x61u, 0x75u, 0x60u,
+    0xA4u, 0x61u, 0x14u, 0x1Au, 'P',   'K',   'T',   'L',   0x00u, 0x70u, 'I',   'N',   'N',   'R',   0x60u,
+    0xA4u, 0x72u, 0x60u, 0x72u, 0x01u, 0x72u, 0x01u, 'I',   'N',   'N',   'R',   0x00u, 0x00u, 0x00u,
+};
+
+/**
+ * @brief A While whose body is a Break, as BRKB (Arg0): `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local0++; While
+ *        (Local1 < 5) { Break } }; Return (Arg0)`: never a tight loop.
+ */
+static const uint8_t predecoding_break_body[] = {
+    0x14u, 0x1Du, 'B',   'R',   'K',   'B',   0x01u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x0Eu,
+    0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA2u, 0x06u, 0x95u, 0x61u, 0x0Au, 0x05u, 0xA5u, 0xA4u, 0x68u,
+};
+
+/**
+ * @brief A tight loop whose bound becomes a String between two of its entries, as TOPR: `Local0 = 0; Local1 = 0;
+ *        Local2 = 5; While (Local0 < 4) { Local0++; If (Local0 == 3) { Local2 = "9" }; While (Local1 < Local2) {
+ *        Local1++ } }; Return (Local1)`, so 9.
+ */
+static const uint8_t predecoding_string_bound[] = {
+    0x14u, 0x2Cu, 'T',   'O',   'P',   'R',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0x70u, 0x0Au,
+    0x05u, 0x62u, 0xA2u, 0x19u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x0Au, 0x93u, 0x60u, 0x0Au,
+    0x03u, 0x70u, 0x0Du, 0x39u, 0x00u, 0x62u, 0xA2u, 0x06u, 0x95u, 0x61u, 0x62u, 0x75u, 0x61u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief A While whose predicate is an operator and no comparison, as ANDW: `Local0 = 5; While (Local0 & 0x0F) {
+ *        Local0-- }; Return (Local0)`, so 0; and one whose predicate is two LNot over a comparison, as NNOT: `Local0 =
+ *        0; While (!!(Local0 < 5)) { Local0++ }; Return (Local0)`, so 5: never tight loops.
+ */
+static const uint8_t predecoding_and_predicate[] = {
+    0x14u, 0x15u, 'A',   'N',   'D',   'W',   0x00u, 0x70u, 0x0Au, 0x05u, 0x60u,
+    0xA2u, 0x08u, 0x7Bu, 0x60u, 0x0Au, 0x0Fu, 0x00u, 0x76u, 0x60u, 0xA4u, 0x60u,
+};
+static const uint8_t predecoding_two_lnot[] = {
+    0x14u, 0x15u, 'N',   'N',   'O',   'T',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
+    0x09u, 0x92u, 0x92u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x75u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
+ * @brief ROOM, whose inner While runs as a tight loop from its first record in a call, the If before it false at the
+ *        first turn: `Local0 = 0; Local1 = 0; While (Local0 < 3) { Local0++; If (Local0 > 1) { Local1 = 0; While
+ *        (Local1 < 4) { Local1 = Local1 + 1 } } }; Return (Local1)`, its body 3 values deep and its predicate 2; then
+ *        FSEV (Arg0 to Arg6), which returns Arg6.
+ */
+static const uint8_t predecoding_room_loop[] = {
+    0x14u, 0x2Au, 'R',   'O',   'O',   'M',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u,
+    0xA2u, 0x1Bu, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x13u, 0x94u, 0x60u, 0x01u,
+    0x70u, 0x00u, 0x61u, 0xA2u, 0x0Bu, 0x95u, 0x61u, 0x0Au, 0x04u, 0x70u, 0x72u, 0x61u, 0x01u,
+    0x00u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x08u, 'F',   'S',   'E',   'V',   0x07u, 0xA4u, 0x6Eu,
+};
+
+/**
  * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
  */
 static const uint8_t predecoding_while[] = {0xA2u, 0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u};
@@ -377,6 +437,33 @@ static void predecoding_write_values_nearly_full(void)
         made_up_aml_raw(&predecoding_body, null_name, sizeof(null_name));
     made_up_aml_begin(&predecoding_method);
     made_up_aml_raw(&predecoding_method, predecoding_values_loop, sizeof(predecoding_values_loop));
+    made_up_aml_method(&predecoding_method, "MAIN", 0x00u, &predecoding_body);
+}
+
+/**
+ * @brief Writes ROOM and FSEV, then MAIN: `Local0 = ROOM (); Return (1 + (1 + ... FSEV (1, 1, 1, 1, 1, 1, FSEV (...
+ *        ROOM ()))))`, PREDECODING_SEVEN_CALLS calls nested in the last argument under @p pads Adds: the first call
+ *        links ROOM's tight loop, the second runs it @p pads values deeper.
+ */
+static void predecoding_write_room(uint32_t pads)
+{
+    static const uint8_t first_call[] = {0x70u, 'R', 'O', 'O', 'M', 0x60u, 0xA4u};
+    static const uint8_t add_one[] = {0x72u, 0x01u};
+    static const uint8_t seven[] = {'F', 'S', 'E', 'V', 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u};
+    static const uint8_t room_call[] = {'R', 'O', 'O', 'M'};
+    static const uint8_t null_name[] = {0x00u};
+
+    made_up_aml_begin(&predecoding_body);
+    made_up_aml_raw(&predecoding_body, first_call, sizeof(first_call));
+    for (uint32_t pad = 0u; pad < pads; ++pad)
+        made_up_aml_raw(&predecoding_body, add_one, sizeof(add_one));
+    for (uint32_t call = 0u; call < PREDECODING_SEVEN_CALLS; ++call)
+        made_up_aml_raw(&predecoding_body, seven, sizeof(seven));
+    made_up_aml_raw(&predecoding_body, room_call, sizeof(room_call));
+    for (uint32_t pad = 0u; pad < pads; ++pad)
+        made_up_aml_raw(&predecoding_body, null_name, sizeof(null_name));
+    made_up_aml_begin(&predecoding_method);
+    made_up_aml_raw(&predecoding_method, predecoding_room_loop, sizeof(predecoding_room_loop));
     made_up_aml_method(&predecoding_method, "MAIN", 0x00u, &predecoding_body);
 }
 
@@ -835,4 +922,67 @@ KERNEL_TEST(a_record_is_found_by_its_table_and_its_offset)
                       advanced_configuration_and_power_interface_machine_language_record_find(
                           cache, PREDECODING_FIND_TABLE, PREDECODING_FIND_PC) == 0u,
                       "the same offset of table 22 finds none");
+}
+
+/**
+ * @brief A tight loop that a deeper call enters at once, its records linked by an earlier one, holds the values of
+ *        its body as the loop holds them (§3.6): PKTL returns 6, with records as without, after tight turns.
+ */
+KERNEL_TEST(a_tight_loop_entered_deeper_holds_its_body_s_values)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_deeper_tight, sizeof(predecoding_deeper_tight),
+                                                     2u, "\\PKTL", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 6u && run.tight_turns != 0u, "PKTL returns 6, after tight turns");
+}
+
+/**
+ * @brief A While runs as a tight loop only when its predicate compares two leaves and its body writes: a Break as
+ *        the body (BRKB), an operator as the predicate (ANDW), two LNot over a comparison (NNOT) run no tight turn,
+ *        with records as without; a bound that becomes a String between two entries is handed back at the second
+ *        (TOPR), after tight turns at the first.
+ */
+KERNEL_TEST(only_a_comparison_of_two_leaves_over_a_writing_body_is_a_tight_loop)
+{
+    const PredecodingRun_t breaks = predecoding_compare(test, predecoding_break_body, sizeof(predecoding_break_body),
+                                                        2u, "\\BRKB", 7u, true, "fold_break");
+    const PredecodingRun_t ands =
+        predecoding_compare(test, predecoding_and_predicate, sizeof(predecoding_and_predicate), 2u, "\\ANDW",
+                            PREDECODING_NO_ARGUMENT, true, "fold_and");
+    const PredecodingRun_t nots = predecoding_compare(test, predecoding_two_lnot, sizeof(predecoding_two_lnot), 2u,
+                                                      "\\NNOT", PREDECODING_NO_ARGUMENT, true, "fold_lnot");
+    const PredecodingRun_t strings =
+        predecoding_compare(test, predecoding_string_bound, sizeof(predecoding_string_bound), 2u, "\\TOPR",
+                            PREDECODING_NO_ARGUMENT, true, "fold_string");
+
+    kernel_test_check(test, breaks.result == 7u && breaks.tight_turns == 0u, "BRKB returns 7, no tight turn");
+    kernel_test_check(test, ands.result == 0u && ands.tight_turns == 0u, "ANDW returns 0, no tight turn");
+    kernel_test_check(test, nots.result == 5u && nots.tight_turns == 0u, "NNOT returns 5, no tight turn");
+    kernel_test_check(test, strings.result == 9u && strings.tight_turns != 0u, "TOPR returns 9, after tight turns");
+}
+
+/**
+ * @brief A tight loop whose body needs more values than the evaluation has left is handed back, and the loop fails
+ *        as it fails without records (§6.1): ROOM's inner While, linked by a first call, entered from records two
+ *        values short of its body in a second, deeper by 1,014 values and some Adds, the loop then failing with
+ *        limit_values, with records as without. The control: one depth of those tried fails so.
+ */
+KERNEL_TEST(a_tight_loop_whose_body_has_no_room_is_handed_back)
+{
+    static const char *const keys[] = {"fold_5_pads", "fold_6_pads", "fold_7_pads", "fold_8_pads", "fold_9_pads"};
+    uint32_t short_of_room = 0u;
+
+    for (uint32_t pads = 5u; pads < 10u; ++pads)
+    {
+        predecoding_write_room(pads);
+        if (!kernel_test_check(test, !predecoding_method.overflowed, "the made-up AML fits"))
+            return;
+
+        const PredecodingRun_t run = predecoding_compare(test, predecoding_method.bytes, predecoding_method.length, 2u,
+                                                         "\\MAIN", PREDECODING_NO_ARGUMENT, true, keys[pads - 5u]);
+
+        short_of_room +=
+            (run.status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_VALUES) ? 1u : 0u;
+    }
+    kernel_test_check(test, short_of_room != 0u, "a depth leaves the body no room, and the loop fails there");
 }

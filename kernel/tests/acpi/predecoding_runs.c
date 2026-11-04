@@ -144,6 +144,7 @@ void predecoding_evaluate(const char *path, uint64_t argument, PredecodingRun_t 
             (argument == PREDECODING_NO_ARGUMENT) ? 0u : 1u, &result);
 
     run->fold = predecoding_fold(status, &result);
+    run->status = status;
     run->result = result.payload;
     predecoding_counts(run);
     advanced_configuration_and_power_interface_machine_language_value_release(&predecoding_load.heap,
