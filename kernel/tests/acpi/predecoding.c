@@ -627,6 +627,23 @@ static const uint8_t predecoding_tight_name[] = {
 };
 
 /**
+ * @brief An External a table the loop loads fills with an Alias, as MAIN: `External (\FOO_); Scope (\FOO_) { Name
+ *        (BAR_, 1) }`, DEVB.BAR_ holding 100, then `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local0++; If (Local0
+ * == 3) { Load (TBLR, HNDL) }; Local1 += \FOO_.BAR_ }; Return (Local1)`, the table loaded declaring `Alias (\DEVB,
+ *        \FOO_)`: 1 + 1 + 100 + 100, so 202.
+ */
+static const uint8_t predecoding_alias_fills[] = {
+    0x15u, 0x5Cu, 'F',   'O',   'O',   '_',   0x06u, 0x00u, 0x10u, 0x0Cu, 0x5Cu, 'F',   'O',   'O',   '_',   0x08u,
+    'B',   'A',   'R',   '_',   0x01u, 0x5Bu, 0x82u, 0x0Cu, 'D',   'E',   'V',   'B',   0x08u, 'B',   'A',   'R',
+    '_',   0x0Au, 0x64u, 0x08u, 'H',   'N',   'D',   'L',   0x00u, 0x5Bu, 0x80u, 'T',   'B',   'L',   'R',   0x00u,
+    0x0Cu, 0x00u, 0x00u, 0x30u, 0x00u, 0x0Au, 0x32u, 0x14u, 0x33u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u,
+    0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x24u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x0Fu, 0x93u, 0x60u,
+    0x0Au, 0x03u, 0x5Bu, 0x20u, 'T',   'B',   'L',   'R',   'H',   'N',   'D',   'L',   0x72u, 0x61u, 0x5Cu, 0x2Eu,
+    'F',   'O',   'O',   '_',   'B',   'A',   'R',   '_',   0x61u, 0xA4u, 0x61u,
+};
+static const uint8_t predecoding_alias_loaded[] = {0x06u, 0x5Cu, 'D', 'E', 'V', 'B', 0x5Cu, 'F', 'O', 'O', '_'};
+
+/**
  * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
  */
 static const uint8_t predecoding_while[] = {0xA2u, 0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u};
@@ -1723,4 +1740,30 @@ KERNEL_TEST(a_while_whose_predicate_reads_a_name_is_no_tight_loop)
                                                      "\\TIGN", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 5u && run.tight_turns == 0u, "TIGN returns 5, no tight turn");
+}
+
+/**
+ * @brief An External that a declaration fills changes what a name resolves to, and the generation moves with it
+ *        (§3.6): MAIN reads \FOO_.BAR_ from 1 to 100 once a table it loads makes \FOO_ an Alias of \DEVB, with records
+ *        as without. The control: every name read finds the node its record checked.
+ */
+KERNEL_TEST(an_external_an_alias_fills_moves_what_a_record_reads)
+{
+    PredecodingRun_t runs[2] = {{0}, {0}};
+
+    for (uint32_t predecodes = 0u; predecodes < 2u; ++predecodes)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = made_up_definition_block(
+            predecoding_second_table, "SSDT", 2u, predecoding_alias_loaded, sizeof(predecoding_alias_loaded));
+
+        if (!predecoding_open(test, 2u, predecoding_alias_fills, sizeof(predecoding_alias_fills), predecodes != 0u))
+            return;
+        predecoding_poke(PREDECODING_LOADED_ADDRESS, predecoding_second_table, header->length);
+        predecoding_evaluate("\\MAIN", PREDECODING_NO_ARGUMENT, &runs[predecodes]);
+        predecoding_close();
+    }
+    kernel_test_check(test, runs[0].result == 202u, "MAIN returns 202");
+    kernel_test_check(test, runs[1].fold == runs[0].fold && runs[1].stale_names == 0u,
+                      "the records leave what the loop leaves, every name read finding the node its record checked");
+    kernel_test_measure_hexadecimal(test, "fold", runs[1].fold);
 }

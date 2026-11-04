@@ -444,6 +444,37 @@ static bool made_up_firmware_declares(AdvancedConfigurationAndPowerInterfaceMach
 }
 
 /**
+ * @brief DSDTs whose IndexField has its index register, IDXI, on a byte of the DSDT, its data register, DATF, a byte
+ *        elsewhere, each in a SystemMemory region whose address the test writes: reading a unit of the IndexField
+ *        writes its index over that byte. In the first, MAIN runs `Local1 = 0x11; Local2 = 0x22; Local0 = 0; While
+ *        (Local0 < 4) { Local5 = IDXC; Local1 = IDXB; Local0++ }; Return (Local1 + Local2)`, IDXI on the target of
+ *        `Local1 = IDXB`, which the index rewrites; in the second, `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local5
+ *        = IDXA; Local1 += IDXB + VALA; Local0++ }; Return (Local1)`, IDXI on the last character of VALA, which the
+ *        index turns into VALB.
+ */
+static const uint8_t made_up_firmware_index_target[] = {
+    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu, 0x81u,
+    0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'I',   'D',   'X',   'I',   0x08u, 0x5Bu, 0x80u, 'D',   'R',   'E',
+    'G',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'D',   'R',   'E',   'G',
+    0x01u, 'D',   'A',   'T',   'F',   0x08u, 0x5Bu, 0x86u, 0x17u, 'I',   'D',   'X',   'I',   'D',   'A',   'T',
+    'F',   0x01u, 0x00u, 0x48u, 0x30u, 'I',   'D',   'X',   'B',   0x08u, 'I',   'D',   'X',   'C',   0x08u, 0x14u,
+    0x2Au, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x0Au, 0x11u, 0x61u, 0x70u, 0x0Au, 0x22u, 0x62u, 0x70u, 0x00u,
+    0x60u, 0xA2u, 0x13u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x70u, 'I',   'D',   'X',   'C',   0x65u, 0x70u, 'I',   'D',
+    'X',   'B',   0x61u, 0x75u, 0x60u, 0xA4u, 0x72u, 0x61u, 0x62u, 0x00u,
+};
+static const uint8_t made_up_firmware_index_name[] = {
+    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu,
+    0x81u, 0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'I',   'D',   'X',   'I',   0x08u, 0x5Bu, 0x80u, 'D',
+    'R',   'E',   'G',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'D',
+    'R',   'E',   'G',   0x01u, 'D',   'A',   'T',   'F',   0x08u, 0x5Bu, 0x86u, 0x17u, 'I',   'D',   'X',
+    'I',   'D',   'A',   'T',   'F',   0x01u, 0x00u, 0x48u, 0x20u, 'I',   'D',   'X',   'A',   0x08u, 'I',
+    'D',   'X',   'B',   0x08u, 0x08u, 'V',   'A',   'L',   'A',   0x0Bu, 0x00u, 0x01u, 0x08u, 'V',   'A',
+    'L',   'B',   0x0Bu, 0x00u, 0x02u, 0x14u, 0x26u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u,
+    0x70u, 0x00u, 0x61u, 0xA2u, 0x17u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x70u, 'I',   'D',   'X',   'A',   0x65u,
+    0x72u, 'I',   'D',   'X',   'B',   'V',   'A',   'L',   'A',   0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
  * @brief The simulated host's memory write, made through to the firmware's page too, so that a write over a
  *        table's bytes changes the bytes the load reads in place, as it would on a machine; the simulated host
  *        alone keeps what a region writes apart from the ranges it serves.
@@ -1085,4 +1116,47 @@ KERNEL_TEST(kept_data_is_built_before_a_write_lands_on_its_table)
                       "PKG0's first element is 0x11, the Package built from the bytes before the write");
     kernel_test_measure(test, "first_element", (uint32_t) result.payload);
     made_up_firmware_unload_writes(test);
+}
+
+/**
+ * @brief A record reads no field whose read writes a register, an IndexField's index or a BankField's bank, which may
+ *        land on the bytes of a table the load reads in place (§3.6, §5.3): with IDXI on the DSDT, MAIN returns 0x22
+ *        when the index rewrites the target of the Store that reads the field, and 0x200 when it rewrites a name the
+ *        loop reads, with records as without.
+ */
+KERNEL_TEST(a_record_reads_no_field_whose_read_writes_a_register)
+{
+    static const struct {
+        const uint8_t *aml;
+        uint32_t length;
+        uint32_t byte;
+        uint64_t result;
+    } cases[] = {
+        {made_up_firmware_index_target, sizeof(made_up_firmware_index_target), 114u, 0x22u },
+        {made_up_firmware_index_name,   sizeof(made_up_firmware_index_name),   128u, 0x200u},
+    };
+    uint32_t agree = 0u;
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+    {
+        const uint32_t places[] = {MADE_UP_FIRMWARE_FIRST_ADDRESS, 35u};
+        const uint32_t addresses[] = {
+            MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
+                cases[index].byte,
+            MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_ELSEWHERE,
+        };
+        const MadeUpWriteTable_t table = {cases[index].aml, cases[index].length, MADE_UP_FIRMWARE_DSDT_64_OFFSET,
+                                          places,           addresses,           2u};
+        MadeUpWriteRun_t runs[2] = {
+            {0u, 0u, 0u, 0u},
+            {0u, 0u, 0u, 0u}
+        };
+
+        if (!made_up_firmware_run_writes(test, &table, "\\MAIN", false, &runs[0]) ||
+            !made_up_firmware_run_writes(test, &table, "\\MAIN", true, &runs[1]))
+            return;
+        agree += (runs[0].result == cases[index].result && runs[1].result == runs[0].result) ? 1u : 0u;
+    }
+    kernel_test_check(test, agree == sizeof(cases) / sizeof(cases[0]),
+                      "MAIN returns 0x22, then 0x200, with records as without");
 }
