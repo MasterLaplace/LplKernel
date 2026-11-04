@@ -81,6 +81,7 @@ static void predecoding_counts(PredecodingRun_t *run)
         run->declined += cache->declined[reason];
     run->flushes = cache->flushes;
     run->built = cache->built;
+    run->tight_turns = cache->tight_turns;
 }
 
 bool predecoding_open_empty(KernelTest_t *test, bool predecodes)
@@ -143,6 +144,8 @@ void predecoding_evaluate(const char *path, uint64_t argument, PredecodingRun_t 
             (argument == PREDECODING_NO_ARGUMENT) ? 0u : 1u, &result);
 
     run->fold = predecoding_fold(status, &result);
+    run->status = status;
+    run->result = result.payload;
     predecoding_counts(run);
     advanced_configuration_and_power_interface_machine_language_value_release(&predecoding_load.heap,
                                                                               &predecoding_load.space, &result);

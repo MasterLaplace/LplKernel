@@ -103,6 +103,62 @@ static void programs_expression(ProgramsWriter_t *writer, MadeUpAml_t *aml, uint
 static void programs_statements(ProgramsWriter_t *writer, MadeUpAml_t *aml);
 
 /**
+ * @brief Appends a While that runs as a tight loop: the counter of its depth set, compared with a constant,
+ *        and stepped by one statement, an Increment, a Decrement, an Add with a target under an LNot over
+ *        LGreater, a Store of an Add, or an Add of a modulo by a data local, which may hold 0 or a String.
+ */
+static void programs_tight_while(ProgramsWriter_t *writer, MadeUpAml_t *aml)
+{
+    static const uint8_t while_lead[] = {0xA2u};
+    MadeUpAml_t *body = &programs_bodies[writer->depth + 1u];
+    const uint8_t counter = (uint8_t) (PROGRAMS_LOCAL0 + PROGRAMS_DATA_LOCALS + writer->depth);
+    const uint8_t bound = (uint8_t) (2u + programs_pick(writer, 5u));
+    const uint8_t data = (uint8_t) (PROGRAMS_LOCAL0 + programs_pick(writer, PROGRAMS_DATA_LOCALS));
+    const uint8_t step = (uint8_t) (1u + programs_pick(writer, 3u));
+    const uint8_t count_up[] = {0x70u, 0x00u, counter};
+    const uint8_t count_down[] = {0x70u, 0x0Au, bound, counter};
+    const uint8_t below[] = {0x95u, counter, 0x0Au, bound};
+    const uint8_t above_zero[] = {0x94u, counter, 0x00u};
+    const uint8_t at_most[] = {0x92u, 0x94u, counter, 0x0Au, bound};
+    const uint8_t increment[] = {0x75u, counter};
+    const uint8_t decrement[] = {0x76u, counter};
+    const uint8_t add[] = {0x72u, counter, 0x0Au, step, counter};
+    const uint8_t store_sum[] = {0x70u, 0x72u, counter, 0x01u, 0x00u, counter};
+    const uint8_t add_modulo[] = {0x72u, counter, 0x72u, 0x01u, 0x85u, 0x00u, data, 0x00u, 0x00u, counter};
+
+    made_up_aml_begin(body);
+    switch (programs_pick(writer, 5u))
+    {
+    case 0u:
+        made_up_aml_raw(aml, count_up, sizeof(count_up));
+        made_up_aml_raw(body, below, sizeof(below));
+        made_up_aml_raw(body, increment, sizeof(increment));
+        break;
+    case 1u:
+        made_up_aml_raw(aml, count_down, sizeof(count_down));
+        made_up_aml_raw(body, above_zero, sizeof(above_zero));
+        made_up_aml_raw(body, decrement, sizeof(decrement));
+        break;
+    case 2u:
+        made_up_aml_raw(aml, count_up, sizeof(count_up));
+        made_up_aml_raw(body, at_most, sizeof(at_most));
+        made_up_aml_raw(body, add, sizeof(add));
+        break;
+    case 3u:
+        made_up_aml_raw(aml, count_up, sizeof(count_up));
+        made_up_aml_raw(body, below, sizeof(below));
+        made_up_aml_raw(body, store_sum, sizeof(store_sum));
+        break;
+    default:
+        made_up_aml_raw(aml, count_up, sizeof(count_up));
+        made_up_aml_raw(body, below, sizeof(below));
+        made_up_aml_raw(body, add_modulo, sizeof(add_modulo));
+        break;
+    }
+    made_up_aml_construct(aml, while_lead, sizeof(while_lead), body);
+}
+
+/**
  * @brief Appends an If, or a While that counts its turns in the local of its depth, its body the next
  *        builder, and an Else after an If one time in two.
  */
@@ -141,12 +197,13 @@ static void programs_construct(ProgramsWriter_t *writer, MadeUpAml_t *aml, bool 
 }
 
 /**
- * @brief Appends one statement: a store, a step or an operator into a data local, a construct, a Break
- *        or a Continue inside a While, or one that hands records back: a String stored to a local.
+ * @brief Appends one statement: a store, a step or an operator into a data local or NullName, a construct, a While
+ *        that runs as a tight loop, a Break or a Continue inside a While, or one that hands records back:
+ *        a String stored to a local.
  */
 static void programs_statement(ProgramsWriter_t *writer, MadeUpAml_t *aml)
 {
-    const uint32_t choice = programs_pick(writer, 12u);
+    const uint32_t choice = programs_pick(writer, 13u);
     const uint8_t local = (uint8_t) (PROGRAMS_LOCAL0 + programs_pick(writer, PROGRAMS_DATA_LOCALS));
 
     if (choice < 3u)
@@ -165,7 +222,7 @@ static void programs_statement(ProgramsWriter_t *writer, MadeUpAml_t *aml)
         programs_byte(aml, 0x72u);
         programs_expression(writer, aml, 1u);
         programs_expression(writer, aml, 1u);
-        programs_byte(aml, local);
+        programs_byte(aml, (programs_pick(writer, 4u) == 0u) ? PROGRAMS_NULL_NAME : local);
     }
     else if (choice < 9u && writer->depth < PROGRAMS_MAX_DEPTH)
         programs_construct(writer, aml, choice == 8u);
@@ -177,6 +234,8 @@ static void programs_statement(ProgramsWriter_t *writer, MadeUpAml_t *aml)
 
         made_up_aml_raw(aml, string, sizeof(string));
     }
+    else if (choice == 11u)
+        programs_tight_while(writer, aml);
     else
         programs_byte(aml, 0xA3u);
 }
@@ -243,9 +302,10 @@ KERNEL_TEST(the_boot_line_decides_whether_loops_run_from_records)
  * @brief Methods written from a fixed seed, with While, If, Else, Break and Continue nested in loops of a
  *        few turns, operators, comparisons and LNot over locals, Arg0 (its 32 high bits set but for the
  *        first) and constants of every width, and
- *        statements that hand records back, leave what the loop leaves when their loops run from records:
- *        each runs with records off, then on, under both integer widths, and both leave the same fold.
- *        The control: records ran, and were handed back, over the methods.
+ *        statements that hand records back, and While that run as tight loops, leave what the loop leaves
+ *        when their loops run from records: each runs with records off, then on, under both integer
+ *        widths, and both leave the same fold. The control: records ran, and were handed back, and While
+ *        ran as tight loops, over the methods.
  */
 KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
 {
@@ -254,6 +314,7 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
     uint32_t written = 0u;
     uint64_t records_run = 0u;
     uint64_t declined = 0u;
+    uint64_t tight_turns = 0u;
 
     for (uint32_t program = 0u; program < PROGRAMS_COUNT; ++program)
     {
@@ -273,10 +334,39 @@ KERNEL_TEST(methods_written_at_random_leave_what_the_loop_leaves)
         agree += (off.fold == on.fold && off.records_run == 0u) ? 1u : 0u;
         records_run += on.records_run;
         declined += on.declined;
+        tight_turns += on.tight_turns;
     }
     kernel_test_check(test, written > PROGRAMS_COUNT / 2u, "most methods fit their builder");
     kernel_test_check(test, agree == written, "every method leaves with records what it leaves without");
-    kernel_test_check(test, records_run != 0u && declined != 0u, "records ran, and were handed back");
+    kernel_test_check(test, records_run != 0u && declined != 0u && tight_turns != 0u,
+                      "records ran, and were handed back, and While ran as tight loops");
     kernel_test_measure(test, "methods", written);
     kernel_test_measure(test, "records_run", (uint32_t) records_run);
+    kernel_test_measure(test, "tight_turns", (uint32_t) tight_turns);
+}
+
+/**
+ * @brief A tight loop that never ends is stopped past 2^20 back-edges (§6.1) as the loop stops it:
+ *        ENDL, `Local0 = 0; While (Local0 < 1) { Local0 = 0 }`, leaves the same fold, its status
+ *        included, with records and without. The control: its first turn is decoded, its
+ *        second runs from its two records, and every other one up to the failing back-edge, 2^20 - 1,
+ *        runs as a tight loop.
+ */
+KERNEL_TEST(a_tight_loop_that_never_ends_is_stopped_as_the_loop_stops_it)
+{
+    static const uint8_t endless[] = {
+        0x14u, 0x13u, 'E',   'N',   'D',   'L',   0x00u, 0x70u, 0x00u, 0x60u,
+        0xA2u, 0x07u, 0x95u, 0x60u, 0x01u, 0x70u, 0x00u, 0x60u, 0xA4u, 0x60u,
+    };
+    PredecodingRun_t off = {0};
+    PredecodingRun_t on = {0};
+
+    if (!predecoding_run(test, endless, sizeof(endless), 2u, "\\ENDL", PREDECODING_NO_ARGUMENT, false, &off) ||
+        !predecoding_run(test, endless, sizeof(endless), 2u, "\\ENDL", PREDECODING_NO_ARGUMENT, true, &on))
+        return;
+    kernel_test_check(test, off.fold == on.fold, "the records leave what the loop leaves");
+    kernel_test_check(
+        test, on.tight_turns == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS - 1u,
+        "2^20 - 1 turns run as a tight loop");
+    kernel_test_measure_hexadecimal(test, "fold", on.fold);
 }

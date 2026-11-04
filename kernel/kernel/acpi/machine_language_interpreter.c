@@ -4182,14 +4182,14 @@ static bool machine_language_record_operand(const MachineLanguageLoad_t *load, c
 }
 
 /**
- * @brief Runs the operators of a record's expression in the loop's order, then gives the value of its
- *        predicate; changes nothing.
+ * @brief Runs the operators of a record's expression in the loop's order, then gives the Integer of its
+ *        source: an If's or a While's predicate, or what an operator stores; changes nothing.
  *
  * @return false, @p out_reason saying why, when an operand holds no Integer or an operator would fail.
  */
-static bool machine_language_record_predicate(const MachineLanguageLoad_t *load, const MachineLanguageFrame_t *frame,
-                                              const MachineLanguageRecord_t *record, uint64_t *out_integer,
-                                              uint8_t *out_reason)
+static bool machine_language_record_integer(const MachineLanguageLoad_t *load, const MachineLanguageFrame_t *frame,
+                                            const MachineLanguageRecord_t *record, uint64_t *out_integer,
+                                            uint8_t *out_reason)
 {
     uint64_t results[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NODES_PER_RECORD];
 
@@ -4225,6 +4225,102 @@ static bool machine_language_record_predicate(const MachineLanguageLoad_t *load,
 }
 
 /**
+ * @brief The local or the argument a record's operand names.
+ */
+static MachineLanguageValue_t *machine_language_record_local_or_argument(MachineLanguageFrame_t *frame,
+                                                                         const MachineLanguageRecordOperand_t *operand)
+{
+    return (operand->kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL)) ? &frame->locals[operand->slot] :
+                                                                       &frame->arguments[operand->slot];
+}
+
+/**
+ * @brief The value a Store's record stores: a local or an argument that holds an Integer, whole and
+ *        unmasked, as a Store copies a value (§5.2); otherwise the Integer its expression gives.
+ *
+ * @return false, @p out_reason saying why, when an operand holds no Integer or an operator would fail.
+ */
+static bool machine_language_record_value(const MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                          const MachineLanguageRecord_t *record, MachineLanguageValue_t *out_value,
+                                          uint8_t *out_reason)
+{
+    uint64_t integer = 0u;
+
+    if (record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(LOCAL) ||
+        record->source.kind == MACHINE_LANGUAGE_RECORD_OPERAND(ARGUMENT))
+    {
+        const MachineLanguageValue_t *slot = machine_language_record_local_or_argument(frame, &record->source);
+
+        *out_reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
+        if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
+            return false;
+        *out_value = *slot;
+        return true;
+    }
+    if (!machine_language_record_integer(load, frame, record, &integer, out_reason))
+        return false;
+    *out_value = machine_language_integer(integer);
+    return true;
+}
+
+/**
+ * @brief Runs a Store, an operator with a target, an Increment or a Decrement from its record: its value,
+ *        then written to the local or the argument it targets as machine_language_store writes an
+ *        Integer there, in place; an operator whose target is NullName writes nothing.
+ *
+ * @return false, @p out_reason saying why, nothing changed, when an operand holds no Integer, an operator
+ *         would fail, or the target holds what is not overwritten in place, or no Integer to step.
+ */
+static bool machine_language_record_write(const MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                          const MachineLanguageRecord_t *record, uint8_t *out_reason)
+{
+    MachineLanguageValue_t value;
+    MachineLanguageValue_t *slot = NULL;
+
+    if (record->shape == MACHINE_LANGUAGE_RECORD(STORE))
+    {
+        if (!machine_language_record_value(load, frame, record, &value, out_reason))
+            return false;
+        if (record->target.kind == MACHINE_LANGUAGE_RECORD_OPERAND(NONE))
+            return true;
+        slot = machine_language_record_local_or_argument(frame, &record->target);
+    }
+    else
+    {
+        slot = machine_language_record_local_or_argument(frame, &record->target);
+        *out_reason = MACHINE_LANGUAGE_DECLINED(TARGET);
+        if (slot->kind != MACHINE_LANGUAGE_VALUE(INTEGER))
+            return false;
+        value = machine_language_integer(machine_language_stepped(load, machine_language_mask(load, slot->payload),
+                                                                  record->shape == MACHINE_LANGUAGE_RECORD(INCREMENT)));
+    }
+    *out_reason = MACHINE_LANGUAGE_DECLINED(TARGET);
+    if (!machine_language_overwrites_in_place(slot))
+        return false;
+    machine_language_overwrite_in_place(slot, &value);
+    return true;
+}
+
+/**
+ * @brief Runs a statement that writes from its record, the frame then past it.
+ *
+ * @return false, the reason counted, when the record hands the statement back, nothing changed.
+ */
+static bool machine_language_record_statement(MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                              const MachineLanguageRecord_t *record)
+{
+    uint8_t reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
+
+    if (!machine_language_record_write(load, frame, record, &reason))
+    {
+        ++load->predecoding.declined[reason];
+        return false;
+    }
+    frame->pc = record->after;
+    return true;
+}
+
+/**
  * @brief The record of the statement at the running frame's pc, found by @p index when it holds that
  *        statement's key, by the cache's hash otherwise, built when the cache holds none: NULL, the reason
  *        counted, when a record built under another end of the construct is found, or when the cache is
@@ -4257,7 +4353,7 @@ static MachineLanguageRecord_t *machine_language_record_at(MachineLanguageLoad_t
             return NULL;
         }
         if (previous != 0u)
-            cache->records[previous - 1u].next = *index;
+            advanced_configuration_and_power_interface_machine_language_record_link(cache, previous, *index);
     }
     if (cache->records[*index - 1u].limit == block->end)
         return &cache->records[*index - 1u];
@@ -4278,7 +4374,7 @@ static bool machine_language_record_branch(MachineLanguageLoad_t *load, MachineL
     uint64_t truth = 0u;
     uint8_t reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
 
-    if (!machine_language_record_predicate(load, frame, record, &truth, &reason) ||
+    if (!machine_language_record_integer(load, frame, record, &truth, &reason) ||
         (truth != 0u &&
          evaluation->block_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS))
     {
@@ -4298,6 +4394,98 @@ static bool machine_language_record_branch(MachineLanguageLoad_t *load, MachineL
     if (record->shape == MACHINE_LANGUAGE_RECORD(IF))
         *out_status = machine_language_enter_else(evaluation);
     return true;
+}
+
+/**
+ * @brief The record of a While's body when the While runs as a tight loop now (§3.6): the While was linked to a body
+ *        that makes it one, and the body fits the room the stacks have left, which changes from one call to the
+ *        next, as a block would, were the body handed back; NULL otherwise.
+ */
+static const MachineLanguageRecord_t *machine_language_tight_body(const MachineLanguageEvaluation_t *evaluation,
+                                                                  const MachineLanguagePredecoding_t *cache,
+                                                                  const MachineLanguageRecord_t *loop,
+                                                                  uint32_t value_room, uint32_t operator_room)
+{
+    const MachineLanguageRecord_t *body = &cache->records[loop->next - 1u];
+
+    if (loop->tight == 0u || body->values_peak > value_room || body->operators_peak > operator_room ||
+        evaluation->block_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS)
+        return NULL;
+    return body;
+}
+
+/**
+ * @brief Runs a While that machine_language_tight_body accepts, turn after turn as its two records would
+ *        run: the predicate, the body, the back-edge, no block opened; the frame is left as the records
+ *        would leave it, the While's block open when its body is handed back.
+ *
+ * @param load          The load.
+ * @param frame         The running frame, at the While.
+ * @param loop          The While's record.
+ * @param body          Its body's record.
+ * @param inout_values  The most values the records run so far held, raised by the two records.
+ * @param inout_ran     Set when a record ran.
+ * @param out_status    Receives what a back-edge past the evaluation's budget failed with.
+ * @return true when the predicate failed, the frame past the While, or a back-edge failed; false, the
+ *         reason counted, when a record handed its statement back.
+ */
+static bool machine_language_run_tight_while(MachineLanguageLoad_t *load, MachineLanguageFrame_t *frame,
+                                             const MachineLanguageRecord_t *loop, const MachineLanguageRecord_t *body,
+                                             uint32_t *inout_values, bool *inout_ran,
+                                             MachineLanguageStatus_t *out_status)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguagePredecoding_t *cache = &load->predecoding;
+    const MachineLanguageRecordNode_t *node = &cache->nodes[loop->first_node];
+    const bool negated = node->negated != 0u;
+    uint8_t reason = MACHINE_LANGUAGE_DECLINED(OPERAND);
+    uint32_t turns = 0u;
+    uint32_t ran = 0u;
+    uint64_t left = 0u;
+    uint64_t right = 0u;
+    bool goes_on = true;
+
+    for (;;)
+    {
+        if (!machine_language_record_operand(load, frame, &node->operands[0], NULL, &left) ||
+            !machine_language_record_operand(load, frame, &node->operands[1], NULL, &right))
+        {
+            ++cache->declined[MACHINE_LANGUAGE_DECLINED(OPERAND)];
+            frame->pc = loop->pc;
+            goes_on = false;
+            break;
+        }
+        ++ran;
+        if (machine_language_integers_compare(node->opcode, left, right) == negated)
+        {
+            frame->pc = loop->end;
+            break;
+        }
+        if (!machine_language_record_write(load, frame, body, &reason))
+        {
+            ++cache->declined[reason];
+            *out_status = machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_WHILE, loop->pc, loop->end,
+                                                machine_language_block(evaluation)->scope);
+            frame->pc = loop->after;
+            goes_on = false;
+            break;
+        }
+        ++turns;
+        *out_status = machine_language_count_iteration(evaluation);
+        if (*out_status != MACHINE_LANGUAGE_OK)
+        {
+            frame->pc = loop->pc;
+            break;
+        }
+    }
+    cache->records_run += ran + turns;
+    cache->tight_turns += turns;
+    *inout_ran = *inout_ran || ran != 0u;
+    if (ran != 0u && loop->values_peak > *inout_values)
+        *inout_values = loop->values_peak;
+    if (turns != 0u && body->values_peak > *inout_values)
+        *inout_values = body->values_peak;
+    return goes_on;
 }
 
 /**
@@ -4357,6 +4545,7 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
             break;
 
         const MachineLanguageRecord_t *record = machine_language_record_at(load, frame, &block, &index, previous);
+        const MachineLanguageRecord_t *body = NULL;
 
         if (record == NULL)
             break;
@@ -4367,10 +4556,25 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
                                                                                     MACHINE_LANGUAGE_DECLINED(ROOM)];
             break;
         }
+        if (record->tight != 0u)
+            body = machine_language_tight_body(evaluation, cache, record, value_room, operator_room);
+        if (body != NULL)
+        {
+            if (!machine_language_run_tight_while(load, frame, record, body, &values_peak, out_ran, &status))
+                break;
+            previous = 0u;
+            index = 0u;
+            continue;
+        }
         if (record->shape == MACHINE_LANGUAGE_RECORD(BREAK))
         {
             frame->pc = record->after;
             status = machine_language_leave_loop(evaluation, false);
+        }
+        else if (advanced_configuration_and_power_interface_machine_language_record_writes(record->shape))
+        {
+            if (!machine_language_record_statement(load, frame, record))
+                break;
         }
         else if (!machine_language_record_branch(load, frame, record, &status))
             break;

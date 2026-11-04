@@ -234,15 +234,16 @@ acpi_helper_write_services_record(Serial_t *serial,
 /**
  * @brief Writes the `[LPLTLM] acpi.predecoding` record (§3.6, §6.1): whether loops run from records, the
  *        back-edges every evaluation took, the statements records ran, those they handed back per reason,
- *        the records built, the times the cache was emptied, its peak, and the comparisons decoded with
- *        their LNot.
+ *        the records built, the times the cache was emptied, its peak, the comparisons decoded with their
+ *        LNot, and the turns of While run as tight loops.
  */
 static void
 acpi_helper_write_predecoding_record(Serial_t *serial,
                                      const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     static const char *const reasons[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES] = {
-        "declined_shape", "declined_limit", "declined_operand", "declined_room", "declined_operation", "declined_full",
+        "declined_shape",     "declined_limit", "declined_operand", "declined_room",
+        "declined_operation", "declined_full",  "declined_target",
     };
     const AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache = &load->predecoding;
 
@@ -256,6 +257,7 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("flushes", cache->flushes);
     kernel_telemetry_write_unsigned("records_peak", cache->records_peak);
     kernel_telemetry_write_unsigned("fused_comparisons", cache->fused_comparisons);
+    kernel_telemetry_write_unsigned("tight_turns", cache->tight_turns);
     kernel_telemetry_end_record();
 }
 

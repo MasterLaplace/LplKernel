@@ -33,15 +33,18 @@
 #define PREDECODING_NO_ARGUMENT ~0ull /**< What a method called without an argument is given. */
 
 /**
- * @brief What one evaluation of a made-up method left: its fold, and what the records ran and handed
- *        back.
+ * @brief What one evaluation of a made-up method left: its fold and its result, and what the records ran
+ *        and handed back.
  */
 typedef struct PredecodingRun {
     uint32_t fold;        /**< The status, the result and everything the load counted, as FNV-1a. */
+    uint32_t status;      /**< The evaluation's status. */
     uint32_t records_run; /**< Statements and predicates run from records. */
     uint32_t declined;    /**< Statements the records handed back, over every reason. */
     uint32_t flushes;     /**< Times the cache was emptied. */
     uint32_t built;       /**< Records built. */
+    uint32_t tight_turns; /**< Turns of While run as tight loops. */
+    uint64_t result;      /**< The result's payload, whole. */
 } PredecodingRun_t;
 
 /**

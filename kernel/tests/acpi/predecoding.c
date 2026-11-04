@@ -185,6 +185,117 @@ static const uint8_t predecoding_once[] = {
 };
 
 /**
+ * @brief A revision-1 STOR (Arg0) that stores its argument whole: `Local0 = 0; While (Local0 < 2)
+ *        { Local1 = Arg0; Local0++ }; Return (Local1)`.
+ */
+static const uint8_t predecoding_store_whole[] = {
+    0x14u, 0x16u, 'S',   'T',   'O',   'R',   0x01u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Au,
+    0x95u, 0x60u, 0x0Au, 0x02u, 0x70u, 0x68u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief Targets a record hands back, as UNIN: `Local0 = 0; Local1 = "7"; While (Local0 < 3) { Local0++;
+ *        If (Local0 == 2) { Local6++; Local1 = Local0 } }; Return (Local6 + Local1)`: at the second turn,
+ *        the first from records, Local6 holds nothing to step and Local1 a String to give back.
+ */
+static const uint8_t predecoding_targets[] = {
+    0x14u, 0x26u, 'U',   'N',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x0Du, 0x37u,
+    0x00u, 0x61u, 0xA2u, 0x12u, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x0Au, 0x93u,
+    0x60u, 0x0Au, 0x02u, 0x75u, 0x66u, 0x70u, 0x60u, 0x61u, 0xA4u, 0x72u, 0x66u, 0x61u, 0x00u,
+};
+
+/**
+ * @brief A Store first run from a record, as PEAK: `Local0++` three times, then `While (Local0) { Local0--;
+ *        If (Local1) { Local2 = Local0 }; Local1++ }; Return (Local2)`; nothing before its second turn holds
+ *        2 values, and the Store, its If false at the first turn, first runs at the second, from its record.
+ */
+static const uint8_t predecoding_store_peak[] = {
+    0x14u, 0x1Bu, 'P',   'E',   'A',   'K',   0x00u, 0x75u, 0x60u, 0x75u, 0x60u, 0x75u, 0x60u, 0xA2u,
+    0x0Cu, 0x60u, 0x76u, 0x60u, 0xA0u, 0x05u, 0x61u, 0x70u, 0x60u, 0x62u, 0x75u, 0x61u, 0xA4u, 0x62u,
+};
+
+/**
+ * @brief Three While that run as tight loops, as MAIN: `Local0 = 0; While (!(Local0 > 9)) { Local0 += 3 }`,
+ *        `Local1 = Local0; While (Local1 > 0) { Local1-- }`, `Local2 = 0; While (Local2 < 5) { Local2 =
+ *        Local2 + 2 }`, then `Return (Local0 + Local2)`: 12 and 6, so 18.
+ */
+static const uint8_t predecoding_tight[] = {
+    0x14u, 0x34u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Bu, 0x92u, 0x94u,
+    0x60u, 0x0Au, 0x09u, 0x72u, 0x60u, 0x0Au, 0x03u, 0x60u, 0x70u, 0x60u, 0x61u, 0xA2u, 0x06u, 0x94u,
+    0x61u, 0x00u, 0x76u, 0x61u, 0x70u, 0x00u, 0x62u, 0xA2u, 0x0Cu, 0x95u, 0x62u, 0x0Au, 0x05u, 0x70u,
+    0x72u, 0x62u, 0x0Au, 0x02u, 0x00u, 0x62u, 0xA4u, 0x72u, 0x60u, 0x62u, 0x00u,
+};
+
+/**
+ * @brief A tight loop whose body divides by zero at its fifth turn, as MODT: `Local0 = 0; While (Local0 <
+ *        10) { Local0 += 1 + (0 % (4 - Local0)) }; Return (Local0)`.
+ */
+static const uint8_t predecoding_tight_modulo[] = {
+    0x14u, 0x1Fu, 'M',   'O',   'D',   'T',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x13u, 0x95u, 0x60u, 0x0Au, 0x0Au,
+    0x72u, 0x60u, 0x72u, 0x01u, 0x85u, 0x00u, 0x74u, 0x0Au, 0x04u, 0x60u, 0x00u, 0x00u, 0x00u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
+ * @brief Tight loops whose body runs first in a call deeper than the one that linked it, as PKTL: `Local0 = INNR ();
+ *        Return (Local0 + (1 + (1 + INNR ())))`, INNR running `Local0 = 0; Local1 = 0; While (Local0 < 3) { While
+ *        (Local1 < Local0) { Local1 += 1 }; Local0++ }; Return (Local1)`: the second call enters its tight loops at
+ *        once, their records linked by the first, two values deeper, so 6.
+ */
+static const uint8_t predecoding_deeper_tight[] = {
+    0x14u, 0x1Fu, 'I',   'N',   'N',   'R',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x10u,
+    0x95u, 0x60u, 0x0Au, 0x03u, 0xA2u, 0x08u, 0x95u, 0x61u, 0x60u, 0x72u, 0x61u, 0x01u, 0x61u, 0x75u, 0x60u,
+    0xA4u, 0x61u, 0x14u, 0x1Au, 'P',   'K',   'T',   'L',   0x00u, 0x70u, 'I',   'N',   'N',   'R',   0x60u,
+    0xA4u, 0x72u, 0x60u, 0x72u, 0x01u, 0x72u, 0x01u, 'I',   'N',   'N',   'R',   0x00u, 0x00u, 0x00u,
+};
+
+/**
+ * @brief A While whose body is a Break, as BRKB (Arg0): `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local0++; While
+ *        (Local1 < 5) { Break } }; Return (Arg0)`: never a tight loop.
+ */
+static const uint8_t predecoding_break_body[] = {
+    0x14u, 0x1Du, 'B',   'R',   'K',   'B',   0x01u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x0Eu,
+    0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA2u, 0x06u, 0x95u, 0x61u, 0x0Au, 0x05u, 0xA5u, 0xA4u, 0x68u,
+};
+
+/**
+ * @brief A tight loop whose bound becomes a String between two of its entries, as TOPR: `Local0 = 0; Local1 = 0;
+ *        Local2 = 5; While (Local0 < 4) { Local0++; If (Local0 == 3) { Local2 = "9" }; While (Local1 < Local2) {
+ *        Local1++ } }; Return (Local1)`, so 9.
+ */
+static const uint8_t predecoding_string_bound[] = {
+    0x14u, 0x2Cu, 'T',   'O',   'P',   'R',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0x70u, 0x0Au,
+    0x05u, 0x62u, 0xA2u, 0x19u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x0Au, 0x93u, 0x60u, 0x0Au,
+    0x03u, 0x70u, 0x0Du, 0x39u, 0x00u, 0x62u, 0xA2u, 0x06u, 0x95u, 0x61u, 0x62u, 0x75u, 0x61u, 0xA4u, 0x61u,
+};
+
+/**
+ * @brief A While whose predicate is an operator and no comparison, as ANDW: `Local0 = 5; While (Local0 & 0x0F) {
+ *        Local0-- }; Return (Local0)`, so 0; and one whose predicate is two LNot over a comparison, as NNOT: `Local0 =
+ *        0; While (!!(Local0 < 5)) { Local0++ }; Return (Local0)`, so 5: never tight loops.
+ */
+static const uint8_t predecoding_and_predicate[] = {
+    0x14u, 0x15u, 'A',   'N',   'D',   'W',   0x00u, 0x70u, 0x0Au, 0x05u, 0x60u,
+    0xA2u, 0x08u, 0x7Bu, 0x60u, 0x0Au, 0x0Fu, 0x00u, 0x76u, 0x60u, 0xA4u, 0x60u,
+};
+static const uint8_t predecoding_two_lnot[] = {
+    0x14u, 0x15u, 'N',   'N',   'O',   'T',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
+    0x09u, 0x92u, 0x92u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x75u, 0x60u, 0xA4u, 0x60u,
+};
+
+/**
+ * @brief ROOM, whose inner While runs as a tight loop from its first record in a call, the If before it false at the
+ *        first turn: `Local0 = 0; Local1 = 0; While (Local0 < 3) { Local0++; If (Local0 > 1) { Local1 = 0; While
+ *        (Local1 < 4) { Local1 = Local1 + 1 } } }; Return (Local1)`, its body 3 values deep and its predicate 2; then
+ *        FSEV (Arg0 to Arg6), which returns Arg6.
+ */
+static const uint8_t predecoding_room_loop[] = {
+    0x14u, 0x2Au, 'R',   'O',   'O',   'M',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u,
+    0xA2u, 0x1Bu, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x13u, 0x94u, 0x60u, 0x01u,
+    0x70u, 0x00u, 0x61u, 0xA2u, 0x0Bu, 0x95u, 0x61u, 0x0Au, 0x04u, 0x70u, 0x72u, 0x61u, 0x01u,
+    0x00u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x08u, 'F',   'S',   'E',   'V',   0x07u, 0xA4u, 0x6Eu,
+};
+
+/**
  * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
  */
 static const uint8_t predecoding_while[] = {0xA2u, 0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u};
@@ -204,6 +315,19 @@ static const uint8_t predecoding_inner_target[] = {0xA2u, 0x07u, 0x72u, 0x60u, 0
 static const uint8_t predecoding_cut_constant[] = {0xA2u, 0x04u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u};
 static const uint8_t predecoding_crossing[] = {0xA2u, 0x10u, 0x95u, 0x60u, 0x01u, 0x75u, 0x60u};
 static const uint8_t predecoding_continue[] = {0x9Fu};
+static const uint8_t predecoding_store_debug[] = {0x70u, 0x60u, 0x5Bu, 0x31u};
+static const uint8_t predecoding_add_debug[] = {0x72u, 0x60u, 0x01u, 0x5Bu, 0x31u};
+static const uint8_t predecoding_increment_name[] = {0x75u, 'N', 'A', 'M', 'E'};
+
+/**
+ * @brief Statements that write a local or an argument, each at offset 0: `Local2 = Local0 + Arg1`,
+ *        `Local1 = Arg0`, `Local0 = Local0 - 1` as Subtract with a target, `Arg3++` and `Local7--`.
+ */
+static const uint8_t predecoding_store_sum[] = {0x70u, 0x72u, 0x60u, 0x69u, 0x00u, 0x62u};
+static const uint8_t predecoding_store_leaf[] = {0x70u, 0x68u, 0x61u};
+static const uint8_t predecoding_subtract[] = {0x74u, 0x60u, 0x01u, 0x60u};
+static const uint8_t predecoding_increment[] = {0x75u, 0x6Bu};
+static const uint8_t predecoding_decrement[] = {0x76u, 0x67u};
 
 /**
  * @brief Runs @p path of @p aml with records off, then on, and checks that both left the same fold;
@@ -317,6 +441,33 @@ static void predecoding_write_values_nearly_full(void)
 }
 
 /**
+ * @brief Writes ROOM and FSEV, then MAIN: `Local0 = ROOM (); Return (1 + (1 + ... FSEV (1, 1, 1, 1, 1, 1, FSEV (...
+ *        ROOM ()))))`, PREDECODING_SEVEN_CALLS calls nested in the last argument under @p pads Adds: the first call
+ *        links ROOM's tight loop, the second runs it @p pads values deeper.
+ */
+static void predecoding_write_room(uint32_t pads)
+{
+    static const uint8_t first_call[] = {0x70u, 'R', 'O', 'O', 'M', 0x60u, 0xA4u};
+    static const uint8_t add_one[] = {0x72u, 0x01u};
+    static const uint8_t seven[] = {'F', 'S', 'E', 'V', 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u};
+    static const uint8_t room_call[] = {'R', 'O', 'O', 'M'};
+    static const uint8_t null_name[] = {0x00u};
+
+    made_up_aml_begin(&predecoding_body);
+    made_up_aml_raw(&predecoding_body, first_call, sizeof(first_call));
+    for (uint32_t pad = 0u; pad < pads; ++pad)
+        made_up_aml_raw(&predecoding_body, add_one, sizeof(add_one));
+    for (uint32_t call = 0u; call < PREDECODING_SEVEN_CALLS; ++call)
+        made_up_aml_raw(&predecoding_body, seven, sizeof(seven));
+    made_up_aml_raw(&predecoding_body, room_call, sizeof(room_call));
+    for (uint32_t pad = 0u; pad < pads; ++pad)
+        made_up_aml_raw(&predecoding_body, null_name, sizeof(null_name));
+    made_up_aml_begin(&predecoding_method);
+    made_up_aml_raw(&predecoding_method, predecoding_room_loop, sizeof(predecoding_room_loop));
+    made_up_aml_method(&predecoding_method, "MAIN", 0x00u, &predecoding_body);
+}
+
+/**
  * @brief The home slot of a statement's records, its table and offset mixed as the cache mixes them, written here
  *        apart, so that a change of the mix breaks the premise of the test that uses it, loudly.
  */
@@ -388,9 +539,63 @@ KERNEL_TEST(lnot_and_a_comparison_decode_as_one_operator)
 }
 
 /**
+ * @brief A Store, an operator with a target, an Increment and a Decrement that write a local or an
+ *        argument decode into records: their source, their target, and what the loop holds to run them,
+ *        the source then the target as values, an operator's target as its third (§3.6).
+ */
+KERNEL_TEST(statements_that_write_a_local_or_an_argument_decode_into_records)
+{
+    const PredecodingRecord_t *sum = predecoding_build(predecoding_store_sum, sizeof(predecoding_store_sum));
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t *node = &predecoding_cache.nodes[0];
+
+    kernel_test_check(
+        test,
+        sum != NULL && sum->shape == PREDECODING_RECORD(STORE) && sum->after == 6u && sum->node_count == 1u &&
+            node->opcode == PREDECODING_OPCODE(ADD) && node->operands[1].kind == PREDECODING_OPERAND(ARGUMENT) &&
+            sum->source.kind == PREDECODING_OPERAND(RESULT) && sum->target.kind == PREDECODING_OPERAND(LOCAL) &&
+            sum->target.slot == 2u && sum->values_peak == 3u && sum->operators_peak == 2u,
+        "Local2 = Local0 + Arg1 stores an Add to Local2, holding 3 values and 2 operators");
+
+    const PredecodingRecord_t *leaf = predecoding_build(predecoding_store_leaf, sizeof(predecoding_store_leaf));
+
+    kernel_test_check(test,
+                      leaf != NULL && leaf->shape == PREDECODING_RECORD(STORE) && leaf->node_count == 0u &&
+                          leaf->source.kind == PREDECODING_OPERAND(ARGUMENT) && leaf->source.slot == 0u &&
+                          leaf->target.kind == PREDECODING_OPERAND(LOCAL) && leaf->target.slot == 1u &&
+                          leaf->values_peak == 2u && leaf->operators_peak == 1u,
+                      "Local1 = Arg0 stores Arg0 itself, holding 2 values and 1 operator");
+
+    const PredecodingRecord_t *difference = predecoding_build(predecoding_subtract, sizeof(predecoding_subtract));
+
+    kernel_test_check(test,
+                      difference != NULL && difference->shape == PREDECODING_RECORD(STORE) &&
+                          difference->node_count == 1u &&
+                          predecoding_cache.nodes[0].opcode == PREDECODING_OPCODE(SUBTRACT) &&
+                          difference->target.kind == PREDECODING_OPERAND(LOCAL) && difference->target.slot == 0u &&
+                          difference->values_peak == 3u && difference->operators_peak == 1u,
+                      "Subtract (Local0, One, Local0) writes Local0, holding 3 values and 1 operator");
+
+    const PredecodingRecord_t *up = predecoding_build(predecoding_increment, sizeof(predecoding_increment));
+
+    kernel_test_check(test,
+                      up != NULL && up->shape == PREDECODING_RECORD(INCREMENT) && up->after == 2u &&
+                          up->target.kind == PREDECODING_OPERAND(ARGUMENT) && up->target.slot == 3u &&
+                          up->values_peak == 1u && up->operators_peak == 1u,
+                      "Arg3++ steps Arg3 up, holding 1 value and 1 operator");
+
+    const PredecodingRecord_t *down = predecoding_build(predecoding_decrement, sizeof(predecoding_decrement));
+
+    kernel_test_check(test,
+                      down != NULL && down->shape == PREDECODING_RECORD(DECREMENT) &&
+                          down->target.kind == PREDECODING_OPERAND(LOCAL) && down->target.slot == 7u,
+                      "Local7-- steps Local7 down");
+}
+
+/**
  * @brief A statement no record runs stays a record the loop runs: a name in a predicate, an operator
- *        that stores to a local, a constant its PkgLength cuts, a PkgLength that passes the end of the
- *        construct around it, a Continue.
+ *        that stores to a local inside a predicate, a constant its PkgLength cuts, a PkgLength that passes
+ *        the end of the construct around it, a Continue, a Store and an operator to Debug, an Increment of
+ *        a name.
  */
 KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
 {
@@ -403,6 +608,9 @@ KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
         {predecoding_cut_constant,   sizeof(predecoding_cut_constant)  },
         {predecoding_crossing,       sizeof(predecoding_crossing)      },
         {predecoding_continue,       sizeof(predecoding_continue)      },
+        {predecoding_store_debug,    sizeof(predecoding_store_debug)   },
+        {predecoding_add_debug,      sizeof(predecoding_add_debug)     },
+        {predecoding_increment_name, sizeof(predecoding_increment_name)},
     };
     uint32_t general = 0u;
 
@@ -420,14 +628,84 @@ KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
 }
 
 /**
- * @brief The loops of window W4 run from records as the loop runs them, under revision 2 and revision 1.
+ * @brief The loops of window W4 run from records as the loop runs them, under revision 2 and revision 1;
+ *        the control: the loop decodes its first turn, runs its second from its two records, which links
+ *        them, and its 998 others as a tight loop.
  */
 KERNEL_TEST(the_loop_of_window_w4_runs_from_records_as_the_loop_runs_it)
 {
-    predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 2u, "\\LOOP", PREDECODING_NO_ARGUMENT, true,
-                        "fold_revision_2");
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 2u, "\\LOOP",
+                                                     PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
+
     predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 1u, "\\LOOP", PREDECODING_NO_ARGUMENT, true,
                         "fold_revision_1");
+    kernel_test_check(test, run.tight_turns == 998u, "998 turns run as a tight loop");
+}
+
+/**
+ * @brief A Store copies a local or an argument whole, unmasked, from a record as from the loop (§5.2):
+ *        under revision 1, STOR (0x100000001) stores its argument at its second turn, from a record, and
+ *        returns 0x100000001, not 1.
+ */
+KERNEL_TEST(a_store_from_a_record_copies_a_wide_argument_whole)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_store_whole, sizeof(predecoding_store_whole), 1u,
+                                                     "\\STOR", 0x100000001ull, true, "fold");
+
+    kernel_test_check(test, run.result == 0x100000001ull, "STOR returns its argument whole");
+}
+
+/**
+ * @brief A record hands back an Increment of a local that holds nothing, which the loop reads as 0,
+ *        counted, and a Store to a local that holds a String, which the loop gives back: UNIN returns 3,
+ *        from records as from the loop, the two statements handed back once each.
+ */
+KERNEL_TEST(a_record_hands_back_a_target_that_holds_no_integer)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_targets, sizeof(predecoding_targets), 2u,
+                                                     "\\UNIN", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 3u && run.declined == 2u, "UNIN returns 3, two statements handed back");
+}
+
+/**
+ * @brief A Store that a record runs first raises the most values the evaluation held, as the loop would:
+ *        PEAK's Store holds its source and its target, 2 values, more than anything before it.
+ */
+KERNEL_TEST(a_store_first_run_from_a_record_raises_the_values_peak)
+{
+    predecoding_compare(test, predecoding_store_peak, sizeof(predecoding_store_peak), 2u, "\\PEAK",
+                        PREDECODING_NO_ARGUMENT, true, "fold");
+}
+
+/**
+ * @brief While whose predicate compares two leaves and whose body writes a local run as tight loops, as
+ *        the loop runs them: an LNot over LGreater with an Add, a Decrement, a Store of an Add, under both
+ *        widths. The control: MAIN returns 18, and each loop runs from its third turn as a tight loop, so
+ *        2, 10 and 1 turns.
+ */
+KERNEL_TEST(while_with_a_one_statement_body_run_as_tight_loops_as_the_loop_runs_them)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight, sizeof(predecoding_tight), 2u, "\\MAIN",
+                                                     PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
+
+    predecoding_compare(test, predecoding_tight, sizeof(predecoding_tight), 1u, "\\MAIN", PREDECODING_NO_ARGUMENT, true,
+                        "fold_revision_1");
+    kernel_test_check(test, run.result == 18u && run.tight_turns == 13u, "MAIN returns 18, after 13 tight turns");
+}
+
+/**
+ * @brief A tight loop whose body would divide by zero hands it back with the While's block open, and the
+ *        loop fails as it fails without records: MODT runs 2 tight turns, then its modulo by zero is
+ *        handed back, once.
+ */
+KERNEL_TEST(a_tight_loop_hands_back_a_body_that_would_fail)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight_modulo, sizeof(predecoding_tight_modulo),
+                                                     2u, "\\MODT", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.tight_turns == 2u && run.declined == 1u,
+                      "two tight turns, then the modulo by zero handed back");
 }
 
 /**
@@ -467,13 +745,13 @@ KERNEL_TEST(breaks_continues_calls_and_returns_inside_loops_agree)
 
 /**
  * @brief A record hands back a statement whose operand holds no Integer (a String, a Buffer, a
- *        reference, an uninitialized local), so that no record of MAIN runs, and one whose modulo by
- *        zero would fail; the loop then runs them, and the failure is the loop's.
+ *        reference, an uninitialized local), so that of MAIN's records only its Increment runs, and one
+ *        whose modulo by zero would fail; the loop then runs them, and the failure is the loop's.
  */
 KERNEL_TEST(a_record_hands_back_what_holds_no_integer_or_would_fail)
 {
     const PredecodingRun_t run = predecoding_compare(test, predecoding_guards, sizeof(predecoding_guards), 2u, "\\MAIN",
-                                                     PREDECODING_NO_ARGUMENT, false, "fold_operands");
+                                                     PREDECODING_NO_ARGUMENT, true, "fold_operands");
     PredecodingRun_t failed = {0};
 
     kernel_test_check(test, run.declined != 0u, "the statements whose operands hold no Integer are handed back");
@@ -644,4 +922,67 @@ KERNEL_TEST(a_record_is_found_by_its_table_and_its_offset)
                       advanced_configuration_and_power_interface_machine_language_record_find(
                           cache, PREDECODING_FIND_TABLE, PREDECODING_FIND_PC) == 0u,
                       "the same offset of table 22 finds none");
+}
+
+/**
+ * @brief A tight loop that a deeper call enters at once, its records linked by an earlier one, holds the values of
+ *        its body as the loop holds them (§3.6): PKTL returns 6, with records as without, after tight turns.
+ */
+KERNEL_TEST(a_tight_loop_entered_deeper_holds_its_body_s_values)
+{
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_deeper_tight, sizeof(predecoding_deeper_tight),
+                                                     2u, "\\PKTL", PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(test, run.result == 6u && run.tight_turns != 0u, "PKTL returns 6, after tight turns");
+}
+
+/**
+ * @brief A While runs as a tight loop only when its predicate compares two leaves and its body writes: a Break as
+ *        the body (BRKB), an operator as the predicate (ANDW), two LNot over a comparison (NNOT) run no tight turn,
+ *        with records as without; a bound that becomes a String between two entries is handed back at the second
+ *        (TOPR), after tight turns at the first.
+ */
+KERNEL_TEST(only_a_comparison_of_two_leaves_over_a_writing_body_is_a_tight_loop)
+{
+    const PredecodingRun_t breaks = predecoding_compare(test, predecoding_break_body, sizeof(predecoding_break_body),
+                                                        2u, "\\BRKB", 7u, true, "fold_break");
+    const PredecodingRun_t ands =
+        predecoding_compare(test, predecoding_and_predicate, sizeof(predecoding_and_predicate), 2u, "\\ANDW",
+                            PREDECODING_NO_ARGUMENT, true, "fold_and");
+    const PredecodingRun_t nots = predecoding_compare(test, predecoding_two_lnot, sizeof(predecoding_two_lnot), 2u,
+                                                      "\\NNOT", PREDECODING_NO_ARGUMENT, true, "fold_lnot");
+    const PredecodingRun_t strings =
+        predecoding_compare(test, predecoding_string_bound, sizeof(predecoding_string_bound), 2u, "\\TOPR",
+                            PREDECODING_NO_ARGUMENT, true, "fold_string");
+
+    kernel_test_check(test, breaks.result == 7u && breaks.tight_turns == 0u, "BRKB returns 7, no tight turn");
+    kernel_test_check(test, ands.result == 0u && ands.tight_turns == 0u, "ANDW returns 0, no tight turn");
+    kernel_test_check(test, nots.result == 5u && nots.tight_turns == 0u, "NNOT returns 5, no tight turn");
+    kernel_test_check(test, strings.result == 9u && strings.tight_turns != 0u, "TOPR returns 9, after tight turns");
+}
+
+/**
+ * @brief A tight loop whose body needs more values than the evaluation has left is handed back, and the loop fails
+ *        as it fails without records (§6.1): ROOM's inner While, linked by a first call, entered from records two
+ *        values short of its body in a second, deeper by 1,014 values and some Adds, the loop then failing with
+ *        limit_values, with records as without. The control: one depth of those tried fails so.
+ */
+KERNEL_TEST(a_tight_loop_whose_body_has_no_room_is_handed_back)
+{
+    static const char *const keys[] = {"fold_5_pads", "fold_6_pads", "fold_7_pads", "fold_8_pads", "fold_9_pads"};
+    uint32_t short_of_room = 0u;
+
+    for (uint32_t pads = 5u; pads < 10u; ++pads)
+    {
+        predecoding_write_room(pads);
+        if (!kernel_test_check(test, !predecoding_method.overflowed, "the made-up AML fits"))
+            return;
+
+        const PredecodingRun_t run = predecoding_compare(test, predecoding_method.bytes, predecoding_method.length, 2u,
+                                                         "\\MAIN", PREDECODING_NO_ARGUMENT, true, keys[pads - 5u]);
+
+        short_of_room +=
+            (run.status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_VALUES) ? 1u : 0u;
+    }
+    kernel_test_check(test, short_of_room != 0u, "a depth leaves the body no room, and the loop fails there");
 }

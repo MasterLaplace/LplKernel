@@ -47,14 +47,21 @@
     8u /**< Operators one record's expression holds at most; a longer one is run by the interpreter's loop. */
 
 /**
- * @brief What a record runs.
+ * @brief What a record runs: the shapes from STORE on write a local or an argument.
  */
 typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordShape {
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_GENERAL = 0, /**< Nothing: the interpreter's
-                                                                                       loop runs the statement. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_WHILE = 1,   /**< A While and its predicate. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_IF = 2,      /**< An If and its predicate. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_BREAK = 3,   /**< A Break. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_GENERAL = 0,   /**< Nothing: the interpreter's
+                                                                                         loop runs the statement. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_WHILE = 1,     /**< A While and its predicate. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_IF = 2,        /**< An If and its predicate. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_BREAK = 3,     /**< A Break. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_STORE = 4,     /**< A Store of its source, or an
+                                                                                         operator on two integers, to
+                                                                                         its target. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_INCREMENT = 5, /**< An Increment of its
+                                                                                         target. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_DECREMENT = 6, /**< A Decrement of its
+                                                                                         target. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordShape_t;
 
 /**
@@ -91,7 +98,12 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordDecline 
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_FULL = 5,      /**< The cache was full, or
                                                                                            frozen for this loop after
                                                                                            it was emptied. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES = 6,           /**< Reasons counted. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_TARGET = 6,    /**< The target held more than
+                                                                                           an Integer or nothing, an
+                                                                                           object to give back or a
+                                                                                           reference to go through,
+                                                                                           or no Integer to step. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES = 7,           /**< Reasons counted. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordDecline_t;
 
 /**
@@ -128,10 +140,16 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
     uint8_t node_count;  /**< Its operators. */
     uint8_t shape;       /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_* shape. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t source; /**< The predicate of an If or a
-                                                                                    While. */
+                                                                                    While, the value a Store or an
+                                                                                    operator stores. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t target; /**< The local or argument a Store,
+                                                                                    an operator, an Increment or a
+                                                                                    Decrement writes, or none. */
     uint8_t values_peak;    /**< Values the interpreter's loop holds on its stack for it at most. */
     uint8_t operators_peak; /**< Operators it holds pending for it at most. */
-    uint16_t reserved;      /**< Unused, 0. */
+    uint8_t tight;          /**< For a While, 1 once linked to the record of a body that makes it a tight loop: its
+                                 predicate compares two leaves, and its body is one statement that writes. */
+    uint8_t reserved;       /**< Unused, 0. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**
@@ -154,6 +172,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t flushes;           /**< Times the cache was emptied whole. */
     uint32_t records_peak;      /**< Most records held at once. */
     uint32_t fused_comparisons; /**< LNot and a comparison decoded as one operator (§7.2, O7). */
+    uint32_t tight_turns;       /**< Turns of a While run as a tight loop (§3.6). */
     union {
         uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
                                                                                                      per hash slot. */
@@ -189,6 +208,27 @@ extern void advanced_configuration_and_power_interface_machine_language_predecod
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint8_t integer_bits);
 
 /**
+ * @brief Whether a record writes a local, an argument or NullName: a Store, an operator with a target, an
+ *        Increment or a Decrement.
+ *
+ * @param shape An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_* shape.
+ * @return Whether it is one of those three.
+ */
+static inline bool advanced_configuration_and_power_interface_machine_language_record_writes(uint8_t shape);
+
+/**
+ * @brief Links record @p from to record @p to, the record of the statement where @p from leaves the frame's pc,
+ *        and decides once whether @p from, a While, runs as a tight loop with @p to as its body (§3.6): its
+ *        predicate compares two leaves, and its body is one statement that writes and ends where the While does.
+ *
+ * @param cache The cache.
+ * @param from  The record linked, plus 1.
+ * @param to    The record it leads to, plus 1.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_record_link(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, uint16_t from, uint16_t to);
+
+/**
  * @brief The record of the statement at @p pc of table @p table.
  *
  * @param cache The cache.
@@ -203,8 +243,10 @@ extern uint16_t advanced_configuration_and_power_interface_machine_language_reco
  * @brief Decodes the statement at @p pc of a table under @p limit, the end of the construct around it,
  *        into a record: a While, an If or a Break whose predicate is an expression over locals,
  *        arguments and constants, its operators the comparisons, LNot and the operators on two
- *        integers, with no target but NullName; any other statement, or one whose decoding faults,
- *        becomes a record the interpreter's loop runs.
+ *        integers, with no target but NullName; a Store of such an expression to a local or an
+ *        argument; an operator on two integers whose target is a local, an argument or NullName; an
+ *        Increment or a Decrement of a local or an argument. Any other statement, or one whose decoding
+ *        faults, becomes a record the interpreter's loop runs.
  *
  * @param cache        The cache, whose records are of @p integer_bits.
  * @param code         The table's bytes, header included.
@@ -218,5 +260,7 @@ extern uint16_t advanced_configuration_and_power_interface_machine_language_reco
 extern uint16_t advanced_configuration_and_power_interface_machine_language_record_build(
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t *cache, const uint8_t *code, uint16_t table,
     uint32_t pc, uint32_t limit, uint8_t integer_bits);
+
+#include <kernel/acpi/machine_language_predecoding.inl>
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_PREDECODING_H */
