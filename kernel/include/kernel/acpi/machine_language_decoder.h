@@ -582,8 +582,8 @@ advanced_configuration_and_power_interface_machine_language_read_name_string(
  * @param offset Where the NameSeg starts; the caller has checked its 4 bytes.
  * @return The NameSeg.
  */
-extern uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes,
-                                                                                         uint32_t offset);
+static inline uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes,
+                                                                                                uint32_t offset);
 
 #include <kernel/acpi/machine_language_decoder.inl>
 

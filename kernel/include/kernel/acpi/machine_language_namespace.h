@@ -224,7 +224,7 @@ extern void advanced_configuration_and_power_interface_machine_language_namespac
  * @param index A node index.
  * @return The node, or NULL for 0 and indices not used yet.
  */
-extern AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *
 advanced_configuration_and_power_interface_machine_language_namespace_node(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t index);
 

@@ -348,16 +348,6 @@ void advanced_configuration_and_power_interface_machine_language_namespace_close
     space->node_count = 0u;
 }
 
-AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *
-advanced_configuration_and_power_interface_machine_language_namespace_node(
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t index)
-{
-    if (index == 0u || index >= space->node_count)
-        return NULL;
-    return &space->runs[index / ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN]
-                       [index % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN];
-}
-
 uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_child(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name)
 {
