@@ -37,6 +37,7 @@
 typedef enum ShortcutsTable {
     SHORTCUTS_TABLE_DATA,       /**< Names of every kind of constant data. */
     SHORTCUTS_TABLE_STATEMENTS, /**< Statements of every shape the declaration pass's decoder takes (O19). */
+    SHORTCUTS_TABLE_REGIONS,    /**< OperationRegions the decoder takes, hands back, or leaves to the walk (O19). */
 } ShortcutsTable_t;
 
 /**
