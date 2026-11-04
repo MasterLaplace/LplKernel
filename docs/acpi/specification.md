@@ -206,8 +206,8 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 50 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. |
-| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8`, whether a While runs as a tight loop `u8`, and for a record that runs nothing, whether its statement always goes on to the next `u8` | 36 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant index). |
-| **Record cache** | 128 records, 256 operators, 256 constants (`u64`, masked to the width), 256 hash slots (`u16`), 64 recent slots (`u16`, the record last found or built at an offset of each, the offset modulo 64), the frame and loop start watched for a turn handed back whole, the integer width they were built under, what running them counted | about 10 KiB, the last member of the load | Opening the load empties the hash slots and the counters alone, word by word: a record is one only below the count and under its own key (table, `pc`), the one a recent slot names included. |
+| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8`, whether a While runs as a tight loop `u8`, for a record that runs nothing whether its statement always goes on to the next `u8`, first name `u16`, names `u8` | 40 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant or name index). A name is 28 bytes: its NameString, where it ends `u32`, the node it named when last checked `u32` with the namespace's generation and the scope of that check `u32`, and the values the loop held for the statement before reading it `u8`. |
+| **Record cache** | 128 records, 256 operators, 256 constants (`u64`, masked to the width), 256 hash slots (`u16`), 64 names, the values the running record read by name, 64 recent slots (`u16`, the record last found or built at an offset of each, the offset modulo 64), the frame and loop start watched for a turn handed back whole, the integer width they were built under, what running them counted | about 10 KiB, the last member of the load | Opening the load empties the hash slots and the counters alone, word by word: a record is one only below the count and under its own key (table, `pc`), the one a recent slot names included. |
 
 ### 3.5 Memory strategy
 
@@ -329,15 +329,21 @@ resolve against objects that do not exist.
 has holds it, and the statements of the frame's loop run from records, each built the first time the loop reaches its
 statement: a record is the shape of the statement at an offset of a table under the end of the construct around it,
 found again by its table and offset, through the record last found or built at an offset of the same recent slot
-before the hash. A record runs an If, a While or a Break whose predicate is an expression of locals, arguments and
-constants, its operators the comparisons, `LNot` (over a comparison, the two as one operator) and the operators on two
-integers whose target is NullName. It runs a statement that writes a local or an argument:
-a Store of such an expression, or of a local or an argument copied whole, as a Store copies a value (§5.2); an
+before the hash. A record runs an If, a While or a Break whose predicate is an expression of locals, arguments,
+constants and names, its operators the comparisons, `LNot` (over a comparison, the two as one operator) and the
+operators on two integers whose target is NullName. It runs a statement that writes a local or an argument:
+a Store of such an expression, or of a local, an argument or a name copied whole, as a Store copies a value (§5.2); an
 operator on two integers whose target is a local, an argument or NullName; an Increment or a Decrement. Every
 operation a record runs is one the loop calls for the same case. A record checks, before any effect, every condition
 under which the loop would do anything else (an operand that holds no Integer, a stack that would overflow, a modulo
 by zero, a target that holds an object or a reference, an Increment of what holds no Integer); when one holds, it
-changes nothing and the loop decodes and runs the statement. Any other statement keeps a record that hands it to the
+changes nothing and the loop decodes and runs the statement. A name a record reads names an Integer, or a field unit
+whose read gives an Integer (§5.3) and whose PCI_Config regions wait for no attach: the record checks it before any
+effect, from the node it checked last while the namespace's generation, which moves each time a node enters or leaves
+the hash, and the scope hold, then reads its names in the loop's order, each resolved as the loop resolves it, counted.
+Nothing hands the statement back after that: a read that fails fails as it fails in the loop, and a resolution that
+finds another node than the checked one is counted (`stale_names`). A record that reads a name holds no modulo and runs
+as no tight loop. Any other statement keeps a record that hands it to the
 loop, before any record runs when the recent slot finds it. A While whose record hands it back, and whose statements
 all went to the loop for a whole turn of the frame's loop, each one that always goes on to the next (a name, or an
 operator that opens no construct and is no Break, Continue or Return), asks its records no more: every turn after it
@@ -923,7 +929,7 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | States one CPU slot publishes | 7, as Linux, whose table of `ACPI_PROCESSOR_MAX_POWER` (8) keeps its first entry for C0; the states after them are counted, not read |
 | Region mapping cache | 64 entries, each the pages one access touched |
-| Pre-decoded records per load | 128 records, 256 operators and 256 constants; a cache whose records, operators or constants are full is emptied whole, counted, and the loop that filled it builds no more, never a failure |
+| Pre-decoded records per load | 128 records, 256 operators, 256 constants and 64 names, 4 per record; a cache whose records, operators, constants or names are full is emptied whole, counted, and the loop that filled it builds no more, never a failure |
 
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
 back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the
@@ -1023,7 +1029,7 @@ reads a table in kernel memory. The costs to cut are:
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list | `declarations_decoded_directly`; W1 |
 | O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it or a write is about to land on its table's bytes (§3.5, §5.3) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
-| C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, and the times a frame's loop was handed back whole |
+| C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
 
 ### 7.3 Candidates, adopted only when a count asks for them
