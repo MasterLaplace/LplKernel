@@ -284,9 +284,9 @@ static bool shortcuts_record(KernelTest_t *test, const ShortcutsCase_t *load_cas
 }
 
 /**
- * @brief Whether a case loads to the same namespace and the same counts with the load's shortcuts and without,
- *        the load without them taking none, and the shortcuts stepped over a data object when the case says they
- *        must; @p out_taken receives what the shortcuts took.
+ * @brief Whether a case loads to the same namespace and the same counts of what it declared with the load's
+ *        shortcuts and without, the load without them taking none, and the shortcuts stepped over a data object
+ *        when the case says they must; @p out_taken receives what the shortcuts took.
  */
 static bool shortcuts_agree(KernelTest_t *test, const ShortcutsCase_t *load_case, ShortcutsTaken_t *out_taken)
 {
@@ -340,7 +340,8 @@ void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t
 
 /**
  * @brief The declaration pass steps over a Name's data object it has built instead of decoding it again (O18),
- *        and a load with that shortcut ends with the namespace, the faults and the counts of a load without it:
+ *        and a load with that shortcut ends with the namespace, the faults and the counts of what it declared of a
+ *        load without it, its work (lookups, probes, the stacks' peaks) falling:
  *        on data of every kind under revision 2, then 1, an SSDT declared before the DSDT, sizes a name gives,
  *        data the decoder refuses, a PkgLength that abandons the table, a package 33 deep, which needs the
  *        interpreter, and a package 32 deep inside 481 Devices, where decoding it meets the limit of 512 open
@@ -392,8 +393,9 @@ KERNEL_TEST(a_name_s_data_object_decoded_once_declares_what_two_decodings_declar
 
 /**
  * @brief A sample of one-byte changes of a table of data, every 16th byte changed once, to its value with one bit
- *        flipped, to 0x00 or to 0xFF in turn, loads to the same namespace, faults and counts with the load's
- *        shortcuts and without, in ring 0 as on the host; host_shortcuts changes every byte to each of the three.
+ *        flipped, to 0x00 or to 0xFF in turn, loads to the same namespace, faults and counts of what it declared
+ *        with the load's shortcuts and without, in ring 0 as on the host; host_shortcuts changes every byte to each
+ *        of the three.
  */
 KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_data_declares_the_same_both_ways)
 {

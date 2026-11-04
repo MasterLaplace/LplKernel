@@ -57,7 +57,8 @@ typedef struct ShortcutsMutations {
 
 /**
  * @brief Loads @p table both ways once for each change of one of its bytes, every @p stride bytes from the
- *        first, and compares the namespace, its fold, the faults and the counts of the two loads.
+ *        first, and compares the namespace, its fold, the faults and the counts of what the two loads declared, not
+ *        their work (lookups, probes, the stacks' peaks), which the shortcuts lower.
  *
  * @details A byte is changed to its value with one bit flipped, to 0x00 and to 0xFF when @p every_value
  *          holds, else to one of the three in turn from one changed byte to the next; to the flipped value
