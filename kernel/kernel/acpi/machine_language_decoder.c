@@ -109,6 +109,8 @@ static const char
             "load_form_unsupported",
         [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLES] = "limit_tables",
         [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLE_BYTES] = "limit_table_bytes",
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_METHOD_WITHOUT_BODY] =
+            "method_without_body",
 };
 
 const char *advanced_configuration_and_power_interface_machine_language_opcode_name(uint32_t opcode)

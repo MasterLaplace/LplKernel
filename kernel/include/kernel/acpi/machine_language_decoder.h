@@ -364,10 +364,15 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLES,          /**< Load and LoadTable
                                                                                                   add a table past the
                                                                                                   cap of §6.1. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLE_BYTES, /**< Load copies more table
-                                                                                              bytes than §6.1
-                                                                                              allows. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,             /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TABLE_BYTES,   /**< Load copies more table
+                                                                                                bytes than §6.1
+                                                                                                allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_METHOD_WITHOUT_BODY, /**< A call of a method
+                                                                                               whose declaration
+                                                                                               recorded no body: its
+                                                                                               PkgLength ends before
+                                                                                               its flags. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,               /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**
