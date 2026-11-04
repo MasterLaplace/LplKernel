@@ -76,7 +76,8 @@ typedef struct MachineLanguageWalk {
                                                     at its place in the load, for the same reason as top. */
     MachineLanguageBlock_t *top; /**< The construct the walk is in, the last of the load's block stack, kept as it
                                       opens and closes so that a step reads it without computing where it lies in
-                                      the load, whose layout would then change the step's code. */
+                                      the load, whose layout would then change the step's code; once every
+                                      construct is closed, it stays on the first. */
     uint32_t fault_opcode;       /**< The opcode a fault at pc belongs to. */
     MachineLanguagePass_t pass;  /**< Which pass it is. */
     uint32_t last_created;       /**< The node the last declaration created, 0 when it created none. */
