@@ -454,6 +454,60 @@ KERNEL_TEST(a_removed_node_leaves_no_tombstone)
 }
 
 /**
+ * @brief A node taken again from the free list reads as a new node whatever the removed node left in it: its first
+ *        child, its next sibling, its flags and its value zero, its name, parent, type and owner the ones given, its
+ *        previous sibling the last child its parent had.
+ */
+KERNEL_TEST(a_node_taken_again_reads_as_a_new_one_whatever_the_removed_one_left)
+{
+    static const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t zero = {0};
+    uint32_t removed = 0u;
+    uint32_t taken = 0u;
+
+    if (!made_up_open(test))
+        return;
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_load.space;
+    const uint32_t root = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+
+    (void) advanced_configuration_and_power_interface_machine_language_namespace_add_child(
+        space, root, made_up_segment("OLD_"), ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE,
+        1u, &removed);
+    advanced_configuration_and_power_interface_machine_language_namespace_remove(space, removed);
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *left =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(space, removed);
+    const uint32_t free_link = left->next_sibling;
+
+    memset(left, 0xFF, sizeof(*left));
+    left->next_sibling = free_link;
+
+    const uint32_t last =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(
+            space, advanced_configuration_and_power_interface_machine_language_namespace_node(space, root)->first_child)
+            ->previous_sibling;
+
+    (void) advanced_configuration_and_power_interface_machine_language_namespace_add_child(
+        space, root, made_up_segment("NEW_"), ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD,
+        2u, &taken);
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(space, taken);
+
+    kernel_test_check(test, taken == removed, "the node removed last is taken again");
+    kernel_test_check(test,
+                      node->name == made_up_segment("NEW_") && node->parent == root &&
+                          node->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD &&
+                          node->owner == 2u && node->previous_sibling == last,
+                      "it takes the name, parent, type and owner given, after its parent's last child");
+    kernel_test_check(test,
+                      node->first_child == 0u && node->next_sibling == 0u && node->flags == 0u &&
+                          memcmp(&node->value, &zero, sizeof(zero)) == 0,
+                      "it holds no child, no next sibling, no flag and no value of the node removed");
+    made_up_close(test);
+}
+
+/**
  * @brief A single NameSeg searches its scope, then each parent, from 0 to 6 levels up; a dual path
  *        and a path with parent prefixes never search, and a prefix that climbs above the root
  *        names nothing.
