@@ -153,8 +153,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
     uint8_t tight;          /**< For a While, 1 once linked to the record of a body that makes it a tight loop: its
                                  predicate compares two leaves, and its body is one statement that writes. */
     uint8_t goes_on;        /**< For a record that runs nothing, 1 when its statement always goes on to the one after
-                                 it: a call, a name, or an operator that opens no construct and is no Break, Continue
-                                 or Return. */
+                                 it: a name, or an operator that opens no construct and is no Break, Continue or
+                                 Return. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**
@@ -181,8 +181,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t records_peak;      /**< Most records held at once. */
     uint32_t fused_comparisons; /**< LNot and a comparison decoded as one operator (§7.2, O7). */
     uint32_t tight_turns;       /**< Turns of a While run as a tight loop (§3.6). */
-    uint32_t searches;          /**< Statements whose record was searched in the hash, no link leading to it. */
-    uint32_t handed_back_loops; /**< Whiles whose statements all go to the loop, whose turns then ask no record. */
+    uint32_t searches;          /**< Searches of the hash for a statement that neither a link nor its recent slot gave,
+                                     found or not. */
+    uint32_t handed_back_loops; /**< Times a frame's loop was handed back whole, its turns then asking no record. */
     union {
         uint16_t slots[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RECORD_SLOTS]; /**< A record, plus 1,
                                                                                                      per hash slot. */

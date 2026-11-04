@@ -401,8 +401,8 @@ static void machine_language_record_decode(MachineLanguageRecordBuilder_t *build
 }
 
 /**
- * @brief Whether the statement at @p pc, which no record runs, always goes on to the statement after it: a call or a
- *        name, or an operator that opens no construct and is no Break, Continue or Return.
+ * @brief Whether the statement at @p pc, which no record runs, always goes on to the statement after it: a name, a
+ *        call among them, or an operator that opens no construct and is no Break, Continue or Return.
  */
 static bool machine_language_record_goes_on(const uint8_t *code, uint32_t pc, uint32_t limit)
 {

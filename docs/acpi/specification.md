@@ -339,16 +339,17 @@ under which the loop would do anything else (an operand that holds no Integer, a
 by zero, a target that holds an object or a reference, an Increment of what holds no Integer); when one holds, it
 changes nothing and the loop decodes and runs the statement. Any other statement keeps a record that hands it to the
 loop, before any record runs when the recent slot finds it. A While whose record hands it back, and whose statements
-all went to the loop for a whole turn of the frame's loop, each one that always goes on to the next (a call, a name,
-or an operator that opens no construct and is no Break, Continue or Return), asks its records no more: every turn after
-it holds the same statements, and the frame's loop is left empty at the While's start. The end of a construct a record
+all went to the loop for a whole turn of the frame's loop, each one that always goes on to the next (a name, or an
+operator that opens no construct and is no Break, Continue or Return), asks its records no more: every turn after it
+holds the same statements while the bytes of the loop are not rewritten (§5.3), and the frame's loop is left empty at
+the While's start; a loop whose bytes are rewritten stays with the loop. The end of a construct a record
 opened is closed as the loop closes it, a While's taking its back-edge, counted as the loop counts it. A While whose
 predicate compares two leaves and whose body is one statement a record writes runs as a tight loop once its two records
 are linked: predicate, body and back-edge, turn after turn, its block never opened; when the body hands its statement
-back, the block is opened as the loop opens it. A cache whose records,
-operators or constants are full is emptied whole, and the loop of the frame it filled under builds no record until
-the frame's loop changes (§6.1); a change of integer width empties it too, and so does a write to the bytes of a
-table read in place (§5.3). Table-level code never runs from records. A load runs none when the boot line holds
+back, the block is opened as the loop opens it. A cache whose records, operators or constants are full is emptied
+whole, and the loop of the frame it filled under builds no record until the frame's loop changes (§6.1); a change of
+integer width empties it too, and so does a write to the bytes of a table read in place (§5.3). Table-level code
+never runs from records. A load runs none when the boot line holds
 `lpl.acpi.predecoding=off` (`test-acpi --predecoding off`), which the tests that compare the two runs use (§8.1).
 
 **The evaluations a region needs** (`_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID` while a PCI_Config region attaches;
@@ -1022,7 +1023,7 @@ reads a table in kernel memory. The costs to cut are:
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list | `declarations_decoded_directly`; W1 |
 | O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it or a write is about to land on its table's bytes (§3.5, §5.3) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
-| C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the records searched in the hash and the loops handed back whole |
+| C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, and the times a frame's loop was handed back whole |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
 
 ### 7.3 Candidates, adopted only when a count asks for them
