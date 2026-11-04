@@ -960,7 +960,7 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 | Division by zero | fails | construct skipped | `divide_by_zero` |
 | Index or buffer field out of range, or an index or BankValue its register cannot hold | fails | construct skipped | `index_out_of_range` |
 | Reference cycle | fails | construct skipped | `reference_cycle` |
-| An operator whose frame holds fewer values than it takes, which only a producer of the interpreter that pushed none leaves: a defect of the kernel, not of the firmware | fails | construct skipped | `operands_missing` |
+| An operator whose frame holds fewer values than it takes, which only a defect of the interpreter leaves, as a producer that pushed none: a defect of the kernel, not of the firmware | fails | construct skipped | `operands_missing` |
 | A limit of §6.1 | fails with the limit's name | construct skipped | `limit_<name>` |
 | Region without handler, out of bounds, or unreachable (above 4 GiB on i686, on physical page 0, where the kernel maps no window, a PCI offset from 0x100 or a PCI segment other than 0 before #58) | fails | construct skipped | `space_unsupported`, `region_bounds`, `address_unreachable` |
 | A field of a region whose offset and length were never evaluated: declared in a branch that did not run, or its operands failed; or of a PCI_Config region whose attach needs a method where no frame can wait (§3.6) | fails | construct skipped | `region_unevaluated` |

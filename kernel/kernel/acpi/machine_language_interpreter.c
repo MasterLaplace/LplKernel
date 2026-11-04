@@ -122,8 +122,8 @@ typedef enum MachineLanguageRunBlock {
     (MACHINE_LANGUAGE_IS_KIND(k0, FIELD_LIST) || MACHINE_LANGUAGE_IS_KIND(k1, FIELD_LIST) ||                           \
      MACHINE_LANGUAGE_IS_KIND(k2, FIELD_LIST) || MACHINE_LANGUAGE_IS_KIND(k3, FIELD_LIST) ||                           \
      MACHINE_LANGUAGE_IS_KIND(k4, FIELD_LIST) ||                                                                       \
-     MACHINE_LANGUAGE_IS_KIND(k5, FIELD_LIST)) /**< Whether a descriptor ends with a FieldList, whose names push the   \
-                                                   node they name. */
+     MACHINE_LANGUAGE_IS_KIND(k5, FIELD_LIST)) /**< Whether a descriptor's operands include a FieldList, whose names   \
+                                                  push the node they name. */
 #define MACHINE_LANGUAGE_PUSHES_NO_VALUE(operand, field_list)                                                          \
     (MACHINE_LANGUAGE_OPERAND(operand) >= MACHINE_LANGUAGE_OPERAND(ASCII_STRING) ||                                    \
      (MACHINE_LANGUAGE_IS_KIND(operand, NAME_STRING) && !(field_list))) /**< Whether an operand pushes no value: a     \

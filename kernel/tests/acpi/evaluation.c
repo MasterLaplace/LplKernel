@@ -884,29 +884,29 @@ KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
  * @brief An operator whose frame holds fewer values than it takes is refused with operands_missing, counted, and
  *        takes nothing below its frame, each Timer leaving the stack as deep as it found it: an Add at table level,
  *        which would read below the value stack; an Add in M001, which would take the 0x07 of its caller; the
- *        predicate of an If in M002, whose body only reads Timer; the count of a VarPackage in M003; and in M004 a
- *        BankField, whose region and bank names push a value each, followed by a Timer. SEEN counts the methods that
- *        went on past their Timer, timer_reads a Timer after the refusal, packages_padded a VarPackage built from a
- *        count below its frame.
+ *        predicate of an If in M002, whose body and Else only read Timer; the count of a VarPackage in M003; in
+ *        M004, a BankField, whose region and bank names push a value each, followed by a Timer. SEEN counts the
+ *        methods that went on past their Timer, timer_reads a Timer after the refusal, packages_padded a VarPackage
+ *        built from a count below its frame.
  */
 KERNEL_TEST(an_operator_whose_frame_holds_fewer_values_than_it_takes_is_refused)
 {
     static const uint8_t aml[] = {
         0x14u, 0x14u, 'M',   '0',   '0',   '1',   0x00u, 0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 0x60u, 0x75u, 'S',
-        'E',   'E',   'N',   0xA4u, 0x60u, 0x14u, 0x0Eu, 'M',   '0',   '0',   '2',   0x00u, 0xA0u, 0x05u, 0x5Bu, 0x33u,
-        0x5Bu, 0x33u, 0xA4u, 0x00u, 0x14u, 0x14u, 'M',   '0',   '0',   '3',   0x00u, 0x70u, 0x13u, 0x04u, 0x5Bu, 0x33u,
-        0x01u, 0x60u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x14u, 0x22u, 'M',   '0',   '0',   '4',   0x00u,
-        0x5Bu, 0x87u, 0x11u, 'R',   'E',   'G',   '0',   'B',   'N',   'K',   '0',   0x5Bu, 0x33u, 0x01u, 'F',   'L',
-        'D',   '4',   0x08u, 0x5Bu, 0x33u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x5Bu, 0x80u, 'R',   'E',
-        'G',   '0',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x04u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',   'G',
-        '0',   0x01u, 'B',   'N',   'K',   '0',   0x08u, 0x08u, 'R',   'E',   'S',   '1',   0x0Au, 0x05u, 0x08u, 'R',
-        'E',   'S',   '2',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '3',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',
-        '4',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '5',   0x0Au, 0x05u, 0x08u, 'S',   'E',   'E',   'N',   0x00u,
-        0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 'R',   'E',   'S',   '1',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',
-        '0',   '1',   0x00u, 'R',   'E',   'S',   '2',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '2',   0x00u,
-        'R',   'E',   'S',   '3',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '3',   0x00u, 'R',   'E',   'S',
-        '4',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '4',   0x00u, 'R',   'E',   'S',   '5',   0x08u, 'A',
-        'F',   'T',   'R',   0x01u,
+        'E',   'E',   'N',   0xA4u, 0x60u, 0x14u, 0x12u, 'M',   '0',   '0',   '2',   0x00u, 0xA0u, 0x05u, 0x5Bu, 0x33u,
+        0x5Bu, 0x33u, 0xA1u, 0x03u, 0x5Bu, 0x33u, 0xA4u, 0x00u, 0x14u, 0x14u, 'M',   '0',   '0',   '3',   0x00u, 0x70u,
+        0x13u, 0x04u, 0x5Bu, 0x33u, 0x01u, 0x60u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x14u, 0x22u, 'M',
+        '0',   '0',   '4',   0x00u, 0x5Bu, 0x87u, 0x11u, 'R',   'E',   'G',   '0',   'B',   'N',   'K',   '0',   0x5Bu,
+        0x33u, 0x01u, 'F',   'L',   'D',   '4',   0x08u, 0x5Bu, 0x33u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u,
+        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x04u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u,
+        0x0Bu, 'R',   'E',   'G',   '0',   0x01u, 'B',   'N',   'K',   '0',   0x08u, 0x08u, 'R',   'E',   'S',   '1',
+        0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '2',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '3',   0x0Au, 0x05u,
+        0x08u, 'R',   'E',   'S',   '4',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '5',   0x0Au, 0x05u, 0x08u, 'S',
+        'E',   'E',   'N',   0x00u, 0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 'R',   'E',   'S',   '1',   0x70u, 0x72u,
+        0x0Au, 0x07u, 'M',   '0',   '0',   '1',   0x00u, 'R',   'E',   'S',   '2',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',
+        '0',   '0',   '2',   0x00u, 'R',   'E',   'S',   '3',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '3',
+        0x00u, 'R',   'E',   'S',   '4',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '4',   0x00u, 'R',   'E',
+        'S',   '5',   0x08u, 'A',   'F',   'T',   'R',   0x01u,
     };
 
     advanced_configuration_and_power_interface_simulated_host_open(&evaluation_host);
@@ -928,10 +928,10 @@ KERNEL_TEST(an_operator_whose_frame_holds_fewer_values_than_it_takes_is_refused)
                           evaluation_integer("RES3") == 5u && evaluation_integer("RES4") == 5u &&
                           evaluation_integer("RES5") == 5u && evaluation_integer("AFTR") == 1u,
                       "no Store stores, and the load goes on to AFTR");
-    kernel_test_check(test,
-                      evaluation_integer("SEEN") == 0u && evaluation_load.services.timer_reads == 5u &&
-                          evaluation_load.heap.packages_padded == 0u,
-                      "no method goes on past the operator refused, M002's If runs no body, and M003 builds no "
-                      "package");
+    kernel_test_check(test, evaluation_integer("SEEN") == 0u,
+                      "no method goes on past the operator refused to its Increment (SEEN)");
+    kernel_test_check(test, evaluation_load.services.timer_reads == 5u,
+                      "M002 runs neither its If's body nor its Else, and M004 reads no Timer after its BankField");
+    kernel_test_check(test, evaluation_load.heap.packages_padded == 0u, "M003 builds no package");
     evaluation_close(test);
 }
