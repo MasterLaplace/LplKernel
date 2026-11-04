@@ -96,6 +96,29 @@ typedef struct MachineLanguageWalk {
 } MachineLanguageWalk_t;
 
 /**
+ * @brief One element of a data object kept in its table (O20), as machine_language_read_kept reads it.
+ */
+typedef struct MachineLanguageKeptElement {
+    uint64_t integer; /**< An Integer's value, masked to its table's width. */
+    uint32_t first;   /**< Where a String's characters, a Buffer's initialiser or a package's elements start. */
+    uint32_t end;     /**< Where it ends: past an Integer, a name, a String's NUL, a Buffer or a package. */
+    uint32_t count;   /**< A String's or a Buffer's length, or a package's element count. */
+    uint8_t class;    /**< The class of its lead byte in machine_language_data_classes. */
+} MachineLanguageKeptElement_t;
+
+/**
+ * @brief A package the builder of kept data fills (C4): its elements, its object, the next element, how many it
+ *        holds, and where it ends.
+ */
+typedef struct MachineLanguageKeptFrame {
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *elements; /**< Its elements, in its object. */
+    uint32_t handle;                                                        /**< Its object. */
+    uint32_t index;                                                         /**< The next element read. */
+    uint32_t count;                                                         /**< Elements it holds. */
+    uint32_t end;                                                           /**< Its PkgLength end. */
+} MachineLanguageKeptFrame_t;
+
+/**
  * @brief The construct the walk is in.
  */
 static MachineLanguageBlock_t *machine_language_top_block(MachineLanguageWalk_t *walk)
@@ -1607,9 +1630,12 @@ static const uint8_t machine_language_data_classes[256] = {
  * @brief Reads a Buffer's size or a VarPackage's element count at @p offset, before @p end, when it is a literal
  *        constant: Zero, One, or a byte, word or double word constant; false for any other term, which the
  *        general path reads.
+ *
+ * @details Always inlined, as machine_language_data_head, which calls it once per Buffer or VarPackage head.
  */
-static bool machine_language_data_count(const uint8_t *bytes, uint32_t offset, uint32_t end, uint32_t *out_count,
-                                        uint32_t *out_after)
+__attribute__((always_inline)) static inline bool machine_language_data_count(const uint8_t *bytes, uint32_t offset,
+                                                                              uint32_t end, uint32_t *out_count,
+                                                                              uint32_t *out_after)
 {
     if (offset >= end)
         return false;
@@ -1631,9 +1657,15 @@ static bool machine_language_data_count(const uint8_t *bytes, uint32_t offset, u
  * @brief Reads the head of the Buffer, Package or VarPackage of class @p class whose opcode is at @p offset: its
  *        PkgLength, which must end by @p end, then its size or its element count, a literal constant;
  *        @p out_end receives where the object ends, @p out_first where its initialiser or its elements start.
+ *
+ * @details Always inlined into the check, the reader and the description of kept data: the check of the load and
+ *          the builder of kept data read every Buffer and package head through it, and a call costs them more than
+ *          the head they read.
  */
-static bool machine_language_data_head(const uint8_t *bytes, uint32_t offset, uint32_t end, uint8_t class,
-                                       uint32_t *out_end, uint32_t *out_first, uint32_t *out_count)
+__attribute__((always_inline)) static inline bool machine_language_data_head(const uint8_t *bytes, uint32_t offset,
+                                                                             uint32_t end, uint8_t class,
+                                                                             uint32_t *out_end, uint32_t *out_first,
+                                                                             uint32_t *out_count)
 {
     if (advanced_configuration_and_power_interface_machine_language_read_package_end(bytes, offset + 1u, end, out_end,
                                                                                      out_first) != MACHINE_LANGUAGE_OK)
@@ -2203,14 +2235,102 @@ static uint32_t machine_language_fold_unreadable(uint32_t fold)
 }
 
 /**
+ * @brief The integers of kept data @p value hold all their bits, or 32 of them when its table was declared under a
+ *        DSDT whose revision is below 2.
+ */
+static uint64_t machine_language_kept_mask(const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value)
+{
+    return ((value->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_KEPT_DATA_32_BIT_INTEGERS) !=
+            0u) ?
+               0xFFFFFFFFull :
+               UINT64_MAX;
+}
+
+/**
+ * @brief The Integer the constant of class @p class at @p pc holds, masked by @p mask: Zero, One, Ones, or the
+ *        little-endian bytes after its prefix.
+ */
+static uint64_t machine_language_data_integer(const uint8_t *bytes, uint32_t pc, uint8_t class, uint64_t mask)
+{
+    uint64_t integer = (bytes[pc] == 0xFFu) ? UINT64_MAX : (bytes[pc] == 0x01u) ? 1u : 0u;
+
+    for (uint32_t byte = 1u; byte < class; ++byte)
+        integer |= (uint64_t) bytes[pc + byte] << (8u * (byte - 1u));
+    return integer & mask;
+}
+
+/**
+ * @brief Reads the element of kept data (O20) at @p pc, before @p end, inside @p depth packages, as
+ *        machine_language_check_data accepts one, since AML can rewrite its table after the load: an integer
+ *        constant whose bytes end by @p end, masked by @p mask; a NameString; a String whose NUL comes before
+ *        @p end, within 64 KiB; a Buffer or a package whose head reads, its size or count a literal constant, a
+ *        Buffer within 64 KiB, a package within 4,096 elements and the levels of §6.1. Nothing past @p end is read.
+ *
+ * @return Whether the bytes read so; @p out_element then holds the element.
+ *
+ * @details Always inlined: the builder of kept data reads every element through it, and a call, with the element
+ *          written through memory, costs it more than the checks the element needs.
+ */
+__attribute__((always_inline)) static inline bool machine_language_read_kept(const uint8_t *bytes, uint32_t pc,
+                                                                             uint32_t end, uint32_t depth,
+                                                                             uint64_t mask,
+                                                                             MachineLanguageKeptElement_t *out_element)
+{
+    const uint8_t class = machine_language_data_classes[bytes[pc]];
+    MachineLanguageNameString_t name;
+
+    out_element->class = class;
+    if ((class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
+    {
+        out_element->end = pc + class;
+        if (end - pc < class)
+            return false;
+        out_element->integer = machine_language_data_integer(bytes, pc, class, mask);
+        return true;
+    }
+    if (class == MACHINE_LANGUAGE_DATA_SEGMENT)
+    {
+        out_element->end = pc + 4u;
+        return machine_language_holds_name_segment(bytes, pc, end);
+    }
+    if (class == MACHINE_LANGUAGE_DATA_PREFIX)
+        return advanced_configuration_and_power_interface_machine_language_read_name_string(
+                   bytes, pc, end, &name, &out_element->end) == MACHINE_LANGUAGE_OK;
+    if (class == MACHINE_LANGUAGE_DATA_STRING)
+    {
+        uint32_t nul = pc + 1u;
+
+        while (nul < end && bytes[nul] != 0x00u)
+            ++nul;
+        out_element->first = pc + 1u;
+        out_element->count = nul - out_element->first;
+        out_element->end = nul + 1u;
+        return nul != end && out_element->count <= MACHINE_LANGUAGE_MAX_BUFFER_BYTES;
+    }
+    if (class == 0u ||
+        !machine_language_data_head(bytes, pc, end, class, &out_element->end, &out_element->first, &out_element->count))
+        return false;
+    if (class == MACHINE_LANGUAGE_DATA_BUFFER)
+    {
+        const uint32_t initialised = out_element->end - out_element->first;
+
+        out_element->count = (out_element->count > initialised) ? out_element->count : initialised;
+        return out_element->count <= MACHINE_LANGUAGE_MAX_BUFFER_BYTES;
+    }
+    return depth < MACHINE_LANGUAGE_MAX_NESTED_PACKAGES &&
+           out_element->count <=
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS;
+}
+
+/**
  * @brief Folds a data object kept in its table (O20) as machine_language_fold_value folds the object it builds
  *        into, from the bytes machine_language_check_data vouched for: an Integer masked to its width, a String's
  *        or a Buffer's length and bytes, zeros past a Buffer's initialiser, a Package's count and each element it
  *        keeps, none past its count, a name as its path bytes. AML can rewrite its table after the load: bytes that
- *        no longer read as data within it, an object or a name cut by the end of the table or of its package, a byte
- *        that starts no data object, packages nested past the levels of §6.1, a String or a Buffer past its bytes or a
- *        VarPackage past its elements in §6.1, which machine_language_check_data refuses as the object would, fold as
- *        machine_language_fold_unreadable folds them, and nothing past the table is read.
+ *        machine_language_read_kept no longer reads as data, an object or a name cut by the end of the table or of its
+ *        package, a byte that starts no data object, packages nested past the levels of §6.1, a String or a Buffer
+ *        past its bytes or a VarPackage past its elements in §6.1, which machine_language_check_data refuses as the
+ *        object would, fold as machine_language_fold_unreadable folds them, and nothing past the table is read.
  */
 static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                            uint32_t fold,
@@ -2218,10 +2338,7 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load->tables[value->auxiliary - 1u];
     const uint8_t *bytes = (const uint8_t *) table->header;
-    const uint64_t mask =
-        ((value->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_KEPT_DATA_32_BIT_INTEGERS) != 0u) ?
-            0xFFFFFFFFull :
-            UINT64_MAX;
+    const uint64_t mask = machine_language_kept_mask(value);
     uint32_t ends[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
     uint32_t counts[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
     uint32_t seen[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
@@ -2244,82 +2361,234 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
         }
 
         const bool folds = hidden == 0u && (depth == 0u || seen[depth - 1u] < counts[depth - 1u]);
-        const uint8_t lead = bytes[pc];
-        const uint8_t class = machine_language_data_classes[lead];
-        uint32_t object_end = 0u;
-        uint32_t first = 0u;
-        uint32_t count = 0u;
+        MachineLanguageKeptElement_t element;
 
-        if ((class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
+        if (!machine_language_read_kept(bytes, pc, end, depth, mask, &element))
+            return machine_language_fold_unreadable(before);
+        if ((element.class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
+            fold = folds ? machine_language_fold_unsigned(fold, element.integer, 8u) : fold;
+        else if (element.class == MACHINE_LANGUAGE_DATA_SEGMENT || element.class == MACHINE_LANGUAGE_DATA_PREFIX)
+            fold = folds ? machine_language_fold_bytes(fold, bytes + pc, element.end - pc) : fold;
+        else if (element.class == MACHINE_LANGUAGE_DATA_STRING || element.class == MACHINE_LANGUAGE_DATA_BUFFER)
         {
-            if (end - pc < class)
-                return machine_language_fold_unreadable(before);
+            const uint32_t initialised =
+                (element.class == MACHINE_LANGUAGE_DATA_STRING) ? element.count : element.end - element.first;
 
-            uint64_t integer = (lead == 0xFFu) ? UINT64_MAX : (lead == 0x01u) ? 1u : 0u;
-
-            for (uint32_t byte = 1u; byte < class; ++byte)
-                integer |= (uint64_t) bytes[pc + byte] << (8u * (byte - 1u));
-            fold = folds ? machine_language_fold_unsigned(fold, integer & mask, 8u) : fold;
-            pc += class;
-        }
-        else if (class == MACHINE_LANGUAGE_DATA_SEGMENT || class == MACHINE_LANGUAGE_DATA_PREFIX)
-        {
-            MachineLanguageNameString_t name;
-
-            if (advanced_configuration_and_power_interface_machine_language_read_name_string(
-                    bytes, pc, end, &name, &first) != MACHINE_LANGUAGE_OK)
-                return machine_language_fold_unreadable(before);
-            fold = folds ? machine_language_fold_bytes(fold, bytes + pc, first - pc) : fold;
-            pc = first;
-        }
-        else if (class == MACHINE_LANGUAGE_DATA_STRING)
-        {
-            first = pc + 1u;
-            pc = first;
-            while (pc < end && bytes[pc] != 0x00u)
-                ++pc;
-            if (pc == end || pc - first > MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
-                return machine_language_fold_unreadable(before);
             if (folds)
             {
-                fold = machine_language_fold_unsigned(fold, pc - first, 4u);
-                fold = machine_language_fold_bytes(fold, bytes + first, pc - first);
+                fold = machine_language_fold_unsigned(fold, element.count, 4u);
+                fold = machine_language_fold_bytes(fold, bytes + element.first, initialised);
+                fold = machine_language_fold_zeros(fold, element.count - initialised);
             }
-            ++pc;
         }
-        else if (class == 0u || !machine_language_data_head(bytes, pc, end, class, &object_end, &first, &count))
-            return machine_language_fold_unreadable(before);
-        else if (class == MACHINE_LANGUAGE_DATA_BUFFER)
-        {
-            const uint32_t initialised = object_end - first;
-            const uint32_t length = (count > initialised) ? count : initialised;
-
-            if (length > MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
-                return machine_language_fold_unreadable(before);
-            if (folds)
-            {
-                fold = machine_language_fold_unsigned(fold, length, 4u);
-                fold = machine_language_fold_bytes(fold, bytes + first, initialised);
-                fold = machine_language_fold_zeros(fold, length - initialised);
-            }
-            pc = object_end;
-        }
-        else if (depth == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES ||
-                 count > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS)
-            return machine_language_fold_unreadable(before);
         else
         {
-            fold = folds ? machine_language_fold_unsigned(fold, count, 4u) : fold;
+            fold = folds ? machine_language_fold_unsigned(fold, element.count, 4u) : fold;
             hidden = (folds || hidden != 0u) ? hidden : depth + 1u;
-            ends[depth] = object_end;
-            counts[depth] = count;
+            ends[depth] = element.end;
+            counts[depth] = element.count;
             seen[depth++] = 0u;
-            pc = first;
+            pc = element.first;
             continue;
         }
+        pc = element.end;
         if (depth == 0u)
             return fold;
         ++seen[depth - 1u];
+    }
+}
+
+/**
+ * @brief Gives back the packages the builder of kept data left open, innermost first, each with what it holds, as
+ *        evaluate_data gives back those it abandons, and returns @p status.
+ */
+static MachineLanguageStatus_t
+machine_language_abandon_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                              const MachineLanguageKeptFrame_t *frames, uint32_t depth, MachineLanguageStatus_t status)
+{
+    while (depth != 0u)
+        advanced_configuration_and_power_interface_machine_language_object_release(&load->heap, &load->space,
+                                                                                   frames[--depth].handle);
+    return status;
+}
+
+/**
+ * @brief Gives @p out_value a String or a Buffer, @p kind, of @p length bytes whose first @p copied are @p bytes, the
+ *        rest zero.
+ */
+static MachineLanguageStatus_t
+machine_language_kept_bytes(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint8_t kind,
+                            const uint8_t *bytes, uint32_t copied, uint32_t length,
+                            AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value)
+{
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &load->heap, &load->space, kind, length, &out_value->handle);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    memcpy(advanced_configuration_and_power_interface_machine_language_object(&load->heap, out_value->handle) + 1,
+           bytes, copied);
+    out_value->kind = kind;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Opens @p package, a Package or a VarPackage machine_language_read_kept has read, as @p out_frame: its object
+ *        of the element count its head gives, whose elements start Uninitialized.
+ */
+static MachineLanguageStatus_t
+machine_language_open_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                           const MachineLanguageKeptElement_t *package, MachineLanguageKeptFrame_t *out_frame)
+{
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
+        &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(PACKAGE), package->count, &out_frame->handle);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    out_frame->elements =
+        (AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t
+             *) (advanced_configuration_and_power_interface_machine_language_object(&load->heap, out_frame->handle) +
+                 1);
+    out_frame->index = 0u;
+    out_frame->count = package->count;
+    out_frame->end = package->end;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Builds the data object node @p node kept in its table (O20) with the general data decoder, as a load whose
+ *        general_load is set builds it: from the same bytes, its names read in the node's parent and its integers as
+ *        wide as when its table was declared, counting nothing.
+ *
+ * @return The data decoder's status, OK otherwise, or TYPE_MISMATCH when the bytes no longer build a constant.
+ */
+static MachineLanguageStatus_t
+machine_language_decode_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                             const MachineLanguageNode_t *node,
+                             AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table =
+        &load->tables[node->value.auxiliary - 1u];
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = {
+        .bytes = (const uint8_t *) table->header,
+        .scope = node->parent,
+        .table = node->value.auxiliary,
+        .integer_bits = (machine_language_kept_mask(&node->value) == UINT64_MAX) ? 64u : 32u,
+    };
+    bool constant = false;
+    uint32_t after = 0u;
+    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_evaluate_data(
+        &load->heap, &load->space, &source, (uint32_t) node->value.payload, table->length, false, out_value, &constant,
+        &after);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    return constant ? MACHINE_LANGUAGE_OK : MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+}
+
+/**
+ * @brief Gives back what the builder of kept data built from bytes AML has rewritten since the load, which no longer
+ *        read as kept data, then builds the object through the general data decoder, so that it ends as the general
+ *        path does: the status it fails with, or the object it builds.
+ */
+static MachineLanguageStatus_t
+machine_language_rebuild_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                              const MachineLanguageNode_t *node, const MachineLanguageKeptFrame_t *frames,
+                              uint32_t depth, AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value)
+{
+    (void) machine_language_abandon_kept(load, frames, depth, MACHINE_LANGUAGE_OK);
+    return machine_language_decode_kept(load, node, out_value);
+}
+
+/**
+ * @brief Builds the data object node @p node kept in its table (O20) without the general data decoder (C4): each
+ *        element machine_language_read_kept reads is decoded straight into its package, its integers masked to the
+ *        table's width, its names kept as names read in the node's parent, each object allocated where evaluate_data
+ *        allocates it, so that the heap ends the same; as evaluate_data building kept data, it counts no package padded
+ *        or cut, but it counts what it built. Bytes AML has rewritten since the load, which no longer read as kept
+ *        data, a name where the object starts included, are built by the general data decoder instead.
+ *
+ * @return OK; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold an object, every object built so far
+ *         given back; the general data decoder's status for rewritten bytes.
+ */
+static MachineLanguageStatus_t
+machine_language_build_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                            const MachineLanguageNode_t *node,
+                            AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table =
+        &load->tables[node->value.auxiliary - 1u];
+    const uint8_t *bytes = (const uint8_t *) table->header;
+    const uint64_t mask = machine_language_kept_mask(&node->value);
+    MachineLanguageKeptFrame_t frames[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
+    uint32_t depth = 0u;
+    uint32_t pc = (uint32_t) node->value.payload;
+
+    for (;;)
+    {
+        const uint32_t end = (depth != 0u) ? frames[depth - 1u].end : table->length;
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value = {0};
+        MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+        if (depth != 0u && pc == end)
+        {
+            value.kind = MACHINE_LANGUAGE_VALUE(PACKAGE);
+            value.handle = frames[--depth].handle;
+        }
+        else
+        {
+            MachineLanguageKeptElement_t element;
+
+            if (!machine_language_read_kept(bytes, pc, end, depth, mask, &element))
+                return machine_language_rebuild_kept(load, node, frames, depth, out_value);
+            if ((element.class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
+            {
+                value.kind = MACHINE_LANGUAGE_VALUE(INTEGER);
+                value.payload = element.integer;
+            }
+            else if (element.class == MACHINE_LANGUAGE_DATA_SEGMENT || element.class == MACHINE_LANGUAGE_DATA_PREFIX)
+            {
+                if (depth == 0u)
+                    return machine_language_rebuild_kept(load, node, frames, depth, out_value);
+                value.kind = MACHINE_LANGUAGE_VALUE(NAME_REFERENCE);
+                value.auxiliary = node->value.auxiliary;
+                value.handle = node->parent;
+                value.payload = pc;
+            }
+            else if (element.class == MACHINE_LANGUAGE_DATA_STRING)
+                status = machine_language_kept_bytes(load, MACHINE_LANGUAGE_VALUE(STRING), bytes + element.first,
+                                                     element.count, element.count, &value);
+            else if (element.class == MACHINE_LANGUAGE_DATA_BUFFER)
+                status = machine_language_kept_bytes(load, MACHINE_LANGUAGE_VALUE(BUFFER), bytes + element.first,
+                                                     element.end - element.first, element.count, &value);
+            else
+            {
+                status = machine_language_open_kept(load, &element, &frames[depth]);
+                if (status != MACHINE_LANGUAGE_OK)
+                    return machine_language_abandon_kept(load, frames, depth, status);
+                ++depth;
+                pc = element.first;
+                continue;
+            }
+            if (status != MACHINE_LANGUAGE_OK)
+                return machine_language_abandon_kept(load, frames, depth, status);
+            pc = element.end;
+        }
+        if (depth == 0u)
+        {
+            ++load->data_built_directly;
+            *out_value = value;
+            return MACHINE_LANGUAGE_OK;
+        }
+
+        MachineLanguageKeptFrame_t *frame = &frames[depth - 1u];
+
+        if (frame->index < frame->count)
+            frame->elements[frame->index] = value;
+        else
+            advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space,
+                                                                                      &value);
+        ++frame->index;
     }
 }
 
@@ -2895,29 +3164,12 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     if (node == NULL || node->value.kind != MACHINE_LANGUAGE_VALUE(KEPT_DATA))
         return MACHINE_LANGUAGE_OK;
 
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table =
-        &load->tables[node->value.auxiliary - 1u];
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = {
-        .bytes = (const uint8_t *) table->header,
-        .scope = node->parent,
-        .table = node->value.auxiliary,
-        .integer_bits =
-            ((node->value.flags &
-              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_KEPT_DATA_32_BIT_INTEGERS) != 0u) ?
-                32u :
-                64u,
-    };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value;
-    bool constant = false;
-    uint32_t after = 0u;
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_evaluate_data(
-        &load->heap, &load->space, &source, (uint32_t) node->value.payload, table->length, false, &value, &constant,
-        &after);
+    const MachineLanguageStatus_t status = load->general_load ? machine_language_decode_kept(load, node, &value) :
+                                                                machine_language_build_kept(load, node, &value);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    if (!constant)
-        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     node->value = value;
     ++load->data_materialized;
     return MACHINE_LANGUAGE_OK;

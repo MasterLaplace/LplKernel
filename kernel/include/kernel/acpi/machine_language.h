@@ -159,8 +159,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     bool skips_bodies;            /**< Whether the load decodes no method body once its tables are declared, nor
                                        those of a table Load adds, as a release kernel loads (O2, §3.6); false in a
                                        debug kernel and in the host tools. */
-    bool general_load;            /**< Whether the declaration pass takes none of its shortcuts (§3.6): the
-                                       differential test compares them with this general path; false at boot. */
+    bool general_load;            /**< Whether the declaration pass takes none of its shortcuts (§3.6), and a kept
+                                       object is built by the general data decoder instead of the builder of kept
+                                       data (C4): the differential test compares them with this general path; false
+                                       at boot. */
     bool predecodes_loops;        /**< Whether the statements of a method's While that loops run from records
                                        (§3.6): true unless the boot line holds lpl.acpi.predecoding=off. */
     uint8_t integer_bits;         /**< 32 when the DSDT's revision is below 2, 64 otherwise, 0 without a DSDT. */
@@ -179,12 +181,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                      them as terms: built (O18), or kept in their table (O20). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
                                                  instead of operand by operand through the walk (O19). */
-    uint32_t data_kept;          /**< Data objects of a Name the declaration pass checked, then kept in their table
-                                      unbuilt, and stepped over, until a name resolution reaches them (O20). */
-    uint32_t data_materialized;  /**< Of those, the ones a name resolution has built since. */
-    uint32_t duplicates;         /**< Declarations of a name that already existed, skipped. */
-    uint32_t externals_unplaced; /**< Externals the declaration pass had nowhere to place, which the Externals
-                                      pass places once every table is declared. */
+    uint32_t data_kept;           /**< Data objects of a Name the declaration pass checked, then kept in their table
+                                       unbuilt, and stepped over, until a name resolution reaches them (O20). */
+    uint32_t data_materialized;   /**< Of those, the ones a name resolution has built since. */
+    uint32_t data_built_directly; /**< Of those, the ones the builder of kept data built (C4), not the general data
+                                       decoder, which a load whose general_load is set uses. */
+    uint32_t duplicates;          /**< Declarations of a name that already existed, skipped. */
+    uint32_t externals_unplaced;  /**< Externals the declaration pass had nowhere to place, which the Externals
+                                       pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;     /**< The first of them. */
     uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
@@ -901,7 +905,9 @@ advanced_configuration_and_power_interface_machine_language_memory_read(
 /**
  * @brief Builds the data object a Name kept in its table (O20), once a name resolution reaches its node: the
  *        Package, VarPackage or Buffer the load would have built, from the same bytes, its names read in the
- *        node's parent and its integers as wide as when its table was declared. Any other node is left as it is.
+ *        node's parent and its integers as wide as when its table was declared, by a builder of its own (C4); by
+ *        the general data decoder when the load's general_load is set, or when AML has rewritten the bytes since the
+ *        load so that they no longer read as kept data. Any other node is left as it is.
  *
  * @param load  The load.
  * @param index The node a name resolved to.

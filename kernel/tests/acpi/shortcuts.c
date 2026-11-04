@@ -287,6 +287,35 @@ static const uint8_t shortcuts_field_too_large[] = {
 };
 
 /**
+ * @brief Kept data of edge sizes (O20): `Name (PD__, Package (3) {1})`, padded; `Name (TR__, Package (1) {1, "abc",
+ *        Buffer (2) {1}, Package (1) {2}})`, whose dropped initialisers hold objects; `Name (BS__, Buffer (8) {1, 2})`,
+ *        shorter than its size; `Name (BL__, Buffer (2) {1, 2, 3, 4})`, longer; `Name (E0__, Package (0) {})`,
+ *        `Name (E1__, Buffer (0) {})` and `Name (E2__, Package (1) {""})`; `Name (VP__, VarPackage (0x0100) {One})`;
+ *        `Name (NM__, Package (3) {\\_SB_, ^XYZW, AB__.CD__})`, a name of each prefix; and
+ *        `Name (B64K, Buffer (0x10000) {})`, the largest buffer of §6.1.
+ */
+static const uint8_t shortcuts_kept_edges[] = {
+    0x08u, 'P',   'D',   '_',   '_',   0x12u, 0x03u, 0x03u, 0x01u, 0x08u, 'T',   'R',   '_',   '_',   0x12u,
+    0x12u, 0x01u, 0x01u, 0x0Du, 'a',   'b',   'c',   0x00u, 0x11u, 0x04u, 0x0Au, 0x02u, 0x01u, 0x12u, 0x04u,
+    0x01u, 0x0Au, 0x02u, 0x08u, 'B',   'S',   '_',   '_',   0x11u, 0x05u, 0x0Au, 0x08u, 0x01u, 0x02u, 0x08u,
+    'B',   'L',   '_',   '_',   0x11u, 0x07u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x03u, 0x04u, 0x08u, 'E',   '0',
+    '_',   '_',   0x12u, 0x02u, 0x00u, 0x08u, 'E',   '1',   '_',   '_',   0x11u, 0x03u, 0x0Au, 0x00u, 0x08u,
+    'E',   '2',   '_',   '_',   0x12u, 0x04u, 0x01u, 0x0Du, 0x00u, 0x08u, 'V',   'P',   '_',   '_',   0x13u,
+    0x05u, 0x0Bu, 0x00u, 0x01u, 0x01u, 0x08u, 'N',   'M',   '_',   '_',   0x12u, 0x15u, 0x03u, 0x5Cu, '_',
+    'S',   'B',   '_',   0x5Eu, 'X',   'Y',   'Z',   'W',   0x2Eu, 'A',   'B',   '_',   '_',   'C',   'D',
+    '_',   '_',   0x08u, 'B',   '6',   '4',   'K',   0x11u, 0x06u, 0x0Cu, 0x00u, 0x00u, 0x01u, 0x00u,
+};
+
+/**
+ * @brief A package of three Buffers of 4 KiB, each a run of two pages of its own: `Name (FL__, Package (3)
+ *        {Buffer (0x1000) {}, Buffer (0x1000) {}, Buffer (0x1000) {}})`, whose third no longer fits 16 KiB.
+ */
+static const uint8_t shortcuts_kept_too_large[] = {
+    0x08u, 'F',   'L',   '_',   '_',   0x12u, 0x11u, 0x03u, 0x11u, 0x04u, 0x0Bu, 0x00u,
+    0x10u, 0x11u, 0x04u, 0x0Bu, 0x00u, 0x10u, 0x11u, 0x04u, 0x0Bu, 0x00u, 0x10u,
+};
+
+/**
  * @brief Prepends @p length bytes to @p backwards, or marks it overflowed when they do not fit.
  */
 static void shortcuts_prepend(ShortcutsBackwards_t *backwards, const uint8_t *bytes, uint32_t length)
@@ -990,4 +1019,145 @@ KERNEL_TEST(kept_data_reads_unbuilt_as_the_object_it_builds_into)
                               &shortcuts_load, shortcuts_root_value("I3__"), &length, &initialiser, &initialised),
                       "an Integer reads as no kept data");
     shortcuts_close();
+}
+
+/**
+ * @brief A table whose kept data both builders build, and the arena they build it in.
+ */
+typedef struct ShortcutsBuildCase {
+    const char *claim;  /**< What the two builders agreeing shows. */
+    const uint8_t *aml; /**< The DSDT's AML. */
+    uint32_t length;    /**< Its length. */
+    uint8_t revision;   /**< The DSDT's revision: below 2, every integer is 32 bits. */
+    bool wide_first;    /**< Whether shortcuts_wide is declared first, an SSDT whose integers are then 64 bits. */
+    bool capped;        /**< Whether the arena holds 16 KiB past the namespace's own pages only. */
+} ShortcutsBuildCase_t;
+
+/**
+ * @brief What building every data object a load kept ended with: what both builders must agree on, then which
+ *        builder built them.
+ */
+typedef struct ShortcutsBuilt {
+    uint32_t data_kept;           /**< Data objects the load kept in its table. */
+    uint32_t data_materialized;   /**< Of those, the ones built. */
+    uint32_t failed;              /**< Builds that failed. */
+    uint32_t first_failure;       /**< The status of the first, or OK. */
+    uint32_t fold;                /**< The namespace's fold once every kept object is built or has failed. */
+    uint32_t objects;             /**< Objects the heap allocated. */
+    uint32_t objects_freed;       /**< Of those, the ones freed. */
+    uint32_t object_bytes;        /**< Bytes the live objects take. */
+    uint32_t packages_padded;     /**< Packages padded, at load. */
+    uint32_t packages_truncated;  /**< Packages cut, at load. */
+    uint32_t data_built_directly; /**< Kept objects the builder of kept data built (C4). */
+} ShortcutsBuilt_t;
+
+/**
+ * @brief Loads a case into shortcuts_load with the load's shortcuts, so that it keeps its constant packages and
+ *        buffers, then builds every kept object in node order, through the general data decoder when @p general
+ *        holds and through the builder of kept data otherwise, and records what that ended with.
+ */
+static bool shortcuts_build_kept(KernelTest_t *test, const ShortcutsBuildCase_t *build_case, bool general,
+                                 ShortcutsBuilt_t *out_built)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = &shortcuts_load;
+    uint32_t arena = MADE_UP_MAX_ARENA_BYTES;
+
+    memset(out_built, 0, sizeof(*out_built));
+    if (build_case->capped)
+    {
+        if (!shortcuts_open(test, false, MADE_UP_MAX_ARENA_BYTES))
+            return false;
+        arena = shortcuts_load.space.arena_bytes + SHORTCUTS_KEPT_ARENA_BYTES;
+        shortcuts_close();
+    }
+    if (!shortcuts_open(test, false, arena))
+        return false;
+    if (build_case->wide_first)
+        (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+            &shortcuts_load,
+            made_up_definition_block(shortcuts_ssdt, "SSDT", 2u, shortcuts_wide, sizeof(shortcuts_wide)));
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &shortcuts_load,
+        made_up_definition_block(shortcuts_dsdt, "DSDT", build_case->revision, build_case->aml, build_case->length));
+    shortcuts_load.general_load = general;
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         index < shortcuts_load.space.node_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+            advanced_configuration_and_power_interface_machine_language_materialize(&shortcuts_load, index);
+
+        out_built->first_failure = (out_built->failed == 0u) ? (uint32_t) status : out_built->first_failure;
+        out_built->failed +=
+            (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK) ? 1u : 0u;
+    }
+    out_built->data_kept = load->data_kept;
+    out_built->data_materialized = load->data_materialized;
+    out_built->fold = advanced_configuration_and_power_interface_machine_language_namespace_fold(load);
+    out_built->objects = load->heap.objects;
+    out_built->objects_freed = load->heap.objects_freed;
+    out_built->object_bytes = load->heap.object_bytes;
+    out_built->packages_padded = load->heap.packages_padded;
+    out_built->packages_truncated = load->heap.packages_truncated;
+    out_built->data_built_directly = load->data_built_directly;
+    shortcuts_close();
+    return true;
+}
+
+/**
+ * @brief Each data object a Name keeps in its table builds the same when a name first reaches it through the builder
+ *        of kept data (C4) as through the general data decoder, which a load whose general_load is set uses: the
+ *        same namespace fold, the same objects allocated, freed and held, the same counts and the same failures; on
+ *        data of every kind under revision 2 then 1, an SSDT declared before the DSDT, kept data of edge sizes under
+ *        revision 2 then 1, a package 32 deep, and a package whose third Buffer no longer fits the arena, which both
+ *        builders refuse with out_of_memory, everything built so far given back. Only the builder of kept data counts
+ *        what it built.
+ */
+KERNEL_TEST(kept_data_builds_the_same_through_its_own_builder_and_the_general_decoder)
+{
+    ShortcutsBuildCase_t cases[] = {
+        {"data of every kind under revision 2",          shortcuts_constants,      sizeof(shortcuts_constants),      2u, false, false},
+        {"data of every kind under revision 1",          shortcuts_constants,      sizeof(shortcuts_constants),      1u, false, false},
+        {"an SSDT declared before a DSDT of revision 1", shortcuts_constants,      sizeof(shortcuts_constants),      1u, true,
+         false                                                                                                                       },
+        {"kept data of edge sizes under revision 2",     shortcuts_kept_edges,     sizeof(shortcuts_kept_edges),     2u, false,
+         false                                                                                                                       },
+        {"kept data of edge sizes under revision 1",     shortcuts_kept_edges,     sizeof(shortcuts_kept_edges),     1u, false,
+         false                                                                                                                       },
+        {"a package 32 deep",                            NULL,                     0u,                               2u, false, false},
+        {"a package whose third Buffer does not fit",    shortcuts_kept_too_large, sizeof(shortcuts_kept_too_large), 2u,
+         false,                                                                                                                 true },
+    };
+    const uint32_t count = sizeof(cases) / sizeof(cases[0]);
+    uint32_t built_directly = 0u;
+
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        ShortcutsBuilt_t direct;
+        ShortcutsBuilt_t general;
+
+        if (cases[index].aml == NULL)
+        {
+            shortcuts_write_nested(&shortcuts_backwards, "DEEP",
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES, 0u);
+            if (!kernel_test_check(test, !shortcuts_backwards.overflowed, "the nested table fits its buffer"))
+                return;
+            cases[index].aml = shortcuts_backwards.bytes + shortcuts_backwards.start;
+            cases[index].length = SHORTCUTS_AML_CAPACITY - shortcuts_backwards.start;
+        }
+        if (!shortcuts_build_kept(test, &cases[index], false, &direct) ||
+            !shortcuts_build_kept(test, &cases[index], true, &general))
+            return;
+        kernel_test_check(
+            test,
+            direct.data_kept != 0u && memcmp(&direct, &general, offsetof(ShortcutsBuilt_t, data_built_directly)) == 0 &&
+                general.data_built_directly == 0u && direct.data_built_directly == direct.data_materialized &&
+                (cases[index].capped ?
+                     direct.first_failure ==
+                         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY :
+                     direct.failed == 0u && direct.data_materialized == direct.data_kept),
+            cases[index].claim);
+        built_directly += direct.data_built_directly;
+    }
+    kernel_test_check(test, built_directly != 0u, "the builder of kept data built some");
+    kernel_test_measure(test, "data_built_directly", built_directly);
 }

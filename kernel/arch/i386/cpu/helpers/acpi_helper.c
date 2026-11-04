@@ -443,6 +443,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("load_duplicates", load->load_duplicates);
     kernel_telemetry_write_unsigned("load_tables_missing", load->load_tables_missing);
     kernel_telemetry_write_unsigned("table_bytes_copied", load->table_bytes_copied);
+    kernel_telemetry_write_unsigned("data_built_directly", load->data_built_directly);
     kernel_telemetry_end_record();
     acpi_helper_write_regions_record(serial, &load->regions);
     acpi_helper_write_services_record(serial, &load->services);
