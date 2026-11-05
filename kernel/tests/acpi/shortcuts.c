@@ -1,6 +1,7 @@
-#include "shortcuts.h"
+#include "fixtures/shortcuts.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
+#include "shortcuts.h"
 #include "simulated_host.h"
 
 #include <kernel/acpi/machine_language.h>
@@ -121,7 +122,7 @@ typedef enum ShortcutsFirstRead {
 
 /**
  * @brief A Name's package whose head reads, loaded as `Name (PKG_, ...)` between the readers of
- *        shortcuts_unbuilt_readers and `Name (AFTR, 7)`.
+ *        shortcuts_unbuilt_readers_aml and `Name (AFTR, 7)`.
  */
 typedef struct ShortcutsUnbuilt {
     const char *claim;               /**< What the package is. */
@@ -152,6 +153,9 @@ static ShortcutsBackwards_t shortcuts_backwards;
  *        word and a quad word, `"abc"`, `Buffer (4) {1, 2}`, `Buffer (2) {1, 2, 3}`, `Buffer (0) {}`,
  *        `Package (3) {Ones, QWord, "x"}`, `Package (1) {1, 2, 3}`, `Package { Package { Package { I0__ } } }`,
  *        `VarPackage (2) {One}` and `Package (2) {"s", Buffer (1) {7}}`.
+ *
+ * It is raw bytes: the fixtures are compiled at revision 1, where iasl truncates a QWord to 32 bits, and iasl raises a
+ * Package's count to its initialisers.
  */
 static const uint8_t shortcuts_constants[] = {
     0x08u, 'I',   '0',   '_',   '_',   0x00u, 0x08u, 'I',   '1',   '_',   '_',   0x01u, 0x08u, 'I',   '2',
@@ -171,6 +175,8 @@ static const uint8_t shortcuts_constants[] = {
 /**
  * @brief An SSDT declared before the DSDT, whose integers are then 64 bits: `Name (Q0__, Ones)` and
  *        `Name (Q1__, Package (2) {Ones, QWord})`.
+ *
+ * It is raw bytes: the fixtures are compiled at revision 1, where iasl truncates a QWord to 32 bits.
  */
 static const uint8_t shortcuts_wide[] = {
     0x08u, 'Q',   '0',   '_',   '_',   0xFFu, 0x08u, 'Q',   '1',   '_',   '_',   0x12u,
@@ -178,23 +184,13 @@ static const uint8_t shortcuts_wide[] = {
 };
 
 /**
- * @brief Sizes a name gives: `Name (CNT_, 4)`, `Name (B3__, Buffer (CNT_) {})`,
- *        `Name (P3__, Package (2) {Package (3) {1}, Buffer (CNT_) {}})`, which pads one package and builds the
- *        other, `Method (MCNT) { Return (4) }` and `Name (B4__, Buffer (MCNT) {})`, which waits for the
- *        interpreter; then table-level code that stores 8 to CNT_.
- */
-static const uint8_t shortcuts_named_sizes[] = {
-    0x08u, 'C', 'N',   'T',   '_',   0x0Au, 0x04u, 0x08u, 'B',   '3',   '_',   '_',   0x11u, 0x05u, 'C',   'N',
-    'T',   '_', 0x08u, 'P',   '3',   '_',   '_',   0x12u, 0x0Cu, 0x02u, 0x12u, 0x03u, 0x03u, 0x01u, 0x11u, 0x05u,
-    'C',   'N', 'T',   '_',   0x14u, 0x09u, 'M',   'C',   'N',   'T',   0x00u, 0xA4u, 0x0Au, 0x04u, 0x08u, 'B',
-    '4',   '_', '_',   0x11u, 0x05u, 'M',   'C',   'N',   'T',   0x70u, 0x0Au, 0x08u, 'C',   'N',   'T',   '_',
-};
-
-/**
  * @brief Data the decoder refuses: a package of an OperationRegion opcode, a package whose String has no NUL,
  *        and a duplicate Name whose package is the first's; then `Name (OK__, Package (1) {One})`,
  *        `Name (L0__, Package (1) {Local0})`, whose Local0 is no data object, and `Name (B64_, Buffer (0x10001) {})`,
  *        past the 64 KiB of §6.1.
+ *
+ * It is raw bytes: iasl's grammar refuses an OperationRegion opcode or Local0 as a package element, and iasl emits no
+ * String without its NUL and no second Name of one name.
  */
 static const uint8_t shortcuts_malformed[] = {
     0x08u, 'M', '0', '_',   '_',   0x12u, 0x08u, 0x01u, 0x5Bu, 0x80u, 'R',   'G',   'N',   '_',   0x08u, 'M',
@@ -208,6 +204,8 @@ static const uint8_t shortcuts_malformed[] = {
  * @brief A package whose inner package's PkgLength crosses its parent, which stops the decoding of the rest of the
  *        table (§6.2), after a Name the load builds, `Name (G0__, Package (1) {One})`, and before
  *        `Name (X1__, Package (1) {...})`, which holds the byte 0x02, which starts no data object.
+ *
+ * It is raw bytes: iasl emits no PkgLength that crosses its parent's and no element that is the byte 0x02.
  */
 static const uint8_t shortcuts_crossing[] = {
     0x08u, 'G',   '0',   '_',   '_',   0x12u, 0x03u, 0x01u, 0x01u, 0x08u, 'X', '0',   '_',   '_',   0x12u,
@@ -219,6 +217,9 @@ static const uint8_t shortcuts_crossing[] = {
  *        `Name (DUP_, Package (1) {One})` then `Name (DUP_, Package (1) {...})` again, whose duplicate holds the byte
  *        0x02, which starts no data object, then `Name (CNT2, 2)` and `Name (VPK_, VarPackage (CNT2) {Package (3)
  *        {One}, ...})`, not kept for its count, whose inner Package is padded before such a byte.
+ *
+ * It is raw bytes: iasl emits no second Name of one name, no element that is the byte 0x02, and a Package, not a
+ * VarPackage, of constant count.
  */
 static const uint8_t shortcuts_kept_refused_and_duplicate[] = {
     0x08u, 'V',   'P',   'X', '_', 0x13u, 0x04u, 0x0Bu, 0x01u, 0x10u, 0x08u, 'D',   'U',   'P',   '_',   0x12u, 0x03u,
@@ -230,6 +231,8 @@ static const uint8_t shortcuts_kept_refused_and_duplicate[] = {
  * @brief Integers of a Name the declaration pass's decoder leaves to the general path: `Name (IR__, Revision)`,
  *        `Name (IN__, IR__)`, then `Name (IO__, One)`, which it builds, `Name (IO__, Ones)` again, and a QWord whose
  *        last byte the table's end cuts, `Name (IQ__, ...)`.
+ *
+ * It is raw bytes: iasl emits no second Name of one name and no QWord the table's end cuts.
  */
 static const uint8_t shortcuts_integers_refused[] = {
     0x08u, 'I', 'R',   '_', '_', 0x5Bu, 0x30u, 0x08u, 'I',   'N',   '_',   '_',   'I',   'R',
@@ -238,91 +241,36 @@ static const uint8_t shortcuts_integers_refused[] = {
 };
 
 /**
- * @brief `Name (HA__, Package (1) {Package (0) {}})`, whose inner PkgLength of 2 holds its count and nothing more.
- */
-static const uint8_t shortcuts_head_count_only[] = {0x08u, 'H',   'A',   '_',   '_',  0x12u,
-                                                    0x05u, 0x01u, 0x12u, 0x02u, 0x00u};
-
-/**
  * @brief `Name (HB__, Package (1) {...})`, whose inner PkgLength of 1 leaves its count outside the package.
+ *
+ * It is raw bytes: iasl emits no PkgLength that leaves a Package's count outside it.
  */
 static const uint8_t shortcuts_head_without_count[] = {0x08u, 'H',   'B',   '_',   '_',  0x12u,
                                                        0x05u, 0x01u, 0x12u, 0x01u, 0x00u};
 
 /**
- * @brief `Name (HC__, Package (1) {Package (61) {Zero, ...}})`, whose inner PkgLength of 63, the most one byte holds,
- *        reaches its parent's end exactly, the parent's PkgLength two bytes.
- */
-static const uint8_t shortcuts_head_widest[] = {
-    0x08u, 'H',   'C',   '_',   '_',   0x12u, 0x43u, 0x04u, 0x01u, 0x12u, 0x3Fu, 0x3Du, 0x00u, 0x00u, 0x00u,
-    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-};
-
-/**
  * @brief `Name (HD__, Package (1) {...})`, whose inner PkgLength of 3 passes its parent's end by one byte.
+ *
+ * It is raw bytes: iasl emits no PkgLength that passes its parent's end.
  */
 static const uint8_t shortcuts_head_past_parent[] = {0x08u, 'H',   'D',   '_',   '_',  0x12u,
                                                      0x05u, 0x01u, 0x12u, 0x03u, 0x00u};
 
 /**
  * @brief `Name (HE__, Package (1) {Package (1) {One}})`, whose inner PkgLength of 4 takes two bytes.
+ *
+ * It is raw bytes: iasl writes a PkgLength that one byte holds in one byte.
  */
 static const uint8_t shortcuts_head_two_bytes[] = {0x08u, 'H',   'E',   '_',   '_',   0x12u, 0x07u,
                                                    0x01u, 0x12u, 0x44u, 0x00u, 0x01u, 0x01u};
 
 /**
  * @brief `Name (HG__, Package (1) {VarPackage (One) {One}})`, a VarPackage whose PkgLength is one byte.
+ *
+ * It is raw bytes: iasl emits a Package, not a VarPackage, of constant count.
  */
 static const uint8_t shortcuts_head_variable[] = {0x08u, 'H',   'G',   '_',   '_',   0x12u,
                                                   0x06u, 0x01u, 0x13u, 0x03u, 0x01u, 0x01u};
-
-/**
- * @brief `Name (HV__, Package (1) {VarPackage (0x1000) {}})`, a VarPackage of the most elements §6.1 allows.
- */
-static const uint8_t shortcuts_head_most_elements[] = {0x08u, 'H',   'V',   '_',   '_',   0x12u, 0x07u,
-                                                       0x01u, 0x13u, 0x04u, 0x0Bu, 0x00u, 0x10u};
-
-/**
- * @brief `Name (HW__, Package (1) {VarPackage (0x1001) {}})`, a VarPackage of one element more than §6.1 allows.
- */
-static const uint8_t shortcuts_head_too_many_elements[] = {0x08u, 'H',   'W',   '_',   '_',   0x12u, 0x07u,
-                                                           0x01u, 0x13u, 0x04u, 0x0Bu, 0x01u, 0x10u};
-
-/**
- * @brief Statements the declaration pass's decoder takes (O19), as iasl compiles them: `Name (N0__, One)`,
- *        `Name (N1__, Package (2) {1, "a"})`, `Method (M0__, 0) {Return (One)}`,
- *        `Method (M1__, 7, Serialized, 15) {Return (Arg6)}`, `OperationRegion (R0__, SystemMemory, 0x100000, 0x20)`,
- *        `Field (R0__, ByteAcc, NoLock, Preserve) {F0__, 8, , 4, F1__, 4, Offset (4), F2__, 32}`,
- *        `Field (R0__, AnyAcc, Lock, WriteAsZeros) {AccessAs (DWordAcc), F3__, 32}`, `Device (D0__)` holding
- *        `Name (_HID, "LPL0001")`, `Method (_STA) {Return (0x0F)}`, `Device (D1__) {Name (_ADR, Zero)}`,
- *        `ThermalZone (TZ1_) {}` and `Scope (^D0__) {Name (S2__, 6)}`, then `Scope (D0__) {Name (S0__, 2)}`,
- *        `Scope (\_SB) {Device (D2__) {}}`, `Scope (\D0__.D1__) {Name (S1__, 3)}`,
- *        `ThermalZone (TZ0_) {Method (_TMP) {Return (3000)}}`, `Device (\_SB.D3__) {}`, `Name (\_SB.N2__, 4)`,
- *        `Method (\_SB.M2__) {}` and `Scope (\) {Name (RT__, 5)}`: 26 of them through the decoder, the Name and the
- *        Method of a path through the walk.
- */
-static const uint8_t shortcuts_statements[] = {
-    0x08u, 'N',   '0',   '_',   '_',   0x01u, 0x08u, 'N',   '1',   '_',   '_',   0x12u, 0x06u, 0x02u, 0x01u, 0x0Du,
-    0x61u, 0x00u, 0x14u, 0x08u, 'M',   '0',   '_',   '_',   0x00u, 0xA4u, 0x01u, 0x14u, 0x08u, 'M',   '1',   '_',
-    '_',   0xFFu, 0xA4u, 0x6Eu, 0x5Bu, 0x80u, 'R',   '0',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u,
-    0x0Au, 0x20u, 0x5Bu, 0x81u, 0x19u, 'R',   '0',   '_',   '_',   0x01u, 'F',   '0',   '_',   '_',   0x08u, 0x00u,
-    0x04u, 'F',   '1',   '_',   '_',   0x04u, 0x00u, 0x10u, 'F',   '2',   '_',   '_',   0x20u, 0x5Bu, 0x81u, 0x0Eu,
-    'R',   '0',   '_',   '_',   0x50u, 0x01u, 0x03u, 0x00u, 'F',   '3',   '_',   '_',   0x20u, 0x5Bu, 0x82u, 0x3Fu,
-    'D',   '0',   '_',   '_',   0x08u, '_',   'H',   'I',   'D',   0x0Du, 'L',   'P',   'L',   '0',   '0',   '0',
-    '1',   0x00u, 0x14u, 0x09u, '_',   'S',   'T',   'A',   0x00u, 0xA4u, 0x0Au, 0x0Fu, 0x5Bu, 0x82u, 0x0Bu, 'D',
-    '1',   '_',   '_',   0x08u, '_',   'A',   'D',   'R',   0x00u, 0x5Bu, 0x85u, 0x05u, 'T',   'Z',   '1',   '_',
-    0x10u, 0x0Du, 0x5Eu, 'D',   '0',   '_',   '_',   0x08u, 'S',   '2',   '_',   '_',   0x0Au, 0x06u, 0x10u, 0x0Cu,
-    'D',   '0',   '_',   '_',   0x08u, 'S',   '0',   '_',   '_',   0x0Au, 0x02u, 0x10u, 0x0Cu, '_',   'S',   'B',
-    '_',   0x5Bu, 0x82u, 0x05u, 'D',   '2',   '_',   '_',   0x10u, 0x11u, 0x2Eu, 'D',   '0',   '_',   '_',   'D',
-    '1',   '_',   '_',   0x08u, 'S',   '1',   '_',   '_',   0x0Au, 0x03u, 0x5Bu, 0x85u, 0x10u, 'T',   'Z',   '0',
-    '_',   0x14u, 0x0Au, '_',   'T',   'M',   'P',   0x00u, 0xA4u, 0x0Bu, 0xB8u, 0x0Bu, 0x5Bu, 0x82u, 0x0Au, 0x2Eu,
-    '_',   'S',   'B',   '_',   'D',   '3',   '_',   '_',   0x08u, 0x2Eu, '_',   'S',   'B',   '_',   'N',   '2',
-    '_',   '_',   0x0Au, 0x04u, 0x14u, 0x0Bu, 0x2Eu, '_',   'S',   'B',   '_',   'M',   '2',   '_',   '_',   0x00u,
-    0x10u, 0x0Au, 0x5Cu, 0x00u, 0x08u, 'R',   'T',   '_',   '_',   0x0Au, 0x05u,
-};
 
 /**
  * @brief Statements the decoder hands back to the walk at their first operand whose outcome differs, after
@@ -337,6 +285,9 @@ static const uint8_t shortcuts_statements[] = {
  *        ends inside their NameString, `Name (NS__, Alias (NS__, ALS_))`, whose data object is a statement, and
  *        `Field (NOPE)` whose PkgLength ends at its name and whose region was never declared; and a Name cut by the
  *        table's end: 15 of them through the decoder, the 2 OperationRegions and the 5 Devices among them.
+ *
+ * It is raw bytes: iasl emits no second Method or Device of one name, no NameSeg that starts with a digit, no PkgLength
+ * that ends inside a name, and no term the table's end cuts.
  */
 static const uint8_t shortcuts_handed_back[] = {
     0x5Bu, 0x80u, 'R',   '0',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u, 0x0Au, 0x20u, 0x5Bu, 0x80u,
@@ -369,6 +320,9 @@ static const uint8_t shortcuts_handed_back[] = {
  *        reader refuses, one whose RegionSpace and one whose length the Device's PkgLength cuts; and a region whose
  *        NameSeg the table's end cuts: 12 of them through the decoder, the 2 Names, the Method and the 4 Devices among
  *        them.
+ *
+ * It is raw bytes: iasl emits no second OperationRegion of one name, no NameSeg that starts with a digit, no PkgLength
+ * that cuts a region, and no term the table's end cuts.
  */
 static const uint8_t shortcuts_regions[] = {
     0x5Bu, 0x80u, 'R',   'B',   '_',   '_',   0x01u, 0x00u, 0x01u, 0x5Bu, 0x80u, 'R',   'W',   '_',   '_',   0x02u,
@@ -389,69 +343,15 @@ static const uint8_t shortcuts_regions[] = {
 };
 
 /**
- * @brief Statements inside table-level code: `Name (N0__, One)`, `If (N0__) {Device (D0__) {Name (N1__, 1)}
- *        Method (M0__) {}} Else {Name (N2__, 2)}` and `Store (2, N0__)`: through the decoder, the 4 declarations
- *        of the code the load runs, the Else stepped over, and the 5 of both branches where it declares every
- *        branch.
- */
-static const uint8_t shortcuts_table_level_code[] = {
-    0x08u, 'N',   '0',   '_',   '_', 0x01u, 0xA0u, 0x19u, 'N',   '0',   '_',   '_',   0x5Bu, 0x82u, 0x0Bu, 'D',
-    '0',   '_',   '_',   0x08u, 'N', '1',   '_',   '_',   0x01u, 0x14u, 0x06u, 'M',   '0',   '_',   '_',   0x00u,
-    0xA1u, 0x08u, 0x08u, 'N',   '2', '_',   '_',   0x0Au, 0x02u, 0x70u, 0x0Au, 0x02u, 'N',   '0',   '_',   '_',
-};
-
-/**
- * @brief Names whose kept data objects (O20) methods reach, as iasl compiles them: `Name (BUF0, Buffer (4) {1, 2})`,
- *        `Name (PKG0, Package (3) {1, 2, 3})`, `Name (PKG1, Package (2) {0x11, 0x22})`, `Name (PKGA, Package (1)
- *        {PKG1})`, `Name (PKG2, Package (1) {0x33})`, `Name (PKG3, Package (2) {4, 5})`, `Name (BUF1, Buffer (2) {6})`;
- *        then `M0__` stores 0x1234 to BUF0 and returns its byte 1, `M1__` stores RefOf (PKG0) to Local0 and returns
- *        element 2 of DerefOf (Local0), `M2__` returns element 1 of what element 0 of PKGA names, `M3__` returns
- *        element 0 of DerefOf ("\\PKG2"), `M4__` stores 7 to element 0 of PKG3 and returns it, `M5__` returns element
- *        0 of PKG3, and `M6__` returns SizeOf (BUF1).
- */
-static const uint8_t shortcuts_reached[] = {
-    0x08u, 'B',   'U',   'F',   '0',   0x11u, 0x05u, 0x0Au, 0x04u, 0x01u, 0x02u, 0x08u, 'P',   'K',   'G',   '0',
-    0x12u, 0x07u, 0x03u, 0x01u, 0x0Au, 0x02u, 0x0Au, 0x03u, 0x08u, 'P',   'K',   'G',   '1',   0x12u, 0x06u, 0x02u,
-    0x0Au, 0x11u, 0x0Au, 0x22u, 0x08u, 'P',   'K',   'G',   'A',   0x12u, 0x06u, 0x01u, 'P',   'K',   'G',   '1',
-    0x08u, 'P',   'K',   'G',   '2',   0x12u, 0x04u, 0x01u, 0x0Au, 0x33u, 0x08u, 'P',   'K',   'G',   '3',   0x12u,
-    0x06u, 0x02u, 0x0Au, 0x04u, 0x0Au, 0x05u, 0x08u, 'B',   'U',   'F',   '1',   0x11u, 0x04u, 0x0Au, 0x02u, 0x06u,
-    0x14u, 0x17u, 'M',   '0',   '_',   '_',   0x00u, 0x70u, 0x0Bu, 0x34u, 0x12u, 'B',   'U',   'F',   '0',   0xA4u,
-    0x83u, 0x88u, 'B',   'U',   'F',   '0',   0x01u, 0x00u, 0x14u, 0x18u, 'M',   '1',   '_',   '_',   0x00u, 0x70u,
-    0x71u, 'P',   'K',   'G',   '0',   0x60u, 0x70u, 0x83u, 0x60u, 0x61u, 0xA4u, 0x83u, 0x88u, 0x61u, 0x0Au, 0x02u,
-    0x00u, 0x14u, 0x16u, 'M',   '2',   '_',   '_',   0x00u, 0x70u, 0x83u, 0x88u, 'P',   'K',   'G',   'A',   0x00u,
-    0x00u, 0x60u, 0xA4u, 0x83u, 0x88u, 0x60u, 0x01u, 0x00u, 0x14u, 0x19u, 'M',   '3',   '_',   '_',   0x00u, 0x70u,
-    0x0Du, 0x5Cu, 'P',   'K',   'G',   '2',   0x00u, 0x61u, 0x70u, 0x83u, 0x61u, 0x60u, 0xA4u, 0x83u, 0x88u, 0x60u,
-    0x00u, 0x00u, 0x14u, 0x19u, 'M',   '4',   '_',   '_',   0x00u, 0x70u, 0x0Au, 0x07u, 0x88u, 'P',   'K',   'G',
-    '3',   0x00u, 0x00u, 0xA4u, 0x83u, 0x88u, 'P',   'K',   'G',   '3',   0x00u, 0x00u, 0x14u, 0x0Fu, 'M',   '5',
-    '_',   '_',   0x00u, 0xA4u, 0x83u, 0x88u, 'P',   'K',   'G',   '3',   0x00u, 0x00u, 0x14u, 0x0Cu, 'M',   '6',
-    '_',   '_',   0x00u, 0xA4u, 0x87u, 'B',   'U',   'F',   '1',
-};
-
-/**
- * @brief A Buffer too large for an arena with no room left, then what follows it: `Name (BIG_, Buffer (0x8000) {})`,
- *        `Name (INT_, 5)`, `Method (MBIG) {Return (SizeOf (BIG_))}` and `Name (LAST, One)`.
- */
-static const uint8_t shortcuts_too_large[] = {
-    0x08u, 'B', 'I', 'G', '_', 0x11u, 0x04u, 0x0Bu, 0x00u, 0x80u, 0x08u, 'I', 'N',   'T', '_', 0x0Au, 0x05u, 0x14u,
-    0x0Cu, 'M', 'B', 'I', 'G', 0x00u, 0xA4u, 0x87u, 'B',   'I',   'G',   '_', 0x08u, 'L', 'A', 'S',   'T',   0x01u,
-};
-
-/**
- * @brief A table-level buffer field over a Buffer too large for an arena with no room left, then a name:
- *        `Name (BIG_, Buffer (0x8000) {})`, `CreateByteField (BIG_, Zero, BYT_)` and `Name (LAST, One)`.
- */
-static const uint8_t shortcuts_field_too_large[] = {
-    0x08u, 'B', 'I',   'G', '_', 0x11u, 0x04u, 0x0Bu, 0x00u, 0x80u, 0x8Cu, 'B', 'I',
-    'G',   '_', 0x00u, 'B', 'Y', 'T',   '_',   0x08u, 'L',   'A',   'S',   'T', 0x01u,
-};
-
-/**
  * @brief Kept data of edge sizes (O20): `Name (PD__, Package (3) {1})`, padded; `Name (TR__, Package (1) {1, "abc",
  *        Buffer (2) {1}, Package (1) {2}})`, whose dropped initialisers hold objects; `Name (BS__, Buffer (8) {1, 2})`,
  *        shorter than its size; `Name (BL__, Buffer (2) {1, 2, 3, 4})`, longer; `Name (E0__, Package (0) {})`,
  *        `Name (E1__, Buffer (0) {})` and `Name (E2__, Package (1) {""})`; `Name (VP__, VarPackage (0x0100) {One})`;
  *        `Name (NM__, Package (3) {\\_SB_, ^XYZW, AB__.CD__})`, a name of each prefix; and
  *        `Name (B64K, Buffer (0x10000) {})`, the largest buffer of §6.1.
+ *
+ * It is raw bytes: iasl raises a Package's count to its initialisers and a Buffer's size to its bytes, and emits a
+ * Package, not a VarPackage, of constant count.
  */
 static const uint8_t shortcuts_kept_edges[] = {
     0x08u, 'P',   'D',   '_',   '_',   0x12u, 0x03u, 0x03u, 0x01u, 0x08u, 'T',   'R',   '_',   '_',   0x12u,
@@ -466,86 +366,62 @@ static const uint8_t shortcuts_kept_edges[] = {
 };
 
 /**
- * @brief A package of three Buffers of 4 KiB, each a run of two pages of its own: `Name (FL__, Package (3)
- *        {Buffer (0x1000) {}, Buffer (0x1000) {}, Buffer (0x1000) {}})`, whose third no longer fits 16 KiB.
- */
-static const uint8_t shortcuts_kept_too_large[] = {
-    0x08u, 'F',   'L',   '_',   '_',   0x12u, 0x11u, 0x03u, 0x11u, 0x04u, 0x0Bu, 0x00u,
-    0x10u, 0x11u, 0x04u, 0x0Bu, 0x00u, 0x10u, 0x11u, 0x04u, 0x0Bu, 0x00u, 0x10u,
-};
-
-/**
- * @brief The methods that read `PKG_` and `AFTR` once a table of shortcuts_unbuilt_cases has loaded, before both, so
- *        that a fault that abandons the rest of the table cannot remove them: `MOT_` returns `ObjectType (PKG_)`, then
- *        come `MSZ_` and `SizeOf (PKG_)`, `MEL_` and `DerefOf (Index (PKG_, Zero))`, `MCR_` and `CondRefOf (PKG_)`,
- *        and `MAF_`, which returns `AFTR`.
- */
-static const uint8_t shortcuts_unbuilt_readers[] = {
-    0x14u, 0x0Cu, 'M',   'O', 'T',   '_',   0x00u, 0xA4u, 0x8Eu, 'P',   'K', 'G', '_',   0x14u,
-    0x0Cu, 'M',   'S',   'Z', '_',   0x00u, 0xA4u, 0x87u, 'P',   'K',   'G', '_', 0x14u, 0x0Fu,
-    'M',   'E',   'L',   '_', 0x00u, 0xA4u, 0x83u, 0x88u, 'P',   'K',   'G', '_', 0x00u, 0x00u,
-    0x14u, 0x0Eu, 'M',   'C', 'R',   '_',   0x00u, 0xA4u, 0x5Bu, 0x12u, 'P', 'K', 'G',   '_',
-    0x00u, 0x14u, 0x0Bu, 'M', 'A',   'F',   '_',   0x00u, 0xA4u, 'A',   'F', 'T', 'R',
-};
-
-/**
  * @brief `Package (2) {One, 2}`, which builds.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_valid[] = {0x12u, 0x05u, 0x02u, 0x01u, 0x0Au, 0x02u};
 
 /**
  * @brief A Package whose DWord constant its PkgLength cuts after one byte.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_integer_cut[] = {0x12u, 0x04u, 0x02u, 0x0Cu, 0x01u};
 
 /**
  * @brief A Package whose element `A!!!` starts as a NameSeg, its last three characters none.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_name_segment[] = {0x12u, 0x06u, 0x01u, 'A', '!', '!', '!'};
 
 /**
  * @brief A Package whose inner Package's PkgLength of 9 crosses its parent's end, then a Zero at table level.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_crossing[] = {0x12u, 0x05u, 0x01u, 0x12u, 0x09u, 0x01u, 0x00u};
 
 /**
  * @brief `Package (1) {Buffer (Add (1, 1)) {}}`, whose Buffer's size needs the interpreter.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_expression_size[] = {0x12u, 0x0Au, 0x01u, 0x11u, 0x07u, 0x72u,
                                                             0x0Au, 0x01u, 0x0Au, 0x01u, 0x00u};
 
 /**
  * @brief A Package whose element is the byte 0x02, which starts no data object.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_invalid_opcode[] = {0x12u, 0x03u, 0x01u, 0x02u};
 
 /**
  * @brief `Package (2) {Package (3) {One}, ...}`, whose inner Package is padded before the byte 0x02, which starts no
  *        data object.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_padded_then_fault[] = {0x12u, 0x07u, 0x02u, 0x12u, 0x03u, 0x03u, 0x01u, 0x02u};
 
 /**
  * @brief A Package whose String `AB` its PkgLength cuts before the NUL.
+ *
+ * It is raw bytes: iasl emits no Package term alone at the root (§8.2).
  */
 static const uint8_t shortcuts_unbuilt_string_cut[] = {0x12u, 0x05u, 0x01u, 0x0Du, 'A', 'B'};
-
-/**
- * @brief Sizes a name gives inside kept packages, read when a method reads them: `Name (CNT_, 4)`,
- *        `Name (PNS_, Package (1) {Buffer (CNT_) {}})`, `Name (PLT_, Package (1) {Buffer (LATE) {}})` before
- *        `Name (LATE, 2)`, `Name (BIG_, 0x1001)` and `Name (PVC_, Package (1) {VarPackage (BIG_) {}})`, one
- *        element past the 4,096 of §6.1, then table-level code that stores 8 to CNT_; the method MNS_ returns the
- *        SizeOf of PNS_'s Buffer, and MLT_ that of PLT_'s.
- */
-static const uint8_t shortcuts_nested_named_sizes[] = {
-    0x08u, 'C',   'N',   'T',   '_',   0x0Au, 0x04u, 0x08u, 'P',   'N', 'S',   '_',   0x12u, 0x08u, 0x01u,
-    0x11u, 0x05u, 'C',   'N',   'T',   '_',   0x08u, 'P',   'L',   'T', '_',   0x12u, 0x08u, 0x01u, 0x11u,
-    0x05u, 'L',   'A',   'T',   'E',   0x08u, 'L',   'A',   'T',   'E', 0x0Au, 0x02u, 0x08u, 'B',   'I',
-    'G',   '_',   0x0Bu, 0x01u, 0x10u, 0x08u, 'P',   'V',   'C',   '_', 0x12u, 0x08u, 0x01u, 0x13u, 0x05u,
-    'B',   'I',   'G',   '_',   0x70u, 0x0Au, 0x08u, 'C',   'N',   'T', '_',   0x14u, 0x10u, 'M',   'N',
-    'S',   '_',   0x00u, 0xA4u, 0x87u, 0x83u, 0x88u, 'P',   'N',   'S', '_',   0x00u, 0x00u, 0x14u, 0x10u,
-    'M',   'L',   'T',   '_',   0x00u, 0xA4u, 0x87u, 0x83u, 0x88u, 'P', 'L',   'T',   '_',   0x00u, 0x00u,
-};
 
 /**
  * @brief Prepends @p length bytes to @p backwards, or marks it overflowed when they do not fit.
@@ -574,6 +450,8 @@ static void shortcuts_prepend_package_length(ShortcutsBackwards_t *backwards, ui
 
 /**
  * @brief Wraps what @p backwards holds up to @p end in a `Package (1) {...}`.
+ *
+ * Its opcode and count are raw bytes: partial terms around what @p backwards holds.
  */
 static void shortcuts_wrap_package(ShortcutsBackwards_t *backwards, uint32_t end)
 {
@@ -588,17 +466,18 @@ static void shortcuts_wrap_package(ShortcutsBackwards_t *backwards, uint32_t end
 /**
  * @brief Writes `Name (name, Package (1) {...})` nested @p depth packages deep around Zero, then wraps it in
  *        @p devices nested Devices; with a top-level `Name (TOP_, Package (1) {One})` after them.
+ *
+ * Its Zero, Name and Device opcodes are raw bytes: partial terms of a nesting whose depth the test names.
  */
 static void shortcuts_write_nested(ShortcutsBackwards_t *backwards, const char *name, uint32_t depth, uint32_t devices)
 {
     static const uint8_t zero[] = {0x00u};
     static const uint8_t name_opcode[] = {0x08u};
     static const uint8_t device_opcode[] = {0x5Bu, 0x82u};
-    static const uint8_t top[] = {0x08u, 'T', 'O', 'P', '_', 0x12u, 0x03u, 0x01u, 0x01u};
 
     memset(backwards, 0, sizeof(*backwards));
     backwards->start = SHORTCUTS_AML_CAPACITY;
-    shortcuts_prepend(backwards, top, sizeof(top));
+    shortcuts_prepend(backwards, shortcuts_write_nested_top_aml, sizeof(shortcuts_write_nested_top_aml));
 
     const uint32_t end = backwards->start;
 
@@ -820,7 +699,7 @@ static void shortcuts_declare(const uint8_t *aml, uint32_t length)
 }
 
 /**
- * @brief Loads shortcuts_reached into shortcuts_load, with the load's shortcuts or without, then evaluates its
+ * @brief Loads shortcuts_reached_aml into shortcuts_load, with the load's shortcuts or without, then evaluates its
  *        methods in turn and records what they returned.
  */
 static bool shortcuts_reach(KernelTest_t *test, bool general, ShortcutsReached_t *out_reached)
@@ -830,7 +709,7 @@ static bool shortcuts_reach(KernelTest_t *test, bool general, ShortcutsReached_t
     memset(out_reached, 0, sizeof(*out_reached));
     if (!shortcuts_open(test, general, MADE_UP_MAX_ARENA_BYTES))
         return false;
-    shortcuts_declare(shortcuts_reached, sizeof(shortcuts_reached));
+    shortcuts_declare(shortcuts_reached_aml, sizeof(shortcuts_reached_aml));
     for (uint32_t method = 0u; method < sizeof(methods) / sizeof(methods[0]); ++method)
     {
         AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
@@ -928,20 +807,22 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t shortcuts_e
 }
 
 /**
- * @brief Writes into shortcuts_backwards the table of @p unbuilt: shortcuts_unbuilt_readers, `Name (PKG_, ...)` of its
- *        package, then `Name (AFTR, 7)`.
+ * @brief Writes into shortcuts_backwards the table of @p unbuilt: shortcuts_unbuilt_readers_aml, `Name (PKG_, ...)` of
+ * its package, then `Name (AFTR, 7)`.
  *
  * @return Whether it fits the buffer.
+ *
+ * Its Name opcode and NameSeg and its One are raw bytes: partial terms around the package @p unbuilt gives.
  */
 static bool shortcuts_unbuilt_table(KernelTest_t *test, const ShortcutsUnbuilt_t *unbuilt)
 {
     static const uint8_t name[] = {0x08u, 'P', 'K', 'G', '_'};
-    static const uint8_t after[] = {0x08u, 'A', 'F', 'T', 'R', 0x0Au, 0x07u};
     static const uint8_t one[] = {0x01u};
 
     memset(&shortcuts_backwards, 0, sizeof(shortcuts_backwards));
     shortcuts_backwards.start = SHORTCUTS_AML_CAPACITY;
-    shortcuts_prepend(&shortcuts_backwards, after, sizeof(after));
+    shortcuts_prepend(&shortcuts_backwards, shortcuts_unbuilt_table_after_aml,
+                      sizeof(shortcuts_unbuilt_table_after_aml));
 
     const uint32_t end = shortcuts_backwards.start;
 
@@ -952,7 +833,7 @@ static bool shortcuts_unbuilt_table(KernelTest_t *test, const ShortcutsUnbuilt_t
          ++level)
         shortcuts_wrap_package(&shortcuts_backwards, end);
     shortcuts_prepend(&shortcuts_backwards, name, sizeof(name));
-    shortcuts_prepend(&shortcuts_backwards, shortcuts_unbuilt_readers, sizeof(shortcuts_unbuilt_readers));
+    shortcuts_prepend(&shortcuts_backwards, shortcuts_unbuilt_readers_aml, sizeof(shortcuts_unbuilt_readers_aml));
     return kernel_test_check(test, !shortcuts_backwards.overflowed, "the table fits its buffer");
 }
 
@@ -1028,7 +909,7 @@ static const uint8_t *shortcuts_table_bytes(ShortcutsTable_t table, uint32_t *ou
 {
     switch (table)
     {
-    case SHORTCUTS_TABLE_STATEMENTS: *out_length = sizeof(shortcuts_statements); return shortcuts_statements;
+    case SHORTCUTS_TABLE_STATEMENTS: *out_length = sizeof(shortcuts_statements_aml); return shortcuts_statements_aml;
     case SHORTCUTS_TABLE_REGIONS: *out_length = sizeof(shortcuts_regions); return shortcuts_regions;
     case SHORTCUTS_TABLE_DATA:
     default: *out_length = sizeof(shortcuts_constants); return shortcuts_constants;
@@ -1074,20 +955,20 @@ void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t
 KERNEL_TEST(a_name_s_data_object_decoded_once_declares_what_two_decodings_declare)
 {
     ShortcutsCase_t cases[] = {
-        {"data of every kind under revision 2",          shortcuts_constants,   sizeof(shortcuts_constants),   2u, NULL, 0u,                     false,
-         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
-        {"data of every kind under revision 1",          shortcuts_constants,   sizeof(shortcuts_constants),   1u, NULL, 0u,                     false,
-         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
-        {"an SSDT declared before a DSDT of revision 1", shortcuts_constants,   sizeof(shortcuts_constants),   1u,
-         shortcuts_wide,                                                                                                 sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
-        {"sizes a name gives",                           shortcuts_named_sizes, sizeof(shortcuts_named_sizes), 2u, NULL, 0u,                     false, false, true,
-         MADE_UP_MAX_NODES                                                                                                                                                            },
-        {"data the decoder refuses",                     shortcuts_malformed,   sizeof(shortcuts_malformed),   2u, NULL, 0u,                     false, false, true,
-         MADE_UP_MAX_NODES                                                                                                                                                            },
-        {"a PkgLength that abandons the table",          shortcuts_crossing,    sizeof(shortcuts_crossing),    2u, NULL, 0u,                     false,
-         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
-        {"a package 33 deep",                            NULL,                  0u,                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
-        {"a package 32 deep inside 480 Devices",         NULL,                  0u,                            2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
+        {"data of every kind under revision 2",          shortcuts_constants,       sizeof(shortcuts_constants),       2u, NULL, 0u,                     false,
+         false,                                                                                                                                                        true, MADE_UP_MAX_NODES},
+        {"data of every kind under revision 1",          shortcuts_constants,       sizeof(shortcuts_constants),       1u, NULL, 0u,                     false,
+         false,                                                                                                                                                        true, MADE_UP_MAX_NODES},
+        {"an SSDT declared before a DSDT of revision 1", shortcuts_constants,       sizeof(shortcuts_constants),       1u,
+         shortcuts_wide,                                                                                                         sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
+        {"sizes a name gives",                           shortcuts_named_sizes_aml, sizeof(shortcuts_named_sizes_aml), 2u, NULL, 0u,                     false, false,
+         true,                                                                                                                                                               MADE_UP_MAX_NODES},
+        {"data the decoder refuses",                     shortcuts_malformed,       sizeof(shortcuts_malformed),       2u, NULL, 0u,                     false, false, true,
+         MADE_UP_MAX_NODES                                                                                                                                                                    },
+        {"a PkgLength that abandons the table",          shortcuts_crossing,        sizeof(shortcuts_crossing),        2u, NULL, 0u,                     false,
+         false,                                                                                                                                                        true, MADE_UP_MAX_NODES},
+        {"a package 33 deep",                            NULL,                      0u,                                2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
+        {"a package 32 deep inside 480 Devices",         NULL,                      0u,                                2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
     };
     const uint32_t count = sizeof(cases) / sizeof(cases[0]);
     uint32_t stepped_over = 0u;
@@ -1200,22 +1081,22 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_data_declares_the_same_bo
 KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
 {
     const ShortcutsCase_t cases[] = {
-        {"statements the decoder takes, under revision 2",                      shortcuts_statements,       sizeof(shortcuts_statements),       2u, NULL,
-         0u,                                                                                                                                                  false, false, true, MADE_UP_MAX_NODES},
-        {"statements the decoder takes, under revision 1",                      shortcuts_statements,       sizeof(shortcuts_statements),       1u, NULL,
-         0u,                                                                                                                                                  false, false, true, MADE_UP_MAX_NODES},
-        {"statements the decoder hands back",                                   shortcuts_handed_back,      sizeof(shortcuts_handed_back),      2u, NULL, 0u, false,
-         false,                                                                                                                                                             true, MADE_UP_MAX_NODES},
-        {"the declarations of table-level code it runs",                        shortcuts_table_level_code, sizeof(shortcuts_table_level_code),
-         2u,                                                                                                                                        NULL, 0u, false, false, true, MADE_UP_MAX_NODES},
-        {"the declarations of table-level code whose every branch it declares", shortcuts_table_level_code,
-         sizeof(shortcuts_table_level_code),                                                                                                    2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
-        {"OperationRegions, under revision 2",                                  shortcuts_regions,          sizeof(shortcuts_regions),          2u, NULL, 0u, false, false,
-         true,                                                                                                                                                                    MADE_UP_MAX_NODES},
-        {"OperationRegions, under revision 1",                                  shortcuts_regions,          sizeof(shortcuts_regions),          1u, NULL, 0u, false, false,
-         true,                                                                                                                                                                    MADE_UP_MAX_NODES},
+        {"statements the decoder takes, under revision 2",                      shortcuts_statements_aml,       sizeof(shortcuts_statements_aml),
+         2u,                                                                                                                                          NULL, 0u, false, false, true, MADE_UP_MAX_NODES},
+        {"statements the decoder takes, under revision 1",                      shortcuts_statements_aml,       sizeof(shortcuts_statements_aml),
+         1u,                                                                                                                                          NULL, 0u, false, false, true, MADE_UP_MAX_NODES},
+        {"statements the decoder hands back",                                   shortcuts_handed_back,          sizeof(shortcuts_handed_back),    2u, NULL, 0u, false,
+         false,                                                                                                                                                               true, MADE_UP_MAX_NODES},
+        {"the declarations of table-level code it runs",                        shortcuts_table_level_code_aml,
+         sizeof(shortcuts_table_level_code_aml),                                                                                                  2u, NULL, 0u, false, false, true, MADE_UP_MAX_NODES},
+        {"the declarations of table-level code whose every branch it declares", shortcuts_table_level_code_aml,
+         sizeof(shortcuts_table_level_code_aml),                                                                                                  2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
+        {"OperationRegions, under revision 2",                                  shortcuts_regions,              sizeof(shortcuts_regions),        2u, NULL, 0u, false, false,
+         true,                                                                                                                                                                      MADE_UP_MAX_NODES},
+        {"OperationRegions, under revision 1",                                  shortcuts_regions,              sizeof(shortcuts_regions),        1u, NULL, 0u, false, false,
+         true,                                                                                                                                                                      MADE_UP_MAX_NODES},
         {"OperationRegions, every construct walked by the declaration pass",    shortcuts_regions,
-         sizeof(shortcuts_regions),                                                                                                             2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
+         sizeof(shortcuts_regions),                                                                                                               2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
     };
     const uint32_t decoded[] = {26u, 26u, 15u, 4u, 5u, 12u, 12u, 12u};
     uint32_t decoded_directly = 0u;
@@ -1247,7 +1128,7 @@ KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares_under_every_
     for (uint32_t cap = 1u; cap < SHORTCUTS_NODE_CAPS; ++cap)
     {
         const ShortcutsCase_t load_case = {
-            "", shortcuts_statements, sizeof(shortcuts_statements), 2u, NULL, 0u, false, false, false, cap};
+            "", shortcuts_statements_aml, sizeof(shortcuts_statements_aml), 2u, NULL, 0u, false, false, false, cap};
         ShortcutsRecord_t record;
 
         disagreements += shortcuts_agree(test, &load_case, &record) ? 0u : 1u;
@@ -1345,22 +1226,22 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_s
 KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_reaches_it)
 {
     ShortcutsCase_t cases[] = {
-        {"data of every kind under revision 2",              shortcuts_constants,                  sizeof(shortcuts_constants),   2u, NULL, 0u,                     false,
-         false,                                                                                                                                                                   true, MADE_UP_MAX_NODES},
-        {"data of every kind under revision 1",              shortcuts_constants,                  sizeof(shortcuts_constants),   1u, NULL, 0u,                     false,
-         false,                                                                                                                                                                   true, MADE_UP_MAX_NODES},
-        {"an SSDT declared before a DSDT of revision 1",     shortcuts_constants,                  sizeof(shortcuts_constants),   1u,
-         shortcuts_wide,                                                                                                                    sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
-        {"sizes a name gives",                               shortcuts_named_sizes,                sizeof(shortcuts_named_sizes), 2u, NULL, 0u,                     false, false, true,
-         MADE_UP_MAX_NODES                                                                                                                                                                               },
-        {"data the decoder refuses",                         shortcuts_malformed,                  sizeof(shortcuts_malformed),   2u, NULL, 0u,                     false, false, true,
-         MADE_UP_MAX_NODES                                                                                                                                                                               },
-        {"a PkgLength that abandons the table",              shortcuts_crossing,                   sizeof(shortcuts_crossing),    2u, NULL, 0u,                     false,
-         false,                                                                                                                                                                   true, MADE_UP_MAX_NODES},
+        {"data of every kind under revision 2",              shortcuts_constants,                  sizeof(shortcuts_constants),       2u, NULL, 0u,                     false,
+         false,                                                                                                                                                                       true, MADE_UP_MAX_NODES},
+        {"data of every kind under revision 1",              shortcuts_constants,                  sizeof(shortcuts_constants),       1u, NULL, 0u,                     false,
+         false,                                                                                                                                                                       true, MADE_UP_MAX_NODES},
+        {"an SSDT declared before a DSDT of revision 1",     shortcuts_constants,                  sizeof(shortcuts_constants),       1u,
+         shortcuts_wide,                                                                                                                        sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
+        {"sizes a name gives",                               shortcuts_named_sizes_aml,            sizeof(shortcuts_named_sizes_aml), 2u, NULL, 0u,                     false, false,
+         true,                                                                                                                                                                              MADE_UP_MAX_NODES},
+        {"data the decoder refuses",                         shortcuts_malformed,                  sizeof(shortcuts_malformed),       2u, NULL, 0u,                     false, false, true,
+         MADE_UP_MAX_NODES                                                                                                                                                                                   },
+        {"a PkgLength that abandons the table",              shortcuts_crossing,                   sizeof(shortcuts_crossing),        2u, NULL, 0u,                     false,
+         false,                                                                                                                                                                       true, MADE_UP_MAX_NODES},
         {"a VarPackage past 4,096 elements and a duplicate", shortcuts_kept_refused_and_duplicate,
-         sizeof(shortcuts_kept_refused_and_duplicate),                                                                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
-        {"a package 33 deep",                                NULL,                                 0u,                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
-        {"a package 32 deep inside 480 Devices",             NULL,                                 0u,                            2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
+         sizeof(shortcuts_kept_refused_and_duplicate),                                                                                2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
+        {"a package 33 deep",                                NULL,                                 0u,                                2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
+        {"a package 32 deep inside 480 Devices",             NULL,                                 0u,                                2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
     };
     const uint32_t kept[] = {8u, 8u, 9u, 1u, 4u, 3u, 1u, 2u, 1u};
     const uint32_t faults[] = {0u, 0u, 0u, 0u, 3u, 2u, 0u, 1u, 0u};
@@ -1406,22 +1287,22 @@ KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_
 KERNEL_TEST(a_kept_package_s_one_byte_head_is_read_as_the_head_reader_reads_it)
 {
     const ShortcutsCase_t cases[] = {
-        {"a PkgLength that holds only the count",           shortcuts_head_count_only,        sizeof(shortcuts_head_count_only),        2u,
-         NULL,                                                                                                                                    0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength that holds only the count",           shortcuts_head_count_only_aml,        sizeof(shortcuts_head_count_only_aml),
+         2u,                                                                                                                                    NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
         {"a PkgLength that leaves the count outside",       shortcuts_head_without_count,
-         sizeof(shortcuts_head_without_count),                                                                                          2u, NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
-        {"a PkgLength of 63 that reaches the parent's end", shortcuts_head_widest,            sizeof(shortcuts_head_widest),            2u,
-         NULL,                                                                                                                                    0u, false, false, false, MADE_UP_MAX_NODES},
-        {"a PkgLength one past the parent's end",           shortcuts_head_past_parent,       sizeof(shortcuts_head_past_parent),       2u,
-         NULL,                                                                                                                                    0u, false, false, false, MADE_UP_MAX_NODES},
-        {"a PkgLength of two bytes",                        shortcuts_head_two_bytes,         sizeof(shortcuts_head_two_bytes),         2u, NULL, 0u, false,
-         false,                                                                                                                                                     false, MADE_UP_MAX_NODES},
-        {"a VarPackage",                                    shortcuts_head_variable,          sizeof(shortcuts_head_variable),          2u, NULL, 0u, false, false, false,
-         MADE_UP_MAX_NODES                                                                                                                                                                  },
-        {"a VarPackage of 4,096 elements",                  shortcuts_head_most_elements,     sizeof(shortcuts_head_most_elements),     2u, NULL,
-         0u,                                                                                                                                          false, false, false, MADE_UP_MAX_NODES},
-        {"a VarPackage of 4,097 elements",                  shortcuts_head_too_many_elements, sizeof(shortcuts_head_too_many_elements),
-         2u,                                                                                                                                NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
+         sizeof(shortcuts_head_without_count),                                                                                              2u, NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength of 63 that reaches the parent's end", shortcuts_head_widest_aml,
+         sizeof(shortcuts_head_widest_aml),                                                                                                 2u, NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength one past the parent's end",           shortcuts_head_past_parent,           sizeof(shortcuts_head_past_parent),       2u,
+         NULL,                                                                                                                                        0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength of two bytes",                        shortcuts_head_two_bytes,             sizeof(shortcuts_head_two_bytes),         2u, NULL, 0u, false,
+         false,                                                                                                                                                         false, MADE_UP_MAX_NODES},
+        {"a VarPackage",                                    shortcuts_head_variable,              sizeof(shortcuts_head_variable),          2u, NULL, 0u, false, false, false,
+         MADE_UP_MAX_NODES                                                                                                                                                                      },
+        {"a VarPackage of 4,096 elements",                  shortcuts_head_most_elements_aml,     sizeof(shortcuts_head_most_elements_aml),
+         2u,                                                                                                                                    NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a VarPackage of 4,097 elements",                  shortcuts_head_too_many_elements_aml,
+         sizeof(shortcuts_head_too_many_elements_aml),                                                                                      2u, NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
     };
     const uint32_t refused[] = {0u, 1u, 0u, 1u, 0u, 0u, 0u, 1u};
     uint32_t data_kept = 0u;
@@ -1513,7 +1394,7 @@ KERNEL_TEST(a_kept_package_s_size_a_name_gives_is_read_at_its_first_read_and_cou
 
         if (!shortcuts_open(test, way != 0u, MADE_UP_MAX_ARENA_BYTES))
             return;
-        shortcuts_declare(shortcuts_nested_named_sizes, sizeof(shortcuts_nested_named_sizes));
+        shortcuts_declare(shortcuts_nested_named_sizes_aml, sizeof(shortcuts_nested_named_sizes_aml));
         advanced_configuration_and_power_interface_machine_language_decode_tables(&shortcuts_load);
         kernel_test_check(test,
                           shortcuts_load.data_kept == 3u && shortcuts_load.values_deferred == 0u &&
@@ -1544,6 +1425,8 @@ KERNEL_TEST(a_kept_package_s_size_a_name_gives_is_read_at_its_first_read_and_cou
  *        package element that names a kept Package (0x22), a DerefOf of a path String (0x33), a Store to an element,
  *        which the next method still reads (7, 7), and the SizeOf of a Buffer (2). Both loads keep the 7 objects, and
  *        the methods build each once.
+ *
+ * Its succeeded array is the statuses the test expects, not AML.
  */
 KERNEL_TEST(a_name_resolution_builds_the_kept_data_it_reaches)
 {
@@ -1589,7 +1472,7 @@ KERNEL_TEST(a_kept_object_that_no_longer_fits_fails_the_evaluation_that_reaches_
     shortcuts_close();
     if (!shortcuts_open(test, false, arena + SHORTCUTS_KEPT_ARENA_BYTES))
         return;
-    shortcuts_declare(shortcuts_too_large, sizeof(shortcuts_too_large));
+    shortcuts_declare(shortcuts_too_large_aml, sizeof(shortcuts_too_large_aml));
     nodes = shortcuts_load.space.live_nodes;
     for (uint32_t turn = 0u; turn < 2u; ++turn)
     {
@@ -1635,7 +1518,7 @@ KERNEL_TEST(a_buffer_field_over_kept_data_that_no_longer_fits_stops_its_table)
     shortcuts_close();
     if (!shortcuts_open(test, false, arena + SHORTCUTS_KEPT_ARENA_BYTES))
         return;
-    shortcuts_declare(shortcuts_field_too_large, sizeof(shortcuts_field_too_large));
+    shortcuts_declare(shortcuts_field_too_large_aml, sizeof(shortcuts_field_too_large_aml));
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *big = shortcuts_root_value("BIG_");
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *field = shortcuts_root_value("BYT_");
@@ -1659,6 +1542,8 @@ KERNEL_TEST(a_buffer_field_over_kept_data_that_no_longer_fits_stops_its_table)
  *        builds into: `Buffer (4) {1, 2}` as 4 bytes that start with 1 and 2, `Buffer (2) {1, 2, 3}` as its 3 bytes,
  *        `Buffer (0) {}` as none, `Package (3) {...}` and `Package (1) {1, 2, 3}` as 3 and 1 elements,
  *        `VarPackage (2) {One}` as 2; an Integer reads as no kept data.
+ *
+ * Its first and longer arrays are the bytes the test expects, not AML.
  */
 KERNEL_TEST(kept_data_reads_unbuilt_as_the_object_it_builds_into)
 {
@@ -1782,17 +1667,17 @@ static bool shortcuts_build_kept(KernelTest_t *test, const ShortcutsBuildCase_t 
 KERNEL_TEST(kept_data_builds_the_same_through_its_own_builder_and_the_general_decoder)
 {
     ShortcutsBuildCase_t cases[] = {
-        {"data of every kind under revision 2",          shortcuts_constants,      sizeof(shortcuts_constants),      2u, false, false},
-        {"data of every kind under revision 1",          shortcuts_constants,      sizeof(shortcuts_constants),      1u, false, false},
-        {"an SSDT declared before a DSDT of revision 1", shortcuts_constants,      sizeof(shortcuts_constants),      1u, true,
+        {"data of every kind under revision 2",          shortcuts_constants,          sizeof(shortcuts_constants),  2u, false, false},
+        {"data of every kind under revision 1",          shortcuts_constants,          sizeof(shortcuts_constants),  1u, false, false},
+        {"an SSDT declared before a DSDT of revision 1", shortcuts_constants,          sizeof(shortcuts_constants),  1u, true,
          false                                                                                                                       },
-        {"kept data of edge sizes under revision 2",     shortcuts_kept_edges,     sizeof(shortcuts_kept_edges),     2u, false,
+        {"kept data of edge sizes under revision 2",     shortcuts_kept_edges,         sizeof(shortcuts_kept_edges), 2u, false,
          false                                                                                                                       },
-        {"kept data of edge sizes under revision 1",     shortcuts_kept_edges,     sizeof(shortcuts_kept_edges),     1u, false,
+        {"kept data of edge sizes under revision 1",     shortcuts_kept_edges,         sizeof(shortcuts_kept_edges), 1u, false,
          false                                                                                                                       },
-        {"a package 32 deep",                            NULL,                     0u,                               2u, false, false},
-        {"a package whose third Buffer does not fit",    shortcuts_kept_too_large, sizeof(shortcuts_kept_too_large), 2u,
-         false,                                                                                                                 true },
+        {"a package 32 deep",                            NULL,                         0u,                           2u, false, false},
+        {"a package whose third Buffer does not fit",    shortcuts_kept_too_large_aml,
+         sizeof(shortcuts_kept_too_large_aml),                                                                       2u, false, true },
     };
     const uint32_t count = sizeof(cases) / sizeof(cases[0]);
     uint32_t built_directly = 0u;
