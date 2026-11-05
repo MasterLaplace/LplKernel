@@ -70,6 +70,10 @@ extern "C" {
 /** Codec slots the controller can report on its serial bus. */
 #define INTEL_HIGH_DEFINITION_AUDIO_MAX_CODECS 15u
 
+/** Pages the controller reads or writes: the command ring, the response ring, the capture descriptor list and the
+ *  capture buffer. */
+#define INTEL_HIGH_DEFINITION_AUDIO_DIRECT_MEMORY_ACCESS_PAGES 4u
+
 /**
  * @struct IntelHighDefinitionAudioRingProbe_t
  * @brief The eight numbers that say who is waiting on whom.
@@ -141,6 +145,9 @@ typedef struct {
     IntelHighDefinitionAudioRingProbe_t probe_before; /**< Rings before it was submitted. */
     IntelHighDefinitionAudioRingProbe_t probe_after;  /**< Rings after the budget ran out. */
     uint8_t interrupt_line; /**< PCI configuration offset 0x3C, or KERNEL_HDA_NO_INTERRUPT_LINE. */
+    /** Where each page the controller reads or writes was mapped, in the order the bring-up claimed them. */
+    uint32_t direct_memory_access_pages[INTEL_HIGH_DEFINITION_AUDIO_DIRECT_MEMORY_ACCESS_PAGES];
+    uint8_t direct_memory_access_pages_claimed; /**< How many of them the bring-up claimed. */
 } IntelHighDefinitionAudioState_t;
 
 /**

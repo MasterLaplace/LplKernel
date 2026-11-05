@@ -348,6 +348,9 @@ static void *hda_claim_dma_page(uint32_t *out_physical)
     for (uint32_t i = 0u; i < 1024u; ++i)
         ((volatile uint32_t *) virt)[i] = 0u;
 
+    if (hda_state.direct_memory_access_pages_claimed < INTEL_HIGH_DEFINITION_AUDIO_DIRECT_MEMORY_ACCESS_PAGES)
+        hda_state.direct_memory_access_pages[hda_state.direct_memory_access_pages_claimed++] = (uint32_t) virt;
+
     if (out_physical != NULL)
         *out_physical = physical;
     return virt;
