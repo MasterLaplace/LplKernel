@@ -11,22 +11,24 @@ the pinned iasl first (§8.2): a bubblewrap sandbox with no network, every file 
 <output directory>, a /dev and a /proc of its own, and an environment of PATH and LC_ALL alone, with
 HOME and TMPDIR the output directory.
 
-  - /run, /tmp, /mnt and the home directory, where the host's services keep the sockets a read-only
-    file system would leave open (D-Bus, WSL's interop, agents), are empty in it, but for this
-    repository and the directory of the command, bound back read-only;
-  - socket() is refused, as any system call of another architecture: a network namespace does not
-    cut AF_VSOCK, the channel to the hypervisor;
+  - /run, /tmp, /mnt, /home, /root and the user's home directory, which hold the user's secrets and
+    the sockets of the host's services a read-only file system would leave open (D-Bus, WSL's
+    interop, agents), are empty in it, but for this repository and the directory of the command,
+    bound back read-only;
+  - socket() and io_uring are refused, as any system call of another architecture: a network
+    namespace does not cut AF_VSOCK, the channel to the hypervisor;
   - the command reads an empty standard input, and no descriptor above 2 the caller left open;
   - the caller stands in this repository, where the command starts, so that relative paths keep
     their meaning; a command whose directory is the root, a masked directory or holds one is refused.
 
-The sandbox dies with this script. Without bwrap nothing runs: there is no unsandboxed fallback.
+The sandbox dies with this script. Without bwrap nothing runs: there is no unsandboxed fallback. It
+does not vouch for what the command writes to its output directory.
 
-  --self-test  checks, from inside a sandbox, that files outside its output directory, in the
-               repository and in /var/tmp, are read-only, that one inside can be written, that no
-               socket is left on any file system it sees, that its only network interface is the
-               loopback, that no socket can be made, and that a descriptor the caller left open is
-               closed
+  --self-test  checks, from inside a sandbox, that the home directory shows only the way to the
+               repository, that files outside the output directory, in the repository and in
+               /var/tmp, are read-only, that one inside can be written, that no socket is left on any
+               file system it sees, that its only network interface is the loopback, that socket()
+               and io_uring_setup() are refused, and that descriptors the caller left open are closed
 
 Exit status: the command's; 1 when bwrap is missing, when the caller or the command stands where the
 sandbox would uncover a masked directory, or bwrap's own when it cannot make the sandbox; 2 on a usage
@@ -42,11 +44,12 @@ require_bubblewrap() {
     fi
 }
 
-# Prints, one per line, the directories the sandbox empties because the host's services keep their sockets there,
-# the home directory $1 among them.
+# Prints, one per line, the directories the sandbox empties because the host's services keep their sockets and the
+# user their secrets there: /run, /tmp, /mnt, /home, /root, and the user's home directory, as the password database
+# names it, wherever it is.
 masked_directories() {
     local directory
-    for directory in /run /tmp /mnt "$1"; do
+    for directory in /run /tmp /mnt /home /root "$(getent passwd "$(id -u)" | cut -d: -f6)"; do
         [[ -n "$directory" && "$directory" != / && -d "$directory" ]] && echo "$directory"
     done
 }
@@ -68,7 +71,7 @@ uncovers_a_mask() {
 require_safe_bindings() {
     local root="$1" command_directory="$2" directory
     local -a masks
-    mapfile -t masks < <(masked_directories "${HOME:-}")
+    mapfile -t masks < <(masked_directories)
     if [[ "$PWD/" != "$root/"* ]]; then
         echo "sandbox: the caller's directory $PWD is not in the repository $root: run from it" >&2
         exit 1
@@ -81,24 +84,33 @@ require_safe_bindings() {
     done
 }
 
-# Prints the seccomp program, classic BPF for x86-64, that refuses socket() with EPERM, and any system call of
-# another architecture or of the x32 ABI: the network namespace does not cut AF_VSOCK, the channel to the hypervisor.
-socket_filter() {
+# Prints the seccomp program, classic BPF for x86-64, that refuses with EPERM socket() and io_uring_setup(),
+# io_uring_enter() and io_uring_register(), whose IORING_OP_SOCKET makes a socket without socket(), and any system
+# call of another architecture or of the x32 ABI: the network namespace does not cut AF_VSOCK, the channel to the
+# hypervisor. Each line is one instruction: code, jump if true, jump if false, constant, little-endian.
+system_call_filter() {
     printf '\x20\x00\x00\x00\x04\x00\x00\x00'
-    printf '\x15\x00\x00\x04\x3e\x00\x00\xc0'
+    printf '\x15\x00\x00\x07\x3e\x00\x00\xc0'
     printf '\x20\x00\x00\x00\x00\x00\x00\x00'
-    printf '\x35\x00\x02\x00\x00\x00\x00\x40'
-    printf '\x15\x00\x01\x00\x29\x00\x00\x00'
+    printf '\x35\x00\x05\x00\x00\x00\x00\x40'
+    printf '\x15\x00\x04\x00\x29\x00\x00\x00'
+    printf '\x15\x00\x03\x00\xa9\x01\x00\x00'
+    printf '\x15\x00\x02\x00\xaa\x01\x00\x00'
+    printf '\x15\x00\x01\x00\xab\x01\x00\x00'
     printf '\x06\x00\x00\x00\x00\x00\xff\x7f'
     printf '\x06\x00\x00\x00\x01\x00\x05\x00'
 }
 
-# Closes every descriptor above 2 the caller left open, which would let the command write outside the sandbox.
+# Closes every descriptor above 2 the caller left open, which would let the command write outside the sandbox, but
+# the one bash reads this script through, which it closes on exec.
 close_inherited_descriptors() {
-    local descriptor
+    local descriptor script
+    script="$(readlink -f "${BASH_SOURCE[0]}")"
     for descriptor in /proc/$$/fd/*; do
         descriptor="${descriptor##*/}"
-        [[ "$descriptor" -gt 2 && "$descriptor" -ne 255 ]] && eval "exec $descriptor>&-"
+        [[ "$descriptor" -le 2 ]] && continue
+        [[ "$descriptor" -eq 255 && "$(readlink "/proc/$$/fd/255")" == "$script" ]] && continue
+        eval "exec $descriptor>&-"
     done
     return 0
 }
@@ -118,10 +130,10 @@ run_sandboxed() {
     require_safe_bindings "$root" "$command"
     while IFS= read -r mask; do
         masks+=(--tmpfs "$mask")
-    done < <(masked_directories "${HOME:-}")
+    done < <(masked_directories)
     close_inherited_descriptors
     filter="$(mktemp)"
-    socket_filter >"$filter"
+    system_call_filter >"$filter"
     exec 3<"$filter"
     rm -f "$filter"
     exec bwrap --unshare-all --die-with-parent --new-session --seccomp 3 \
@@ -131,18 +143,21 @@ run_sandboxed() {
         --setenv TMPDIR "$output" -- "$@" </dev/null
 }
 
-# Checks the sandbox's promises from inside one, given a descriptor 7 open on a file outside it, and two files
-# outside it to write: one in the repository, one in /var/tmp. Prints a line per promise.
+# Checks the sandbox's promises from inside one, given descriptors 7 and 255 open on a file outside it, the user's home
+# directory and what it may show, and two files outside it to write: one in the repository, one in /var/tmp. Prints a
+# line per promise.
 self_test() {
-    local work status root
+    local work status root home visible=""
     work="$(mktemp -d)"
     root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    home="$(getent passwd "$(id -u)" | cut -d: -f6)"
+    [[ "$root/" == "$home/"* ]] && visible="${root#"$home"/}" && visible="${visible%%/*}"
     status=0
     (
         cd "$root"
-        exec 7>>"$work/inherited"
-        "${BASH_SOURCE[0]}" "$work" bash -c "$(self_test_probes)" self-test "$root/.sandbox-self-test" \
-            "/var/tmp/.sandbox-self-test-$$"
+        exec 7>>"$work/inherited" 255>>"$work/inherited"
+        "${BASH_SOURCE[0]}" "$work" bash -c "$(self_test_probes)" self-test "$home" "$visible" \
+            "$root/.sandbox-self-test" "/var/tmp/.sandbox-self-test-$$"
     ) || status=1
     if [[ -s "$work/inherited" ]]; then
         echo "not ok: a descriptor the caller left open was written through"
@@ -157,6 +172,14 @@ self_test_probes() {
     cat <<'PROBES'
 failures=0
 fail() { echo "not ok: $1"; failures=$((failures + 1)); }
+home="$1" visible="$2"
+shift 2
+listed="$(ls -A "$home" 2>/dev/null | tr '\n' ' ')"
+if [[ "$listed" == "${visible:+$visible }" ]]; then
+    echo "ok: the home directory $home shows nothing but the way to the repository"
+else
+    fail "the home directory $home shows ${listed:-nothing} instead of ${visible:-nothing}"
+fi
 for outside in "$@"; do
     if (: >"$outside") 2>"$HOME/written"; then
         fail "$outside, outside the output directory, was written"
@@ -172,8 +195,9 @@ else
     fail "a file in the output directory cannot be written"
 fi
 find / \( -path /proc -o -path /sys \) -prune -o -type s -print >"$HOME/sockets" 2>"$HOME/find"
-if [[ ! -f "$HOME/sockets" ]]; then
-    fail "the file systems were not searched for sockets"
+status=$?
+if [[ ! -f "$HOME/sockets" || "$status" -gt 1 ]] || grep -qv 'Permission denied' "$HOME/find"; then
+    fail "the file systems were not searched for sockets whole: find exited $status, $(head -n 1 "$HOME/find")"
 elif [[ -s "$HOME/sockets" ]]; then
     fail "the socket $(head -n 1 "$HOME/sockets") is left in the sandbox"
 else
@@ -187,12 +211,21 @@ else
 fi
 (exec 4<>/dev/tcp/127.0.0.1/9) 2>"$HOME/socket"
 if grep -q 'Operation not permitted' "$HOME/socket"; then
-    echo "ok: no socket can be made, a vsock to the hypervisor included"
+    echo "ok: socket() is refused"
 else
-    fail "a socket could be made: $(cat "$HOME/socket")"
+    fail "socket() made a socket: $(cat "$HOME/socket")"
 fi
-if (echo inherited >&7) 2>/dev/null; then
-    fail "the descriptor 7 the caller left open is still open"
+uring="$(python3 -I -c '
+import ctypes
+libc = ctypes.CDLL(None, use_errno=True)
+print(libc.syscall(425, 1, ctypes.create_string_buffer(120)), ctypes.get_errno())')"
+if [[ "$uring" == "-1 1" ]]; then
+    echo "ok: io_uring_setup() is refused, so no IORING_OP_SOCKET makes a socket"
+else
+    fail "io_uring_setup() gave $uring instead of -1 and EPERM"
+fi
+if (echo inherited >&7) 2>/dev/null || (echo inherited >&255) 2>/dev/null; then
+    fail "a descriptor the caller left open, 7 or 255, is still open"
 else
     echo "ok: no descriptor the caller left open is open"
 fi
