@@ -296,6 +296,16 @@ static const uint8_t predecoding_loads_aml[] = {
 };
 
 /**
+ * @brief LOOP (), the innermost call the builder of the nearly full values nests FSEV calls around.
+ */
+static const uint8_t predecoding_loop_call_aml[] = {
+    0x4Cu,
+    0x4Fu,
+    0x4Fu,
+    0x50u,
+};
+
+/**
  * @brief A name the loop declares that masks the one it reads, as MASK: VALU holds 1 at the root; `Local0 = 0;
  *        Local1 = 0; While (Local0 < 4) { Local0++; If (Local0 == 3) { Name (VALU, 100) }; Local1 += VALU };
  *        Return (Local1)`: 1 + 1 + 100 + 100, so 202, the method's VALU gone when it returns.
@@ -493,6 +503,16 @@ static const uint8_t predecoding_return_sum_aml[] = {
 };
 
 /**
+ * @brief ROOM (), the innermost call the builder of the room nests FSEV calls around.
+ */
+static const uint8_t predecoding_room_call_aml[] = {
+    0x52u,
+    0x4Fu,
+    0x4Fu,
+    0x4Du,
+};
+
+/**
  * @brief ROOM, whose inner While runs as a tight loop from its first record in a call, the If before it false at the
  *        first turn: `Local0 = 0; Local1 = 0; While (Local0 < 3) { Local0++; If (Local0 > 1) { Local1 = 0; While
  *        (Local1 < 4) { Local1 = Local1 + 1 } } }; Return (Local1)`, its body 3 values deep and its predicate 2; then
@@ -532,6 +552,13 @@ static const uint8_t predecoding_store_leaf_aml[] = {
 static const uint8_t predecoding_store_peak_aml[] = {
     0x14u, 0x1Bu, 0x50u, 0x45u, 0x41u, 0x4Bu, 0x00u, 0x75u, 0x60u, 0x75u, 0x60u, 0x75u, 0x60u, 0xA2u,
     0x0Cu, 0x60u, 0x76u, 0x60u, 0xA0u, 0x05u, 0x61u, 0x70u, 0x60u, 0x62u, 0x75u, 0x61u, 0xA4u, 0x62u,
+};
+
+/**
+ * @brief Store (ROOM (), Local0): the first call of the MAIN the builder of the room writes.
+ */
+static const uint8_t predecoding_store_room_call_aml[] = {
+    0x70u, 0x52u, 0x4Fu, 0x4Fu, 0x4Du, 0x60u,
 };
 
 /**
