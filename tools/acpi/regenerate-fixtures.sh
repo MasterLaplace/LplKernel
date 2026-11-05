@@ -83,13 +83,19 @@ require_sandbox() {
     fi
 }
 
-# Compiles the source $1 into $2.aml, in the sandbox, or prints iasl's report and fails.
+# Compiles the source $1 into $2.aml, in the sandbox, its report written to $3 outside it, or prints the report, its
+# control characters dropped so that it drives no terminal, and fails. An .aml that is not a plain file, such as a link
+# a compromised iasl would plant to a file the sandbox hides, is refused unread.
 compile() {
-    local source="$1" prefix="$2"
-    if ! "$SANDBOX" "${prefix%/*}" "$IASL" -oa -r 1 -we -vr -vs -p "$prefix" "$source" >"$prefix.log" 2>&1 ||
-        [[ ! -f "$prefix.aml" ]]; then
+    local source="$1" prefix="$2" report="$3"
+    if ! "$SANDBOX" "${prefix%/*}" "$IASL" -oa -r 1 -we -vr -vs -p "$prefix" "$source" >"$report" 2>&1 ||
+        [[ ! -e "$prefix.aml" && ! -L "$prefix.aml" ]]; then
         echo "not ok ${source#"$ROOT"/}: iasl refuses it"
-        sed 's/^/    # /' "$prefix.log"
+        tr -d '\000-\010\013-\037\177' <"$report" | sed 's/^/    # /'
+        return 1
+    fi
+    if [[ -L "$prefix.aml" || ! -f "$prefix.aml" ]]; then
+        echo "not ok ${source#"$ROOT"/}: iasl left something other than a plain file at its output, refused unread"
         return 1
     fi
     if [[ "$(stat -c %s "$prefix.aml")" -le "$TABLE_HEADER_BYTES" ]]; then
@@ -187,7 +193,7 @@ generate_suite() {
         echo "not ok ${directory#"$ROOT"/}: holds no .asl source"
         return 1
     fi
-    mkdir -p "$WORK/$suite"
+    mkdir -p "$WORK/$suite" "$WORK/reports"
     header_opening "$suite" "$(creation_date "$FIXTURES/$suite.h")" >"$output"
     for source in "${sources[@]}"; do
         name="$(basename "$source" .asl)"
@@ -203,7 +209,10 @@ generate_suite() {
             failures=$((failures + 1))
             continue
         fi
-        compile "$source" "$WORK/$suite/$name" || { failures=$((failures + 1)); continue; }
+        if ! compile "$source" "$WORK/$suite/$name" "$WORK/reports/$suite-$name.log"; then
+            failures=$((failures + 1))
+            continue
+        fi
         printf '\n%s\nstatic const uint8_t %s_aml[] = {\n%s\n};\n' "$documented" "$name" \
             "$(initialiser "$WORK/$suite/$name.aml")" >>"$output"
     done
