@@ -561,12 +561,11 @@ KERNEL_TEST(a_failure_in_a_table_an_attach_method_loads_is_the_table_s)
     kernel_test_check(test,
                       pci_load.regions.internal_evaluations == 1u && pci_load.regions.internal_failures == 0u &&
                           pci_load.tables_loaded == 1u,
-                      "_BBN runs once, pci_loads_table_and_returns_aml its table, and does not fail");
+                      "_BBN runs once, loads its table, and does not fail");
     kernel_test_check(test,
                       pci_load.evaluation.statuses[PCI_STATUS(NAME_NOT_FOUND)] == 1u && pci_integer("V2__") == 0x55u &&
                           pci_integer("AFTR") == 7u,
-                      "the table's statement that pci_stores_failing_call_aml FALT pci_return_missing_name_aml, "
-                      "counted, and the declaration after it is made");
+                      "the table's statement that calls FALT fails, counted, and the declaration after it is made");
     pci_close(test);
 }
 
@@ -624,13 +623,12 @@ KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_f
     kernel_test_check(test, status == PCI_STATUS(OK) && left == preset && pci_load.declaring == 0u,
                       "the Load succeeds, and leaves no value behind and no table declaring");
     kernel_test_check(test, pci_load.tables_loaded == 1u && pci_load.regions.internal_failures == 1u,
-                      "the table is loaded, and the _BBN pci_return_missing_name_aml once");
+                      "the table is loaded, and the _BBN fails once");
     kernel_test_check(test,
                       pci_load.evaluation.failures == 1u &&
                           pci_load.evaluation.statuses[PCI_STATUS(LIMIT_VALUES)] == 1u &&
                           pci_integer("V2__") == 0x55u && pci_integer("AFTR") == 7u,
-                      "the table's statement pci_return_missing_name_aml with limit_values, counted, and the "
-                      "declaration after it is made");
+                      "the table's statement fails with limit_values, counted, and the declaration after it is made");
     pci_close(test);
 }
 
