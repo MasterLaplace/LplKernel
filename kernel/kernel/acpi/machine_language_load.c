@@ -379,7 +379,7 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
             node->type = type;
             ++load->space.generation;
             node->owner = (uint16_t) (walk->table + 1u);
-            memset(&node->value, 0, sizeof(node->value));
+            node->value = (AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t){0};
             machine_language_count_declaration(walk);
             walk->last_created = existing;
         }
@@ -1111,7 +1111,7 @@ static MachineLanguageStatus_t machine_language_begin_field_list(MachineLanguage
     bool constant = false;
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
 
-    memset(field, 0, sizeof(*field));
+    *field = (MachineLanguageFieldList_t){0};
     field->builds = true;
     field->opcode = active->opcode;
     field->access = flags & 0x0Fu;
