@@ -33,7 +33,7 @@
 #define HOST_PAGES_RESERVED 4u /**< Pages the contract reserves. */
 
 /**
- * @brief Checks a host's reservations: four pages reserved, none of them usable; two committed from the start, then
+ * @brief Checks a host's reservations: four pages reserved; two committed from the start, then
  *        the fourth, each page written and read back at its first and last byte; the third committed after them, so
  *        that a commit never moves the pages committed before; the reservation released, all four counted as
  *        committed; then a commit at the released address refused.

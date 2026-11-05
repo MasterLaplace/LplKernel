@@ -181,11 +181,12 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
  *
  * @param space           Filled; closed with
  * advanced_configuration_and_power_interface_machine_language_namespace_close, even when this fails.
- * @param host            The host whose allocate_pages and release_pages it uses.
+ * @param host            The host whose allocate_pages and release_pages it uses, and whose reserve_pages,
+ *                        commit_pages and release_reservation hold its node array.
  * @param max_nodes       The node cap.
  * @param max_arena_bytes The arena cap.
- * @return OUT_OF_MEMORY when the host gives no pages or the caps cannot hold the predefined
- *         objects; OK otherwise.
+ * @return OUT_OF_MEMORY when the host gives no pages, reserves no address space for the node array,
+ *         or the caps cannot hold the predefined objects; OK otherwise.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_namespace_open(
