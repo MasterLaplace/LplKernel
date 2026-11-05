@@ -174,9 +174,11 @@ static void corpus_enter_mode(KernelTest_t *test)
     advanced_configuration_and_power_interface_enter_mode(&corpus_host.host, &corpus_directory.fixed_description,
                                                           &corpus_mode);
     kernel_test_check(test,
-                      corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN &&
-                          corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED,
-                      "step 0 runs on the recorded machine's FADT, and its firmware answers ACPI_ENABLE");
+                      !corpus_directory.fixed_description.present ||
+                          corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN,
+                      "step 0 runs on the recorded machine's FADT, when it has one");
+    kernel_test_check(test, corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED,
+                      "the recorded machine's firmware answers ACPI_ENABLE");
     kernel_test_measure(test, "mode_outcome", corpus_mode.outcome);
     kernel_test_measure(test, "mode_enables_cleared", corpus_mode.enable_registers_cleared);
     kernel_test_measure(test, "mode_polls", corpus_mode.polls);

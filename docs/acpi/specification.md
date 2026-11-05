@@ -1178,7 +1178,8 @@ published image. The made-up ASL is ours, under MIT.
   the needs-path closure, and the needs-path run (§3.8, steps 0 to 9) with the opcodes, spaces and access types it
   executed. Step 0 meets the firmware the FADT describes, as it boots ([§4.8.2.5]): with a legacy mode, SMI_CMD and
   ACPI_ENABLE both set, SCI_EN reads clear until ACPI_ENABLE is written to SMI_CMD, and set once the write returns,
-  as an SMI handler sets it; without one, SCI_EN reads set from the start, as on a platform that only supports ACPI.
+  the SMI handler's last action ([§5.2.9]); without one, SCI_EN reads set from the start, as on a platform that only
+  supports ACPI.
 - **The static tables**: the parsed FADT, MADT, MCFG and HPET fields of every machine equal the decoded `[xxxh]`
   lines that ship with each dump. The FADT also equals the local FADT ACPICA builds from the same bytes
   (`tools/acpi/acpica_fadt.c`), with ACPICA's rewrite of PM block widths (`AcpiGbl_UseDefaultRegisterWidths`)

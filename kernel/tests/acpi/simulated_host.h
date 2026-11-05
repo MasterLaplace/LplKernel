@@ -318,7 +318,8 @@ extern bool advanced_configuration_and_power_interface_simulated_host_set_port(
  *        reads SCI_EN set from the start.
  *
  * @details A platform without a FADT, a hardware-reduced one, and one whose PM1a control register
- *          is not a port have no SCI_EN to give: their host is left as it is.
+ *          is not a port have no SCI_EN to give: their host is left as it is. An SMI_CMD past port
+ *          0xFFFF is answered at no port, not at its low 16 bits.
  *
  * @param simulated The host, opened.
  * @param fadt      The platform's normalised FADT.

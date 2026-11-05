@@ -38,7 +38,8 @@
     "                                    gives NVS objects their values\n"                                             \
     "       test-acpi --loaded <dump> <presets> <directory>  the same, then prints the namespace and writes\n"         \
     "                                    each table it holds, Load's included, as a raw file of <directory>\n"         \
-    "       test-acpi --initialize-tables <table>...  the same from raw definition blocks, the DSDT first\n"           \
+    "       test-acpi --initialize-tables <table>...  the same from raw definition blocks, the DSDT first; they\n"     \
+    "                                    come without a FADT, so the platform is not switched to ACPI mode\n"          \
     "       test-acpi --evaluate <path> <table>...    loads raw definition blocks, the DSDT first, initialises\n"      \
     "                                    their namespace, and prints what evaluating the absolute path gives: its\n"   \
     "                                    status, then the result's type and value, and each opcode run but not\n"      \
@@ -870,9 +871,10 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
     memcpy(harness_unimplemented, load->evaluation.unimplemented, sizeof(harness_unimplemented));
     advanced_configuration_and_power_interface_initialize_namespace(load, harness_machine(directory),
                                                                     &harness_initialization, &harness_idle);
-    printf("aml mode outcome=%s enables_cleared=%u polls=%u waited_ms=%u\n",
+    printf("aml mode outcome=%s enables_cleared=%u polls=%u waited_ms=%u fadt_revision=%u\n",
            advanced_configuration_and_power_interface_mode_outcome_name(harness_mode.outcome),
-           harness_mode.enable_registers_cleared, harness_mode.polls, harness_mode.waited_milliseconds);
+           harness_mode.enable_registers_cleared, harness_mode.polls, harness_mode.waited_milliseconds,
+           (directory != NULL) ? directory->fixed_description.revision : 0u);
     printf("aml init initializations=%u initialization_failed=%u registrations=%u region_registration_failed=%u "
            "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u "
            "platform_capabilities=%s processor_capabilities=%u processor_capabilities_legacy=%u "

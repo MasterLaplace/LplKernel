@@ -422,6 +422,12 @@ KERNEL_TEST(a_booted_platform_with_a_legacy_mode_is_switched_at_the_first_read)
                           mode_host.clock_100ns == 0u,
                       "the platform is switched at the first read of SCI_EN, the host never waiting");
     mode_measure(test);
+
+    mode_open_platform();
+    mode_fadt.system_management_interrupt_command = 0x100B2u;
+    mode_boot();
+    kernel_test_check(test, mode_host.firmware_command_port == 0u,
+                      "an SMI_CMD past port 0xFFFF is answered at no port, not at its low 16 bits");
 }
 
 /**
