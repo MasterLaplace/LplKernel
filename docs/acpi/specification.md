@@ -284,10 +284,10 @@ which the load did not check or AML has rewritten since, and the kept objects of
 built by the general data decoder, whose status then gives the object or leaves the node Uninitialized (§3.5). Once
 the pass that decodes every method body has run, a debug kernel and the host tools check each kept Package and
 VarPackage as the data decoder would build it, over the namespace's nodes, so that a fault that stops the decoding of a
-table hides none: one that would not build is counted in `data_faults`, which the corpus check fails on. One that code
-reads before the check, where code runs (table-level code, an initialisation, ring 0), is counted at that read instead,
-in `data_faults_read`, which `acpi.aml` records, or in `values_deferred`, so that every kept object that builds nothing
-is counted once. A release kernel, which skips that pass, meets such an object at its first read only, as it meets a
+table hides none: one that would not build is counted in `data_faults`, which the corpus check fails on. One that
+table-level code reads before the check (at boot, or in a table Load adds) is counted at that read instead, in
+`data_faults_read`, which `acpi.aml` records, or in `values_deferred`, so that once the check has run each kept object
+that builds nothing has been counted once; a later read counts it again in `data_faults_read`. A release kernel, which skips that pass, meets such an object at its first read only, as it meets a
 faulty body only when it runs. One whose nested size or
 count a name gives is counted in `data_named_sizes`, since its first read reads that name where a load that built it
 at once read it as it declared it.
@@ -1053,7 +1053,7 @@ reads a table in kernel memory. The costs to cut are:
 | O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list, a Name's integer constant built by the decoder itself, and an OperationRegion of one NameSeg whose offset and length need no interpreter | `declarations_decoded_directly`, `integers_built_directly`; W1 |
-| O20 | A Name's Package, VarPackage or Buffer kept in its table once its head reads, neither checked nor built until a name resolution reaches it or a write is about to land on its table's bytes; a debug kernel and the host tools check each one as they decode bodies (§3.5, §3.6, §5.3) | `data_kept`, `data_materialized`, `data_faults_read` in `acpi.aml`, and `data_faults`, `data_named_sizes` with its decoding counts; W1 |
+| O20 | A Name's Package, VarPackage or Buffer kept in its table once its head reads, neither checked nor built until a name resolution reaches it or a write is about to land on its table's bytes; a debug kernel and the host tools check each one once they have decoded bodies (§3.5, §3.6, §5.3) | `data_kept`, `data_materialized`, `data_faults_read` in `acpi.aml`, and `data_faults`, `data_named_sizes` with its decoding counts; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
 | C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them; bytes that do not read as kept data, which the load did not check or AML has rewritten since, are built by the decoder (§3.6) | `data_built_directly` in `acpi.load`; W2 and W3 on the MS-7E16 |

@@ -889,15 +889,18 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
 
 /**
  * @brief Builds every data object @p load still keeps in its tables (O20), as a name resolution reaching it would, and
- *        prints `aml kept` with what the load counted of kept data before (the objects kept, the faults the check
- *        found, those reads found before) and what the builds found: the objects read, and those they left
- *        Uninitialized for a fault or a term that needs the interpreter.
+ *        prints `aml kept`: what the load counted before (the objects kept, the faults the check found and the
+ *        signature of their nodes, the faults reads found before), then what the builds found (the objects read, those
+ *        left Uninitialized for a fault or a term that needs the interpreter and the signature of their nodes, and
+ *        those the heap refused to build, left kept).
  */
 static void harness_read_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     const uint32_t faults_read = load->data_faults_read;
-    const uint32_t deferred = load->values_deferred;
     uint32_t read = 0u;
+    uint32_t unbuilt = 0u;
+    uint32_t refused = 0u;
+    uint32_t signature = 0u;
 
     for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT + 1u;
          index < load->space.node_count; ++index)
@@ -909,11 +912,20 @@ static void harness_read_kept(AdvancedConfigurationAndPowerInterfaceMachineLangu
             node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_KEPT_DATA)
             continue;
         ++read;
-        (void) advanced_configuration_and_power_interface_machine_language_materialize(load, index);
+        if (advanced_configuration_and_power_interface_machine_language_materialize(load, index) !=
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+            ++refused;
+        else if (node->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_UNINITIALIZED)
+        {
+            ++unbuilt;
+            signature =
+                advanced_configuration_and_power_interface_machine_language_kept_data_signature(signature, index);
+        }
     }
-    printf("aml kept data_kept=%u data_faults=%u data_faults_read=%u read=%u unbuilt=%u\n", load->data_kept,
-           load->data_faults, faults_read, read,
-           (load->data_faults_read - faults_read) + (load->values_deferred - deferred));
+    printf("aml kept data_kept=%u data_faults=%u data_faults_signature=0x%08X data_faults_read=%u read=%u unbuilt=%u "
+           "unbuilt_signature=0x%08X refused=%u\n",
+           load->data_kept, load->data_faults, load->data_faults_signature, faults_read, read, unbuilt, signature,
+           refused);
 }
 
 /**

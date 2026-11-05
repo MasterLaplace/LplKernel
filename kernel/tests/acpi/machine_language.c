@@ -1103,7 +1103,7 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t made_up_loa
 /**
  * @brief A load that skips method bodies, as a release kernel's (O2, §3.6), declares what one that decodes them
  *        declares, and decodes no body: the fault in BAD2's body is found when BAD2 runs, not at load, and nothing
- *        the decoding pass counts is counted.
+ *        the decoding pass, or the check of kept data that follows it, counts is counted.
  */
 KERNEL_TEST(a_load_that_skips_bodies_declares_the_same_names_and_decodes_none)
 {

@@ -76,10 +76,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          wrote to stderr; a run where every load fails compares nothing, and fails
   kept   loads each machine of a list, and <mutants> copies of each whose bytes `--mutate` changes, with
          `test-acpi --read-kept --namespace`, which ends by building every data object the load still keeps in
-         its tables (specification §3.6, O20), and checks that each kept object that builds nothing is counted
-         once: the faults counted, data_faults plus the data_faults_read reads found before the check, are the
-         objects found to build nothing, those the builds leave Uninitialized or waiting plus those reads. A load
-         where they differ fails, and so does one that prints no `aml kept` line
+         its tables (specification §3.6, O20), and checks that the objects the check of kept data counted in
+         data_faults are those the builds leave Uninitialized or waiting: as many, on the same nodes (a signature
+         of their indices), every build possible (none the heap refused). A load where they differ fails, and so
+         does one that prints no `aml kept` line
   predecoding  initialises each machine of a list with `test-acpi --loaded` twice, the statements of the
          loops that loop run from records, then with `--predecoding off`, and compares every line the two
          print, the namespace and `aml run namespace` (lookups, probes and back-edges) included, but `aml
@@ -468,11 +468,11 @@ differential_check() {
 
 # Loads each machine of the list $1, and $2 mutated copies of each, with `test-acpi --read-kept --namespace`, and checks
 # on each load that the check of kept data counted in data_faults exactly the kept objects the builds that end the view
-# leave unbuilt (O20): with the data_faults_read reads found before the check, every kept object that builds nothing is
-# counted once. Prints a line per load that breaks it, then the totals.
+# leave unbuilt (O20): as many, on the same nodes, and that the heap refused none of the builds. Prints a line per load
+# that breaks it, then the totals.
 kept_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local mutants="${2:-0}" number=0 agree=0 subject seed line kept=0 faults=0 faults_read=0 unbuilt=0
+    local mutants="${2:-0}" number=0 agree=0 subject seed line kept=0 faults=0 unbuilt=0 refused=0
     local -a mutation fields
     [[ "$mutants" =~ ^[0-9]+$ ]] || { usage >&2; exit 2; }
     while IFS= read -r subject; do
@@ -482,25 +482,25 @@ kept_check() {
             [[ "$seed" -eq 0 ]] || mutation=(--mutate "$seed")
             line="$("$HARNESS" "${mutation[@]}" --read-kept --namespace "$LINUXHW/$subject.bin" 2>/dev/null |
                 grep '^aml kept ')" || true
-            if [[ -z "$line" ]]; then
+            read -ra fields <<<"$(sed -nE 's/^aml kept data_kept=([0-9]+) data_faults=([0-9]+) data_faults_signature=(0x[0-9A-F]+) data_faults_read=[0-9]+ read=[0-9]+ unbuilt=([0-9]+) unbuilt_signature=(0x[0-9A-F]+) refused=([0-9]+)$/\1 \2 \3 \4 \5 \6/p' <<<"$line")"
+            if [[ "${#fields[@]}" -ne 6 ]]; then
                 echo "not ok $number $subject${mutation[*]:+ ${mutation[*]}}: no aml kept line"
                 continue
             fi
-            read -ra fields <<<"$(sed -E 's/^aml kept data_kept=([0-9]+) data_faults=([0-9]+) data_faults_read=([0-9]+) read=[0-9]+ unbuilt=([0-9]+)$/\1 \2 \3 \4/' <<<"$line")"
             kept=$((kept + fields[0]))
             faults=$((faults + fields[1]))
-            faults_read=$((faults_read + fields[2]))
             unbuilt=$((unbuilt + fields[3]))
-            if [[ "$((fields[1] + fields[2]))" -ne "$((fields[3] + fields[2]))" ]]; then
+            refused=$((refused + fields[5]))
+            if [[ "${fields[1]}" -ne "${fields[3]}" || "${fields[2]}" != "${fields[4]}" || "${fields[5]}" -ne 0 ]]; then
                 echo "not ok $number $subject${mutation[*]:+ ${mutation[*]}}: data_faults=${fields[1]}" \
-                    "data_faults_read=${fields[2]} unbuilt=${fields[3]}"
+                    "signature ${fields[2]}, unbuilt=${fields[3]} signature ${fields[4]}, refused=${fields[5]}"
                 continue
             fi
             agree=$((agree + 1))
         done
     done < <(reports "$1")
-    echo "# kept data: $agree of $number loads count each kept object that builds nothing once; $kept kept," \
-        "$faults counted by the check, $faults_read by reads before it, $unbuilt left unbuilt by the builds"
+    echo "# kept data: $agree of $number loads flag the nodes their builds leave unbuilt; $kept kept, $faults" \
+        "counted by the check, $unbuilt left unbuilt, $refused builds the heap refused"
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
 }
 
@@ -793,7 +793,7 @@ decoded() {
 
 # Compares the directory, the FADT and the MADT the kernel's code reads from each dump of the list $1 with the
 # expected ones, then says how many FADTs, registers, CPU slots, I/O APICs, overrides and NMI connections the
-# comparison held; fails on kept data the decoding pass found would not build.
+# comparison held; fails on kept data the check of kept data finds would not build.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables census

@@ -2980,7 +2980,7 @@ static void machine_language_leave_unbuilt(AdvancedConfigurationAndPowerInterfac
  *        data_named_sizes.
  */
 static void machine_language_check_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-                                        const MachineLanguageNode_t *node)
+                                        uint32_t index, const MachineLanguageNode_t *node)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table =
         &load->tables[node->value.auxiliary - 1u];
@@ -2993,7 +2993,11 @@ static void machine_language_check_kept(AdvancedConfigurationAndPowerInterfaceMa
     bool named = false;
 
     if (!machine_language_check_data(&load->space, &source, (uint32_t) node->value.payload, table->length, &named))
+    {
         ++load->data_faults;
+        load->data_faults_signature = advanced_configuration_and_power_interface_machine_language_kept_data_signature(
+            load->data_faults_signature, index);
+    }
     else if (named)
         ++load->data_named_sizes;
 }
@@ -3028,7 +3032,7 @@ static void machine_language_check_kept_data(AdvancedConfigurationAndPowerInterf
             continue;
         --kept;
         if (node->type == MACHINE_LANGUAGE_NODE(PACKAGE))
-            machine_language_check_kept(load, node);
+            machine_language_check_kept(load, index, node);
     }
 }
 
@@ -3622,6 +3626,16 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     node->value = value;
     ++load->data_materialized;
     return MACHINE_LANGUAGE_OK;
+}
+
+uint32_t advanced_configuration_and_power_interface_machine_language_kept_data_signature(uint32_t signature,
+                                                                                         uint32_t index)
+{
+    uint32_t fold = 0x811C9DC5u;
+
+    for (uint32_t byte = 0u; byte < 4u; ++byte)
+        fold = (fold ^ ((index >> (8u * byte)) & 0xFFu)) * 0x01000193u;
+    return signature + fold;
 }
 
 bool advanced_configuration_and_power_interface_machine_language_describe_kept_data(

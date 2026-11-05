@@ -82,7 +82,7 @@ typedef struct KeptDataBuilt {
  */
 typedef struct KeptDataVerdict {
     uint32_t kept;    /**< Data objects the load kept in its table. */
-    uint32_t faults;  /**< Of those, the ones the decoding pass found would not build. */
+    uint32_t faults;  /**< Of those, the ones the check of kept data found would not build. */
     uint32_t untyped; /**< Of those, the ones their first build left Uninitialized, for a fault or a term that needs
                            the interpreter. */
 } KeptDataVerdict_t;
@@ -92,7 +92,7 @@ typedef struct KeptDataVerdict {
  */
 typedef struct KeptDataChecked {
     uint32_t kept;        /**< Data objects the load kept in its table. */
-    uint32_t faults;      /**< Of those, the ones the decoding pass found would not build. */
+    uint32_t faults;      /**< Of those, the ones the check of kept data found would not build. */
     uint32_t faults_read; /**< Of those, the ones whose build found a fault, left Uninitialized. */
 } KeptDataChecked_t;
 

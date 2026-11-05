@@ -68,8 +68,8 @@ typedef struct ShortcutsRecord {
     uint32_t built_faults;     /**< Kept objects left Uninitialized for a fault, once every kept object is built. */
     uint32_t built_deferred;   /**< Objects that wait for the interpreter, once every kept object is built. */
     uint32_t data_kept;        /**< Data objects of a Name kept in their table (O20). */
-    uint32_t data_faults;      /**< Of those, the ones the decoding pass found would not build. */
-    uint32_t data_named_sizes; /**< Of those, the ones the decoding pass found hold a size a name gives. */
+    uint32_t data_faults;      /**< Of those, the ones the check of kept data found would not build. */
+    uint32_t data_named_sizes; /**< Of those, the ones the check of kept data found hold a size a name gives. */
     uint32_t live_nodes;       /**< Nodes in the namespace. */
     uint32_t declarations;     /**< Nodes the tables created. */
     uint32_t duplicates;       /**< Declarations of a name that existed. */
@@ -135,7 +135,7 @@ typedef struct ShortcutsUnbuilt {
  */
 typedef struct ShortcutsUnbuiltCounts {
     uint32_t data_kept;        /**< Data objects kept in their table. */
-    uint32_t data_faults;      /**< Of those, the ones the decoding pass found would not build. */
+    uint32_t data_faults;      /**< Of those, the ones the check of kept data found would not build. */
     uint32_t data_faults_read; /**< Of those, the ones whose first read found a fault. */
     uint32_t values_deferred;  /**< Objects that wait for the interpreter, once every package was read. */
 } ShortcutsUnbuiltCounts_t;
