@@ -18,3 +18,19 @@ advanced_configuration_and_power_interface_machine_language_namespace_node(
     return &space->runs[index / ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN]
                        [index % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN];
 }
+
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name,
+    uint8_t type, uint16_t owner, uint32_t *out_index, bool *out_created)
+{
+    const uint32_t existing =
+        advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, parent, name);
+
+    *out_created = existing == 0u;
+    if (existing == 0u)
+        return advanced_configuration_and_power_interface_machine_language_namespace_add_child(space, parent, name,
+                                                                                               type, owner, out_index);
+    *out_index = existing;
+    return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+}

@@ -299,6 +299,27 @@ advanced_configuration_and_power_interface_machine_language_namespace_add_child(
     uint8_t type, uint16_t owner, uint32_t *out_index);
 
 /**
+ * @brief Finds the child of @p parent named @p name, or creates it last in declaration order: what
+ *        advanced_configuration_and_power_interface_machine_language_namespace_find_child then, when it finds none,
+ *        advanced_configuration_and_power_interface_machine_language_namespace_add_child do, to the same node, slot,
+ *        links, counters and status.
+ *
+ * @param space       The namespace.
+ * @param parent      The parent's index: a node, never 0.
+ * @param name        The NameSeg, as an integer.
+ * @param type        An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_* value, for a child it
+ * creates.
+ * @param owner       The table that declares a child it creates, counted from 1, or 0.
+ * @param out_index   Receives the child's index, found or created; untouched when the creation fails.
+ * @param out_created Receives whether @p parent had no child named @p name, so that the creation was tried.
+ * @return OK when it finds the child; what add_child returns when it creates it.
+ */
+static inline AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name,
+    uint8_t type, uint16_t owner, uint32_t *out_index, bool *out_created);
+
+/**
  * @brief Removes a node that has no child: it leaves its parent's children and the hash table, by
  *        backward shifting so that no tombstone is left, and its index goes on the free list.
  *

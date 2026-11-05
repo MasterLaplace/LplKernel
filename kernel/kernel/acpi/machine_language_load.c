@@ -343,10 +343,34 @@ static void machine_language_count_declaration(MachineLanguageWalk_t *walk)
 }
 
 /**
+ * @brief Finds the child of @p parent named @p name, or creates it, by find_child then add_child, and reports as
+ *        advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child does: the way a load
+ *        whose general_load is set declares a name, so that the differential tests compare it with the way the load
+ *        takes otherwise (§3.6).
+ */
+static MachineLanguageStatus_t
+machine_language_find_then_add_child(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+                                     uint32_t parent, uint32_t name, uint8_t type, uint16_t owner, uint32_t *out_index,
+                                     bool *out_created)
+{
+    const uint32_t existing =
+        advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, parent, name);
+
+    *out_created = existing == 0u;
+    if (existing == 0u)
+        return advanced_configuration_and_power_interface_machine_language_namespace_add_child(space, parent, name,
+                                                                                               type, owner, out_index);
+    *out_index = existing;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Creates the node a declaration names in the scope the walk is in, or finds the one that
  *        holds the name already: an External gives way to the object, any other existing node
  *        stays and the declaration counts as a duplicate. A NameString of one NameSeg and no prefix
- *        names a child of that scope, which needs no walk of prefixes and segments.
+ *        names a child of that scope, which needs no walk of prefixes and segments. A load whose general_load is set
+ *        finds or creates the node by machine_language_find_then_add_child, any other by
+ *        advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child.
  */
 static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *walk,
                                                         const MachineLanguageNameString_t *name, uint8_t type,
@@ -356,6 +380,8 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
     uint32_t parent = machine_language_top_block(walk)->scope;
     uint32_t segment = 0u;
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+    const uint16_t owner = (uint16_t) (walk->table + 1u);
+    bool created = false;
 
     if (!name->root && name->parent_prefixes == 0u && name->segment_count == 1u)
         segment = advanced_configuration_and_power_interface_machine_language_name_segment(walk->bytes, name->segments);
@@ -365,12 +391,13 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
     walk->last_created = 0u;
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-
-    const uint32_t existing =
-        advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent, segment);
-
-    if (existing != 0u)
+    status = load->general_load ?
+                 machine_language_find_then_add_child(&load->space, parent, segment, type, owner, out_index, &created) :
+                 advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child(
+                     &load->space, parent, segment, type, owner, out_index, &created);
+    if (!created)
     {
+        const uint32_t existing = *out_index;
         MachineLanguageNode_t *node = machine_language_node(walk, existing);
 
         walk->last_created = 0u;
@@ -378,18 +405,15 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
         {
             node->type = type;
             ++load->space.generation;
-            node->owner = (uint16_t) (walk->table + 1u);
+            node->owner = owner;
             node->value = (AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t){0};
             machine_language_count_declaration(walk);
             walk->last_created = existing;
         }
         else if (type != MACHINE_LANGUAGE_NODE(EXTERNAL))
             ++load->duplicates;
-        *out_index = existing;
         return MACHINE_LANGUAGE_OK;
     }
-    status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
-        &load->space, parent, segment, type, (uint16_t) (walk->table + 1u), out_index);
     if (status == MACHINE_LANGUAGE_OK)
         machine_language_count_declaration(walk);
     walk->last_created = (status == MACHINE_LANGUAGE_OK) ? *out_index : 0u;
