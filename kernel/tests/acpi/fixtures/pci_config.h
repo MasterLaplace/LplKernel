@@ -103,13 +103,6 @@ static const uint8_t pci_return_bus_aml[] = {
 };
 
 /**
- * @brief Return (Divide (One, Zero)): the body of an attach method that fails with divide_by_zero.
- */
-static const uint8_t pci_return_divide_by_zero_aml[] = {
-    0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u,
-};
-
-/**
  * @brief Return (\NOPE), a name no table declares: the body of a method that fails.
  */
 static const uint8_t pci_return_missing_name_aml[] = {

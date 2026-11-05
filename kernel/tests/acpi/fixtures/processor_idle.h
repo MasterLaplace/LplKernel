@@ -51,13 +51,6 @@ static const uint8_t idle_counted_absent_aml[] = {
 };
 
 /**
- * @brief Divide (One, Zero), which fails with divide_by_zero.
- */
-static const uint8_t idle_divide_by_zero_aml[] = {
-    0x78u, 0x01u, 0x00u, 0x00u, 0x00u,
-};
-
-/**
  * @brief Method (MTH1) {}: a method a package element names.
  */
 static const uint8_t idle_empty_method_aml[] = {
@@ -132,13 +125,6 @@ static const uint8_t idle_present_csta_aml[] = {
  */
 static const uint8_t idle_present_psta_aml[] = {
     0x75u, 0x5Cu, 0x50u, 0x53u, 0x54u, 0x41u, 0xA4u, 0x0Au, 0x0Fu,
-};
-
-/**
- * @brief Return (Divide (One, Zero)): the body of a _STA that fails.
- */
-static const uint8_t idle_return_divide_by_zero_aml[] = {
-    0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u,
 };
 
 /**

@@ -1,4 +1,5 @@
 #include "fixtures/processor_idle.h"
+#include "fixtures/common.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -532,7 +533,7 @@ KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
 
     idle_begin(identifiers, 6u);
     made_up_aml_begin(&idle_method);
-    made_up_aml_raw(&idle_method, idle_divide_by_zero_aml, sizeof(idle_divide_by_zero_aml));
+    made_up_aml_raw(&idle_method, common_divide_by_zero_aml, sizeof(common_divide_by_zero_aml));
     made_up_aml_begin(&idle_scope);
     made_up_aml_method(&idle_scope, "_CST", 0x00u, &idle_method);
     idle_processor("CPU1", 1u, &idle_scope);
@@ -716,7 +717,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     made_up_aml_device(&idle_aml, "DEV1", &device);
     made_up_aml_begin(&idle_scope);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_return_divide_by_zero_aml, sizeof(idle_return_divide_by_zero_aml));
+    made_up_aml_raw(&body, common_return_divide_by_zero_aml, sizeof(common_return_divide_by_zero_aml));
     made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
     idle_static(&idle_scope, 1u, &only, 1u);
     idle_processor("CPU6", 7u, &idle_scope);
@@ -724,7 +725,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     idle_present(&idle_aml, "CPU8", 8u, 0x100u);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_return_divide_by_zero_aml, sizeof(idle_return_divide_by_zero_aml));
+    made_up_aml_raw(&body, common_return_divide_by_zero_aml, sizeof(common_return_divide_by_zero_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     idle_present(&device, "CPUB", 11u, 0x100u);
     made_up_aml_device(&idle_aml, "DEV2", &device);
@@ -734,7 +735,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     made_up_aml_thermal_zone(&idle_aml, "TZ00", &device);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_return_divide_by_zero_aml, sizeof(idle_return_divide_by_zero_aml));
+    made_up_aml_raw(&body, common_return_divide_by_zero_aml, sizeof(common_return_divide_by_zero_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     idle_present(&device, "CPUD", 13u, 0x100u);
     made_up_aml_thermal_zone(&idle_aml, "TZ01", &device);
