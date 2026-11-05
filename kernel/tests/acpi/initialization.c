@@ -159,6 +159,8 @@ static void initialization_method(MadeUpAml_t *aml, const char *name, uint8_t ar
 
 /**
  * @brief Appends Method (_STA) { Return (@p status) }.
+ *
+ * Its Return opcode is raw bytes: a partial term around @p status.
  */
 static void initialization_status(MadeUpAml_t *aml, uint64_t status)
 {
@@ -334,6 +336,8 @@ static void initialization_hardware_identifier(MadeUpAml_t *aml, const char *ide
 /**
  * @brief The 16 bytes ToUUID makes of @p text, "aabbccdd-eeff-gghh-iijj-kkllmmnnoopp": aa to hh land at
  *        offsets 3, 2, 1, 0, 5, 4, 7 and 6, ii to pp in the order written (ACPI 6.6 §19.6.144).
+ *
+ * Its written_at array is a UUID's byte order, not AML.
  */
 static void initialization_uuid(const char *text, uint8_t out_bytes[16])
 {
@@ -650,36 +654,30 @@ KERNEL_TEST(a_registration_runs_once_per_scope_of_pci_config_regions)
  *        that fails there is dropped, counted; one created before, one in the method's own scope or one
  *        of SystemMemory gets none, and a _REG that does not take two arguments is not called, counted
  *        as failed (§5.3).
- *
- * The bodies of MKRG and MKMM are raw bytes: iasl does not emit their regions' parent prefix, ^DYNR and ^DYNM, at
- * the root, where a fixture's body stands.
  */
 KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
 {
-    static const uint8_t creates[] = {0x5Bu, 0x80u, '^', 'D', 'Y', 'N', 'R',  0x02u, 0x00u, 0x0Au, 0x10u,
-                                      0x70u, '\\',  'T', 'R', 'A', 'C', '\\', 'S',   'N',   'A',   'P'};
-    static const uint8_t creates_memory[] = {0x5Bu, 0x80u, '^',   'D',   'Y',   'N',  'M',
-                                             0x00u, 0x0Bu, 0x00u, 0x30u, 0x0Au, 0x10u};
-    static const uint8_t creates_other[] = {0x5Bu, 0x80u, '^',   'D',   'Y',  'N', 'R', 0x02u, 0x00u,
-                                            0x0Au, 0x10u, 0x70u, 0x01u, '\\', 'S', 'N', 'A',   'P'};
-
     initialization_begin();
     made_up_aml_name_integer(&initialization_aml, "SNAP", 0u);
     made_up_aml_begin(&initialization_inner);
     initialization_registration(&initialization_inner);
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates, sizeof(creates));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_parent_region_aml,
+                          sizeof(initialization_creates_parent_region_aml));
     initialization_method(&initialization_inner, "MKRL", 0x00u, initialization_creates_own_region_aml,
                           sizeof(initialization_creates_own_region_aml));
-    initialization_method(&initialization_inner, "MKMM", 0x00u, creates_memory, sizeof(creates_memory));
+    initialization_method(&initialization_inner, "MKMM", 0x00u, initialization_creates_parent_memory_region_aml,
+                          sizeof(initialization_creates_parent_memory_region_aml));
     initialization_device(&initialization_aml, "XDEV", 0u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
     initialization_method(&initialization_inner, "_REG", 0x01u, initialization_trace_f_aml,
                           sizeof(initialization_trace_f_aml));
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates_other, sizeof(creates_other));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_parent_region_then_marks_aml,
+                          sizeof(initialization_creates_parent_region_then_marks_aml));
     initialization_device(&initialization_aml, "YDEV", 0u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
     initialization_failing(&initialization_inner, "_REG", 0x02u, false);
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates_other, sizeof(creates_other));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_parent_region_then_marks_aml,
+                          sizeof(initialization_creates_parent_region_then_marks_aml));
     initialization_device(&initialization_aml, "WDEV", 0u, &initialization_inner);
     if (!initialization_run(test, false))
         return;
@@ -728,14 +726,12 @@ KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
  *        the two arguments it was given: the method that created the region still has the whole value stack, as it
  *        has before the initialisation, when no _REG is called, which a VarPackage and its count fill (§5.3, §6.1).
  *
- * The creator's body is raw bytes: iasl does not emit its region's parent prefix, ^DYNR, at the root, where a
- * fixture's body stands.
+ * The creator's Return opcode is raw bytes, a partial term around the VarPackage the test builds, and so are that
+ * VarPackage's opcode and its One initialisers: the test names their count.
  */
 KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back)
 {
-    static const uint8_t creates[] = {0x5Bu, 0x23u, '\\', 'M', 'T', 'X', 'A',   0xFFu, 0xFFu, 0x5Bu,
-                                      0x80u, '^',   'D',  'Y', 'N', 'R', 0x02u, 0x00u, 0x0Au, 0x10u,
-                                      0x5Bu, 0x27u, '\\', 'M', 'T', 'X', 'A',   0xA4u};
+    static const uint8_t return_byte = 0xA4u;
     static const uint8_t variable_package = 0x13u;
     static const uint8_t one = 0x01u;
     static MadeUpAml_t elements;
@@ -750,7 +746,9 @@ KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back
     for (uint32_t element = 0u; element < initialisers; ++element)
         made_up_aml_raw(&elements, &one, 1u);
     made_up_aml_begin(&creator);
-    made_up_aml_raw(&creator, creates, sizeof(creates));
+    made_up_aml_raw(&creator, initialization_creates_region_under_mutex_aml,
+                    sizeof(initialization_creates_region_under_mutex_aml));
+    made_up_aml_raw(&creator, &return_byte, 1u);
     made_up_aml_construct(&creator, &variable_package, 1u, &elements);
     made_up_aml_begin(&initialization_inner);
     initialization_method(&initialization_inner, "_REG", 0x0Au, initialization_trace_one_aml,
@@ -780,22 +778,15 @@ KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back
  * @brief A _REG that creates a PCI_Config region in its own scope is not called again for it, whether
  *        a region's creation or AML called it: the method that called it still succeeds, and the trace
  *        holds one _REG per call.
- *
- * The bodies of _REG and MKRG are raw bytes: iasl does not emit their regions' parent prefix, ^DYNZ and ^DYNR, at
- * the root, where a fixture's body stands.
  */
 KERNEL_TEST(a_registration_that_creates_a_region_in_its_scope_runs_once)
 {
-    static const uint8_t registers[] = {0x70u, 0x72u, 0x77u, 0x72u, 0x77u, '\\',  'T',   'R',   'A',
-                                        'C',   0x0Au, 0x10u, 0x00u, 0x68u, 0x00u, 0x0Au, 0x10u, 0x00u,
-                                        0x69u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0x5Bu, 0x80u,
-                                        '^',   'D',   'Y',   'N',   'Z',   0x02u, 0x00u, 0x0Au, 0x10u};
-    static const uint8_t creates[] = {0x5Bu, 0x80u, '^', 'D', 'Y', 'N', 'R', 0x02u, 0x00u, 0x0Au, 0x10u};
-
     initialization_begin();
     made_up_aml_begin(&initialization_inner);
-    initialization_method(&initialization_inner, "_REG", 0x02u, registers, sizeof(registers));
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates, sizeof(creates));
+    initialization_method(&initialization_inner, "_REG", 0x02u, initialization_registration_creates_region_aml,
+                          sizeof(initialization_registration_creates_region_aml));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_region_above_aml,
+                          sizeof(initialization_creates_region_above_aml));
     initialization_method(&initialization_inner, "CALR", 0x00u, initialization_calls_registration_aml,
                           sizeof(initialization_calls_registration_aml));
     initialization_device(&initialization_aml, "ZDEV", 0u, &initialization_inner);
@@ -931,8 +922,7 @@ KERNEL_TEST(each_evaluation_starts_its_budgets_from_zero)
     initialization_load.evaluation.iterations =
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS;
     kernel_test_check(test, initialization_call("\\READ") == INITIALIZATION_STATUS(OK),
-                      "a method that initialization_reads_field_aml a field and loops once succeeds after a load that "
-                      "spent both budgets");
+                      "a method that reads a field and loops once succeeds after a load that spent both budgets");
     initialization_close(test);
 }
 
@@ -1046,6 +1036,8 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
  *        Intel's UUID, a commit, or its _PDC with a buffer of revision 1 and one DWORD when it has no _OSC,
  *        inside a Device that has neither too; one bound to no slot, and Devices that are no processor, a
  *        PCI bridge and an ambient light sensor with the same _UID, get nothing (§3.8 step 7, §3.10).
+ *
+ * Its driver_capabilities array is the _PDC buffer the test expects, not AML.
  */
 KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
 {
