@@ -633,8 +633,46 @@ typedef struct MadeUpTwoNamespaces {
 static MadeUpTwoNamespaces_t made_up_two;
 
 /**
+ * @brief Whether the two namespaces of made_up_two hold as many nodes, live and free, runs, slots and arena bytes, and
+ *        counted the same lookups, probes and generations.
+ */
+static bool made_up_counts_alike(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *expected = &made_up_two.found_then_added;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_two.found_or_added;
+
+    return space->node_count == expected->node_count && space->live_nodes == expected->live_nodes &&
+           space->free_nodes == expected->free_nodes && space->run_count == expected->run_count &&
+           space->slot_capacity == expected->slot_capacity && space->arena_bytes == expected->arena_bytes &&
+           space->lookups == expected->lookups && space->probes == expected->probes &&
+           space->generation == expected->generation;
+}
+
+/**
+ * @brief Whether the two namespaces of made_up_two hold the same nodes, links, slots, free list, runs and arena, and
+ *        counted the same lookups, probes and generations.
+ */
+static bool made_up_namespaces_alike(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *expected = &made_up_two.found_then_added;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_two.found_or_added;
+
+    if (!made_up_counts_alike() ||
+        memcmp(space->slots, expected->slots, (size_t) expected->slot_capacity * sizeof(uint32_t)) != 0)
+        return false;
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         index < expected->node_count; ++index)
+        if (memcmp(advanced_configuration_and_power_interface_machine_language_namespace_node(space, index),
+                   advanced_configuration_and_power_interface_machine_language_namespace_node(expected, index),
+                   sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t)) != 0)
+            return false;
+    return true;
+}
+
+/**
  * @brief Declares the Device @p name, a child of @p parent, in both namespaces of made_up_two, and counts what the
- *        declaration did.
+ *        declaration did; it differs when the status, the node or the report differ, or the counts of
+ *        made_up_counts_alike once it is made.
  *
  * @return The child's index find_child then add_child gave, or 0 when the creation failed.
  */
@@ -655,8 +693,10 @@ static uint32_t made_up_declare_in_both(uint32_t parent, uint32_t name)
     made_up_two.last_status = advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child(
         &made_up_two.found_or_added, parent, name, type, 1u, &index, &created);
     ++made_up_two.declarations;
-    made_up_two.differences +=
-        (made_up_two.last_status != status || index != expected || created != (existing == 0u)) ? 1u : 0u;
+    made_up_two.differences += (made_up_two.last_status != status || index != expected || created != (existing == 0u) ||
+                                !made_up_counts_alike()) ?
+                                   1u :
+                                   0u;
     made_up_two.found += (existing != 0u) ? 1u : 0u;
     made_up_two.taken_again +=
         (existing == 0u && status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
@@ -667,35 +707,11 @@ static uint32_t made_up_declare_in_both(uint32_t parent, uint32_t name)
 }
 
 /**
- * @brief Whether the two namespaces of made_up_two hold the same nodes, links, slots, free list, runs and arena, and
- *        counted the same lookups, probes and generations.
- */
-static bool made_up_namespaces_alike(void)
-{
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *expected = &made_up_two.found_then_added;
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_two.found_or_added;
-
-    if (space->node_count != expected->node_count || space->live_nodes != expected->live_nodes ||
-        space->free_nodes != expected->free_nodes || space->run_count != expected->run_count ||
-        space->slot_capacity != expected->slot_capacity || space->arena_bytes != expected->arena_bytes ||
-        space->lookups != expected->lookups || space->probes != expected->probes ||
-        space->generation != expected->generation ||
-        memcmp(space->slots, expected->slots, (size_t) expected->slot_capacity * sizeof(uint32_t)) != 0)
-        return false;
-    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
-         index < expected->node_count; ++index)
-        if (memcmp(advanced_configuration_and_power_interface_machine_language_namespace_node(space, index),
-                   advanced_configuration_and_power_interface_machine_language_namespace_node(expected, index),
-                   sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t)) != 0)
-            return false;
-    return true;
-}
-
-/**
  * @brief Declares in both namespaces of made_up_two, and compares them after each of four phases: 40 children of a new
  *        Device, the first its parent's first child; the same 40 again and a predefined object, all found; every
  *        third of the 40 removed, then 20 more children, the first 14 on the indices the free list gives; then
- *        children of the root and of the Device in turn, until a declaration fails or 4,000 are made.
+ *        children of the root and of the Device in turn, until a declaration fails, one differs, or 4,000 are made:
+ *        a namespace that has gone wrong is not filled further, where a full hash table would never end a probe.
  *
  * @return The phases that ended with both namespaces alike, of 4.
  */
@@ -740,7 +756,7 @@ static uint32_t made_up_declare_until_refused(void)
     alike += made_up_namespaces_alike() ? 1u : 0u;
     name[0] = 'N';
     for (uint32_t index = 0u;
-         index < 4000u &&
+         index < 4000u && made_up_two.differences == 0u &&
          made_up_two.last_status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
          ++index)
     {
