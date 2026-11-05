@@ -343,19 +343,48 @@ static void machine_language_count_declaration(MachineLanguageWalk_t *walk)
 }
 
 /**
+ * @brief Finds the child of @p parent named @p name, or creates it, by find_child then add_child, and reports as
+ *        advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child does: the way a load
+ *        whose general_load is set declares a name, so that the differential tests compare it with the way the load
+ *        takes otherwise (§3.6).
+ */
+static MachineLanguageStatus_t
+machine_language_find_then_add_child(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+                                     uint32_t parent, uint32_t name, uint8_t type, uint16_t owner, uint32_t *out_index,
+                                     bool *out_created)
+{
+    const uint32_t existing =
+        advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, parent, name);
+
+    *out_created = existing == 0u;
+    if (existing == 0u)
+        return advanced_configuration_and_power_interface_machine_language_namespace_add_child(space, parent, name,
+                                                                                               type, owner, out_index);
+    *out_index = existing;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Creates the node a declaration names in the scope the walk is in, or finds the one that
  *        holds the name already: an External gives way to the object, any other existing node
  *        stays and the declaration counts as a duplicate. A NameString of one NameSeg and no prefix
- *        names a child of that scope, which needs no walk of prefixes and segments.
+ *        names a child of that scope, which needs no walk of prefixes and segments. A load whose general_load is set
+ *        finds or creates the node by machine_language_find_then_add_child, any other by
+ *        advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child.
+ *
+ * @details Always inlined, as machine_language_use_name, so that the insertion is in line in each declaration
+ *          decoder and in the field list: a call costs a declaration more than the probe it makes.
  */
-static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *walk,
-                                                        const MachineLanguageNameString_t *name, uint8_t type,
-                                                        uint32_t *out_index)
+__attribute__((always_inline)) static inline MachineLanguageStatus_t
+machine_language_declare(MachineLanguageWalk_t *walk, const MachineLanguageNameString_t *name, uint8_t type,
+                         uint32_t *out_index)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     uint32_t parent = machine_language_top_block(walk)->scope;
     uint32_t segment = 0u;
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+    const uint16_t owner = (uint16_t) (walk->table + 1u);
+    bool created = false;
 
     if (!name->root && name->parent_prefixes == 0u && name->segment_count == 1u)
         segment = advanced_configuration_and_power_interface_machine_language_name_segment(walk->bytes, name->segments);
@@ -365,12 +394,13 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
     walk->last_created = 0u;
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-
-    const uint32_t existing =
-        advanced_configuration_and_power_interface_machine_language_namespace_find_child(&load->space, parent, segment);
-
-    if (existing != 0u)
+    status = load->general_load ?
+                 machine_language_find_then_add_child(&load->space, parent, segment, type, owner, out_index, &created) :
+                 advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child(
+                     &load->space, parent, segment, type, owner, out_index, &created);
+    if (!created)
     {
+        const uint32_t existing = *out_index;
         MachineLanguageNode_t *node = machine_language_node(walk, existing);
 
         walk->last_created = 0u;
@@ -378,18 +408,15 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *w
         {
             node->type = type;
             ++load->space.generation;
-            node->owner = (uint16_t) (walk->table + 1u);
+            node->owner = owner;
             node->value = (AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t){0};
             machine_language_count_declaration(walk);
             walk->last_created = existing;
         }
         else if (type != MACHINE_LANGUAGE_NODE(EXTERNAL))
             ++load->duplicates;
-        *out_index = existing;
         return MACHINE_LANGUAGE_OK;
     }
-    status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
-        &load->space, parent, segment, type, (uint16_t) (walk->table + 1u), out_index);
     if (status == MACHINE_LANGUAGE_OK)
         machine_language_count_declaration(walk);
     walk->last_created = (status == MACHINE_LANGUAGE_OK) ? *out_index : 0u;
@@ -648,10 +675,13 @@ static void machine_language_keep_external(MachineLanguageWalk_t *walk, const Ma
  *        table level, a construct only finds the scope it opens: the decoding pass decodes the body of
  *        one it cannot find in the scope the walk is in, the Externals pass skips it, and both skip the
  *        body of one another construct declared.
+ *
+ * @details Always inlined into each declaration decoder, which knows its opcode, so that the compiler drops the
+ *          branches that opcode never takes; the walk calls it out of line, through machine_language_use_operand_name.
  */
-static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *walk,
-                                                         MachineLanguagePendingOperator_t *active,
-                                                         const MachineLanguageNameString_t *name)
+__attribute__((always_inline)) static inline MachineLanguageStatus_t
+machine_language_use_name(MachineLanguageWalk_t *walk, MachineLanguagePendingOperator_t *active,
+                          const MachineLanguageNameString_t *name)
 {
     const MachineLanguageBlock_t *block = machine_language_top_block(walk);
     const bool declaring = walk->pass == MACHINE_LANGUAGE_PASS_DECLARE;
@@ -722,6 +752,18 @@ static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *
     if (status == MACHINE_LANGUAGE_OK && type == MACHINE_LANGUAGE_NODE(ALIAS) && active->node == walk->last_created)
         machine_language_node(walk, active->node)->value.handle = target;
     return status;
+}
+
+/**
+ * @brief machine_language_use_name, out of line, for a NameString the walk's operand step reads: the walk runs every
+ *        pass and every method body, and the declaration's code in line in it costs the decoding pass of the debug
+ *        kernel and the host tools more in register spills than the call it saves the declaration pass.
+ */
+__attribute__((noinline)) static MachineLanguageStatus_t
+machine_language_use_operand_name(MachineLanguageWalk_t *walk, MachineLanguagePendingOperator_t *active,
+                                  const MachineLanguageNameString_t *name)
+{
+    return machine_language_use_name(walk, active, name);
 }
 
 /**
@@ -1590,7 +1632,7 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
             walk->bytes, walk->pc, active->end, &name, &after);
         if (status != MACHINE_LANGUAGE_OK)
             return status;
-        status = machine_language_use_name(walk, active, &name);
+        status = machine_language_use_operand_name(walk, active, &name);
         if (status != MACHINE_LANGUAGE_OK)
             return status;
         walk->pc = after;

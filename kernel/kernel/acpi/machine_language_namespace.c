@@ -14,22 +14,6 @@ static uint32_t machine_language_namespace_segment(const char *characters)
 }
 
 /**
- * @brief The first slot a (parent, name) pair probes: a fixed multiplicative mix, the parent
- *        multiplied before it is folded in so that swapping the two does not collide.
- */
-static uint32_t machine_language_namespace_hash(uint32_t parent, uint32_t name)
-{
-    uint32_t key = name ^ (parent * 0x9E3779B1u);
-
-    key ^= key >> 16u;
-    key *= 0x7FEB352Du;
-    key ^= key >> 15u;
-    key *= 0x846CA68Bu;
-    key ^= key >> 16u;
-    return key;
-}
-
-/**
  * @brief Pages a hash table of @p slot_capacity slots takes.
  */
 static uint32_t machine_language_namespace_slot_pages(uint32_t slot_capacity)
@@ -46,7 +30,9 @@ static void machine_language_namespace_place(AdvancedConfigurationAndPowerInterf
                                              const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node,
                                              uint32_t index)
 {
-    uint32_t slot = machine_language_namespace_hash(node->parent, node->name) & (slot_capacity - 1u);
+    uint32_t slot =
+        advanced_configuration_and_power_interface_machine_language_namespace_hash(node->parent, node->name) &
+        (slot_capacity - 1u);
 
     while (slots[slot] != 0u)
         slot = (slot + 1u) & (slot_capacity - 1u);
@@ -122,7 +108,8 @@ static void machine_language_namespace_unplace(AdvancedConfigurationAndPowerInte
                                                uint32_t index)
 {
     const uint32_t mask = space->slot_capacity - 1u;
-    uint32_t hole = machine_language_namespace_hash(node->parent, node->name) & mask;
+    uint32_t hole =
+        advanced_configuration_and_power_interface_machine_language_namespace_hash(node->parent, node->name) & mask;
 
     while (space->slots[hole] != index)
         hole = (hole + 1u) & mask;
@@ -130,7 +117,9 @@ static void machine_language_namespace_unplace(AdvancedConfigurationAndPowerInte
     {
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *moved =
             advanced_configuration_and_power_interface_machine_language_namespace_node(space, space->slots[slot]);
-        const uint32_t home = machine_language_namespace_hash(moved->parent, moved->name) & mask;
+        const uint32_t home =
+            advanced_configuration_and_power_interface_machine_language_namespace_hash(moved->parent, moved->name) &
+            mask;
 
         if (((slot - home) & mask) >= ((slot - hole) & mask))
         {
@@ -351,7 +340,8 @@ void advanced_configuration_and_power_interface_machine_language_namespace_close
 uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_child(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t parent, uint32_t name)
 {
-    uint32_t slot = machine_language_namespace_hash(parent, name) & (space->slot_capacity - 1u);
+    uint32_t slot = advanced_configuration_and_power_interface_machine_language_namespace_hash(parent, name) &
+                    (space->slot_capacity - 1u);
 
     ++space->lookups;
     for (;;)

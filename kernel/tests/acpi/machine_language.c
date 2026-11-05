@@ -614,6 +614,230 @@ KERNEL_TEST(a_node_taken_again_reads_as_a_new_one_whatever_the_removed_one_left)
 }
 
 /**
+ * @brief Two namespaces given the same declarations, one by find_child then add_child, the other by
+ *        find_or_add_child, and what the declarations did.
+ */
+typedef struct MadeUpTwoNamespaces {
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t
+        found_then_added; /**< Declared by find_child, then add_child when it finds nothing. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t
+        found_or_added;    /**< Declared by find_or_add_child. */
+    uint32_t declarations; /**< Declarations made in both. */
+    uint32_t differences;  /**< Declarations whose status, node or report differ between the two. */
+    uint32_t found;        /**< Declarations that found their child. */
+    uint32_t taken_again;  /**< Children created on an index the free list gave. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+        last_status; /**< What the last declaration returned. */
+} MadeUpTwoNamespaces_t;
+
+static MadeUpTwoNamespaces_t made_up_two;
+
+/**
+ * @brief Whether the two namespaces of made_up_two hold as many nodes, live and free, runs, slots and arena bytes, and
+ *        counted the same lookups, probes and generations.
+ */
+static bool made_up_counts_alike(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *expected = &made_up_two.found_then_added;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_two.found_or_added;
+
+    return space->node_count == expected->node_count && space->live_nodes == expected->live_nodes &&
+           space->free_nodes == expected->free_nodes && space->run_count == expected->run_count &&
+           space->slot_capacity == expected->slot_capacity && space->arena_bytes == expected->arena_bytes &&
+           space->lookups == expected->lookups && space->probes == expected->probes &&
+           space->generation == expected->generation;
+}
+
+/**
+ * @brief Whether the two namespaces of made_up_two hold the same nodes, links, slots, free list, runs and arena, and
+ *        counted the same lookups, probes and generations.
+ */
+static bool made_up_namespaces_alike(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *expected = &made_up_two.found_then_added;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_two.found_or_added;
+
+    if (!made_up_counts_alike() ||
+        memcmp(space->slots, expected->slots, (size_t) expected->slot_capacity * sizeof(uint32_t)) != 0)
+        return false;
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         index < expected->node_count; ++index)
+        if (memcmp(advanced_configuration_and_power_interface_machine_language_namespace_node(space, index),
+                   advanced_configuration_and_power_interface_machine_language_namespace_node(expected, index),
+                   sizeof(AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t)) != 0)
+            return false;
+    return true;
+}
+
+/**
+ * @brief Declares the Device @p name, a child of @p parent, in both namespaces of made_up_two, and counts what the
+ *        declaration did; it differs when the status, the node or the report differ, or the counts of
+ *        made_up_counts_alike once it is made.
+ *
+ * @return The child's index find_child then add_child gave, or 0 when the creation failed.
+ */
+static uint32_t made_up_declare_in_both(uint32_t parent, uint32_t name)
+{
+    const uint8_t type = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE;
+    const uint32_t unused = made_up_two.found_then_added.node_count;
+    const uint32_t existing = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &made_up_two.found_then_added, parent, name);
+    uint32_t expected = (existing != 0u) ? existing : 0xFFFFFFFFu;
+    uint32_t index = 0xFFFFFFFFu;
+    bool created = existing != 0u;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        (existing != 0u) ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK :
+                           advanced_configuration_and_power_interface_machine_language_namespace_add_child(
+                               &made_up_two.found_then_added, parent, name, type, 1u, &expected);
+
+    made_up_two.last_status = advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child(
+        &made_up_two.found_or_added, parent, name, type, 1u, &index, &created);
+    ++made_up_two.declarations;
+    made_up_two.differences += (made_up_two.last_status != status || index != expected || created != (existing == 0u) ||
+                                !made_up_counts_alike()) ?
+                                   1u :
+                                   0u;
+    made_up_two.found += (existing != 0u) ? 1u : 0u;
+    made_up_two.taken_again +=
+        (existing == 0u && status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+         expected < unused) ?
+            1u :
+            0u;
+    return (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK) ? expected : 0u;
+}
+
+/**
+ * @brief Declares in both namespaces of made_up_two, and compares them after each of four phases: 40 children of a new
+ *        Device, the first its parent's first child; the same 40 again and a predefined object, all found; every
+ *        third of the 40 removed, then 20 more children, the first 14 on the indices the free list gives; then
+ *        children of the root and of the Device in turn, until a declaration fails, one differs, or 4,000 are made:
+ *        a namespace that has gone wrong is not filled further, where a full hash table would never end a probe.
+ *
+ * @return The phases that ended with both namespaces alike, of 4.
+ */
+static uint32_t made_up_declare_until_refused(void)
+{
+    const uint32_t root = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+    static const char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    uint32_t children[40] = {0u};
+    char name[5] = "C000";
+    uint32_t alike = 0u;
+    const uint32_t device = made_up_declare_in_both(root, made_up_segment("PARN"));
+
+    for (uint32_t index = 0u; index < 40u; ++index)
+    {
+        name[2] = (char) ('0' + index / 10u);
+        name[3] = (char) ('0' + index % 10u);
+        children[index] = made_up_declare_in_both(device, made_up_segment(name));
+    }
+    alike += made_up_namespaces_alike() ? 1u : 0u;
+    for (uint32_t index = 0u; index < 40u; ++index)
+    {
+        name[2] = (char) ('0' + index / 10u);
+        name[3] = (char) ('0' + index % 10u);
+        (void) made_up_declare_in_both(device, made_up_segment(name));
+    }
+    (void) made_up_declare_in_both(root, made_up_segment("_SB_"));
+    alike += made_up_namespaces_alike() ? 1u : 0u;
+    for (uint32_t index = 0u; index < 40u; index += 3u)
+    {
+        advanced_configuration_and_power_interface_machine_language_namespace_remove(&made_up_two.found_then_added,
+                                                                                     children[index]);
+        advanced_configuration_and_power_interface_machine_language_namespace_remove(&made_up_two.found_or_added,
+                                                                                     children[index]);
+    }
+    name[0] = 'R';
+    for (uint32_t index = 0u; index < 20u; ++index)
+    {
+        name[2] = (char) ('0' + index / 10u);
+        name[3] = (char) ('0' + index % 10u);
+        (void) made_up_declare_in_both(device, made_up_segment(name));
+    }
+    alike += made_up_namespaces_alike() ? 1u : 0u;
+    name[0] = 'N';
+    for (uint32_t index = 0u;
+         index < 4000u && made_up_two.differences == 0u &&
+         made_up_two.last_status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+         ++index)
+    {
+        name[1] = digits[index / 1296u];
+        name[2] = digits[(index / 36u) % 36u];
+        name[3] = digits[index % 36u];
+        (void) made_up_declare_in_both((index % 2u == 0u) ? root : device, made_up_segment(name));
+    }
+    alike += made_up_namespaces_alike() ? 1u : 0u;
+    return alike;
+}
+
+/**
+ * @brief Opens both namespaces of made_up_two with a node cap of @p max_nodes and an arena of @p arena_pages pages,
+ *        declares in them as made_up_declare_until_refused does, then checks that every declaration and every phase
+ *        agreed, and that the last declaration was refused with @p refusal once the hash table held @p slot_capacity
+ *        slots and the namespace @p run_count runs, as @p what says; last, closes both.
+ */
+static void made_up_find_or_add_until_refused(KernelTest_t *test, uint32_t max_nodes, uint32_t arena_pages,
+                                              AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t refusal,
+                                              uint32_t slot_capacity, uint32_t run_count, const char *what)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_two.found_then_added;
+    const uint32_t arena = arena_pages * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
+    uint32_t alike = 0u;
+
+    memset(&made_up_two, 0, sizeof(made_up_two));
+    advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
+
+    const bool opened = advanced_configuration_and_power_interface_machine_language_namespace_open(
+                            &made_up_two.found_then_added, &made_up_host.host, max_nodes, arena) ==
+                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                        advanced_configuration_and_power_interface_machine_language_namespace_open(
+                            &made_up_two.found_or_added, &made_up_host.host, max_nodes, arena) ==
+                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+
+    if (opened)
+        alike = made_up_declare_until_refused();
+    kernel_test_check(test, opened, "both namespaces open");
+    kernel_test_check(test, made_up_two.differences == 0u,
+                      "every declaration finds or creates the node find_child then add_child give, with their status");
+    kernel_test_check(test, alike == 4u,
+                      "both namespaces end each phase alike: nodes, links, slots, free list, runs, arena and counters");
+    kernel_test_check(test, made_up_two.found == 41u, "the same 40 names again and a predefined one are found");
+    kernel_test_check(test, made_up_two.taken_again == 14u,
+                      "the 14 children declared first after the removals take the indices the free list gives");
+    kernel_test_check(test,
+                      made_up_two.last_status == refusal && space->slot_capacity == slot_capacity &&
+                          space->run_count == run_count,
+                      what);
+    advanced_configuration_and_power_interface_machine_language_namespace_close(&made_up_two.found_then_added);
+    advanced_configuration_and_power_interface_machine_language_namespace_close(&made_up_two.found_or_added);
+    kernel_test_check(test, made_up_host.outstanding_pages == 0u, "every page goes back to the host");
+}
+
+/**
+ * @brief A child found or added by find_or_add_child is the one find_child then add_child give, whatever the
+ *        declaration meets: a first child, a duplicate, the free list, the hash table growing, a new run of nodes,
+ *        then the node cap; with an arena too small, the growth or the run refused.
+ */
+KERNEL_TEST(a_child_found_or_added_at_once_is_the_one_found_then_added)
+{
+    const uint32_t first_slots =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES / (uint32_t) sizeof(uint32_t);
+
+    made_up_find_or_add_until_refused(
+        test, 1700u, 256u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_NAMESPACE_NODES,
+        4u * first_slots, 2u,
+        "the hash table grows twice and a second run is taken before the node cap refuses a child");
+    kernel_test_measure(test, "declarations", made_up_two.declarations);
+    kernel_test_measure(test, "lookups", made_up_two.found_then_added.lookups);
+    kernel_test_measure(test, "probes", made_up_two.found_then_added.probes);
+    made_up_find_or_add_until_refused(
+        test, 4000u, 18u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY, first_slots,
+        1u, "an arena with no room to grow the hash table refuses the child that needs it");
+    made_up_find_or_add_until_refused(
+        test, 4000u, 24u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY,
+        4u * first_slots, 1u, "an arena with no room for a second run refuses the child that needs it");
+}
+
+/**
  * @brief A single NameSeg searches its scope, then each parent, from 0 to 6 levels up; a dual path
  *        and a path with parent prefixes never search, and a prefix that climbs above the root
  *        names nothing.
