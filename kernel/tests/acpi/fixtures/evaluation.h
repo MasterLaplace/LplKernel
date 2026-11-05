@@ -139,6 +139,14 @@ static const uint8_t evaluation_method_names_aml[] = {
 };
 
 /**
+ * @brief Return (Local0): the end of LONG, after its run of Noops.
+ */
+static const uint8_t evaluation_return_local0_aml[] = {
+    0xA4u,
+    0x60u,
+};
+
+/**
  * @brief RES0, RES1 and RES2, 5 each, take ShiftLeft (One, 64), Divide (One, Zero) and Mod (One, Zero).
  */
 static const uint8_t evaluation_shifts_and_divisions_aml[] = {

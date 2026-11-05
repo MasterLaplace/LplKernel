@@ -138,8 +138,8 @@ static const uint8_t values_growing_string_aml[] = {
 };
 
 /**
- * @brief Methods whose operators take, where they need an Integer, Strings with and without a 0x prefix, a Buffer,
- *        an empty String, an empty Buffer and a Package.
+ * @brief Table-level stores of operators that take, where they need an Integer, Strings with and without a 0x
+ *        prefix, a Buffer, an empty String, an empty Buffer and a Package.
  */
 static const uint8_t values_implicit_conversions_aml[] = {
     0x08u, 0x52u, 0x30u, 0x30u, 0x30u, 0x0Au, 0x07u, 0x08u, 0x52u, 0x30u, 0x30u, 0x31u, 0x0Au, 0x07u, 0x08u, 0x52u,
@@ -233,8 +233,8 @@ static const uint8_t values_store_to_local_aml[] = {
 };
 
 /**
- * @brief Named Integers, Strings, Buffers, a Package and a Device, and methods that store Strings, Buffers, Integers
- *        and Packages to them.
+ * @brief Named Integers, Strings, Buffers, a Package and a Device, and table-level stores of Strings, Buffers,
+ *        Integers and Packages to them.
  */
 static const uint8_t values_store_to_named_aml[] = {
     0x08u, 0x49u, 0x4Eu, 0x54u, 0x30u, 0x0Bu, 0x34u, 0x12u, 0x08u, 0x49u, 0x4Eu, 0x54u, 0x31u, 0x0Au, 0x00u, 0x08u,

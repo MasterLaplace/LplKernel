@@ -71,7 +71,8 @@ static uint32_t limits_package_length(uint32_t end, uint32_t content)
 
 /**
  * @brief Writes a ladder of @p depth If and Else at the end of the AML buffer, from the inside out:
- *        level k returns k when Arg0 is k, the innermost Else returns Ones.
+ *        level k returns k when Arg0 is k, the innermost Else returns Ones. Its bytes are written at run time, from
+ *        raw ones: the depth is a parameter.
  *
  * @return Where the ladder starts.
  */
@@ -107,7 +108,8 @@ static uint32_t limits_ladder(uint32_t depth)
 
 /**
  * @brief Loads a table that declares RES_ as 5, a method M008 of one argument whose body is a ladder
- *        of @p depth, and stores M008 (@p depth - 1) to RES_, which reaches its deepest level.
+ *        of @p depth, and stores M008 (@p depth - 1) to RES_, which reaches its deepest level. The Store is raw
+ *        bytes: its constant is @p depth - 1.
  */
 static bool limits_run_ladder(KernelTest_t *test, uint32_t depth)
 {
@@ -214,7 +216,7 @@ KERNEL_TEST(an_endless_loop_is_stopped)
  *        fails with limit_blocks before its TermList opens, and leaves no mark behind: a fault in the
  *        body of the If (One) after it is a decode error of a declared construct, not an undeclared one.
  *
- * The If (One) after the ladder is raw bytes: iasl does not emit the byte 0x02, which opens no term, in a body.
+ * The If (One) after the 511 If (Zero) is raw bytes: iasl does not emit the byte 0x02, which opens no term, in a body.
  */
 KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
 {
@@ -241,7 +243,7 @@ KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
 
 /**
  * @brief Loads a table whose code nests @p depth If (One), the @p length bytes at @p inner at the deepest
- *        level.
+ *        level. The If (One) are written at run time, from raw bytes: their depth is a parameter.
  */
 static bool limits_run_nested(KernelTest_t *test, uint32_t depth, const uint8_t *inner, uint32_t length)
 {
