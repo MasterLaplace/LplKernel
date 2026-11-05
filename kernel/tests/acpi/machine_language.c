@@ -2275,7 +2275,7 @@ KERNEL_TEST(the_load_decides_table_level_code_for_every_opcode_as_section_3_6_de
                               advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
             ++disagreements;
         }
-        code += runs ? 1u : 0u;
+        code += (runs && opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT) ? 1u : 0u;
     }
     kernel_test_check(test, disagreements == 0u, "every opcode is decided as the definition decides it");
     kernel_test_measure(test, "opcodes", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT);
