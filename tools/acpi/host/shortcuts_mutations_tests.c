@@ -48,3 +48,23 @@ KERNEL_TEST(every_one_byte_change_of_a_table_of_statements_declares_the_same_bot
     kernel_test_measure(test, "mutants", mutations.loads);
     kernel_test_measure(test, "declarations_decoded_directly", mutations.taken.declarations_decoded_directly);
 }
+
+/**
+ * @brief Every byte of the OperationRegions changed to its value with one bit flipped, to 0x00 and to 0xFF, each change
+ *        loading to the same namespace, faults and counts of what it declared with the load's shortcuts and without:
+ *        the decoder holds for each byte changed to each of three values, whether it takes the region, hands it back at
+ *        its RegionSpace or leaves it to the walk.
+ */
+KERNEL_TEST(every_one_byte_change_of_a_table_of_regions_declares_the_same_both_ways)
+{
+    ShortcutsMutations_t mutations;
+
+    shortcuts_change_bytes(test, SHORTCUTS_TABLE_REGIONS, 1u, true, &mutations);
+    kernel_test_check(test,
+                      mutations.loads == 3u * mutations.bytes && mutations.taken.declarations_decoded_directly != 0u,
+                      "every change was loaded both ways, and the decoder took statements");
+    kernel_test_check(test, mutations.disagreements == 0u,
+                      "every change declares the same with the decoder and without");
+    kernel_test_measure(test, "mutants", mutations.loads);
+    kernel_test_measure(test, "declarations_decoded_directly", mutations.taken.declarations_decoded_directly);
+}

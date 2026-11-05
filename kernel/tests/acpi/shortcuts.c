@@ -23,8 +23,20 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_shortcuts, KERNEL_T
     16u /**< Bytes from one changed byte to the next in the sample ring 0 loads; host_shortcuts changes every byte. */
 #define SHORTCUTS_KEPT_ARENA_BYTES                                                                                     \
     (16u * 1024u) /**< Bytes past the namespace's own pages in the case whose kept Buffer no longer fits. */
+#define SHORTCUTS_NO_RUN_ARENA_BYTES                                                                                   \
+    (4u * 1024u * 1024u) /**< Bytes the arena may hold where the heap takes every run it may hold: room for each of    \
+                            them, two pages each, so that the run cap refuses the next one before the arena does. */
 #define SHORTCUTS_STATUS_COUNT ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT
 #define SHORTCUTS_OPCODE_COUNT ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
+
+/**
+ * @brief How much room a load's heap has before its tables load.
+ */
+typedef enum ShortcutsHeap {
+    SHORTCUTS_HEAP_ROOM,     /**< What the load opens with. */
+    SHORTCUTS_HEAP_NO_ARENA, /**< None: the arena capped at what it holds, the run of small objects full. */
+    SHORTCUTS_HEAP_NO_RUN,   /**< None: every run the heap may hold taken, the run of small objects full. */
+} ShortcutsHeap_t;
 
 /**
  * @brief A load made twice, with the load's shortcuts and without: a DSDT, and an SSDT that may come first.
@@ -47,6 +59,7 @@ typedef struct ShortcutsCase {
  */
 typedef struct ShortcutsRecord {
     uint32_t opened;           /**< 1 when the namespace opened under the case's caps, else 0. */
+    uint32_t filled;           /**< Empty Strings taken to leave the heap no room before the tables load, or 0. */
     uint32_t fold;             /**< The namespace's fold. */
     uint32_t built_fold;       /**< The namespace's fold once every data object kept in its table is built (O20). */
     uint32_t unbuilt;          /**< Of those kept objects, the ones that could not be built. */
@@ -174,8 +187,8 @@ static const uint8_t shortcuts_crossing[] = {
  *        `ThermalZone (TZ1_) {}` and `Scope (^D0__) {Name (S2__, 6)}`, then `Scope (D0__) {Name (S0__, 2)}`,
  *        `Scope (\_SB) {Device (D2__) {}}`, `Scope (\D0__.D1__) {Name (S1__, 3)}`,
  *        `ThermalZone (TZ0_) {Method (_TMP) {Return (3000)}}`, `Device (\_SB.D3__) {}`, `Name (\_SB.N2__, 4)`,
- *        `Method (\_SB.M2__) {}` and `Scope (\) {Name (RT__, 5)}`: 25 of them through the decoder, the
- *        OperationRegion and the Name and the Method of a path through the walk.
+ *        `Method (\_SB.M2__) {}` and `Scope (\) {Name (RT__, 5)}`: 26 of them through the decoder, the Name and the
+ *        Method of a path through the walk.
  */
 static const uint8_t shortcuts_statements[] = {
     0x08u, 'N',   '0',   '_',   '_',   0x01u, 0x08u, 'N',   '1',   '_',   '_',   0x12u, 0x06u, 0x02u, 0x01u, 0x0Du,
@@ -198,8 +211,8 @@ static const uint8_t shortcuts_statements[] = {
 };
 
 /**
- * @brief Statements the decoder hands back to the walk at their first operand whose outcome differs:
- *        `OperationRegion (R0__, ...)` and `(R9__, ...)`, `Method (M0__, 0) {Return (One)}`, then
+ * @brief Statements the decoder hands back to the walk at their first operand whose outcome differs, after
+ *        `OperationRegion (R0__, ...)` and `(R9__, ...)`, which it takes: `Method (M0__, 0) {Return (One)}`, then
  *        `Method (M0__, 1) {Return (Arg0)}` again, `Device (D0__) {Name (A0__, 1)}`, then
  *        `Device (D0__) {Name (A1__, 2)}` again, whose body is skipped, `Device (D7__) {}`,
  *        `Scope (D8__) {Name (X0__, 1)}` of a name never declared, `Field (NOPE, ByteAcc, NoLock, Preserve)
@@ -209,7 +222,7 @@ static const uint8_t shortcuts_statements[] = {
  *        (`DA__` to `DE__`), a Method whose PkgLength ends inside its NameSeg, a Device and a Scope whose PkgLength
  *        ends inside their NameString, `Name (NS__, Alias (NS__, ALS_))`, whose data object is a statement, and
  *        `Field (NOPE)` whose PkgLength ends at its name and whose region was never declared; and a Name cut by the
- *        table's end: 13 of them through the decoder, the 5 Devices among them.
+ *        table's end: 15 of them through the decoder, the 2 OperationRegions and the 5 Devices among them.
  */
 static const uint8_t shortcuts_handed_back[] = {
     0x5Bu, 0x80u, 'R',   '0',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u, 0x0Au, 0x20u, 0x5Bu, 0x80u,
@@ -227,6 +240,38 @@ static const uint8_t shortcuts_handed_back[] = {
     0x82u, 0x13u, 'D',   'D',   '_',   '_',   0x08u, 'N',   'S',   '_',   '_',   0x06u, 'N',   'S',   '_',   '_',
     'A',   'L',   'S',   '_',   0x5Bu, 0x82u, 0x0Cu, 'D',   'E',   '_',   '_',   0x5Bu, 0x81u, 0x05u, 'N',   'O',
     'P',   'E',   0x08u, 'N',   'C',   'U',   'T',
+};
+
+/**
+ * @brief OperationRegions, as iasl compiles them, the decoder taking those of one NameSeg whose offset and length need
+ *        no interpreter: `OperationRegion (RB__, SystemIO, Zero, One)`, `(RW__, PCI_Config, 0x40, 0x0100)`, `(RQ__,
+ *        SystemMemory, 0x0000000100000000, Ones)`, then `Name (OFS_, 0x80)`, `Name (DSDT, 0x10)`, the name the table's
+ *        first bytes spell, and `OperationRegion (RN__, EmbeddedControl, OFS_, 2)`, and `Device (DR__) {OperationRegion
+ *        (RD__, SystemMemory, 0x1000, 0x10)}`; the decoder hands back to the walk at their RegionSpace `OperationRegion
+ *        (RB__, SystemMemory, 0x10, 1)` again, `(RX__, SystemIO, Add (OFS_, 4), 8)`, `(RM__, SystemIO, 0x60, MLEN)`
+ *        after `Method (MLEN) {Return (6)}`, and `(RU__, SystemIO, UNDF, 1)` of a name never declared; the walk takes
+ *        whole `OperationRegion (\RP__, SystemIO, 0x70, 2)` and `(DR__.RE__, SystemIO, 0x72, 2)`; then, by hand, each
+ *        in a Device of its own (`DS__` to `DU__`), a region whose NameSeg starts with a digit, which the NameString
+ *        reader refuses, one whose RegionSpace and one whose length the Device's PkgLength cuts; and a region whose
+ *        NameSeg the table's end cuts: 12 of them through the decoder, the 2 Names, the Method and the 4 Devices among
+ *        them.
+ */
+static const uint8_t shortcuts_regions[] = {
+    0x5Bu, 0x80u, 'R',   'B',   '_',   '_',   0x01u, 0x00u, 0x01u, 0x5Bu, 0x80u, 'R',   'W',   '_',   '_',   0x02u,
+    0x0Au, 0x40u, 0x0Bu, 0x00u, 0x01u, 0x5Bu, 0x80u, 'R',   'Q',   '_',   '_',   0x00u, 0x0Eu, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0xFFu, 0x08u, 'O',   'F',   'S',   '_',   0x0Au, 0x80u, 0x08u, 'D',   'S',
+    'D',   'T',   0x0Au, 0x10u, 0x5Bu, 0x80u, 'R',   'N',   '_',   '_',   0x03u, 'O',   'F',   'S',   '_',   0x0Au,
+    0x02u, 0x5Bu, 0x82u, 0x11u, 'D',   'R',   '_',   '_',   0x5Bu, 0x80u, 'R',   'D',   '_',   '_',   0x00u, 0x0Bu,
+    0x00u, 0x10u, 0x0Au, 0x10u, 0x5Bu, 0x80u, 'R',   'B',   '_',   '_',   0x00u, 0x0Au, 0x10u, 0x01u, 0x5Bu, 0x80u,
+    'R',   'X',   '_',   '_',   0x01u, 0x72u, 'O',   'F',   'S',   '_',   0x0Au, 0x04u, 0x00u, 0x0Au, 0x08u, 0x14u,
+    0x09u, 'M',   'L',   'E',   'N',   0x00u, 0xA4u, 0x0Au, 0x06u, 0x5Bu, 0x80u, 'R',   'M',   '_',   '_',   0x01u,
+    0x0Au, 0x60u, 'M',   'L',   'E',   'N',   0x5Bu, 0x80u, 'R',   'U',   '_',   '_',   0x01u, 'U',   'N',   'D',
+    'F',   0x01u, 0x5Bu, 0x80u, 0x5Cu, 'R',   'P',   '_',   '_',   0x01u, 0x0Au, 0x70u, 0x0Au, 0x02u, 0x5Bu, 0x80u,
+    0x2Eu, 'D',   'R',   '_',   '_',   'R',   'E',   '_',   '_',   0x01u, 0x0Au, 0x72u, 0x0Au, 0x02u, 0x5Bu, 0x82u,
+    0x10u, 'D',   'S',   '_',   '_',   0x5Bu, 0x80u, '3',   'R',   '_',   '_',   0x01u, 0x0Au, 0x70u, 0x0Au, 0x02u,
+    0x5Bu, 0x82u, 0x0Bu, 'D',   'T',   '_',   '_',   0x5Bu, 0x80u, 'R',   'S',   '_',   '_',   0x5Bu, 0x82u, 0x0Fu,
+    'D',   'U',   '_',   '_',   0x5Bu, 0x80u, 'R',   'L',   '_',   '_',   0x00u, 0x0Au, 0x10u, 0x0Au, 0x5Bu, 0x80u,
+    'R',   'Z',
 };
 
 /**
@@ -419,11 +464,42 @@ static uint32_t shortcuts_build_kept_data(void)
 }
 
 /**
- * @brief Loads a case into shortcuts_load, with its shortcuts or without, its method bodies decoded as in the
- *        debug kernel and the host tools, and records what it ended with, then the fold and the counts once every
- *        data object it kept in its table is built; a namespace its node cap does not let open records that alone.
+ * @brief Leaves shortcuts_load's heap no room for one more object as @p heap says: its arena capped at the bytes it
+ *        holds, or every run it may hold taken by a Buffer of its own; then its run of small objects filled with empty
+ *        Strings until the heap refuses one.
+ *
+ * @return The objects it took.
  */
-static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, ShortcutsRecord_t *out_record)
+static uint32_t shortcuts_fill_heap(ShortcutsHeap_t heap)
+{
+    uint32_t handle = 0u;
+    uint32_t filled = 0u;
+
+    shortcuts_load.space.max_arena_bytes =
+        (heap == SHORTCUTS_HEAP_NO_RUN) ? SHORTCUTS_NO_RUN_ARENA_BYTES : shortcuts_load.space.arena_bytes;
+    while (heap == SHORTCUTS_HEAP_NO_RUN &&
+           advanced_configuration_and_power_interface_machine_language_object_allocate(
+               &shortcuts_load.heap, &shortcuts_load.space,
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES,
+               &handle) == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        ++filled;
+    while (advanced_configuration_and_power_interface_machine_language_object_allocate(
+               &shortcuts_load.heap, &shortcuts_load.space,
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 0u,
+               &handle) == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        ++filled;
+    return filled;
+}
+
+/**
+ * @brief Loads a case into shortcuts_load, with its shortcuts or without, its heap with the room @p heap says, its
+ *        method bodies decoded as in the debug kernel and the host tools, and records what it ended with, then the fold
+ *        and the counts once every data object it kept in its table is built; a namespace its node cap does not let
+ *        open records that alone.
+ */
+static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, ShortcutsHeap_t heap,
+                             ShortcutsRecord_t *out_record)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = &shortcuts_load;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *dsdt =
@@ -443,6 +519,7 @@ static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, Sho
         return;
     }
     out_record->opened = 1u;
+    out_record->filled = (heap != SHORTCUTS_HEAP_ROOM) ? shortcuts_fill_heap(heap) : 0u;
     shortcuts_load.general_load = general;
     shortcuts_load.declares_every_branch = load_case->every_branch;
     if (ssdt != NULL && load_case->ssdt_first)
@@ -481,27 +558,39 @@ static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, Sho
 }
 
 /**
- * @brief Whether a case loads to the same namespace and the same counts of what it declared with the load's
- *        shortcuts and without, the load without them taking none, and the shortcuts stepped over a data object
- *        when the case says they must; @p out_taken receives what the shortcuts took. A case under the made-up
- *        node cap must open its namespace; under a lower cap, both loads may fail to open it alike.
+ * @brief Whether a case loads, its heap with the room @p heap says, to the same namespace and the same counts of what
+ *        it declared with the load's shortcuts and without, the load without them taking none, and the shortcuts
+ *        stepped over a data object when the case says they must; @p out_record receives what the load with the
+ *        shortcuts ended with. A case under the made-up node cap must open its namespace; under a lower cap, both loads
+ *        may fail to open it alike.
+ */
+static bool shortcuts_agree_in_heap(KernelTest_t *test, const ShortcutsCase_t *load_case, ShortcutsHeap_t heap,
+                                    ShortcutsRecord_t *out_record)
+{
+    static const ShortcutsTaken_t none = {0};
+    ShortcutsRecord_t general;
+
+    shortcuts_record(load_case, false, heap, out_record);
+    shortcuts_record(load_case, true, heap, &general);
+    if (!kernel_test_check(test, out_record->opened != 0u || load_case->max_nodes < MADE_UP_MAX_NODES,
+                           "the namespace opens"))
+        return false;
+    return memcmp(&general.taken, &none, sizeof(none)) == 0 &&
+           memcmp(out_record, &general, offsetof(ShortcutsRecord_t, taken)) == 0 &&
+           (!load_case->steps_over || out_record->taken.data_stepped_over != 0u);
+}
+
+/**
+ * @brief Whether a case loads, its heap with room, as shortcuts_agree_in_heap says; @p out_taken receives what the
+ *        shortcuts took.
  */
 static bool shortcuts_agree(KernelTest_t *test, const ShortcutsCase_t *load_case, ShortcutsTaken_t *out_taken)
 {
-    static const ShortcutsTaken_t none = {0};
     ShortcutsRecord_t shortcut;
-    ShortcutsRecord_t general;
+    const bool agree = shortcuts_agree_in_heap(test, load_case, SHORTCUTS_HEAP_ROOM, &shortcut);
 
-    memset(out_taken, 0, sizeof(*out_taken));
-    shortcuts_record(load_case, false, &shortcut);
-    shortcuts_record(load_case, true, &general);
-    if (!kernel_test_check(test, shortcut.opened != 0u || load_case->max_nodes < MADE_UP_MAX_NODES,
-                           "the namespace opens"))
-        return false;
     *out_taken = shortcut.taken;
-    return memcmp(&general.taken, &none, sizeof(none)) == 0 &&
-           memcmp(&shortcut, &general, offsetof(ShortcutsRecord_t, taken)) == 0 &&
-           (!load_case->steps_over || out_taken->data_stepped_over != 0u);
+    return agree;
 }
 
 /**
@@ -631,6 +720,7 @@ static const uint8_t *shortcuts_table_bytes(ShortcutsTable_t table, uint32_t *ou
     switch (table)
     {
     case SHORTCUTS_TABLE_STATEMENTS: *out_length = sizeof(shortcuts_statements); return shortcuts_statements;
+    case SHORTCUTS_TABLE_REGIONS: *out_length = sizeof(shortcuts_regions); return shortcuts_regions;
     case SHORTCUTS_TABLE_DATA:
     default: *out_length = sizeof(shortcuts_constants); return shortcuts_constants;
     }
@@ -739,13 +829,14 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_data_declares_the_same_bo
 }
 
 /**
- * @brief The declaration pass takes a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a
- *        Field through its own decoder (O19), which hands a statement back to the walk at its first operand whose
- *        outcome differs; a load with that decoder ends with the namespace, the faults and the counts of what it
- *        declared of a load without it, its work (lookups, probes, the stacks' peaks) falling, and its decoder took
- *        the statements each table's documentation counts: on statements of every shape it takes, under revision 2
- *        then 1, on statements it hands back, and on the declarations of table-level code, run and declared in every
- *        branch.
+ * @brief The declaration pass takes a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope, a Field
+ *        and an OperationRegion of one NameSeg through its own decoder (O19), which hands a statement back to the walk
+ *        at its first operand whose outcome differs; a load with that decoder ends with the namespace, the faults and
+ *        the counts of what it declared of a load without it, its work (lookups, probes, the stacks' peaks) falling
+ *        but for the names of a region it hands back, and its decoder took the statements each table's documentation
+ * counts: on statements of every shape it takes, under revision 2 then 1, on statements it hands back, on the
+ * declarations of table-level code, run and declared in every branch, and on OperationRegions under revision 2, then 1,
+ * then with every construct walked by the declaration pass.
  */
 KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
 {
@@ -760,8 +851,14 @@ KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares)
          2u,                                                                                                                                        NULL, 0u, false, false, true, MADE_UP_MAX_NODES},
         {"the declarations of table-level code whose every branch it declares", shortcuts_table_level_code,
          sizeof(shortcuts_table_level_code),                                                                                                    2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
+        {"OperationRegions, under revision 2",                                  shortcuts_regions,          sizeof(shortcuts_regions),          2u, NULL, 0u, false, false,
+         true,                                                                                                                                                                    MADE_UP_MAX_NODES},
+        {"OperationRegions, under revision 1",                                  shortcuts_regions,          sizeof(shortcuts_regions),          1u, NULL, 0u, false, false,
+         true,                                                                                                                                                                    MADE_UP_MAX_NODES},
+        {"OperationRegions, every construct walked by the declaration pass",    shortcuts_regions,
+         sizeof(shortcuts_regions),                                                                                                             2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
     };
-    const uint32_t decoded[] = {25u, 25u, 13u, 4u, 5u};
+    const uint32_t decoded[] = {26u, 26u, 15u, 4u, 5u, 12u, 12u, 12u};
     uint32_t decoded_directly = 0u;
 
     for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
@@ -800,6 +897,51 @@ KERNEL_TEST(the_declaration_decoder_declares_what_the_walk_declares_under_every_
                       "some caps refuse the namespace, the others let the decoder take statements");
     kernel_test_check(test, disagreements == 0u, "every cap declares the same with the decoder and without");
     kernel_test_measure(test, "caps_taking_statements", taking);
+}
+
+/**
+ * @brief An OperationRegion whose object finds no room in the heap stops its table, as an exhausted arena stops any
+ *        table (§6.2), through the decoder as through the walk: with the heap left no room for one more object, the
+ *        OperationRegions load to the same namespace, faults and counts both ways, the first region's name declared
+ *        and its object refused with out_of_memory, the load's one fault, before the decoder takes any statement.
+ */
+KERNEL_TEST(an_operation_region_whose_object_finds_no_room_stops_its_table_both_ways)
+{
+    const ShortcutsCase_t load_case = {"",    shortcuts_regions, sizeof(shortcuts_regions), 2u, NULL, 0u, false, false,
+                                       false, MADE_UP_MAX_NODES};
+    ShortcutsRecord_t record;
+
+    kernel_test_check(test, shortcuts_agree_in_heap(test, &load_case, SHORTCUTS_HEAP_NO_ARENA, &record),
+                      "the regions declare the same with the decoder and without");
+    kernel_test_check(test,
+                      record.filled != 0u && record.declarations == 1u && record.load_errors == 1u &&
+                          record.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY &&
+                          record.taken.declarations_decoded_directly == 0u,
+                      "the table stops at the first region: its name declared, its object refused with out_of_memory");
+}
+
+/**
+ * @brief An OperationRegion whose object the heap refuses for want of a run is counted, and its table goes on, through
+ *        the decoder as through the walk: with every run the heap may hold taken and its run of small objects full,
+ *        the OperationRegions load to the same namespace, faults and counts both ways, the first fault
+ *        limit_object_runs, one for each of the 5 regions the decoder takes and for each of the 9 others, and the
+ *        decoder takes its 12 statements.
+ */
+KERNEL_TEST(an_operation_region_whose_object_finds_no_run_is_counted_both_ways)
+{
+    const ShortcutsCase_t load_case = {"",    shortcuts_regions, sizeof(shortcuts_regions), 2u, NULL, 0u, false, false,
+                                       false, MADE_UP_MAX_NODES};
+    ShortcutsRecord_t record;
+
+    kernel_test_check(test, shortcuts_agree_in_heap(test, &load_case, SHORTCUTS_HEAP_NO_RUN, &record),
+                      "the regions declare the same with the decoder and without");
+    kernel_test_check(test,
+                      record.filled != 0u && record.load_errors == 14u &&
+                          record.first_load_error ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_OBJECT_RUNS &&
+                          record.taken.declarations_decoded_directly == 12u,
+                      "every region's object is refused with limit_object_runs and counted, and the table goes on");
 }
 
 /**
