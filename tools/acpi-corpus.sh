@@ -938,8 +938,9 @@ modules() {
 
 # Boots the kernel $1 on the QEMU machine $2, its serial port written to the log $3, with the boot line $4
 # and the module $5 when there is one, until its tests print their totals or BOOT_SECONDS pass. Both are
-# copied under a short path first: QEMU puts the kernel's path at the head of the boot line, which the
-# kernel cuts at 255 characters (#553), and takes a space or a comma in a module's path for a separator.
+# copied under a short path first: QEMU puts the kernel's path at the head of the boot line, of which the
+# kernel keeps 1,023 characters (BOOT_COMMAND_LINE_CAPACITY) and fails a test run it cut, and takes a space
+# or a comma in a module's path for a separator.
 boot() {
     local kernel="$1" machine="$2" log="$3" line="$4" module="${5:-}" short pid
     local -a initrd=()
