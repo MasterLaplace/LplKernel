@@ -179,13 +179,13 @@ static const uint8_t shortcuts_crossing[] = {
 
 /**
  * @brief Integers of a Name the declaration pass's decoder leaves to the general path: `Name (IR__, Revision)`,
- *        `Name (IN__, IR__)`, then `Name (IO__, One)`, which it builds, `Name (IO__, Ones)` again, and a QWord the
- *        table's end cuts, `Name (IQ__, ...)`.
+ *        `Name (IN__, IR__)`, then `Name (IO__, One)`, which it builds, `Name (IO__, Ones)` again, and a QWord whose
+ *        last byte the table's end cuts, `Name (IQ__, ...)`.
  */
 static const uint8_t shortcuts_integers_refused[] = {
-    0x08u, 'I',   'R',   '_',   '_', 0x5Bu, 0x30u, 0x08u, 'I',   'N',   '_',   '_', 'I',
-    'R',   '_',   '_',   0x08u, 'I', 'O',   '_',   '_',   0x01u, 0x08u, 'I',   'O', '_',
-    '_',   0xFFu, 0x08u, 'I',   'Q', '_',   '_',   0x0Eu, 0x01u, 0x02u, 0x03u,
+    0x08u, 'I', 'R',   '_', '_', 0x5Bu, 0x30u, 0x08u, 'I',   'N',   '_',   '_',   'I',   'R',
+    '_',   '_', 0x08u, 'I', 'O', '_',   '_',   0x01u, 0x08u, 'I',   'O',   '_',   '_',   0xFFu,
+    0x08u, 'I', 'Q',   '_', '_', 0x0Eu, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u, 0x07u,
 };
 
 /**
@@ -819,13 +819,14 @@ KERNEL_TEST(a_name_s_data_object_decoded_once_declares_what_two_decodings_declar
 }
 
 /**
- * @brief The declaration pass's decoder builds a Name's integer constant itself, as the general data decoder builds
- *        it, and steps over it (O19): a load with that decoder ends with the namespace, the faults and the counts of
- *        what it declared of a load without it, and its decoder built the integers each case counts: Zero, One, Ones
- *        and the four widths under revision 2, then under revision 1, which masks them to 32 bits, then with an SSDT
- *        declared before that DSDT, whose integers stay 64 bits; one of the integers it leaves to the general path,
- *        Revision, a name, a duplicate and a QWord the table's end cuts; an integer inside 479 Devices the declaration
- *        pass walks itself, where the walk still has room for 32 packages, and none inside 480, where it has not.
+ * @brief The declaration pass's decoder builds a Name's integer constant itself, as the general data decoder builds it,
+ *        and steps over it (O19): a load with that decoder ends with the namespace, the faults and the counts of what
+ *        it declared of a load without it, and its decoder built the integers each case counts: Zero, One, Ones and the
+ *        four widths under revision 2, then under revision 1, which masks them to 32 bits, then with an SSDT declared
+ *        before that DSDT, whose integers stay 64 bits; one of the integers it leaves to the general path, Revision, a
+ *        name, a duplicate and a QWord whose last byte the table's end cuts; an integer inside 479 Devices the
+ *        declaration pass walks itself, where the walk still has room for 32 packages, and none inside 480, where it
+ *        has not.
  */
 KERNEL_TEST(the_declaration_decoder_builds_a_name_s_integer_as_the_data_decoder_builds_it)
 {
