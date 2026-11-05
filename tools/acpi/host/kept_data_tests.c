@@ -242,6 +242,18 @@ static bool kept_data_check_then_build(const uint8_t *aml, uint32_t length, Kept
 }
 
 /**
+ * @brief `Name (BUF0, Buffer (4) {1, 2})`, whose PkgLength, at offset 6, a rewrite makes cross the table's end.
+ */
+static const uint8_t kept_data_buffer_for_field[] = {0x08u, 'B',   'U',   'F',   '0',  0x11u,
+                                                     0x05u, 0x0Au, 0x04u, 0x01u, 0x02u};
+
+/**
+ * @brief `CreateByteField (BUF0, Zero, BYT0)` at table level, then `Name (LAST, One)`.
+ */
+static const uint8_t kept_data_field_over_buffer[] = {0x8Cu, 'B', 'U',   'F', '0', 0x00u, 'B', 'Y',
+                                                      'T',   '0', 0x08u, 'L', 'A', 'S',   'T', 0x01u};
+
+/**
  * @brief Takes @p byte, the last byte folded, back out of the FNV-1a fold @p fold, through the prime's inverse
  *        modulo 2^32, which each Newton step doubles the correct bits of.
  *
@@ -714,4 +726,55 @@ KERNEL_TEST(the_kept_data_check_stops_at_each_bound_without_reading_past_the_tab
                               checked.kept == 1u && checked.faults == 1u && checked.faults_read == 1u,
                           cases[index].claim);
     }
+}
+
+/**
+ * @brief A table-level buffer field over a kept Buffer whose bytes AML rewrote so that they build no object waits for
+ *        the interpreter, as one over a Name left Uninitialized at load does (O20): BUF0 kept, its PkgLength then made
+ *        to cross the table's end, an SSDT's `CreateByteField (BUF0, Zero, BYT0)` leaves BUF0 Uninitialized, counted
+ *        as a fault, declares BYT0 without an object, counted as waiting, and the SSDT goes on to LAST.
+ */
+KERNEL_TEST(a_buffer_field_over_kept_data_that_builds_nothing_waits_for_the_interpreter)
+{
+    uint8_t *dsdt = malloc(MADE_UP_TABLE_HEADER + sizeof(kept_data_buffer_for_field));
+    uint8_t *ssdt = malloc(MADE_UP_TABLE_HEADER + sizeof(kept_data_field_over_buffer));
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+
+    if (!kernel_test_check(test, dsdt != NULL && ssdt != NULL, "the tables are allocated"))
+    {
+        free(dsdt);
+        free(ssdt);
+        return;
+    }
+    advanced_configuration_and_power_interface_simulated_host_open(&host);
+    advanced_configuration_and_power_interface_machine_language_open(&load, &host.host, MADE_UP_MAX_NODES,
+                                                                     MADE_UP_MAX_ARENA_BYTES);
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &load,
+        made_up_definition_block(dsdt, "DSDT", 2u, kept_data_buffer_for_field, sizeof(kept_data_buffer_for_field)));
+    dsdt[MADE_UP_TABLE_HEADER + 6u] = 0x3Fu;
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &load,
+        made_up_definition_block(ssdt, "SSDT", 2u, kept_data_field_over_buffer, sizeof(kept_data_field_over_buffer)));
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *buffer = made_up_root_node(&load, "BUF0");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *field = made_up_root_node(&load, "BYT0");
+
+    kernel_test_check(test,
+                      load.data_kept == 1u && load.data_faults_read == 1u && buffer != NULL &&
+                          buffer->type ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_UNINITIALIZED,
+                      "BUF0 is left Uninitialized, counted as a fault");
+    kernel_test_check(test,
+                      field != NULL &&
+                          field->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD &&
+                          load.values_deferred == 1u && load.load_errors == 0u,
+                      "BYT0 is declared without an object, waiting for the interpreter, and nothing is a load error");
+    kernel_test_check(test, made_up_root_node(&load, "LAST") != NULL, "the SSDT goes on to LAST");
+    advanced_configuration_and_power_interface_machine_language_close(&load);
+    advanced_configuration_and_power_interface_simulated_host_close(&host);
+    free(dsdt);
+    free(ssdt);
 }

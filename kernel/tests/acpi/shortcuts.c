@@ -506,6 +506,12 @@ static const uint8_t shortcuts_unbuilt_expression_size[] = {0x12u, 0x0Au, 0x01u,
 static const uint8_t shortcuts_unbuilt_invalid_opcode[] = {0x12u, 0x03u, 0x01u, 0x02u};
 
 /**
+ * @brief `Package (2) {Package (3) {One}, ...}`, whose inner Package is padded before the byte 0x02, which starts no
+ *        data object.
+ */
+static const uint8_t shortcuts_unbuilt_padded_then_fault[] = {0x12u, 0x07u, 0x02u, 0x12u, 0x03u, 0x03u, 0x01u, 0x02u};
+
+/**
  * @brief A Package whose String `AB` its PkgLength cuts before the NUL.
  */
 static const uint8_t shortcuts_unbuilt_string_cut[] = {0x12u, 0x05u, 0x01u, 0x0Du, 'A', 'B'};
@@ -942,9 +948,9 @@ static bool shortcuts_unbuilt_table(KernelTest_t *test, const ShortcutsUnbuilt_t
  * @return Whether the load kept the package, with no fault and nothing waiting, its decoding pass counting it in
  *         data_faults unless it builds; whether its first read left it a Package when it builds, Uninitialized
  *         otherwise, counted in data_faults_read for a fault and in values_deferred for a term that needs the
- *         interpreter; whether the readers then returned what AML reads of that object, ObjectType 4, SizeOf 2 and the
- *         element One of the Package, else ObjectType 0 and type_mismatch for SizeOf and Index; and whether CondRefOf
- *         found PKG_ and AFTR read 7.
+ *         interpreter, no package counted as padded or cut; whether the readers then returned what AML reads of that
+ *         object, ObjectType 4, SizeOf 2 and the element One of the Package, else ObjectType 0 and type_mismatch for
+ *         SizeOf and Index; and whether CondRefOf found PKG_ and AFTR read 7.
  */
 static bool shortcuts_read_unbuilt(KernelTest_t *test, const ShortcutsUnbuilt_t *unbuilt, bool general,
                                    ShortcutsUnbuiltCounts_t *counts)
@@ -988,7 +994,8 @@ static bool shortcuts_read_unbuilt(KernelTest_t *test, const ShortcutsUnbuilt_t 
     const bool counted =
         shortcuts_load.data_materialized == (builds ? 1u : 0u) &&
         shortcuts_load.data_faults_read == ((unbuilt->first_read == SHORTCUTS_FIRST_READ_FAULT) ? 1u : 0u) &&
-        shortcuts_load.values_deferred == ((unbuilt->first_read == SHORTCUTS_FIRST_READ_WAITS) ? 1u : 0u);
+        shortcuts_load.values_deferred == ((unbuilt->first_read == SHORTCUTS_FIRST_READ_WAITS) ? 1u : 0u) &&
+        shortcuts_load.heap.packages_padded == 0u && shortcuts_load.heap.packages_truncated == 0u;
 
     counts->data_kept += shortcuts_load.data_kept;
     counts->data_faults += shortcuts_load.data_faults;
@@ -1420,27 +1427,30 @@ KERNEL_TEST(a_kept_package_s_one_byte_head_is_read_as_the_head_reader_reads_it)
  *        0, SizeOf and Index failing with type_mismatch, CondRefOf finding it; and the table goes on past it, past a
  *        PkgLength that crosses its parent too. The packages: one whose DWord is cut, one of a NameSeg of invalid
  *        characters, one whose inner PkgLength crosses it, one whose Buffer's size needs the interpreter, one of the
- *        byte 0x02, one 33 deep and one whose String is cut before its NUL; and `Package (2) {One, 2}`, which builds.
- *        Each loads with the load's shortcuts and without, alike.
+ *        byte 0x02, one 33 deep, one whose String is cut before its NUL, and one whose inner Package is padded before
+ *        such a byte, which counts no package padded; and `Package (2) {One, 2}`, which builds. Each loads with the
+ *        load's shortcuts and without, alike.
  */
 KERNEL_TEST(a_kept_package_whose_elements_do_not_build_is_counted_at_boot_and_left_untyped_at_its_first_read)
 {
     static const ShortcutsUnbuilt_t cases[] = {
-        {"a Package that builds",                     shortcuts_unbuilt_valid,           sizeof(shortcuts_unbuilt_valid),
-         SHORTCUTS_FIRST_READ_BUILDS                                                                                                                       },
-        {"a DWord cut",                               shortcuts_unbuilt_integer_cut,     sizeof(shortcuts_unbuilt_integer_cut),
-         SHORTCUTS_FIRST_READ_FAULT                                                                                                                        },
-        {"a NameSeg of invalid characters",           shortcuts_unbuilt_name_segment,    sizeof(shortcuts_unbuilt_name_segment),
-         SHORTCUTS_FIRST_READ_FAULT                                                                                                                        },
-        {"a PkgLength that crosses its parent",       shortcuts_unbuilt_crossing,        sizeof(shortcuts_unbuilt_crossing),
-         SHORTCUTS_FIRST_READ_FAULT                                                                                                                        },
+        {"a Package that builds",                     shortcuts_unbuilt_valid,             sizeof(shortcuts_unbuilt_valid),
+         SHORTCUTS_FIRST_READ_BUILDS                                                                                                                         },
+        {"a DWord cut",                               shortcuts_unbuilt_integer_cut,       sizeof(shortcuts_unbuilt_integer_cut),
+         SHORTCUTS_FIRST_READ_FAULT                                                                                                                          },
+        {"a NameSeg of invalid characters",           shortcuts_unbuilt_name_segment,      sizeof(shortcuts_unbuilt_name_segment),
+         SHORTCUTS_FIRST_READ_FAULT                                                                                                                          },
+        {"a PkgLength that crosses its parent",       shortcuts_unbuilt_crossing,          sizeof(shortcuts_unbuilt_crossing),
+         SHORTCUTS_FIRST_READ_FAULT                                                                                                                          },
         {"a Buffer whose size needs the interpreter", shortcuts_unbuilt_expression_size,
-         sizeof(shortcuts_unbuilt_expression_size),                                                                              SHORTCUTS_FIRST_READ_WAITS},
+         sizeof(shortcuts_unbuilt_expression_size),                                                                                SHORTCUTS_FIRST_READ_WAITS},
         {"a byte that starts no data object",         shortcuts_unbuilt_invalid_opcode,
-         sizeof(shortcuts_unbuilt_invalid_opcode),                                                                               SHORTCUTS_FIRST_READ_FAULT},
-        {"a Package 33 deep",                         NULL,                              0u,                                     SHORTCUTS_FIRST_READ_WAITS},
-        {"a String cut before its NUL",               shortcuts_unbuilt_string_cut,      sizeof(shortcuts_unbuilt_string_cut),
-         SHORTCUTS_FIRST_READ_FAULT                                                                                                                        },
+         sizeof(shortcuts_unbuilt_invalid_opcode),                                                                                 SHORTCUTS_FIRST_READ_FAULT},
+        {"a Package 33 deep",                         NULL,                                0u,                                     SHORTCUTS_FIRST_READ_WAITS},
+        {"a String cut before its NUL",               shortcuts_unbuilt_string_cut,        sizeof(shortcuts_unbuilt_string_cut),
+         SHORTCUTS_FIRST_READ_FAULT                                                                                                                          },
+        {"a Package padded before a fault",           shortcuts_unbuilt_padded_then_fault,
+         sizeof(shortcuts_unbuilt_padded_then_fault),                                                                              SHORTCUTS_FIRST_READ_FAULT},
     };
     ShortcutsUnbuiltCounts_t counts = {0};
 
@@ -1453,9 +1463,9 @@ KERNEL_TEST(a_kept_package_whose_elements_do_not_build_is_counted_at_boot_and_le
     }
     kernel_test_check(
         test,
-        counts.data_kept == 16u && counts.data_faults == 14u && counts.data_faults_read == 10u &&
+        counts.data_kept == 18u && counts.data_faults == 16u && counts.data_faults_read == 12u &&
             counts.values_deferred == 4u,
-        "both ways, the 8 packages are kept, 7 counted at boot, 5 faults and 2 waits at their first read");
+        "both ways, the 9 packages are kept, 8 counted at boot, 6 faults and 2 waits at their first read");
     kernel_test_measure(test, "data_kept", counts.data_kept);
     kernel_test_measure(test, "data_faults", counts.data_faults);
     kernel_test_measure(test, "data_faults_read", counts.data_faults_read);
