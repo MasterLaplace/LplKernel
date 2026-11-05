@@ -51,8 +51,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
   initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
          `test-acpi --initialize` as the boot does, a recorded machine put in ACPI mode first (step 0), and sums
          how step 0 ended, what the initialisations ran and counted, the C-states they published, then the
-         statuses their failures ended with; a machine the harness fails on, or whose run prints no outcome of
-         step 0, fails it. The SSDTs a dump's firmware loads at run time wait for Load where
+         statuses their failures ended with; a machine the harness fails on fails it, and so does one whose run
+         prints no outcome of step 0, whose step 0 did not run or found no SCI_EN set, or whose CST_CNT step 8
+         skipped though step 0 switched it. The SSDTs a dump's firmware loads at run time wait for Load where
          tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt gives the NVS objects firmware
          fills at boot their values, which a dump lacks (specification §8.4)
   load  initialises each machine of a list whose firmware loads tables at run time, with
@@ -307,12 +308,28 @@ namespace_check() {
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
 }
 
+# Prints what the initialisation run $2 of a machine of the list $1 does wrong at step 0 or at step 8's write of
+# CST_CNT, and nothing when it does nothing wrong: it prints no outcome of step 0, a recorded machine's step 0 did
+# not run, the simulated firmware never answered ACPI_ENABLE, or step 8 skipped the CST_CNT of a platform step 0
+# switched, whose SMI_CMD the switch showed writable.
+step_zero_fault() {
+    if ! grep -q '^aml mode outcome=' "$2"; then
+        echo "the run printed no outcome of step 0"
+    elif [[ "$1" != qemu ]] && grep -q '^aml mode outcome=not-run ' "$2"; then
+        echo "step 0 did not run on the machine's FADT"
+    elif grep -q '^aml mode outcome=failed ' "$2"; then
+        echo "step 0 wrote ACPI_ENABLE, and the simulated firmware never set SCI_EN"
+    elif grep -q '^aml mode outcome=switched ' "$2" && grep -q '^aml idle control=skipped ' "$2"; then
+        echo "step 0 switched the platform, and step 8 skipped its CST_CNT"
+    fi
+}
+
 # Initialises the namespace of each machine of the list $1, or each QEMU configuration, with
 # `test-acpi --initialize`, and sums how step 0 ended and what the initialisations ran and counted; a machine
-# the harness fails on, or whose run prints no outcome of step 0, fails the run.
+# the harness fails on, or whose step 0 or CST_CNT step_zero_fault finds wrong, fails the run.
 initialize_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 failed=0 subject output counts="" key
+    local number=0 failed=0 subject output counts="" key fault
     local -a tables
     output="$(mktemp)"
     while IFS= read -r subject; do
@@ -330,8 +347,9 @@ initialize_check() {
             failed=$((failed + 1))
             continue
         fi
-        if ! grep -q '^aml mode outcome=' "$output"; then
-            echo "not ok $number $subject: the run printed no outcome of step 0"
+        fault="$(step_zero_fault "$1" "$output")"
+        if [[ -n "$fault" ]]; then
+            echo "not ok $number $subject: $fault"
             failed=$((failed + 1))
             continue
         fi
