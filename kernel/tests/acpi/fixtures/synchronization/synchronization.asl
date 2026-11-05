@@ -10,7 +10,8 @@
  * while holding MTA1, SR3_ calls SER3 (Serialized, level 3), which calls itself twice then acquires MTX2, AFTR acquires
  * MTX2 once SER3 has returned, EWAI waits on EVT0, and MANY acquires the 33 M0xx. CONS signals EVT0 twice, then
  * WAI0, WAI1 and WAI2 take three Waits on it, the second's timeout given by TMO_, which counts its call in CNT0; RSTE
- * signals EVT0 twice, resets it, and returns a Wait on it; RSTI resets INT0, and WAII waits on INT0.
+ * signals EVT0 twice, resets it, and returns a Wait on it; RSTI resets INT0, WAII waits on INT0, and WAIP signals
+ * EVT0 then waits on it with the Package PKG0 as its timeout.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
@@ -165,6 +166,16 @@ DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
     Method (WAII, 0, NotSerialized)
     {
         Return (Wait (INT0, Zero)) __EXPECT__(6058)
+    }
+
+    Name (PKG0, Package (0x01)
+    {
+        Zero
+    })
+    Method (WAIP, 0, NotSerialized)
+    {
+        Signal (EVT0)
+        Return (Wait (EVT0, PKG0)) __EXPECT__(6058)
     }
 
     Mutex (M000, 0x00)

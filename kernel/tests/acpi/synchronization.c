@@ -227,7 +227,8 @@ KERNEL_TEST(signal_counts_an_event_up)
 
 /**
  * @brief Wait consumes a pending signal and gives 0, or reports a timeout at once, True, whatever the timeout it was
- *        given, which is evaluated; Reset clears every pending signal; both refuse an object that is no Event (§5.2).
+ *        given, which is evaluated and must convert to an Integer; Reset clears every pending signal; both refuse an
+ *        object that is no Event (§5.2).
  *        True is Ones at the width of the table's integers (§5.2).
  */
 KERNEL_TEST(wait_consumes_a_signal_and_reset_clears_them)
@@ -255,6 +256,10 @@ KERNEL_TEST(wait_consumes_a_signal_and_reset_clears_them)
     kernel_test_check(test, status == SYNCHRONIZATION_STATUS(TYPE_MISMATCH), "Reset of an Integer is refused");
     (void) synchronization_evaluate("\\WAII", &status);
     kernel_test_check(test, status == SYNCHRONIZATION_STATUS(TYPE_MISMATCH), "Wait on an Integer is refused");
+    (void) synchronization_evaluate("\\WAIP", &status);
+    kernel_test_check(test,
+                      status == SYNCHRONIZATION_STATUS(TYPE_MISMATCH) && event != NULL && event->value.payload == 1u,
+                      "a Wait whose timeout is a Package fails, the signal WAIP raised still pending");
     synchronization_close(test);
     if (!synchronization_run_revision(test, 1u))
         return;

@@ -3,8 +3,8 @@
 
 /**
  * @brief A BreakPoint, then a Fatal (3, 4, 5), at table level, then RES_ takes 7. BRKP runs a BreakPoint and returns
- *        1, FATL runs Fatal (1, 2, ARGM ()) and returns 2, UNLD unloads TBLX and returns 3, and UNLI unloads Index
- *        (PKG0, INDM ()) and returns 4; ARGM and INDM each count their call in CNT0.
+ *        1, FATL runs Fatal (1, 2, ARGM ()) and returns 2, FATP runs Fatal (1, 2, PKG0), UNLD unloads TBLX and returns
+ *        3, and UNLI unloads Index (PKG0, INDM ()) and returns 4; ARGM and INDM each count their call in CNT0.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
@@ -37,6 +37,12 @@ DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
     {
         Fatal (0x01, 0x00000002, ARGM ())
         Return (0x02)
+    }
+
+    Method (FATP, 0, NotSerialized)
+    {
+        Fatal (0x01, 0x00000002, PKG0) __EXPECT__(6058)
+        Return (0x05)
     }
 
     Method (UNLD, 0, NotSerialized)

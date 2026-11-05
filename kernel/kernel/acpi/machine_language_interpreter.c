@@ -2924,11 +2924,10 @@ static MachineLanguageStatus_t machine_language_compute(MachineLanguageLoad_t *l
         result = machine_language_integer(machine_language_mask(load, ~operands[0]));
         break;
     case MACHINE_LANGUAGE_OPCODE(FIND_SET_LEFT_BIT):
-        result = machine_language_integer(machine_language_find_set_left_bit(machine_language_mask(load, operands[0])));
+        result = machine_language_integer(machine_language_find_set_left_bit(operands[0]));
         break;
     case MACHINE_LANGUAGE_OPCODE(FIND_SET_RIGHT_BIT):
-        result =
-            machine_language_integer(machine_language_find_set_right_bit(machine_language_mask(load, operands[0])));
+        result = machine_language_integer(machine_language_find_set_right_bit(operands[0]));
         break;
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT): result = machine_language_truth(load, operands[0] == 0u); break;
     default:

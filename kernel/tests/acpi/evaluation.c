@@ -67,6 +67,20 @@ static uint64_t evaluation_call(const char *path)
 }
 
 /**
+ * @brief Evaluates the method at @p path, which takes no argument, and gives the status it ends with.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t evaluation_status(const char *path)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&evaluation_load, path, NULL, 0u, &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
+                                                                              &evaluation_load.space, &result);
+    return status;
+}
+
+/**
  * @brief Checks that every run left the evaluation's stacks empty, then closes the load.
  */
 static void evaluation_close(KernelTest_t *test)
@@ -365,8 +379,8 @@ KERNEL_TEST(find_set_left_bit_and_find_set_right_bit_work_with_a_target_and_with
 
 /**
  * @brief A BreakPoint is a counted no-op and a Fatal is counted, its argument evaluated, then execution goes on past
- *        both (§5.2), at table level and in a method; an Unload is refused, its operand evaluated and nothing else
- *        done, counted (§4.5).
+ *        both (§5.2), at table level and in a method; a Fatal whose argument is no Integer fails, as an impossible
+ *        conversion (§5.2); an Unload is refused, its operand evaluated and nothing else done, counted (§4.5).
  */
 KERNEL_TEST(break_point_and_fatal_are_counted_and_unload_is_refused)
 {
@@ -385,6 +399,11 @@ KERNEL_TEST(break_point_and_fatal_are_counted_and_unload_is_refused)
                           evaluation_integer("CNT0") == 1u,
                       "FATL counts its Fatal, whose argument called ARGM, and returns 2");
     kernel_test_check(test,
+                      evaluation_status("\\FATP") ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH &&
+                          evaluation_load.services.fatals == 2u,
+                      "FATP's Fatal, whose argument is a Package, fails with type_mismatch and is not counted");
+    kernel_test_check(test,
                       evaluation_call("\\UNLD") == 3u && evaluation_load.unload_refused == 1u &&
                           evaluation_integer("TBLX") == 0u,
                       "UNLD's Unload is refused and counted, TBLX untouched, and UNLD returns 3");
@@ -397,7 +416,8 @@ KERNEL_TEST(break_point_and_fatal_are_counted_and_unload_is_refused)
 
 /**
  * @brief A DataTableRegion at table level, which the kernel decodes but does not run (§1.4), fails its statement,
- *        counted in unimplemented_operator, and the load goes on (§4.5).
+ *        counted in unimplemented_operator, and the load goes on (§4.5); the name it declares stays, with no region
+ *        object, since a failure never takes an object out of the namespace (§3.6).
  */
 KERNEL_TEST(a_data_table_region_at_table_level_fails_and_the_load_goes_on)
 {
@@ -414,6 +434,11 @@ KERNEL_TEST(a_data_table_region_at_table_level_fails_and_the_load_goes_on)
         "the DataTableRegion fails as unimplemented, counted under its opcode");
     kernel_test_check(test, evaluation_load.evaluation.failures == 1u && evaluation_integer("RES_") == 7u,
                       "its statement alone fails, and the code after it runs");
+    kernel_test_check(test,
+                      made_up_root_node(&evaluation_load, "DTR0") != NULL &&
+                          made_up_root_node(&evaluation_load, "DTR0")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION,
+                      "DTR0 is declared, and holds no region");
     evaluation_close(test);
 }
 
