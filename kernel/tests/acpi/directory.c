@@ -1,3 +1,4 @@
+#include "fixtures/directory.h"
 #include "simulated_host.h"
 
 #include <kernel/acpi/machine_language.h>
@@ -69,101 +70,6 @@ typedef struct MadeUpFirmware {
     uint8_t *page;     /**< The page, as the test addresses it. */
     uint32_t physical; /**< Where the simulated host serves it. */
 } MadeUpFirmware_t;
-
-/**
- * @brief A DSDT whose method rewrites its own bytes: the field BND_ over the bound of SELF's While and the
- *        field OTHR over a byte of TSTA, which the directory lists and the load does not read, each a byte of
- *        a SystemMemory region whose address the test writes, at MADE_UP_FIRMWARE_SELF_ADDRESS and
- *        MADE_UP_FIRMWARE_OTHER_ADDRESS; then SELF: `OTHR = One; Local0 = 0; While (Local0 < 0x10)
- *        { Local0++; If (Local0 == 2) { BND_ = 4 } }; Return (Local0)`.
- */
-static const uint8_t made_up_firmware_self[] = {
-    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u,
-    0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'B',   'N',   'D',   '_',   0x08u, 0x5Bu, 0x80u, 'T',   'S',   'T',
-    'R',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'T',   'S',   'T',   'R',
-    0x01u, 'O',   'T',   'H',   'R',   0x08u, 0x14u, 0x26u, 'S',   'E',   'L',   'F',   0x00u, 0x70u, 0x01u, 'O',
-    'T',   'H',   'R',   0x70u, 0x00u, 0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u, 0xA0u, 0x0Cu,
-    0x93u, 0x60u, 0x0Au, 0x02u, 0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
-};
-
-/**
- * @brief A DSDT that keeps a Package in its table and rewrites it: `Name (PKG0, Package () {0x11, 0x22})`, kept unbuilt
- *        (O20), BYT0, the byte of a SystemMemory region over that Package's first element, whose address the test
- *        writes at MADE_UP_FIRMWARE_KEPT_ADDRESS, then KEPT: `BYT0 = 0x99; Return (DerefOf (PKG0 [0]))`.
- */
-static const uint8_t made_up_firmware_kept[] = {
-    0x08u, 'P',   'K',   'G',   '0',   0x12u, 0x06u, 0x02u, 0x0Au, 0x11u, 0x0Au, 0x22u, 0x5Bu, 0x80u, 'T',   'R',
-    'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'T',   'R',   'E',
-    'G',   0x01u, 'B',   'Y',   'T',   '0',   0x08u, 0x14u, 0x16u, 'K',   'E',   'P',   'T',   0x00u, 0x70u, 0x0Au,
-    0x99u, 'B',   'Y',   'T',   '0',   0xA4u, 0x83u, 0x88u, 'P',   'K',   'G',   '0',   0x00u, 0x00u,
-};
-
-/**
- * @brief SELF's DSDT, whose table-level code writes OTHR, over a byte of TSTA, before SELF is declared: `OTHR =
- *        One` runs while the DSDT is declared, the first write through the firmware's page.
- */
-static const uint8_t made_up_firmware_latch[] = {
-    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu,
-    0x81u, 0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'B',   'N',   'D',   '_',   0x08u, 0x5Bu, 0x80u, 'T',
-    'S',   'T',   'R',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'T',
-    'S',   'T',   'R',   0x01u, 'O',   'T',   'H',   'R',   0x08u, 0x70u, 0x01u, 'O',   'T',   'H',   'R',
-    0x14u, 0x26u, 'S',   'E',   'L',   'F',   0x00u, 0x70u, 0x01u, 'O',   'T',   'H',   'R',   0x70u, 0x00u,
-    0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u, 0xA0u, 0x0Cu, 0x93u, 0x60u, 0x0Au, 0x02u,
-    0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
-};
-
-/**
- * @brief A DSDT whose method maps 64 pages before it writes its own bytes: BND_ over the bound of EVCT's last
- *        While, FARW a byte of a page apart, each a byte of a SystemMemory region whose address the test writes;
- *        TOUC (Arg0) reads a byte at Arg0 through a region of its own; EVCT: `FARW = One; Local1 = 0; While (Local1
- *        < 63) { TOUC (0x01000000 + Local1 * 0x1000); Local1++ }; Local0 = 0; While (Local0 < 0x10) { Local0++;
- *        If (Local0 == 2) { BND_ = 4 } }; Return (Local0)`: the write over BND_ takes the mapping of FARW's page,
- *        the least recently used of the 64 the cache holds.
- */
-static const uint8_t made_up_firmware_evict[] = {
-    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu,
-    'T',   'B',   'L',   'B',   0x01u, 'B',   'N',   'D',   '_',   0x08u, 0x5Bu, 0x80u, 'F',   'A',   'R',   'R',
-    0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'F',   'A',   'R',   'R',   0x01u, 'F',
-    'A',   'R',   'W',   0x08u, 0x14u, 0x21u, 'T',   'O',   'U',   'C',   0x09u, 0x5Bu, 0x80u, 'S',   'C',   'A',
-    'N',   0x00u, 0x68u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'S',   'C',   'A',   'N',   0x01u, 'S',   'C',   'N',   'B',
-    0x08u, 0xA4u, 'S',   'C',   'N',   'B',   0x14u, 0x43u, 0x04u, 'E',   'V',   'C',   'T',   0x00u, 0x70u, 0x01u,
-    'F',   'A',   'R',   'W',   0x70u, 0x00u, 0x61u, 0xA2u, 0x18u, 0x95u, 0x61u, 0x0Au, 0x3Fu, 'T',   'O',   'U',
-    'C',   0x72u, 0x0Cu, 0x00u, 0x00u, 0x00u, 0x01u, 0x77u, 0x61u, 0x0Bu, 0x00u, 0x10u, 0x00u, 0x00u, 0x75u, 0x61u,
-    0x70u, 0x00u, 0x60u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x10u, 0x75u, 0x60u, 0xA0u, 0x0Cu, 0x93u, 0x60u, 0x0Au,
-    0x02u, 0x70u, 0x0Au, 0x04u, 'B',   'N',   'D',   '_',   0xA4u, 0x60u,
-};
-
-/**
- * @brief A DSDT that writes One to five bytes or words whose addresses the test writes, each through a
- *        SystemMemory region of its own and a method: BEFO by WBEF, FRST by WFRS, LAST by WLST and AFTE by WAFT,
- *        bytes, and DWRD by WDWD, a DWordAcc unit of 32 bits.
- */
-static const uint8_t made_up_firmware_edges[] = {
-    0x5Bu, 0x80u, 'B',   'E',   'F',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu,
-    'B',   'E',   'F',   'R',   0x01u, 'B',   'E',   'F',   'O',   0x08u, 0x5Bu, 0x80u, 'F',   'R',   'S',   'R',
-    0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'F',   'R',   'S',   'R',   0x01u, 'F',
-    'R',   'S',   'T',   0x08u, 0x5Bu, 0x80u, 'L',   'S',   'T',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u,
-    0x01u, 0x5Bu, 0x81u, 0x0Bu, 'L',   'S',   'T',   'R',   0x01u, 'L',   'A',   'S',   'T',   0x08u, 0x5Bu, 0x80u,
-    'A',   'F',   'T',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'A',   'F',
-    'T',   'R',   0x01u, 'A',   'F',   'T',   'E',   0x08u, 0x5Bu, 0x80u, 'D',   'W',   'R',   'R',   0x00u, 0x0Cu,
-    0x78u, 0x56u, 0x34u, 0x12u, 0x0Au, 0x04u, 0x5Bu, 0x81u, 0x0Bu, 'D',   'W',   'R',   'R',   0x03u, 'D',   'W',
-    'R',   'D',   0x20u, 0x14u, 0x0Cu, 'W',   'B',   'E',   'F',   0x00u, 0x70u, 0x01u, 'B',   'E',   'F',   'O',
-    0x14u, 0x0Cu, 'W',   'F',   'R',   'S',   0x00u, 0x70u, 0x01u, 'F',   'R',   'S',   'T',   0x14u, 0x0Cu, 'W',
-    'L',   'S',   'T',   0x00u, 0x70u, 0x01u, 'L',   'A',   'S',   'T',   0x14u, 0x0Cu, 'W',   'A',   'F',   'T',
-    0x00u, 0x70u, 0x01u, 'A',   'F',   'T',   'E',   0x14u, 0x0Cu, 'W',   'D',   'W',   'D',   0x00u, 0x70u, 0x01u,
-    'D',   'W',   'R',   'D',
-};
-
-/**
- * @brief A DSDT whose LDTB runs `LoadTable ("TSTA", "", "", "", "", Zero); OTHR = One; Return (Zero)`, OTHR a byte
- *        of a SystemMemory region whose address the test writes.
- */
-static const uint8_t made_up_firmware_load_table[] = {
-    0x5Bu, 0x80u, 'T',   'S',   'T',   'R',   0x00u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x01u, 0x5Bu, 0x81u,
-    0x0Bu, 'T',   'S',   'T',   'R',   0x01u, 'O',   'T',   'H',   'R',   0x08u, 0x14u, 0x1Fu, 'L',   'D',
-    'T',   'B',   0x00u, 0x5Bu, 0x1Fu, 0x0Du, 'T',   'S',   'T',   'A',   0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u,
-    0x0Du, 0x00u, 0x0Du, 0x00u, 0x00u, 0x70u, 0x01u, 'O',   'T',   'H',   'R',   0xA4u, 0x00u,
-};
 
 /**
  * @brief A DSDT of a write test: its AML, where it lies in the firmware's page, and the physical address each of
@@ -442,37 +348,6 @@ static bool made_up_firmware_declares(AdvancedConfigurationAndPowerInterfaceMach
                advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)) !=
            0u;
 }
-
-/**
- * @brief DSDTs whose IndexField has its index register, IDXI, on a byte of the DSDT, its data register, DATF, a byte
- *        elsewhere, each in a SystemMemory region whose address the test writes: reading a unit of the IndexField
- *        writes its index over that byte. In the first, MAIN runs `Local1 = 0x11; Local2 = 0x22; Local0 = 0; While
- *        (Local0 < 4) { Local5 = IDXC; Local1 = IDXB; Local0++ }; Return (Local1 + Local2)`, IDXI on the target of
- *        `Local1 = IDXB`, which the index rewrites; in the second, `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local5
- *        = IDXA; Local1 += IDXB + VALA; Local0++ }; Return (Local1)`, IDXI on the last character of VALA, which the
- *        index turns into VALB.
- */
-static const uint8_t made_up_firmware_index_target[] = {
-    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu, 0x81u,
-    0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'I',   'D',   'X',   'I',   0x08u, 0x5Bu, 0x80u, 'D',   'R',   'E',
-    'G',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'D',   'R',   'E',   'G',
-    0x01u, 'D',   'A',   'T',   'F',   0x08u, 0x5Bu, 0x86u, 0x17u, 'I',   'D',   'X',   'I',   'D',   'A',   'T',
-    'F',   0x01u, 0x00u, 0x48u, 0x30u, 'I',   'D',   'X',   'B',   0x08u, 'I',   'D',   'X',   'C',   0x08u, 0x14u,
-    0x2Au, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x0Au, 0x11u, 0x61u, 0x70u, 0x0Au, 0x22u, 0x62u, 0x70u, 0x00u,
-    0x60u, 0xA2u, 0x13u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x70u, 'I',   'D',   'X',   'C',   0x65u, 0x70u, 'I',   'D',
-    'X',   'B',   0x61u, 0x75u, 0x60u, 0xA4u, 0x72u, 0x61u, 0x62u, 0x00u,
-};
-static const uint8_t made_up_firmware_index_name[] = {
-    0x5Bu, 0x80u, 'T',   'B',   'L',   'B',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu,
-    0x81u, 0x0Bu, 'T',   'B',   'L',   'B',   0x01u, 'I',   'D',   'X',   'I',   0x08u, 0x5Bu, 0x80u, 'D',
-    'R',   'E',   'G',   0x00u, 0x0Cu, 0,     0,     0,     0,     0x0Au, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'D',
-    'R',   'E',   'G',   0x01u, 'D',   'A',   'T',   'F',   0x08u, 0x5Bu, 0x86u, 0x17u, 'I',   'D',   'X',
-    'I',   'D',   'A',   'T',   'F',   0x01u, 0x00u, 0x48u, 0x20u, 'I',   'D',   'X',   'A',   0x08u, 'I',
-    'D',   'X',   'B',   0x08u, 0x08u, 'V',   'A',   'L',   'A',   0x0Bu, 0x00u, 0x01u, 0x08u, 'V',   'A',
-    'L',   'B',   0x0Bu, 0x00u, 0x02u, 0x14u, 0x26u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u,
-    0x70u, 0x00u, 0x61u, 0xA2u, 0x17u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x70u, 'I',   'D',   'X',   'A',   0x65u,
-    0x72u, 'I',   'D',   'X',   'B',   'V',   'A',   'L',   'A',   0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
-};
 
 /**
  * @brief The simulated host's memory write, made through to the firmware's page too, so that a write over a
@@ -907,8 +782,6 @@ KERNEL_TEST(a_load_takes_its_global_lock_from_the_facs_unless_the_platform_is_ha
 KERNEL_TEST(a_load_of_the_directory_counts_each_definition_block_whose_checksum_fails)
 {
     static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
-    static const uint8_t dsdt_aml[] = {0x08u, 'D', 'N', 'A', 'M', 0x01u};
-    static const uint8_t ssdt_aml[] = {0x08u, 'S', 'N', 'A', 'M', 0x01u};
     static const char *const claims[] = {
         "a DSDT whose checksum fails is declared and counted once",
         "an SSDT whose checksum fails is declared and counted once",
@@ -920,10 +793,11 @@ KERNEL_TEST(a_load_of_the_directory_counts_each_definition_block_whose_checksum_
     {
         made_up_firmware_open(&firmware);
         made_up_firmware_write(&firmware, 2u, firmware.physical + MADE_UP_FIRMWARE_DSDT_64_OFFSET);
-        made_up_firmware_append_aml(&firmware, MADE_UP_FIRMWARE_DSDT_64_OFFSET, dsdt_aml, sizeof(dsdt_aml), pass == 0u);
+        made_up_firmware_append_aml(&firmware, MADE_UP_FIRMWARE_DSDT_64_OFFSET, directory_dsdt_name_aml,
+                                    sizeof(directory_dsdt_name_aml), pass == 0u);
         memcpy(firmware.page + MADE_UP_FIRMWARE_EXTENDED_OFFSET, "SSDT", 4u);
-        made_up_firmware_append_aml(&firmware, MADE_UP_FIRMWARE_EXTENDED_OFFSET, ssdt_aml, sizeof(ssdt_aml),
-                                    pass == 1u);
+        made_up_firmware_append_aml(&firmware, MADE_UP_FIRMWARE_EXTENDED_OFFSET, directory_ssdt_name_aml,
+                                    sizeof(directory_ssdt_name_aml), pass == 1u);
         if (!kernel_test_check(test, made_up_firmware_read(), "the directory is read") ||
             !kernel_test_check(test,
                                advanced_configuration_and_power_interface_machine_language_open(
@@ -956,8 +830,12 @@ KERNEL_TEST(a_write_to_a_table_read_in_place_empties_the_records_built_from_it)
             MADE_UP_FIRMWARE_SELF_BOUND,
         MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_BOTH_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES - 1u,
     };
-    const MadeUpWriteTable_t table = {
-        made_up_firmware_self, sizeof(made_up_firmware_self), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+    const MadeUpWriteTable_t table = {made_up_firmware_self_aml,
+                                      sizeof(made_up_firmware_self_aml),
+                                      MADE_UP_FIRMWARE_DSDT_64_OFFSET,
+                                      places,
+                                      addresses,
+                                      2u};
 
     made_up_firmware_check_bound_write(test, &table, "\\SELF");
 }
@@ -975,8 +853,12 @@ KERNEL_TEST(a_write_the_code_of_a_table_makes_as_it_is_declared_is_checked)
             MADE_UP_FIRMWARE_LATCH_BOUND,
         MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_BOTH_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES - 1u,
     };
-    const MadeUpWriteTable_t table = {
-        made_up_firmware_latch, sizeof(made_up_firmware_latch), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+    const MadeUpWriteTable_t table = {made_up_firmware_latch_aml,
+                                      sizeof(made_up_firmware_latch_aml),
+                                      MADE_UP_FIRMWARE_DSDT_64_OFFSET,
+                                      places,
+                                      addresses,
+                                      2u};
 
     made_up_firmware_check_bound_write(test, &table, "\\SELF");
 }
@@ -994,8 +876,12 @@ KERNEL_TEST(a_first_write_elsewhere_in_a_page_still_learns_its_tables)
             MADE_UP_FIRMWARE_SELF_BOUND,
         MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_ELSEWHERE,
     };
-    const MadeUpWriteTable_t table = {
-        made_up_firmware_self, sizeof(made_up_firmware_self), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+    const MadeUpWriteTable_t table = {made_up_firmware_self_aml,
+                                      sizeof(made_up_firmware_self_aml),
+                                      MADE_UP_FIRMWARE_DSDT_64_OFFSET,
+                                      places,
+                                      addresses,
+                                      2u};
 
     made_up_firmware_check_bound_write(test, &table, "\\SELF");
 }
@@ -1014,8 +900,12 @@ KERNEL_TEST(a_mapping_taken_again_learns_the_tables_of_its_new_page)
             MADE_UP_FIRMWARE_EVICT_BOUND,
         MADE_UP_FIRMWARE_FAR_PAGE,
     };
-    const MadeUpWriteTable_t table = {
-        made_up_firmware_evict, sizeof(made_up_firmware_evict), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 2u};
+    const MadeUpWriteTable_t table = {made_up_firmware_evict_aml,
+                                      sizeof(made_up_firmware_evict_aml),
+                                      MADE_UP_FIRMWARE_DSDT_64_OFFSET,
+                                      places,
+                                      addresses,
+                                      2u};
     const MadeUpWriteRun_t run = made_up_firmware_check_bound_write(test, &table, "\\EVCT");
 
     kernel_test_check(test,
@@ -1036,10 +926,14 @@ KERNEL_TEST(a_write_is_counted_when_one_of_its_bytes_lands_on_a_table)
     static const uint32_t expected[] = {0u, 1u, 1u, 0u, 1u};
     const uint32_t places[] = {8u, 34u, 60u, 86u, 112u};
     const uint32_t dsdt = MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_UNALIGNED_DSDT;
-    const uint32_t end = dsdt + MADE_UP_FIRMWARE_HEADER_BYTES + (uint32_t) sizeof(made_up_firmware_edges);
+    const uint32_t end = dsdt + MADE_UP_FIRMWARE_HEADER_BYTES + (uint32_t) sizeof(made_up_firmware_edges_aml);
     const uint32_t addresses[] = {dsdt - 1u, dsdt, end - 1u, end, dsdt - 3u};
-    const MadeUpWriteTable_t table = {
-        made_up_firmware_edges, sizeof(made_up_firmware_edges), MADE_UP_FIRMWARE_UNALIGNED_DSDT, places, addresses, 5u};
+    const MadeUpWriteTable_t table = {made_up_firmware_edges_aml,
+                                      sizeof(made_up_firmware_edges_aml),
+                                      MADE_UP_FIRMWARE_UNALIGNED_DSDT,
+                                      places,
+                                      addresses,
+                                      5u};
     uint32_t agree = 0u;
 
     if (!made_up_firmware_load_writes(test, &table, false, true))
@@ -1070,8 +964,8 @@ KERNEL_TEST(a_write_to_a_table_load_table_found_is_counted)
     const uint32_t addresses[] = {
         MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_BOTH_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES - 1u,
     };
-    const MadeUpWriteTable_t table = {made_up_firmware_load_table,
-                                      sizeof(made_up_firmware_load_table),
+    const MadeUpWriteTable_t table = {made_up_firmware_load_table_aml,
+                                      sizeof(made_up_firmware_load_table_aml),
                                       MADE_UP_FIRMWARE_DSDT_64_OFFSET,
                                       places,
                                       addresses,
@@ -1101,8 +995,12 @@ KERNEL_TEST(kept_data_is_built_before_a_write_lands_on_its_table)
         MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET + MADE_UP_FIRMWARE_HEADER_BYTES +
             MADE_UP_FIRMWARE_KEPT_ELEMENT,
     };
-    const MadeUpWriteTable_t table = {
-        made_up_firmware_kept, sizeof(made_up_firmware_kept), MADE_UP_FIRMWARE_DSDT_64_OFFSET, places, addresses, 1u};
+    const MadeUpWriteTable_t table = {made_up_firmware_kept_aml,
+                                      sizeof(made_up_firmware_kept_aml),
+                                      MADE_UP_FIRMWARE_DSDT_64_OFFSET,
+                                      places,
+                                      addresses,
+                                      1u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result = {0};
 
     if (!made_up_firmware_load_writes(test, &table, true, true))
@@ -1132,8 +1030,8 @@ KERNEL_TEST(a_record_reads_no_field_whose_read_writes_a_register)
         uint32_t byte;
         uint64_t result;
     } cases[] = {
-        {made_up_firmware_index_target, sizeof(made_up_firmware_index_target), 114u, 0x22u },
-        {made_up_firmware_index_name,   sizeof(made_up_firmware_index_name),   128u, 0x200u},
+        {made_up_firmware_index_target_aml, sizeof(made_up_firmware_index_target_aml), 114u, 0x22u },
+        {made_up_firmware_index_name_aml,   sizeof(made_up_firmware_index_name_aml),   128u, 0x200u},
     };
     uint32_t agree = 0u;
 
