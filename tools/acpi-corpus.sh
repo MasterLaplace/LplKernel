@@ -74,12 +74,12 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          tables the initialisation ended with and the same presets; a machine where acpiexec stops before an
          evaluation it was given is counted apart
   slack  initialises each machine of a list with `test-acpi --loaded`, its presets given; then
-         tools/acpi/acpiexec_slack.py has acpiexec evaluate the needs path a host can ask it for, on the
-         tables the initialisation ended with, once as acpiexec runs and once in its slack mode
-         (`acpiexec -es`); the mode lists the machines whose initialisation or results differ, those that
+         tools/acpi/acpiexec_slack.py has acpiexec evaluate the needs path a host can ask it for, in the
+         order of §3.8, on the tables the initialisation ended with, once as acpiexec runs and once in its
+         slack mode (`acpiexec -es`); the mode lists the machines whose load or results differ, those that
          rely on slack behaviour, which reopen the implicit-return and uninitialised-operand rules
-         (specification §8.6), and fail it; a _PDC and a method that reads Timer compare on status only,
-         and a machine where acpiexec stops before an evaluation it was given is counted apart
+         (specification §8.6), and fail it; an _INI, a _REG, a _PDC and a method that reads Timer compare
+         on status only, and a machine where acpiexec stops before an evaluation it was given is counted apart
   differential  loads each machine of a list twice, with the load's shortcuts and with --general-load,
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
          `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
