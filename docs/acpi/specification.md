@@ -1025,7 +1025,7 @@ reads a table in kernel memory. The costs to cut are:
 | O2 | Skip method bodies at load by their PkgLength; a release kernel decodes none of them (§3.6) | `acpi.aml` reports `bodies=skipped`; W1 on the release kernel |
 | O3 | Integers by value; constants, `LocalX` and `ArgX` pushed without an operator record | `allocations` = 0 for an integer-only method |
 | O4 | One evaluation context, allocated once, never zeroed per evaluation | `allocations` per evaluation |
-| O5 | One hash for the whole namespace, O(1) per probe; an upward search costs at most its depth in probes; a declaration finds or creates its node in one probe sequence, in line in the declaration pass | `probes` / `lookups`; W1 |
+| O5 | One hash for the whole namespace, O(1) per probe; an upward search costs at most its depth in probes; a declaration finds or creates its node in one probe sequence, in line in the declaration pass, unless it takes a node from the free list, grows the hash, takes a run of nodes or meets the node cap | `probes` / `lookups`; W1 |
 | O6 | Direct-indexed decode tables, operand kinds packed in a `uint32_t`, one `switch` of handlers | W4 |
 | O7 | `LNot` over a comparison decoded as one operator of a pre-decoded record (§3.6) | `fused_comparisons` |
 | O8 | `DerefOf (Index (x, i))` read without building a reference | `references_built` |
@@ -1072,9 +1072,9 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 | W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget`; `tools/acpi-cst-<machine>.debug.budget` | its first measurement |
 | W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT; a polling loop of 1,000 turns, shaped like those real firmware runs at boot, that masks a SystemMemory field into a local, tests it in an If, and steps two locals | debug: `--inside kernel_test_body_<test>` | `tools/acpi-microbenchmark.debug.budget` | at most 200 instructions per iteration of the counting loop, its first measurement for the polling loop, 0 allocations |
 
-W1's target is a count, not a cost per named object. On q35, placing the names in the namespace
-(`machine_language_namespace.c`) costs 232 instructions per declaration, and checking the data the Names keep in their
-table (O20) 207: those two alone take more than the 300 per named object a first target set. The debug windows of W1
+W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
+instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
+more than the 300 per named object a first target set. The debug windows of W1
 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no count per declaration
 applies to them.
 
