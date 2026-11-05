@@ -1,3 +1,4 @@
+#include "fixtures/processor_idle.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -146,6 +147,8 @@ static void idle_register(MadeUpAml_t *aml, const AdvancedConfigurationAndPowerI
 
 /**
  * @brief Appends Package (4) { the Register of @p state, its Type, Latency and Power }.
+ *
+ * Its lead is raw bytes: the opcode of a Package whose PkgLength the builder writes.
  */
 static void idle_state(MadeUpAml_t *aml, const IdleState_t *state)
 {
@@ -163,6 +166,8 @@ static void idle_state(MadeUpAml_t *aml, const IdleState_t *state)
 
 /**
  * @brief Appends Package () { @p count, then the @p state_count @p states }.
+ *
+ * Its lead is raw bytes: the opcode of a Package whose PkgLength the builder writes.
  */
 static void idle_states(MadeUpAml_t *aml, uint64_t count, const IdleState_t *states, uint32_t state_count)
 {
@@ -258,6 +263,9 @@ static bool idle_published(uint32_t slot, const IdleState_t *expected, uint32_t 
  *        `If (And (PDCB, 0x200)) { Store (MWC1, Index (C1TM, Zero)) }`,
  *        `Store (C6LT, Index (C6TM, 2))`, `Store (C7LT, Index (C7TM, 2))`, then
  *        `Return (Package () { 3, C1TM, C6TM, C7TM })`: names, which are read where they point.
+ *
+ * Its whole terms come from fixtures; its other pieces are raw bytes: the If and the Package it opens, whose
+ * PkgLengths it writes, the Return opcode, and the head of the Package of names it returns.
  */
 static void idle_intel_pattern(uint8_t identifier)
 {
@@ -268,11 +276,6 @@ static void idle_intel_pattern(uint8_t identifier)
     };
     static const uint8_t if_lead[] = {0xA0u};
     static const uint8_t package_lead[] = {0x12u};
-    static const uint8_t predicate[] = {0x7Bu, 'P', 'D', 'C', 'B', 0x0Bu, 0x00u, 0x02u, 0x00u};
-    static const uint8_t patch_register[] = {0x70u, 'M', 'W', 'C', '1', 0x88u, 'C', '1', 'T', 'M', 0x00u, 0x00u};
-    static const uint8_t patch_latencies[] = {0x70u, 'C',   '6',   'L',   'T',   0x88u, 'C',   '6',  'T',
-                                              'M',   0x0Au, 0x02u, 0x00u, 0x70u, 'C',   '7',   'L',  'T',
-                                              0x88u, 'C',   '7',   'T',   'M',   0x0Au, 0x02u, 0x00u};
     static const uint8_t return_byte = 0xA4u;
     static const uint8_t names[] = {0x04u, 0x0Au, 0x03u, 'C', '1', 'T', 'M', 'C', '6', 'T', 'M', 'C', '7', 'T', 'M'};
     const IdleState_t halt = {.entry = {.space = IDLE_FIXED_HARDWARE}, .type = 1u, .latency = 1u, .power = 1000u};
@@ -292,11 +295,11 @@ static void idle_intel_pattern(uint8_t identifier)
     idle_name(&idle_scope, "MWC1");
     idle_register(&idle_scope, &monitor_wait.entry);
     made_up_aml_begin(&idle_branch);
-    made_up_aml_raw(&idle_branch, predicate, sizeof(predicate));
-    made_up_aml_raw(&idle_branch, patch_register, sizeof(patch_register));
+    made_up_aml_raw(&idle_branch, idle_pdc_bit_nine_aml, sizeof(idle_pdc_bit_nine_aml));
+    made_up_aml_raw(&idle_branch, idle_patch_register_aml, sizeof(idle_patch_register_aml));
     made_up_aml_begin(&idle_method);
     made_up_aml_construct(&idle_method, if_lead, sizeof(if_lead), &idle_branch);
-    made_up_aml_raw(&idle_method, patch_latencies, sizeof(patch_latencies));
+    made_up_aml_raw(&idle_method, idle_patch_latencies_aml, sizeof(idle_patch_latencies_aml));
     made_up_aml_raw(&idle_method, &return_byte, 1u);
     made_up_aml_begin(&idle_package);
     made_up_aml_raw(&idle_package, names, sizeof(names));
@@ -474,6 +477,8 @@ static void idle_package_begin(uint8_t elements, uint64_t count)
 
 /**
  * @brief Appends to idle_package the state idle_state_body holds, its element count first.
+ *
+ * Its lead is raw bytes: the opcode of a Package whose PkgLength the builder writes.
  */
 static void idle_package_add(void)
 {
@@ -484,6 +489,8 @@ static void idle_package_add(void)
 
 /**
  * @brief Appends Processor (@p name, @p identifier) { Name (_CST, the package idle_package holds) }.
+ *
+ * Its lead is raw bytes: the opcode of a Package whose PkgLength the builder writes.
  */
 static void idle_package_end(const char *name, uint8_t identifier)
 {
@@ -526,11 +533,12 @@ static void idle_state_end(uint64_t type, uint64_t latency, uint64_t power)
  * @brief A _CST that fails, or returns no Package, an empty one, one whose Count is no Integer, below 1, or
  *        other than its sub-packages, fails as a whole, as Linux refuses it: nothing is published and the
  *        failure is counted with its status.
+ *
+ * Its _CST results are raw bytes: data objects the builder returns, which iasl's grammar refuses alone.
  */
 KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
 {
     static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u};
-    static const uint8_t divide[] = {0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
     static const uint8_t integer[] = {0x0Au, 0x03u};
     static const uint8_t miscounted[] = {0x12u, 0x04u, 0x01u, 0x0Au, 0x02u};
     static const uint8_t empty_package[] = {0x12u, 0x02u, 0x00u};
@@ -539,7 +547,7 @@ KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
 
     idle_begin(identifiers, 6u);
     made_up_aml_begin(&idle_method);
-    made_up_aml_raw(&idle_method, divide, sizeof(divide));
+    made_up_aml_raw(&idle_method, idle_divide_by_zero_aml, sizeof(idle_divide_by_zero_aml));
     made_up_aml_begin(&idle_scope);
     made_up_aml_method(&idle_scope, "_CST", 0x00u, &idle_method);
     idle_processor("CPU1", 1u, &idle_scope);
@@ -573,6 +581,9 @@ KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
  *        Register, or a Generic Register shorter than 12 bytes, a Type that is a String, a Latency past
  *        32 bits. The Generic Register is found after another descriptor, a Latency of 32 bits is kept, and
  *        a register of any space, SystemMemory here, is published.
+ *
+ * Its registers are raw bytes, resource descriptors a Buffer holds, and so is the String it writes as a Type: data
+ * objects, which iasl's grammar refuses alone.
  */
 KERNEL_TEST(a_faulty_state_is_left_out_and_counted_on_its_slot)
 {
@@ -697,8 +708,6 @@ static void idle_present(MadeUpAml_t *aml, const char *name, uint8_t identifier,
 KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
 {
     static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 10u, 11u, 12u, 13u};
-    static const uint8_t counted_absent[] = {0x75u, '\\', 'D', '0', 'R', 'D', 0xA4u, 0x00u};
-    static const uint8_t failing[] = {0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
     const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
     MadeUpAml_t device;
     MadeUpAml_t body;
@@ -711,7 +720,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     idle_present(&idle_aml, "CPU3", 4u, 0x0Au);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, counted_absent, sizeof(counted_absent));
+    made_up_aml_raw(&body, idle_counted_absent_aml, sizeof(idle_counted_absent_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     idle_present(&device, "CPU4", 5u, 0x100u);
     idle_present(&device, "CPU9", 10u, 0x100u);
@@ -722,7 +731,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     made_up_aml_device(&idle_aml, "DEV1", &device);
     made_up_aml_begin(&idle_scope);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, failing, sizeof(failing));
+    made_up_aml_raw(&body, idle_return_divide_by_zero_aml, sizeof(idle_return_divide_by_zero_aml));
     made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
     idle_static(&idle_scope, 1u, &only, 1u);
     idle_processor("CPU6", 7u, &idle_scope);
@@ -730,7 +739,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     idle_present(&idle_aml, "CPU8", 8u, 0x100u);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, failing, sizeof(failing));
+    made_up_aml_raw(&body, idle_return_divide_by_zero_aml, sizeof(idle_return_divide_by_zero_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     idle_present(&device, "CPUB", 11u, 0x100u);
     made_up_aml_device(&idle_aml, "DEV2", &device);
@@ -740,7 +749,7 @@ KERNEL_TEST(only_the_processors_linux_attaches_publish_their_c_states)
     made_up_aml_thermal_zone(&idle_aml, "TZ00", &device);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, failing, sizeof(failing));
+    made_up_aml_raw(&body, idle_return_divide_by_zero_aml, sizeof(idle_return_divide_by_zero_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     idle_present(&device, "CPUD", 13u, 0x100u);
     made_up_aml_thermal_zone(&idle_aml, "TZ01", &device);
@@ -864,6 +873,8 @@ KERNEL_TEST(cst_control_goes_to_smi_command_once_in_acpi_mode_only)
 /**
  * @brief Appends Processor (@p name, @p identifier) { @p initialize, and a _CST that increments \@p runs,
  *        then runs @p notifies and returns one MWAIT C1 }.
+ *
+ * Its Increment is raw bytes: a partial term around the name the builder writes.
  */
 static void idle_notifying(const char *name, uint8_t identifier, const char *runs, const uint8_t *notifies,
                            uint32_t length, const uint8_t *initialize, uint32_t initialize_length)
@@ -898,19 +909,16 @@ static void idle_notifying(const char *name, uint8_t identifier, const char *run
 KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
 {
     static const uint32_t identifiers[] = {1u, 2u, 3u};
-    static const uint8_t initialize[] = {0x86u, '\\', 'C', 'P', 'U', '2', 0x0Au, 0x81u};
-    static const uint8_t first[] = {0x86u, '\\', 'C', 'P', 'U', '1', 0x0Au, 0x81u};
-    static const uint8_t second[] = {0x86u, '\\', 'C', 'P', 'U', '0', 0x0Au, 0x81u,
-                                     0x86u, '\\', 'C', 'P', 'U', '1', 0x0Au, 0x81u};
-    static const uint8_t third[] = {0x86u, '\\', 'C', 'P', 'U', '2', 0x0Au, 0x80u};
 
     idle_begin(identifiers, 3u);
     made_up_aml_name_integer(&idle_aml, "C0RN", 0u);
     made_up_aml_name_integer(&idle_aml, "C1RN", 0u);
     made_up_aml_name_integer(&idle_aml, "C2RN", 0u);
-    idle_notifying("CPU0", 1u, "C0RN", first, sizeof(first), initialize, sizeof(initialize));
-    idle_notifying("CPU1", 2u, "C1RN", second, sizeof(second), NULL, 0u);
-    idle_notifying("CPU2", 3u, "C2RN", third, sizeof(third), NULL, 0u);
+    idle_notifying("CPU0", 1u, "C0RN", idle_notifies_cpu1_c_states_aml, sizeof(idle_notifies_cpu1_c_states_aml),
+                   idle_notifies_cpu2_c_states_aml, sizeof(idle_notifies_cpu2_c_states_aml));
+    idle_notifying("CPU1", 2u, "C1RN", idle_notifies_cpu0_and_cpu1_c_states_aml,
+                   sizeof(idle_notifies_cpu0_and_cpu1_c_states_aml), NULL, 0u);
+    idle_notifying("CPU2", 3u, "C2RN", idle_notifies_cpu2_status_aml, sizeof(idle_notifies_cpu2_status_aml), NULL, 0u);
     if (!idle_run(test))
         return;
     kernel_test_check(test,
@@ -934,10 +942,6 @@ KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
 KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
 {
     static const uint32_t identifiers[] = {1u, 2u};
-    static const uint8_t absent_status[] = {0x75u, '\\', 'P', '1', 'S', 'T', 0xA4u, 0x00u};
-    static const uint8_t device_status[] = {0x75u, '\\', 'D', 'S', 'T', 'A', 0xA4u, 0x00u};
-    static const uint8_t processor_status[] = {0x75u, '\\', 'P', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
-    static const uint8_t nothing[] = {0xA3u};
     const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
     MadeUpAml_t device;
     MadeUpAml_t body;
@@ -948,24 +952,24 @@ KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
     made_up_aml_name_integer(&idle_aml, "P1ST", 0u);
     made_up_aml_begin(&idle_scope);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, processor_status, sizeof(processor_status));
+    made_up_aml_raw(&body, idle_present_psta_aml, sizeof(idle_present_psta_aml));
     made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
     idle_static(&idle_scope, 1u, &only, 1u);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, device_status, sizeof(device_status));
+    made_up_aml_raw(&body, idle_absent_dsta_aml, sizeof(idle_absent_dsta_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
     made_up_aml_method(&device, "_INI", 0x00u, &body);
     made_up_aml_processor(&device, "CPU0", 1u, 0x410u, 6u, &idle_scope);
     made_up_aml_device(&idle_aml, "DEVA", &device);
     made_up_aml_begin(&idle_scope);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, absent_status, sizeof(absent_status));
+    made_up_aml_raw(&body, idle_absent_p1st_aml, sizeof(idle_absent_p1st_aml));
     made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
     made_up_aml_method(&idle_scope, "_INI", 0x00u, &body);
     idle_static(&idle_scope, 1u, &only, 1u);
     idle_processor("CPU1", 2u, &idle_scope);
@@ -980,7 +984,7 @@ KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
     kernel_test_check(test,
                       idle_table.slots[0].processor == 0u && idle_table.slots[1].processor == 0u &&
                           idle_counts.processor_idle_absent == 2u,
-                      "both processors publish nothing, counted absent");
+                      "both processors publish idle_noop_aml, counted absent");
     idle_close(test);
 }
 
@@ -992,9 +996,6 @@ KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
 KERNEL_TEST(a_device_below_one_found_absent_is_not_read)
 {
     static const uint32_t identifiers[] = {1u};
-    static const uint8_t absent[] = {0x75u, '\\', 'D', 'S', 'T', 'A', 0xA4u, 0x00u};
-    static const uint8_t present[] = {0x75u, '\\', 'C', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
-    static const uint8_t nothing[] = {0xA3u};
     static MadeUpAml_t middle;
     static MadeUpAml_t outer;
     const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
@@ -1007,24 +1008,24 @@ KERNEL_TEST(a_device_below_one_found_absent_is_not_read)
     idle_static(&idle_scope, 1u, &only, 1u);
     made_up_aml_begin(&middle);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, present, sizeof(present));
+    made_up_aml_raw(&body, idle_present_csta_aml, sizeof(idle_present_csta_aml));
     made_up_aml_method(&middle, "_STA", 0x00u, &body);
     made_up_aml_processor(&middle, "CPU0", 1u, 0x410u, 6u, &idle_scope);
     made_up_aml_begin(&outer);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, absent, sizeof(absent));
+    made_up_aml_raw(&body, idle_absent_dsta_aml, sizeof(idle_absent_dsta_aml));
     made_up_aml_method(&outer, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
     made_up_aml_method(&outer, "_INI", 0x00u, &body);
     made_up_aml_device(&outer, "DEVC", &middle);
     made_up_aml_device(&idle_aml, "DEVA", &outer);
     if (!idle_run(test))
         return;
     kernel_test_check(test, made_up_root_node(&idle_load, "CSTA")->value.payload == 0u,
-                      "DEVC, below DEVA found absent, is never read");
+                      "DEVC, below DEVA found idle_absent_dsta_aml, is never read");
     kernel_test_check(test, idle_table.slots[0].processor == 0u && idle_counts.processor_idle_absent == 1u,
-                      "CPU0 publishes nothing, counted absent");
+                      "CPU0 publishes idle_noop_aml, counted idle_absent_dsta_aml");
     idle_close(test);
 }
 
@@ -1036,10 +1037,6 @@ KERNEL_TEST(a_device_below_one_found_absent_is_not_read)
 KERNEL_TEST(a_status_an_initialization_changes_after_step_four_decides_step_eight)
 {
     static const uint32_t identifiers[] = {1u};
-    static const uint8_t status[] = {0x75u, '\\', 'B', 'S', 'T',   'A',   0xA0u, 0x09u, '\\',
-                                     'F',   'L',  'A', 'G', 0xA4u, 0x0Au, 0x0Fu, 0xA4u, 0x00u};
-    static const uint8_t nothing[] = {0xA3u};
-    static const uint8_t sets[] = {0x70u, 0x01u, '\\', 'F', 'L', 'A', 'G'};
     const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
     MadeUpAml_t device;
     MadeUpAml_t body;
@@ -1051,16 +1048,16 @@ KERNEL_TEST(a_status_an_initialization_changes_after_step_four_decides_step_eigh
     idle_static(&idle_scope, 1u, &only, 1u);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, status, sizeof(status));
+    made_up_aml_raw(&body, idle_status_by_flag_aml, sizeof(idle_status_by_flag_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, nothing, sizeof(nothing));
+    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
     made_up_aml_method(&device, "_INI", 0x00u, &body);
     made_up_aml_processor(&device, "CPU0", 1u, 0x410u, 6u, &idle_scope);
     made_up_aml_device(&idle_aml, "DEVB", &device);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, sets, sizeof(sets));
+    made_up_aml_raw(&body, idle_sets_flag_aml, sizeof(idle_sets_flag_aml));
     made_up_aml_method(&device, "_INI", 0x00u, &body);
     made_up_aml_device(&idle_aml, "LATE", &device);
     if (!idle_run(test))
@@ -1068,7 +1065,7 @@ KERNEL_TEST(a_status_an_initialization_changes_after_step_four_decides_step_eigh
     kernel_test_check(test,
                       made_up_root_node(&idle_load, "FLAG")->value.payload == 1u &&
                           made_up_root_node(&idle_load, "BSTA")->value.payload == 2u,
-                      "LATE's _INI sets FLAG, and DEVB's _STA is read by step 4, then by step 8");
+                      "LATE's _INI idle_sets_flag_aml FLAG, and DEVB's _STA is read by step 4, then by step 8");
     kernel_test_check(test, idle_published(0u, &only, 1u) && idle_counts.processor_idle_absent == 0u,
                       "CPU0 publishes its state");
     idle_close(test);
@@ -1077,19 +1074,20 @@ KERNEL_TEST(a_status_an_initialization_changes_after_step_four_decides_step_eigh
 /**
  * @brief A _CST that fails when step 9 evaluates it once more publishes nothing in place of what step 8
  *        published: its _CST notifies its own processor 0x81 and divides by zero on its second run.
+ *
+ * Its Return opcode is raw bytes: the Package it returns comes from idle_states.
  */
 KERNEL_TEST(a_cst_that_fails_in_step_9_publishes_nothing)
 {
     static const uint32_t identifiers[] = {1u};
-    static const uint8_t body[] = {0x75u, '\\', 'R',   'U',   'N',   'S',   0x86u, '\\',  'C',   'P',
-                                   'U',   '0',  0x0Au, 0x81u, 0xA0u, 0x0Eu, 0x93u, '\\',  'R',   'U',
-                                   'N',   'S',  0x0Au, 0x02u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u, 0xA4u};
+    static const uint8_t return_byte = 0xA4u;
     const IdleState_t only = idle_monitor_wait(0x00u, 1u, 1u, 1000u);
 
     idle_begin(identifiers, 1u);
     made_up_aml_name_integer(&idle_aml, "RUNS", 0u);
     made_up_aml_begin(&idle_method);
-    made_up_aml_raw(&idle_method, body, sizeof(body));
+    made_up_aml_raw(&idle_method, idle_runs_then_fails_twice_aml, sizeof(idle_runs_then_fails_twice_aml));
+    made_up_aml_raw(&idle_method, &return_byte, 1u);
     idle_states(&idle_method, 1u, &only, 1u);
     made_up_aml_begin(&idle_scope);
     made_up_aml_method(&idle_scope, "_CST", 0x00u, &idle_method);
@@ -1240,17 +1238,14 @@ KERNEL_TEST(a_resource_template_is_read_in_place)
 KERNEL_TEST(a_package_element_holding_a_name_reads_what_it_names)
 {
     static const uint32_t identifiers[] = {1u};
-    static const uint8_t package[] = {0x08u, 'P', 'K', 'G', '0', 0x12u, 0x0Cu, 0x04u, 0x0Au,
-                                      0x07u, 'N', 'A', 'M', '1', 'M',   'T',   'H',   '1'};
-    static const uint8_t method[] = {0x14u, 0x06u, 'M', 'T', 'H', '1', 0x00u};
     const IdleValue_t integer = {.kind = IDLE_VALUE(INTEGER), .payload = 1u};
     IdleValue_t root;
     IdleValue_t element;
 
     idle_begin(identifiers, 1u);
     made_up_aml_name_integer(&idle_aml, "NAM1", 0x2Au);
-    made_up_aml_raw(&idle_aml, method, sizeof(method));
-    made_up_aml_raw(&idle_aml, package, sizeof(package));
+    made_up_aml_raw(&idle_aml, idle_empty_method_aml, sizeof(idle_empty_method_aml));
+    made_up_aml_raw(&idle_aml, idle_package_of_names_aml, sizeof(idle_package_of_names_aml));
     if (!idle_run(test))
         return;
     if (!kernel_test_check(test,
@@ -1279,7 +1274,7 @@ KERNEL_TEST(a_package_element_holding_a_name_reads_what_it_names)
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_package_element(
                           &idle_load, &root, 2u, &element) == IDLE_STATUS(TYPE_MISMATCH),
-                      "element 2, the name of a method, is refused");
+                      "element 2, the name of a idle_empty_method_aml, is refused");
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_package_element(
                           &idle_load, &root, 3u, &element) == IDLE_STATUS(TYPE_MISMATCH),
