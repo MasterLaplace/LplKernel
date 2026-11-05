@@ -1,0 +1,116 @@
+/**************************************************************************
+ * LplKernel - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under the MIT License.
+ * https://opensource.org/license/mit
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is free software: you can use, copy, modify, merge, publish and
+ * distribute it under the terms of the MIT License, provided this copyright
+ * notice and the permission notice are kept. See the LICENSE file.
+ *
+ * @file limits.h
+ * @brief The made-up tables of kernel/tests/acpi/limits.c, compiled from the ASL sources of
+ *        kernel/tests/acpi/fixtures/limits/ (docs/acpi/specification.md, §8.2).
+ *
+ * Written by tools/acpi/regenerate-fixtures.sh --write, which checks it against its sources when run
+ * without an option: a table changes in its source, never here.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-11-05
+ **************************************************************************/
+
+#ifndef KERNEL_TESTS_ACPI_FIXTURES_LIMITS_H
+#define KERNEL_TESTS_ACPI_FIXTURES_LIMITS_H
+
+#include <stdint.h>
+
+/**
+ * @brief A Device DEVX that holds the Name INNR, then the Name AFTD after it, which the test puts at the bottom of
+ *        nested If (One).
+ */
+static const uint8_t limits_deep_device_aml[] = {
+    0x5Bu, 0x82u, 0x0Bu, 0x44u, 0x45u, 0x56u, 0x58u, 0x08u, 0x49u, 0x4Eu,
+    0x4Eu, 0x52u, 0x01u, 0x08u, 0x41u, 0x46u, 0x54u, 0x44u, 0x01u,
+};
+
+/**
+ * @brief While (CNT2 < 2) increments CNT2, then declares INIF when CNT2 is 2 and increments ELSC otherwise; the test
+ *        puts it at the bottom of 510 If (One).
+ */
+static const uint8_t limits_deep_loop_aml[] = {
+    0x08u, 0x43u, 0x4Eu, 0x54u, 0x32u, 0x00u, 0x08u, 0x45u, 0x4Cu, 0x53u, 0x43u, 0x00u, 0xA2u, 0x23u, 0x95u, 0x43u,
+    0x4Eu, 0x54u, 0x32u, 0x0Au, 0x02u, 0x75u, 0x43u, 0x4Eu, 0x54u, 0x32u, 0xA0u, 0x0Eu, 0x93u, 0x43u, 0x4Eu, 0x54u,
+    0x32u, 0x0Au, 0x02u, 0x08u, 0x49u, 0x4Eu, 0x49u, 0x46u, 0x01u, 0xA1u, 0x06u, 0x75u, 0x45u, 0x4Cu, 0x53u, 0x43u,
+};
+
+/**
+ * @brief DEEP, an Integer 1, which the test puts at the bottom of nested If (One).
+ */
+static const uint8_t limits_deep_name_aml[] = {
+    0x08u, 0x44u, 0x45u, 0x45u, 0x50u, 0x01u,
+};
+
+/**
+ * @brief M009 loops forever on a Noop, and the table's code calls it; then a table-level While (One) whose body only
+ *        continues, another on a Noop, and the Name AFTR after them.
+ */
+static const uint8_t limits_endless_loops_aml[] = {
+    0x14u, 0x0Au, 0x4Du, 0x30u, 0x30u, 0x39u, 0x00u, 0xA2u, 0x03u, 0x01u, 0xA3u, 0x4Du, 0x30u, 0x30u, 0x39u,
+    0xA2u, 0x03u, 0x01u, 0x9Fu, 0xA2u, 0x03u, 0x01u, 0xA3u, 0x08u, 0x41u, 0x46u, 0x54u, 0x52u, 0x01u,
+};
+
+/**
+ * @brief The SSDT after the endless loops: While (CNT2 < 0x20) increments CNT2.
+ */
+static const uint8_t limits_endless_loops_second_aml[] = {
+    0x08u, 0x43u, 0x4Eu, 0x54u, 0x32u, 0x00u, 0xA2u, 0x0Du, 0x95u, 0x43u,
+    0x4Eu, 0x54u, 0x32u, 0x0Au, 0x20u, 0x75u, 0x43u, 0x4Eu, 0x54u, 0x32u,
+};
+
+/**
+ * @brief The SSDT the test declares while the evaluation holds its 64 frames: LDED, INIF in an If (One) after it,
+ *        and a Store (Zero, RES_) to the DSDT's RES_.
+ */
+static const uint8_t limits_frameless_loaded_aml[] = {
+    0x08u, 0x4Cu, 0x44u, 0x45u, 0x44u, 0x01u, 0xA0u, 0x08u, 0x01u, 0x08u, 0x49u,
+    0x4Eu, 0x49u, 0x46u, 0x01u, 0x70u, 0x00u, 0x52u, 0x45u, 0x53u, 0x5Fu,
+};
+
+/**
+ * @brief M007 calls itself Arg0 times, then returns 0; the table's code stores M007 (62) to RES0 and M007 (63) to
+ *        RES1, both 5 before.
+ */
+static const uint8_t limits_recursion_aml[] = {
+    0x08u, 0x52u, 0x45u, 0x53u, 0x30u, 0x0Au, 0x05u, 0x08u, 0x52u, 0x45u, 0x53u, 0x31u, 0x0Au, 0x05u, 0x14u,
+    0x14u, 0x4Du, 0x30u, 0x30u, 0x37u, 0x01u, 0xA0u, 0x0Bu, 0x68u, 0xA4u, 0x4Du, 0x30u, 0x30u, 0x37u, 0x74u,
+    0x68u, 0x01u, 0x00u, 0xA4u, 0x00u, 0x70u, 0x4Du, 0x30u, 0x30u, 0x37u, 0x0Au, 0x3Eu, 0x52u, 0x45u, 0x53u,
+    0x30u, 0x70u, 0x4Du, 0x30u, 0x30u, 0x37u, 0x0Au, 0x3Fu, 0x52u, 0x45u, 0x53u, 0x31u,
+};
+
+/**
+ * @brief A Device DEVX with no term, which the test puts at the bottom of 511 If (Zero).
+ */
+static const uint8_t limits_refused_device_aml[] = {
+    0x5Bu, 0x82u, 0x05u, 0x44u, 0x45u, 0x56u, 0x58u,
+};
+
+/**
+ * @brief RES_, an Integer 5: what a result left unwritten reads.
+ */
+static const uint8_t limits_result_five_aml[] = {
+    0x08u, 0x52u, 0x45u, 0x53u, 0x5Fu, 0x0Au, 0x05u,
+};
+
+/**
+ * @brief RES_, an Integer 0.
+ */
+static const uint8_t limits_result_zero_aml[] = {
+    0x08u, 0x52u, 0x45u, 0x53u, 0x5Fu, 0x00u,
+};
+
+#endif /* KERNEL_TESTS_ACPI_FIXTURES_LIMITS_H */

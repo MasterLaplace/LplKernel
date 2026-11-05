@@ -1,3 +1,4 @@
+#include "fixtures/values.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -216,25 +217,11 @@ static void values_close(KernelTest_t *test) { values_close_with(test, 0u); }
  */
 KERNEL_TEST(strings_buffers_and_packages_are_built_while_methods_run)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'S',   'T',   'R',   '0',   0x0Au, 0x00u, 0x08u, 'B',   'U',   'F',   '0',   0x0Au, 0x00u, 0x08u, 'B',
-        'U',   'F',   '1',   0x0Au, 0x00u, 0x08u, 'V',   'P',   'K',   '0',   0x0Au, 0x00u, 0x08u, 'V',   'P',   'K',
-        '1',   0x0Au, 0x00u, 0x08u, 'P',   'K',   'G',   '0',   0x0Au, 0x00u, 0x14u, 0x14u, 'M',   'S',   'T',   'R',
-        0x00u, 0xA4u, 0x0Du, 0x68u, 0x65u, 0x6Cu, 0x6Cu, 0x6Fu, 0x20u, 0x77u, 0x6Fu, 0x72u, 0x6Cu, 0x64u, 0x00u, 0x14u,
-        0x0Cu, 'M',   'B',   'U',   'F',   0x01u, 0xA4u, 0x11u, 0x04u, 0x68u, 0x01u, 0x02u, 0x14u, 0x14u, 'M',   'V',
-        'P',   'K',   0x01u, 0xA4u, 0x13u, 0x0Cu, 0x68u, 0x0Au, 0x11u, 0x11u, 0x03u, 0x68u, 0xAAu, 0x0Du, 0x61u, 0x62u,
-        0x00u, 0x14u, 0x17u, 'M',   'P',   'K',   'G',   0x00u, 0xA4u, 0x12u, 0x0Fu, 0x02u, 0x0Au, 0x22u, 0x12u, 0x0Au,
-        0x02u, 0x0Du, 0x63u, 0x64u, 0x00u, 'S',   'T',   'R',   '0',   0x9Du, 'M',   'S',   'T',   'R',   'S',   'T',
-        'R',   '0',   0x9Du, 'M',   'B',   'U',   'F',   0x0Au, 0x04u, 'B',   'U',   'F',   '0',   0x9Du, 'M',   'B',
-        'U',   'F',   0x0Au, 0x01u, 'B',   'U',   'F',   '1',   0x9Du, 'M',   'V',   'P',   'K',   0x0Au, 0x05u, 'V',
-        'P',   'K',   '0',   0x9Du, 'M',   'V',   'P',   'K',   0x0Au, 0x01u, 'V',   'P',   'K',   '1',   0x9Du, 'M',
-        'P',   'K',   'G',   'P',   'K',   'G',   '0',
-    };
     static const uint8_t four[] = {0x01u, 0x02u, 0x00u, 0x00u};
     static const uint8_t two[] = {0x01u, 0x02u};
     static const uint8_t padded[] = {0xAAu, 0x00u, 0x00u, 0x00u, 0x00u};
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_built_while_running_aml, sizeof(values_built_while_running_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *long_package =
@@ -297,21 +284,7 @@ KERNEL_TEST(strings_buffers_and_packages_are_built_while_methods_run)
  */
 KERNEL_TEST(an_operand_converts_to_the_integer_its_operator_needs)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   '0',   '0',   '0',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '1',   0x0Au, 0x07u, 0x08u, 'R',
-        '0',   '0',   '2',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',
-        '4',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '5',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '6',   0x0Au,
-        0x07u, 0x08u, 'R',   '0',   '0',   '7',   0x0Au, 0x07u, 0x70u, 0x72u, 0x0Du, '1',   'F',   0x00u, 0x0Au, 0x01u,
-        0x00u, 'R',   '0',   '0',   '0',   0x70u, 0x72u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x0Au, 0x00u, 0x00u,
-        'R',   '0',   '0',   '1',   0x70u, 0x72u, 0x0Du, 0x30u, 0x78u, '1',   '0',   0x00u, 0x0Au, 0x00u, 0x00u, 'R',
-        '0',   '0',   '2',   0x70u, 0x72u, 0x0Du, 0x00u, 0x0Au, 0x05u, 0x00u, 'R',   '0',   '0',   '3',   0x70u, 0x72u,
-        0x0Du, '1',   '2',   'G',   '4',   0x00u, 0x0Au, 0x00u, 0x00u, 'R',   '0',   '0',   '4',   0x70u, 0x72u, 0x12u,
-        0x04u, 0x01u, 0x0Au, 0x01u, 0x0Au, 0x00u, 0x00u, 'R',   '0',   '0',   '5',   0x70u, 0x72u, 0x11u, 0x0Cu, 0x0Au,
-        0x09u, 0x01u, 0x02u, 0x03u, 0x04u, 0x05u, 0x06u, 0x07u, 0x08u, 0x09u, 0x0Au, 0x00u, 0x00u, 'R',   '0',   '0',
-        '6',   0x70u, 0x72u, 0x11u, 0x03u, 0x0Au, 0x00u, 0x0Au, 0x03u, 0x00u, 'R',   '0',   '0',   '7',
-    };
-
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_implicit_conversions_aml, sizeof(values_implicit_conversions_aml)))
         return;
     kernel_test_check(test, values_integer("R000") == 0x20u, "Add (\"1F\", 1) is 0x20");
     kernel_test_check(test, values_integer("R001") == 0x0201u, "Add (Buffer { 1, 2 }, 0) is 0x0201");
@@ -328,7 +301,7 @@ KERNEL_TEST(an_operand_converts_to_the_integer_its_operator_needs)
     kernel_test_check(test, values_load.evaluation.forbidden_conversions == 3u,
                       "the 0x prefix, the empty String and the empty Buffer are counted");
     values_close(test);
-    if (!values_run(test, 1u, aml, sizeof(aml)))
+    if (!values_run(test, 1u, values_implicit_conversions_aml, sizeof(values_implicit_conversions_aml)))
         return;
     kernel_test_check(test, values_integer("R006") == 0x04030201u && values_integer("R001") == 0x0201u,
                       "under revision 1, a Buffer reads its first 4 bytes");
@@ -344,26 +317,11 @@ KERNEL_TEST(an_operand_converts_to_the_integer_its_operator_needs)
  */
 KERNEL_TEST(a_store_to_a_named_object_copies_into_it_and_keeps_its_size)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'I',   'N',   'T',   '0',   0x0Bu, 0x34u, 0x12u, 0x08u, 'I',   'N',   'T',   '1',   0x0Au, 0x00u, 0x08u,
-        'S',   'T',   'R',   '0',   0x0Du, 'A',   'B',   'C',   0x00u, 0x08u, 'S',   'T',   'R',   '1',   0x0Du, 'A',
-        'B',   'C',   'D',   'E',   0x00u, 0x08u, 'B',   'U',   'F',   '0',   0x11u, 0x07u, 0x0Au, 0x04u, 0x09u, 0x09u,
-        0x09u, 0x09u, 0x08u, 'B',   'U',   'F',   '1',   0x11u, 0x03u, 0x0Au, 0x01u, 0x08u, 'P',   'K',   'G',   '0',
-        0x12u, 0x04u, 0x01u, 0x0Au, 0x01u, 0x08u, 'P',   'K',   'G',   '1',   0x12u, 0x04u, 0x01u, 0x0Au, 0x01u, 0x5Bu,
-        0x82u, 0x05u, 'D',   'E',   'V',   '0',   0x08u, 'I',   'N',   'T',   '2',   0x0Au, 0x00u, 0x70u, 0x0Du, 'A',
-        'B',   'C',   'D',   'E',   'F',   'G',   'H',   'I',   'J',   0x00u, 'I',   'N',   'T',   '0',   0x70u, 0x11u,
-        0x05u, 0x0Au, 0x02u, 0x01u, 0x02u, 'I',   'N',   'T',   '1',   0x70u, 0x0Du, 'H',   'E',   'L',   'L',   'O',
-        0x20u, 'W',   'O',   'R',   'L',   'D',   0x00u, 'S',   'T',   'R',   '0',   0x70u, 0x0Au, 'A',   'S',   'T',
-        'R',   '1',   0x70u, 0x0Du, 'A',   'B',   0x00u, 'B',   'U',   'F',   '0',   0x70u, 0x0Bu, 0x02u, 0x01u, 'B',
-        'U',   'F',   '1',   0x70u, 0x12u, 0x08u, 0x02u, 0x0Au, 0x02u, 0x0Du, 'X',   'Y',   0x00u, 'P',   'K',   'G',
-        '0',   0x70u, 0x0Au, 0x05u, 'P',   'K',   'G',   '1',   0x70u, 0x0Au, 0x01u, 'D',   'E',   'V',   '0',   0x70u,
-        0x70u, 0x0Au, '3',   'I',   'N',   'T',   '2',   0x5Bu, 0x31u,
-    };
     static const uint8_t ascii_bytes[] = {0x41u, 0x00u, 0x00u, 0x00u, 0x00u};
     static const uint8_t buffer_four[] = {0x41u, 0x42u, 0x00u, 0x00u};
     static const uint8_t buffer_one[] = {0x02u};
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_store_to_named_aml, sizeof(values_store_to_named_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *replaced =
@@ -409,19 +367,10 @@ KERNEL_TEST(a_store_to_a_named_object_copies_into_it_and_keeps_its_size)
  */
 KERNEL_TEST(a_store_to_a_local_copies_and_copy_object_replaces_the_type)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'B',   'U',   'F',   '0',   0x11u, 0x06u, 0x0Au, 0x03u, 0x01u, 0x02u, 0x03u, 0x08u, 'R', 'E',
-        'S',   '0',   0x0Au, 0x00u, 0x08u, 'R',   'E',   'S',   '1',   0x0Au, 0x00u, 0x08u, 'I',   'N', 'T',
-        '0',   0x0Au, 0x05u, 0x14u, 0x15u, 'M',   'C',   'P',   'Y',   0x00u, 0x70u, 'B',   'U',   'F', '0',
-        0x60u, 0x70u, 0x0Au, 0xFFu, 'B',   'U',   'F',   '0',   0xA4u, 0x60u, 0x14u, 0x0Eu, 'M',   'A', 'R',
-        'G',   0x01u, 0x70u, 0x0Du, 'Z',   'Z',   0x00u, 0x68u, 0xA4u, 0x68u, 0x9Du, 'M',   'C',   'P', 'Y',
-        'R',   'E',   'S',   '0',   0x9Du, 'M',   'A',   'R',   'G',   'B',   'U',   'F',   '0',   'R', 'E',
-        'S',   '1',   0x9Du, 0x0Du, 'S',   'T',   'R',   0x00u, 'I',   'N',   'T',   '0',
-    };
     static const uint8_t original[] = {0x01u, 0x02u, 0x03u};
     static const uint8_t changed[] = {0xFFu, 0x00u, 0x00u};
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_store_to_local_aml, sizeof(values_store_to_local_aml)))
         return;
     kernel_test_check(test, values_buffer_is("RES0", original, sizeof(original)),
                       "Local0 keeps the bytes BUF0 had when it was stored");
@@ -444,6 +393,8 @@ KERNEL_TEST(a_store_to_a_local_copies_and_copy_object_replaces_the_type)
  *        from above the Package's first element, which the Package keeps; a copied Buffer lives in BUF1 and in
  *        the operand both; 1,280 CopyObject statements in a loop leave the value stack as they found it; and a
  *        CopyObject that fails keeps nothing of the Package it was given.
+ *
+ * Its table is raw bytes: iasl's grammar refuses a CopyObject whose target is an Index.
  */
 KERNEL_TEST(copy_object_gives_what_it_copied_to_the_operator_that_waits_for_it)
 {
@@ -510,21 +461,13 @@ KERNEL_TEST(copy_object_gives_what_it_copied_to_the_operator_that_waits_for_it)
  */
 KERNEL_TEST(an_integer_stored_to_a_local_frees_what_it_held_or_goes_through_it)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '0',   0x00u, 0x08u,
-        'R',   'E',   'S',   '1',   0x00u, 0x14u, 0x2Au, 'M',   'S',   'T',   'O',   0x00u, 0x70u, 0x11u,
-        0x05u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x60u, 0x70u, 0x0Au, 0x07u, 0x60u, 0x70u, 0x71u, 'I',   'N',
-        'T',   '0',   0x61u, 0x70u, 0x0Au, 0x09u, 0x61u, 0x70u, 0x60u, 'R',   'E',   'S',   '0',   0x70u,
-        0x83u, 0x61u, 'R',   'E',   'S',   '1',   0x14u, 0x14u, 'M',   'A',   'R',   'G',   0x01u, 0x70u,
-        0x11u, 0x05u, 0x0Au, 0x02u, 0x03u, 0x04u, 0x68u, 0x70u, 0x0Au, 0x07u, 0x68u, 0xA4u, 0x68u,
-    };
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
         .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
         .payload = 1u,
     };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_integer_over_local_aml, sizeof(values_integer_over_local_aml)))
         return;
 
     const uint32_t alive = values_load.heap.objects - values_load.heap.objects_freed;
@@ -558,17 +501,13 @@ KERNEL_TEST(an_integer_stored_to_a_local_frees_what_it_held_or_goes_through_it)
  */
 KERNEL_TEST(a_wide_integer_is_stored_whole_and_compared_masked_in_revision_1)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '1',   0x00u, 0x14u, 0x13u, 'M', 'W', 'I', 'D',   0x01u,
-        0x70u, 0x68u, 0x61u, 0x70u, 0x93u, 0x68u, 0x01u, 'R',   'E', 'S', '1', 0xA4u, 0x61u,
-    };
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
         .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
         .payload = 0x100000001ull,
     };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
-    if (!values_run(test, 1u, aml, sizeof(aml)))
+    if (!values_run(test, 1u, values_wide_integer_aml, sizeof(values_wide_integer_aml)))
         return;
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_evaluate(&values_load, "\\MWID",
@@ -590,31 +529,7 @@ KERNEL_TEST(a_wide_integer_is_stored_whole_and_compared_masked_in_revision_1)
  */
 KERNEL_TEST(strings_and_buffers_compare_by_their_bytes)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   '0',   '0',   '0',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '1',   0x0Au, 0x07u, 0x08u, 'R',
-        '0',   '0',   '2',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '3',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',
-        '4',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '5',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '6',   0x0Au,
-        0x07u, 0x08u, 'R',   '0',   '0',   '7',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '0',   '8',   0x0Au, 0x07u, 0x08u,
-        'R',   '0',   '0',   '9',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '0',   0x0Au, 0x07u, 0x08u, 'R',   '0',
-        '1',   '1',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '2',   0x0Au, 0x07u, 0x08u, 'R',   '0',   '1',   '3',
-        0x0Au, 0x07u, 0x70u, 0x93u, 0x0Du, 'A',   'B',   'C',   0x00u, 0x0Du, 'A',   'B',   'C',   0x00u, 'R',   '0',
-        '0',   '0',   0x70u, 0x93u, 0x0Du, 'A',   'B',   'C',   0x00u, 0x0Du, 'A',   'B',   'D',   0x00u, 'R',   '0',
-        '0',   '1',   0x70u, 0x95u, 0x0Du, 'A',   'B',   'C',   0x00u, 0x0Du, 'A',   'B',   'D',   0x00u, 'R',   '0',
-        '0',   '2',   0x70u, 0x94u, 0x0Du, 'A',   'B',   'C',   'D',   0x00u, 0x0Du, 'A',   'B',   'C',   0x00u, 'R',
-        '0',   '0',   '3',   0x70u, 0x93u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u,
-        0x02u, 'R',   '0',   '0',   '4',   0x70u, 0x95u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x11u, 0x05u, 0x0Au,
-        0x02u, 0x01u, 0x03u, 'R',   '0',   '0',   '5',   0x70u, 0x93u, 0x0Au, 0x1Fu, 0x0Du, '1',   'F',   0x00u, 'R',
-        '0',   '0',   '6',   0x70u, 0x93u, 0x0Du, '1',   'F',   0x00u, 0x0Au, 0x1Fu, 'R',   '0',   '0',   '7',   0x70u,
-        0x93u, 0x0Du, '0',   '0',   '0',   '0',   '0',   '0',   '0',   '0',   '0',   '0',   '0',   '0',   '0',   '0',
-        '1',   'F',   0x00u, 0x0Au, 0x1Fu, 'R',   '0',   '0',   '8',   0x70u, 0x90u, 0x11u, 0x08u, 0x0Au, 0x05u, 0x00u,
-        0x00u, 0x00u, 0x00u, 0x01u, 0x0Au, 0x01u, 'R',   '0',   '0',   '9',   0x70u, 0x91u, 0x11u, 0x08u, 0x0Au, 0x05u,
-        0x00u, 0x00u, 0x00u, 0x00u, 0x01u, 0x0Au, 0x00u, 'R',   '0',   '1',   '0',   0x70u, 0x92u, 0x0Du, 0x30u, 0x00u,
-        'R',   '0',   '1',   '1',   0x70u, 0x95u, 0x0Du, 'A',   'B',   0x00u, 0x0Du, 'A',   'B',   'C',   0x00u, 'R',
-        '0',   '1',   '2',   0x70u, 0x93u, 0x0Du, 'A',   'B',   0x00u, 0x0Du, 'A',   'B',   'C',   0x00u, 'R',   '0',
-        '1',   '3',
-    };
-
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_comparisons_aml, sizeof(values_comparisons_aml)))
         return;
     kernel_test_check(test, values_integer("R000") == VALUES_ONES, "\"ABC\" equals \"ABC\"");
     kernel_test_check(test, values_integer("R001") == 0u, "\"ABC\" differs from \"ABD\"");
@@ -646,24 +561,12 @@ KERNEL_TEST(strings_and_buffers_compare_by_their_bytes)
  */
 KERNEL_TEST(concatenate_gives_the_type_of_its_first_operand)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   '0',   '0',   '0',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '1',   0x0Au, 0x00u, 0x08u,
-        'R',   '0',   '0',   '2',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '3',   0x0Au, 0x00u, 0x08u, 'R',
-        '0',   '0',   '4',   0x0Au, 0x00u, 0x08u, 'R',   '0',   '0',   '5',   0x0Au, 0x00u, 0x08u, 'R',   '0',
-        '0',   '6',   0x0Au, 0x00u, 0x9Du, 0x73u, 0x0Bu, 0x02u, 0x01u, 0x0Bu, 0x04u, 0x03u, 0x00u, 'R',   '0',
-        '0',   '0',   0x9Du, 0x73u, 0x0Du, 'A',   'B',   0x00u, 0x0Du, 'C',   'D',   0x00u, 0x00u, 'R',   '0',
-        '0',   '1',   0x9Du, 0x73u, 0x0Du, 'A',   'B',   0x00u, 0x0Au, 0x1Fu, 0x00u, 'R',   '0',   '0',   '2',
-        0x9Du, 0x73u, 0x11u, 0x04u, 0x0Au, 0x01u, 0x01u, 0x0Du, 'A',   'B',   0x00u, 0x00u, 'R',   '0',   '0',
-        '3',   0x9Du, 0x73u, 0x11u, 0x04u, 0x0Au, 0x01u, 0x01u, 0x0Bu, 0x02u, 0x01u, 0x00u, 'R',   '0',   '0',
-        '4',   0x9Du, 0x73u, 0x0Du, 'A',   'B',   0x00u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u, 0xABu, 0x00u, 'R',
-        '0',   '0',   '5',   0x73u, 0x0Du, 0x58u, 0x00u, 0x0Du, 0x59u, 0x00u, 'R',   '0',   '0',   '6',
-    };
     static const uint8_t integers[] = {0x02u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
                                        0x04u, 0x03u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
     static const uint8_t with_string[] = {0x01u, 0x41u, 0x42u, 0x00u};
     static const uint8_t with_integer[] = {0x01u, 0x02u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_concatenations_aml, sizeof(values_concatenations_aml)))
         return;
     kernel_test_check(test, values_buffer_is("R000", integers, sizeof(integers)),
                       "Concatenate (0x0102, 0x0304) is a Buffer of two 8-byte integers");
@@ -691,38 +594,11 @@ KERNEL_TEST(concatenate_gives_the_type_of_its_first_operand)
  */
 KERNEL_TEST(the_explicit_conversions_give_what_acpi_and_windows_give)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'S',   '0',   '0',   '0',   0x0Au, 0x00u, 0x08u, 'S',   '0',   '0',   '1',   0x0Au, 0x00u, 0x08u, 'S',
-        '0',   '0',   '2',   0x0Au, 0x00u, 0x08u, 'S',   '0',   '0',   '3',   0x0Au, 0x00u, 0x08u, 'S',   '0',   '0',
-        '4',   0x0Au, 0x00u, 0x08u, 'S',   '0',   '0',   '5',   0x0Au, 0x00u, 0x08u, 'S',   '0',   '0',   '6',   0x0Au,
-        0x00u, 0x08u, 'S',   '0',   '0',   '7',   0x0Au, 0x00u, 0x08u, 'S',   '0',   '0',   '8',   0x0Au, 0x00u, 0x08u,
-        'B',   '0',   '0',   '0',   0x0Au, 0x00u, 0x08u, 'B',   '0',   '0',   '1',   0x0Au, 0x00u, 0x08u, 'B',   '0',
-        '0',   '2',   0x0Au, 0x00u, 0x08u, 'I',   '0',   '0',   '0',   0x0Au, 0x07u, 0x08u, 'I',   '0',   '0',   '1',
-        0x0Au, 0x07u, 0x08u, 'I',   '0',   '0',   '2',   0x0Au, 0x07u, 0x08u, 'I',   '0',   '0',   '3',   0x0Au, 0x07u,
-        0x08u, 'I',   '0',   '0',   '4',   0x0Au, 0x07u, 0x08u, 'I',   '0',   '0',   '5',   0x0Au, 0x07u, 0x08u, 'I',
-        '0',   '0',   '6',   0x0Au, 0x07u, 0x08u, 'I',   '0',   '0',   '7',   0x0Au, 0x07u, 0x9Du, 0x97u, 0x0Bu, 0xD2u,
-        0x04u, 0x00u, 'S',   '0',   '0',   '0',   0x9Du, 0x97u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x07u, 0xC8u, 0x00u, 'S',
-        '0',   '0',   '1',   0x9Du, 0x98u, 0x0Au, 0x2Au, 0x00u, 'S',   '0',   '0',   '2',   0x9Du, 0x98u, 0x11u, 0x05u,
-        0x0Au, 0x02u, 0x0Au, 0xFFu, 0x00u, 'S',   '0',   '0',   '3',   0x9Du, 0x98u, 0x0Du, 'X',   'Y',   0x00u, 0x00u,
-        'S',   '0',   '0',   '4',   0x9Du, 0x9Cu, 0x11u, 0x07u, 0x0Au, 0x04u, 'A',   'B',   0x00u, 0x43u, 0xFFu, 0x00u,
-        'S',   '0',   '0',   '5',   0x9Du, 0x9Cu, 0x11u, 0x06u, 0x0Au, 0x03u, 'A',   'B',   'C',   0x0Au, 0x02u, 0x00u,
-        'S',   '0',   '0',   '6',   0x9Du, 0x97u, 0x11u, 0x03u, 0x0Au, 0x00u, 0x00u, 'S',   '0',   '0',   '7',   0x9Du,
-        0x98u, 0x0Au, 0x00u, 0x00u, 'S',   '0',   '0',   '8',   0x9Du, 0x96u, 0x0Du, 'H',   'I',   0x00u, 0x00u, 'B',
-        '0',   '0',   '0',   0x9Du, 0x96u, 0x0Bu, 0x02u, 0x01u, 0x00u, 'B',   '0',   '0',   '1',   0x9Du, 0x96u, 0x11u,
-        0x04u, 0x0Au, 0x01u, 0x05u, 0x00u, 'B',   '0',   '0',   '2',   0x70u, 0x99u, 0x0Du, 0x20u, 0x20u, '4',   '2',
-        0x00u, 0x00u, 'I',   '0',   '0',   '0',   0x70u, 0x99u, 0x0Du, 0x30u, 0x78u, '2',   'A',   0x00u, 0x00u, 'I',
-        '0',   '0',   '1',   0x70u, 0x99u, 0x0Du, '0',   '5',   '2',   0x00u, 0x00u, 'I',   '0',   '0',   '2',   0x70u,
-        0x99u, 0x0Du, 0x2Du, 0x31u, 0x00u, 0x00u, 'I',   '0',   '0',   '3',   0x70u, 0x99u, 0x0Du, '9',   '9',   '9',
-        '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',   '9',
-        '9',   '9',   '9',   '9',   0x00u, 0x00u, 'I',   '0',   '0',   '4',   0x70u, 0x99u, 0x11u, 0x05u, 0x0Au, 0x02u,
-        0x2Au, 0x00u, 0x00u, 'I',   '0',   '0',   '5',   0x70u, 0x99u, 0x0Du, '4',   '2',   'A',   'B',   'C',   0x00u,
-        0x00u, 'I',   '0',   '0',   '6',   0x70u, 0x99u, 0x0Au, 0x2Au, 0x00u, 'I',   '0',   '0',   '7',
-    };
     static const uint8_t from_string[] = {0x48u, 0x49u, 0x00u};
     static const uint8_t from_integer[] = {0x02u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
     static const uint8_t from_buffer[] = {0x05u};
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_explicit_conversions_aml, sizeof(values_explicit_conversions_aml)))
         return;
     kernel_test_check(test, values_string_is("S000", "1234"), "ToDecimalString (1234) is \"1234\"");
     kernel_test_check(test, values_string_is("S001", "7,200"), "ToDecimalString (Buffer { 7, 200 }) is \"7,200\"");
@@ -761,47 +637,10 @@ KERNEL_TEST(the_explicit_conversions_give_what_acpi_and_windows_give)
  */
 KERNEL_TEST(mid_size_of_and_object_type_read_what_they_are_given)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x01u, 0x08u, 'S',   'T',   'R',   '0',   0x0Du, 'A',   'B',   'C',
-        'D',   0x00u, 0x08u, 'B',   'U',   'F',   '0',   0x11u, 0x03u, 0x0Au, 0x06u, 0x08u, 'P',   'K',   'G',   '0',
-        0x12u, 0x02u, 0x03u, 0x5Bu, 0x82u, 0x13u, 'D',   'E',   'V',   '0',   0x08u, '_',   'H',   'I',   'D',   0x0Du,
-        'L',   'P',   'L',   '0',   '0',   '0',   '0',   0x00u, 0x5Bu, 0x01u, 'M',   'T',   'X',   '0',   0x00u, 0x5Bu,
-        0x80u, 'R',   'E',   'G',   '0',   0x00u, 0x0Bu, 0x00u, 0x10u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',
-        'G',   '0',   0x01u, 'F',   'L',   'D',   '0',   0x08u, 0x14u, 0x09u, 'M',   'T',   'H',   'D',   0x00u, 0xA4u,
-        0x0Au, 0x00u, 0x14u, 0x0Eu, 'M',   'L',   'O',   'C',   0x00u, 0x70u, 0x12u, 0x02u, 0x05u, 0x60u, 0xA4u, 0x87u,
-        0x60u, 0x14u, 0x09u, 'M',   'U',   'N',   'I',   0x00u, 0xA4u, 0x8Eu, 0x61u, 0x14u, 0x14u, 'M',   'N',   'A',
-        'M',   0x01u, 0x08u, 'T',   'M',   'P',   '0',   0x11u, 0x02u, 0x68u, 0xA4u, 0x87u, 'T',   'M',   'P',   '0',
-        0x08u, 'M',   '0',   '0',   '0',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',   '1',   0x0Au, 0x00u, 0x08u, 'M',
-        '0',   '0',   '2',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',   '3',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',
-        '4',   0x0Au, 0x00u, 0x08u, 'M',   '0',   '0',   '5',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '0',   0x0Au,
-        0x07u, 0x08u, 'Z',   '0',   '0',   '1',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '2',   0x0Au, 0x00u, 0x08u,
-        'Z',   '0',   '0',   '3',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '4',   0x0Au, 0x00u, 0x08u, 'Z',   '0',
-        '0',   '5',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '6',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '7',
-        0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '8',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '0',   '9',   0x0Au, 0x00u,
-        0x08u, 'Z',   '0',   '1',   '0',   0x0Au, 0x00u, 0x08u, 'Z',   '0',   '1',   '1',   0x0Au, 0x00u, 0x08u, 'Z',
-        '0',   '1',   '2',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',   '3',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',
-        '4',   0x0Au, 0x07u, 0x08u, 'Z',   '0',   '1',   '5',   0x0Au, 0x07u, 0x9Du, 0x9Eu, 0x0Du, 'A',   'B',   'C',
-        'D',   'E',   'F',   0x00u, 0x0Au, 0x02u, 0x0Au, 0x03u, 0x00u, 'M',   '0',   '0',   '0',   0x9Du, 0x9Eu, 0x0Du,
-        'A',   'B',   'C',   0x00u, 0x0Au, 0x01u, 0x0Au, 0x0Au, 0x00u, 'M',   '0',   '0',   '1',   0x9Du, 0x9Eu, 0x11u,
-        0x06u, 0x0Au, 0x03u, 0x01u, 0x02u, 0x03u, 0x0Au, 0x05u, 0x0Au, 0x01u, 0x00u, 'M',   '0',   '0',   '2',   0x9Du,
-        0x9Eu, 0x0Du, 'A',   'B',   'C',   0x00u, 0x0Au, 0x00u, 0x0Au, 0x00u, 0x00u, 'M',   '0',   '0',   '3',   0x9Du,
-        0x9Eu, 0x11u, 0x07u, 0x0Au, 0x04u, 0x01u, 0x02u, 0x03u, 0x04u, 0x0Au, 0x01u, 0x0Au, 0x02u, 0x00u, 'M',   '0',
-        '0',   '4',   0x9Du, 0x9Eu, 0x0Bu, 'B',   'A',   0x0Au, 0x00u, 0x0Au, 0x01u, 0x00u, 'M',   '0',   '0',   '5',
-        0x70u, 0x87u, 'S',   'T',   'R',   '0',   'Z',   '0',   '0',   '1',   0x70u, 0x87u, 'B',   'U',   'F',   '0',
-        'Z',   '0',   '0',   '2',   0x70u, 0x87u, 'P',   'K',   'G',   '0',   'Z',   '0',   '0',   '3',   0x70u, 'M',
-        'L',   'O',   'C',   'Z',   '0',   '0',   '4',   0x70u, 0x8Eu, 'I',   'N',   'T',   '0',   'Z',   '0',   '0',
-        '5',   0x70u, 0x8Eu, 'S',   'T',   'R',   '0',   'Z',   '0',   '0',   '6',   0x70u, 0x8Eu, 'B',   'U',   'F',
-        '0',   'Z',   '0',   '0',   '7',   0x70u, 0x8Eu, 'P',   'K',   'G',   '0',   'Z',   '0',   '0',   '8',   0x70u,
-        0x8Eu, 'D',   'E',   'V',   '0',   'Z',   '0',   '0',   '9',   0x70u, 0x8Eu, 'M',   'T',   'H',   'D',   'Z',
-        '0',   '1',   '0',   0x70u, 0x8Eu, 'M',   'T',   'X',   '0',   'Z',   '0',   '1',   '1',   0x70u, 0x8Eu, 'R',
-        'E',   'G',   '0',   'Z',   '0',   '1',   '4',   0x70u, 0x8Eu, 'F',   'L',   'D',   '0',   'Z',   '0',   '1',
-        '2',   0x70u, 'M',   'U',   'N',   'I',   'Z',   '0',   '1',   '3',   0x70u, 0x87u, 'I',   'N',   'T',   '0',
-        'Z',   '0',   '0',   '0',   0x70u, 'M',   'N',   'A',   'M',   0x0Au, 0x09u, 'Z',   '0',   '1',   '5',
-    };
     static const uint8_t slice[] = {0x02u, 0x03u};
     static const uint8_t low_byte[] = {0x42u};
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_mid_size_of_and_object_type_aml, sizeof(values_mid_size_of_and_object_type_aml)))
         return;
     kernel_test_check(test, values_string_is("M000", "CDE"), "Mid (\"ABCDEF\", 2, 3) is \"CDE\"");
     kernel_test_check(test, values_string_is("M001", "BC"), "Mid (\"ABC\", 1, 10) stops at the end: \"BC\"");
@@ -836,6 +675,8 @@ KERNEL_TEST(mid_size_of_and_object_type_read_what_they_are_given)
  *        that hold a String and a Package, once their table is loaded, a method cut short in the middle
  *        of an operator, a String without its NUL, both truncated, and a VarPackage of 0xFFFFFFFF
  *        elements, refused as limit_package_elements (§6.3).
+ *
+ * Its table is raw bytes: iasl does not emit a Concatenate cut short in the middle of its operands.
  */
 KERNEL_TEST(an_evaluation_gives_back_every_object_it_built)
 {
@@ -881,7 +722,6 @@ KERNEL_TEST(an_evaluation_gives_back_every_object_it_built)
  */
 KERNEL_TEST(the_object_heap_reuses_what_it_frees)
 {
-    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '0', 0x00u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap = &values_load.heap;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &values_load.space;
     uint32_t first = 0u;
@@ -890,7 +730,7 @@ KERNEL_TEST(the_object_heap_reuses_what_it_frees)
     uint32_t inner = 0u;
     uint32_t text = 0u;
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
         return;
 
     const uint32_t live = values_live_objects();
@@ -951,12 +791,11 @@ KERNEL_TEST(the_object_heap_reuses_what_it_frees)
  */
 KERNEL_TEST(a_saturated_reference_count_is_never_freed)
 {
-    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '0', 0x00u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap = &values_load.heap;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &values_load.space;
     uint32_t handle = 0u;
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
         return;
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 3u, &handle);
@@ -983,13 +822,12 @@ KERNEL_TEST(a_saturated_reference_count_is_never_freed)
  */
 KERNEL_TEST(a_dead_handle_is_counted_and_changes_nothing)
 {
-    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '0', 0x00u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap = &values_load.heap;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &values_load.space;
     uint32_t handle = 0u;
     uint32_t again = 0u;
 
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
         return;
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 3u, &handle);
@@ -1020,6 +858,8 @@ KERNEL_TEST(a_dead_handle_is_counted_and_changes_nothing)
  *        elements, keeps nothing it cannot use (§5.1): the packages and strings the load built before it
  *        met Buffer (Add (1, 1)) or Package (Add (1, 1)) are freed, as is the initialiser past the
  *        count.
+ *
+ * Its table is raw bytes: iasl raises the count of a Package that holds more initialisers than elements.
  */
 KERNEL_TEST(a_name_whose_object_waits_or_is_cut_keeps_nothing_else)
 {
@@ -1059,22 +899,13 @@ KERNEL_TEST(a_name_whose_object_waits_or_is_cut_keeps_nothing_else)
  */
 KERNEL_TEST(a_growing_string_reuses_the_blocks_it_gives_back)
 {
-    static const uint8_t empty[] = {0x08u, 'R', 'E', 'S', '0', 0x00u};
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '0',   0x0Au, 0x00u, 0x14u, '2',   'M',   'G',   'R',   'W',   0x00u,
-        0x70u, 0x0Du, 0x00u, 0x60u, 0x70u, 0x0Au, 0x00u, 0x61u, 0xA2u, 0x20u, 0x95u, 0x61u, 0x0Au, 0xC8u,
-        0x73u, 0x60u, 0x0Du, 'A',   'B',   'C',   'D',   'E',   'F',   'G',   'H',   'I',   'J',   'K',
-        'L',   'M',   'N',   'O',   'P',   'Q',   'R',   'S',   'T',   0x00u, 0x60u, 0x75u, 0x61u, 0xA4u,
-        0x87u, 0x60u, 0x70u, 'M',   'G',   'R',   'W',   'R',   'E',   'S',   '0',
-    };
-
-    if (!values_run(test, 2u, empty, sizeof(empty)))
+    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
         return;
 
     const uint32_t arena = values_load.space.arena_bytes;
 
     values_close(test);
-    if (!values_run(test, 2u, aml, sizeof(aml)))
+    if (!values_run(test, 2u, values_growing_string_aml, sizeof(values_growing_string_aml)))
         return;
     kernel_test_measure(test, "arena_growth", values_load.space.arena_bytes - arena);
     kernel_test_check(test, values_integer("RES0") == 4000u, "the String reaches 4,000 characters");
