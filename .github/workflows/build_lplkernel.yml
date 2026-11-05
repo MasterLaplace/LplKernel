@@ -218,3 +218,6 @@ jobs:
         set -e
         tools/acpi-corpus.sh fetch quick
         tools/acpi-corpus.sh check quick
+
+    - name: The kept data of the quick list and 4 mutated copies, which the check flags as its builds leave it unbuilt
+      run: tools/acpi-corpus.sh kept quick 4
