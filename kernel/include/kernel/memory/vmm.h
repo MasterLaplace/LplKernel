@@ -36,6 +36,23 @@
 #define KERNEL_VMM_DYNAMIC_SIZE  (KERNEL_VMM_DYNAMIC_END - KERNEL_VMM_DYNAMIC_START)
 /** @} */
 
+#define KERNEL_VMM_NO_FREE_RUN 0xFFFFFFFFu /**< What kernel_vmm_first_free_run gives when no run is free. */
+
+/**
+ * @brief The first run of @p run_pages free pages a page bitmap holds, as kernel_vmm_reserve_pages searches its own.
+ *
+ * @details First fit, from page 0: a page whose bit is set is taken. A byte whose eight pages are all taken is
+ *          stepped over whole, so that a search crosses a long reservation, such as the namespace's node array, in
+ *          one step per eight pages; the run found is the one a search page by page finds.
+ *
+ * @param bitmap     One bit per page, page i at bit i % 8 of byte i / 8, set when the page is taken.
+ * @param page_count Pages the bitmap covers.
+ * @param run_pages  Pages the run needs.
+ * @return The index of the run's first page, or KERNEL_VMM_NO_FREE_RUN when none is free or @p run_pages is 0 or
+ *         more than @p page_count.
+ */
+uint32_t kernel_vmm_first_free_run(const uint8_t *bitmap, uint32_t page_count, uint32_t run_pages);
+
 /**
  * @brief Initialize the Virtual Memory Manager.
  */

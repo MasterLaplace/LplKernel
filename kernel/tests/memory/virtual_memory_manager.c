@@ -5,6 +5,8 @@
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
+#include <string.h>
+
 KERNEL_TEST_SUITE(virtual_memory_manager, KERNEL_TEST_STAGE_INITIALIZATION);
 
 #if !defined(LPL_KERNEL_REAL_TIME_MODE)
@@ -41,6 +43,81 @@ KERNEL_TEST(page_runs_are_served_in_range)
     if (four_pages)
         kernel_vmm_free_pages(four_pages, 4);
 #endif
+}
+
+#define VIRTUAL_MEMORY_MANAGER_TEST_BITMAP_BYTES 32u /**< Bytes of each bitmap the first-fit test searches. */
+
+/**
+ * @brief The first run of @p run_pages free pages of @p bitmap, searched one page at a time from page 0, apart from
+ *        the manager's search: what kernel_vmm_first_free_run must find.
+ */
+static uint32_t virtual_memory_manager_test_first_fit(const uint8_t *bitmap, uint32_t page_count, uint32_t run_pages)
+{
+    for (uint32_t first = 0u; run_pages != 0u && first + run_pages <= page_count; ++first)
+    {
+        uint32_t page = first;
+
+        while (page < first + run_pages && (bitmap[page / 8u] & (1u << (page % 8u))) == 0u)
+            ++page;
+        if (page == first + run_pages)
+            return first;
+    }
+    return KERNEL_VMM_NO_FREE_RUN;
+}
+
+/**
+ * @brief The manager's first-fit search finds the run a search page by page finds, on 256 bitmaps of 256 pages whose
+ *        bytes are each all taken, all free, or mixed, for every run of 1 to 24 pages, and on runs that start at a
+ *        byte's first page right after taken bytes, end at the bitmap's last page, or fit nowhere.
+ */
+KERNEL_TEST(the_first_fit_search_finds_the_run_a_page_by_page_search_finds)
+{
+    uint8_t bitmap[VIRTUAL_MEMORY_MANAGER_TEST_BITMAP_BYTES];
+    const uint32_t pages = VIRTUAL_MEMORY_MANAGER_TEST_BITMAP_BYTES * 8u;
+    uint32_t state = 0x811C9DC5u;
+    uint32_t searches = 0u;
+    uint32_t agree = 0u;
+    uint32_t found = 0u;
+
+    for (uint32_t pattern = 0u; pattern < 256u; ++pattern)
+    {
+        for (uint32_t byte = 0u; byte < VIRTUAL_MEMORY_MANAGER_TEST_BITMAP_BYTES; ++byte)
+        {
+            state = state * 1664525u + 1013904223u;
+            bitmap[byte] = ((state >> 28u) < 9u) ? 0xFFu : ((state >> 28u) < 11u) ? 0x00u : (uint8_t) (state >> 8u);
+        }
+        for (uint32_t run = 1u; run <= 24u; ++run)
+        {
+            const uint32_t expected = virtual_memory_manager_test_first_fit(bitmap, pages, run);
+
+            ++searches;
+            found += (expected != KERNEL_VMM_NO_FREE_RUN) ? 1u : 0u;
+            agree += (kernel_vmm_first_free_run(bitmap, pages, run) == expected) ? 1u : 0u;
+        }
+    }
+    memset(bitmap, 0xFF, sizeof(bitmap));
+    bitmap[3] = 0x00u;
+    bitmap[4] = 0x00u;
+    kernel_test_check(test, kernel_vmm_first_free_run(bitmap, pages, 9u) == 24u,
+                      "a run that starts at a byte's first page, after whole bytes taken, is found there");
+    bitmap[VIRTUAL_MEMORY_MANAGER_TEST_BITMAP_BYTES - 1u] = 0x0Fu;
+    kernel_test_check(test,
+                      kernel_vmm_first_free_run(bitmap, pages, 9u) == 24u &&
+                          kernel_vmm_first_free_run(bitmap, pages, 4u) == 24u,
+                      "the first run that fits is found, not a later one");
+    bitmap[3] = 0xFFu;
+    bitmap[4] = 0xFFu;
+    kernel_test_check(test,
+                      kernel_vmm_first_free_run(bitmap, pages, 4u) == pages - 4u &&
+                          kernel_vmm_first_free_run(bitmap, pages, 5u) == KERNEL_VMM_NO_FREE_RUN,
+                      "a run that ends at the last page is found, and one larger than every hole is not");
+    kernel_test_check(test, kernel_vmm_first_free_run(bitmap, pages, 0u) == KERNEL_VMM_NO_FREE_RUN,
+                      "a run of no page is not");
+    kernel_test_check(test, agree == searches, "every search finds the run a page-by-page search finds");
+    kernel_test_check(test, found > searches / 4u && found < searches,
+                      "the bitmaps hold runs to find, and runs that fit nowhere");
+    kernel_test_measure(test, "searches", searches);
+    kernel_test_measure(test, "found", found);
 }
 
 /**

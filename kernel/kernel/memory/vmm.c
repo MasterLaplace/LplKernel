@@ -130,6 +130,27 @@ static void vmm_unmap_window(uint32_t window, uint32_t size)
     vmm_release(window - page_offset, page_count, page_count, false);
 }
 
+uint32_t kernel_vmm_first_free_run(const uint8_t *bitmap, uint32_t page_count, uint32_t run_pages)
+{
+    uint32_t index = 0u;
+
+    if (run_pages == 0u || run_pages > page_count)
+        return KERNEL_VMM_NO_FREE_RUN;
+    while (index <= page_count - run_pages)
+    {
+        uint32_t taken = 0u;
+
+        while (taken < run_pages && (bitmap[(index + taken) / 8u] & (1u << ((index + taken) % 8u))) == 0u)
+            ++taken;
+        if (taken == run_pages)
+            return index;
+        index += taken + 1u;
+        while (index % 8u == 0u && index + 8u <= page_count && bitmap[index / 8u] == 0xFFu)
+            index += 8u;
+    }
+    return KERNEL_VMM_NO_FREE_RUN;
+}
+
 bool kernel_vmm_initialize(void)
 {
     memset(vmm_bitmap, 0, sizeof(vmm_bitmap));
@@ -144,30 +165,9 @@ void *kernel_vmm_reserve_pages(uint32_t page_count)
     if (!vmm_initialized || page_count == 0 || page_count > VMM_PAGE_COUNT)
         return NULL;
 
-    uint32_t found_index = 0xFFFFFFFFu;
+    const uint32_t found_index = kernel_vmm_first_free_run(vmm_bitmap, VMM_PAGE_COUNT, page_count);
 
-    uint32_t i = 0;
-    while (i <= VMM_PAGE_COUNT - page_count)
-    {
-        bool match = true;
-        for (uint32_t j = 0u; j < page_count; ++j)
-        {
-            if (vmm_bitmap_test(i + j))
-            {
-                match = false;
-                i += j + 1;
-                break;
-            }
-        }
-
-        if (match)
-        {
-            found_index = i;
-            break;
-        }
-    }
-
-    if (found_index == 0xFFFFFFFFu)
+    if (found_index == KERNEL_VMM_NO_FREE_RUN)
         return NULL;
 
     for (uint32_t i = 0u; i < page_count; ++i)
