@@ -1590,6 +1590,22 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
 }
 
 /**
+ * @brief Whether the three characters after the first of the NameSeg at @p offset may follow it: `A` to `Z`, `0` to
+ *        `9` or `_`.
+ *
+ * @details Always inlined, as machine_language_holds_name_segment, and into the check of kept data, which knows the
+ *          first character from its class.
+ */
+__attribute__((always_inline)) static inline bool machine_language_continues_name_segment(const uint8_t *bytes,
+                                                                                          uint32_t offset)
+{
+    const uint8_t *characters = advanced_configuration_and_power_interface_machine_language_segment_characters;
+
+    return (characters[bytes[offset + 1u]] & characters[bytes[offset + 2u]] & characters[bytes[offset + 3u]] &
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER) != 0u;
+}
+
+/**
  * @brief Whether the @p limit bytes from @p offset hold a NameString of one NameSeg, as the general NameString
  *        reader reads one: four characters of a NameSeg, the first a letter or `_`.
  *
@@ -1599,12 +1615,9 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
 __attribute__((always_inline)) static inline bool machine_language_holds_name_segment(const uint8_t *bytes,
                                                                                       uint32_t offset, uint32_t limit)
 {
-    const uint8_t *characters = advanced_configuration_and_power_interface_machine_language_segment_characters;
-
     return limit - offset >= 4u &&
            advanced_configuration_and_power_interface_machine_language_starts_segment(bytes[offset]) &&
-           (characters[bytes[offset + 1u]] & characters[bytes[offset + 2u]] & characters[bytes[offset + 3u]] &
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SEGMENT_CHARACTER) != 0u;
+           machine_language_continues_name_segment(bytes, offset);
 }
 
 /**
@@ -1722,45 +1735,105 @@ __attribute__((always_inline)) static inline bool machine_language_data_head(con
 }
 
 /**
+ * @brief Reads the head of the Package or VarPackage of class @p class at @p offset, whose parent ends at @p end, as
+ *        machine_language_data_head reads it, its element count within the 4,096 of §6.1; a Package whose PkgLength
+ *        is one byte is read without it.
+ *
+ * @details Always inlined into the check of kept data, which reads every package head through it: most packages of
+ *          real tables are under 64 bytes, their PkgLength one byte, and the general head reader costs them more than
+ *          the three bytes they need.
+ */
+__attribute__((always_inline)) static inline bool machine_language_package_head(const uint8_t *bytes, uint32_t offset,
+                                                                                uint32_t end, uint8_t class,
+                                                                                uint32_t *out_end, uint32_t *out_first,
+                                                                                uint32_t *out_count)
+{
+    const uint32_t length = (class == MACHINE_LANGUAGE_DATA_PACKAGE && end - offset >= 3u) ? bytes[offset + 1u] : 0u;
+
+    if ((length & 0xC0u) == 0u && length >= 2u && length <= end - offset - 1u)
+    {
+        *out_end = offset + 1u + length;
+        *out_first = offset + 3u;
+        *out_count = bytes[offset + 2u];
+        return true;
+    }
+    return machine_language_data_head(bytes, offset, end, class, out_end, out_first, out_count) &&
+           *out_count <= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS;
+}
+
+/**
+ * @brief Checks the Buffer whose head machine_language_data_head has read, its size @p count and its initialiser from
+ *        @p first to @p end, as evaluate_data would build it: true within 64 KiB.
+ */
+static bool machine_language_buffer_fits(uint32_t count, uint32_t first, uint32_t end)
+{
+    return count <= MACHINE_LANGUAGE_MAX_BUFFER_BYTES && end - first <= MACHINE_LANGUAGE_MAX_BUFFER_BYTES;
+}
+
+/**
  * @brief Checks the Package, VarPackage or Buffer at @p offset, whose statement ends at @p limit, as
  *        evaluate_data would build it, without building it (O20): true when it builds with no interpreter and no
  *        fault, its packages within the levels of §6.1, its sizes and counts literal constants, its strings and
  *        buffers within 64 KiB. @p out_after then receives the offset past it, @p out_padded and @p out_truncated
  *        the packages evaluate_data would count as padded and cut. An object it cannot vouch for is refused, and
- *        the general path builds it.
+ *        the general path builds it; any other data object is refused.
+ *
+ * @details The open package's end, count and elements seen stay in locals, and only the packages around it on the
+ *          stack: an element is checked against them without reading the stack.
  */
 static bool machine_language_check_data(const uint8_t *bytes, uint32_t offset, uint32_t limit, uint32_t *out_after,
                                         uint32_t *out_padded, uint32_t *out_truncated)
 {
-    uint32_t ends[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
-    uint32_t counts[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
-    uint32_t seen[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
-    uint32_t depth = 0u;
+    uint32_t outer_ends[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
+    uint32_t outer_counts[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
+    uint32_t outer_seen[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
+    uint32_t outer = 0u;
     uint32_t padded = 0u;
     uint32_t truncated = 0u;
-    uint32_t pc = offset;
+    uint32_t end = 0u;
+    uint32_t first = 0u;
+    uint32_t count = 0u;
+    uint32_t seen = 0u;
+
+    if (offset >= limit)
+        return false;
+
+    const uint8_t top = machine_language_data_classes[bytes[offset]];
+
+    if (top == MACHINE_LANGUAGE_DATA_BUFFER)
+    {
+        if (!machine_language_data_head(bytes, offset, limit, top, &end, &first, &count) ||
+            !machine_language_buffer_fits(count, first, end))
+            return false;
+        *out_after = end;
+        *out_padded = 0u;
+        *out_truncated = 0u;
+        return true;
+    }
+    if ((top != MACHINE_LANGUAGE_DATA_PACKAGE && top != MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE) ||
+        !machine_language_package_head(bytes, offset, limit, top, &end, &first, &count))
+        return false;
+
+    uint32_t pc = first;
 
     for (;;)
     {
-        const uint32_t end = (depth != 0u) ? ends[depth - 1u] : limit;
-
-        if (depth != 0u && pc == end)
+        if (pc == end)
         {
-            --depth;
-            padded += (seen[depth] < counts[depth]) ? 1u : 0u;
-            truncated += (seen[depth] > counts[depth]) ? 1u : 0u;
-            if (depth == 0u)
+            padded += (seen < count) ? 1u : 0u;
+            truncated += (seen > count) ? 1u : 0u;
+            if (outer == 0u)
                 break;
-            ++seen[depth - 1u];
+            --outer;
+            end = outer_ends[outer];
+            count = outer_counts[outer];
+            seen = outer_seen[outer] + 1u;
             continue;
         }
-        if (pc >= end)
-            return false;
 
         const uint8_t class = machine_language_data_classes[bytes[pc]];
-        uint32_t object_end = 0u;
-        uint32_t first = 0u;
-        uint32_t count = 0u;
+        uint32_t inner_end = 0u;
+        uint32_t inner_count = 0u;
 
         if ((class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
         {
@@ -1768,13 +1841,27 @@ static bool machine_language_check_data(const uint8_t *bytes, uint32_t offset, u
                 return false;
             pc += class;
         }
-        else if (class == MACHINE_LANGUAGE_DATA_SEGMENT && depth != 0u)
+        else if (class == MACHINE_LANGUAGE_DATA_SEGMENT)
         {
-            if (!machine_language_holds_name_segment(bytes, pc, end))
+            if (end - pc < 4u || !machine_language_continues_name_segment(bytes, pc))
                 return false;
             pc += 4u;
         }
-        else if (class == MACHINE_LANGUAGE_DATA_PREFIX && depth != 0u)
+        else if (class == MACHINE_LANGUAGE_DATA_PACKAGE || class == MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE)
+        {
+            if (outer + 1u == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES ||
+                !machine_language_package_head(bytes, pc, end, class, &inner_end, &first, &inner_count))
+                return false;
+            outer_ends[outer] = end;
+            outer_counts[outer] = count;
+            outer_seen[outer++] = seen;
+            end = inner_end;
+            count = inner_count;
+            seen = 0u;
+            pc = first;
+            continue;
+        }
+        else if (class == MACHINE_LANGUAGE_DATA_PREFIX)
         {
             MachineLanguageNameString_t name;
 
@@ -1794,28 +1881,14 @@ static bool machine_language_check_data(const uint8_t *bytes, uint32_t offset, u
         }
         else if (class == MACHINE_LANGUAGE_DATA_BUFFER)
         {
-            if (!machine_language_data_head(bytes, pc, end, class, &object_end, &first, &count) ||
-                count > MACHINE_LANGUAGE_MAX_BUFFER_BYTES || object_end - first > MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
+            if (!machine_language_data_head(bytes, pc, end, class, &inner_end, &first, &inner_count) ||
+                !machine_language_buffer_fits(inner_count, first, inner_end))
                 return false;
-            pc = object_end;
-        }
-        else if (class == MACHINE_LANGUAGE_DATA_PACKAGE || class == MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE)
-        {
-            if (depth == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES ||
-                !machine_language_data_head(bytes, pc, end, class, &object_end, &first, &count) ||
-                count > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS)
-                return false;
-            ends[depth] = object_end;
-            counts[depth] = count;
-            seen[depth++] = 0u;
-            pc = first;
-            continue;
+            pc = inner_end;
         }
         else
             return false;
-        if (depth == 0u)
-            break;
-        ++seen[depth - 1u];
+        ++seen;
     }
     *out_after = pc;
     *out_padded = padded;
