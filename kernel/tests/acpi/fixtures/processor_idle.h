@@ -58,6 +58,14 @@ static const uint8_t idle_empty_method_aml[] = {
 };
 
 /**
+ * @brief The start of a _CST: Increment (\RUNS), Notify (\CPU0, 0x81), then Divide (One, Zero) on its second run.
+ */
+static const uint8_t idle_fails_on_second_run_aml[] = {
+    0x75u, 0x5Cu, 0x52u, 0x55u, 0x4Eu, 0x53u, 0x86u, 0x5Cu, 0x43u, 0x50u, 0x55u, 0x30u, 0x0Au, 0x81u, 0xA0u,
+    0x0Eu, 0x93u, 0x5Cu, 0x52u, 0x55u, 0x4Eu, 0x53u, 0x0Au, 0x02u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u,
+};
+
+/**
  * @brief The body of Intel's _CST: If (And (PDCB, 0x200)) { Store (MWC1, Index (C1TM, Zero)) }, Store (C6LT,
  *        Index (C6TM, 2)), Store (C7LT, Index (C7TM, 2)), then Return (Package () { 3, C1TM, C6TM, C7TM }): names,
  *        which are read where they point.
@@ -165,14 +173,6 @@ static const uint8_t idle_returns_string_count_aml[] = {
  */
 static const uint8_t idle_returns_zero_count_aml[] = {
     0xA4u, 0x12u, 0x03u, 0x01u, 0x00u,
-};
-
-/**
- * @brief The start of a _CST: Increment (\RUNS), Notify (\CPU0, 0x81), then Divide (One, Zero) on its second run.
- */
-static const uint8_t idle_runs_then_fails_twice_aml[] = {
-    0x75u, 0x5Cu, 0x52u, 0x55u, 0x4Eu, 0x53u, 0x86u, 0x5Cu, 0x43u, 0x50u, 0x55u, 0x30u, 0x0Au, 0x81u, 0xA0u,
-    0x0Eu, 0x93u, 0x5Cu, 0x52u, 0x55u, 0x4Eu, 0x53u, 0x0Au, 0x02u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u,
 };
 
 /**

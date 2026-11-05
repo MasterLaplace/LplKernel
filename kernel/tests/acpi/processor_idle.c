@@ -1062,7 +1062,7 @@ KERNEL_TEST(a_cst_that_fails_in_step_9_publishes_nothing)
     idle_begin(identifiers, 1u);
     made_up_aml_name_integer(&idle_aml, "RUNS", 0u);
     made_up_aml_begin(&idle_method);
-    made_up_aml_raw(&idle_method, idle_runs_then_fails_twice_aml, sizeof(idle_runs_then_fails_twice_aml));
+    made_up_aml_raw(&idle_method, idle_fails_on_second_run_aml, sizeof(idle_fails_on_second_run_aml));
     made_up_aml_raw(&idle_method, &return_byte, 1u);
     idle_states(&idle_method, 1u, &only, 1u);
     made_up_aml_begin(&idle_scope);
