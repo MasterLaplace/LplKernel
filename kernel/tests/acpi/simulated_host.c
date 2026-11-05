@@ -428,6 +428,30 @@ static void simulated_host_release_pages(void *context, void *address, uint32_t 
     simulated->outstanding_pages -= count;
 }
 
+static void *simulated_host_reserve_pages(void *context, uint32_t count)
+{
+    (void) context;
+    return kernel_vmm_reserve_pages(count);
+}
+
+static bool simulated_host_commit_pages(void *context, void *address, uint32_t count)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+
+    if (simulated->refuses_commits || !kernel_vmm_commit_pages(address, count))
+        return false;
+    simulated->outstanding_pages += count;
+    return true;
+}
+
+static void simulated_host_release_reservation(void *context, void *address, uint32_t reserved, uint32_t committed)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+
+    kernel_vmm_free_pages(address, reserved);
+    simulated->outstanding_pages -= committed;
+}
+
 /**
  * @brief Whether the @p count bytes at @p bytes are all zero.
  */
@@ -529,11 +553,15 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.clock_100ns = simulated_host_clock_100ns;
     simulated->host.allocate_pages = simulated_host_allocate_pages;
     simulated->host.release_pages = simulated_host_release_pages;
+    simulated->host.reserve_pages = simulated_host_reserve_pages;
+    simulated->host.commit_pages = simulated_host_commit_pages;
+    simulated->host.release_reservation = simulated_host_release_reservation;
     simulated->root_system_description_pointer = 0u;
     simulated->outstanding_maps = 0u;
     simulated->mismatched_unmaps = 0u;
     simulated->range_count = 0u;
     simulated->outstanding_pages = 0u;
+    simulated->refuses_commits = false;
     simulated->memory_fill = 0u;
     simulated->configuration_fill = 0xFFu;
     simulated->page_count = 0u;

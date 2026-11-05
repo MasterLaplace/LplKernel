@@ -36,6 +36,23 @@
 #define KERNEL_VMM_DYNAMIC_SIZE  (KERNEL_VMM_DYNAMIC_END - KERNEL_VMM_DYNAMIC_START)
 /** @} */
 
+#define KERNEL_VMM_NO_FREE_RUN 0xFFFFFFFFu /**< What kernel_vmm_first_free_run gives when no run is free. */
+
+/**
+ * @brief The first run of @p run_pages free pages a page bitmap holds, as kernel_vmm_reserve_pages searches its own.
+ *
+ * @details First fit, from page 0: a page whose bit is set is taken. A byte whose eight pages are all taken is
+ *          stepped over whole, so that a search crosses a long reservation, such as the namespace's node array, in
+ *          one step per eight pages; the run found is the one a search page by page finds.
+ *
+ * @param bitmap     One bit per page, page i at bit i % 8 of byte i / 8, set when the page is taken.
+ * @param page_count Pages the bitmap covers.
+ * @param run_pages  Pages the run needs.
+ * @return The index of the run's first page, or KERNEL_VMM_NO_FREE_RUN when none is free or @p run_pages is 0 or
+ *         more than @p page_count.
+ */
+uint32_t kernel_vmm_first_free_run(const uint8_t *bitmap, uint32_t page_count, uint32_t run_pages);
+
 /**
  * @brief Initialize the Virtual Memory Manager.
  */
@@ -56,6 +73,20 @@ void *kernel_vmm_alloc_pages(uint32_t page_count);
  * @return Virtual address of the reserved range, or NULL on failure.
  */
 void *kernel_vmm_reserve_pages(uint32_t page_count);
+
+/**
+ * @brief Maps physical frames under pages a reservation holds, so that they can be read and written.
+ *
+ * @details Every page from @p address must be reserved (kernel_vmm_reserve_pages) and not mapped yet; a commit that
+ *          fails, out of frames or of page tables, unmaps and frees what it mapped, so that the pages stay as they
+ *          were. kernel_vmm_free_pages gives back a reservation whatever part of it is committed.
+ *
+ * @param address    First page, page-aligned, of the dynamic region.
+ * @param page_count Pages to commit.
+ * @return Whether every page is now mapped; false, and none of them mapped, when a page is not reserved, is mapped
+ *         already, or a frame cannot be had.
+ */
+bool kernel_vmm_commit_pages(void *address, uint32_t page_count);
 
 /**
  * @brief Reserve a FIXED range of virtual pages without mapping them.

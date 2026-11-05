@@ -70,7 +70,12 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
  *          the start, at a rate under 1 GHz, and holds at least the 30 ms the power management timer's
  *          check counts. A host without such a count leaves both NULL.
  *          allocate_pages gives count pages of 4 KiB, contiguous and writable, or NULL; release_pages
- *          takes them back, given the same count.
+ *          takes them back, given the same count. reserve_pages reserves count pages of 4 KiB of contiguous
+ *          address space and returns the first, or NULL: none of them can be read or written yet.
+ *          commit_pages makes count pages of a reservation usable, from address, page-aligned, up, each
+ *          reserved and not committed yet, and returns whether it could: one that fails leaves those pages
+ *          as they were. release_reservation gives back a whole reservation, given the pages it reserved
+ *          and how many, from its start, were committed.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     void *context;                                              /**< The host's own state, or NULL. */
@@ -103,6 +108,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     uint32_t (*reference_read)(void *context);  /**< What that count reached since it started. */
     void *(*allocate_pages)(void *context, uint32_t count);              /**< Gives pages of memory. */
     void (*release_pages)(void *context, void *address, uint32_t count); /**< Takes them back. */
+    void *(*reserve_pages)(void *context, uint32_t count); /**< Reserves address space for pages, none usable yet. */
+    bool (*commit_pages)(void *context, void *address, uint32_t count); /**< Makes pages of a reservation usable. */
+    void (*release_reservation)(void *context, void *address, uint32_t reserved,
+                                uint32_t committed); /**< Gives a reservation back, its committed pages with it. */
 } AdvancedConfigurationAndPowerInterfaceHost_t;
 
 /**

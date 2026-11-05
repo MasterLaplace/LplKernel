@@ -1,4 +1,5 @@
 #include "../../../../tests/acpi/field_cases.h"
+#include "../../../../tests/acpi/host_pages.h"
 #include "../../../../tests/acpi/simulated_host.h"
 
 #include <kernel/acpi/host.h>
@@ -150,4 +151,17 @@ KERNEL_TEST(the_machine_host_compare_exchange_swaps_only_the_expected_word)
                       "another word is left as it is, and returned");
     kernel_vmm_unmap_firmware_window((uint32_t) (uintptr_t) window, 4096u);
     physical_memory_manager_page_frame_free(frame);
+}
+
+/**
+ * @brief The machine host keeps the reservation contract every host keeps, and the frames it committed go back to the
+ *        physical memory manager with the reservation.
+ */
+KERNEL_TEST(the_machine_host_reserves_commits_and_releases_pages)
+{
+    const uint32_t free_before = physical_memory_manager_get_free_page_count();
+
+    (void) host_pages_keep_their_contract(test, &advanced_configuration_and_power_interface_machine_host);
+    kernel_test_check(test, physical_memory_manager_get_free_page_count() == free_before,
+                      "every frame committed goes back with the reservation");
 }

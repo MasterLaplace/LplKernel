@@ -8,6 +8,50 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+
+#define PLATFORM_MAX_RESERVATIONS 64u /**< Reservations the build machine's stand-in for the VMM holds at once. */
+
+/**
+ * @brief A run of address space kernel_vmm_reserve_pages gave on the build machine: mapped with no access, until
+ *        kernel_vmm_commit_pages opens pages of it.
+ */
+typedef struct PlatformReservation {
+    void *address; /**< Its first byte, or NULL when the entry is free. */
+    size_t bytes;  /**< Its length. */
+} PlatformReservation_t;
+
+static PlatformReservation_t platform_reservations[PLATFORM_MAX_RESERVATIONS];
+
+/**
+ * @brief The reservation that holds @p address, or NULL when none does.
+ */
+static PlatformReservation_t *platform_reservation_holding(const void *address)
+{
+    for (uint32_t index = 0u; index < PLATFORM_MAX_RESERVATIONS; ++index)
+    {
+        PlatformReservation_t *reservation = &platform_reservations[index];
+        const uint8_t *start = reservation->address;
+
+        if (start != NULL && (const uint8_t *) address >= start &&
+            (const uint8_t *) address < start + reservation->bytes)
+            return reservation;
+    }
+    return NULL;
+}
+
+/**
+ * @brief An entry of the table no reservation holds, or NULL when every one does.
+ */
+static PlatformReservation_t *platform_free_reservation(void)
+{
+    for (uint32_t index = 0u; index < PLATFORM_MAX_RESERVATIONS; ++index)
+    {
+        if (platform_reservations[index].address == NULL)
+            return &platform_reservations[index];
+    }
+    return NULL;
+}
 
 static const AdvancedConfigurationAndPowerInterfaceHost_t *platform_firmware;
 static const char *platform_module_name;
@@ -163,6 +207,25 @@ static void platform_release_pages(void *context, void *address, uint32_t count)
     kernel_vmm_free_pages(address, count);
 }
 
+static void *platform_reserve_pages(void *context, uint32_t count)
+{
+    (void) context;
+    return kernel_vmm_reserve_pages(count);
+}
+
+static bool platform_commit_pages(void *context, void *address, uint32_t count)
+{
+    (void) context;
+    return kernel_vmm_commit_pages(address, count);
+}
+
+static void platform_release_reservation(void *context, void *address, uint32_t reserved, uint32_t committed)
+{
+    (void) context;
+    (void) committed;
+    kernel_vmm_free_pages(address, reserved);
+}
+
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
     .root_system_description_pointer = platform_root_system_description_pointer,
@@ -185,6 +248,9 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .clock_100ns = platform_no_clock,
     .allocate_pages = platform_allocate_pages,
     .release_pages = platform_release_pages,
+    .reserve_pages = platform_reserve_pages,
+    .commit_pages = platform_commit_pages,
+    .release_reservation = platform_release_reservation,
 };
 
 void *kernel_vmm_alloc_pages(uint32_t page_count)
@@ -192,10 +258,46 @@ void *kernel_vmm_alloc_pages(uint32_t page_count)
     return page_count == 0u ? NULL : aligned_alloc(4096u, (size_t) page_count * 4096u);
 }
 
+void *kernel_vmm_reserve_pages(uint32_t page_count)
+{
+    PlatformReservation_t *free_entry = platform_free_reservation();
+    void *pages = NULL;
+
+    if (page_count == 0u || free_entry == NULL)
+        return NULL;
+    pages = mmap(NULL, (size_t) page_count * 4096u, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (pages == MAP_FAILED)
+        return NULL;
+    free_entry->address = pages;
+    free_entry->bytes = (size_t) page_count * 4096u;
+    return pages;
+}
+
+bool kernel_vmm_commit_pages(void *address, uint32_t page_count)
+{
+    const PlatformReservation_t *reservation = platform_reservation_holding(address);
+    const size_t bytes = (size_t) page_count * 4096u;
+
+    return page_count != 0u && reservation != NULL &&
+           bytes <= reservation->bytes - (size_t) ((uint8_t *) address - (uint8_t *) reservation->address) &&
+           mprotect(address, bytes, PROT_READ | PROT_WRITE) == 0;
+}
+
 void kernel_vmm_free_pages(void *ptr, uint32_t page_count)
 {
+    PlatformReservation_t *reservation = platform_reservation_holding(ptr);
+
     (void) page_count;
-    free(ptr);
+    if (reservation == NULL)
+    {
+        free(ptr);
+        return;
+    }
+    if (reservation->address != ptr)
+        return;
+    munmap(reservation->address, reservation->bytes);
+    reservation->address = NULL;
+    reservation->bytes = 0u;
 }
 
 void serial_write_char(Serial_t *serial, char c)

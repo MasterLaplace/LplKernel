@@ -380,8 +380,12 @@ static bool processor_idle_present(ProcessorIdleLoad_t *load, ProcessorIdleCount
 
 /**
  * @brief Whether a node may be a processor object with a _CST: a Processor, or a Device, that holds one.
+ *
+ * @details Always inlined into the two walks that ask it of every node: once processor_idle_node and the lookup of
+ *          _CST are inlined into it, GCC judges those walks' calls too cold for its body and keeps it out of line,
+ *          which costs every node a call.
  */
-static bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
+__attribute__((always_inline)) static inline bool processor_idle_candidate(ProcessorIdleLoad_t *load, uint32_t index)
 {
     const uint8_t type = processor_idle_node(load, index)->type;
 

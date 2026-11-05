@@ -196,7 +196,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t outstanding_maps;                         /**< Maps not unmapped yet, each kept in maps. */
     uint32_t mismatched_unmaps;                        /**< Unmaps whose address and length name no open map. */
     uint32_t range_count;                              /**< Ranges placed. */
-    uint32_t outstanding_pages;                        /**< Pages given and not taken back yet. */
+    uint32_t outstanding_pages;                        /**< Pages given and not taken back yet, those committed
+                                                            included. */
+    bool refuses_commits;                              /**< Whether commit_pages refuses, as a host out of frames
+                                                            would. */
     uint8_t memory_fill;                               /**< What memory no range covers reads as. */
     uint8_t configuration_fill;            /**< What each byte of a PCI function given no configuration space
                                                 reads as: 0xFF, as an absent function, unless a host sets
