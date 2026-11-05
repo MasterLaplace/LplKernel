@@ -1,12 +1,15 @@
 #include <kernel/acpi/host.h>
+#include <kernel/acpi/log.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/boot_module.h>
+#include <kernel/config.h>
 #include <kernel/cpu/acpi.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/cpu/pit.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/drivers/serial.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
 
@@ -290,6 +293,16 @@ static void acpi_host_release_reservation(void *context, void *address, uint32_t
     kernel_vmm_free_pages(address, reserved);
 }
 
+static void acpi_host_log(void *context, uint8_t level, const char *text)
+{
+    (void) context;
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: ACPI ");
+    serial_write_string(&com1, advanced_configuration_and_power_interface_log_level_name(level));
+    serial_write_string(&com1, ": ");
+    serial_write_string(&com1, text);
+    serial_write_char(&com1, '\n');
+}
+
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
     .root_system_description_pointer = acpi_host_root_system_description_pointer,
@@ -317,6 +330,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .reserve_pages = acpi_host_reserve_pages,
     .commit_pages = acpi_host_commit_pages,
     .release_reservation = acpi_host_release_reservation,
+    .log = acpi_host_log,
 };
 
 bool advanced_configuration_and_power_interface_boot_line_holds(const char *word)
