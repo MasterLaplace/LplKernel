@@ -201,6 +201,9 @@ jobs:
     - name: The rule the slack oracle compares acpiexec's two runs by
       run: python3 -I -B tools/acpi/acpiexec_slack.py --self-test
 
+    - name: The rule a real machine's C-states are compared with Linux's cpuidle by
+      run: python3 -I -B tools/acpi/against_linux_cpuidle.py --self-test
+
     - name: The ACPI tests on the host
       run: |
         set -eo pipefail
