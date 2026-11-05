@@ -105,13 +105,14 @@ documentation() {
 
 # Prints why the documentation block $2 of the source $1 cannot go into a header, if it cannot.
 documentation_fault() {
-    local wide
+    local wide first
     if [[ -z "$2" ]]; then
         echo "has no /** */ block to document its array"
     elif [[ "$(tail -n 1 <<<"$2")" != " */" ]]; then
         echo "its /** block ends with no line ' */' that closes it"
     elif wide="$(LC_ALL=C.UTF-8 grep -n ".\{$((COLUMN_LIMIT + 1)),\}" <<<"$2")"; then
-        echo "line ${wide%%:*} of its /** */ block is wider than $COLUMN_LIMIT columns"
+        first="$(grep -n '^/\*\*$' "$1" | head -n 1)"
+        echo "line $((${first%%:*} + ${wide%%:*} - 1)) is wider than $COLUMN_LIMIT columns"
     fi
 }
 
@@ -251,6 +252,7 @@ main() {
         *) usage >&2; exit 2 ;;
     esac
     [[ $# -le 1 ]] || { usage >&2; exit 2; }
+    cd "$ROOT"
     require_pinned_iasl
     require_sandbox
     local directories=("$FIXTURES"/*/)
