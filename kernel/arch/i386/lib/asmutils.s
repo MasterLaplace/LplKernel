@@ -236,6 +236,19 @@ asmutils_monitor_wait:
     popl %ebp
     ret
 
+.globl asmutils_flush_cache_line
+.type asmutils_flush_cache_line, @function
+asmutils_flush_cache_line:
+    movl 4(%esp), %eax
+    clflush (%eax)
+    ret
+
+.globl asmutils_write_back_and_invalidate_caches
+.type asmutils_write_back_and_invalidate_caches, @function
+asmutils_write_back_and_invalidate_caches:
+    wbinvd
+    ret
+
 .globl asmutils_store_zero_with_resume_address
 .type asmutils_store_zero_with_resume_address, @function
 asmutils_store_zero_with_resume_address:

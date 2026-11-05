@@ -247,6 +247,12 @@
 /** Standard PCI configuration offset of the legacy interrupt line. */
 #define HDA_PCI_INTERRUPT_LINE_OFFSET 0x3Cu
 
+/** CPUID leaf 1, EDX bit 19: the processor has CLFLUSH. */
+#define HDA_CPUID_CACHE_LINE_FLUSH_BIT (1u << 19)
+
+/** CPUID leaf 1, EBX bits 15:8 count CLFLUSH's line in units of this many bytes. */
+#define HDA_CPUID_CACHE_LINE_FLUSH_UNIT_BYTES 8u
+
 static IntelHighDefinitionAudioState_t hda_state;
 static volatile uint32_t *hda_command_ring = NULL;
 static volatile uint64_t *hda_response_ring = NULL;
@@ -314,7 +320,66 @@ static void hda_write32(uint32_t offset, uint32_t value)
 }
 
 /**
- * @brief Claims one physical page and maps it for uncached device access.
+ * @brief Writes back and evicts every line of the page at @p page from the caches.
+ *
+ * @details CLFLUSH reaches every cache of the coherence domain. A processor without it flushes its own caches with
+ *          WBINVD instead; the other processors' own caches are left as they are, where Linux runs WBINVD on each of
+ *          them (cpa_flush).
+ */
+static void hda_flush_page_from_caches(uint32_t page)
+{
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
+
+    const uint32_t line_bytes = ((ebx >> 8) & 0xFFu) * HDA_CPUID_CACHE_LINE_FLUSH_UNIT_BYTES;
+
+    if ((edx & HDA_CPUID_CACHE_LINE_FLUSH_BIT) == 0u || line_bytes == 0u)
+    {
+        asmutils_write_back_and_invalidate_caches();
+        return;
+    }
+    for (uint32_t offset = 0u; offset < PAGE_SIZE; offset += line_bytes)
+        asmutils_flush_cache_line((const volatile void *) (uintptr_t) (page + offset));
+}
+
+/**
+ * @brief Makes the kernel's map of physical memory hold @p frame uncached, the type the driver maps it with, so that
+ *        the frame has one memory type (Intel SDM vol. 3, §14.12.4).
+ *
+ * @details Uncached rather than write-back, because the driver sets up none of the vendor registers that make a
+ *          controller snoop the processor's caches, and some controllers cannot snoop at all: Linux's hda_intel then
+ *          maps its buffers write-combining, which no cache holds either, and keeps its own map of physical memory in
+ *          step (memtype_kernel_map_sync). The kernel's map holds each frame in a 4 KiB entry of its own, so only this
+ *          frame changes. Every processor then drops the old translation, and the frame's lines leave the caches, as
+ *          the SDM asks when a page goes from write-back to uncached. Writing the entry cannot fail: the entry was just
+ *          read, so its page table is there. The frame never goes back to the physical memory manager, so nothing
+ *          makes it write-back again.
+ */
+static void hda_make_kernel_map_hold_frame_uncached(uint32_t frame)
+{
+    const uint32_t kernel_map_page = frame + KERNEL_VIRTUAL_BASE;
+    PageTableEntry_t entry;
+
+    if (!paging_get_page_table_entry(kernel_map_page, &entry) || ((uint32_t) entry.page_frame_base << 12u) != frame)
+        return;
+
+    const PageDirectoryEntry_t pde_flags = {.present = 1u, .read_write = 1u};
+
+    entry.write_through = 1u;
+    entry.cache_disable = 1u;
+    entry.page_attribute_table = 0u;
+    (void) paging_map_page(kernel_map_page, frame, pde_flags, entry);
+    advanced_pic_ipi_broadcast_tlb_shootdown(kernel_map_page);
+    hda_flush_page_from_caches(kernel_map_page);
+}
+
+/**
+ * @brief Claims one physical page and maps it for uncached device access, the kernel's map
+ *        of physical memory holding it uncached as well.
  *
  * The rings are read and written by the controller's bus master, so the memory has to
  * be physically contiguous and its physical address has to be known — neither of
@@ -344,9 +409,13 @@ static void *hda_claim_dma_page(uint32_t *out_physical)
         physical_memory_manager_page_frame_free(physical);
         return NULL;
     }
+    hda_make_kernel_map_hold_frame_uncached(physical);
 
     for (uint32_t i = 0u; i < 1024u; ++i)
         ((volatile uint32_t *) virt)[i] = 0u;
+
+    if (hda_state.direct_memory_access_pages_claimed < INTEL_HIGH_DEFINITION_AUDIO_DIRECT_MEMORY_ACCESS_PAGES)
+        hda_state.direct_memory_access_pages[hda_state.direct_memory_access_pages_claimed++] = (uint32_t) virt;
 
     if (out_physical != NULL)
         *out_physical = physical;
