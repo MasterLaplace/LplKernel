@@ -128,6 +128,46 @@ static const uint8_t idle_present_psta_aml[] = {
 };
 
 /**
+ * @brief Return (Package () {}): a _CST that returns an empty Package, without its Count.
+ */
+static const uint8_t idle_returns_empty_package_aml[] = {
+    0xA4u,
+    0x12u,
+    0x02u,
+    0x00u,
+};
+
+/**
+ * @brief Return (3): a _CST that returns an Integer, no Package.
+ */
+static const uint8_t idle_returns_integer_aml[] = {
+    0xA4u,
+    0x0Au,
+    0x03u,
+};
+
+/**
+ * @brief Return (Package () { 2 }): a _CST whose Count says two states, with none after it.
+ */
+static const uint8_t idle_returns_miscounted_aml[] = {
+    0xA4u, 0x12u, 0x04u, 0x01u, 0x0Au, 0x02u,
+};
+
+/**
+ * @brief Return (Package () { "1" }): a _CST whose Count is a String, no Integer.
+ */
+static const uint8_t idle_returns_string_count_aml[] = {
+    0xA4u, 0x12u, 0x05u, 0x01u, 0x0Du, 0x31u, 0x00u,
+};
+
+/**
+ * @brief Return (Package () { Zero }): a _CST whose Count is below 1.
+ */
+static const uint8_t idle_returns_zero_count_aml[] = {
+    0xA4u, 0x12u, 0x03u, 0x01u, 0x00u,
+};
+
+/**
  * @brief The start of a _CST: Increment (\RUNS), Notify (\CPU0, 0x81), then Divide (One, Zero) on its second run.
  */
 static const uint8_t idle_runs_then_fails_twice_aml[] = {

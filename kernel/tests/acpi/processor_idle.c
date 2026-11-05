@@ -424,14 +424,11 @@ KERNEL_TEST(a_processor_binds_to_the_cpu_slot_of_its_uid_or_publishes_nothing)
 }
 
 /**
- * @brief Appends Processor (@p name, @p identifier) { Method (_CST) { Return (@p bytes) } }.
+ * @brief Appends Processor (@p name, @p identifier) { Method (_CST) { @p bytes } }.
  */
 static void idle_returning(const char *name, uint8_t identifier, const uint8_t *bytes, uint32_t length)
 {
-    static const uint8_t return_byte = 0xA4u;
-
     made_up_aml_begin(&idle_method);
-    made_up_aml_raw(&idle_method, &return_byte, 1u);
     made_up_aml_raw(&idle_method, bytes, length);
     made_up_aml_begin(&idle_scope);
     made_up_aml_method(&idle_scope, "_CST", 0x00u, &idle_method);
@@ -519,17 +516,10 @@ static void idle_state_end(uint64_t type, uint64_t latency, uint64_t power)
  * @brief A _CST that fails, or returns no Package, an empty one, one whose Count is no Integer, below 1, or
  *        other than its sub-packages, fails as a whole, as Linux refuses it: nothing is published and the
  *        failure is counted with its status.
- *
- * Its _CST results are raw bytes: data objects the builder returns, which iasl's grammar refuses alone.
  */
 KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
 {
     static const uint32_t identifiers[] = {1u, 2u, 3u, 4u, 5u, 6u};
-    static const uint8_t integer[] = {0x0Au, 0x03u};
-    static const uint8_t miscounted[] = {0x12u, 0x04u, 0x01u, 0x0Au, 0x02u};
-    static const uint8_t empty_package[] = {0x12u, 0x02u, 0x00u};
-    static const uint8_t zero_count[] = {0x12u, 0x03u, 0x01u, 0x00u};
-    static const uint8_t string_count[] = {0x12u, 0x05u, 0x01u, 0x0Du, '1', 0x00u};
 
     idle_begin(identifiers, 6u);
     made_up_aml_begin(&idle_method);
@@ -537,11 +527,11 @@ KERNEL_TEST(a_malformed_cst_package_publishes_nothing_and_is_counted)
     made_up_aml_begin(&idle_scope);
     made_up_aml_method(&idle_scope, "_CST", 0x00u, &idle_method);
     idle_processor("CPU1", 1u, &idle_scope);
-    idle_returning("CPU2", 2u, integer, sizeof(integer));
-    idle_returning("CPU3", 3u, miscounted, sizeof(miscounted));
-    idle_returning("CPU4", 4u, empty_package, sizeof(empty_package));
-    idle_returning("CPU5", 5u, zero_count, sizeof(zero_count));
-    idle_returning("CPU6", 6u, string_count, sizeof(string_count));
+    idle_returning("CPU2", 2u, idle_returns_integer_aml, sizeof(idle_returns_integer_aml));
+    idle_returning("CPU3", 3u, idle_returns_miscounted_aml, sizeof(idle_returns_miscounted_aml));
+    idle_returning("CPU4", 4u, idle_returns_empty_package_aml, sizeof(idle_returns_empty_package_aml));
+    idle_returning("CPU5", 5u, idle_returns_zero_count_aml, sizeof(idle_returns_zero_count_aml));
+    idle_returning("CPU6", 6u, idle_returns_string_count_aml, sizeof(idle_returns_string_count_aml));
     if (!idle_run(test))
         return;
 
