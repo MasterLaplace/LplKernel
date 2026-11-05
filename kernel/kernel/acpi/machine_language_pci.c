@@ -52,8 +52,8 @@ typedef enum MachineLanguageFound {
     MACHINE_LANGUAGE_FOUND_NOTHING = 0, /**< No such object, or one the attach does not read. */
     MACHINE_LANGUAGE_FOUND_VALUE = 1,   /**< A value, data or what a method returned. */
     MACHINE_LANGUAGE_FOUND_METHOD = 2,  /**< A method, whose result the attach waits for. */
-    MACHINE_LANGUAGE_FOUND_FAULT = 3,   /**< Data its Name kept in its table (O20), which the heap could not hold or
-                                             whose bytes no longer build an object: materialize's status says which. */
+    MACHINE_LANGUAGE_FOUND_FAULT = 3,   /**< Data its Name kept in its table (O20), which the heap could not hold:
+                                             materialize's status says which limit. */
 } MachineLanguageFound_t;
 
 /**

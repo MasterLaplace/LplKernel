@@ -387,9 +387,9 @@ advanced_configuration_and_power_interface_machine_language_field_write(
  * @param result     What the method the previous call named returned, or NULL.
  * @param out_method The method, without arguments, whose result the attach waits for, or 0 once the
  *                   region is attached.
- * @return OK; TYPE_MISMATCH when @p region holds no PCI_Config region; when an object it reads, its data kept in its
- *         table (O20), cannot be built, what building it returned: OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap
- *         cannot hold it, the status of the data decoder or TYPE_MISMATCH when its bytes no longer build one.
+ * @return OK; TYPE_MISMATCH when @p region holds no PCI_Config region; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the
+ *         heap cannot hold an object it reads, its data kept in its table (O20); kept data whose bytes build no object
+ *         is left Uninitialized, and read as such.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_attach(
