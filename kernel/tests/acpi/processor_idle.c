@@ -960,7 +960,7 @@ KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
     kernel_test_check(test,
                       idle_table.slots[0].processor == 0u && idle_table.slots[1].processor == 0u &&
                           idle_counts.processor_idle_absent == 2u,
-                      "both processors publish idle_noop_aml, counted absent");
+                      "both processors publish nothing, counted absent");
     idle_close(test);
 }
 
@@ -999,9 +999,9 @@ KERNEL_TEST(a_device_below_one_found_absent_is_not_read)
     if (!idle_run(test))
         return;
     kernel_test_check(test, made_up_root_node(&idle_load, "CSTA")->value.payload == 0u,
-                      "DEVC, below DEVA found idle_absent_dsta_aml, is never read");
+                      "DEVC, below DEVA found absent, is never read");
     kernel_test_check(test, idle_table.slots[0].processor == 0u && idle_counts.processor_idle_absent == 1u,
-                      "CPU0 publishes idle_noop_aml, counted idle_absent_dsta_aml");
+                      "CPU0 publishes nothing, counted absent");
     idle_close(test);
 }
 
@@ -1041,7 +1041,7 @@ KERNEL_TEST(a_status_an_initialization_changes_after_step_four_decides_step_eigh
     kernel_test_check(test,
                       made_up_root_node(&idle_load, "FLAG")->value.payload == 1u &&
                           made_up_root_node(&idle_load, "BSTA")->value.payload == 2u,
-                      "LATE's _INI idle_sets_flag_aml FLAG, and DEVB's _STA is read by step 4, then by step 8");
+                      "LATE's _INI sets FLAG, and DEVB's _STA is read by step 4, then by step 8");
     kernel_test_check(test, idle_published(0u, &only, 1u) && idle_counts.processor_idle_absent == 0u,
                       "CPU0 publishes its state");
     idle_close(test);
@@ -1250,7 +1250,7 @@ KERNEL_TEST(a_package_element_holding_a_name_reads_what_it_names)
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_package_element(
                           &idle_load, &root, 2u, &element) == IDLE_STATUS(TYPE_MISMATCH),
-                      "element 2, the name of a idle_empty_method_aml, is refused");
+                      "element 2, the name of a method, is refused");
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_package_element(
                           &idle_load, &root, 3u, &element) == IDLE_STATUS(TYPE_MISMATCH),
