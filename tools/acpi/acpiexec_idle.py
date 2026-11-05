@@ -45,7 +45,7 @@ import acpiexec_namespace  # noqa: E402
 PLATFORM_UUID = "6E B0 11 08 27 4A F9 44 8D 60 3C BB C2 2E 7B 48"
 PROCESSOR_UUID = "16 A6 77 40 0C 29 BE 47 9E BD D8 70 58 71 39 53"
 CAPABILITIES = "18 03 00 00"
-OPTIONS = ["-fv", "0", "-dr", "-fi", "nvs.txt"]
+OPTIONS = ["-fv", acpiexec_namespace.REGION_FILL, "-dr", "-fi", "nvs.txt"]
 MAX_STATES = 7
 NO_STATUS = 0x0F
 DEVICES = ("Device", "Processor", "Thermal")
@@ -72,13 +72,17 @@ class Stopped(Exception):
     """acpiexec did not reach every evaluation it was given."""
 
 
+def run(bin_directory, work, tables, commands, options=OPTIONS):
+    """What acpiexec prints, given @p options, the tables, then @p commands on its standard input."""
+    return subprocess.run([os.path.join(bin_directory, "acpiexec")] + options + tables, cwd=work,
+                          input="\n".join(commands + ["quit", ""]), capture_output=True, text=True,
+                          errors="replace", timeout=600).stdout
+
+
 def acpiexec(bin_directory, work, tables, commands):
     """Each path acpiexec evaluated from @p commands, given on its standard input: its result, or None when the
     evaluation failed; Stopped when it did not reach one."""
-    output = subprocess.run([os.path.join(bin_directory, "acpiexec")] + OPTIONS + tables, cwd=work,
-                            input="\n".join(commands + ["quit", ""]), capture_output=True, text=True,
-                            errors="replace", timeout=600).stdout
-    found = results(output)
+    found = results(run(bin_directory, work, tables, commands))
     for command in commands:
         path = EVALUATE.match(command).group(1)
         if path not in found:
@@ -276,65 +280,108 @@ def self_test():
     return failures
 
 
+class Machine:
+    """A machine's tables staged for acpiexec in a work directory, with the presets, its namespace as acpiexec loads it,
+    and its processor objects bound to the CPU slots of its MADT lines."""
+
+    def __init__(self, bin_directory, slots, presets, tables, work):
+        self.bin_directory, self.slots, self.work, self.tables, self.nodes = bin_directory, slots, work, [], {}
+        self.processors, self.identity = [], {}
+        for index, table in enumerate(tables):
+            self.tables.append("table%03u.dat" % index)
+            shutil.copyfile(table, os.path.join(work, self.tables[-1]))
+        with open(os.path.join(work, "nvs.txt"), "w") as nvs:
+            nvs.write("".join(line + "\n" for line in presets))
+        if not self.tables:
+            return
+        for line in acpiexec_namespace.namespace(bin_directory, self.tables, work):
+            match = NODE.match(line)
+            if match:
+                self.nodes[match.group(1)] = (match.group(2), match.group(3) or "")
+        self.processors = [path for path, (kind, _) in self.nodes.items() if kind in ("Processor", "Device") and
+                           any(path + "." + name in self.nodes for name in ("_CST", "_OSC", "_PDC"))]
+
+    def identify(self):
+        """Reads the _HID and _UID of the processor Devices, which tell which are processor objects and their slots;
+        Stopped when acpiexec does not reach one."""
+        self.identity = acpiexec(self.bin_directory, self.work, self.tables, self.identity_commands())
+
+    def identity_commands(self):
+        """The evaluations of the _HID and _UID of each Device among the processor objects' candidates."""
+        return ["evaluate %s.%s" % (path, name) for path in self.processors if self.nodes[path][0] == "Device"
+                for name in ("_HID", "_UID") if path + "." + name in self.nodes]
+
+    def is_processor(self, path):
+        """Whether @p path is a Processor, or a Device whose _HID is "ACPI0007"."""
+        return self.nodes[path][0] == "Processor" or self.identity.get(path + "._HID") == ("string", "ACPI0007")
+
+    def slot_of(self, path):
+        """The CPU slot a processor object binds to: the first of its ProcessorID or _UID, or None."""
+        if self.nodes[path][0] == "Processor":
+            match = PROCESSOR_ID.match(self.nodes[path][1])
+            unique = int(match.group(1), 16) if match else None
+        else:
+            unique = integer_of(self.identity.get(path + "._UID"))
+        return self.slots.index(unique) if unique in self.slots else None
+
+    def candidates(self):
+        """The processor objects with a _CST, in declaration order."""
+        return [path for path in self.processors if path + "._CST" in self.nodes and self.is_processor(path)]
+
+    def handshake_commands(self):
+        """The evaluations of §3.8 steps 6 and 7: the platform _OSC, a query then a commit, then the _OSC or the _PDC
+        of each processor object bound to a slot."""
+        commands = []
+        if "\\_SB_._OSC" in self.nodes:
+            commands += ["evaluate \\_SB._OSC (%s) 1 2 (01 00 00 00 00 00 00 00)" % PLATFORM_UUID,
+                         "evaluate \\_SB._OSC (%s) 1 2 (00 00 00 00 00 00 00 00)" % PLATFORM_UUID]
+        for path in self.processors:
+            if not self.is_processor(path) or self.slot_of(path) is None:
+                continue
+            if path + "._OSC" in self.nodes:
+                commands.append("evaluate %s._OSC (%s) 1 2 (00 00 00 00 %s)" % (path, PROCESSOR_UUID, CAPABILITIES))
+            elif path + "._PDC" in self.nodes:
+                commands.append("evaluate %s._PDC (01 00 00 00 01 00 00 00 %s)" % (path, CAPABILITIES))
+        return commands
+
+    def presence_commands(self):
+        """The evaluations of the _STA of each candidate and of the Devices, Processors and ThermalZones above it."""
+        wanted = {device for path in self.candidates() for device in above(path) + [path]}
+        return ["evaluate %s._STA" % path for path in self.nodes if path in wanted and
+                self.nodes[path][0] in DEVICES and path + "._STA" in self.nodes]
+
+    def idle_commands(self):
+        """The evaluations of the _CST of each candidate."""
+        return ["evaluate %s._CST" % path for path in self.candidates()]
+
+
+def read_slots(path):
+    """The CPU slots of MADT lines, by UID."""
+    return [int(match.group(2), 16) for match in map(SLOT.match, open(path).read().splitlines()) if match]
+
+
+def read_presets(path):
+    """The lines of a preset file but its comments and empty lines."""
+    return [line for line in open(path).read().splitlines() if line.strip() and not line.startswith("#")]
+
+
 def main():
     if sys.argv[1:] == ["--self-test"]:
         sys.exit(1 if self_test() else 0)
-    bin_directory = os.path.abspath(sys.argv[1])
-    slots = [int(match.group(2), 16) for match in map(SLOT.match, open(sys.argv[2]).read().splitlines()) if match]
-    presets = [line for line in open(sys.argv[3]).read().splitlines() if line.strip() and not line.startswith("#")]
-    nodes = {}
     with tempfile.TemporaryDirectory() as work:
-        tables = []
-        for index, table in enumerate(sys.argv[4:]):
-            tables.append("table%03u.dat" % index)
-            shutil.copyfile(table, os.path.join(work, tables[-1]))
-        if not tables:
+        machine = Machine(os.path.abspath(sys.argv[1]), read_slots(sys.argv[2]), read_presets(sys.argv[3]),
+                          sys.argv[4:], work)
+        if not machine.tables:
             return
-        with open(os.path.join(work, "nvs.txt"), "w") as nvs:
-            nvs.write("".join(line + "\n" for line in presets))
-        for line in acpiexec_namespace.namespace(bin_directory, tables, work):
-            match = NODE.match(line)
-            if match:
-                nodes[match.group(1)] = (match.group(2), match.group(3) or "")
-        processors = [path for path, (kind, _) in nodes.items() if kind in ("Processor", "Device") and
-                      any(path + "." + name in nodes for name in ("_CST", "_OSC", "_PDC"))]
         try:
-            identity = acpiexec(bin_directory, work, tables,
-                                ["evaluate %s.%s" % (path, name) for path in processors
-                                 if nodes[path][0] == "Device" for name in ("_HID", "_UID") if path + "." + name in nodes])
-
-            def is_processor(path):
-                return nodes[path][0] == "Processor" or identity.get(path + "._HID") == ("string", "ACPI0007")
-
-            def slot_of(path):
-                if nodes[path][0] == "Processor":
-                    match = PROCESSOR_ID.match(nodes[path][1])
-                    unique = int(match.group(1), 16) if match else None
-                else:
-                    unique = integer_of(identity.get(path + "._UID"))
-                return slots.index(unique) if unique in slots else None
-
-            candidates = [path for path in processors if path + "._CST" in nodes and is_processor(path)]
-            wanted = {device for path in candidates for device in above(path) + [path]}
-            commands = []
-            if "\\_SB_._OSC" in nodes:
-                commands += ["evaluate \\_SB._OSC (%s) 1 2 (01 00 00 00 00 00 00 00)" % PLATFORM_UUID,
-                             "evaluate \\_SB._OSC (%s) 1 2 (00 00 00 00 00 00 00 00)" % PLATFORM_UUID]
-            for path in processors:
-                if not is_processor(path) or slot_of(path) is None:
-                    continue
-                if path + "._OSC" in nodes:
-                    commands.append("evaluate %s._OSC (%s) 1 2 (00 00 00 00 %s)" % (path, PROCESSOR_UUID, CAPABILITIES))
-                elif path + "._PDC" in nodes:
-                    commands.append("evaluate %s._PDC (01 00 00 00 01 00 00 00 %s)" % (path, CAPABILITIES))
-            commands += ["evaluate %s._STA" % path for path in nodes if path in wanted and
-                         nodes[path][0] in DEVICES and path + "._STA" in nodes]
-            commands += ["evaluate %s._CST" % path for path in candidates]
-            found = acpiexec(bin_directory, work, tables, commands)
+            machine.identify()
+            commands = machine.handshake_commands() + machine.presence_commands() + machine.idle_commands()
+            found = acpiexec(machine.bin_directory, work, machine.tables, commands)
         except Stopped as stopped:
             print("aml idle unevaluated %s" % stopped)
             return
-    published = publish(nodes, found, candidates, slot_of)
+    nodes = machine.nodes
+    published = publish(nodes, found, machine.candidates(), machine.slot_of)
     for slot in sorted(published):
         path, listed, skipped = published[slot]
         handshake = "osc" if path + "._OSC" in nodes else ("pdc" if path + "._PDC" in nodes else "none")
