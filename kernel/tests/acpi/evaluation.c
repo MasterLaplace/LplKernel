@@ -378,6 +378,24 @@ KERNEL_TEST(the_integer_operators_compute_what_acpi_says)
 }
 
 /**
+ * @brief A Switch on Local0 at table level, as firmware writes one at the root, takes the Case of the value Local0
+ *        holds, and its Default when no Case does: the table's Local0 lives as long as its code runs, and the Name
+ *        iasl makes for each Switch keeps the value it switched on (§3.6).
+ */
+KERNEL_TEST(a_switch_on_local0_at_table_level_takes_its_case)
+{
+    if (!evaluation_run(test, 2u, evaluation_switch_at_root_aml, sizeof(evaluation_switch_at_root_aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("RES0") == 0x14u, "Local0 holds 2: Case (2) stores 20 to RES0");
+    kernel_test_check(test, evaluation_integer("RES1") == 0x1Eu,
+                      "Local0 holds 5: no Case takes it, and Default stores 30 to RES1");
+    kernel_test_check(test, evaluation_integer("_T_0") == 2u && evaluation_integer("_T_1") == 5u,
+                      "each Switch keeps the value it switched on");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails");
+    evaluation_close(test);
+}
+
+/**
  * @brief A While of table-level code goes back to its predicate until it is false, a Break leaves it,
  *        and a Continue skips the rest of its body.
  */

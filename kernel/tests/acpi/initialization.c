@@ -18,6 +18,10 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_initialization, KER
 #define INITIALIZATION_SYSTEM_MEMORY 0x00u /**< The RegionSpace byte of SystemMemory. */
 #define INITIALIZATION_SYSTEM_IO     0x01u /**< The RegionSpace byte of SystemIO. */
 #define INITIALIZATION_STATUS(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
+#define INITIALIZATION_ROUTER_INDEX  0x0C00u     /**< The index port of AMD's PCI interrupt router. */
+#define INITIALIZATION_ROUTER_DATA   0x0C01u     /**< Its data port. */
+#define INITIALIZATION_NVS_ADDRESS   0x00320000u /**< Where GNVS, the NVS region of Intel's HWP pattern, lies. */
+#define INITIALIZATION_HWP_ADDRESS   0x00330000u /**< Where the HWP table that pattern loads lies. */
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t initialization_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t initialization_load;
@@ -26,6 +30,8 @@ static AdvancedConfigurationAndPowerInterfaceMadtState_t initialization_madt;
 static AdvancedConfigurationAndPowerInterfaceInitializationMachine_t initialization_machine;
 static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t initialization_idle;
 static uint8_t initialization_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static uint8_t initialization_hwp_table[MADE_UP_TABLE_HEADER + sizeof(initialization_hwp_table_aml)];
+static uint32_t initialization_nvs[3];
 static MadeUpAml_t initialization_aml;
 static MadeUpAml_t initialization_outer;
 static MadeUpAml_t initialization_inner;
@@ -387,6 +393,71 @@ static void initialization_slots(const uint32_t *identifiers, uint32_t count)
     initialization_madt.processor_count = count;
     for (uint32_t slot = 0u; slot < count; ++slot)
         initialization_madt.processors[slot].processor_unique_identifier = identifiers[slot];
+}
+
+/**
+ * @brief How many writes to the I/O port @p port the simulated host logged, of @p value, or of any value when
+ *        @p value is above 0xFF.
+ */
+static uint32_t initialization_port_writes(uint16_t port, uint32_t value)
+{
+    const uint32_t logged =
+        initialization_host.access_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES ?
+            initialization_host.access_count :
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES;
+    uint32_t writes = 0u;
+
+    for (uint32_t index = 0u; index < logged; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &initialization_host.accesses[index];
+
+        if (access->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE && access->port == port &&
+            (value > 0xFFu || access->value == value))
+            ++writes;
+    }
+    return writes;
+}
+
+/**
+ * @brief Evaluates \_PIC with the Integer @p model, and gives back its status.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t initialization_interrupt_model(uint64_t model)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = model};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&initialization_load, "\\_PIC", &argument,
+                                                                             1u, &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&initialization_load.heap,
+                                                                              &initialization_load.space, &result);
+    return status;
+}
+
+/**
+ * @brief Loads Intel's HWP pattern on a machine whose one CPU slot binds CPU0, its GNVS telling where the HWP table
+ *        lies and the platform granting @p granted unasked, then runs the initialisation.
+ */
+static bool initialization_run_hardware_p_states(KernelTest_t *test, uint32_t granted)
+{
+    static const uint32_t identifiers[] = {1u};
+
+    initialization_begin();
+    initialization_slots(identifiers, 1u);
+    made_up_definition_block(initialization_hwp_table, "SSDT", 2u, initialization_hwp_table_aml,
+                             sizeof(initialization_hwp_table_aml));
+    initialization_nvs[0] = INITIALIZATION_HWP_ADDRESS;
+    initialization_nvs[1] = sizeof(initialization_hwp_table);
+    initialization_nvs[2] = granted;
+    advanced_configuration_and_power_interface_simulated_host_place(&initialization_host, INITIALIZATION_NVS_ADDRESS,
+                                                                    initialization_nvs, sizeof(initialization_nvs));
+    advanced_configuration_and_power_interface_simulated_host_place(
+        &initialization_host, INITIALIZATION_HWP_ADDRESS, initialization_hwp_table, sizeof(initialization_hwp_table));
+    made_up_aml_raw(&initialization_aml, initialization_intel_hardware_p_states_aml,
+                    sizeof(initialization_intel_hardware_p_states_aml));
+    return initialization_run(test, true);
 }
 
 /**
@@ -1211,5 +1282,70 @@ KERNEL_TEST(the_handshake_releases_every_buffer_it_builds)
                       "the platform granted, three processors handed the capabilities, one failed");
     kernel_test_check(test, heap->objects - heap->objects_freed == alive,
                       "as many objects alive after the handshake as before it");
+    initialization_close(test);
+}
+
+/**
+ * @brief AMD's _PIC, which rewrites the links of the PCI interrupt router when its argument is 1, is not called by an
+ *        initialisation that keeps the 8259: no port of the router is written, and the deferral is counted (§3.8 step
+ *        5). Called with 0 it writes no link; called with 1, as a switch to the APIC would, it writes 0x1F to each of
+ *        the four links through the index and data ports.
+ */
+KERNEL_TEST(an_amd_interrupt_model_rewrites_its_links_only_when_given_one)
+{
+    initialization_begin();
+    made_up_aml_raw(&initialization_aml, initialization_amd_interrupt_model_aml,
+                    sizeof(initialization_amd_interrupt_model_aml));
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_integer("PICM") == 0u && initialization_counts.pic_mode_deferred == 1u &&
+                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 0x100u) == 0u &&
+                          initialization_port_writes(INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
+                      "the initialisation leaves _PIC uncalled, counts its deferral, and writes no link");
+    kernel_test_check(test,
+                      initialization_interrupt_model(0u) == INITIALIZATION_STATUS(OK) &&
+                          initialization_integer("PICM") == 0u &&
+                          initialization_port_writes(INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
+                      "_PIC (0) keeps the 8259's model and writes no link");
+    kernel_test_check(
+        test, initialization_interrupt_model(1u) == INITIALIZATION_STATUS(OK) && initialization_integer("PICM") == 1u,
+        "_PIC (1) runs and keeps the APIC's model in PICM");
+    kernel_test_check(test,
+                      initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 0u) == 1u &&
+                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 1u) == 1u &&
+                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 2u) == 1u &&
+                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 3u) == 1u &&
+                          initialization_port_writes(INITIALIZATION_ROUTER_DATA, 0x1Fu) == 4u &&
+                          initialization_host.access_count <=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES,
+                      "it selects links 0 to 3 and writes 0x1F to each");
+    initialization_close(test);
+}
+
+/**
+ * @brief Intel's GCAP, which CPU0's _PDC calls, Loads its HWP table from the place an NVS region names only when the
+ *        platform _OSC granted bit 6: a platform that grants what it is asked, which is never bit 6, leaves the table
+ *        unloaded; one that grants bit 6 unasked has it loaded at step 7 and declared (§3.8).
+ */
+KERNEL_TEST(an_intel_capabilities_method_loads_its_hwp_table_only_when_the_platform_grants_bit_6)
+{
+    if (!initialization_run_hardware_p_states(test, 0u))
+        return;
+    kernel_test_check(test,
+                      initialization_counts.processor_capabilities == 1u &&
+                          initialization_counts.processor_capabilities_legacy == 1u,
+                      "CPU0's _PDC is called");
+    kernel_test_check(test,
+                      (initialization_integer("OSCP") & 0x40u) == 0u && initialization_integer("HWPT") == 0xDEADu &&
+                          initialization_load.tables_loaded == 0u,
+                      "bit 6 not granted: the HWP table is not loaded");
+    initialization_close(test);
+    if (!initialization_run_hardware_p_states(test, 0x40u))
+        return;
+    kernel_test_check(test,
+                      (initialization_integer("OSCP") & 0x40u) != 0u && initialization_integer("HWPT") == 1u &&
+                          initialization_load.tables_loaded == 1u,
+                      "bit 6 granted: GCAP loads the HWP table, which declares HWPT");
     initialization_close(test);
 }
