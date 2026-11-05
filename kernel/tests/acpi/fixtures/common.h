@@ -37,6 +37,13 @@ static const uint8_t common_divide_by_zero_aml[] = {
 };
 
 /**
+ * @brief Noop: the body of a method that does nothing, a whole table, or one Noop of a run.
+ */
+static const uint8_t common_noop_aml[] = {
+    0xA3u,
+};
+
+/**
  * @brief Return (Divide (One, Zero)): the body of a method that fails with divide_by_zero, returning its quotient.
  */
 static const uint8_t common_return_divide_by_zero_aml[] = {

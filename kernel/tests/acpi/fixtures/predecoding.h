@@ -387,13 +387,6 @@ static const uint8_t predecoding_nested_refused_loop_aml[] = {
 };
 
 /**
- * @brief A Noop: the whole revision-1 DSDT declared after an SSDT, and each Noop of the full loop's run.
- */
-static const uint8_t predecoding_noop_aml[] = {
-    0xA3u,
-};
-
-/**
  * @brief An If at offset 0 whose predicate is `LNotEqual (Arg1, 5)`: LNot over LEqual.
  */
 static const uint8_t predecoding_not_equal_aml[] = {

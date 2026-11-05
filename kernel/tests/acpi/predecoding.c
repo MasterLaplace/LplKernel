@@ -1,4 +1,5 @@
 #include "fixtures/predecoding.h"
+#include "fixtures/common.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "predecoding_runs.h"
@@ -207,7 +208,7 @@ static void predecoding_write_full_loop(void)
     made_up_aml_begin(&predecoding_inner);
     made_up_aml_raw(&predecoding_inner, inner_head, sizeof(inner_head));
     for (uint32_t index = 0u; index < PREDECODING_NOOPS; ++index)
-        made_up_aml_raw(&predecoding_inner, predecoding_noop_aml, sizeof(predecoding_noop_aml));
+        made_up_aml_raw(&predecoding_inner, common_noop_aml, sizeof(common_noop_aml));
     made_up_aml_begin(&predecoding_outer);
     made_up_aml_raw(&predecoding_outer, outer_head, sizeof(outer_head));
     made_up_aml_construct(&predecoding_outer, while_lead, sizeof(while_lead), &predecoding_inner);
@@ -660,7 +661,7 @@ KERNEL_TEST(records_of_one_integer_width_are_emptied_when_the_width_changes)
         advanced_configuration_and_power_interface_machine_language_evaluate(&predecoding_load, "\\WIDE", NULL, 0u,
                                                                              &result);
         counts[predecodes][0] = result.payload;
-        predecoding_declare(predecoding_second_table, "DSDT", 1u, predecoding_noop_aml, sizeof(predecoding_noop_aml));
+        predecoding_declare(predecoding_second_table, "DSDT", 1u, common_noop_aml, sizeof(common_noop_aml));
         predecoding_evaluate("\\WIDE", PREDECODING_NO_ARGUMENT, &run);
         advanced_configuration_and_power_interface_machine_language_evaluate(&predecoding_load, "\\WIDE", NULL, 0u,
                                                                              &result);

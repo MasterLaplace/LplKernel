@@ -2,7 +2,7 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Noop.
+ * @brief Noop: the body of a method that does nothing, a whole table, or one Noop of a run.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {

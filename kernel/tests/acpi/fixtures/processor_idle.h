@@ -79,13 +79,6 @@ static const uint8_t idle_intel_states_method_aml[] = {
 };
 
 /**
- * @brief Noop: the body of a method that does nothing.
- */
-static const uint8_t idle_noop_aml[] = {
-    0xA3u,
-};
-
-/**
  * @brief Notify (\CPU0, 0x81) and Notify (\CPU1, 0x81): the C-states of CPU0 and CPU1 changed.
  */
 static const uint8_t idle_notifies_cpu0_and_cpu1_c_states_aml[] = {

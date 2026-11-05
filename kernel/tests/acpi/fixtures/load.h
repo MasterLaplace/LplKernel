@@ -159,13 +159,6 @@ static const uint8_t load_late_initialisation_decides_integer_aml[] = {
 };
 
 /**
- * @brief Noop.
- */
-static const uint8_t load_late_initialisation_keeps_nothing_aml[] = {
-    0xA3u,
-};
-
-/**
  * @brief \FLAG = One.
  */
 static const uint8_t load_late_initialisation_keeps_sets_aml[] = {

@@ -1,4 +1,5 @@
 #include "fixtures/load.h"
+#include "fixtures/common.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -1511,8 +1512,7 @@ KERNEL_TEST(the_late_initialisation_keeps_the_absence_step_four_found)
     made_up_aml_begin(&scope);
     load_method(&scope, "_STA", load_late_initialisation_keeps_status_aml,
                 sizeof(load_late_initialisation_keeps_status_aml));
-    load_method(&scope, "_INI", load_late_initialisation_keeps_nothing_aml,
-                sizeof(load_late_initialisation_keeps_nothing_aml));
+    load_method(&scope, "_INI", common_noop_aml, sizeof(common_noop_aml));
     made_up_aml_processor(&scope, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     made_up_aml_device(&load_aml, "DEVB", &scope);
     made_up_aml_begin(&scope);
