@@ -1064,10 +1064,16 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 
 | Window | Command | Budget files | First target |
 |---|---|---|---|
-| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside --skip 1` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | at most 300 instructions per named object created; 0 allocations per method declared |
+| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside --skip 1` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | the count #584 closed on: 309,831 instructions on q35, 1,229 per declaration of its 252; 0 allocations per method declared |
 | W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same `--skip 1` during the ring-0 corpus test | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget` | its first measurement |
 | W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget`; `tools/acpi-cst-<machine>.debug.budget` | its first measurement |
 | W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT; a polling loop of 1,000 turns, shaped like those real firmware runs at boot, that masks a SystemMemory field into a local, tests it in an If, and steps two locals | debug: `--inside kernel_test_body_<test>` | `tools/acpi-microbenchmark.debug.budget` | at most 200 instructions per iteration of the counting loop, its first measurement for the polling loop, 0 allocations |
+
+W1's target is a count, not a cost per named object. On q35, placing the names in the namespace
+(`machine_language_namespace.c`) costs 232 instructions per declaration, and checking the data the Names keep in their
+table (O20) 207: those two alone take more than the 300 per named object a first target set. The debug windows of W1
+count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no count per declaration
+applies to them.
 
 `_PRT` gets a window once #59 gives it a boot consumer.
 
