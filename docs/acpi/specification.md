@@ -97,7 +97,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | Integers | Every AML integer is a `uint64_t` on both targets, masked to 32 bits when the DSDT's revision is below 2 ([§19.6.29]). 64-bit division on i686 goes through libgcc. |
 | No inline assembly | Port I/O is an `asmutils` routine; the global lock's compare-exchange is the compiler's atomic builtin, which the shared rules prefer to assembly; a 64-bit memory-mapped datum of i686 is two 32-bit accesses the field engine makes (§5.3). |
 | Naming | Externs `advanced_configuration_and_power_interface_…` for the tables and `advanced_configuration_and_power_interface_machine_language_…` for the interpreter, types `AdvancedConfigurationAndPowerInterface…_t`, static helpers `acpi_…`. |
-| Tests | `KERNEL_TEST`s in `kernel/tests/acpi/` for architecture-free code, in `kernel/arch/i386/tests/acpi/` otherwise. A host tool's own tests, such as the needs-path closure's, are `host_*` suites in `tools/acpi/host/`: ring 0 never runs them, and `tools/parity.sh` leaves them out. |
+| Tests | `KERNEL_TEST`s in `kernel/tests/acpi/` for architecture-free code, in `kernel/arch/i386/tests/cpu/` otherwise (`acpi.c`, `acpi_regions.c`). A host tool's own tests, such as the needs-path closure's, are `host_*` suites in `tools/acpi/host/`: ring 0 never runs them, and `tools/parity.sh` leaves them out. |
 | Unbuilt branches | The host harness and every compile-time switch of the interpreter have a gate profile that builds them, or a line in `tools/unbuilt-branches.declared`. `kernel/kernel/acpi/` builds only where `KERNEL_ARCH_HAS_FIRMWARE_TABLES` is 1. |
 | i686 now, long mode later (#96) | No pointer is stored in the namespace or in an object, with two exceptions that are never folded: the loaded-table registry's address of a table's bytes, and a frame's transient code pointer (§3.4). Physical addresses are `uint64_t` in every interface. CI also compiles `kernel/kernel/acpi/*.c` with the host's gcc and `-ffreestanding -m64 -mno-red-zone -mcmodel=kernel -nostdinc` against libk's headers and `kernel/include/kernel/acpi/` alone (`tools/acpi/check-portable.sh`). On i686 an address above 4 GiB fails loudly and is never truncated. |
 | Firmware memory is read-only | AML is read through the read-only firmware window, and the interpreter never writes to it. |
@@ -138,12 +138,15 @@ architecture supplies the host interface.
 | `kernel/kernel/acpi/machine_language_load.c` | definition-block load, the loaded-table registry, `Load`, `LoadTable`, the answers of `\_OS` and `\_REV` |
 | `kernel/kernel/acpi/machine_language_objects.c` | values, object heap, reference counts, conversions |
 | `kernel/kernel/acpi/machine_language_interpreter.c` | the execution loop, frames, control flow, operator handlers |
-| `kernel/kernel/acpi/machine_language_regions.c` | region attach, mapping cache, field engine, port and PCI-header protection |
+| `kernel/kernel/acpi/machine_language_regions.c` | region attach, mapping cache, field engine, port protection |
+| `kernel/kernel/acpi/machine_language_pci.c` | the PCI_Config attach (its root bridge, bus and device) and the PCI-header protection |
+| `kernel/kernel/acpi/machine_language_predecoding.c`, `kernel/include/kernel/acpi/machine_language_predecoding.h` | the records of pre-decoded loops (§3.6) |
 | `kernel/kernel/acpi/machine_language_services.c` | `_OSI`, the Windows version it records and the ports that version protects; `Sleep`, `Stall`, `Timer` and the time budget; the Notify ring; the mutexes, `Signal` and the sync level |
 | `kernel/kernel/acpi/initialization.c`, `kernel/include/kernel/acpi/initialization.h` | the initialisation sequence of §3.8 and the boot's load |
 | `kernel/kernel/acpi/resources.c` | the zero-copy resource-template iterator |
 | `kernel/kernel/acpi/processor_idle.c` | `_CST` per processor, its binding to CPU slots, the published table (§3.10) |
 | `kernel/arch/i386/cpu/acpi_host.c` | the host interface in ring 0: windows, memory types, ports, PCI, time, sleep |
+| `kernel/arch/i386/cpu/helpers/acpi_helper.c`, `kernel/include/kernel/cpu/helpers/acpi_helper.h` | the boot's `[LPLTLM] acpi` records |
 | `kernel/arch/i386/lib/asmutils.s`, `kernel/include/kernel/lib/asmutils.h` | the 8-, 16- and 32-bit port accesses of the ring-0 host |
 | `kernel/tests/acpi/simulated_host.c`, `simulated_host.h` | the simulated host: sparse memory, zero-filled ports, simulated PCI, virtual clock, target parameters; one source for the host harness and the ring-0 corpus test |
 | `kernel/tests/acpi/*.c` | `KERNEL_TEST`s with made-up AML, and the ring-0 corpus test; also compiled into the host harness |
@@ -1126,10 +1129,10 @@ published image. The made-up ASL is ours, under MIT.
 
 ### 8.3 QEMU
 
-- **Live boot.** `./qemu.sh --server` on `-machine q35` and `pc`: the kernel switches to ACPI mode, loads what QEMU
-  generates, runs the initialisation and prints its counters and statuses. A debug kernel can also print each table
-  as hex lines on COM1; `tools/acpi/host` reads them back from `serial.log`, so the host harness loads exactly the
-  bytes ring 0 saw.
+- **Live boot.** A debug kernel on `-machine q35` and `pc` (`tools/acpi-corpus.sh ring0 qemu <kernel>`;
+  `./qemu.sh --server` boots QEMU's default, `pc`): the kernel switches to ACPI mode, loads what QEMU generates, runs
+  the initialisation and prints its counters and statuses. A debug kernel can also print each table as hex lines on
+  COM1; `tools/acpi/host` reads them back from `serial.log`, so the host harness loads exactly the bytes ring 0 saw.
 - **Reference tables** (`tests/data/acpi/x86` at v10.2.1): 42 configurations, and 5 `microvm` ones (revision-2
   DSDT, hardware-reduced FADT). They test the namespace, not the table walk.
 - **What QEMU cannot test**, and the corpus and the made-up tables test instead: `_CST`, `_PSS`, `_CPC`, `_LPI`,
