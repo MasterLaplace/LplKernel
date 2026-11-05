@@ -82,6 +82,13 @@ static const uint8_t regions_locked_field_aml[] = {
 };
 
 /**
+ * @brief Store (P01_, Local0) then Store (P00_, Local0): page 1 again, then page 0, which 64 later pages evicted.
+ */
+static const uint8_t regions_reads_pages_again_aml[] = {
+    0x70u, 0x50u, 0x30u, 0x31u, 0x5Fu, 0x60u, 0x70u, 0x50u, 0x30u, 0x30u, 0x5Fu, 0x60u,
+};
+
+/**
  * @brief OperationRegion (MR__, SystemMemory, Arg0, 2): the region MREG creates at the offset its argument gives.
  */
 static const uint8_t regions_region_at_argument_aml[] = {
@@ -132,10 +139,13 @@ static const uint8_t regions_return_sum_aml[] = {
 };
 
 /**
- * @brief OperationRegion (SKPR, SystemMemory, Add (BASE, Zero), One): the region of a branch the load does not take.
+ * @brief If (ECF_) { OperationRegion (SKPR, SystemMemory, Add (BASE, Zero), One) and its field SKF_ }: the branch
+ *        the load declares without taking.
  */
-static const uint8_t regions_skipped_region_aml[] = {
-    0x5Bu, 0x80u, 0x53u, 0x4Bu, 0x50u, 0x52u, 0x00u, 0x72u, 0x42u, 0x41u, 0x53u, 0x45u, 0x00u, 0x00u, 0x01u,
+static const uint8_t regions_skipped_branch_aml[] = {
+    0xA0u, 0x21u, 0x45u, 0x43u, 0x46u, 0x5Fu, 0x5Bu, 0x80u, 0x53u, 0x4Bu, 0x50u, 0x52u,
+    0x00u, 0x72u, 0x42u, 0x41u, 0x53u, 0x45u, 0x00u, 0x00u, 0x01u, 0x5Bu, 0x81u, 0x0Bu,
+    0x53u, 0x4Bu, 0x50u, 0x52u, 0x01u, 0x53u, 0x4Bu, 0x46u, 0x5Fu, 0x08u,
 };
 
 /**

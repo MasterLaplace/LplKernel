@@ -472,10 +472,6 @@ KERNEL_TEST(a_region_takes_computed_operands_when_its_declaration_runs)
     static const MadeUpFieldUnit_t controller[] = {
         {"ECF_", 8u}
     };
-    static const MadeUpFieldUnit_t skipped[] = {
-        {"SKF_", 8u}
-    };
-    MadeUpAml_t branch;
 
     regions_begin();
     advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY + 0x30u, memory, 1u);
@@ -484,12 +480,7 @@ KERNEL_TEST(a_region_takes_computed_operands_when_its_declaration_runs)
     made_up_aml_field(&regions_aml, "NAMR", REGIONS_BYTE_ACCESS, named, 1u);
     made_up_aml_region(&regions_aml, "ECR_", 0x03u, 0u, 1u);
     made_up_aml_field(&regions_aml, "ECR_", REGIONS_BYTE_ACCESS, controller, 1u);
-    made_up_aml_begin(&branch);
-    made_up_aml_name(&branch, "ECF_");
-    made_up_aml_raw(&branch, regions_skipped_region_aml, sizeof(regions_skipped_region_aml));
-    made_up_aml_field(&branch, "SKPR", REGIONS_BYTE_ACCESS, skipped, 1u);
-    made_up_aml_raw(&regions_aml, (const uint8_t[]){0xA0u, (uint8_t) (branch.length + 1u)}, 2u);
-    made_up_aml_raw(&regions_aml, branch.bytes, branch.length);
+    made_up_aml_raw(&regions_aml, regions_skipped_branch_aml, sizeof(regions_skipped_branch_aml));
     made_up_aml_name_integer(&regions_aml, "RN__", 0u);
     made_up_aml_name_integer(&regions_aml, "RS__", 0xEEu);
     made_up_aml_store_name(&regions_aml, "NMF_", "RN__");
@@ -508,11 +499,13 @@ KERNEL_TEST(a_region_takes_computed_operands_when_its_declaration_runs)
  * @brief The mapping cache maps each page an access touches once, cached for ACPI NVS and uncached
  *        elsewhere; past its 64 entries it gives back the least recently used.
  *
- * Its Store opcode is raw bytes, a partial term the test closes with the unit it builds from an index.
+ * Its Store opcode and the Local0 that closes it are raw bytes, partial terms around the unit it builds from an
+ * index.
  */
 KERNEL_TEST(the_mapping_cache_maps_each_page_once_and_follows_the_memory_type)
 {
     static const uint8_t store_to_local[] = {0x70u};
+    static const uint8_t local0[] = {0x60u};
     MadeUpFieldUnit_t units[2u * 65u];
     char names[65][5];
     uint32_t cached = 0u;
@@ -538,10 +531,9 @@ KERNEL_TEST(the_mapping_cache_maps_each_page_once_and_follows_the_memory_type)
     {
         made_up_aml_raw(&regions_aml, store_to_local, 1u);
         made_up_aml_name(&regions_aml, names[page]);
-        made_up_aml_raw(&regions_aml, (const uint8_t[]){0x60u}, 1u);
+        made_up_aml_raw(&regions_aml, local0, 1u);
     }
-    made_up_aml_raw(&regions_aml, (const uint8_t[]){0x70u, 'P', '0', '1', '_', 0x60u}, 6u);
-    made_up_aml_raw(&regions_aml, (const uint8_t[]){0x70u, 'P', '0', '0', '_', 0x60u}, 6u);
+    made_up_aml_raw(&regions_aml, regions_reads_pages_again_aml, sizeof(regions_reads_pages_again_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
