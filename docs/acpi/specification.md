@@ -265,10 +265,10 @@ resolves before it gives the region back and the walk resolves again. A load who
 the differential tests compare the two (§8.1). At a statement's place, the declaration pass takes a Name or a Method of
 one NameSeg, a Device, a ThermalZone, a Scope, a Field and an OperationRegion of one NameSeg through a decoder of its
 own (O19), which reads the operator, its PkgLength and its NameString and declares or resolves the name as the walk
-would. It takes a Name whose data object it has built, an integer constant it builds itself as the general data decoder
-builds it, a Method whose body it records whole, and an OperationRegion whose object it builds from an offset and a
-length that need no interpreter; any other statement it gives back to the walk as the operator the walk would hold at
-that point, and the walk takes the rest: the content of its list, or the operand whose outcome differs. A Name of one
+would. It takes a Name whose data object it has built, or whose integer constant it builds itself as the general data
+decoder builds it, a Method whose body it records whole, and an OperationRegion whose object it builds from an offset
+and a length that need no interpreter; any other statement it gives back to the walk as the operator the walk would hold
+at that point, and the walk takes the rest: the content of its list, or the operand whose outcome differs. A Name of one
 NameSeg whose data object is a Package, a VarPackage or a Buffer that would build with no interpreter and no fault, its
 sizes and counts literal constants, is checked without being built, its padded and cut packages counted, and kept in its
 table (O20): the node takes the object's type, and the walk steps over it as O18 does. Any other data object, one a name
