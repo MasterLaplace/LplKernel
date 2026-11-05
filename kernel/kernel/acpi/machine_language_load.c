@@ -371,10 +371,13 @@ machine_language_find_then_add_child(AdvancedConfigurationAndPowerInterfaceMachi
  *        names a child of that scope, which needs no walk of prefixes and segments. A load whose general_load is set
  *        finds or creates the node by machine_language_find_then_add_child, any other by
  *        advanced_configuration_and_power_interface_machine_language_namespace_find_or_add_child.
+ *
+ * @details Always inlined, as machine_language_use_name, so that the insertion is in line in each declaration
+ *          decoder and in the field list: a call costs a declaration more than the probe it makes.
  */
-static MachineLanguageStatus_t machine_language_declare(MachineLanguageWalk_t *walk,
-                                                        const MachineLanguageNameString_t *name, uint8_t type,
-                                                        uint32_t *out_index)
+__attribute__((always_inline)) static inline MachineLanguageStatus_t
+machine_language_declare(MachineLanguageWalk_t *walk, const MachineLanguageNameString_t *name, uint8_t type,
+                         uint32_t *out_index)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     uint32_t parent = machine_language_top_block(walk)->scope;
@@ -672,10 +675,13 @@ static void machine_language_keep_external(MachineLanguageWalk_t *walk, const Ma
  *        table level, a construct only finds the scope it opens: the decoding pass decodes the body of
  *        one it cannot find in the scope the walk is in, the Externals pass skips it, and both skip the
  *        body of one another construct declared.
+ *
+ * @details Always inlined into the walk and into each declaration decoder, which knows its opcode, so that the
+ *          compiler drops the branches that opcode never takes.
  */
-static MachineLanguageStatus_t machine_language_use_name(MachineLanguageWalk_t *walk,
-                                                         MachineLanguagePendingOperator_t *active,
-                                                         const MachineLanguageNameString_t *name)
+__attribute__((always_inline)) static inline MachineLanguageStatus_t
+machine_language_use_name(MachineLanguageWalk_t *walk, MachineLanguagePendingOperator_t *active,
+                          const MachineLanguageNameString_t *name)
 {
     const MachineLanguageBlock_t *block = machine_language_top_block(walk);
     const bool declaring = walk->pass == MACHINE_LANGUAGE_PASS_DECLARE;
