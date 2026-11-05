@@ -1075,9 +1075,13 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
  *        Whether it fits its Buffer is checked at access.
  *
  * @return OK, or OUT_OF_MEMORY when the Buffer could not be built, as machine_language_build_fault gives it.
+ *
+ * @details Never inlined: it runs once per table-level Create*Field, and its body in line in the walk, which runs every
+ *          pass and every method body, costs the decoding pass of the debug kernel and the host tools more in register
+ *          spills than the call costs the declaration pass.
  */
-static MachineLanguageStatus_t machine_language_build_buffer_field(MachineLanguageWalk_t *walk,
-                                                                   const MachineLanguagePendingOperator_t *active)
+__attribute__((noinline)) static MachineLanguageStatus_t
+machine_language_build_buffer_field(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = machine_language_source(walk);
