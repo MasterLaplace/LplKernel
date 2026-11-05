@@ -178,6 +178,17 @@ static const uint8_t shortcuts_crossing[] = {
 };
 
 /**
+ * @brief Integers of a Name the declaration pass's decoder leaves to the general path: `Name (IR__, Revision)`,
+ *        `Name (IN__, IR__)`, then `Name (IO__, One)`, which it builds, `Name (IO__, Ones)` again, and a QWord the
+ *        table's end cuts, `Name (IQ__, ...)`.
+ */
+static const uint8_t shortcuts_integers_refused[] = {
+    0x08u, 'I',   'R',   '_',   '_', 0x5Bu, 0x30u, 0x08u, 'I',   'N',   '_',   '_', 'I',
+    'R',   '_',   '_',   0x08u, 'I', 'O',   '_',   '_',   0x01u, 0x08u, 'I',   'O', '_',
+    '_',   0xFFu, 0x08u, 'I',   'Q', '_',   '_',   0x0Eu, 0x01u, 0x02u, 0x03u,
+};
+
+/**
  * @brief Statements the declaration pass's decoder takes (O19), as iasl compiles them: `Name (N0__, One)`,
  *        `Name (N1__, Package (2) {1, "a"})`, `Method (M0__, 0) {Return (One)}`,
  *        `Method (M1__, 7, Serialized, 15) {Return (Arg6)}`, `OperationRegion (R0__, SystemMemory, 0x100000, 0x20)`,
@@ -549,6 +560,7 @@ static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, Sho
     out_record->taken.data_stepped_over = load->data_stepped_over;
     out_record->taken.declarations_decoded_directly = load->declarations_decoded_directly;
     out_record->taken.data_kept = load->data_kept;
+    out_record->taken.integers_built_directly = load->integers_built_directly;
     out_record->unbuilt = shortcuts_build_kept_data();
     out_record->built_fold = advanced_configuration_and_power_interface_machine_language_namespace_fold(load);
     out_record->built_padded = load->heap.packages_padded;
@@ -746,6 +758,7 @@ void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t
             out_mutations->taken.data_stepped_over += taken.data_stepped_over;
             out_mutations->taken.declarations_decoded_directly += taken.declarations_decoded_directly;
             out_mutations->taken.data_kept += taken.data_kept;
+            out_mutations->taken.integers_built_directly += taken.integers_built_directly;
             ++out_mutations->loads;
         }
     }
@@ -803,6 +816,53 @@ KERNEL_TEST(a_name_s_data_object_decoded_once_declares_what_two_decodings_declar
         stepped_over += taken.data_stepped_over;
     }
     kernel_test_measure(test, "data_stepped_over", stepped_over);
+}
+
+/**
+ * @brief The declaration pass's decoder builds a Name's integer constant itself, as the general data decoder builds
+ *        it, and steps over it (O19): a load with that decoder ends with the namespace, the faults and the counts of
+ *        what it declared of a load without it, and its decoder built the integers each case counts: Zero, One, Ones
+ *        and the four widths under revision 2, then under revision 1, which masks them to 32 bits, then with an SSDT
+ *        declared before that DSDT, whose integers stay 64 bits; one of the integers it leaves to the general path,
+ *        Revision, a name, a duplicate and a QWord the table's end cuts; an integer inside 479 Devices the declaration
+ *        pass walks itself, where the walk still has room for 32 packages, and none inside 480, where it has not.
+ */
+KERNEL_TEST(the_declaration_decoder_builds_a_name_s_integer_as_the_data_decoder_builds_it)
+{
+    ShortcutsCase_t cases[] = {
+        {"integers of every width under revision 2",        shortcuts_constants,        sizeof(shortcuts_constants), 2u, NULL, 0u,
+         false,                                                                                                                                               false, true, MADE_UP_MAX_NODES},
+        {"integers of every width under revision 1",        shortcuts_constants,        sizeof(shortcuts_constants), 1u, NULL, 0u,
+         false,                                                                                                                                               false, true, MADE_UP_MAX_NODES},
+        {"an SSDT declared before a DSDT of revision 1",    shortcuts_constants,        sizeof(shortcuts_constants), 1u,
+         shortcuts_wide,                                                                                                       sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
+        {"integers the decoder leaves to the general path", shortcuts_integers_refused,
+         sizeof(shortcuts_integers_refused),                                                                         2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
+        {"an integer inside 479 Devices",                   NULL,                       0u,                          2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
+        {"an integer inside 480 Devices",                   NULL,                       0u,                          2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
+    };
+    const uint32_t devices[] = {0u, 0u, 0u, 0u, SHORTCUTS_DEEP_DEVICES - 1u, SHORTCUTS_DEEP_DEVICES};
+    const uint32_t integers[] = {7u, 7u, 8u, 1u, 1u, 0u};
+    uint32_t built_directly = 0u;
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+    {
+        ShortcutsTaken_t taken;
+
+        if (cases[index].dsdt == NULL)
+        {
+            shortcuts_write_nested(&shortcuts_backwards, "DEEP", 0u, devices[index]);
+            if (!kernel_test_check(test, !shortcuts_backwards.overflowed, "the nested table fits its buffer"))
+                return;
+            cases[index].dsdt = shortcuts_backwards.bytes + shortcuts_backwards.start;
+            cases[index].dsdt_bytes = SHORTCUTS_AML_CAPACITY - shortcuts_backwards.start;
+        }
+        kernel_test_check(
+            test, shortcuts_agree(test, &cases[index], &taken) && taken.integers_built_directly == integers[index],
+            cases[index].claim);
+        built_directly += taken.integers_built_directly;
+    }
+    kernel_test_measure(test, "integers_built_directly", built_directly);
 }
 
 /**

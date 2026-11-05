@@ -1592,8 +1592,12 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
 /**
  * @brief Whether the @p limit bytes from @p offset hold a NameString of one NameSeg, as the general NameString
  *        reader reads one: four characters of a NameSeg, the first a letter or `_`.
+ *
+ * @details Always inlined: the declaration decoder checks the name of almost every statement through it, and the
+ *          check of kept data each NameSeg element, and a call costs them more than the four bytes it reads.
  */
-static bool machine_language_holds_name_segment(const uint8_t *bytes, uint32_t offset, uint32_t limit)
+__attribute__((always_inline)) static inline bool machine_language_holds_name_segment(const uint8_t *bytes,
+                                                                                      uint32_t offset, uint32_t limit)
 {
     const uint8_t *characters = advanced_configuration_and_power_interface_machine_language_segment_characters;
 
@@ -1651,6 +1655,19 @@ static const uint8_t machine_language_data_classes[256] = {
     ['Z'] = MACHINE_LANGUAGE_DATA_SEGMENT,
     ['_'] = MACHINE_LANGUAGE_DATA_SEGMENT,
 };
+
+/**
+ * @brief The Integer the constant of class @p class at @p pc holds, masked by @p mask: Zero, One, Ones, or the
+ *        little-endian bytes after its prefix.
+ */
+static uint64_t machine_language_data_integer(const uint8_t *bytes, uint32_t pc, uint8_t class, uint64_t mask)
+{
+    uint64_t integer = (bytes[pc] == 0xFFu) ? UINT64_MAX : (bytes[pc] == 0x01u) ? 1u : 0u;
+
+    for (uint32_t byte = 1u; byte < class; ++byte)
+        integer |= (uint64_t) bytes[pc + byte] << (8u * (byte - 1u));
+    return integer & mask;
+}
 
 /**
  * @brief Reads a Buffer's size or a VarPackage's element count at @p offset, before @p end, when it is a literal
@@ -1847,6 +1864,36 @@ static bool machine_language_keeps_data(MachineLanguageWalk_t *walk, uint32_t in
 }
 
 /**
+ * @brief Builds into node @p index, which the declaration pass has just created, the integer constant a Name's data
+ *        object at @p offset is, as the general data decoder builds it, when its bytes end by @p limit and the walk
+ *        could step over it (O18): Zero, One, Ones, or a byte, word, double word or quad word constant, masked to the
+ *        load's integers. The node takes the Integer, and the walk goes on past it.
+ *
+ * @return Whether it built the object; any other object, and one @p limit cuts, is left to the general path.
+ */
+static bool machine_language_integer_data(MachineLanguageWalk_t *walk, uint32_t index, uint32_t offset, uint32_t limit)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
+    const uint8_t class = machine_language_data_classes[walk->bytes[offset]];
+    const uint64_t mask = (load->integer_bits == 32u) ? 0xFFFFFFFFull : UINT64_MAX;
+
+    if ((class & MACHINE_LANGUAGE_DATA_WIDTH) == 0u || limit - offset < class || !machine_language_room_for_data(walk))
+        return false;
+
+    MachineLanguageNode_t *node = machine_language_node(walk, index);
+
+    node->value = (AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t){
+        .kind = MACHINE_LANGUAGE_VALUE(INTEGER),
+        .payload = machine_language_data_integer(walk->bytes, offset, class, mask),
+    };
+    node->type = MACHINE_LANGUAGE_NODE(INTEGER);
+    ++load->integers_built_directly;
+    ++load->data_stepped_over;
+    walk->pc = offset + class;
+    return true;
+}
+
+/**
  * @brief Puts @p state on the walk's operator stack, as push_operator would have pushed it, its operands
  *        taken so far included, so that the walk goes on with the rest of the statement; machine_language_statement
  *        has checked that the stack has room for it.
@@ -1860,8 +1907,9 @@ static void machine_language_hand_back(MachineLanguageWalk_t *walk, const Machin
 
 /**
  * @brief Takes `Name (NameSeg, data)` at @p start, whose statement ends at @p limit, as the walk would: the
- *        name declared through use_name, then the data object built and stepped over (O18); the general path
- *        takes the rest of a statement from the first step whose outcome differs.
+ *        name declared through use_name, then the data object built and stepped over (O18), an integer constant
+ *        built here, a package or a buffer kept in its table (O20); the general path takes the rest of a statement
+ *        from the first step whose outcome differs.
  */
 static MachineLanguageStatus_t machine_language_name_statement(MachineLanguageWalk_t *walk, uint32_t start,
                                                                uint32_t limit)
@@ -1888,7 +1936,9 @@ static MachineLanguageStatus_t machine_language_name_statement(MachineLanguageWa
     }
     walk->pc = start + 5u;
     state.operands_done = 2u;
-    if (machine_language_builds(walk, state.node) && machine_language_keeps_data(walk, state.node, start + 5u, limit))
+    if (machine_language_builds(walk, state.node) &&
+        (machine_language_integer_data(walk, state.node, start + 5u, limit) ||
+         machine_language_keeps_data(walk, state.node, start + 5u, limit)))
     {
         ++walk->load->declarations_decoded_directly;
         return MACHINE_LANGUAGE_OK;
@@ -2016,6 +2066,25 @@ static MachineLanguageStatus_t machine_language_region_statement(MachineLanguage
 }
 
 /**
+ * @brief Reads the NameString at @p offset, before @p limit, as the general NameString reader reads it, and one of
+ *        a single NameSeg without calling it; @p out_name and @p out_after receive what that reader gives.
+ *
+ * @details Always inlined into the decoder of list statements: most of their names are one NameSeg, and the call costs
+ *          them more than the four bytes it checks.
+ */
+__attribute__((always_inline)) static inline MachineLanguageStatus_t
+machine_language_read_name(const uint8_t *bytes, uint32_t offset, uint32_t limit, MachineLanguageNameString_t *out_name,
+                           uint32_t *out_after)
+{
+    if (!machine_language_holds_name_segment(bytes, offset, limit))
+        return advanced_configuration_and_power_interface_machine_language_read_name_string(bytes, offset, limit,
+                                                                                            out_name, out_after);
+    *out_name = (MachineLanguageNameString_t){.segments = offset, .segment_count = 1u};
+    *out_after = offset + 4u;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Takes a statement whose operator @p opcode ends at @p end, whose NameString starts at @p name_start, and
  *        whose operands are that NameString, the @p fixed bytes of a field list's FieldFlags or none, then a list
  *        of @p kind, as the walk would: the name read and used through use_name, the fixed bytes passed, then the
@@ -2036,8 +2105,7 @@ machine_language_list_statement(MachineLanguageWalk_t *walk, uint32_t opcode, ui
     };
     MachineLanguageNameString_t name;
     uint32_t after = 0u;
-    MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_read_name_string(
-        walk->bytes, name_start, end, &name, &after);
+    MachineLanguageStatus_t status = machine_language_read_name(walk->bytes, name_start, end, &name, &after);
 
     walk->fault_opcode = opcode;
     walk->pc = name_start;
@@ -2348,19 +2416,6 @@ static uint64_t machine_language_kept_mask(const AdvancedConfigurationAndPowerIn
             0u) ?
                0xFFFFFFFFull :
                UINT64_MAX;
-}
-
-/**
- * @brief The Integer the constant of class @p class at @p pc holds, masked by @p mask: Zero, One, Ones, or the
- *        little-endian bytes after its prefix.
- */
-static uint64_t machine_language_data_integer(const uint8_t *bytes, uint32_t pc, uint8_t class, uint64_t mask)
-{
-    uint64_t integer = (bytes[pc] == 0xFFu) ? UINT64_MAX : (bytes[pc] == 0x01u) ? 1u : 0u;
-
-    for (uint32_t byte = 1u; byte < class; ++byte)
-        integer |= (uint64_t) bytes[pc + byte] << (8u * (byte - 1u));
-    return integer & mask;
 }
 
 /**
