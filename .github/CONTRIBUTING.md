@@ -128,7 +128,8 @@ On top of the shared C and C++ rules:
   raw bytes, and its test says why (§8.2).
   `tools/acpi/regenerate-fixtures.sh --write` compiles it into `fixtures/<suite>.h`, and without an option checks
   every header against its sources: run it after `tools/acpi-corpus.sh fetch acpica`, with bubblewrap installed,
-  since iasl runs only in the sandbox of `tools/acpi/sandbox.sh`. CI's `acpi_fixtures` job runs both.
+  since iasl runs only in the sandbox of `tools/acpi/sandbox.sh`. CI's `acpi_fixtures` job runs the check, after
+  the sandbox's `--self-test`.
 - A switch no gate profile turns on is code nothing compiles. `tools/unbuilt-branches.sh` lists every
   source, `#if` branch, object and `-D` macro the gate profiles leave out, and fails on one that
   `tools/unbuilt-branches.declared` does not explain: a new one gets a profile that builds it, or a
