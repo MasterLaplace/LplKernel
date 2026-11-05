@@ -87,6 +87,7 @@ typedef struct ShortcutsRecord {
     uint32_t failures;                              /**< Of those, the ones that failed. */
     uint32_t statuses[SHORTCUTS_STATUS_COUNT];      /**< The failures, per status. */
     uint32_t unimplemented[SHORTCUTS_OPCODE_COUNT]; /**< Opcodes run but not implemented. */
+    uint32_t executed[SHORTCUTS_OPCODE_COUNT];      /**< Operations table-level code ran, per opcode. */
     ShortcutsTaken_t taken;                         /**< What only the shortcuts change. */
 } ShortcutsRecord_t;
 
@@ -736,6 +737,7 @@ static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, Sho
     out_record->failures = load->evaluation.failures;
     memcpy(out_record->statuses, load->evaluation.statuses, sizeof(out_record->statuses));
     memcpy(out_record->unimplemented, load->evaluation.unimplemented, sizeof(out_record->unimplemented));
+    memcpy(out_record->executed, load->evaluation.executed, sizeof(out_record->executed));
     out_record->taken.data_stepped_over = load->data_stepped_over;
     out_record->taken.declarations_decoded_directly = load->declarations_decoded_directly;
     out_record->taken.integers_built_directly = load->integers_built_directly;

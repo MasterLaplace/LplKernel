@@ -32,6 +32,7 @@ kernel/include/kernel/core/console.h | #else of #if defined(LPL_KERNEL_ENABLE_CO
 kernel/kernel/core/console.c | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/core/console.c | #if !defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/acpi/initialization.c | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel decodes no method body at load (§3.6), built by SMOKE_TESTS=0 or xmake -m release, on which tools/acpi-load.budget counts W1
+kernel/include/kernel/acpi/machine_language_decoder.h | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel counts no executed opcode, space or access type (§4.1), built by SMOKE_TESTS=0 or xmake -m release, on which tools/acpi-initialization.budget counts W2
 
 # Planned and never written.
 kernel/arch/i386/boot/boot2.o | no source | MULTIBOOT_VERSION=2 links a Multiboot 2 entry that was never written

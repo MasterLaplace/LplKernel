@@ -20,6 +20,9 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperand_t Mac
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t MachineLanguageRecordName_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t MachineLanguageNameString_t;
 
+_Static_assert(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT <= 256u,
+               "a record keeps the opcode of its statement in a byte");
+
 /**
  * @brief What a record's decoding works on: the cache, the record, the bytes it reads, and what the interpreter's
  *        loop holds for the statement as it would run it, values on its stack and operators pending, now and at most.
@@ -181,7 +184,8 @@ static bool machine_language_record_leaf(MachineLanguageRecordBuilder_t *builder
 
 /**
  * @brief Decodes a NameString at @p pc read as a value into a name of the record, kept among the cache's with where
- *        it ends and the values the loop held for the statement before reading it.
+ *        it ends, the values the loop held for the statement before reading it and, in a build that counts what the
+ *        loop runs, the operators of the record it runs before it.
  *
  * @return false when the bytes hold no NameString, or the record or the cache holds no more names; the cache's, the
  *         builder notes.
@@ -205,6 +209,8 @@ static bool machine_language_record_name(MachineLanguageRecordBuilder_t *builder
         .name = name,
         .after = after,
         .values_before = (uint8_t) builder->values_peak,
+        .nodes_before =
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED ? record->node_count : 0u,
     };
     if (record->name_count == 0u)
         record->first_name = (uint16_t) cache->name_count;
@@ -421,7 +427,8 @@ static void machine_language_record_step(MachineLanguageRecordBuilder_t *builder
 /**
  * @brief Decodes the statement of the record: a While, an If, a Break, a Store, an operator with a
  *        target, an Increment or a Decrement, or any other statement, which stays a record the
- *        interpreter's loop runs.
+ *        interpreter's loop runs; in a build that counts what the loop runs, it keeps the opcode of a statement
+ *        that is no operator of the record (§4.1).
  */
 static void machine_language_record_decode(MachineLanguageRecordBuilder_t *builder)
 {
@@ -432,6 +439,9 @@ static void machine_language_record_decode(MachineLanguageRecordBuilder_t *build
     if (advanced_configuration_and_power_interface_machine_language_read_opcode(
             builder->code, record->pc, record->limit, &opcode, &after) != MACHINE_LANGUAGE_OK)
         return;
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED &&
+        !machine_language_record_computes(opcode))
+        record->statement = (uint8_t) opcode;
     switch (opcode)
     {
     case MACHINE_LANGUAGE_OPCODE(WHILE):

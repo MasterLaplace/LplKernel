@@ -158,6 +158,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
                                                                                                           failed with
                                                                                                           unimplemented_
                                                                                                           operator. */
+    uint32_t executed[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Operations run,
+                                                                                                     per opcode, in a
+                                                                                                     build that counts
+                                                                                                     them (§4.1). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t;
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_INTERPRETER_H */

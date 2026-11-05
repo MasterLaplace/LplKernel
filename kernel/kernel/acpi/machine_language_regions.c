@@ -444,9 +444,20 @@ static MachineLanguageStatus_t machine_language_count_field_access(MachineLangua
 }
 
 /**
+ * @brief Counts a read or a write of a unit AML names, per its AccessType, a reserved one included (§4.1).
+ */
+static void machine_language_count_access_type(MachineLanguageLoad_t *load, const MachineLanguageFieldUnit_t *unit)
+{
+    uint32_t *counts = load->regions.type_accesses;
+
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        ++counts[unit->access % ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ACCESS_TYPES];
+}
+
+/**
  * @brief One access of up to 4 bytes in a space: memory, a port, a PCI function's configuration
  *        space, or a space with no handler. It is one field access, an unaligned one included, which
- *        fails once the budget is spent.
+ *        fails once the budget is spent, and is counted in its space, a refused one included (§4.1).
  */
 static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad_t *load, uint32_t region_node,
                                                              uint8_t space, uint64_t address, uint8_t width, bool write,
@@ -456,6 +467,8 @@ static MachineLanguageStatus_t machine_language_space_access(MachineLanguageLoad
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        ++load->regions.space_accesses[space];
     if (space == MACHINE_LANGUAGE_SYSTEM_MEMORY)
         return machine_language_memory(load, address, width, write, value);
     if (space == MACHINE_LANGUAGE_SYSTEM_IO)
@@ -961,6 +974,7 @@ advanced_configuration_and_power_interface_machine_language_field_read(MachineLa
 
     if (unit == NULL)
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    machine_language_count_access_type(load, unit);
     if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
         return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
 
@@ -992,6 +1006,7 @@ advanced_configuration_and_power_interface_machine_language_field_write(MachineL
 
     if (unit == NULL)
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    machine_language_count_access_type(load, unit);
     if (unit->access > MACHINE_LANGUAGE_ACCESS_LAST)
         return MACHINE_LANGUAGE_STATUS(ACCESS_WIDTH_INVALID);
 

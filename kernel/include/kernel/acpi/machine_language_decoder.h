@@ -231,6 +231,16 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageOpcode {
                                                                                      included. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageOpcode_t;
 
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+#    define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED                                \
+        true /**< A debug kernel and the host tools count what the loop runs, per opcode, region space and access      \
+                type (§4.1). */
+#else
+#    define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED                                \
+        false /**< A release kernel counts none of it: only the records of a debug kernel and of the host read those   \
+                 counts (§4.1, §8.7). */
+#endif
+
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_PACKAGE_LENGTH                                \
     0x01u /**< A PkgLength follows the opcode. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_STATEMENT                                     \

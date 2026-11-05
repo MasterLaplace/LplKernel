@@ -122,9 +122,9 @@ extern void predecoding_close(void);
 /**
  * @brief Evaluates @p path in the open load, with one Integer argument unless @p argument is
  *        PREDECODING_NO_ARGUMENT, and folds what it left: its status and result, everything the
- *        evaluations counted, the namespace's lookups, probes and nodes, the heap's objects, the field
- *        accesses, every access the host saw and the namespace itself; then what the records ran and
- *        handed back.
+ *        evaluations counted, the opcodes they executed included, the namespace's lookups, probes and nodes,
+ *        the heap's objects, the field accesses, per space and AccessType too, every access the host saw and
+ *        the namespace itself; then what the records ran and handed back.
  *
  * @param path     An absolute path.
  * @param argument The argument, or PREDECODING_NO_ARGUMENT.
