@@ -83,15 +83,15 @@ require_sandbox() {
     fi
 }
 
-# Compiles the source $1 into $2.aml, in the sandbox, its report written to $3 outside it, or prints the report and
-# fails. An .aml that is not a plain file, such as a link a compromised iasl would plant to a file the sandbox hides,
-# is refused unread.
+# Compiles the source $1 into $2.aml, in the sandbox, its report written to $3 outside it, or prints the report, its
+# control characters dropped so that it drives no terminal, and fails. An .aml that is not a plain file, such as a link
+# a compromised iasl would plant to a file the sandbox hides, is refused unread.
 compile() {
     local source="$1" prefix="$2" report="$3"
     if ! "$SANDBOX" "${prefix%/*}" "$IASL" -oa -r 1 -we -vr -vs -p "$prefix" "$source" >"$report" 2>&1 ||
         [[ ! -e "$prefix.aml" && ! -L "$prefix.aml" ]]; then
         echo "not ok ${source#"$ROOT"/}: iasl refuses it"
-        sed 's/^/    # /' "$report"
+        tr -d '\000-\010\013-\037\177' <"$report" | sed 's/^/    # /'
         return 1
     fi
     if [[ -L "$prefix.aml" || ! -f "$prefix.aml" ]]; then
