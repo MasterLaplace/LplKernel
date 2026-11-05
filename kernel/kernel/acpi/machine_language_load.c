@@ -1739,9 +1739,8 @@ __attribute__((always_inline)) static inline bool machine_language_data_head(con
  *        machine_language_data_head reads it, its element count within the 4,096 of §6.1; a Package whose PkgLength
  *        is one byte is read without it.
  *
- * @details Always inlined into the check of kept data, which reads every inner package's head through it: most
- *          packages of real tables are under 64 bytes, their PkgLength one byte, and the general head reader costs them
- * more than the three bytes they need.
+ * @details Always inlined into the check of kept data, which reads every inner package's head through it: a package
+ *          under 64 bytes has a one-byte PkgLength, and the general head reader costs it more than its three bytes.
  */
 __attribute__((always_inline)) static inline bool machine_language_package_head(const uint8_t *bytes, uint32_t offset,
                                                                                 uint32_t end, uint8_t class,
@@ -1868,7 +1867,7 @@ static bool machine_language_check_data(const uint8_t *bytes, uint32_t offset, u
             pc = first;
             continue;
         }
-        else if (class == MACHINE_LANGUAGE_DATA_PREFIX)
+        if (class == MACHINE_LANGUAGE_DATA_PREFIX)
         {
             MachineLanguageNameString_t name;
 

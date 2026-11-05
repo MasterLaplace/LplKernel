@@ -43,6 +43,16 @@ typedef struct KeptDataCase {
 } KeptDataCase_t;
 
 /**
+ * @brief A definition block whose Name's data the check of kept data must refuse at a bound the table's end lies just
+ *        past.
+ */
+typedef struct KeptDataBound {
+    const char *claim;  /**< The bound, and that the check stops at it. */
+    const uint8_t *aml; /**< The AML. */
+    uint32_t length;    /**< Its bytes. */
+} KeptDataBound_t;
+
+/**
  * @brief A definition block whose kept data each one-byte rewrite must build the same way through both builders.
  */
 typedef struct KeptDataSweep {
@@ -138,6 +148,23 @@ static const uint8_t kept_data_buffer[] = {0x08u, 'B',   'U',   'F',   'X',   0x
  */
 static const uint8_t kept_data_variable_package[] = {0x08u, 'V',   'P',   'K',   'G',  0x13u,
                                                      0x05u, 0x0Bu, 0x02u, 0x00u, 0x01u};
+
+/**
+ * @brief `Name (PKGL, Package (1) {...})`, whose inner PkgLength of 1 leaves its count, the table's last byte, outside.
+ */
+static const uint8_t kept_data_head_without_count[] = {0x08u, 'P',   'K',   'G',   'L',  0x12u,
+                                                       0x05u, 0x01u, 0x12u, 0x01u, 0x00u};
+
+/**
+ * @brief `Name (PKGO, Package (1) {...})`, whose inner PkgLength of 3 passes its parent's end, the table's, by one.
+ */
+static const uint8_t kept_data_head_past_parent[] = {0x08u, 'P',   'K',   'G',   'O',  0x12u,
+                                                     0x05u, 0x01u, 0x12u, 0x03u, 0x00u};
+
+/**
+ * @brief `Name (PKGC, Package (1) {AB})`, whose NameSeg element the table's end cuts after two characters.
+ */
+static const uint8_t kept_data_cut_name[] = {0x08u, 'P', 'K', 'G', 'C', 0x12u, 0x04u, 0x01u, 'A', 'B'};
 
 /**
  * @brief Loads the definition block @p aml from a copy of exactly its size, so that the address sanitizer catches a
@@ -611,4 +638,31 @@ KERNEL_TEST(every_one_byte_rewrite_of_kept_data_builds_the_same_through_its_buil
     }
     kernel_test_measure(test, "rewrites", rewrites);
     kernel_test_measure(test, "built_directly", built_directly);
+}
+
+/**
+ * @brief The check of kept data (O20) stops at each bound of a package's elements without reading a byte past the
+ *        table, loaded from a copy of exactly its size: a package head whose PkgLength of 1 leaves its count outside,
+ *        one whose PkgLength passes its parent's end, and a NameSeg element the table's end cuts, each refused, so that
+ *        the load keeps nothing.
+ */
+KERNEL_TEST(the_kept_data_check_stops_at_each_bound_without_reading_past_the_table)
+{
+    const KeptDataBound_t cases[] = {
+        {"a PkgLength of 1 is refused without reading past the table",                 kept_data_head_without_count,
+         sizeof(kept_data_head_without_count)},
+        {"a PkgLength past its parent is refused without reading past the table",      kept_data_head_past_parent,
+         sizeof(kept_data_head_past_parent)  },
+        {"a NameSeg cut by the table's end is refused without reading past the table", kept_data_cut_name,
+         sizeof(kept_data_cut_name)          },
+    };
+    const KeptDataRewrite_t intact = {KEPT_DATA_UNCHANGED, 0u};
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+    {
+        uint32_t kept = 1u;
+
+        (void) kept_data_fold_after(cases[index].aml, cases[index].length, intact, &kept);
+        kernel_test_check(test, kept == 0u, cases[index].claim);
+    }
 }
