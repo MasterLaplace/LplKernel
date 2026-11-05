@@ -4439,34 +4439,37 @@ static bool machine_language_record_write(const MachineLanguageLoad_t *load, Mac
 }
 
 /**
- * @brief Counts the first @p count operators of @p record as the loop counts them when it runs them, an LNot a
- *        comparison takes at once with it (§4.1).
+ * @brief Counts the first @p count operators of @p record @p runs times, as the loop counts them when it runs them, an
+ *        LNot a comparison takes at once with it (§4.1).
  */
 static void machine_language_count_record_nodes(MachineLanguageLoad_t *load, const MachineLanguageRecord_t *record,
-                                                uint32_t count)
+                                                uint32_t count, uint32_t runs)
 {
+    uint32_t *executed = load->evaluation.executed;
+
     if (!ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
         return;
     for (uint32_t index = 0u; index < count; ++index)
     {
         const MachineLanguageRecordNode_t *node = &load->predecoding.nodes[record->first_node + index];
 
-        machine_language_count_executed(&load->evaluation, node->opcode);
+        executed[node->opcode] += runs;
         if (node->negated != 0u)
-            machine_language_count_executed(&load->evaluation, MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT));
+            executed[MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT)] += runs;
     }
 }
 
 /**
- * @brief Counts what a record that ran ran, as the loop counts it (§4.1): its operators, then its statement.
+ * @brief Counts what @p runs runs of a record ran, as the loop counts it (§4.1): its operators, then its statement.
  */
-static void machine_language_count_record(MachineLanguageLoad_t *load, const MachineLanguageRecord_t *record)
+static void machine_language_count_record(MachineLanguageLoad_t *load, const MachineLanguageRecord_t *record,
+                                          uint32_t runs)
 {
     if (!ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
         return;
-    machine_language_count_record_nodes(load, record, record->node_count);
+    machine_language_count_record_nodes(load, record, record->node_count, runs);
     if (record->statement != MACHINE_LANGUAGE_OPCODE(INVALID))
-        machine_language_count_executed(&load->evaluation, record->statement);
+        load->evaluation.executed[record->statement] += runs;
 }
 
 /**
@@ -4628,7 +4631,7 @@ static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguag
 
         if (status != MACHINE_LANGUAGE_OK)
         {
-            machine_language_count_record_nodes(load, record, entry->nodes_before);
+            machine_language_count_record_nodes(load, record, entry->nodes_before, 1u);
             frame->pc = entry->after;
             if (evaluation->value_count + entry->values_before > evaluation->values_peak)
                 evaluation->values_peak = evaluation->value_count + entry->values_before;
@@ -4740,9 +4743,9 @@ static const MachineLanguageRecord_t *machine_language_tight_body(const MachineL
 
 /**
  * @brief Runs a While that machine_language_tight_body accepts, turn after turn as its two records would
- *        run: the predicate, the body, the back-edge, no block opened, each record counted as the loop counts what
- *        it runs; the frame is left as the records would leave it, the While's block open when its body is handed
- *        back.
+ *        run: the predicate, the body, the back-edge, no block opened; once it stops, each record is counted as many
+ *        times as it ran, as the loop counts what its turns ran. The frame is left as the records would leave it, the
+ *        While's block open when its body is handed back.
  *
  * @param load          The load.
  * @param frame         The running frame, at the While.
@@ -4781,7 +4784,6 @@ static bool machine_language_run_tight_while(MachineLanguageLoad_t *load, Machin
             break;
         }
         ++ran;
-        machine_language_count_record(load, loop);
         if (machine_language_integers_compare(node->opcode, left, right) == negated)
         {
             frame->pc = loop->end;
@@ -4796,7 +4798,6 @@ static bool machine_language_run_tight_while(MachineLanguageLoad_t *load, Machin
             goes_on = false;
             break;
         }
-        machine_language_count_record(load, body);
         ++turns;
         *out_status = machine_language_count_iteration(evaluation);
         if (*out_status != MACHINE_LANGUAGE_OK)
@@ -4807,6 +4808,8 @@ static bool machine_language_run_tight_while(MachineLanguageLoad_t *load, Machin
     }
     cache->records_run += ran + turns;
     cache->tight_turns += turns;
+    machine_language_count_record(load, loop, ran);
+    machine_language_count_record(load, body, turns);
     *inout_ran = *inout_ran || ran != 0u;
     if (ran != 0u && loop->values_peak > *inout_values)
         *inout_values = loop->values_peak;
@@ -4923,7 +4926,7 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
         }
         else if (!machine_language_record_branch(load, frame, record, &status))
             break;
-        machine_language_count_record(load, record);
+        machine_language_count_record(load, record, 1u);
         ++cache->records_run;
         values_peak = (record->values_peak > values_peak) ? record->values_peak : values_peak;
         *out_ran = true;
