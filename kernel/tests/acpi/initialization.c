@@ -437,8 +437,8 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t initializat
 }
 
 /**
- * @brief Loads Intel's HWP pattern on a machine whose one CPU slot binds CPU0, its GNVS telling where the HWP table
- *        lies and the platform granting @p granted unasked, then runs the initialisation.
+ * @brief Loads Intel's HWP pattern on a machine whose one CPU slot binds CPU0, its GNVS, a page of ACPI NVS,
+ *        telling where the HWP table lies and the platform granting @p granted unasked, then runs the initialisation.
  */
 static bool initialization_run_hardware_p_states(KernelTest_t *test, uint32_t granted)
 {
@@ -451,6 +451,9 @@ static bool initialization_run_hardware_p_states(KernelTest_t *test, uint32_t gr
     initialization_nvs[0] = INITIALIZATION_HWP_ADDRESS;
     initialization_nvs[1] = sizeof(initialization_hwp_table);
     initialization_nvs[2] = granted;
+    advanced_configuration_and_power_interface_simulated_host_describe(
+        &initialization_host, INITIALIZATION_NVS_ADDRESS, 4096u,
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_ACPI_NVS);
     advanced_configuration_and_power_interface_simulated_host_place(&initialization_host, INITIALIZATION_NVS_ADDRESS,
                                                                     initialization_nvs, sizeof(initialization_nvs));
     advanced_configuration_and_power_interface_simulated_host_place(
