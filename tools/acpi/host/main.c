@@ -794,23 +794,35 @@ static bool harness_observe(AdvancedConfigurationAndPowerInterfaceMachineLanguag
 }
 
 /**
- * @brief Walks the needs path of a decoded load and prints its counts, then each opcode it reaches,
- *        in descriptor order.
+ * @brief Walks the needs path of a decoded load and prints its counts, the reached opcodes the run list leaves out
+ *        among them, then each opcode it reaches, in descriptor order, and each of those it leaves out (§4.1).
  */
 static void harness_print_closure(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     uint32_t opcodes = 0u;
+    uint32_t unexecuted = 0u;
 
     needs_path_closure_walk(&harness_closure, load);
     for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
          ++opcode)
-        opcodes += needs_path_closure_reaches_opcode(&harness_closure, opcode) ? 1u : 0u;
-    printf("aml closure entries=%u methods=%u opcodes=%u dropped=%u\n", harness_closure.entries,
-           harness_closure.methods, opcodes, harness_closure.dropped);
+    {
+        if (!needs_path_closure_reaches_opcode(&harness_closure, opcode))
+            continue;
+        ++opcodes;
+        unexecuted += needs_path_closure_executes(&harness_closure, opcode) ? 0u : 1u;
+    }
+    printf("aml closure entries=%u methods=%u opcodes=%u unexecuted=%u dropped=%u\n", harness_closure.entries,
+           harness_closure.methods, opcodes, unexecuted, harness_closure.dropped);
     for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
          ++opcode)
         if (needs_path_closure_reaches_opcode(&harness_closure, opcode))
             printf("aml closure opcode %s\n",
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (needs_path_closure_reaches_opcode(&harness_closure, opcode) &&
+            !needs_path_closure_executes(&harness_closure, opcode))
+            printf("aml closure unexecuted %s\n",
                    advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
 }
 

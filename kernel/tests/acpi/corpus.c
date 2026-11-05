@@ -24,12 +24,14 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_corpus, KERNEL_TEST
 #define CORPUS_MODULE_SUFFIX ".acpi"     /**< How the boot module holding a recorded machine's image is named. */
 #define CORPUS_FOLD_OFFSET   0x811C9DC5u /**< FNV-1a's offset basis. */
 #define CORPUS_FOLD_PRIME    0x01000193u /**< FNV-1a's prime. */
+#define CORPUS_KEY_BYTES     48u /**< Bytes of a record's key built from a prefix and a name, its NUL included. */
 
 static uint8_t corpus_image[CORPUS_IMAGE_CAPACITY];
 static uint32_t corpus_image_length;
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t corpus_host;
 static AdvancedConfigurationAndPowerInterfaceDirectory_t corpus_directory;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t corpus_load;
+static char corpus_key[CORPUS_KEY_BYTES];
 
 /**
  * @brief Appends @p value to the made-up image, as @p width little-endian bytes, written one by one
@@ -125,6 +127,74 @@ static uint32_t corpus_opcode_fold(void)
 }
 
 /**
+ * @brief The key @p prefix then @p name, cut to CORPUS_KEY_BYTES, in a buffer the next call writes again.
+ */
+static const char *corpus_key_of(const char *prefix, const char *name)
+{
+    uint32_t length = 0u;
+
+    for (; *prefix != '\0' && length + 1u < CORPUS_KEY_BYTES; ++prefix)
+        corpus_key[length++] = *prefix;
+    for (; *name != '\0' && length + 1u < CORPUS_KEY_BYTES; ++name)
+        corpus_key[length++] = *name;
+    corpus_key[length] = '\0';
+    return corpus_key;
+}
+
+/**
+ * @brief The key @p prefix then @p number in two hexadecimal digits, as corpus_key_of writes it.
+ */
+static const char *corpus_key_of_number(const char *prefix, uint32_t number)
+{
+    static const char digits[] = "0123456789ABCDEF";
+    const char name[3] = {digits[(number >> 4u) & 0xFu], digits[number & 0xFu], '\0'};
+
+    return corpus_key_of(prefix, name);
+}
+
+/**
+ * @brief Prints what the needs path executed (§4.1): each opcode it ran, each region space a field access reached
+ *        and each AccessType of a unit AML read or wrote, those counted at least once, then each opcode it reached
+ *        that the interpreter does not run and their total, which must be 0.
+ */
+static void corpus_measure_executed(KernelTest_t *test)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &corpus_load.evaluation;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t *regions = &corpus_load.regions;
+    uint32_t unimplemented = 0u;
+
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (evaluation->executed[opcode] != 0u)
+            kernel_test_measure(
+                test,
+                corpus_key_of("executed_",
+                              advanced_configuration_and_power_interface_machine_language_opcode_name(opcode)),
+                evaluation->executed[opcode]);
+    for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
+        if (regions->space_accesses[space] != 0u)
+            kernel_test_measure(test, corpus_key_of_number("space_", space), regions->space_accesses[space]);
+    for (uint32_t access = 0u; access < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ACCESS_TYPES;
+         ++access)
+        if (regions->type_accesses[access] != 0u)
+            kernel_test_measure(test, corpus_key_of_number("access_type_", access), regions->type_accesses[access]);
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+    {
+        if (evaluation->unimplemented[opcode] == 0u)
+            continue;
+        kernel_test_measure(
+            test,
+            corpus_key_of("unimplemented_",
+                          advanced_configuration_and_power_interface_machine_language_opcode_name(opcode)),
+            evaluation->unimplemented[opcode]);
+        unimplemented += evaluation->unimplemented[opcode];
+    }
+    kernel_test_measure(test, "unimplemented", unimplemented);
+    kernel_test_check(test, unimplemented == 0u, "the needs path executes no opcode the interpreter does not run");
+}
+
+/**
  * @brief Prints what the load of the directory read built and counted, as the records both sides
  *        compare: the caps it ran under, its tables, its namespace and its fold, what its second pass
  *        decoded and its fold, its faults, and what waits for the interpreter.
@@ -165,7 +235,8 @@ static void corpus_measure_load(KernelTest_t *test)
  * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
  *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform never switched to ACPI mode,
  *        as the host harness does, and prints what it ran and counted, the tables Load added included, the
- *        kept data found faulty by the check and by the reads (O20), and the fold of the C-states it published.
+ *        kept data found faulty by the check and by the reads (O20), the fold of the C-states it published, and what
+ *        the load and the initialisation executed, which must hold no opcode the interpreter does not run (§4.1).
  */
 static void corpus_initialize(KernelTest_t *test)
 {
@@ -214,6 +285,7 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure_hexadecimal(test, "idle_fold",
                                     advanced_configuration_and_power_interface_processor_idle_fold(&idle));
     kernel_test_measure(test, "first_failure", initialization.first_failure);
+    corpus_measure_executed(test);
     kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
                       "the initialisation leaves no frame and no temporary node behind");
 }

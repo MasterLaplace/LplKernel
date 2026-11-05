@@ -58,6 +58,8 @@ typedef struct NeedsPathClosure {
     uint32_t entries;                                          /**< Entries the last walk started from. */
     uint32_t methods;                                          /**< Methods it reached, table-level code apart. */
     uint32_t reached_opcodes[NEEDS_PATH_CLOSURE_OPCODE_WORDS]; /**< The opcodes it reached, as bits. */
+    uint32_t method_opcodes[NEEDS_PATH_CLOSURE_OPCODE_WORDS];  /**< Of those, the ones a method body it reached holds,
+                                                                    as bits. */
 } NeedsPathClosure_t;
 
 /**
@@ -88,6 +90,17 @@ extern void needs_path_closure_walk(NeedsPathClosure_t *closure,
  * @return true when a body the walk reached, or table-level code, holds @p opcode.
  */
 extern bool needs_path_closure_reaches_opcode(const NeedsPathClosure_t *closure, uint32_t opcode);
+
+/**
+ * @brief Whether the needs path executes an opcode the last walk reached where the walk reached it (§4.1): in a
+ *        method body as the interpreter runs it there, in table-level code alone as the interpreter or the load takes
+ *        it there.
+ *
+ * @param closure Walked.
+ * @param opcode  A descriptor the walk reached.
+ * @return false when the opcode fails with unimplemented_operator where the walk reached it.
+ */
+extern bool needs_path_closure_executes(const NeedsPathClosure_t *closure, uint32_t opcode);
 
 /**
  * @brief Frees what needs_path_closure_attach() allocated and empties the closure.

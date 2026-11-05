@@ -262,3 +262,46 @@ KERNEL_TEST(region_attach_methods_and_a_processor_uid_are_entries)
                       "DEV2._UID is not");
     closure_close();
 }
+
+/**
+ * @brief The closure says which opcodes it reached the needs path does not execute where it reached them (§4.1):
+ *        `Event (EVT0)` at table level, which the load declares, is executed; in `_INI`, `Store (Nor (1, 1), Local0)`
+ *        runs Store and reads One and Local0, but not Nor, and a Mutex _INI declares is not run either.
+ */
+KERNEL_TEST(the_closure_compares_what_it_reaches_with_the_run_list)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x02u, 'E', 'V', 'T', '0', 0x14u, 0x13u, '_',   'I',   'N',   'I',   0x00u,
+        0x5Bu, 0x01u, 'M', 'U', 'T', '0', 0x00u, 0x70u, 0x7Eu, 0x01u, 0x01u, 0x00u, 0x60u,
+    };
+
+    if (!closure_walk(test, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      needs_path_closure_reaches_opcode(
+                          &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_EVENT) &&
+                          needs_path_closure_reaches_opcode(
+                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_MUTEX) &&
+                          needs_path_closure_reaches_opcode(
+                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOR),
+                      "the walk reaches the Event, the Mutex and the Nor");
+    kernel_test_check(
+        test,
+        needs_path_closure_executes(&closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_EVENT),
+        "an Event table-level code declares is executed");
+    kernel_test_check(test,
+                      needs_path_closure_executes(
+                          &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_STORE) &&
+                          needs_path_closure_executes(
+                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ONE) &&
+                          needs_path_closure_executes(
+                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_LOCAL0),
+                      "_INI's Store, One and Local0 are executed");
+    kernel_test_check(test,
+                      !needs_path_closure_executes(
+                          &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOR) &&
+                          !needs_path_closure_executes(
+                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_MUTEX),
+                      "_INI's Nor and Mutex are not");
+    closure_close();
+}

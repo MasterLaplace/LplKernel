@@ -47,13 +47,17 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
   closure  loads each machine of a list, or each QEMU configuration, with `test-acpi --closure`, and
          prints, for each opcode the needs path reaches on some machine, how many machines it reaches
          it on, and which when they are five or fewer: the opcodes the interpreter executes
-         (specification §4.1); a machine not read or a decode fault fails it
+         (specification §4.1); then each one the run list leaves out where the path reaches it, in a method
+         body or in table-level code, with the machines it is reached on. Such an opcode fails it, and so do a
+         machine not read and a decode fault
   initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
          `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, the
-         C-states they published, then the statuses their failures ended with; a machine the harness fails on
-         fails it. The SSDTs a dump's firmware loads at run time wait for Load where
-         tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt gives the NVS objects firmware
-         fills at boot their values, which a dump lacks (specification §8.4)
+         C-states they published, the statuses their failures ended with, then the opcodes, region spaces and
+         AccessTypes the needs path executed, each with how many machines executed it; a machine the harness
+         fails on fails it, and so does one whose table-level code or initialisation executes an opcode the
+         interpreter does not run (specification §4.1). The SSDTs a dump's firmware loads at run time wait
+         for Load where tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt gives the NVS
+         objects firmware fills at boot their values, which a dump lacks (specification §8.4)
   load  initialises each machine of a list whose firmware loads tables at run time, with
          `test-acpi --loaded`, and compares the paths of its namespace with those of the namespace
          acpiexec loads, statically, from the tables it ended with, Load's included; a machine whose
@@ -307,8 +311,9 @@ namespace_check() {
 }
 
 # Initialises the namespace of each machine of the list $1, or each QEMU configuration, with
-# `test-acpi --initialize`, and sums what the initialisations ran and counted; a machine the harness fails
-# on fails the run.
+# `test-acpi --initialize`, and sums what the initialisations ran and counted, then the opcodes, region spaces and
+# AccessTypes the needs path executed; a machine the harness fails on fails the run, and so does one whose table-level
+# code or initialisation executes an opcode the interpreter does not (specification §4.1).
 initialize_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 failed=0 subject output counts="" key
@@ -329,8 +334,14 @@ initialize_check() {
             failed=$((failed + 1))
             continue
         fi
+        counts+="$(grep -E '^aml (init|idle|load) |^aml run (tables|executed|unimplemented) ' "$output")"$'\n'
+        if grep -q '^aml run unimplemented ' "$output"; then
+            echo "not ok $number $subject: the needs path executes what the interpreter does not:" \
+                $(grep '^aml run unimplemented ' "$output" | cut -d' ' -f4)
+            failed=$((failed + 1))
+            continue
+        fi
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
-        counts+="$(grep -E '^aml (init|idle|load) |^aml run tables ' "$output")"$'\n'
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
     echo -n "# initialization of $((number - failed)) of $number:"
@@ -348,9 +359,16 @@ initialize_check() {
         "$(total_of missing "$counts"); presets given: $(total_of presets "$counts")"
     echo "# platform _OSC, machines per answer:" \
         $(grep -o ' platform_capabilities=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
-    echo "# unimplemented opcodes the initialisation reached:" \
-        $(grep '^aml init unimplemented ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
+    echo "# unimplemented opcodes the needs path executed:" \
+        $(grep '^aml run unimplemented ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
             END { for (key in total) printf " %s=%u", key, total[key] }')
+    for key in opcode space access; do
+        echo "# executed, per $key, over every machine:" \
+            $(grep "^aml run executed $key " <<<"$counts" | awk '{ split($5, pair, "="); total[pair[1]] += pair[2]
+                    machines[pair[1]] += 1 }
+                END { for (key in total) printf "%u %s=%u(%u)\n", total[key], key, total[key], machines[key] }' |
+                sort -k1,1nr | cut -d' ' -f2)
+    done
     echo -n "# C-states of"
     for key in slots published states skipped processor_idle processor_idle_failed processor_idle_absent \
         processor_idle_unbound idle_states_dropped processor_idle_changes; do
@@ -873,8 +891,9 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
 }
 
 # Prints, for each opcode the needs-path closure of some machine of the list $1, or of some QEMU configuration,
-# reaches, the number of machines it reaches it on, and their names when they are five or fewer; fails when a machine
-# could not be read, or when decoding met a fault, which cuts a body and the closure with it.
+# reaches, the number of machines it reaches it on, and their names when they are five or fewer, then each one the run
+# list leaves out where it is reached, with every machine it is reached on; fails on such an opcode (specification
+# §4.1), when a machine could not be read, or when decoding met a fault, which cuts a body and the closure with it.
 closure_table() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local subject
@@ -899,6 +918,10 @@ closure_table() {
                 if (!($4 in reached)) ++count
                 machines[$4] = machines[$4] ((reached[$4]++ == 0) ? "" : "; ") current
             }
+            /^aml closure unexecuted / {
+                if (!($4 in unexecuted)) ++unexecuted_count
+                unexecuted_machines[$4] = unexecuted_machines[$4] ((unexecuted[$4]++ == 0) ? "" : "; ") current
+            }
             /^aml closure entries=/ {
                 ++seen
                 for (field = 1; field <= NF; ++field) if ($field ~ /^dropped=/) dropped += substr($field, 9)
@@ -909,10 +932,13 @@ closure_table() {
                     printf "closure %s %u of %u%s\n", opcode, reached[opcode], subjects,
                         (reached[opcode] <= 5) ? ": " machines[opcode] : "" | sorter
                 close(sorter)
-                printf "# closure: %u opcodes reached on some machine of %u; %u observations dropped; %u decode faults\n",
-                    count, subjects, dropped, faults
+                printf "# closure: %u opcodes reached on some machine of %u, %u of them not executed where they are reached;" \
+                    " %u observations dropped; %u decode faults\n", count, subjects, unexecuted_count, dropped, faults
+                for (opcode in unexecuted)
+                    printf "# not executed: %s, reached on %u: %s\n", opcode, unexecuted[opcode],
+                        unexecuted_machines[opcode]
                 for (index_ = 1; index_ <= failures; ++index_) printf "# not read: %s\n", unread[index_]
-                exit (seen != subjects || faults != 0) ? 1 : 0
+                exit (seen != subjects || faults != 0 || unexecuted_count != 0) ? 1 : 0
             }'
 }
 
