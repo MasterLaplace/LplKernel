@@ -1739,9 +1739,9 @@ __attribute__((always_inline)) static inline bool machine_language_data_head(con
  *        machine_language_data_head reads it, its element count within the 4,096 of §6.1; a Package whose PkgLength
  *        is one byte is read without it.
  *
- * @details Always inlined into the check of kept data, which reads every package head through it: most packages of
- *          real tables are under 64 bytes, their PkgLength one byte, and the general head reader costs them more than
- *          the three bytes they need.
+ * @details Always inlined into the check of kept data, which reads every inner package's head through it: most
+ *          packages of real tables are under 64 bytes, their PkgLength one byte, and the general head reader costs them
+ * more than the three bytes they need.
  */
 __attribute__((always_inline)) static inline bool machine_language_package_head(const uint8_t *bytes, uint32_t offset,
                                                                                 uint32_t end, uint8_t class,
@@ -1811,7 +1811,8 @@ static bool machine_language_check_data(const uint8_t *bytes, uint32_t offset, u
         return true;
     }
     if ((top != MACHINE_LANGUAGE_DATA_PACKAGE && top != MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE) ||
-        !machine_language_package_head(bytes, offset, limit, top, &end, &first, &count))
+        !machine_language_data_head(bytes, offset, limit, top, &end, &first, &count) ||
+        count > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VARIABLE_PACKAGE_ELEMENTS)
         return false;
 
     uint32_t pc = first;
@@ -1832,22 +1833,28 @@ static bool machine_language_check_data(const uint8_t *bytes, uint32_t offset, u
         }
 
         const uint8_t class = machine_language_data_classes[bytes[pc]];
-        uint32_t inner_end = 0u;
-        uint32_t inner_count = 0u;
 
         if ((class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
         {
             if (end - pc < class)
                 return false;
             pc += class;
+            ++seen;
+            continue;
         }
-        else if (class == MACHINE_LANGUAGE_DATA_SEGMENT)
+        if (class == MACHINE_LANGUAGE_DATA_SEGMENT)
         {
             if (end - pc < 4u || !machine_language_continues_name_segment(bytes, pc))
                 return false;
             pc += 4u;
+            ++seen;
+            continue;
         }
-        else if (class == MACHINE_LANGUAGE_DATA_PACKAGE || class == MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE)
+
+        uint32_t inner_end = 0u;
+        uint32_t inner_count = 0u;
+
+        if (class == MACHINE_LANGUAGE_DATA_PACKAGE || class == MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE)
         {
             if (outer + 1u == MACHINE_LANGUAGE_MAX_NESTED_PACKAGES ||
                 !machine_language_package_head(bytes, pc, end, class, &inner_end, &first, &inner_count))
