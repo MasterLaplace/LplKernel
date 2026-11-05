@@ -1569,103 +1569,6 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
 }
 
 /**
- * @brief Decodes the next operand of the active operator.
- */
-static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *walk,
-                                                        MachineLanguagePendingOperator_t *active)
-{
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t kind =
-        (active->opcode == MACHINE_LANGUAGE_CALL) ?
-            MACHINE_LANGUAGE_OPERAND(TERM_ARGUMENT) :
-            advanced_configuration_and_power_interface_machine_language_operand_kind(
-                advanced_configuration_and_power_interface_machine_language_descriptor(active->opcode),
-                active->operands_done);
-    static const uint8_t fixed_widths[] = {
-        [MACHINE_LANGUAGE_OPERAND(BYTE_DATA)] = 1u,
-        [MACHINE_LANGUAGE_OPERAND(WORD_DATA)] = 2u,
-        [MACHINE_LANGUAGE_OPERAND(DOUBLE_WORD_DATA)] = 4u,
-        [MACHINE_LANGUAGE_OPERAND(QUAD_WORD_DATA)] = 8u,
-    };
-    MachineLanguageNameString_t name;
-    uint32_t after = 0u;
-    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
-
-    walk->fault_opcode = active->opcode;
-    ++active->operands_done;
-    switch (kind)
-    {
-    case MACHINE_LANGUAGE_OPERAND(BYTE_DATA):
-    case MACHINE_LANGUAGE_OPERAND(WORD_DATA):
-    case MACHINE_LANGUAGE_OPERAND(DOUBLE_WORD_DATA):
-    case MACHINE_LANGUAGE_OPERAND(QUAD_WORD_DATA):
-        if (active->end - walk->pc < fixed_widths[kind])
-            return MACHINE_LANGUAGE_STATUS(TRUNCATED);
-        walk->pc += fixed_widths[kind];
-        if (active->opcode == MACHINE_LANGUAGE_OPCODE(MUTEX) && machine_language_builds(walk, active->node))
-            machine_language_node(walk, active->node)->value.auxiliary = walk->bytes[walk->pc - 1u] & 0x0Fu;
-        if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL) && active->operands_done == 3u &&
-            walk->external_start == active->start && walk->external_start != 0u)
-            machine_language_place_external(walk, walk->bytes[walk->pc - 2u], walk->bytes[walk->pc - 1u]);
-        else if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL) && active->operands_done == 3u)
-        {
-            MachineLanguageNode_t *node = machine_language_node(walk, active->node);
-
-            if (node != NULL && node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) && active->node == walk->last_created)
-            {
-                node->value.auxiliary = walk->bytes[walk->pc - 2u];
-                node->value.payload = walk->bytes[walk->pc - 1u] & 0x7u;
-            }
-        }
-        return MACHINE_LANGUAGE_OK;
-    case MACHINE_LANGUAGE_OPERAND(ASCII_STRING):
-        for (uint32_t offset = walk->pc; offset < active->end; ++offset)
-        {
-            if (walk->bytes[offset] == 0x00u)
-            {
-                walk->pc = offset + 1u;
-                return MACHINE_LANGUAGE_OK;
-            }
-        }
-        return MACHINE_LANGUAGE_STATUS(TRUNCATED);
-    case MACHINE_LANGUAGE_OPERAND(NAME_STRING):
-        status = advanced_configuration_and_power_interface_machine_language_read_name_string(
-            walk->bytes, walk->pc, active->end, &name, &after);
-        if (status != MACHINE_LANGUAGE_OK)
-            return status;
-        status = machine_language_use_operand_name(walk, active, &name);
-        if (status != MACHINE_LANGUAGE_OK)
-            return status;
-        walk->pc = after;
-        if (machine_language_declared_type(active->opcode) == MACHINE_LANGUAGE_NODE(BUFFER_FIELD) &&
-            machine_language_builds(walk, active->node))
-            return machine_language_build_buffer_field(walk, active);
-        return MACHINE_LANGUAGE_OK;
-    case MACHINE_LANGUAGE_OPERAND(BYTE_LIST): walk->pc = active->end; return MACHINE_LANGUAGE_OK;
-    case MACHINE_LANGUAGE_OPERAND(TERM_LIST):
-    case MACHINE_LANGUAGE_OPERAND(FIELD_LIST):
-    case MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST): return machine_language_open_list(walk, kind);
-    default:
-        if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u &&
-            machine_language_builds(walk, active->node))
-        {
-            uint32_t data_end = 0u;
-
-            status = machine_language_build_name(walk, active, &data_end);
-            if (status == MACHINE_LANGUAGE_OK && machine_language_steps_over_data(walk, data_end))
-            {
-                ++walk->load->data_stepped_over;
-                walk->pc = data_end;
-                return MACHINE_LANGUAGE_OK;
-            }
-        }
-        else if (active->opcode == MACHINE_LANGUAGE_OPCODE(OPERATION_REGION) && active->operands_done == 3u &&
-                 machine_language_builds(walk, active->node))
-            status = machine_language_build_region(walk, active);
-        return (status == MACHINE_LANGUAGE_OK) ? machine_language_term(walk, kind) : status;
-    }
-}
-
-/**
  * @brief Whether the three characters after the first of the NameSeg at @p offset may follow it: `A` to `Z`, `0` to
  *        `9` or `_`.
  *
@@ -2046,6 +1949,103 @@ static bool machine_language_integer_data(MachineLanguageWalk_t *walk, uint32_t 
     ++load->data_stepped_over;
     walk->pc = offset + class;
     return true;
+}
+
+/**
+ * @brief Decodes the next operand of the active operator.
+ */
+static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *walk,
+                                                        MachineLanguagePendingOperator_t *active)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageOperandKind_t kind =
+        (active->opcode == MACHINE_LANGUAGE_CALL) ?
+            MACHINE_LANGUAGE_OPERAND(TERM_ARGUMENT) :
+            advanced_configuration_and_power_interface_machine_language_operand_kind(
+                advanced_configuration_and_power_interface_machine_language_descriptor(active->opcode),
+                active->operands_done);
+    static const uint8_t fixed_widths[] = {
+        [MACHINE_LANGUAGE_OPERAND(BYTE_DATA)] = 1u,
+        [MACHINE_LANGUAGE_OPERAND(WORD_DATA)] = 2u,
+        [MACHINE_LANGUAGE_OPERAND(DOUBLE_WORD_DATA)] = 4u,
+        [MACHINE_LANGUAGE_OPERAND(QUAD_WORD_DATA)] = 8u,
+    };
+    MachineLanguageNameString_t name;
+    uint32_t after = 0u;
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    walk->fault_opcode = active->opcode;
+    ++active->operands_done;
+    switch (kind)
+    {
+    case MACHINE_LANGUAGE_OPERAND(BYTE_DATA):
+    case MACHINE_LANGUAGE_OPERAND(WORD_DATA):
+    case MACHINE_LANGUAGE_OPERAND(DOUBLE_WORD_DATA):
+    case MACHINE_LANGUAGE_OPERAND(QUAD_WORD_DATA):
+        if (active->end - walk->pc < fixed_widths[kind])
+            return MACHINE_LANGUAGE_STATUS(TRUNCATED);
+        walk->pc += fixed_widths[kind];
+        if (active->opcode == MACHINE_LANGUAGE_OPCODE(MUTEX) && machine_language_builds(walk, active->node))
+            machine_language_node(walk, active->node)->value.auxiliary = walk->bytes[walk->pc - 1u] & 0x0Fu;
+        if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL) && active->operands_done == 3u &&
+            walk->external_start == active->start && walk->external_start != 0u)
+            machine_language_place_external(walk, walk->bytes[walk->pc - 2u], walk->bytes[walk->pc - 1u]);
+        else if (active->opcode == MACHINE_LANGUAGE_OPCODE(EXTERNAL) && active->operands_done == 3u)
+        {
+            MachineLanguageNode_t *node = machine_language_node(walk, active->node);
+
+            if (node != NULL && node->type == MACHINE_LANGUAGE_NODE(EXTERNAL) && active->node == walk->last_created)
+            {
+                node->value.auxiliary = walk->bytes[walk->pc - 2u];
+                node->value.payload = walk->bytes[walk->pc - 1u] & 0x7u;
+            }
+        }
+        return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPERAND(ASCII_STRING):
+        for (uint32_t offset = walk->pc; offset < active->end; ++offset)
+        {
+            if (walk->bytes[offset] == 0x00u)
+            {
+                walk->pc = offset + 1u;
+                return MACHINE_LANGUAGE_OK;
+            }
+        }
+        return MACHINE_LANGUAGE_STATUS(TRUNCATED);
+    case MACHINE_LANGUAGE_OPERAND(NAME_STRING):
+        status = advanced_configuration_and_power_interface_machine_language_read_name_string(
+            walk->bytes, walk->pc, active->end, &name, &after);
+        if (status != MACHINE_LANGUAGE_OK)
+            return status;
+        status = machine_language_use_operand_name(walk, active, &name);
+        if (status != MACHINE_LANGUAGE_OK)
+            return status;
+        walk->pc = after;
+        if (machine_language_declared_type(active->opcode) == MACHINE_LANGUAGE_NODE(BUFFER_FIELD) &&
+            machine_language_builds(walk, active->node))
+            return machine_language_build_buffer_field(walk, active);
+        return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPERAND(BYTE_LIST): walk->pc = active->end; return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPERAND(TERM_LIST):
+    case MACHINE_LANGUAGE_OPERAND(FIELD_LIST):
+    case MACHINE_LANGUAGE_OPERAND(PACKAGE_ELEMENT_LIST): return machine_language_open_list(walk, kind);
+    default:
+        if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u &&
+            machine_language_builds(walk, active->node))
+        {
+            uint32_t data_end = 0u;
+
+            status = machine_language_build_name(walk, active, &data_end);
+            if (status == MACHINE_LANGUAGE_OK && machine_language_steps_over_data(walk, data_end))
+            {
+                ++walk->load->data_stepped_over;
+                walk->pc = data_end;
+                return MACHINE_LANGUAGE_OK;
+            }
+        }
+        else if (active->opcode == MACHINE_LANGUAGE_OPCODE(OPERATION_REGION) && active->operands_done == 3u &&
+                 machine_language_builds(walk, active->node))
+            status = machine_language_build_region(walk, active);
+        return (status == MACHINE_LANGUAGE_OK) ? machine_language_term(walk, kind) : status;
+    }
 }
 
 /**
