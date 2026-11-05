@@ -478,7 +478,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageSource {
  *        of names, which stay names until read (§5.1).
  *
  * @details A Package with fewer initialisers than elements is padded with Uninitialized, one with
- *          more keeps the first, each counted in @p heap as it closes; packages nest up to
+ *          more keeps the first, each counted in @p heap once the object is built; packages nest up to
  *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES deep.
  * @param heap         The heap the objects go to.
  * @param space        The namespace whose arena gives the pages.

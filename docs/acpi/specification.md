@@ -283,10 +283,11 @@ decodes each element straight into its package and reads each byte as it builds:
 which the load did not check or AML has rewritten since, and the kept objects of a load whose `general_load` is set, are
 built by the general data decoder, whose status then gives the object or leaves the node Uninitialized (§3.5). The
 pass that decodes every method body in a debug kernel and the host tools also checks each kept Package and VarPackage
-as the data decoder would build it: one that would not build is counted in `data_faults`, which the corpus check fails
-on, and a release kernel, which skips that pass, meets it at its first read only, as it meets a faulty body only when it
-runs; one whose nested size or count a name gives is counted in `data_named_sizes`, since its first read reads that
-name where a load that built it at once read it as it declared it.
+as the data decoder would build it: one that would not build is counted in `data_faults`, and one table-level code read
+and found a fault in during the load in `data_faults_read`, which the corpus check fails on; a release kernel, which
+skips that pass, meets it at its first read only, as it meets a faulty body only when it runs. One whose nested size or
+count a name gives is counted in `data_named_sizes`, since its first read reads that name where a load that built it
+at once read it as it declared it.
 
 **The loop**, in order of precedence at each step:
 
@@ -966,8 +967,8 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 
 | Fault | In a method | At definition-block level | Status |
 |---|---|---|---|
-| PkgLength crossing its parent | the evaluation fails | the rest of the table is abandoned, its objects kept, the next table loads; one inside a data object a Name keeps in its table (O20) is read only at its first resolution, and abandons nothing | `pkglength_out_of_parent` |
-| Elements of a data object a Name keeps in its table (O20) that build no object | | nothing at load; the first name resolution that reaches it leaves the node Uninitialized, counted; the decoding pass of a debug kernel and of the host tools counts it at boot | `data_faults_read`, `values_deferred`; `data_faults` |
+| PkgLength crossing its parent | the evaluation fails | the rest of the table is abandoned, its objects kept, the next table loads; one inside a data object a Name keeps in its table (O20) is read only at its first resolution, and abandons nothing at load, but the pass that decodes bodies in a debug kernel and the host tools, which decodes the object as terms once it has checked it, stops that table there | `pkglength_out_of_parent` |
+| Elements of a data object a Name keeps in its table (O20) that build no object | | nothing at load; the first name resolution that reaches it leaves the node Uninitialized, counted; the decoding pass of a debug kernel and of the host tools counts it at boot, and again as a decode error where its bytes do not decode as terms | `data_faults_read`, `values_deferred`; `data_faults`, `decode_errors` |
 | Truncated operand, bad NameString | fails | the innermost enclosing construct is skipped | `truncated` |
 | A call of a method whose PkgLength ends before its flags, declared without a body | fails | construct skipped | `method_without_body` |
 | Invalid or unimplemented opcode | fails | construct skipped | `invalid_opcode`, `unimplemented_operator` |

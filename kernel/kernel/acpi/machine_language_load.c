@@ -2012,13 +2012,17 @@ machine_language_name_data(MachineLanguageWalk_t *walk, const MachineLanguagePen
 static void machine_language_check_kept(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
 {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
-    const uint8_t class = (walk->pc < active->end) ? machine_language_data_classes[walk->bytes[walk->pc]] : 0u;
     MachineLanguageNameString_t name;
     uint32_t after = 0u;
     bool named = false;
 
     if (walk->pass != MACHINE_LANGUAGE_PASS_DECODE || machine_language_top_block(walk)->placement != 0u ||
-        (class != MACHINE_LANGUAGE_DATA_PACKAGE && class != MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE) ||
+        walk->pc >= active->end)
+        return;
+
+    const uint8_t class = machine_language_data_classes[walk->bytes[walk->pc]];
+
+    if ((class != MACHINE_LANGUAGE_DATA_PACKAGE && class != MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE) ||
         advanced_configuration_and_power_interface_machine_language_read_name_string(
             walk->bytes, active->start + 1u, active->end, &name, &after) != MACHINE_LANGUAGE_OK)
         return;
@@ -2860,7 +2864,7 @@ machine_language_open_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguage
 /**
  * @brief Builds the data object node @p node kept in its table (O20) with the general data decoder, as a load whose
  *        general_load is set builds it: from the same bytes, its names read in the node's parent and its integers as
- *        wide as when its table was declared, the packages it pads or cuts counted only when it builds.
+ *        wide as when its table was declared, the packages it pads or cuts counted once it builds.
  *
  * @return The data decoder's status, OK otherwise, or TYPE_MISMATCH when the bytes no longer build a constant: a term
  *         needs the interpreter, which is the one cause the data decoder gives no status of its own.
@@ -2878,19 +2882,15 @@ machine_language_decode_kept(AdvancedConfigurationAndPowerInterfaceMachineLangua
         .table = node->value.auxiliary,
         .integer_bits = (machine_language_kept_mask(&node->value) == UINT64_MAX) ? 64u : 32u,
     };
-    const uint32_t padded = load->heap.packages_padded;
-    const uint32_t truncated = load->heap.packages_truncated;
     bool constant = false;
     uint32_t after = 0u;
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_evaluate_data(
         &load->heap, &load->space, &source, (uint32_t) node->value.payload, table->length, out_value, &constant,
         &after);
 
-    if (status == MACHINE_LANGUAGE_OK && constant)
-        return MACHINE_LANGUAGE_OK;
-    load->heap.packages_padded = padded;
-    load->heap.packages_truncated = truncated;
-    return (status != MACHINE_LANGUAGE_OK) ? status : MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    return constant ? MACHINE_LANGUAGE_OK : MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
 }
 
 /**

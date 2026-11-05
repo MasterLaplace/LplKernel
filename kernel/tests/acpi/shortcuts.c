@@ -62,7 +62,7 @@ typedef struct ShortcutsRecord {
     uint32_t filled;           /**< Empty Strings taken to leave the heap no room before the tables load, or 0. */
     uint32_t fold;             /**< The namespace's fold. */
     uint32_t built_fold;       /**< The namespace's fold once every data object kept in its table is built (O20). */
-    uint32_t unbuilt;          /**< Of those kept objects, the ones that could not be built. */
+    uint32_t unbuilt;          /**< Of those kept objects, the ones the heap could not hold. */
     uint32_t built_padded;     /**< Packages padded with Uninitialized, once every kept object is built. */
     uint32_t built_truncated;  /**< Packages whose extra initialisers were dropped, once every kept object is built. */
     uint32_t built_faults;     /**< Kept objects left Uninitialized for a fault, once every kept object is built. */
@@ -214,13 +214,15 @@ static const uint8_t shortcuts_crossing[] = {
 };
 
 /**
- * @brief `Name (VPX_, VarPackage (0x1001) {})`, one element past the 4,096 of §6.1, which no load keeps, and
+ * @brief `Name (VPX_, VarPackage (0x1001) {})`, one element past the 4,096 of §6.1, which no load keeps,
  *        `Name (DUP_, Package (1) {One})` then `Name (DUP_, Package (1) {...})` again, whose duplicate holds the byte
- *        0x02, which starts no data object.
+ *        0x02, which starts no data object, then `Name (CNT2, 2)` and `Name (VPK_, VarPackage (CNT2) {Package (3)
+ *        {One}, ...})`, not kept for its count, whose inner Package is padded before such a byte.
  */
 static const uint8_t shortcuts_kept_refused_and_duplicate[] = {
-    0x08u, 'V',   'P',   'X',   '_',   0x13u, 0x04u, 0x0Bu, 0x01u, 0x10u, 0x08u, 'D',   'U',   'P',
-    '_',   0x12u, 0x03u, 0x01u, 0x01u, 0x08u, 'D',   'U',   'P',   '_',   0x12u, 0x03u, 0x01u, 0x02u,
+    0x08u, 'V',   'P',   'X', '_', 0x13u, 0x04u, 0x0Bu, 0x01u, 0x10u, 0x08u, 'D',   'U',   'P',   '_',   0x12u, 0x03u,
+    0x01u, 0x01u, 0x08u, 'D', 'U', 'P',   '_',   0x12u, 0x03u, 0x01u, 0x02u, 0x08u, 'C',   'N',   'T',   '2',   0x0Au,
+    0x02u, 0x08u, 'V',   'P', 'K', '_',   0x13u, 0x0Au, 'C',   'N',   'T',   '2',   0x12u, 0x03u, 0x03u, 0x01u, 0x02u,
 };
 
 /**
@@ -473,8 +475,9 @@ static const uint8_t shortcuts_kept_too_large[] = {
 
 /**
  * @brief The methods that read `PKG_` and `AFTR` once a table of shortcuts_unbuilt_cases has loaded, before both, so
- *        that a fault that abandons the rest of the table cannot remove them: `MOT_` returns `ObjectType (PKG_)`,
- * `MSZ_` `SizeOf (PKG_)`, `MEL_` `DerefOf (Index (PKG_, Zero))`, `MCR_` `CondRefOf (PKG_)` and `MAF_` `AFTR`.
+ *        that a fault that abandons the rest of the table cannot remove them: `MOT_` returns `ObjectType (PKG_)`, then
+ *        come `MSZ_` and `SizeOf (PKG_)`, `MEL_` and `DerefOf (Index (PKG_, Zero))`, `MCR_` and `CondRefOf (PKG_)`,
+ *        and `MAF_`, which returns `AFTR`.
  */
 static const uint8_t shortcuts_unbuilt_readers[] = {
     0x14u, 0x0Cu, 'M',   'O', 'T',   '_',   0x00u, 0xA4u, 0x8Eu, 'P',   'K', 'G', '_',   0x14u,
@@ -529,9 +532,9 @@ static const uint8_t shortcuts_unbuilt_string_cut[] = {0x12u, 0x05u, 0x01u, 0x0D
 /**
  * @brief Sizes a name gives inside kept packages, read when a method reads them: `Name (CNT_, 4)`,
  *        `Name (PNS_, Package (1) {Buffer (CNT_) {}})`, `Name (PLT_, Package (1) {Buffer (LATE) {}})` before
- *        `Name (LATE, 2)`, `Name (BIG_, 0x1001)` and `Name (PVC_, Package (1) {VarPackage (BIG_) {}})`, one element
- * past the 4,096 of §6.1, then table-level code that stores 8 to CNT_; `MNS_` returns the SizeOf of PNS_'s Buffer,
- *        `MLT_` that of PLT_'s.
+ *        `Name (LATE, 2)`, `Name (BIG_, 0x1001)` and `Name (PVC_, Package (1) {VarPackage (BIG_) {}})`, one
+ *        element past the 4,096 of §6.1, then table-level code that stores 8 to CNT_; the method MNS_ returns the
+ *        SizeOf of PNS_'s Buffer, and MLT_ that of PLT_'s.
  */
 static const uint8_t shortcuts_nested_named_sizes[] = {
     0x08u, 'C',   'N',   'T',   '_',   0x0Au, 0x04u, 0x08u, 'P',   'N', 'S',   '_',   0x12u, 0x08u, 0x01u,
@@ -749,9 +752,8 @@ static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, Sho
  * @brief Whether a case loads, its heap with the room @p heap says, to the same namespace and the same counts of what
  *        it declared with the load's shortcuts and without, the load without them taking none, and the shortcuts
  *        stepped over a data object, built (O18) or kept (O20), when the case says they must; @p out_record receives
- *        what the load with the
- *        shortcuts ended with. A case under the made-up node cap must open its namespace; under a lower cap, both loads
- *        may fail to open it alike.
+ *        what the load with the shortcuts ended with. A case under the made-up node cap must open its namespace; under
+ *        a lower cap, both loads may fail to open it alike.
  */
 static bool shortcuts_agree_in_heap(KernelTest_t *test, const ShortcutsCase_t *load_case, ShortcutsHeap_t heap,
                                     ShortcutsRecord_t *out_record)
@@ -1325,17 +1327,18 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_s
 /**
  * @brief A Name's Package, VarPackage or Buffer whose head reads stays in its table until a name resolution reaches it
  *        (O20), with the load's shortcuts and without: both loads end with the same namespace, faults and counts, the
- *        decoding pass's included, then, once every kept object is built, the same fold, the same packages padded and
- *        cut, and the same objects left Uninitialized. The declaration pass keeps the 3 Buffers, 4 Packages and 1
+ *        decoding pass's included, and no package counted as padded or cut at load, then, once every kept object is
+ *        built, the same fold, the same packages padded and cut, and the same objects left Uninitialized. The
+ *        declaration pass keeps the 3 Buffers, 4 Packages and 1
  *        VarPackage of the table of data, under revision 2 then 1, and the SSDT's Package declared before a DSDT of
  *        revision 1, none of which the decoding pass counts; of the sizes a name gives, the Package whose inner Buffer
  *        takes one, counted in data_named_sizes, but not a Buffer whose own size a name gives; of the data the decoder
  *        refuses, the 4 Packages, 3 of which the decoding pass counts in data_faults, but not the Buffer past 64 KiB;
  *        the Package before a PkgLength that abandons the table and that one, counted; not a VarPackage past the
- *        4,096 elements of §6.1, and the first of two `Name (DUP_)`, the decoding pass leaving the duplicate's package,
- *        which would not build, alone; the package 33 deep, which
- *        needs the interpreter, counted, and TOP_ after it; and TOP_ after one 32 deep inside 480 Devices, which is
- *        decoded as terms.
+ *        4,096 elements of §6.1, nor VPK_, whose failed build counts no package padded, and the first of two
+ *        `Name (DUP_)`, the decoding pass leaving the duplicate's package, which would not build, alone; the package
+ *        33 deep, which needs the interpreter, counted, and TOP_ after it;
+ *        and TOP_ after one 32 deep inside 480 Devices, which is decoded as terms.
  */
 KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_reaches_it)
 {
@@ -1377,7 +1380,8 @@ KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_
             return;
         kernel_test_check(test,
                           shortcuts_agree(test, &cases[index], &record) && record.data_kept == kept[index] &&
-                              record.data_faults == faults[index] && record.data_named_sizes == named[index],
+                              record.data_faults == faults[index] && record.data_named_sizes == named[index] &&
+                              record.packages_padded == 0u && record.packages_truncated == 0u,
                           cases[index].claim);
         data_kept += record.data_kept;
         data_faults += record.data_faults;

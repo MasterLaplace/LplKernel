@@ -339,9 +339,9 @@ static void harness_load_every_table(AdvancedConfigurationAndPowerInterfaceMachi
 
 /**
  * @brief Loads every table of @p machine, as harness_load_every_table does, with the server profile's
- *        caps, and prints what the load counted: its tables and faults, the data it kept in its tables that
- *        the decoding pass found would not build or whose size a name gives (O20) among them, then each
- *        opcode decoded, in descriptor order.
+ *        caps, and prints what the load counted: its tables and faults, among them the data it kept in its
+ *        tables (O20) that the decoding pass found would not build, that table-level code read and found a
+ *        fault in, or whose size a name gives, then each opcode decoded, in descriptor order.
  */
 static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
                                            const RecordedMachine_t *machine)
@@ -359,8 +359,10 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
     harness_load_every_table(&load, directory, machine);
     printf("aml tables=%u bytes=%u decode_errors=%u calls=%u\n", load.table_count, load.bytes, load.decode_errors,
            load.method_calls);
-    printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u data_faults=%u data_named_sizes=%u\n",
-           load.load_errors, load.unresolved_names, load.undeclared_faults, load.data_faults, load.data_named_sizes);
+    printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u data_faults=%u data_faults_read=%u "
+           "data_named_sizes=%u\n",
+           load.load_errors, load.unresolved_names, load.undeclared_faults, load.data_faults, load.data_faults_read,
+           load.data_named_sizes);
     for (uint32_t index = 0u; index < load.table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load.tables[index];
@@ -528,8 +530,9 @@ static void harness_print_buffer(uint32_t length, const uint8_t *initialiser, ui
 }
 
 /**
- * @brief Prints a data object a Name kept in its table (O20) as the object it builds into, without building it,
- *        so that printing the namespace leaves it to the evaluations that reach it.
+ * @brief Prints a data object a Name kept in its table (O20) as its head declares it, without building it, so that
+ *        printing the namespace leaves it to the evaluations that reach it; one whose elements build nothing reads
+ *        as Uninitialized once built.
  */
 static void harness_print_kept_data(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node)

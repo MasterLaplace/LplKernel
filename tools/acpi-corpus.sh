@@ -33,7 +33,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          from the report's decoded tables, and the opcodes and method calls its definition blocks
          decode with what tools/acpi/aml_census.py counts, once tools/acpi/check_census.py has
          checked that census against hand-made tables, and fails on a data object a Name kept in its
-         table that the decoding pass found would not build (`aml faults data_faults=`); then
+         table that the decoding pass found would not build, or that table-level code read and found a
+         fault in (`aml faults data_faults=`, `data_faults_read=`); then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
          the report's iASL disassembly, and lists the tables where they differ. Once fetch acpica has
          built acpiexec, the FADT is also compared with the local FADT ACPICA builds from the same table,
@@ -67,9 +68,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
          `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
          namespace, the faults, the counts and the initialisation, the objects allocated and freed apart, which
-         data a Name keeps in its table until it is read moves by construction, the namespace's lookups and
-         probes apart, which the shortcuts save, and the kept data the builder of kept data built apart, which only
-         the shortcuts build; with <mutants>, also that many
+         the builder of kept data moves when it gives back what it built from bytes it then hands to the general
+         data decoder, the namespace's lookups and probes apart, which the shortcuts save, and the kept data the
+         builder of kept data built apart, which only the shortcuts build; with <mutants>, also that many
          copies of each machine whose DSDT and SSDTs have bytes changed at random (`--mutate`), each seeded by its
          number. A load that fails the same way both ways agrees, and is listed with the first line the harness
          wrote to stderr; a run where every load fails compares nothing, and fails
@@ -401,11 +402,11 @@ load_check() {
 
 # Loads each machine of the list $1 with the load's shortcuts and without (specification §3.6), and compares what
 # the namespace and the initialisation views print each way, the objects the heap allocated and freed apart, which the
-# data a Name keeps in its table (O20) moves by construction, what the harness writes to stderr, a sanitizer's report
-# included, its process numbers and addresses apart, and how it exits; with $2 mutants, also that many copies of each
-# machine whose DSDT and SSDTs have bytes changed at random, seeded by the copy's number. A load that fails the same way
-# both ways agrees, and is listed with the first line the harness wrote to stderr; a run where every load fails
-# compares nothing, and fails.
+# builder of kept data (C4) moves when it gives back what it built from bytes it then hands to the general data decoder,
+# what the harness writes to stderr, a sanitizer's report included, its process numbers and addresses apart, and how it
+# exits; with $2 mutants, also that many copies of each machine whose DSDT and SSDTs have bytes changed at random,
+# seeded by the copy's number. A load that fails the same way both ways agrees, and is listed with the first line the
+# harness wrote to stderr; a run where every load fails compares nothing, and fails.
 differential_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local mutants="${2:-0}" number=0 agree=0 failed=0 subject seed view differences stopped exit_shortcut exit_general
@@ -817,11 +818,12 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
         "$(grep -c 'load_errors=[1-9]' <<<"$faults") machines; $(grep -o 'unresolved_names=[0-9]*' <<<"$faults" |
             cut -d= -f2 | paste -sd+ | bc) names that resolve to nothing"
     echo "# kept data: $(total_of data_faults "$faults") objects that would not build, on" \
-        "$(grep -c ' data_faults=[1-9]' <<<"$faults") machines; $(total_of data_named_sizes "$faults") whose size a" \
-        "name gives, read at their first read"
+        "$(grep -c ' data_faults=[1-9]' <<<"$faults") machines; $(total_of data_faults_read "$faults") that" \
+        "table-level code read and found a fault in; $(total_of data_named_sizes "$faults") whose size a name gives," \
+        "read at their first read"
     [[ "$(grep -c ' iasl \(agrees\|differs\|missing\) ' <<<"$disassembly")" -eq "$tables" ]] ||
         { echo "# iASL comparison: not every table was compared" >&2; return 1; }
-    [[ "$(total_of data_faults "$faults")" -eq 0 ]] ||
+    [[ "$(total_of data_faults "$faults")" -eq 0 && "$(total_of data_faults_read "$faults")" -eq 0 ]] ||
         { echo "# kept data: an object that would not build waits for its first read" >&2; return 1; }
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]] &&
         [[ "$oracle" -eq 2 || "$(grep -c '^fadt acpica agrees' <<<"$acpica")" -eq "$number" ]]

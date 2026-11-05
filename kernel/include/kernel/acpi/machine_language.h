@@ -933,8 +933,9 @@ advanced_configuration_and_power_interface_machine_language_materialize(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t index);
 
 /**
- * @brief Reads what a data object kept in its table (O20) holds once built, without building it: a Package's or a
- *        VarPackage's element count, or a Buffer's length and the initialiser its bytes start with, zeros after it.
+ * @brief Reads what the head of a data object kept in its table (O20) declares, without building it: a Package's or a
+ *        VarPackage's element count, or a Buffer's length and the initialiser its bytes start with, zeros after it;
+ *        an object whose elements build nothing reads as Uninitialized once built.
  *
  * @param load            The load.
  * @param value           A node's value.
