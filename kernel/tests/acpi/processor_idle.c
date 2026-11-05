@@ -263,9 +263,6 @@ static bool idle_published(uint32_t slot, const IdleState_t *expected, uint32_t 
  *        `If (And (PDCB, 0x200)) { Store (MWC1, Index (C1TM, Zero)) }`,
  *        `Store (C6LT, Index (C6TM, 2))`, `Store (C7LT, Index (C7TM, 2))`, then
  *        `Return (Package () { 3, C1TM, C6TM, C7TM })`: names, which are read where they point.
- *
- * Its whole terms come from fixtures; its other pieces are raw bytes: the If and the Package it opens, whose
- * PkgLengths it writes, the Return opcode, and the head of the Package of names it returns.
  */
 static void idle_intel_pattern(uint8_t identifier)
 {
@@ -274,10 +271,6 @@ static void idle_intel_pattern(uint8_t identifier)
         {"C6LT", 16u},
         {"C7LT", 16u}
     };
-    static const uint8_t if_lead[] = {0xA0u};
-    static const uint8_t package_lead[] = {0x12u};
-    static const uint8_t return_byte = 0xA4u;
-    static const uint8_t names[] = {0x04u, 0x0Au, 0x03u, 'C', '1', 'T', 'M', 'C', '6', 'T', 'M', 'C', '7', 'T', 'M'};
     const IdleState_t halt = {.entry = {.space = IDLE_FIXED_HARDWARE}, .type = 1u, .latency = 1u, .power = 1000u};
     const IdleState_t deeper = idle_port(0x415u, 0u, 2u, 0u, 350u);
     const IdleState_t deepest = idle_port(0x416u, 0u, 3u, 0u, 200u);
@@ -294,16 +287,8 @@ static void idle_intel_pattern(uint8_t identifier)
     idle_state(&idle_scope, &deepest);
     idle_name(&idle_scope, "MWC1");
     idle_register(&idle_scope, &monitor_wait.entry);
-    made_up_aml_begin(&idle_branch);
-    made_up_aml_raw(&idle_branch, idle_pdc_bit_nine_aml, sizeof(idle_pdc_bit_nine_aml));
-    made_up_aml_raw(&idle_branch, idle_patch_register_aml, sizeof(idle_patch_register_aml));
     made_up_aml_begin(&idle_method);
-    made_up_aml_construct(&idle_method, if_lead, sizeof(if_lead), &idle_branch);
-    made_up_aml_raw(&idle_method, idle_patch_latencies_aml, sizeof(idle_patch_latencies_aml));
-    made_up_aml_raw(&idle_method, &return_byte, 1u);
-    made_up_aml_begin(&idle_package);
-    made_up_aml_raw(&idle_package, names, sizeof(names));
-    made_up_aml_construct(&idle_method, package_lead, sizeof(package_lead), &idle_package);
+    made_up_aml_raw(&idle_method, idle_intel_states_method_aml, sizeof(idle_intel_states_method_aml));
     made_up_aml_method(&idle_scope, "_CST", 0x08u, &idle_method);
     idle_processor("CPU0", identifier, &idle_scope);
 }
