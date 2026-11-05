@@ -86,13 +86,6 @@ static const uint8_t idle_notifies_cpu0_and_cpu1_c_states_aml[] = {
 };
 
 /**
- * @brief Notify (\CPU1, 0x81): the C-states of CPU1 changed.
- */
-static const uint8_t idle_notifies_cpu1_c_states_aml[] = {
-    0x86u, 0x5Cu, 0x43u, 0x50u, 0x55u, 0x31u, 0x0Au, 0x81u,
-};
-
-/**
  * @brief Notify (\CPU2, 0x81): the C-states of CPU2 changed.
  */
 static const uint8_t idle_notifies_cpu2_c_states_aml[] = {
@@ -166,21 +159,6 @@ static const uint8_t idle_returns_string_count_aml[] = {
  */
 static const uint8_t idle_returns_zero_count_aml[] = {
     0xA4u, 0x12u, 0x03u, 0x01u, 0x00u,
-};
-
-/**
- * @brief Store (One, \FLAG): the body of the _INI that makes the _STA above present.
- */
-static const uint8_t idle_sets_flag_aml[] = {
-    0x70u, 0x01u, 0x5Cu, 0x46u, 0x4Cu, 0x41u, 0x47u,
-};
-
-/**
- * @brief The body of a _STA that counts its calls in \BSTA and returns 0x0F once \FLAG is set, 0 before.
- */
-static const uint8_t idle_status_by_flag_aml[] = {
-    0x75u, 0x5Cu, 0x42u, 0x53u, 0x54u, 0x41u, 0xA0u, 0x09u, 0x5Cu,
-    0x46u, 0x4Cu, 0x41u, 0x47u, 0xA4u, 0x0Au, 0x0Fu, 0xA4u, 0x00u,
 };
 
 #endif /* KERNEL_TESTS_ACPI_FIXTURES_PROCESSOR_IDLE_H */

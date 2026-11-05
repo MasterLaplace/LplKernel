@@ -577,7 +577,7 @@ KERNEL_TEST(a_failure_in_a_method_a_loaded_table_calls_goes_on_past_its_statemen
     made_up_aml_raw(&load_loaded, load_failure_method_loaded_calls_aml, sizeof(load_failure_method_loaded_calls_aml));
     made_up_aml_name_integer(&load_loaded, "AFTR", 7u);
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    load_method(&load_aml, "FALT", load_failure_method_loaded_fails_aml, sizeof(load_failure_method_loaded_fails_aml));
+    load_method(&load_aml, "FALT", common_return_missing_name_aml, sizeof(common_return_missing_name_aml));
     load_method(&load_aml, "LDIT", load_loads_table_into_first_handle_aml,
                 sizeof(load_loads_table_into_first_handle_aml));
     if (!load_run(test))
@@ -637,7 +637,7 @@ KERNEL_TEST(a_loaded_table_places_an_external_whose_parent_it_declares_later)
 
     load_begin();
     made_up_aml_raw(&load_loaded, external, sizeof(external));
-    made_up_aml_raw(&load_loaded, load_loaded_table_places_device_aml, sizeof(load_loaded_table_places_device_aml));
+    made_up_aml_raw(&load_loaded, common_device_zdev_aml, sizeof(common_device_zdev_aml));
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     load_method(&load_aml, "LDIT", load_loads_table_into_first_handle_aml,
                 sizeof(load_loads_table_into_first_handle_aml));
@@ -666,7 +666,7 @@ KERNEL_TEST(a_loaded_table_places_an_external_whose_parent_it_declares_later)
 static void load_registration(MadeUpAml_t *aml)
 {
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, load_registration_body_aml, sizeof(load_registration_body_aml));
+    made_up_aml_raw(&load_body, common_traces_two_arguments_aml, sizeof(common_traces_two_arguments_aml));
     made_up_aml_method(aml, "_REG", 0x02u, &load_body);
 }
 
@@ -1322,8 +1322,8 @@ KERNEL_TEST(a_processor_a_step_nine_evaluation_loads_gets_its_capabilities_then_
     made_up_aml_name_integer(&load_aml, "CNT_", 0u);
     made_up_aml_begin(&device);
     load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 1u, false);
-    load_traced_method(&device, "_CST", 0x00u, load_processor_step_nine_notifies_aml,
-                       sizeof(load_processor_step_nine_notifies_aml), 2u, true);
+    load_traced_method(&device, "_CST", 0x00u, common_notifies_cpu1_c_states_aml,
+                       sizeof(common_notifies_cpu1_c_states_aml), 2u, true);
     made_up_aml_processor(&load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
@@ -1463,8 +1463,7 @@ KERNEL_TEST(the_late_initialisation_decides_a_processor_step_eight_decided)
     made_up_aml_begin(&device);
     load_method(&device, "_STA", load_late_initialisation_decides_absent_aml,
                 sizeof(load_late_initialisation_decides_absent_aml));
-    load_method(&device, "_CST", load_late_initialisation_decides_integer_aml,
-                sizeof(load_late_initialisation_decides_integer_aml));
+    load_method(&device, "_CST", common_return_one_aml, sizeof(common_return_one_aml));
     made_up_aml_processor(&load_aml, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     made_up_aml_begin(&device);
     load_method(&device, "_STA", load_counts_present_status_aml, sizeof(load_counts_present_status_aml));
@@ -1516,14 +1515,12 @@ KERNEL_TEST(the_late_initialisation_keeps_the_absence_step_four_found)
     load_method(&device, "_CST", load_loads_c_states_and_returns_one_aml,
                 sizeof(load_loads_c_states_and_returns_one_aml));
     made_up_aml_begin(&scope);
-    load_method(&scope, "_STA", load_late_initialisation_keeps_status_aml,
-                sizeof(load_late_initialisation_keeps_status_aml));
+    load_method(&scope, "_STA", common_status_by_flag_aml, sizeof(common_status_by_flag_aml));
     load_method(&scope, "_INI", common_noop_aml, sizeof(common_noop_aml));
     made_up_aml_processor(&scope, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     made_up_aml_device(&load_aml, "DEVB", &scope);
     made_up_aml_begin(&scope);
-    load_method(&scope, "_INI", load_late_initialisation_keeps_sets_aml,
-                sizeof(load_late_initialisation_keeps_sets_aml));
+    load_method(&scope, "_INI", common_sets_flag_aml, sizeof(common_sets_flag_aml));
     made_up_aml_device(&load_aml, "LATE", &scope);
     if (!load_run(test))
         return;

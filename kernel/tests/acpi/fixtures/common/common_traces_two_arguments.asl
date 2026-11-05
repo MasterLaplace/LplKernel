@@ -2,7 +2,8 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief The body of _REG (2): \TRAC takes Arg0 then Arg1 as its two last hexadecimal digits.
+ * @brief Store (Add (Multiply (Add (Multiply (\TRAC, 0x10), Arg0), 0x10), Arg1), \TRAC): the body of a _REG (2), \TRAC
+ *        taking Arg0 then Arg1 as its two last hexadecimal digits.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {

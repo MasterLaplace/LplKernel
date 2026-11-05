@@ -535,7 +535,7 @@ KERNEL_TEST(a_failure_in_a_table_an_attach_method_loads_is_the_table_s)
     made_up_aml_name_integer(&pci_aml, "V2__", 0x55u);
     made_up_aml_region(&pci_aml, "TBLR", PCI_MEMORY_SPACE, PCI_TABLE_PLACE, header->length);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, pci_return_missing_name_aml, sizeof(pci_return_missing_name_aml));
+    made_up_aml_raw(&pci_method_body, common_return_missing_name_aml, sizeof(common_return_missing_name_aml));
     made_up_aml_method(&pci_aml, "FALT", 0x00u, &pci_method_body);
     made_up_aml_begin(&pci_method_body);
     made_up_aml_raw(&pci_method_body, pci_reads_vendor_aml, sizeof(pci_reads_vendor_aml));
@@ -607,7 +607,7 @@ KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_f
     made_up_aml_begin(&pci_root_body);
     made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, pci_return_missing_name_aml, sizeof(pci_return_missing_name_aml));
+    made_up_aml_raw(&pci_method_body, common_return_missing_name_aml, sizeof(common_return_missing_name_aml));
     made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
     made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
     made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);

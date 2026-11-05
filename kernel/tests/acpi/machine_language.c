@@ -1,4 +1,5 @@
 #include "fixtures/machine_language.h"
+#include "fixtures/common.h"
 #include "host_pages.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -1293,8 +1294,7 @@ KERNEL_TEST(a_load_that_skips_bodies_still_places_its_externals)
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(0u, "DSDT", external, sizeof(external)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", machine_language_load_skips_bodies_device_aml,
-                                     sizeof(machine_language_load_skips_bodies_device_aml)));
+        &made_up_load, made_up_table(1u, "SSDT", common_device_zdev_aml, sizeof(common_device_zdev_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
 
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_load.space;

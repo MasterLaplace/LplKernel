@@ -692,14 +692,6 @@ static const uint8_t predecoding_values_loop_aml[] = {
 };
 
 /**
- * @brief W4's loop, as LOOP: `Local0 = 0; While (Local0 < 1000) { Local0++ }; Return (Local0)`.
- */
-static const uint8_t predecoding_w4_aml[] = {
-    0x14u, 0x14u, 0x4Cu, 0x4Fu, 0x4Fu, 0x50u, 0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
-    0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
  * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
  */
 static const uint8_t predecoding_while_aml[] = {

@@ -73,13 +73,6 @@ static const uint8_t load_failure_method_loaded_calls_aml[] = {
 };
 
 /**
- * @brief Return (\NOPE).
- */
-static const uint8_t load_failure_method_loaded_fails_aml[] = {
-    0xA4u, 0x5Cu, 0x4Eu, 0x4Fu, 0x50u, 0x45u,
-};
-
-/**
  * @brief Load (\TABL, \HND1).
  */
 static const uint8_t load_field_reads_loads_aml[] = {
@@ -151,41 +144,11 @@ static const uint8_t load_late_initialisation_decides_absent_aml[] = {
 };
 
 /**
- * @brief Return (One).
- */
-static const uint8_t load_late_initialisation_decides_integer_aml[] = {
-    0xA4u,
-    0x01u,
-};
-
-/**
- * @brief \FLAG = One.
- */
-static const uint8_t load_late_initialisation_keeps_sets_aml[] = {
-    0x70u, 0x01u, 0x5Cu, 0x46u, 0x4Cu, 0x41u, 0x47u,
-};
-
-/**
- * @brief \BSTA++ If (\FLAG) { Return (0x0F) } Return (Zero).
- */
-static const uint8_t load_late_initialisation_keeps_status_aml[] = {
-    0x75u, 0x5Cu, 0x42u, 0x53u, 0x54u, 0x41u, 0xA0u, 0x09u, 0x5Cu,
-    0x46u, 0x4Cu, 0x41u, 0x47u, 0xA4u, 0x0Au, 0x0Fu, 0xA4u, 0x00u,
-};
-
-/**
  * @brief Store (Add (Multiply (\TRAC, 0x10), 0x01), \TRAC).
  */
 static const uint8_t load_late_processor_driver_aml[] = {
     0x70u, 0x72u, 0x77u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u, 0x0Au, 0x10u,
     0x00u, 0x0Au, 0x01u, 0x00u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u,
-};
-
-/**
- * @brief Device (ZDEV) { }.
- */
-static const uint8_t load_loaded_table_places_device_aml[] = {
-    0x5Bu, 0x82u, 0x05u, 0x5Au, 0x44u, 0x45u, 0x56u,
 };
 
 /**
@@ -272,13 +235,6 @@ static const uint8_t load_pass_after_step_second_aml[] = {
 };
 
 /**
- * @brief Notify (\CPU1, 0x81).
- */
-static const uint8_t load_processor_step_nine_notifies_aml[] = {
-    0x86u, 0x5Cu, 0x43u, 0x50u, 0x55u, 0x31u, 0x0Au, 0x81u,
-};
-
-/**
  * @brief Load (\CUTH, \HND1).
  */
 static const uint8_t load_refuses_what_from_cut_aml[] = {
@@ -311,14 +267,6 @@ static const uint8_t load_refuses_what_from_short_aml[] = {
  */
 static const uint8_t load_refuses_what_from_tiny_aml[] = {
     0x5Bu, 0x20u, 0x5Cu, 0x54u, 0x49u, 0x4Eu, 0x59u, 0x5Cu, 0x48u, 0x4Eu, 0x44u, 0x31u,
-};
-
-/**
- * @brief Store (Add (Multiply (Add (Multiply (\TRAC, 0x10), Arg0), 0x10), Arg1), \TRAC).
- */
-static const uint8_t load_registration_body_aml[] = {
-    0x70u, 0x72u, 0x77u, 0x72u, 0x77u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u, 0x0Au, 0x10u, 0x00u,
-    0x68u, 0x00u, 0x0Au, 0x10u, 0x00u, 0x69u, 0x00u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u,
 };
 
 /**

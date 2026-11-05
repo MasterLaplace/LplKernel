@@ -2,9 +2,11 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Return (One): an _OSC that returns an Integer.
+ * @brief Device (ZDEV) {}: an empty device a table declares.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    Return (One)
+    Device (ZDEV) __EXPECT__(3141)
+    {
+    }
 }

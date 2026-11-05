@@ -198,13 +198,6 @@ static const uint8_t machine_language_load_may_stand_aml[] = {
 };
 
 /**
- * @brief The SSDT's Device (ZDEV), which the DSDT's External names.
- */
-static const uint8_t machine_language_load_skips_bodies_device_aml[] = {
-    0x5Bu, 0x82u, 0x05u, 0x5Au, 0x44u, 0x45u, 0x56u,
-};
-
-/**
  * @brief MAIN calls MTHA (One, Zero), MTHA (Zero, One) and MTH4 (Zero, Zero, Zero, Zero), each declared after
  *        MAIN with the arguments it takes.
  */

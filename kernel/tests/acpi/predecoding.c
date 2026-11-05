@@ -487,10 +487,10 @@ KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
  */
 KERNEL_TEST(the_loop_of_window_w4_runs_from_records_as_the_loop_runs_it)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_w4_aml, sizeof(predecoding_w4_aml), 2u, "\\LOOP",
+    const PredecodingRun_t run = predecoding_compare(test, common_w4_loop_aml, sizeof(common_w4_loop_aml), 2u, "\\LOOP",
                                                      PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
 
-    predecoding_compare(test, predecoding_w4_aml, sizeof(predecoding_w4_aml), 1u, "\\LOOP", PREDECODING_NO_ARGUMENT,
+    predecoding_compare(test, common_w4_loop_aml, sizeof(common_w4_loop_aml), 1u, "\\LOOP", PREDECODING_NO_ARGUMENT,
                         true, "fold_revision_1");
     kernel_test_check(test, run.tight_turns == 998u, "998 turns run as a tight loop");
 }

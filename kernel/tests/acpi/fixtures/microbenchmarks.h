@@ -51,15 +51,6 @@ static const uint8_t microbenchmark_link_device_aml[] = {
 };
 
 /**
- * @brief The loop of window W4: LOOP sets Local0 to 0, then runs
- *        `While (LLess (Local0, 0x03E8)) { Increment (Local0) }` and returns Local0.
- */
-static const uint8_t microbenchmark_loop_aml[] = {
-    0x14u, 0x14u, 0x4Cu, 0x4Fu, 0x4Fu, 0x50u, 0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
-    0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
  * @brief The polling loop of window W4, shaped like the loops real firmware runs at boot but with no Stall
  *        nor Sleep, so that it counts the interpreter alone: STS, 8 bits of a DWordAcc field of a
  *        SystemMemory region at 0x10000, then POLL: `Local0 = 0; Local2 = 1000; While (Local0 < 1000)

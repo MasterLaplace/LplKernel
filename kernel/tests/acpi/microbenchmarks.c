@@ -1,4 +1,5 @@
 #include "fixtures/microbenchmarks.h"
+#include "fixtures/common.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -372,7 +373,7 @@ static void microbenchmark_loop(KernelTest_t *test, uint8_t revision)
     uint32_t objects = 0u;
 
     if (!made_up_load_table(test, &microbenchmark_load, &microbenchmark_host, microbenchmark_table, revision,
-                            microbenchmark_loop_aml, sizeof(microbenchmark_loop_aml)))
+                            common_w4_loop_aml, sizeof(common_w4_loop_aml)))
         return;
     objects = microbenchmark_load.heap.objects;
     kernel_test_check(test,

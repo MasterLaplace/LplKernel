@@ -204,27 +204,11 @@ static const uint8_t initialization_registration_creates_region_aml[] = {
 };
 
 /**
- * @brief The body of _REG (2): \TRAC takes Arg0 then Arg1 as its two last hexadecimal digits.
- */
-static const uint8_t initialization_registration_traces_aml[] = {
-    0x70u, 0x72u, 0x77u, 0x72u, 0x77u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u, 0x0Au, 0x10u, 0x00u,
-    0x68u, 0x00u, 0x0Au, 0x10u, 0x00u, 0x69u, 0x00u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u,
-};
-
-/**
  * @brief Return (Arg3): an _OSC that gives back the Buffer it was given.
  */
 static const uint8_t initialization_return_arg3_aml[] = {
     0xA4u,
     0x6Bu,
-};
-
-/**
- * @brief Return (One): an _OSC that returns an Integer.
- */
-static const uint8_t initialization_return_one_aml[] = {
-    0xA4u,
-    0x01u,
 };
 
 /**
