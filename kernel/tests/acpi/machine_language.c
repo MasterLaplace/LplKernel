@@ -1460,7 +1460,7 @@ KERNEL_TEST(an_alias_keeps_its_first_target)
     target = advanced_configuration_and_power_interface_machine_language_namespace_node(&made_up_load.space, alias)
                  ->value.handle;
     kernel_test_check(test, target == first_target && made_up_load.duplicates == 1u,
-                      "ALI_ still names TGT1, and the machine_language_alias_keeps_first_second_aml Alias is counted");
+                      "ALI_ still names TGT1, and the second Alias is counted");
     made_up_close(test);
 }
 

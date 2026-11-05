@@ -211,7 +211,7 @@ KERNEL_TEST(a_table_load_adds_while_bodies_are_skipped_is_declared_undecoded)
             return;
         load_load.skips_bodies = skips != 0u;
         kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
-                          "LDIT load_loads_table_into_first_handle_aml the table");
+                          "LDIT loads the table");
         kernel_test_check(test, load_call("\\LMTH") == LOAD_STATUS(OK), "the loaded LMTH runs");
         kernel_test_check(test, (load_load.tables[1].terms == 0u) == (skips != 0u),
                           skips ? "the loaded table counts no term: its body is not decoded" :
@@ -259,7 +259,7 @@ KERNEL_TEST(a_table_load_adds_has_its_kept_data_checked_once_decoded)
         uint32_t pkfl = 0u;
 
         kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
-                          "LDIT load_loads_table_into_first_handle_aml the table");
+                          "LDIT loads the table");
         counted[skips] = load_load.data_faults - faults;
         kept[skips] = load_load.data_kept - data_kept;
         pkfl = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
@@ -302,7 +302,7 @@ KERNEL_TEST(a_kept_package_a_loaded_table_reads_first_is_counted_at_that_read)
     const uint32_t faults_read = load_load.data_faults_read;
 
     kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
-                      "LDIT load_loads_table_into_first_handle_aml the table");
+                      "LDIT loads the table");
     kernel_test_check(test,
                       load_load.data_kept - kept == 3u && load_load.data_faults_read - faults_read == 1u &&
                           load_load.data_faults - faults == 1u,
@@ -365,9 +365,8 @@ KERNEL_TEST(load_table_runs_a_table_of_the_directory_in_place)
                       "an OEM ID that only starts the table's gives False: identifiers are padded with zeros");
     kernel_test_check(test, load_load.load_tables_missing == 1u && load_load.table_count == 1u,
                       "the table found nowhere is counted, and nothing is added");
-    kernel_test_check(
-        test, load_call("\\LTB1") == LOAD_STATUS(OK) && load_integer("RES1") == LOAD_ONES,
-        "LoadTable load_table_runs_table_finds_aml OEM1 by its signature, OEM ID and OEM table ID, and gives True");
+    kernel_test_check(test, load_call("\\LTB1") == LOAD_STATUS(OK) && load_integer("RES1") == LOAD_ONES,
+                      "LoadTable finds OEM1 by its signature, OEM ID and OEM table ID, and gives True");
     kernel_test_check(test,
                       load_integer("LDED") == 0x2Au && load_load.tables[1].origin == LOAD_ORIGIN(LOAD_TABLE) &&
                           load_load.tables[1].header == header && load_load.tables[1].pages == 0u &&
@@ -536,8 +535,7 @@ KERNEL_TEST(a_load_in_a_method_belongs_to_its_evaluation)
     kernel_test_check(test, load_load.evaluation.iterations == 8u,
                       "the evaluation counts the 8 back-edges of both loops: the Load reset none");
     kernel_test_check(test, load_load.services.released_at_end == 0u && load_load.services.releases_ignored == 0u,
-                      "the load_method_belongs_mutex_aml the method took before the Load is still held after it, and "
-                      "released by the method");
+                      "the mutex the method took before the Load is still held after it, and released by the method");
     load_close(test);
 }
 
@@ -556,7 +554,7 @@ KERNEL_TEST(a_method_in_the_frame_a_loaded_table_ran_in_runs_as_a_method)
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
-                      "LDIT load_method_frame_loaded_loads_aml the table, its code run in the frame above LDIT's");
+                      "LDIT loads the table, its code run in the frame above LDIT's");
     kernel_test_check(test, load_call("\\OUTR") == LOAD_STATUS(OK) && load_integer("TRAC") == 7u,
                       "INNR, called by OUTR in that same frame, returns the 7 its Name holds");
 
@@ -585,8 +583,7 @@ KERNEL_TEST(a_failure_in_a_method_a_loaded_table_calls_goes_on_past_its_statemen
                       "the Load succeeds and stores True");
     kernel_test_check(test,
                       load_load.evaluation.statuses[LOAD_STATUS(NAME_NOT_FOUND)] == 1u && load_integer("TRAC") == 0u,
-                      "the statement that load_failure_method_loaded_calls_aml FALT "
-                      "load_failure_method_loaded_fails_aml, counted, and stores nothing");
+                      "the statement that calls FALT fails, counted, and stores nothing");
     kernel_test_check(test, load_integer("AFTR") == 7u, "the declaration after it is made");
     load_close(test);
 }
@@ -728,11 +725,10 @@ KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(
-        test,
-        load_integer("HC0_") == LOAD_ONES && load_integer("HW0_") == 0u && load_integer("HWPT") == 0xDEADu &&
-            load_load.tables_loaded == 1u,
-        "the _PDC loads the C-state table, never the HWP one: the load_table_loaded_run_platform_aml granted nothing");
+    kernel_test_check(test,
+                      load_integer("HC0_") == LOAD_ONES && load_integer("HW0_") == 0u &&
+                          load_integer("HWPT") == 0xDEADu && load_load.tables_loaded == 1u,
+                      "the _PDC loads the C-state table, never the HWP one: the platform granted nothing");
     kernel_test_check(test, load_integer("TRAC") == 0x2136u,
                       "the loaded table's scope gets one _REG (2, 1) for its two regions, then its device's _INI "
                       "runs, then its child's");
@@ -1574,9 +1570,8 @@ KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(
-        test, load_integer("HND1") == LOAD_ONES && load_integer("TRAC") == 4u,
-        "\\_SB._INI load_table_loaded_before_loads_aml the table, and step 4 runs its device's _INI once");
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES && load_integer("TRAC") == 4u,
+                      "\\_SB._INI loads the table, and step 4 runs its device's _INI once");
     kernel_test_check(test,
                       load_counts.processor_capabilities == 1u && load_counts.processor_capabilities_legacy == 1u &&
                           load_counts.processor_capabilities_failed == 0u &&
@@ -1703,8 +1698,7 @@ KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
-                      "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4");
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
     kernel_test_check(test,
                       load_integer("TRAC") == 0u && load_counts.status_evaluations == 1u &&
                           load_counts.late_initializations == 0u,
@@ -1754,8 +1748,7 @@ static bool load_absent_machine(KernelTest_t *test, uint8_t status, bool loader_
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
-                          "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4"))
+    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4"))
         return true;
     load_close(test);
     return false;
@@ -1850,8 +1843,7 @@ static bool load_sibling_machine(KernelTest_t *test, const char *first, const ch
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
-                          "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4"))
+    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4"))
         return true;
     load_close(test);
     return false;
@@ -1920,11 +1912,9 @@ static void load_skipped_absent(KernelTest_t *test, bool absent_first)
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
-                      "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4");
-    kernel_test_check(
-        test, load_integer("TRAC") == 5u && load_counts.status_evaluations == 2u,
-        "NOIN's _STA is read once, says load_returns_absent_aml, and LATE is left alone: only ZDEV's _INI runs");
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
+    kernel_test_check(test, load_integer("TRAC") == 5u && load_counts.status_evaluations == 2u,
+                      "NOIN's _STA is read once, says absent, and LATE is left alone: only ZDEV's _INI runs");
     load_close(test);
 }
 
