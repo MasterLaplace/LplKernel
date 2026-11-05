@@ -177,6 +177,8 @@ static bool made_up_runs_at_table_level(uint32_t opcode)
 /**
  * @brief A PkgLength of 1 to 4 bytes gives the value its bytes encode, and the construct it opens
  *        ends at its own first byte plus that value: the length counts its own bytes.
+ *
+ * Its PkgLength encodings are raw bytes: the test reads each alone, outside any table.
  */
 KERNEL_TEST(a_package_length_of_one_to_four_bytes_ends_where_it_says)
 {
@@ -270,6 +272,8 @@ static bool made_up_continues_segment(uint32_t byte)
  * @brief Each of the 256 bytes may start a NameSeg exactly when ACPI's grammar makes it a LeadNameChar, and follow its
  *        first character exactly when it makes it a NameChar; a NameString of one NameSeg whose first or last
  *        character is that byte reads exactly then.
+ *
+ * Its NameStrings are raw bytes: the test builds one from each of the 256 bytes and reads it alone, outside any table.
  */
 KERNEL_TEST(each_byte_is_a_name_segment_character_as_the_grammar_says)
 {
@@ -314,8 +318,8 @@ KERNEL_TEST(each_byte_is_a_name_segment_character_as_the_grammar_says)
  *        dual path, a multi path of 255 segments; a multi path of 0 segments, a NameSeg with a
  *        lower-case character and a root followed by a parent prefix are refused.
  *
- * Its NameStrings are raw bytes: iasl writes every name in its own form, never a root or parent prefix with a
- * NullName, a DualNamePrefix, an empty MultiNamePrefix or a lower-case letter.
+ * Its NameStrings are raw bytes: the test reads each alone, outside any table, and iasl emits no empty
+ * MultiNamePrefix, no lower-case NameSeg and no parent prefix after the root.
  */
 KERNEL_TEST(name_strings_of_every_prefix_and_length_are_read)
 {
@@ -383,6 +387,8 @@ KERNEL_TEST(name_strings_of_every_prefix_and_length_are_read)
 /**
  * @brief Every descriptor is found again from its own encoding, and the bytes the byte table leaves
  *        out, 0x5B 0x10 and 0x5B 0x11 and 0xA9 included, are no opcode.
+ *
+ * Its not_opcodes and bytes arrays are encodings the test looks up alone, outside any table.
  */
 KERNEL_TEST(every_descriptor_is_found_by_its_encoding)
 {
@@ -1210,9 +1216,9 @@ KERNEL_TEST(a_connection_buffer_is_decoded_as_a_buffer)
  * @brief Loads, as a DSDT, Name (VAL_, 0x2A) then BAD2, a method whose Store takes an If as an operand, with method
  *        bodies decoded or, when @p skips holds, skipped as a release kernel loads (O2, §3.6); then evaluates BAD2.
  *
- * @return BAD2's status, or OK when the load does not open.
- *
  * Its table is raw bytes: iasl's grammar refuses an If where an operand is expected.
+ *
+ * @return BAD2's status, or OK when the load does not open.
  */
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t made_up_load_bad_body(KernelTest_t *test,
                                                                                            bool skips)
@@ -1730,8 +1736,9 @@ static const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *m
 
 /**
  * @brief Data objects of every kind a Name declares: an Integer, a String, a Buffer padded to its size, a Package that
- *        nests a Package holding a name, and VPK_, a VarPackage of two elements. It is raw bytes: iasl emits a
- *        VarPackage of constant size as a Package.
+ *        nests a Package holding a name, and VPK_, a VarPackage of two elements.
+ *
+ * It is raw bytes: iasl emits a VarPackage of a constant size below 256 as a Package.
  */
 static const uint8_t made_up_data_objects[] = {
     0x08u, 'I', 'N',   'T',   '_',   0x0Bu, 0x34u, 0x12u, 0x08u, 'S',   'T',   'R',   '_',   0x0Du, 'a',
@@ -1744,6 +1751,8 @@ static const uint8_t made_up_data_objects[] = {
  * @brief A Name holds the data object it declares: an Integer, a String, a Buffer padded to its size,
  *        a Package whose third element is a Package holding a name kept as a name, and a VarPackage
  *        of two elements with one initialiser, the other left Uninitialized.
+ *
+ * Its buffer_bytes array is the bytes the test expects, not AML.
  */
 KERNEL_TEST(a_name_holds_the_data_object_it_declares)
 {
@@ -2341,6 +2350,8 @@ KERNEL_TEST(objects_take_the_sizes_the_specification_gives)
  *        @p letter then three digits: a size a name gives, so that the load builds each buffer, where it keeps
  *        in its table a buffer whose size is a literal (O20).
  *
+ * Its pieces are raw bytes: partial terms around @p size and the names it writes from each index.
+ *
  * @return The bytes written.
  */
 static uint32_t made_up_buffers(uint8_t *aml, char letter, uint32_t count, uint16_t size)
@@ -2535,6 +2546,8 @@ KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
 /**
  * @brief A String of 65,536 characters, the cap of §6.1, is built with its NUL; one of 65,537 is
  *        refused as limit_buffer_bytes.
+ *
+ * Its names are raw bytes: partial terms around Strings whose length the test names (§8.2).
  */
 KERNEL_TEST(a_string_of_the_largest_length_is_built)
 {

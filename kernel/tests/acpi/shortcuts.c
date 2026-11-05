@@ -190,7 +190,7 @@ static const uint8_t shortcuts_wide[] = {
  *        past the 64 KiB of §6.1.
  *
  * It is raw bytes: iasl's grammar refuses an OperationRegion opcode or Local0 as a package element, and iasl emits no
- * String without its NUL and no second Name of one name.
+ * String without its NUL.
  */
 static const uint8_t shortcuts_malformed[] = {
     0x08u, 'M', '0', '_',   '_',   0x12u, 0x08u, 0x01u, 0x5Bu, 0x80u, 'R',   'G',   'N',   '_',   0x08u, 'M',
@@ -218,8 +218,7 @@ static const uint8_t shortcuts_crossing[] = {
  *        0x02, which starts no data object, then `Name (CNT2, 2)` and `Name (VPK_, VarPackage (CNT2) {Package (3)
  *        {One}, ...})`, not kept for its count, whose inner Package is padded before such a byte.
  *
- * It is raw bytes: iasl emits no second Name of one name, no element that is the byte 0x02, and a Package, not a
- * VarPackage, of constant count.
+ * It is raw bytes: iasl emits no element that is the byte 0x02.
  */
 static const uint8_t shortcuts_kept_refused_and_duplicate[] = {
     0x08u, 'V',   'P',   'X', '_', 0x13u, 0x04u, 0x0Bu, 0x01u, 0x10u, 0x08u, 'D',   'U',   'P',   '_',   0x12u, 0x03u,
@@ -232,7 +231,7 @@ static const uint8_t shortcuts_kept_refused_and_duplicate[] = {
  *        `Name (IN__, IR__)`, then `Name (IO__, One)`, which it builds, `Name (IO__, Ones)` again, and a QWord whose
  *        last byte the table's end cuts, `Name (IQ__, ...)`.
  *
- * It is raw bytes: iasl emits no second Name of one name and no QWord the table's end cuts.
+ * It is raw bytes: iasl emits no QWord the table's end cuts.
  */
 static const uint8_t shortcuts_integers_refused[] = {
     0x08u, 'I', 'R',   '_', '_', 0x5Bu, 0x30u, 0x08u, 'I',   'N',   '_',   '_',   'I',   'R',
@@ -267,7 +266,7 @@ static const uint8_t shortcuts_head_two_bytes[] = {0x08u, 'H',   'E',   '_',   '
 /**
  * @brief `Name (HG__, Package (1) {VarPackage (One) {One}})`, a VarPackage whose PkgLength is one byte.
  *
- * It is raw bytes: iasl emits a Package, not a VarPackage, of constant count.
+ * It is raw bytes: iasl emits a Package, not a VarPackage, of a constant count below 256.
  */
 static const uint8_t shortcuts_head_variable[] = {0x08u, 'H',   'G',   '_',   '_',   0x12u,
                                                   0x06u, 0x01u, 0x13u, 0x03u, 0x01u, 0x01u};
@@ -286,8 +285,8 @@ static const uint8_t shortcuts_head_variable[] = {0x08u, 'H',   'G',   '_',   '_
  *        `Field (NOPE)` whose PkgLength ends at its name and whose region was never declared; and a Name cut by the
  *        table's end: 15 of them through the decoder, the 2 OperationRegions and the 5 Devices among them.
  *
- * It is raw bytes: iasl emits no second Method or Device of one name, no NameSeg that starts with a digit, no PkgLength
- * that ends inside a name, and no term the table's end cuts.
+ * It is raw bytes: iasl emits no NameSeg that starts with a digit, no PkgLength that ends inside a name, and no term
+ * the table's end cuts.
  */
 static const uint8_t shortcuts_handed_back[] = {
     0x5Bu, 0x80u, 'R',   '0',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u, 0x0Au, 0x20u, 0x5Bu, 0x80u,
@@ -321,8 +320,8 @@ static const uint8_t shortcuts_handed_back[] = {
  *        NameSeg the table's end cuts: 12 of them through the decoder, the 2 Names, the Method and the 4 Devices among
  *        them.
  *
- * It is raw bytes: iasl emits no second OperationRegion of one name, no NameSeg that starts with a digit, no PkgLength
- * that cuts a region, and no term the table's end cuts.
+ * It is raw bytes: iasl emits no NameSeg that starts with a digit, no PkgLength that cuts a region, and no term the
+ * table's end cuts.
  */
 static const uint8_t shortcuts_regions[] = {
     0x5Bu, 0x80u, 'R',   'B',   '_',   '_',   0x01u, 0x00u, 0x01u, 0x5Bu, 0x80u, 'R',   'W',   '_',   '_',   0x02u,
@@ -350,8 +349,7 @@ static const uint8_t shortcuts_regions[] = {
  *        `Name (NM__, Package (3) {\\_SB_, ^XYZW, AB__.CD__})`, a name of each prefix; and
  *        `Name (B64K, Buffer (0x10000) {})`, the largest buffer of §6.1.
  *
- * It is raw bytes: iasl raises a Package's count to its initialisers and a Buffer's size to its bytes, and emits a
- * Package, not a VarPackage, of constant count.
+ * It is raw bytes: iasl raises a Package's count to its initialisers and a Buffer's size to its bytes.
  */
 static const uint8_t shortcuts_kept_edges[] = {
     0x08u, 'P',   'D',   '_',   '_',   0x12u, 0x03u, 0x03u, 0x01u, 0x08u, 'T',   'R',   '_',   '_',   0x12u,
@@ -501,6 +499,8 @@ static void shortcuts_write_nested(ShortcutsBackwards_t *backwards, const char *
  * @brief Copies the @p length bytes of @p table into shortcuts_mutant with the byte at @p offset changed to the value
  *        of @p turn: its value with one bit flipped, 0x00 or 0xFF, and the flipped value where the turn's value is
  *        the byte's own.
+ *
+ * Its values array is the bytes a turn writes, not AML.
  */
 static void shortcuts_change_one_byte(const uint8_t *table, uint32_t length, uint32_t offset, uint32_t turn)
 {
@@ -807,12 +807,12 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t shortcuts_e
 }
 
 /**
- * @brief Writes into shortcuts_backwards the table of @p unbuilt: shortcuts_unbuilt_readers_aml, `Name (PKG_, ...)` of
- * its package, then `Name (AFTR, 7)`.
- *
- * @return Whether it fits the buffer.
+ * @brief Writes into shortcuts_backwards the table of @p unbuilt: shortcuts_unbuilt_readers_aml, `Name (PKG_, ...)`
+ *        of its package, then `Name (AFTR, 7)`.
  *
  * Its Name opcode and NameSeg and its One are raw bytes: partial terms around the package @p unbuilt gives.
+ *
+ * @return Whether it fits the buffer.
  */
 static bool shortcuts_unbuilt_table(KernelTest_t *test, const ShortcutsUnbuilt_t *unbuilt)
 {

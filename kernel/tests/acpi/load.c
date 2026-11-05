@@ -421,6 +421,8 @@ KERNEL_TEST(the_forms_the_kernel_does_not_load_fail_with_load_form_unsupported)
 /**
  * @brief Load refuses a region of another space than SystemMemory, a table longer than its region, a
  *        region shorter than a header and a header shorter than itself, and leaves no page taken.
+ *
+ * Its cut header is raw bytes: iasl writes no table header shorter than itself.
  */
 KERNEL_TEST(a_load_refuses_what_is_not_a_whole_table_of_system_memory)
 {
@@ -670,6 +672,8 @@ static void load_registration(MadeUpAml_t *aml)
 
 /**
  * @brief Appends Method (_INI), which appends @p digit to \TRAC, and Method (_STA) { Return (0x0F) }.
+ *
+ * Its pieces are raw bytes: the Store and the Add it opens around @p digit, partial terms.
  */
 static void load_present_initialization(MadeUpAml_t *aml, uint8_t digit)
 {
@@ -1104,6 +1108,8 @@ KERNEL_TEST(the_pass_after_step_eight_goes_on_while_its_tables_declare_processor
 /**
  * @brief Appends Method (@p name, @p arguments) to @p aml: the @p length bytes at @p before, then, when @p digit is
  *        not 0, the append of @p digit to \TRAC, then, when @p states holds, the Return of a _CST package of one C1.
+ *
+ * Its pieces are raw bytes: the Store and the Add it opens around @p digit, partial terms.
  */
 static void load_traced_method(MadeUpAml_t *aml, const char *name, uint8_t arguments, const uint8_t *before,
                                uint32_t length, uint8_t digit, bool states)
@@ -1712,6 +1718,8 @@ KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
  *        _INI traces 9, Device (BDEV) whose _INI loads a table, and Device (ZDEV), present, whose _INI traces 5,
  *        in the order @p loader_first says, BDEV first or GONE first; the table declares Device (LATE) in
  *        @p scope, present, whose _INI traces 7. Then initialises the namespace.
+ *
+ * Its Return opcode is raw bytes: a partial term around @p status.
  */
 static bool load_absent_machine(KernelTest_t *test, uint8_t status, bool loader_first, const char *scope)
 {
