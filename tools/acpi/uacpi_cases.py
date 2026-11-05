@@ -2,8 +2,10 @@
 
 Usage: python3 -I tools/acpi/uacpi_cases.py <iasl> <test-acpi> <test-cases directory> <divergences list>
 
-Each case is compiled as uACPI compiles it: `iasl -oa`, with the warnings its runner ignores. `test-acpi --evaluate \\MAIN`
-loads it and evaluates `\\MAIN`. A case is
+Each case is compiled as uACPI compiles it: `iasl -oa`, with the warnings its runner ignores, in the sandbox of
+tools/acpi/sandbox.sh (specification §8.5), from a copy in a directory of its own, the only one iasl can write to; an
+output that is not a plain file is refused unread, and without the sandbox no case is compiled.
+`test-acpi --evaluate \\MAIN` loads it and evaluates `\\MAIN`. A case is
   ok          when the status is ok and the result has the expected type and value;
   divergence  when it is listed in the divergences list with the section of the specification that differs, and fails;
   skip        when its expectation, `check-*`, tests uACPI's own API;
@@ -12,10 +14,11 @@ loads it and evaluates `\\MAIN`. A case is
               divergences list names for it, and fails;
   not ok      otherwise: a listed case that passes, so that the list stays true, and a harness that runs past 120 s
               included.
-Prints one line per case, then the counts; exits 1 when a case is not ok.
+Prints one line per case, then the counts; exits 1 when a case is not ok, or when the sandbox cannot run.
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,6 +27,8 @@ IGNORED_WARNINGS = [3144, 2098, 6058, 6161, 6005, 6080, 6084, 6086, 2089, 2173, 
                     6074, 6085, 3168, 2067]
 EXPECT = re.compile(r"^// Expect: (int|str) => (.*)$")
 WAITING = ("unimplemented_operator", "field_access_deferred")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SANDBOX = os.path.join(ROOT, "tools", "acpi", "sandbox.sh")
 
 
 def divergences(path):
@@ -48,16 +53,34 @@ def expectation(path):
     return None, None
 
 
+def sandbox_runs(work):
+    """Whether the sandbox runs a command, the sandbox's own words on its error output when it does not."""
+    return subprocess.run([SANDBOX, work, "true"], cwd=ROOT, timeout=60).returncode == 0
+
+
+def compile_case(iasl, case, work):
+    """Compiles a copy of a case in the sandbox, in a directory of @p work of its own, the only one iasl can write to:
+    the path of its AML, or None when iasl refuses it or leaves anything but a plain file there."""
+    directory = tempfile.mkdtemp(dir=work)
+    source, prefix = os.path.join(directory, "case.asl"), os.path.join(directory, "case")
+    shutil.copyfile(case, source)
+    flags = [argument for warning in IGNORED_WARNINGS for argument in ("-vw", str(warning))]
+    compiled = subprocess.run([SANDBOX, directory, iasl, *flags, "-oa", "-p", prefix, source], cwd=ROOT,
+                              capture_output=True, text=True, timeout=60)
+    aml = prefix + ".aml"
+    if compiled.returncode != 0 or os.path.islink(aml) or not os.path.isfile(aml):
+        return None
+    return aml
+
+
 def evaluate(iasl, harness, case, work):
     """Compiles a case and evaluates its \\MAIN: the harness's status, result type and value, and what waits."""
-    aml = os.path.join(work, "case")
-    flags = [argument for warning in IGNORED_WARNINGS for argument in ("-vw", str(warning))]
-    compiled = subprocess.run([iasl, *flags, "-oa", "-p", aml, case], capture_output=True, text=True, timeout=60)
-    if compiled.returncode != 0 or not os.path.exists(aml + ".aml"):
+    aml = compile_case(iasl, case, work)
+    if aml is None:
         return None
     result = {"status": None, "type": None, "value": None, "unimplemented": [], "failed": []}
     try:
-        output = subprocess.run([harness, "--evaluate", "\\MAIN", aml + ".aml"], capture_output=True, text=True,
+        output = subprocess.run([harness, "--evaluate", "\\MAIN", aml], capture_output=True, text=True,
                                 errors="replace", timeout=120).stdout
     except subprocess.TimeoutExpired:
         result["status"] = "harness_timeout"
@@ -73,7 +96,7 @@ def evaluate(iasl, harness, case, work):
             result["unimplemented"].append(line.rsplit(" ", 1)[1])
         elif line.startswith("aml evaluate failed "):
             result["failed"].append(line.split(" ")[3])
-    os.remove(aml + ".aml")
+    shutil.rmtree(os.path.dirname(aml))
     return result
 
 
@@ -118,6 +141,9 @@ def main():
     counts = {"ok": 0, "divergence": 0, "skip": 0, "waits": 0, "not ok": 0}
     names = sorted(name for name in os.listdir(cases) if name.endswith(".asl"))
     with tempfile.TemporaryDirectory() as work:
+        if not sandbox_runs(work):
+            print("not ok: the sandbox of tools/acpi/sandbox.sh cannot run, and iasl compiles no case outside it")
+            sys.exit(1)
         for name in names:
             case = name[:-4]
             kind, expected = expectation(os.path.join(cases, name))

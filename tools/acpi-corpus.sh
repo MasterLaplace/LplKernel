@@ -25,7 +25,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          (tools/acpi/corpus.list, the default) or full (every report with a dump, written to
          build/acpi-corpus/full.list); each report's decoded tables come too, kept in the clone's
          objects and never checked out
-         acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit; qemu fetches the
+         acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit, unchanged, in the
+         sandbox of tools/acpi/sandbox.sh, which needs bubblewrap (apt install bubblewrap); qemu fetches the
          reference tables of QEMU at a pinned release, its 47 x86 configurations; uacpi fetches uACPI's
          test cases at a pinned commit
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
@@ -102,8 +103,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          or exits other than 0 under callgrind, or when callgrind counts nothing; so does a list on which the harness
          prints no count, or where no machine asks the records anything. It needs valgrind (`apt install valgrind`),
          or the one VALGRIND names; quick is no list for it, none of its machines asking the records anything
-  uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
-         `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
+  uacpi  compiles each of uACPI's test cases with the iasl acpica built, in the sandbox, and evaluates its
+         \MAIN with `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
          yet; any other result fails
   module  writes the firmware of each machine named, as `test-acpi --write-module` serves it, as one
@@ -194,14 +195,21 @@ known_list() {
 }
 
 # Clones ACPICA at the pinned commit, its blobs fetched as the checkout needs them, and builds the three
-# tools the oracles use.
+# tools the oracles use in the sandbox of tools/acpi/sandbox.sh (specification §8.6): once the sources are
+# fetched, the build reaches no network and writes nowhere but in the checkout. A checkout with local changes is
+# refused, since the oracles are built from the pinned sources alone.
 fetch_acpica() {
     if [[ ! -d "$ACPICA/.git" ]]; then
         git clone -q --filter=blob:none --no-checkout "$ACPICA_URL" "$ACPICA"
     fi
     git -C "$ACPICA" fetch -q --depth 1 origin "$ACPICA_COMMIT"
     git -C "$ACPICA" checkout -q --detach "$ACPICA_COMMIT"
-    make -C "$ACPICA" -s -j"$(nproc)" iasl acpiexec acpixtract >/dev/null
+    if ! git -C "$ACPICA" diff --quiet HEAD; then
+        echo "fetch: ${ACPICA#"$ROOT"/} is changed: restore it, since ACPICA is built from its pinned sources" >&2
+        exit 1
+    fi
+    (cd "$ROOT" && "$ROOT/tools/acpi/sandbox.sh" "$ACPICA" make -C "$ACPICA" -s -j"$(nproc)" iasl acpiexec acpixtract \
+        >/dev/null)
 }
 
 # Fetches QEMU's reference ACPI tables at the pinned release, and nothing else of QEMU.
