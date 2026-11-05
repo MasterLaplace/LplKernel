@@ -177,16 +177,20 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                              against (§5.3), or NULL. */
     uint32_t bytes;             /**< AML bytes of those tables, headers apart. */
     uint32_t declarations;      /**< Nodes the tables created. */
-    uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass stepped over instead of decoding
-                                     them as terms: built (O18), or kept in their table (O20). */
+    uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass built, then stepped over instead of
+                                     decoding them as terms (O18); every load steps over the data it keeps in its
+                                     table, counted in data_kept (O20). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
                                                  instead of operand by operand through the walk (O19). */
     uint32_t integers_built_directly;       /**< Of the data objects stepped over, the integer constants the
                                                  declaration pass's decoder built itself instead of the general data
                                                  decoder (O19). */
-    uint32_t data_kept;           /**< Data objects of a Name the declaration pass checked, then kept in their table
-                                       unbuilt, and stepped over, until a name resolution reaches them (O20). */
+    uint32_t data_kept;           /**< Data objects of a Name the declaration pass kept in their table once their head
+                                       read, neither checked nor built, and stepped over, until a name resolution
+                                       reaches them (O20). */
     uint32_t data_materialized;   /**< Of those, the ones a name resolution has built since. */
+    uint32_t data_faults_read;    /**< Of those, the ones a name resolution found a fault in, left Uninitialized; one
+                                       that needs the interpreter is counted in values_deferred instead (O20). */
     uint32_t data_built_directly; /**< Of those, the ones the builder of kept data built (C4), not the general data
                                        decoder, which a load whose general_load is set uses. */
     uint32_t duplicates;          /**< Declarations of a name that already existed, skipped. */
@@ -195,8 +199,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;     /**< The first of them. */
     uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
+    uint32_t data_faults;         /**< Data objects kept in their table (O20) that the decoding pass found would not
+                                       build, a fault in their bytes or a term that needs the interpreter. */
+    uint32_t data_named_sizes;    /**< Data objects kept in their table (O20) that the decoding pass found hold a
+                                       Buffer or a VarPackage whose size or count a name gives: their first read
+                                       reads that name, where a load that built them read it as it declared them. */
     uint32_t declared_not_run;    /**< Declarations made in a branch whose predicate failed, without running its
-                                       code (§3.6). */
+                                        code (§3.6). */
     uint32_t undeclared_faults;   /**< Faults the decoding pass met inside a construct the declaration pass did not
                                        declare: in a branch table-level code did not take, or in a Scope whose
                                        target does not exist. Its names resolve against objects that do not
@@ -909,13 +918,15 @@ advanced_configuration_and_power_interface_machine_language_memory_read(
  * @brief Builds the data object a Name kept in its table (O20), once a name resolution reaches its node: the
  *        Package, VarPackage or Buffer the load would have built, from the same bytes, its names read in the
  *        node's parent and its integers as wide as when its table was declared, by a builder of its own (C4); by
- *        the general data decoder when the load's general_load is set, or when AML has rewritten the bytes since the
- *        load so that they no longer read as kept data. Any other node is left as it is.
+ *        the general data decoder when the load's general_load is set, or when the bytes do not read as kept data,
+ *        which the load did not check or AML has rewritten since. Bytes that build no object, for a fault or a term
+ *        that needs the interpreter, leave the node Uninitialized, as a load that built the object as it declared it
+ *        would have left it, counted in data_faults_read or values_deferred. Any other node is left as it is.
  *
  * @param load  The load.
  * @param index The node a name resolved to.
- * @return OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object, the status of the data decoder
- *         or TYPE_MISMATCH when its bytes no longer build one, the node keeping its data either way; OK otherwise.
+ * @return OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object, the node keeping its data; OK
+ *         otherwise.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_materialize(

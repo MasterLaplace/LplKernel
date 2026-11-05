@@ -239,8 +239,9 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 
 /**
  * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
- *        operating system services it called, the tables Load and LoadTable added, the failures per
- *        status, the region spaces refused, and the opcodes that failed as unimplemented.
+ *        operating system services it called, the tables Load and LoadTable added, the kept data a first
+ *        read found a fault in (O20), the failures per status, the region spaces refused, and the opcodes
+ *        that failed as unimplemented.
  */
 static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
@@ -293,9 +294,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            load->services.released_at_end, load->services.held_peak,
            (unsigned long long) load->services.time_requested_peak, load->services.signals,
            load->services.notifications, load->services.notifications_dropped, load->services.notification_peak);
-    printf("aml run tables loaded=%u duplicates=%u missing=%u bytes_copied=%u data_built_directly=%u\n",
+    printf("aml run tables loaded=%u duplicates=%u missing=%u bytes_copied=%u data_faults_read=%u "
+           "data_built_directly=%u\n",
            load->tables_loaded, load->load_duplicates, load->load_tables_missing, load->table_bytes_copied,
-           load->data_built_directly);
+           load->data_faults_read, load->data_built_directly);
     printf("aml run pci attachments=%u internal_evaluations=%u internal_failures=%u protected_writes=%u "
            "lost_accesses=%u ecam_accesses=%u registrations=%u registration_failures=%u\n",
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
@@ -337,8 +339,9 @@ static void harness_load_every_table(AdvancedConfigurationAndPowerInterfaceMachi
 
 /**
  * @brief Loads every table of @p machine, as harness_load_every_table does, with the server profile's
- *        caps, and prints what the load counted: its tables and faults, then each opcode decoded, in
- *        descriptor order.
+ *        caps, and prints what the load counted: its tables and faults, the data it kept in its tables that
+ *        the decoding pass found would not build or whose size a name gives (O20) among them, then each
+ *        opcode decoded, in descriptor order.
  */
 static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
                                            const RecordedMachine_t *machine)
@@ -356,8 +359,8 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
     harness_load_every_table(&load, directory, machine);
     printf("aml tables=%u bytes=%u decode_errors=%u calls=%u\n", load.table_count, load.bytes, load.decode_errors,
            load.method_calls);
-    printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u\n", load.load_errors,
-           load.unresolved_names, load.undeclared_faults);
+    printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u data_faults=%u data_named_sizes=%u\n",
+           load.load_errors, load.unresolved_names, load.undeclared_faults, load.data_faults, load.data_named_sizes);
     for (uint32_t index = 0u; index < load.table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load.tables[index];

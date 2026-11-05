@@ -32,7 +32,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
          from the report's decoded tables, and the opcodes and method calls its definition blocks
          decode with what tools/acpi/aml_census.py counts, once tools/acpi/check_census.py has
-         checked that census against hand-made tables; then
+         checked that census against hand-made tables, and fails on a data object a Name kept in its
+         table that the decoding pass found would not build (`aml faults data_faults=`); then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
          the report's iASL disassembly, and lists the tables where they differ. Once fetch acpica has
          built acpiexec, the FADT is also compared with the local FADT ACPICA builds from the same table,
@@ -747,7 +748,7 @@ decoded() {
 
 # Compares the directory, the FADT and the MADT the kernel's code reads from each dump of the list $1 with the
 # expected ones, then says how many FADTs, registers, CPU slots, I/O APICs, overrides and NMI connections the
-# comparison held.
+# comparison held; fails on kept data the decoding pass found would not build.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables census
@@ -815,8 +816,13 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
     echo "# load: $(grep -o 'load_errors=[0-9]*' <<<"$faults" | cut -d= -f2 | paste -sd+ | bc) faults on" \
         "$(grep -c 'load_errors=[1-9]' <<<"$faults") machines; $(grep -o 'unresolved_names=[0-9]*' <<<"$faults" |
             cut -d= -f2 | paste -sd+ | bc) names that resolve to nothing"
+    echo "# kept data: $(total_of data_faults "$faults") objects that would not build, on" \
+        "$(grep -c ' data_faults=[1-9]' <<<"$faults") machines; $(total_of data_named_sizes "$faults") whose size a" \
+        "name gives, read at their first read"
     [[ "$(grep -c ' iasl \(agrees\|differs\|missing\) ' <<<"$disassembly")" -eq "$tables" ]] ||
         { echo "# iASL comparison: not every table was compared" >&2; return 1; }
+    [[ "$(total_of data_faults "$faults")" -eq 0 ]] ||
+        { echo "# kept data: an object that would not build waits for its first read" >&2; return 1; }
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]] &&
         [[ "$oracle" -eq 2 || "$(grep -c '^fadt acpica agrees' <<<"$acpica")" -eq "$number" ]]
 }

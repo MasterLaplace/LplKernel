@@ -72,8 +72,19 @@ typedef struct KeptDataBuilt {
     uint32_t live_objects;   /**< Objects the heap holds once every kept object is built or has failed. */
     uint32_t object_bytes;   /**< Bytes they take. */
     uint32_t fold;           /**< The namespace's fold then. */
+    uint32_t faults_read;    /**< Kept objects left Uninitialized for a fault in their bytes. */
+    uint32_t deferred;       /**< Objects that wait for the interpreter, kept ones left Uninitialized included. */
     uint32_t built_directly; /**< Kept objects the builder of kept data built (C4). */
 } KeptDataBuilt_t;
+
+/**
+ * @brief What a load counted of a data object kept in its table (O20), at load, in the decoding pass, then once built.
+ */
+typedef struct KeptDataChecked {
+    uint32_t kept;        /**< Data objects the load kept in its table. */
+    uint32_t faults;      /**< Of those, the ones the decoding pass found would not build. */
+    uint32_t faults_read; /**< Of those, the ones whose build found a fault, left Uninitialized. */
+} KeptDataChecked_t;
 
 /**
  * @brief `Name (PKGX, Package (1) {One})`, its One the table's last byte.
@@ -194,6 +205,40 @@ static uint32_t kept_data_fold_after(const uint8_t *aml, uint32_t length, KeptDa
     advanced_configuration_and_power_interface_simulated_host_close(&host);
     free(copy);
     return fold;
+}
+
+/**
+ * @brief Loads the definition block @p aml from a copy of exactly its size, so that the address sanitizer catches a
+ *        read past its end, decodes its bodies as the debug kernel and the host tools do, then builds every data object
+ *        it kept in its table, as a name resolution reaching it would; @p out_checked receives what it counted.
+ *
+ * @return Whether the copy could be made.
+ */
+static bool kept_data_check_then_build(const uint8_t *aml, uint32_t length, KeptDataChecked_t *out_checked)
+{
+    uint8_t *copy = malloc(MADE_UP_TABLE_HEADER + length);
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+
+    memset(out_checked, 0, sizeof(*out_checked));
+    if (copy == NULL)
+        return false;
+    advanced_configuration_and_power_interface_simulated_host_open(&host);
+    advanced_configuration_and_power_interface_machine_language_open(&load, &host.host, MADE_UP_MAX_NODES,
+                                                                     MADE_UP_MAX_ARENA_BYTES);
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &load, made_up_definition_block(copy, "DSDT", 2u, aml, length));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         index < load.space.node_count; ++index)
+        (void) advanced_configuration_and_power_interface_machine_language_materialize(&load, index);
+    out_checked->kept = load.data_kept;
+    out_checked->faults = load.data_faults;
+    out_checked->faults_read = load.data_faults_read;
+    advanced_configuration_and_power_interface_machine_language_close(&load);
+    advanced_configuration_and_power_interface_simulated_host_close(&host);
+    free(copy);
+    return true;
 }
 
 /**
@@ -459,6 +504,8 @@ static bool kept_data_build_after(const uint8_t *aml, uint32_t length, uint8_t r
     out_built->live_objects = load.heap.objects - load.heap.objects_freed;
     out_built->object_bytes = load.heap.object_bytes;
     out_built->fold = advanced_configuration_and_power_interface_machine_language_namespace_fold(&load);
+    out_built->faults_read = load.data_faults_read;
+    out_built->deferred = load.values_deferred;
     out_built->built_directly = load.data_built_directly;
     advanced_configuration_and_power_interface_machine_language_close(&load);
     advanced_configuration_and_power_interface_simulated_host_close(&host);
@@ -641,28 +688,30 @@ KERNEL_TEST(every_one_byte_rewrite_of_kept_data_builds_the_same_through_its_buil
 }
 
 /**
- * @brief The check of kept data (O20) stops at each bound of a package's elements without reading a byte past the
- *        table, loaded from a copy of exactly its size: a package head whose PkgLength of 1 leaves its count outside,
- *        one whose PkgLength passes its parent's end, and a NameSeg element the table's end cuts, each refused, so that
- *        the load keeps nothing.
+ * @brief The check of kept data (O20), which the decoding pass runs, and the builder of kept data (C4), which the
+ *        object's first read runs, stop at each bound of a package's elements without reading a byte past the table,
+ *        loaded from a copy of exactly its size: a package head whose PkgLength of 1 leaves its count outside, one
+ *        whose PkgLength passes its parent's end, and a NameSeg element the table's end cuts. The load keeps each
+ *        package, whose own head reads; the decoding pass counts it in data_faults, and its build in data_faults_read.
  */
 KERNEL_TEST(the_kept_data_check_stops_at_each_bound_without_reading_past_the_table)
 {
     const KeptDataBound_t cases[] = {
-        {"a PkgLength of 1 is refused without reading past the table",                 kept_data_head_without_count,
+        {"a PkgLength of 1 is a fault found without reading past the table",                 kept_data_head_without_count,
          sizeof(kept_data_head_without_count)},
-        {"a PkgLength past its parent is refused without reading past the table",      kept_data_head_past_parent,
+        {"a PkgLength past its parent is a fault found without reading past the table",      kept_data_head_past_parent,
          sizeof(kept_data_head_past_parent)  },
-        {"a NameSeg cut by the table's end is refused without reading past the table", kept_data_cut_name,
+        {"a NameSeg cut by the table's end is a fault found without reading past the table", kept_data_cut_name,
          sizeof(kept_data_cut_name)          },
     };
-    const KeptDataRewrite_t intact = {KEPT_DATA_UNCHANGED, 0u};
 
     for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
     {
-        uint32_t kept = 1u;
+        KeptDataChecked_t checked;
 
-        (void) kept_data_fold_after(cases[index].aml, cases[index].length, intact, &kept);
-        kernel_test_check(test, kept == 0u, cases[index].claim);
+        kernel_test_check(test,
+                          kept_data_check_then_build(cases[index].aml, cases[index].length, &checked) &&
+                              checked.kept == 1u && checked.faults == 1u && checked.faults_read == 1u,
+                          cases[index].claim);
     }
 }

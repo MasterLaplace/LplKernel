@@ -20,14 +20,14 @@ KERNEL_TEST(every_one_byte_change_of_a_table_of_data_declares_the_same_both_ways
     shortcuts_change_bytes(test, SHORTCUTS_TABLE_DATA, 1u, true, &mutations);
     kernel_test_check(test,
                       mutations.loads == 3u * mutations.bytes && mutations.taken.data_stepped_over != 0u &&
-                          mutations.taken.data_kept != 0u && mutations.taken.integers_built_directly != 0u,
+                          mutations.data_kept != 0u && mutations.taken.integers_built_directly != 0u,
                       "every change was loaded both ways, and the shortcuts stepped over data, kept some and built "
                       "integers");
     kernel_test_check(test, mutations.disagreements == 0u,
                       "every change declares the same with the shortcut and without");
     kernel_test_measure(test, "mutants", mutations.loads);
     kernel_test_measure(test, "data_stepped_over", mutations.taken.data_stepped_over);
-    kernel_test_measure(test, "data_kept", mutations.taken.data_kept);
+    kernel_test_measure(test, "data_kept", mutations.data_kept);
     kernel_test_measure(test, "integers_built_directly", mutations.taken.integers_built_directly);
 }
 

@@ -1678,8 +1678,8 @@ KERNEL_TEST(the_namespace_fold_follows_the_values)
 
 /**
  * @brief A Buffer takes the longer of its size and its initialiser, a Package with more initialisers
- *        than elements keeps the first, the cut is counted, and the dropped initialiser writes nothing;
- *        a Name declared twice keeps its first value.
+ *        than elements keeps the first, the cut is counted once, when the package is first built, not at load
+ *        (O20), and the dropped initialiser writes nothing; a Name declared twice keeps its first value.
  */
 KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
 {
@@ -1694,8 +1694,10 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
     if (!made_up_load_one(test, aml, sizeof(aml)))
         return;
 
+    const uint32_t cut_at_load = made_up_load.heap.packages_truncated;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
         made_up_object(&made_up_data("TRN_")->value);
+    const uint32_t cut_once_built = made_up_load.heap.packages_truncated;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *buffer =
         made_up_object(&made_up_data("BG__")->value);
 
@@ -1703,8 +1705,8 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
         test,
         package->length == 1u &&
             ((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (package + 1))[0].payload == 1u &&
-            made_up_load.heap.packages_truncated == 2u,
-        "Package (1) {One, 2} keeps One, and it and OVF_ are counted as cut");
+            cut_at_load == 0u && cut_once_built == 1u,
+        "Package (1) {One, 2} keeps One, counted as cut when it is first built, not at load");
     kernel_test_check(test, buffer->length == 3u && memcmp(buffer + 1, longer, 3u) == 0,
                       "Buffer (2) {1, 2, 3} holds the three bytes");
 
@@ -1713,8 +1715,11 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *inner =
         made_up_object((const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *) (outer + 1));
 
-    kernel_test_check(test, outer->length == 1u && inner->length == 1u,
-                      "Package (1) {Package (1) {One}, Zero} drops Zero without touching the package after it");
+    (void) made_up_data("TRN_");
+    (void) made_up_data("OVF_");
+    kernel_test_check(test, outer->length == 1u && inner->length == 1u && made_up_load.heap.packages_truncated == 2u,
+                      "Package (1) {Package (1) {One}, Zero} drops Zero without touching the package after it, and "
+                      "each package is counted as cut once");
     kernel_test_check(test, made_up_node("DUP_")->value.payload == 1u && made_up_load.duplicates == 1u,
                       "a second Name (DUP_) is counted, and the first keeps its value");
     made_up_close(test);
