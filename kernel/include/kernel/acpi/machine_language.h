@@ -173,6 +173,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
     uint32_t load_duplicates;     /**< Load and LoadTable calls refused, False returned, for a table the load holds. */
     uint32_t load_tables_missing; /**< LoadTable calls that found no table, False returned. */
+    uint32_t unload_refused;      /**< Unloads refused, their operand evaluated and nothing else done (§4.5). */
     uint32_t table_bytes_copied;  /**< Bytes Load copied. */
     uint32_t declaring;           /**< Passes and table frames that declare: not 0 while a table is declared. */
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, and
@@ -727,6 +728,30 @@ advanced_configuration_and_power_interface_machine_language_release(
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_signal(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
+ * @brief Runs Reset (§5.2): the Event's pending signals are cleared.
+ *
+ * @param load The load.
+ * @param node The object named.
+ * @return OK; TYPE_MISMATCH when the object is no Event.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_reset(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
+ * @brief Runs Wait (§5.2): takes one of the Event's pending signals, or, with none, reports a timeout at once,
+ *        whatever the timeout, since nothing else can signal while the only AML owner waits.
+ *
+ * @param load          The load.
+ * @param node          The object named.
+ * @param out_timed_out Receives whether no signal was pending; untouched on a refusal.
+ * @return OK; TYPE_MISMATCH when the object is no Event.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_wait(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, bool *out_timed_out);
 
 /**
  * @brief Enters a method whose MethodFlags are @p flags: a Serialized one raises the sync level to

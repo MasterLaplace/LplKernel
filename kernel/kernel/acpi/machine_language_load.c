@@ -1330,8 +1330,13 @@ static void machine_language_build_scope_object(MachineLanguageWalk_t *walk,
      ((opcode) >= MACHINE_LANGUAGE_OPCODE(LOCAL0) &&                                                                   \
       (opcode) <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6))) /**< Whether @p opcode, not data, runs nothing: Noop, a local   \
                                                           or an argument. */
+#define MACHINE_LANGUAGE_REFUSED_DECLARATION(opcode)                                                                   \
+    ((opcode) == MACHINE_LANGUAGE_OPCODE(DATA_REGION)) /**< Whether @p opcode declares a name in a statement the       \
+                                                          interpreter refuses to run: DataTableRegion, decoded only    \
+                                                          (§1.4), whose statement fails (§4.5). */
 #define MACHINE_LANGUAGE_CODE_ENTRY(identifier, encoding, name, package_length, statement, data_object, ...)           \
     [MACHINE_LANGUAGE_OPCODE(identifier)] =                                                                            \
+        MACHINE_LANGUAGE_REFUSED_DECLARATION(MACHINE_LANGUAGE_OPCODE(identifier)) ||                                   \
         !((data_object) || MACHINE_LANGUAGE_DECLARES(MACHINE_LANGUAGE_OPCODE(identifier)) ||                           \
           MACHINE_LANGUAGE_INERT(MACHINE_LANGUAGE_OPCODE(identifier))), /**< The entry of                              \
                                                                            machine_language_code_opcodes for a row of  \
@@ -1339,7 +1344,7 @@ static void machine_language_build_scope_object(MachineLanguageWalk_t *walk,
 
 /**
  * @brief Whether a statement of each opcode is code the interpreter runs: one that is neither a declaration, data, a
- *        local, an argument nor Noop; the invalid opcode is.
+ *        local, an argument nor Noop, and a declaration it refuses to run, which then fails; the invalid opcode is.
  */
 static const bool
     machine_language_code_opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT] = {

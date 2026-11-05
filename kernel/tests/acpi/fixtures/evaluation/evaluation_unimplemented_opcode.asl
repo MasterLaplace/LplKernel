@@ -2,10 +2,10 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief RES_, 5, takes FindSetLeftBit (One).
+ * @brief RES_, 5, takes NOr (One, Zero).
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
     Name (RES, 0x05)
-    RES = FindSetLeftBit (One)
+    RES = NOr (One, Zero)
 }
