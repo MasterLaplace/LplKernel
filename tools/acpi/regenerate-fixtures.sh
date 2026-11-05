@@ -7,9 +7,9 @@ Usage: tools/acpi/regenerate-fixtures.sh [--write]
 
 The made-up tables of the ACPI tests, written in ASL (specification §8.2). Each source
 kernel/tests/acpi/fixtures/<suite>/<name>.asl is compiled with the pinned iasl, as `iasl -oa -r 1`
-(§8.6), and its AML, the 36 bytes of the table header left out, becomes the array <name>_aml of the
-header kernel/tests/acpi/fixtures/<suite>.h, which <suite>.c includes. The first /** */ block of a
-source documents its array there.
+(§8.6), in the sandbox of tools/acpi/sandbox.sh, and its AML, the 36 bytes of the table header left
+out, becomes the array <name>_aml of the header kernel/tests/acpi/fixtures/<suite>.h, which <suite>.c
+includes. The first /** */ block of a source documents its array there.
 
 A source compiles without a warning and without an error, but for those it names on their own line with
 iasl's __EXPECT__(<id>): the ones its table makes on purpose. Remarks are not reported.
@@ -22,8 +22,8 @@ iasl is the one `tools/acpi-corpus.sh fetch acpica` builds in build/acpi-corpus/
 that script pins: another iasl may emit other bytes. A header keeps the @date it was created on.
 
 Exit status: 0 when every header holds what its sources compile to, 1 when one differs, is missing or
-has no source, when a source does not compile, or when iasl is missing or built at another commit; 2 on
-a usage error.
+has no source, when a source does not compile, when iasl is missing or built at another commit, or when
+the sandbox cannot run; 2 on a usage error.
 USAGE
 }
 
@@ -32,6 +32,7 @@ readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly FIXTURES="$ROOT/kernel/tests/acpi/fixtures"
 readonly ACPICA="$ROOT/build/acpi-corpus/acpica"
 readonly IASL="$ACPICA/generate/unix/bin/iasl"
+readonly SANDBOX="$ROOT/tools/acpi/sandbox.sh"
 readonly TABLE_HEADER_BYTES=36
 readonly BYTES_PER_LINE=16
 readonly IDENTIFIER='^[a-z][a-z0-9_]*$'
@@ -64,10 +65,19 @@ require_pinned_iasl() {
     fi
 }
 
-# Compiles the source $1 into $2.aml, or prints iasl's report and fails.
+# Exits, with what the sandbox printed, when it cannot run a command: iasl never runs outside it.
+require_sandbox() {
+    if ! "$SANDBOX" "$WORK" true; then
+        echo "not ok: the sandbox of tools/acpi/sandbox.sh cannot run, and iasl runs in no other place" >&2
+        exit 1
+    fi
+}
+
+# Compiles the source $1 into $2.aml, in the sandbox, or prints iasl's report and fails.
 compile() {
     local source="$1" prefix="$2"
-    if ! "$IASL" -oa -r 1 -we -vr -vs -p "$prefix" "$source" >"$prefix.log" 2>&1 || [[ ! -f "$prefix.aml" ]]; then
+    if ! "$SANDBOX" "${prefix%/*}" "$IASL" -oa -r 1 -we -vr -vs -p "$prefix" "$source" >"$prefix.log" 2>&1 ||
+        [[ ! -f "$prefix.aml" ]]; then
         echo "not ok ${source#"$ROOT"/}: iasl refuses it"
         sed 's/^/    # /' "$prefix.log"
         return 1
@@ -219,6 +229,7 @@ main() {
     esac
     [[ $# -le 1 ]] || { usage >&2; exit 2; }
     require_pinned_iasl
+    require_sandbox
     local directories=("$FIXTURES"/*/)
     if [[ ! -d "${directories[0]}" ]]; then
         echo "not ok: no fixture directory in ${FIXTURES#"$ROOT"/}"
