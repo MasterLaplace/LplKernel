@@ -181,6 +181,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                      them as terms: built (O18), or kept in their table (O20). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
                                                  instead of operand by operand through the walk (O19). */
+    uint32_t integers_built_directly;       /**< Of the data objects stepped over, the integer constants the
+                                                 declaration pass's decoder built itself instead of the general data
+                                                 decoder (O19). */
     uint32_t data_kept;           /**< Data objects of a Name the declaration pass checked, then kept in their table
                                        unbuilt, and stepped over, until a name resolution reaches them (O20). */
     uint32_t data_materialized;   /**< Of those, the ones a name resolution has built since. */

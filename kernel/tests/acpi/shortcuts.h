@@ -47,6 +47,7 @@ typedef struct ShortcutsTaken {
     uint32_t data_stepped_over;             /**< Data objects of a Name stepped over (O18). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass's decoder took (O19). */
     uint32_t data_kept;                     /**< Data objects of a Name kept in their table (O20). */
+    uint32_t integers_built_directly;       /**< Integer constants of a Name the decoder built itself (O19). */
 } ShortcutsTaken_t;
 
 /**

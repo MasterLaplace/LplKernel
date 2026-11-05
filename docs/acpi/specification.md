@@ -265,16 +265,17 @@ resolves before it gives the region back and the walk resolves again. A load who
 the differential tests compare the two (§8.1). At a statement's place, the declaration pass takes a Name or a Method of
 one NameSeg, a Device, a ThermalZone, a Scope, a Field and an OperationRegion of one NameSeg through a decoder of its
 own (O19), which reads the operator, its PkgLength and its NameString and declares or resolves the name as the walk
-would. It takes a Name whose data object it has built, a Method whose body it records whole, and an OperationRegion
-whose object it builds from an offset and a length that need no interpreter; any other statement it gives back to the
-walk as the operator the walk would hold at that point, and the walk takes the rest: the content of its list, or the
-operand whose outcome differs. A Name of one NameSeg whose data object is a Package, a VarPackage or a Buffer that would
-build with no interpreter and no fault, its sizes and counts literal constants, is checked without being built, its
-padded and cut packages counted, and kept in its table (O20): the node takes the object's type, and the walk steps over
-it as O18 does. Any other data object, one a name sizes included, is built as before. A kept object is built by a
-builder of its own (C4), which decodes each element straight into its package and reads each byte again as the check
-read it, since AML can rewrite its table after the load: bytes that no longer read as kept data, and the kept objects of
-a load whose `general_load` is set, are built by the general data decoder, whose status a failure then gives.
+would. It takes a Name whose data object it has built, or whose integer constant it builds itself as the general data
+decoder builds it, a Method whose body it records whole, and an OperationRegion whose object it builds from an offset
+and a length that need no interpreter; any other statement it gives back to the walk as the operator the walk would hold
+at that point, and the walk takes the rest: the content of its list, or the operand whose outcome differs. A Name of one
+NameSeg whose data object is a Package, a VarPackage or a Buffer that would build with no interpreter and no fault, its
+sizes and counts literal constants, is checked without being built, its padded and cut packages counted, and kept in its
+table (O20): the node takes the object's type, and the walk steps over it as O18 does. Any other data object, one a name
+sizes included, is built as before. A kept object is built by a builder of its own (C4), which decodes each element
+straight into its package and reads each byte again as the check read it, since AML can rewrite its table after the
+load: bytes that no longer read as kept data, and the kept objects of a load whose `general_load` is set, are built by
+the general data decoder, whose status a failure then gives.
 
 **The loop**, in order of precedence at each step:
 
@@ -1035,7 +1036,7 @@ reads a table in kernel memory. The costs to cut are:
 | O16 | Log calls compiled out below the build's level | CI checks that the release objects call no log function below the release level (`nm`); W1 on the release kernel |
 | O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
-| O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list, and an OperationRegion of one NameSeg whose offset and length need no interpreter | `declarations_decoded_directly`; W1 |
+| O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list, a Name's integer constant built by the decoder itself, and an OperationRegion of one NameSeg whose offset and length need no interpreter | `declarations_decoded_directly`, `integers_built_directly`; W1 |
 | O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it or a write is about to land on its table's bytes (§3.5, §5.3) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
