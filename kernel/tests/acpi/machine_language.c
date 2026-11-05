@@ -124,6 +124,55 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t made_up_res
 }
 
 /**
+ * @brief The opcodes that declare a name at a statement's place, as the ACPI specification lists them (§20.2.5): each
+ *        named object, a Scope, an Alias and the three field lists.
+ */
+static const uint32_t made_up_declaring_opcodes[] = {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NAME,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_METHOD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_EXTERNAL,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_MUTEX,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_EVENT,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_OPERATION_REGION,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_DATA_REGION,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_DEVICE,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_PROCESSOR,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_POWER_RESOURCE,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_THERMAL_ZONE,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_CREATE_BIT_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_CREATE_BYTE_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_CREATE_WORD_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_CREATE_DOUBLE_WORD_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_CREATE_QUAD_WORD_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_CREATE_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_SCOPE,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ALIAS,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INDEX_FIELD,
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_BANK_FIELD,
+};
+
+/**
+ * @brief Whether a statement of @p opcode is code the interpreter runs at table level, as §3.6 defines it and the
+ *        load decided it opcode by opcode before its table: neither a declaration, data, a local, an argument nor
+ *        Noop. An opcode past the last one is the invalid one, which is code.
+ */
+static bool made_up_runs_at_table_level(uint32_t opcode)
+{
+    const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
+
+    if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) != 0u ||
+        opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP ||
+        (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_LOCAL0 &&
+         opcode <= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_ARGUMENT6))
+        return false;
+    for (uint32_t index = 0u; index < sizeof(made_up_declaring_opcodes) / sizeof(made_up_declaring_opcodes[0]); ++index)
+        if (opcode == made_up_declaring_opcodes[index])
+            return false;
+    return true;
+}
+
+/**
  * @brief A PkgLength of 1 to 4 bytes gives the value its bytes encode, and the construct it opens
  *        ends at its own first byte plus that value: the length counts its own bytes.
  */
@@ -1906,19 +1955,21 @@ KERNEL_TEST(processors_mutexes_and_identity_keep_their_fields)
 }
 
 /**
- * @brief An If and a Store at table level are code the interpreter would run, counted; a declaration,
+ * @brief An If, a Store and a name at table level are code the interpreter would run, counted; a declaration,
  *        Noop and orphan data are not.
  */
 KERNEL_TEST(table_level_code_is_counted)
 {
     static const uint8_t aml[] = {
-        0xA0u, 0x08u, 0x01u, 0x08u, 'N', '1', '_', '_', 0x01u, 0x70u, 0x01u, 'N', '1', '_', '_', 0xA3u, 0x00u,
+        0xA0u, 0x08u, 0x01u, 0x08u, 'N',   '1',   '_', '_', 0x01u, 0x70u, 0x01u,
+        'N',   '1',   '_',   '_',   0xA3u, 0x00u, 'N', '1', '_',   '_',
     };
 
     if (!made_up_load_one(test, aml, sizeof(aml)))
         return;
     kernel_test_measure(test, "table_level_code", made_up_load.table_level_code);
-    kernel_test_check(test, made_up_load.table_level_code == 2u, "the If and the Store are counted, nothing else");
+    kernel_test_check(test, made_up_load.table_level_code == 3u,
+                      "the If, the Store and the name are counted, nothing else");
     made_up_close(test);
 }
 
@@ -2201,4 +2252,32 @@ KERNEL_TEST(a_string_of_the_largest_length_is_built)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES,
                       "one of 65,537 is refused as limit_buffer_bytes");
     made_up_close(test);
+}
+
+/**
+ * @brief The load decides whether a statement at table level is code the interpreter runs by a table built from the
+ *        opcode X-macros: for every opcode, the invalid one and one past the last included, it decides as the
+ *        definition of §3.6 decides, computed here from the descriptors and the specification's list of declarations.
+ */
+KERNEL_TEST(the_load_decides_table_level_code_for_every_opcode_as_section_3_6_defines_it)
+{
+    uint32_t disagreements = 0u;
+    uint32_t code = 0u;
+
+    for (uint32_t opcode = 0u; opcode <= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+    {
+        const bool runs = advanced_configuration_and_power_interface_machine_language_runs_at_table_level(opcode);
+
+        if (runs != made_up_runs_at_table_level(opcode))
+        {
+            kernel_test_check(test, false,
+                              advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
+            ++disagreements;
+        }
+        code += (runs && opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT) ? 1u : 0u;
+    }
+    kernel_test_check(test, disagreements == 0u, "every opcode is decided as the definition decides it");
+    kernel_test_measure(test, "opcodes", ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT);
+    kernel_test_measure(test, "table_level_code_opcodes", code);
 }
