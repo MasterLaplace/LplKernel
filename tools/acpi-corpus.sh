@@ -49,9 +49,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          it on, and which when they are five or fewer: the opcodes the interpreter executes
          (specification §4.1); a machine not read or a decode fault fails it
   initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
-         `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, the
-         C-states they published, then the statuses their failures ended with; a machine the harness fails on
-         fails it. The SSDTs a dump's firmware loads at run time wait for Load where
+         `test-acpi --initialize` as the boot does, a recorded machine put in ACPI mode first (step 0), and sums
+         how step 0 ended, what the initialisations ran and counted, the C-states they published, then the
+         statuses their failures ended with; a machine the harness fails on, or whose run prints no outcome of
+         step 0, fails it. The SSDTs a dump's firmware loads at run time wait for Load where
          tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt gives the NVS objects firmware
          fills at boot their values, which a dump lacks (specification §8.4)
   load  initialises each machine of a list whose firmware loads tables at run time, with
@@ -307,8 +308,8 @@ namespace_check() {
 }
 
 # Initialises the namespace of each machine of the list $1, or each QEMU configuration, with
-# `test-acpi --initialize`, and sums what the initialisations ran and counted; a machine the harness fails
-# on fails the run.
+# `test-acpi --initialize`, and sums how step 0 ended and what the initialisations ran and counted; a machine
+# the harness fails on, or whose run prints no outcome of step 0, fails the run.
 initialize_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 failed=0 subject output counts="" key
@@ -329,8 +330,13 @@ initialize_check() {
             failed=$((failed + 1))
             continue
         fi
+        if ! grep -q '^aml mode outcome=' "$output"; then
+            echo "not ok $number $subject: the run printed no outcome of step 0"
+            failed=$((failed + 1))
+            continue
+        fi
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
-        counts+="$(grep -E '^aml (init|idle|load) |^aml run tables ' "$output")"$'\n'
+        counts+="$(grep -E '^aml (init|idle|load|mode) |^aml run tables ' "$output")"$'\n'
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
     echo -n "# initialization of $((number - failed)) of $number:"
@@ -357,6 +363,8 @@ initialize_check() {
         echo -n " $key=$(grep '^aml idle control=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
     done
     echo
+    echo "# step 0, machines per outcome:" \
+        $(grep -o '^aml mode outcome=[a-z-]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# CST_CNT, machines per outcome:" \
         $(grep -o '^aml idle control=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# machines with a failure: $(grep -c '^aml init first_failure ' <<<"$counts")"

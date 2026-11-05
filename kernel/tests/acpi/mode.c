@@ -47,21 +47,16 @@ static AdvancedConfigurationAndPowerInterfaceGenericAddress_t mode_port_register
 }
 
 /**
- * @brief Opens a simulated host for a platform in legacy mode, whose firmware sets SCI_EN in PM1a's
- *        control register @p enable_milliseconds after ACPI_ENABLE, and the platform's normalised
+ * @brief Opens a simulated host whose firmware answers nothing, and the made-up platform's normalised
  *        FADT: both PM1 groups, both GPE blocks, SMI_CMD and ACPI_ENABLE.
  */
-static void mode_open(uint32_t enable_milliseconds)
+static void mode_open_platform(void)
 {
     advanced_configuration_and_power_interface_simulated_host_open(&mode_host);
     (void) advanced_configuration_and_power_interface_simulated_host_set_port(&mode_host, MODE_PM1A_EVENT + 2u,
                                                                               MODE_PM1A_ENABLES);
     (void) advanced_configuration_and_power_interface_simulated_host_set_port(&mode_host, MODE_PM1B_EVENT + 2u,
                                                                               MODE_PM1B_ENABLES);
-    mode_host.firmware_command_port = MODE_SMI_COMMAND;
-    mode_host.firmware_enable_command = MODE_ENABLE;
-    mode_host.firmware_control_port = MODE_PM1A_CONTROL;
-    mode_host.firmware_enable_milliseconds = enable_milliseconds;
 
     memset(&mode_fadt, 0, sizeof(mode_fadt));
     mode_fadt.present = true;
@@ -77,6 +72,37 @@ static void mode_open(uint32_t enable_milliseconds)
     mode_fadt.general_purpose_event_blocks[1] = mode_port_register(MODE_GPE1, 32u);
     mode_fadt.general_purpose_event_block_lengths[0] = 8u;
     mode_fadt.general_purpose_event_block_lengths[1] = 4u;
+}
+
+/**
+ * @brief Opens the made-up platform in legacy mode, its firmware setting SCI_EN in PM1a's control
+ *        register @p enable_milliseconds after ACPI_ENABLE.
+ */
+static void mode_open(uint32_t enable_milliseconds)
+{
+    mode_open_platform();
+    mode_host.firmware_command_port = MODE_SMI_COMMAND;
+    mode_host.firmware_enable_command = MODE_ENABLE;
+    mode_host.firmware_control_port = MODE_PM1A_CONTROL;
+    mode_host.firmware_enable_milliseconds = enable_milliseconds;
+}
+
+/**
+ * @brief Gives the host the firmware the made-up platform's FADT describes, as the corpus runs give a
+ *        recorded machine's.
+ */
+static void mode_boot(void)
+{
+    advanced_configuration_and_power_interface_simulated_host_boot_platform(&mode_host, &mode_fadt);
+}
+
+/**
+ * @brief Whether the host was given no firmware to answer the switch: no SMI command port, no SCI_EN.
+ */
+static bool mode_host_has_no_firmware(void)
+{
+    return mode_host.firmware_command_port == 0u && mode_host.firmware_control_port == 0u &&
+           mode_host.firmware_enabled_at == UINT64_MAX;
 }
 
 /**
@@ -375,4 +401,77 @@ KERNEL_TEST(no_fadt_is_no_switch)
                       mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN &&
                           mode_host.access_count == 0u,
                       "nothing is accessed");
+}
+
+/**
+ * @brief A platform booted from a FADT that gives it a legacy mode starts in it, and its firmware sets
+ *        SCI_EN by the time the write of ACPI_ENABLE returns: the switch reads it set at its first read,
+ *        without waiting.
+ */
+KERNEL_TEST(a_booted_platform_with_a_legacy_mode_is_switched_at_the_first_read)
+{
+    mode_open_platform();
+    mode_boot();
+    mode_enter();
+    kernel_test_check(test,
+                      mode_log_is_whole() && mode_write_index(MODE_SMI_COMMAND, 1u, MODE_ENABLE) != MODE_NOT_LOGGED,
+                      "SCI_EN reads clear before the switch, which writes ACPI_ENABLE to SMI_CMD");
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED &&
+                          mode_switch.polls == 1u && mode_switch.waited_milliseconds == 0u &&
+                          mode_host.clock_100ns == 0u,
+                      "the platform is switched at the first read of SCI_EN, the host never waiting");
+    mode_measure(test);
+}
+
+/**
+ * @brief A platform booted from a FADT that gives it no legacy mode, SMI_CMD or ACPI_ENABLE 0, reads
+ *        SCI_EN set from the start, as ACPI-only platforms do: the switch finds it in ACPI mode.
+ */
+KERNEL_TEST(a_booted_platform_without_a_legacy_mode_reads_sci_en_set)
+{
+    mode_open_platform();
+    mode_fadt.system_management_interrupt_command = 0u;
+    mode_boot();
+    mode_enter();
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_ALREADY &&
+                          mode_log_is_whole() && mode_port_writes() == 0u,
+                      "SMI_CMD 0: the platform is found in ACPI mode, nothing is written");
+    mode_measure(test);
+
+    mode_open_platform();
+    mode_fadt.enable_command = 0u;
+    mode_boot();
+    mode_enter();
+    kernel_test_check(test,
+                      mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_ALREADY &&
+                          mode_log_is_whole() && mode_port_writes() == 0u,
+                      "ACPI_ENABLE 0: the platform is found in ACPI mode, nothing is written");
+    mode_measure(test);
+}
+
+/**
+ * @brief A platform without SCI_EN gives its host no firmware: none without a FADT, a hardware-reduced
+ *        one, and one whose PM1a control register lies in memory, so that no port reads SCI_EN.
+ */
+KERNEL_TEST(a_booted_platform_without_sci_en_gives_no_firmware)
+{
+    mode_open_platform();
+    mode_fadt.present = false;
+    mode_boot();
+    kernel_test_check(test, mode_host_has_no_firmware(), "no FADT: no firmware");
+
+    mode_open_platform();
+    mode_fadt.hardware_reduced = true;
+    mode_boot();
+    kernel_test_check(test, mode_host_has_no_firmware(), "a hardware-reduced platform: no firmware");
+
+    mode_open_platform();
+    mode_fadt.enable_command = 0u;
+    mode_fadt.power_management_control_blocks[0].space = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_MEMORY;
+    mode_boot();
+    kernel_test_check(test, mode_host_has_no_firmware(),
+                      "a PM1a control register in memory, on a platform without legacy mode: no SCI_EN, not even "
+                      "at port 0");
 }

@@ -1176,7 +1176,9 @@ published image. The made-up ASL is ours, under MIT.
   reads from the same dump, apart from the kernel's code.
 - **For each machine** the harness prints the decode errors, the namespace dump and its fold, the census counts,
   the needs-path closure, and the needs-path run (§3.8, steps 0 to 9) with the opcodes, spaces and access types it
-  executed.
+  executed. Step 0 meets the firmware the FADT describes, as it boots ([§4.8.2.5]): with a legacy mode, SMI_CMD and
+  ACPI_ENABLE both set, SCI_EN reads clear until ACPI_ENABLE is written to SMI_CMD, and set once the write returns,
+  as an SMI handler sets it; without one, SCI_EN reads set from the start, as on a platform that only supports ACPI.
 - **The static tables**: the parsed FADT, MADT, MCFG and HPET fields of every machine equal the decoded `[xxxh]`
   lines that ship with each dump. The FADT also equals the local FADT ACPICA builds from the same bytes
   (`tools/acpi/acpica_fadt.c`), with ACPICA's rewrite of PM block widths (`AcpiGbl_UseDefaultRegisterWidths`)
@@ -1318,6 +1320,7 @@ its page.
 [§3.11.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=120
 [§4.8.1.2]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=138
 [§4.8.2.2.1.3]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=143
+[§4.8.2.5]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=148
 [§4.8.3.2.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=153
 [§5.2.9]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=182
 [§5.2.10.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=200
