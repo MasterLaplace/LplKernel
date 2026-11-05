@@ -1,3 +1,4 @@
+#include "fixtures/load.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -146,22 +147,20 @@ static void load_close(KernelTest_t *test)
  */
 KERNEL_TEST(a_load_runs_a_copy_of_its_table_and_the_same_table_again_returns_false)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t loads_again[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '2'};
-    static const uint8_t returns[] = {0xA4u, 0x0Au, 0x77u};
     static const uint8_t zero[MADE_UP_TABLE_HEADER + 64u] = {0};
     static MadeUpAml_t device;
 
     load_begin();
-    load_method(&load_loaded, "LMTH", returns, sizeof(returns));
+    load_method(&load_loaded, "LMTH", load_returns_seventy_seven_aml, sizeof(load_returns_seventy_seven_aml));
 
     const uint32_t length = load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS);
 
     load_region("TBLR", LOAD_TABLE_ADDRESS, length);
     made_up_aml_name_integer(&load_aml, "HND2", LOAD_UNTOUCHED);
     made_up_aml_begin(&device);
-    load_method(&device, "LDIT", loads, sizeof(loads));
-    load_method(&device, "LDAG", loads_again, sizeof(loads_again));
+    load_method(&device, "LDIT", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
+    load_method(&device, "LDAG", load_runs_copy_loads_again_aml, sizeof(load_runs_copy_loads_again_aml));
     made_up_aml_device(&load_aml, "XDEV", &device);
     if (!load_run(test))
         return;
@@ -201,20 +200,18 @@ KERNEL_TEST(a_load_runs_a_copy_of_its_table_and_the_same_table_again_returns_fal
  */
 KERNEL_TEST(a_table_load_adds_while_bodies_are_skipped_is_declared_undecoded)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t returns[] = {0xA4u, 0x0Au, 0x77u};
-
     for (uint32_t skips = 0u; skips < 2u; ++skips)
     {
         load_begin();
-        load_method(&load_loaded, "LMTH", returns, sizeof(returns));
+        load_method(&load_loaded, "LMTH", load_returns_seventy_seven_aml, sizeof(load_returns_seventy_seven_aml));
         load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-        load_method(&load_aml, "LDIT", loads, sizeof(loads));
+        load_method(&load_aml, "LDIT", load_loads_table_into_first_handle_aml,
+                    sizeof(load_loads_table_into_first_handle_aml));
         if (!load_run(test))
             return;
         load_load.skips_bodies = skips != 0u;
         kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
-                          "LDIT loads the table");
+                          "LDIT load_loads_table_into_first_handle_aml the table");
         kernel_test_check(test, load_call("\\LMTH") == LOAD_STATUS(OK), "the loaded LMTH runs");
         kernel_test_check(test, (load_load.tables[1].terms == 0u) == (skips != 0u),
                           skips ? "the loaded table counts no term: its body is not decoded" :
@@ -230,13 +227,13 @@ KERNEL_TEST(a_table_load_adds_while_bodies_are_skipped_is_declared_undecoded)
  *        counted again; a load that skips bodies, as a release kernel's (O2, §3.6), keeps it and counts nothing. The
  *        DSDT's method TMPM declares two Names, whose nodes the decoding pass of its body gives back, so that PKFL
  *        stands on a node given back, below the nodes the load held before the Load.
+ *
+ * Its Packages are raw bytes: iasl does not emit an element that is the byte 0x02, which opens no term.
  */
 KERNEL_TEST(a_table_load_adds_has_its_kept_data_checked_once_decoded)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
     static const uint8_t faulty[] = {0x08u, 'P', 'K', 'F', 'L', 0x12u, 0x03u, 0x01u, 0x02u};
     static const uint8_t faulty_at_boot[] = {0x08u, 'P', 'K', 'B', 'T', 0x12u, 0x03u, 0x01u, 0x02u};
-    static const uint8_t temporaries[] = {0x08u, 'T', 'M', 'P', '1', 0x01u, 0x08u, 'T', 'M', 'P', '2', 0x01u};
     uint32_t reused[2] = {0u, 0u};
     uint32_t counted[2] = {0u, 0u};
     uint32_t kept[2] = {0u, 0u};
@@ -246,9 +243,11 @@ KERNEL_TEST(a_table_load_adds_has_its_kept_data_checked_once_decoded)
         load_begin();
         made_up_aml_raw(&load_loaded, faulty, sizeof(faulty));
         load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-        load_method(&load_aml, "LDIT", loads, sizeof(loads));
+        load_method(&load_aml, "LDIT", load_loads_table_into_first_handle_aml,
+                    sizeof(load_loads_table_into_first_handle_aml));
         made_up_aml_raw(&load_aml, faulty_at_boot, sizeof(faulty_at_boot));
-        load_method(&load_aml, "TMPM", temporaries, sizeof(temporaries));
+        load_method(&load_aml, "TMPM", load_table_load_adds_temporaries_aml,
+                    sizeof(load_table_load_adds_temporaries_aml));
         if (!load_run(test))
             return;
         kernel_test_check(test, load_load.data_faults == 1u, "the boot's decoding pass counts PKBT");
@@ -260,7 +259,7 @@ KERNEL_TEST(a_table_load_adds_has_its_kept_data_checked_once_decoded)
         uint32_t pkfl = 0u;
 
         kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
-                          "LDIT loads the table");
+                          "LDIT load_loads_table_into_first_handle_aml the table");
         counted[skips] = load_load.data_faults - faults;
         kept[skips] = load_load.data_kept - data_kept;
         pkfl = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
@@ -281,10 +280,11 @@ KERNEL_TEST(a_table_load_adds_has_its_kept_data_checked_once_decoded)
  *        and the check counts the others (O20, §3.6): the table Load adds keeps PKFL and PKF2, each of the byte 0x02,
  *        which starts no data object, and PKOK, `Package (1) {One}`, then runs `If (LEqual (SizeOf (PKFL), One)) {}`;
  *        data_faults_read rises by 1, for PKFL, data_faults by 1, for PKF2, and the three are kept.
+ *
+ * Its table is raw bytes: iasl does not emit a Package element that is the byte 0x02, which opens no term.
  */
 KERNEL_TEST(a_kept_package_a_loaded_table_reads_first_is_counted_at_that_read)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
     static const uint8_t code[] = {0x08u, 'P',   'K',   'F',   'L',   0x12u, 0x03u, 0x01u, 0x02u, 0x08u, 'P', 'K',
                                    'F',   '2',   0x12u, 0x03u, 0x01u, 0x02u, 0x08u, 'P',   'K',   'O',   'K', 0x12u,
                                    0x03u, 0x01u, 0x01u, 0xA0u, 0x08u, 0x93u, 0x87u, 'P',   'K',   'F',   'L', 0x01u};
@@ -292,7 +292,8 @@ KERNEL_TEST(a_kept_package_a_loaded_table_reads_first_is_counted_at_that_read)
     load_begin();
     made_up_aml_raw(&load_loaded, code, sizeof(code));
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    load_method(&load_aml, "LDIT", loads, sizeof(loads));
+    load_method(&load_aml, "LDIT", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
     if (!load_run(test))
         return;
 
@@ -301,7 +302,7 @@ KERNEL_TEST(a_kept_package_a_loaded_table_reads_first_is_counted_at_that_read)
     const uint32_t faults_read = load_load.data_faults_read;
 
     kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
-                      "LDIT loads the table");
+                      "LDIT load_loads_table_into_first_handle_aml the table");
     kernel_test_check(test,
                       load_load.data_kept - kept == 3u && load_load.data_faults_read - faults_read == 1u &&
                           load_load.data_faults - faults == 1u,
@@ -314,8 +315,6 @@ KERNEL_TEST(a_kept_package_a_loaded_table_reads_first_is_counted_at_that_read)
  */
 KERNEL_TEST(a_load_from_a_field_reads_the_unit_as_a_buffer)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'A', 'B', 'L', '\\', 'H', 'N', 'D', '1'};
-
     load_begin();
 
     const uint32_t length = load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS);
@@ -325,7 +324,7 @@ KERNEL_TEST(a_load_from_a_field_reads_the_unit_as_a_buffer)
 
     load_region("TBLR", LOAD_TABLE_ADDRESS, length);
     made_up_aml_field(&load_aml, "TBLR", 0x01u, units, 1u);
-    load_method(&load_aml, "LDFD", loads, sizeof(loads));
+    load_method(&load_aml, "LDFD", load_field_reads_loads_aml, sizeof(load_field_reads_loads_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LDFD") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
@@ -344,23 +343,15 @@ KERNEL_TEST(a_load_from_a_field_reads_the_unit_as_a_buffer)
  */
 KERNEL_TEST(load_table_runs_a_table_of_the_directory_in_place)
 {
-    static const uint8_t finds[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1', 0x00u, 0x0Du, 'L', 'P', 'L',
-                                    'T',   'S',   'T',   0x00u, 0x0Du, 'M',   'A',  'D', 'E',   'U',   'P', 'M', 'L',
-                                    0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x00u, '\\', 'R', 'E',   'S',   '1'};
-    static const uint8_t finds_any[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1', 0x00u, 0x0Du, 0x00u, 0x0Du,
-                                        0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x00u, '\\', 'R', 'E',   'S',   '2'};
-    static const uint8_t misses[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',   '1',   0x00u,
-                                     0x0Du, 'L',   'P',   'L',   0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u,
-                                     0x0Du, 0x00u, 0x00u, '\\',  'R',   'E',   'S',   '3'};
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = NULL;
 
     load_begin();
     made_up_aml_name_integer(&load_aml, "RES1", LOAD_UNTOUCHED);
     made_up_aml_name_integer(&load_aml, "RES2", LOAD_UNTOUCHED);
     made_up_aml_name_integer(&load_aml, "RES3", LOAD_UNTOUCHED);
-    load_method(&load_aml, "LTB1", finds, sizeof(finds));
-    load_method(&load_aml, "LTB2", finds_any, sizeof(finds_any));
-    load_method(&load_aml, "LTB3", misses, sizeof(misses));
+    load_method(&load_aml, "LTB1", load_table_runs_table_finds_aml, sizeof(load_table_runs_table_finds_aml));
+    load_method(&load_aml, "LTB2", load_table_runs_table_finds_any_aml, sizeof(load_table_runs_table_finds_any_aml));
+    load_method(&load_aml, "LTB3", load_table_runs_table_misses_aml, sizeof(load_table_runs_table_misses_aml));
     header = made_up_definition_block(load_table, "OEM1", 2u, load_loaded.bytes, load_loaded.length);
     if (!load_run(test))
         return;
@@ -374,8 +365,9 @@ KERNEL_TEST(load_table_runs_a_table_of_the_directory_in_place)
                       "an OEM ID that only starts the table's gives False: identifiers are padded with zeros");
     kernel_test_check(test, load_load.load_tables_missing == 1u && load_load.table_count == 1u,
                       "the table found nowhere is counted, and nothing is added");
-    kernel_test_check(test, load_call("\\LTB1") == LOAD_STATUS(OK) && load_integer("RES1") == LOAD_ONES,
-                      "LoadTable finds OEM1 by its signature, OEM ID and OEM table ID, and gives True");
+    kernel_test_check(
+        test, load_call("\\LTB1") == LOAD_STATUS(OK) && load_integer("RES1") == LOAD_ONES,
+        "LoadTable load_table_runs_table_finds_aml OEM1 by its signature, OEM ID and OEM table ID, and gives True");
     kernel_test_check(test,
                       load_integer("LDED") == 0x2Au && load_load.tables[1].origin == LOAD_ORIGIN(LOAD_TABLE) &&
                           load_load.tables[1].header == header && load_load.tables[1].pages == 0u &&
@@ -391,33 +383,25 @@ KERNEL_TEST(load_table_runs_a_table_of_the_directory_in_place)
 /**
  * @brief Load from a Buffer, from a local, or while a table is declared, and LoadTable with a RootPath,
  *        a ParameterPath or ParameterData, fail with load_form_unsupported and store nothing (§4.5).
+ *
+ * Its Load from a local is raw bytes: iasl does not emit that form of Load (§8.2).
  */
 KERNEL_TEST(the_forms_the_kernel_does_not_load_fail_with_load_form_unsupported)
 {
-    static const uint8_t loads_buffer[] = {0x5Bu, 0x20u, '\\', 'B', 'U', 'F', 'F', '\\', 'H', 'N', 'D', '1'};
     static const uint8_t loads_local[] = {0x70u, '\\',  'B',  'U', 'F', 'F', 0x60u, 0x5Bu,
                                           0x20u, 0x60u, '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t with_root[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1',
-                                        0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x0Du, '\\', 0x00u,
-                                        0x0Du, 0x00u, 0x00u, '\\',  'H',   'N',   'D',  '1'};
-    static const uint8_t with_parameter[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',   '1', 0x00u,
-                                             0x0Du, 0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x0Du, 'X', 'X',
-                                             0x00u, 0x00u, '\\',  'H',   'N',   'D',   '1'};
-    static const uint8_t with_data[] = {0x70u, 0x5Bu, 0x1Fu, 0x0Du, 'O',   'E',   'M',  '1', 0x00u, 0x0Du, 0x00u, 0x0Du,
-                                        0x00u, 0x0Du, 0x00u, 0x0Du, 0x00u, 0x01u, '\\', 'H', 'N',   'D',   '1'};
-    static const uint8_t at_table_level[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t buffer[] = {0x08u, 'B', 'U', 'F', 'F', 0x11u, 0x05u, 0x0Au, 0x24u, 0x53u, 0x53u};
     static const char *const methods[] = {"\\LDBF", "\\LDLC", "\\LTRT", "\\LTPP", "\\LTPD"};
 
     load_begin();
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    made_up_aml_raw(&load_aml, buffer, sizeof(buffer));
-    load_method(&load_aml, "LDBF", loads_buffer, sizeof(loads_buffer));
+    made_up_aml_raw(&load_aml, load_forms_does_not_buffer_aml, sizeof(load_forms_does_not_buffer_aml));
+    load_method(&load_aml, "LDBF", load_forms_does_not_loads_buffer_aml, sizeof(load_forms_does_not_loads_buffer_aml));
     load_method(&load_aml, "LDLC", loads_local, sizeof(loads_local));
-    load_method(&load_aml, "LTRT", with_root, sizeof(with_root));
-    load_method(&load_aml, "LTPP", with_parameter, sizeof(with_parameter));
-    load_method(&load_aml, "LTPD", with_data, sizeof(with_data));
-    made_up_aml_raw(&load_aml, at_table_level, sizeof(at_table_level));
+    load_method(&load_aml, "LTRT", load_forms_does_not_with_root_aml, sizeof(load_forms_does_not_with_root_aml));
+    load_method(&load_aml, "LTPP", load_forms_does_not_with_parameter_aml,
+                sizeof(load_forms_does_not_with_parameter_aml));
+    load_method(&load_aml, "LTPD", load_forms_does_not_with_data_aml, sizeof(load_forms_does_not_with_data_aml));
+    made_up_aml_raw(&load_aml, load_loads_table_into_first_handle_aml, sizeof(load_loads_table_into_first_handle_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test,
@@ -440,11 +424,6 @@ KERNEL_TEST(the_forms_the_kernel_does_not_load_fail_with_load_form_unsupported)
  */
 KERNEL_TEST(a_load_refuses_what_is_not_a_whole_table_of_system_memory)
 {
-    static const uint8_t from_input_output[] = {0x5Bu, 0x20u, '\\', 'I', 'O', 'R', 'G', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t from_short[] = {0x5Bu, 0x20u, '\\', 'S', 'H', 'R', 'T', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t from_tiny[] = {0x5Bu, 0x20u, '\\', 'T', 'I', 'N', 'Y', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t from_cut[] = {0x5Bu, 0x20u, '\\', 'C', 'U', 'T', 'H', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t from_integer[] = {0x5Bu, 0x20u, '\\', 'H', 'N', 'D', '1', '\\', 'H', 'N', 'D', '1'};
     static const uint8_t cut_header[MADE_UP_TABLE_HEADER] = {'S', 'S', 'D', 'T', 0x10u};
     static const struct {
         const char *path;
@@ -468,11 +447,12 @@ KERNEL_TEST(a_load_refuses_what_is_not_a_whole_table_of_system_memory)
     load_region("SHRT", LOAD_TABLE_ADDRESS, length - 1u);
     load_region("TINY", LOAD_TABLE_ADDRESS, MADE_UP_TABLE_HEADER - 1u);
     load_region("CUTH", LOAD_OTHER_ADDRESS, MADE_UP_TABLE_HEADER);
-    load_method(&load_aml, "LDIO", from_input_output, sizeof(from_input_output));
-    load_method(&load_aml, "LDSH", from_short, sizeof(from_short));
-    load_method(&load_aml, "LDTN", from_tiny, sizeof(from_tiny));
-    load_method(&load_aml, "LDCT", from_cut, sizeof(from_cut));
-    load_method(&load_aml, "LDIN", from_integer, sizeof(from_integer));
+    load_method(&load_aml, "LDIO", load_refuses_what_from_input_output_aml,
+                sizeof(load_refuses_what_from_input_output_aml));
+    load_method(&load_aml, "LDSH", load_refuses_what_from_short_aml, sizeof(load_refuses_what_from_short_aml));
+    load_method(&load_aml, "LDTN", load_refuses_what_from_tiny_aml, sizeof(load_refuses_what_from_tiny_aml));
+    load_method(&load_aml, "LDCT", load_refuses_what_from_cut_aml, sizeof(load_refuses_what_from_cut_aml));
+    load_method(&load_aml, "LDIN", load_refuses_what_from_integer_aml, sizeof(load_refuses_what_from_integer_aml));
     if (!load_run(test))
         return;
 
@@ -493,10 +473,6 @@ KERNEL_TEST(a_load_refuses_what_is_not_a_whole_table_of_system_memory)
  */
 KERNEL_TEST(table_loads_stop_at_their_limits)
 {
-    static const uint8_t loads_each[] = {0x70u, 0x00u, 0x60u, 0xA2u, 0x17u, 0x95u, 0x60u, 0x0Bu, 0x00u,
-                                         0x01u, 0x70u, 0x60u, '\\',  'O',   'R',   'E',   'V',   0x5Bu,
-                                         0x20u, '\\',  'T',   'B',   'L',   'R',   0x61u, 0x75u, 0x60u};
-    static const uint8_t loads_once[] = {0x5Bu, 0x20u, '\\', 'O', 'T', 'H', 'R', '\\', 'H', 'N', 'D', '1'};
     const MadeUpFieldUnit_t units[] = {
         {NULL,   LOAD_REVISION_BITS},
         {"OREV", 32u               },
@@ -508,8 +484,8 @@ KERNEL_TEST(table_loads_stop_at_their_limits)
     made_up_aml_begin(&load_inner);
     made_up_aml_name_integer(&load_inner, "OTHR", 1u);
     load_region("OTHR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
-    load_method(&load_aml, "LDEA", loads_each, sizeof(loads_each));
-    load_method(&load_aml, "LDON", loads_once, sizeof(loads_once));
+    load_method(&load_aml, "LDEA", load_table_loads_stop_loads_each_aml, sizeof(load_table_loads_stop_loads_each_aml));
+    load_method(&load_aml, "LDON", load_table_loads_stop_loads_once_aml, sizeof(load_table_loads_stop_loads_once_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LDEA") == LOAD_STATUS(LIMIT_TABLES),
@@ -549,16 +525,10 @@ KERNEL_TEST(table_loads_stop_at_their_limits)
  */
 KERNEL_TEST(a_load_in_a_method_belongs_to_its_evaluation)
 {
-    static const uint8_t loops_around[] = {
-        0x70u, 0x00u, 0x60u, 0xA2u, 0x07u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x75u, 0x60u, 0x5Bu, 0x23u, '\\', 'M', 'U',
-        'T',   'X',   0xFFu, 0xFFu, 0x5Bu, 0x20u, '\\',  'T',   'B',   'L',   'R',   '\\',  'H',   'N',  'D', '1',
-        0xA2u, 0x07u, 0x95u, 0x60u, 0x0Au, 0x08u, 0x75u, 0x60u, 0x5Bu, 0x27u, '\\',  'M',   'U',   'T',  'X'};
-    static const uint8_t mutex[] = {0x5Bu, 0x01u, 'M', 'U', 'T', 'X', 0x00u};
-
     load_begin();
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    made_up_aml_raw(&load_aml, mutex, sizeof(mutex));
-    load_method(&load_aml, "LPLD", loops_around, sizeof(loops_around));
+    made_up_aml_raw(&load_aml, load_method_belongs_mutex_aml, sizeof(load_method_belongs_mutex_aml));
+    load_method(&load_aml, "LPLD", load_method_belongs_loops_around_aml, sizeof(load_method_belongs_loops_around_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LPLD") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
@@ -566,7 +536,8 @@ KERNEL_TEST(a_load_in_a_method_belongs_to_its_evaluation)
     kernel_test_check(test, load_load.evaluation.iterations == 8u,
                       "the evaluation counts the 8 back-edges of both loops: the Load reset none");
     kernel_test_check(test, load_load.services.released_at_end == 0u && load_load.services.releases_ignored == 0u,
-                      "the mutex the method took before the Load is still held after it, and released by the method");
+                      "the load_method_belongs_mutex_aml the method took before the Load is still held after it, and "
+                      "released by the method");
     load_close(test);
 }
 
@@ -577,19 +548,15 @@ KERNEL_TEST(a_load_in_a_method_belongs_to_its_evaluation)
  */
 KERNEL_TEST(a_method_in_the_frame_a_loaded_table_ran_in_runs_as_a_method)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, 'T', 'B', 'L', 'R', 'H', 'N', 'D', '1'};
-    static const uint8_t inner[] = {0x08u, 'T', 'M', 'P', 'N', 0x0Au, 0x07u, 0xA4u, 'T', 'M', 'P', 'N'};
-    static const uint8_t outer[] = {0x70u, 'I', 'N', 'N', 'R', 'T', 'R', 'A', 'C'};
-
     load_begin();
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    load_method(&load_aml, "LDIT", loads, sizeof(loads));
-    load_method(&load_aml, "INNR", inner, sizeof(inner));
-    load_method(&load_aml, "OUTR", outer, sizeof(outer));
+    load_method(&load_aml, "LDIT", load_method_frame_loaded_loads_aml, sizeof(load_method_frame_loaded_loads_aml));
+    load_method(&load_aml, "INNR", load_method_frame_loaded_inner_aml, sizeof(load_method_frame_loaded_inner_aml));
+    load_method(&load_aml, "OUTR", load_method_frame_loaded_outer_aml, sizeof(load_method_frame_loaded_outer_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
-                      "LDIT loads the table, its code run in the frame above LDIT's");
+                      "LDIT load_method_frame_loaded_loads_aml the table, its code run in the frame above LDIT's");
     kernel_test_check(test, load_call("\\OUTR") == LOAD_STATUS(OK) && load_integer("TRAC") == 7u,
                       "INNR, called by OUTR in that same frame, returns the 7 its Name holds");
 
@@ -605,23 +572,21 @@ KERNEL_TEST(a_method_in_the_frame_a_loaded_table_ran_in_runs_as_a_method)
  */
 KERNEL_TEST(a_failure_in_a_method_a_loaded_table_calls_goes_on_past_its_statement)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t fails[] = {0xA4u, '\\', 'N', 'O', 'P', 'E'};
-    static const uint8_t calls[] = {0x70u, '\\', 'F', 'A', 'L', 'T', '\\', 'T', 'R', 'A', 'C'};
-
     load_begin();
-    made_up_aml_raw(&load_loaded, calls, sizeof(calls));
+    made_up_aml_raw(&load_loaded, load_failure_method_loaded_calls_aml, sizeof(load_failure_method_loaded_calls_aml));
     made_up_aml_name_integer(&load_loaded, "AFTR", 7u);
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    load_method(&load_aml, "FALT", fails, sizeof(fails));
-    load_method(&load_aml, "LDIT", loads, sizeof(loads));
+    load_method(&load_aml, "FALT", load_failure_method_loaded_fails_aml, sizeof(load_failure_method_loaded_fails_aml));
+    load_method(&load_aml, "LDIT", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
                       "the Load succeeds and stores True");
     kernel_test_check(test,
                       load_load.evaluation.statuses[LOAD_STATUS(NAME_NOT_FOUND)] == 1u && load_integer("TRAC") == 0u,
-                      "the statement that calls FALT fails, counted, and stores nothing");
+                      "the statement that load_failure_method_loaded_calls_aml FALT "
+                      "load_failure_method_loaded_fails_aml, counted, and stores nothing");
     kernel_test_check(test, load_integer("AFTR") == 7u, "the declaration after it is made");
     load_close(test);
 }
@@ -632,9 +597,6 @@ KERNEL_TEST(a_failure_in_a_method_a_loaded_table_calls_goes_on_past_its_statemen
  */
 KERNEL_TEST(a_table_whose_frame_finds_no_room_is_declared_without_running)
 {
-    static const uint8_t recurses[] = {0xA0u, 0x0Au, 0x68u, 'R',   'E',   'C',   '_',  0x74u, 0x68u,
-                                       0x01u, 0x00u, 0xA1u, 0x0Du, 0x5Bu, 0x20u, '\\', 'T',   'B',
-                                       'L',   'R',   '\\',  'H',   'N',   'D',   '1'};
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t depth = {
         .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
         .payload = LOAD_FULL_DEPTH};
@@ -644,7 +606,7 @@ KERNEL_TEST(a_table_whose_frame_finds_no_room_is_declared_without_running)
     made_up_aml_store_integer(&load_loaded, 5u, "TRAC");
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, recurses, sizeof(recurses));
+    made_up_aml_raw(&load_body, load_frame_no_room_recurses_aml, sizeof(load_frame_no_room_recurses_aml));
     made_up_aml_method(&load_aml, "REC_", 0x01u, &load_body);
     if (!load_run(test))
         return;
@@ -666,18 +628,19 @@ KERNEL_TEST(a_table_whose_frame_finds_no_room_is_declared_without_running)
 /**
  * @brief An External of a loaded table whose parent the table declares after it is placed under that parent
  *        once the table is declared, by the Externals pass the Load runs (§3.6).
+ *
+ * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(a_loaded_table_places_an_external_whose_parent_it_declares_later)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
     static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'Z', 'D', 'E', 'V', 'Z', 'I', 'N', 'T', 0x01u, 0x00u};
-    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u, 'Z', 'D', 'E', 'V'};
 
     load_begin();
     made_up_aml_raw(&load_loaded, external, sizeof(external));
-    made_up_aml_raw(&load_loaded, device, sizeof(device));
+    made_up_aml_raw(&load_loaded, load_loaded_table_places_device_aml, sizeof(load_loaded_table_places_device_aml));
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    load_method(&load_aml, "LDIT", loads, sizeof(loads));
+    load_method(&load_aml, "LDIT", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
@@ -702,11 +665,8 @@ KERNEL_TEST(a_loaded_table_places_an_external_whose_parent_it_declares_later)
  */
 static void load_registration(MadeUpAml_t *aml)
 {
-    static const uint8_t body[] = {0x70u, 0x72u, 0x77u, 0x72u, 0x77u, '\\',  'T',   'R',  'A', 'C', 0x0Au, 0x10u, 0x00u,
-                                   0x68u, 0x00u, 0x0Au, 0x10u, 0x00u, 0x69u, 0x00u, '\\', 'T', 'R', 'A',   'C'};
-
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, body, sizeof(body));
+    made_up_aml_raw(&load_body, load_registration_body_aml, sizeof(load_registration_body_aml));
     made_up_aml_method(aml, "_REG", 0x02u, &load_body);
 }
 
@@ -717,9 +677,8 @@ static void load_present_initialization(MadeUpAml_t *aml, uint8_t digit)
 {
     const uint8_t traces[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
                               0x00u, 0x0Au, digit, 0x00u, '\\', 'T', 'R', 'A', 'C'};
-    static const uint8_t present[] = {0xA4u, 0x0Au, 0x0Fu};
 
-    load_method(aml, "_STA", present, sizeof(present));
+    load_method(aml, "_STA", load_returns_present_aml, sizeof(load_returns_present_aml));
     load_method(aml, "_INI", traces, sizeof(traces));
 }
 
@@ -731,11 +690,6 @@ static void load_present_initialization(MadeUpAml_t *aml, uint8_t digit)
  */
 KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
 {
-    static const uint8_t platform[] = {0x8Au, 0x6Bu, 0x0Au, 0x04u, 'C', 'D', 'W', '2', 0x70u, 'C',
-                                       'D',   'W',   '2',   '\\',  'O', 'S', 'C', 'P', 0xA4u, 0x6Bu};
-    static const uint8_t driver[] = {0x5Bu, 0x20u, '\\',  'C',  'S', 'T', 'R',  '\\', 'H',   'C',   '0',   '_',
-                                     0xA0u, 0x16u, 0x7Bu, '\\', 'O', 'S', 'C',  'P',  0x0Au, 0x40u, 0x00u, 0x5Bu,
-                                     0x20u, '\\',  'H',   'W',  'P', 'R', '\\', 'H',  'W',   '0',   '_'};
     static MadeUpAml_t device;
 
     load_begin();
@@ -757,12 +711,12 @@ KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
     load_region("HWPR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
     made_up_aml_begin(&device);
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, platform, sizeof(platform));
+    made_up_aml_raw(&load_body, load_table_loaded_run_platform_aml, sizeof(load_table_loaded_run_platform_aml));
     made_up_aml_method(&device, "_OSC", 0x04u, &load_body);
     made_up_aml_scope(&load_aml, "_SB_", &device);
     made_up_aml_begin(&device);
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, driver, sizeof(driver));
+    made_up_aml_raw(&load_body, load_table_loaded_run_driver_aml, sizeof(load_table_loaded_run_driver_aml));
     made_up_aml_method(&device, "_PDC", 0x01u, &load_body);
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
@@ -774,10 +728,11 @@ KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(test,
-                      load_integer("HC0_") == LOAD_ONES && load_integer("HW0_") == 0u &&
-                          load_integer("HWPT") == 0xDEADu && load_load.tables_loaded == 1u,
-                      "the _PDC loads the C-state table, never the HWP one: the platform granted nothing");
+    kernel_test_check(
+        test,
+        load_integer("HC0_") == LOAD_ONES && load_integer("HW0_") == 0u && load_integer("HWPT") == 0xDEADu &&
+            load_load.tables_loaded == 1u,
+        "the _PDC loads the C-state table, never the HWP one: the load_table_loaded_run_platform_aml granted nothing");
     kernel_test_check(test, load_integer("TRAC") == 0x2136u,
                       "the loaded table's scope gets one _REG (2, 1) for its two regions, then its device's _INI "
                       "runs, then its child's");
@@ -795,10 +750,6 @@ KERNEL_TEST(a_table_loaded_at_run_time_is_initialised_late)
  */
 KERNEL_TEST(a_table_a_cst_loads_is_initialised_late)
 {
-    static const uint8_t body[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
-                                   0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
 
     load_begin();
@@ -808,7 +759,8 @@ KERNEL_TEST(a_table_a_cst_loads_is_initialised_late)
     made_up_aml_device(&load_loaded, "LDEV", &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", body, sizeof(body));
+    load_method(&device, "_CST", load_loads_c_states_and_returns_one_aml,
+                sizeof(load_loads_c_states_and_returns_one_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -835,10 +787,6 @@ KERNEL_TEST(a_table_a_cst_loads_is_initialised_late)
  */
 KERNEL_TEST(a_table_a_status_of_step_eight_loads_is_initialised_late)
 {
-    static const uint8_t status[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0', '_', 0xA4u, 0x00u};
-    static const uint8_t idle[] = {0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
 
     load_begin();
@@ -848,8 +796,8 @@ KERNEL_TEST(a_table_a_status_of_step_eight_loads_is_initialised_late)
     made_up_aml_device(&load_loaded, "LDEV", &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_STA", status, sizeof(status));
-    load_method(&device, "_CST", idle, sizeof(idle));
+    load_method(&device, "_STA", load_table_status_step_status_aml, sizeof(load_table_status_step_status_aml));
+    load_method(&device, "_CST", load_returns_one_c_state_aml, sizeof(load_returns_one_c_state_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -876,12 +824,6 @@ KERNEL_TEST(a_table_a_status_of_step_eight_loads_is_initialised_late)
  */
 KERNEL_TEST(a_table_a_step_nine_evaluation_loads_is_initialised_late)
 {
-    static const uint8_t body[] = {0x86u, '\\',  'C',   'P',   'U',   '0',   0x0Au, 0x81u, 0xA0u, 0x14u, 0x93u, '\\',
-                                   'C',   'N',   'T',   '_',   0x01u, 0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',
-                                   '\\',  'H',   'C',   '0',   '_',   0x75u, '\\',  'C',   'N',   'T',   '_',   0xA4u,
-                                   0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u,
-                                   0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
 
     load_begin();
@@ -892,7 +834,8 @@ KERNEL_TEST(a_table_a_step_nine_evaluation_loads_is_initialised_late)
     made_up_aml_device(&load_loaded, "LDEV", &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", body, sizeof(body));
+    load_method(&device, "_CST", load_notifies_and_loads_c_states_once_aml,
+                sizeof(load_notifies_and_loads_c_states_once_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -921,17 +864,6 @@ KERNEL_TEST(a_table_a_step_nine_evaluation_loads_is_initialised_late)
  */
 static bool load_late_processor(KernelTest_t *test, bool in_device, bool absent)
 {
-    static const uint8_t driver[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
-                                     0x00u, 0x0Au, 0x01u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
-    static const uint8_t idle[] = {0x70u, 0x72u, 0x77u, '\\',  'T',   'R',   'A',   'C',   0x0Au, 0x10u, 0x00u,
-                                   0x0Au, 0x02u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0xA4u, 0x12u, 0x20u,
-                                   0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
-                                   0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
-                                    0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                    0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                    0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -939,9 +871,10 @@ static bool load_late_processor(KernelTest_t *test, bool in_device, bool absent)
     made_up_aml_name_integer(&load_aml, "HC0_", 0u);
     made_up_aml_begin(&device);
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, driver, sizeof(driver));
+    made_up_aml_raw(&load_body, load_late_processor_driver_aml, sizeof(load_late_processor_driver_aml));
     made_up_aml_method(&device, "_PDC", 0x01u, &load_body);
-    load_method(&device, "_CST", idle, sizeof(idle));
+    load_method(&device, "_CST", load_traces_two_and_returns_one_c_state_aml,
+                sizeof(load_traces_two_and_returns_one_c_state_aml));
     made_up_aml_begin(&scope);
     made_up_aml_processor(in_device ? &scope : &load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     if (in_device)
@@ -953,7 +886,8 @@ static bool load_late_processor(KernelTest_t *test, bool in_device, bool absent)
     }
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", loads, sizeof(loads));
+    load_method(&device, "_CST", load_loads_c_states_and_returns_one_aml,
+                sizeof(load_loads_c_states_and_returns_one_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return false;
@@ -1036,17 +970,6 @@ KERNEL_TEST(a_processor_a_cst_loads_below_an_absent_device_is_kept_out)
  */
 KERNEL_TEST(a_round_of_the_pass_reads_again_the_devices_above_its_processors)
 {
-    static const uint8_t status[] = {0xA0u, 0x08u, '\\', 'F', 'L', 'A', 'G', 0xA4u, 0x00u, 0xA4u, 0x0Au, 0x0Fu};
-    static const uint8_t hides[] = {0x70u, 0x01u, '\\',  'F',   'L',   'A',   'G',   0x5Bu, 0x20u, '\\',  'C',
-                                    'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',   0xA4u, 0x12u, 0x20u,
-                                    0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
-                                    0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                    0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
-    static const uint8_t traced[] = {0x70u, 0x72u, 0x77u, '\\',  'T',   'R',   'A',   'C',   0x0Au, 0x10u, 0x00u,
-                                     0x0Au, 0x02u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0xA4u, 0x12u, 0x20u,
-                                     0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
-                                     0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                     0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -1054,15 +977,17 @@ KERNEL_TEST(a_round_of_the_pass_reads_again_the_devices_above_its_processors)
     made_up_aml_name_integer(&load_aml, "HC0_", 0u);
     made_up_aml_name_integer(&load_aml, "FLAG", 0u);
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", traced, sizeof(traced));
+    load_method(&device, "_CST", load_traces_two_and_returns_one_c_state_aml,
+                sizeof(load_traces_two_and_returns_one_c_state_aml));
     made_up_aml_begin(&scope);
     made_up_aml_processor(&scope, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     made_up_aml_scope(&load_loaded, "DEVB", &scope);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", hides, sizeof(hides));
+    load_method(&device, "_CST", load_flags_loads_and_returns_one_c_state_aml,
+                sizeof(load_flags_loads_and_returns_one_c_state_aml));
     made_up_aml_begin(&scope);
-    load_method(&scope, "_STA", status, sizeof(status));
+    load_method(&scope, "_STA", load_round_pass_reads_status_aml, sizeof(load_round_pass_reads_status_aml));
     made_up_aml_processor(&scope, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     made_up_aml_device(&load_aml, "DEVB", &scope);
     if (!load_run(test))
@@ -1092,20 +1017,6 @@ KERNEL_TEST(a_round_of_the_pass_reads_again_the_devices_above_its_processors)
  */
 KERNEL_TEST(a_round_of_the_pass_reads_again_a_device_step_eight_found_absent)
 {
-    static const uint8_t status[] = {0xA0u, 0x09u, '\\', 'F', 'L', 'A', 'G', 0xA4u, 0x0Au, 0x0Fu, 0xA4u, 0x00u};
-    static const uint8_t shows[] = {0x70u, 0x01u, '\\',  'F',   'L',   'A',   'G',   0x5Bu, 0x20u, '\\',  'C',
-                                    'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',   0xA4u, 0x12u, 0x20u,
-                                    0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
-                                    0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                    0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
-    static const uint8_t traced[] = {0x70u, 0x72u, 0x77u, '\\',  'T',   'R',   'A',   'C',   0x0Au, 0x10u, 0x00u,
-                                     0x0Au, 0x02u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0xA4u, 0x12u, 0x20u,
-                                     0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu,
-                                     0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                     0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
-    static const uint8_t idle[] = {0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -1113,19 +1024,21 @@ KERNEL_TEST(a_round_of_the_pass_reads_again_a_device_step_eight_found_absent)
     made_up_aml_name_integer(&load_aml, "HC0_", 0u);
     made_up_aml_name_integer(&load_aml, "FLAG", 0u);
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", traced, sizeof(traced));
+    load_method(&device, "_CST", load_traces_two_and_returns_one_c_state_aml,
+                sizeof(load_traces_two_and_returns_one_c_state_aml));
     made_up_aml_begin(&scope);
     made_up_aml_processor(&scope, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     made_up_aml_scope(&load_loaded, "DEVB", &scope);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", idle, sizeof(idle));
+    load_method(&device, "_CST", load_returns_one_c_state_aml, sizeof(load_returns_one_c_state_aml));
     made_up_aml_begin(&scope);
-    load_method(&scope, "_STA", status, sizeof(status));
+    load_method(&scope, "_STA", load_round_pass_reads_status_2_aml, sizeof(load_round_pass_reads_status_2_aml));
     made_up_aml_processor(&scope, "CPUX", LOAD_PROCESSOR_IDENTIFIER + 2u, 0u, 0u, &device);
     made_up_aml_device(&load_aml, "DEVB", &scope);
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", shows, sizeof(shows));
+    load_method(&device, "_CST", load_flags_loads_and_returns_one_c_state_aml,
+                sizeof(load_flags_loads_and_returns_one_c_state_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -1152,33 +1065,23 @@ KERNEL_TEST(a_round_of_the_pass_reads_again_a_device_step_eight_found_absent)
  */
 KERNEL_TEST(the_pass_after_step_eight_goes_on_while_its_tables_declare_processors)
 {
-    static const uint8_t first[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
-                                    0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                    0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                    0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
-    static const uint8_t second[] = {0x5Bu, 0x20u, '\\',  'O',   'T',   'H',   'R',   '\\',  'H',   'C',   '1',   '_',
-                                     0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                     0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                     0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
-    static const uint8_t last[] = {0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
 
     load_begin();
     made_up_aml_name_integer(&load_aml, "HC0_", 0u);
     made_up_aml_name_integer(&load_aml, "HC1_", 0u);
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", second, sizeof(second));
+    load_method(&device, "_CST", load_pass_after_step_second_aml, sizeof(load_pass_after_step_second_aml));
     made_up_aml_processor(&load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&load_inner);
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", last, sizeof(last));
+    load_method(&device, "_CST", load_returns_one_c_state_aml, sizeof(load_returns_one_c_state_aml));
     made_up_aml_processor(&load_inner, "CPU2", LOAD_PROCESSOR_IDENTIFIER + 2u, 0u, 0u, &device);
     load_region("OTHR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", first, sizeof(first));
+    load_method(&device, "_CST", load_loads_c_states_and_returns_one_aml,
+                sizeof(load_loads_c_states_and_returns_one_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -1210,10 +1113,6 @@ static void load_traced_method(MadeUpAml_t *aml, const char *name, uint8_t argum
 {
     const uint8_t traces[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
                               0x00u, 0x0Au, digit, 0x00u, '\\', 'T', 'R', 'A', 'C'};
-    static const uint8_t package[] = {0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u,
-                                      0x14u, 0x0Au, 0x11u, 0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u,
-                                      0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                      0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
 
     made_up_aml_begin(&load_body);
     if (before != NULL)
@@ -1221,7 +1120,7 @@ static void load_traced_method(MadeUpAml_t *aml, const char *name, uint8_t argum
     if (digit != 0u)
         made_up_aml_raw(&load_body, traces, sizeof(traces));
     if (states)
-        made_up_aml_raw(&load_body, package, sizeof(package));
+        made_up_aml_raw(&load_body, load_returns_one_c_state_aml, sizeof(load_returns_one_c_state_aml));
     made_up_aml_method(aml, name, arguments, &load_body);
 }
 
@@ -1248,7 +1147,6 @@ static void load_initialize(uint32_t count)
  */
 static bool load_step_seven_processor(KernelTest_t *test, bool behind)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0', '_'};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -1269,7 +1167,8 @@ static bool load_step_seven_processor(KernelTest_t *test, bool behind)
         made_up_aml_scope(&load_loaded, "DEVZ", &scope);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_traced_method(&device, "_PDC", 0x01u, loads, sizeof(loads), 0u, false);
+    load_traced_method(&device, "_PDC", 0x01u, load_loads_c_state_table_aml, sizeof(load_loads_c_state_table_aml), 0u,
+                       false);
     load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 0u, true);
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
@@ -1328,8 +1227,6 @@ KERNEL_TEST(a_processor_a_pdc_loads_behind_step_seven_gets_its_capabilities_then
  */
 KERNEL_TEST(step_seven_goes_on_while_the_tables_loaded_behind_its_walk_declare_processors)
 {
-    static const uint8_t first[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0', '_'};
-    static const uint8_t second[] = {0x5Bu, 0x20u, '\\', 'O', 'T', 'H', 'R', '\\', 'H', 'C', '1', '_'};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -1348,14 +1245,16 @@ KERNEL_TEST(step_seven_goes_on_while_the_tables_loaded_behind_its_walk_declare_p
     made_up_aml_scope(&load_inner, "DEVZ", &scope);
     load_region("OTHR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
     made_up_aml_begin(&device);
-    load_traced_method(&device, "_PDC", 0x01u, second, sizeof(second), 1u, false);
+    load_traced_method(&device, "_PDC", 0x01u, load_step_seven_goes_second_aml, sizeof(load_step_seven_goes_second_aml),
+                       1u, false);
     load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 2u, true);
     made_up_aml_begin(&scope);
     made_up_aml_processor(&scope, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     made_up_aml_scope(&load_loaded, "DEVZ", &scope);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_traced_method(&device, "_PDC", 0x01u, first, sizeof(first), 0u, false);
+    load_traced_method(&device, "_PDC", 0x01u, load_loads_c_state_table_aml, sizeof(load_loads_c_state_table_aml), 0u,
+                       false);
     load_traced_method(&device, "_CST", 0x00u, NULL, 0u, 0u, true);
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
@@ -1380,8 +1279,6 @@ KERNEL_TEST(step_seven_goes_on_while_the_tables_loaded_behind_its_walk_declare_p
  */
 KERNEL_TEST(a_table_a_hid_of_step_seven_loads_is_initialised_once_it_returns)
 {
-    static const uint8_t identifies[] = {0x5Bu, 0x20u, '\\', 'C', 'S', 'T', 'R', '\\', 'H', 'C', '0',  '_',
-                                         0xA4u, 0x0Du, 'A',  'C', 'P', 'I', '0', '0',  '0', '7', 0x00u};
     static MadeUpAml_t device;
 
     load_begin();
@@ -1391,7 +1288,8 @@ KERNEL_TEST(a_table_a_hid_of_step_seven_loads_is_initialised_once_it_returns)
     made_up_aml_device(&load_loaded, "LDEV", &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_traced_method(&device, "_HID", 0x00u, identifies, sizeof(identifies), 0u, false);
+    load_traced_method(&device, "_HID", 0x00u, load_table_hid_step_identifies_aml,
+                       sizeof(load_table_hid_step_identifies_aml), 0u, false);
     load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 9u, false);
     made_up_aml_device(&load_aml, "CPUD", &device);
     made_up_aml_begin(&device);
@@ -1414,13 +1312,6 @@ KERNEL_TEST(a_table_a_hid_of_step_seven_loads_is_initialised_once_it_returns)
  */
 KERNEL_TEST(a_processor_a_step_nine_evaluation_loads_gets_its_capabilities_then_its_cst)
 {
-    static const uint8_t body[] = {0x86u, '\\',  'C',   'P',   'U',   '0',   0x0Au, 0x81u, 0xA0u, 0x14u, 0x93u, '\\',
-                                   'C',   'N',   'T',   '_',   0x01u, 0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',
-                                   '\\',  'H',   'C',   '0',   '_',   0x75u, '\\',  'C',   'N',   'T',   '_',   0xA4u,
-                                   0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u, 0x82u,
-                                   0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
-    static const uint8_t notifies[] = {0x86u, '\\', 'C', 'P', 'U', '1', 0x0Au, 0x81u};
     static MadeUpAml_t device;
 
     load_begin();
@@ -1428,11 +1319,13 @@ KERNEL_TEST(a_processor_a_step_nine_evaluation_loads_gets_its_capabilities_then_
     made_up_aml_name_integer(&load_aml, "CNT_", 0u);
     made_up_aml_begin(&device);
     load_traced_method(&device, "_PDC", 0x01u, NULL, 0u, 1u, false);
-    load_traced_method(&device, "_CST", 0x00u, notifies, sizeof(notifies), 2u, true);
+    load_traced_method(&device, "_CST", 0x00u, load_processor_step_nine_notifies_aml,
+                       sizeof(load_processor_step_nine_notifies_aml), 2u, true);
     made_up_aml_processor(&load_loaded, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", body, sizeof(body));
+    load_method(&device, "_CST", load_notifies_and_loads_c_states_once_aml,
+                sizeof(load_notifies_and_loads_c_states_once_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -1458,22 +1351,18 @@ KERNEL_TEST(a_processor_a_step_nine_evaluation_loads_gets_its_capabilities_then_
  */
 KERNEL_TEST(a_cst_that_loads_a_table_then_fails_is_the_first_failure)
 {
-    static const uint8_t body[] = {0x5Bu, 0x20u, '\\', 'C',   'S',   'T',   'R',   '\\',  'H',
-                                   'C',   '0',   '_',  0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
-    static const uint8_t present[] = {0xA4u, 0x0Au, 0x0Fu};
-    static const uint8_t missing[] = {0x70u, '\\', 'Z', 'Z', 'Z', 'Z', 0x60u};
     static MadeUpAml_t device;
     char path[12];
 
     load_begin();
     made_up_aml_name_integer(&load_aml, "HC0_", 0u);
     made_up_aml_begin(&device);
-    load_method(&device, "_STA", present, sizeof(present));
-    load_method(&device, "_INI", missing, sizeof(missing));
+    load_method(&device, "_STA", load_returns_present_aml, sizeof(load_returns_present_aml));
+    load_method(&device, "_INI", load_cst_loads_table_missing_aml, sizeof(load_cst_loads_table_missing_aml));
     made_up_aml_device(&load_loaded, "LDEV", &device);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", body, sizeof(body));
+    load_method(&device, "_CST", load_cst_loads_table_body_aml, sizeof(load_cst_loads_table_body_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -1505,11 +1394,6 @@ KERNEL_TEST(a_cst_that_loads_a_table_then_fails_is_the_first_failure)
  */
 KERNEL_TEST(step_eight_and_the_late_initialisation_each_decide_a_device)
 {
-    static const uint8_t counted[] = {0x75u, '\\', 'B', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
-    static const uint8_t body[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
-                                   0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -1523,9 +1407,10 @@ KERNEL_TEST(step_eight_and_the_late_initialisation_each_decide_a_device)
     made_up_aml_scope(&load_loaded, "DEVB", &scope);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", body, sizeof(body));
+    load_method(&device, "_CST", load_loads_c_states_and_returns_one_aml,
+                sizeof(load_loads_c_states_and_returns_one_aml));
     made_up_aml_begin(&scope);
-    load_method(&scope, "_STA", counted, sizeof(counted));
+    load_method(&scope, "_STA", load_counts_present_status_aml, sizeof(load_counts_present_status_aml));
     made_up_aml_processor(&scope, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     made_up_aml_device(&load_aml, "DEVB", &scope);
     if (!load_run(test))
@@ -1554,13 +1439,6 @@ KERNEL_TEST(step_eight_and_the_late_initialisation_each_decide_a_device)
  */
 KERNEL_TEST(the_late_initialisation_decides_a_processor_step_eight_decided)
 {
-    static const uint8_t present[] = {0x75u, '\\', 'B', 'S', 'T', 'A', 0xA4u, 0x0Au, 0x0Fu};
-    static const uint8_t absent[] = {0x75u, '\\', 'A', 'S', 'T', 'A', 0xA4u, 0x00u};
-    static const uint8_t integer[] = {0xA4u, 0x01u};
-    static const uint8_t body[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
-                                   0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -1580,12 +1458,15 @@ KERNEL_TEST(the_late_initialisation_decides_a_processor_step_eight_decided)
     made_up_aml_scope(&load_loaded, "CPU1", &scope);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_STA", absent, sizeof(absent));
-    load_method(&device, "_CST", integer, sizeof(integer));
+    load_method(&device, "_STA", load_late_initialisation_decides_absent_aml,
+                sizeof(load_late_initialisation_decides_absent_aml));
+    load_method(&device, "_CST", load_late_initialisation_decides_integer_aml,
+                sizeof(load_late_initialisation_decides_integer_aml));
     made_up_aml_processor(&load_aml, "CPU1", LOAD_PROCESSOR_IDENTIFIER + 1u, 0u, 0u, &device);
     made_up_aml_begin(&device);
-    load_method(&device, "_STA", present, sizeof(present));
-    load_method(&device, "_CST", body, sizeof(body));
+    load_method(&device, "_STA", load_counts_present_status_aml, sizeof(load_counts_present_status_aml));
+    load_method(&device, "_CST", load_loads_c_states_and_returns_one_aml,
+                sizeof(load_loads_c_states_and_returns_one_aml));
     made_up_aml_processor(&load_aml, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     if (!load_run(test))
         return;
@@ -1615,14 +1496,6 @@ KERNEL_TEST(the_late_initialisation_decides_a_processor_step_eight_decided)
  */
 KERNEL_TEST(the_late_initialisation_keeps_the_absence_step_four_found)
 {
-    static const uint8_t status[] = {0x75u, '\\', 'B', 'S', 'T',   'A',   0xA0u, 0x09u, '\\',
-                                     'F',   'L',  'A', 'G', 0xA4u, 0x0Au, 0x0Fu, 0xA4u, 0x00u};
-    static const uint8_t nothing[] = {0xA3u};
-    static const uint8_t sets[] = {0x70u, 0x01u, '\\', 'F', 'L', 'A', 'G'};
-    static const uint8_t body[] = {0x5Bu, 0x20u, '\\',  'C',   'S',   'T',   'R',   '\\',  'H',   'C',   '0',   '_',
-                                   0xA4u, 0x12u, 0x20u, 0x02u, 0x01u, 0x12u, 0x1Cu, 0x04u, 0x11u, 0x14u, 0x0Au, 0x11u,
-                                   0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
-                                   0x00u, 0x00u, 0x00u, 0x79u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0xE8u, 0x03u};
     static MadeUpAml_t device;
     static MadeUpAml_t scope;
 
@@ -1637,14 +1510,18 @@ KERNEL_TEST(the_late_initialisation_keeps_the_absence_step_four_found)
     made_up_aml_scope(&load_loaded, "DEVB", &scope);
     load_region("CSTR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_CST", body, sizeof(body));
+    load_method(&device, "_CST", load_loads_c_states_and_returns_one_aml,
+                sizeof(load_loads_c_states_and_returns_one_aml));
     made_up_aml_begin(&scope);
-    load_method(&scope, "_STA", status, sizeof(status));
-    load_method(&scope, "_INI", nothing, sizeof(nothing));
+    load_method(&scope, "_STA", load_late_initialisation_keeps_status_aml,
+                sizeof(load_late_initialisation_keeps_status_aml));
+    load_method(&scope, "_INI", load_late_initialisation_keeps_nothing_aml,
+                sizeof(load_late_initialisation_keeps_nothing_aml));
     made_up_aml_processor(&scope, "CPU0", LOAD_PROCESSOR_IDENTIFIER, 0u, 0u, &device);
     made_up_aml_device(&load_aml, "DEVB", &scope);
     made_up_aml_begin(&scope);
-    load_method(&scope, "_INI", sets, sizeof(sets));
+    load_method(&scope, "_INI", load_late_initialisation_keeps_sets_aml,
+                sizeof(load_late_initialisation_keeps_sets_aml));
     made_up_aml_device(&load_aml, "LATE", &scope);
     if (!load_run(test))
         return;
@@ -1671,18 +1548,14 @@ KERNEL_TEST(the_late_initialisation_keeps_the_absence_step_four_found)
  */
 KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'E', 'A', 'R', 'L', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t keeps[] = {0x9Du, 0x68u, '\\', 'E', 'P', 'D', 'C'};
-    static const uint8_t identifies[] = {0x08u, '_', 'H', 'I',   'D',   0x0Du, 'A', 'C', 'P', 'I',  '0',
-                                         '0',   '0', '7', 0x00u, 0x08u, '_',   'U', 'I', 'D', 0x01u};
     static MadeUpAml_t device;
 
     load_begin();
     made_up_aml_name_integer(&load_aml, "EPDC", 0u);
     made_up_aml_begin(&device);
-    made_up_aml_raw(&device, identifies, sizeof(identifies));
+    made_up_aml_raw(&device, load_table_loaded_before_identifies_aml, sizeof(load_table_loaded_before_identifies_aml));
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, keeps, sizeof(keeps));
+    made_up_aml_raw(&load_body, load_table_loaded_before_keeps_aml, sizeof(load_table_loaded_before_keeps_aml));
     made_up_aml_method(&device, "_PDC", 0x01u, &load_body);
     load_present_initialization(&device, 4u);
     made_up_aml_begin(&load_inner);
@@ -1690,7 +1563,7 @@ KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones
     made_up_aml_scope(&load_loaded, "_SB_", &load_inner);
     load_region("EARL", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_INI", loads, sizeof(loads));
+    load_method(&device, "_INI", load_table_loaded_before_loads_aml, sizeof(load_table_loaded_before_loads_aml));
     made_up_aml_scope(&load_aml, "_SB_", &device);
     if (!load_run(test))
         return;
@@ -1701,8 +1574,9 @@ KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(test, load_integer("HND1") == LOAD_ONES && load_integer("TRAC") == 4u,
-                      "\\_SB._INI loads the table, and step 4 runs its device's _INI once");
+    kernel_test_check(
+        test, load_integer("HND1") == LOAD_ONES && load_integer("TRAC") == 4u,
+        "\\_SB._INI load_table_loaded_before_loads_aml the table, and step 4 runs its device's _INI once");
     kernel_test_check(test,
                       load_counts.processor_capabilities == 1u && load_counts.processor_capabilities_legacy == 1u &&
                           load_counts.processor_capabilities_failed == 0u &&
@@ -1721,10 +1595,6 @@ KERNEL_TEST(a_table_loaded_before_step_three_is_initialised_with_the_static_ones
  */
 KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
 {
-    static const uint8_t registers[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', '3', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t initializes[] = {0x70u, 0x72u, 0x77u, '\\', 'T', 'R',  'A', 'C', 0x0Au, 0x10u,
-                                          0x00u, 0x01u, 0x00u, '\\', 'T', 'R',  'A', 'C', 0x5Bu, 0x20u,
-                                          '\\',  'T',   'B',   'L',  '4', '\\', 'H', 'N', 'D',   '2'};
     static MadeUpAml_t device;
 
     load_begin();
@@ -1743,11 +1613,13 @@ KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
     made_up_aml_begin(&device);
     made_up_aml_region(&device, "APCI", 0x02u, 0u, 0x100u);
     made_up_aml_begin(&load_body);
-    made_up_aml_raw(&load_body, registers, sizeof(registers));
+    made_up_aml_raw(&load_body, load_tables_loaded_during_registers_aml,
+                    sizeof(load_tables_loaded_during_registers_aml));
     made_up_aml_method(&device, "_REG", 0x02u, &load_body);
     made_up_aml_device(&load_aml, "ADEV", &device);
     made_up_aml_begin(&device);
-    load_method(&device, "_INI", initializes, sizeof(initializes));
+    load_method(&device, "_INI", load_tables_loaded_during_initializes_aml,
+                sizeof(load_tables_loaded_during_initializes_aml));
     made_up_aml_device(&load_aml, "BDEV", &device);
     if (!load_run(test))
         return;
@@ -1775,19 +1647,16 @@ KERNEL_TEST(tables_loaded_during_steps_three_and_four_are_initialised_once)
  */
 KERNEL_TEST(a_load_the_code_of_a_loaded_table_runs_while_it_is_declared_is_refused)
 {
-    static const uint8_t loads_outer[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'A', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t loads_inner[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', '2', '\\', 'H', 'N', 'D', '2'};
-
     load_begin();
     made_up_aml_name_integer(&load_aml, "HND2", LOAD_UNTOUCHED);
     made_up_aml_begin(&load_inner);
     made_up_aml_name_integer(&load_inner, "SCND", 2u);
     load_region("TBL2", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
-    made_up_aml_raw(&load_loaded, loads_inner, sizeof(loads_inner));
+    made_up_aml_raw(&load_loaded, load_code_loaded_loads_inner_aml, sizeof(load_code_loaded_loads_inner_aml));
     made_up_aml_name_integer(&load_loaded, "AFTR", 7u);
-    load_method(&load_loaded, "LDB2", loads_inner, sizeof(loads_inner));
+    load_method(&load_loaded, "LDB2", load_code_loaded_loads_inner_aml, sizeof(load_code_loaded_loads_inner_aml));
     load_region("TBLA", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
-    load_method(&load_aml, "LDA2", loads_outer, sizeof(loads_outer));
+    load_method(&load_aml, "LDA2", load_code_loaded_loads_outer_aml, sizeof(load_code_loaded_loads_outer_aml));
     if (!load_run(test))
         return;
     kernel_test_check(test, load_call("\\LDA2") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
@@ -1810,10 +1679,6 @@ KERNEL_TEST(a_load_the_code_of_a_loaded_table_runs_while_it_is_declared_is_refus
  */
 KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t traces_nine[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
-                                          0x00u, 0x0Au, 0x09u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
-    static const uint8_t absent[] = {0xA4u, 0x00u};
     static MadeUpAml_t device;
 
     load_begin();
@@ -1824,11 +1689,12 @@ KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
     made_up_aml_scope(&load_loaded, "GONE", &load_inner);
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_STA", absent, sizeof(absent));
-    load_method(&device, "_INI", traces_nine, sizeof(traces_nine));
+    load_method(&device, "_STA", load_returns_absent_aml, sizeof(load_returns_absent_aml));
+    load_method(&device, "_INI", load_traces_nine_aml, sizeof(load_traces_nine_aml));
     made_up_aml_device(&load_aml, "GONE", &device);
     made_up_aml_begin(&device);
-    load_method(&device, "_INI", loads, sizeof(loads));
+    load_method(&device, "_INI", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
     made_up_aml_device(&load_aml, "BDEV", &device);
     if (!load_run(test))
         return;
@@ -1837,7 +1703,8 @@ KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
+                      "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4");
     kernel_test_check(test,
                       load_integer("TRAC") == 0u && load_counts.status_evaluations == 1u &&
                           load_counts.late_initializations == 0u,
@@ -1854,9 +1721,6 @@ KERNEL_TEST(a_device_loaded_under_an_absent_one_is_left_alone)
  */
 static bool load_absent_machine(KernelTest_t *test, uint8_t status, bool loader_first, const char *scope)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t traces_nine[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
-                                          0x00u, 0x0Au, 0x09u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
     static MadeUpAml_t device;
     static MadeUpAml_t loader;
     static MadeUpAml_t gone;
@@ -1871,9 +1735,10 @@ static bool load_absent_machine(KernelTest_t *test, uint8_t status, bool loader_
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&gone);
     load_method(&gone, "_STA", returns, sizeof(returns));
-    load_method(&gone, "_INI", traces_nine, sizeof(traces_nine));
+    load_method(&gone, "_INI", load_traces_nine_aml, sizeof(load_traces_nine_aml));
     made_up_aml_begin(&loader);
-    load_method(&loader, "_INI", loads, sizeof(loads));
+    load_method(&loader, "_INI", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
     if (loader_first)
         made_up_aml_device(&load_aml, "BDEV", &loader);
     made_up_aml_device(&load_aml, "GONE", &gone);
@@ -1889,7 +1754,8 @@ static bool load_absent_machine(KernelTest_t *test, uint8_t status, bool loader_
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4"))
+    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
+                          "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4"))
         return true;
     load_close(test);
     return false;
@@ -1947,7 +1813,6 @@ KERNEL_TEST(no_initialization_runs_twice)
  */
 static bool load_sibling_machine(KernelTest_t *test, const char *first, const char *second, const char *scope)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
     static MadeUpAml_t device;
     static MadeUpAml_t parent;
     static MadeUpAml_t scope_body;
@@ -1968,7 +1833,8 @@ static bool load_sibling_machine(KernelTest_t *test, const char *first, const ch
 
         made_up_aml_begin(&device);
         if (memcmp(name, "BDEV", 4u) == 0)
-            load_method(&device, "_INI", loads, sizeof(loads));
+            load_method(&device, "_INI", load_loads_table_into_first_handle_aml,
+                        sizeof(load_loads_table_into_first_handle_aml));
         else
             load_present_initialization(&device, 9u);
         made_up_aml_device(&parent, name, &device);
@@ -1984,7 +1850,8 @@ static bool load_sibling_machine(KernelTest_t *test, const char *first, const ch
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4"))
+    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
+                          "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4"))
         return true;
     load_close(test);
     return false;
@@ -2023,8 +1890,6 @@ KERNEL_TEST(a_device_loaded_under_the_loader_runs_its_initialization_once)
  */
 static void load_skipped_absent(KernelTest_t *test, bool absent_first)
 {
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t absent[] = {0xA4u, 0x00u};
     static MadeUpAml_t device;
     static MadeUpAml_t loader;
 
@@ -2036,9 +1901,10 @@ static void load_skipped_absent(KernelTest_t *test, bool absent_first)
     made_up_aml_scope(&load_loaded, "NOIN", &load_inner);
     load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
     made_up_aml_begin(&device);
-    load_method(&device, "_STA", absent, sizeof(absent));
+    load_method(&device, "_STA", load_returns_absent_aml, sizeof(load_returns_absent_aml));
     made_up_aml_begin(&loader);
-    load_method(&loader, "_INI", loads, sizeof(loads));
+    load_method(&loader, "_INI", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
     if (absent_first)
         made_up_aml_device(&load_aml, "NOIN", &device);
     made_up_aml_device(&load_aml, "BDEV", &loader);
@@ -2054,9 +1920,11 @@ static void load_skipped_absent(KernelTest_t *test, bool absent_first)
                                                                                    .monitor_wait = false};
 
     advanced_configuration_and_power_interface_initialize_namespace(&load_load, &machine, &load_counts, &load_idle);
-    kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4");
-    kernel_test_check(test, load_integer("TRAC") == 5u && load_counts.status_evaluations == 2u,
-                      "NOIN's _STA is read once, says absent, and LATE is left alone: only ZDEV's _INI runs");
+    kernel_test_check(test, load_integer("HND1") == LOAD_ONES,
+                      "BDEV's _INI load_loads_table_into_first_handle_aml the table at step 4");
+    kernel_test_check(
+        test, load_integer("TRAC") == 5u && load_counts.status_evaluations == 2u,
+        "NOIN's _STA is read once, says load_returns_absent_aml, and LATE is left alone: only ZDEV's _INI runs");
     load_close(test);
 }
 
