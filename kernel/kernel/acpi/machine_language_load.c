@@ -2004,53 +2004,6 @@ machine_language_name_data(MachineLanguageWalk_t *walk, const MachineLanguagePen
 }
 
 /**
- * @brief Checks, in the decoding pass, the Package or VarPackage at the walk's pc that the Name @p active declares at
- *        table level, when the declaration pass kept it in its table (O20): one that would not build is counted in
- *        data_faults, one whose nested size or count a name gives in data_named_sizes. A Buffer, whose head is all its
- *        check, data a method body declares, and data another statement kept are left alone.
- */
-static void machine_language_check_kept(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active)
-{
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
-    MachineLanguageNameString_t name;
-    uint32_t after = 0u;
-    bool named = false;
-
-    if (walk->pass != MACHINE_LANGUAGE_PASS_DECODE || machine_language_top_block(walk)->placement != 0u ||
-        walk->pc >= active->end)
-        return;
-
-    const uint8_t class = machine_language_data_classes[walk->bytes[walk->pc]];
-
-    if ((class != MACHINE_LANGUAGE_DATA_PACKAGE && class != MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE) ||
-        advanced_configuration_and_power_interface_machine_language_read_name_string(
-            walk->bytes, active->start + 1u, active->end, &name, &after) != MACHINE_LANGUAGE_OK)
-        return;
-
-    const MachineLanguageNode_t *node = machine_language_node(walk, machine_language_declared_node(walk, &name));
-
-    if (node == NULL || node->value.kind != MACHINE_LANGUAGE_VALUE(KEPT_DATA) ||
-        node->value.auxiliary != walk->table + 1u || (uint32_t) node->value.payload != walk->pc)
-        return;
-
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = {
-        .bytes = walk->bytes,
-        .scope = node->parent,
-        .table = node->value.auxiliary,
-        .integer_bits =
-            ((node->value.flags &
-              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_KEPT_DATA_32_BIT_INTEGERS) != 0u) ?
-                32u :
-                64u,
-    };
-
-    if (!machine_language_check_data(&load->space, &source, walk->pc, active->end, &named))
-        ++load->data_faults;
-    else if (named)
-        ++load->data_named_sizes;
-}
-
-/**
  * @brief Decodes the next operand of the active operator.
  */
 static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *walk,
@@ -2130,10 +2083,8 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
         if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u &&
             machine_language_builds(walk, active->node))
             return machine_language_name_data(walk, active, kind);
-        if (active->opcode == MACHINE_LANGUAGE_OPCODE(NAME) && active->operands_done == 2u)
-            machine_language_check_kept(walk, active);
-        else if (active->opcode == MACHINE_LANGUAGE_OPCODE(OPERATION_REGION) && active->operands_done == 3u &&
-                 machine_language_builds(walk, active->node))
+        if (active->opcode == MACHINE_LANGUAGE_OPCODE(OPERATION_REGION) && active->operands_done == 3u &&
+            machine_language_builds(walk, active->node))
             status = machine_language_build_region(walk, active);
         return (status == MACHINE_LANGUAGE_OK) ? machine_language_term(walk, kind) : status;
     }
@@ -3023,6 +2974,52 @@ static void machine_language_leave_unbuilt(AdvancedConfigurationAndPowerInterfac
 }
 
 /**
+ * @brief Checks the Package or VarPackage node @p node keeps in its table (O20) as the data decoder would build it: one
+ *        that would not build is counted in data_faults, one whose nested size or count a name gives in
+ *        data_named_sizes.
+ */
+static void machine_language_check_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                        const MachineLanguageNode_t *node)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table =
+        &load->tables[node->value.auxiliary - 1u];
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageSource_t source = {
+        .bytes = (const uint8_t *) table->header,
+        .scope = node->parent,
+        .table = node->value.auxiliary,
+        .integer_bits = (machine_language_kept_mask(&node->value) == UINT64_MAX) ? 64u : 32u,
+    };
+    bool named = false;
+
+    if (!machine_language_check_data(&load->space, &source, (uint32_t) node->value.payload, table->length, &named))
+        ++load->data_faults;
+    else if (named)
+        ++load->data_named_sizes;
+}
+
+/**
+ * @brief Checks, once the decoding pass has decoded the load's tables from @p first to before @p end, each Package and
+ *        VarPackage a Name keeps in one of them (O20), over the namespace's nodes in index order, whatever fault the
+ *        decoding met: a crossing PkgLength that abandons a table hides none of its kept data. A Buffer, whose head is
+ *        all its check, is left alone.
+ */
+static void machine_language_check_kept_data(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                             uint32_t first, uint32_t end)
+{
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT + 1u;
+         index < load->space.node_count; ++index)
+    {
+        const MachineLanguageNode_t *node =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+
+        if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) == 0u &&
+            node->value.kind == MACHINE_LANGUAGE_VALUE(KEPT_DATA) && node->type == MACHINE_LANGUAGE_NODE(PACKAGE) &&
+            node->value.auxiliary > first && node->value.auxiliary <= end)
+            machine_language_check_kept(load, node);
+    }
+}
+
+/**
  * @brief Folds one value: an Integer, a String's or Buffer's length and bytes, a Package's count and
  *        each element, nested packages through an explicit stack, a name element as its path bytes.
  */
@@ -3424,6 +3421,8 @@ void advanced_configuration_and_power_interface_machine_language_decode_tables(
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS);
     for (uint32_t table = 0u; table < load->table_count && !load->skips_bodies; ++table)
         machine_language_walk_table(load, table, MACHINE_LANGUAGE_PASS_DECODE);
+    if (!load->skips_bodies)
+        machine_language_check_kept_data(load, 0u, load->table_count);
 }
 
 void advanced_configuration_and_power_interface_machine_language_declare_directory(
@@ -3524,8 +3523,10 @@ void advanced_configuration_and_power_interface_machine_language_finish_loaded_t
 {
     if (load->externals_unplaced != 0u)
         machine_language_walk_without_running(load, table, MACHINE_LANGUAGE_PASS_EXTERNALS);
-    if (!load->skips_bodies)
-        machine_language_walk_without_running(load, table, MACHINE_LANGUAGE_PASS_DECODE);
+    if (load->skips_bodies)
+        return;
+    machine_language_walk_without_running(load, table, MACHINE_LANGUAGE_PASS_DECODE);
+    machine_language_check_kept_data(load, table, table + 1u);
 }
 
 void advanced_configuration_and_power_interface_machine_language_declare_statement(

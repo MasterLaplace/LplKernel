@@ -205,12 +205,13 @@ static const uint8_t shortcuts_malformed[] = {
 };
 
 /**
- * @brief A package whose inner package's PkgLength crosses its parent, which abandons the rest of the table
- *        (§6.2), after a Name the load builds: `Name (G0__, Package (1) {One})`.
+ * @brief A package whose inner package's PkgLength crosses its parent, which stops the decoding of the rest of the
+ *        table (§6.2), after a Name the load builds, `Name (G0__, Package (1) {One})`, and before
+ *        `Name (X1__, Package (1) {...})`, which holds the byte 0x02, which starts no data object.
  */
 static const uint8_t shortcuts_crossing[] = {
-    0x08u, 'G', '0', '_',   '_',   0x12u, 0x03u, 0x01u, 0x01u, 0x08u, 'X',
-    '0',   '_', '_', 0x12u, 0x05u, 0x01u, 0x12u, 0x09u, 0x01u, 0x00u,
+    0x08u, 'G',   '0',   '_',   '_',   0x12u, 0x03u, 0x01u, 0x01u, 0x08u, 'X', '0',   '_',   '_',   0x12u,
+    0x05u, 0x01u, 0x12u, 0x09u, 0x01u, 0x00u, 0x08u, 'X',   '1',   '_',   '_', 0x12u, 0x03u, 0x01u, 0x02u,
 };
 
 /**
@@ -1334,7 +1335,8 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_s
  *        revision 1, none of which the decoding pass counts; of the sizes a name gives, the Package whose inner Buffer
  *        takes one, counted in data_named_sizes, but not a Buffer whose own size a name gives; of the data the decoder
  *        refuses, the 4 Packages, 3 of which the decoding pass counts in data_faults, but not the Buffer past 64 KiB;
- *        the Package before a PkgLength that abandons the table and that one, counted; not a VarPackage past the
+ *        the Package before a PkgLength that stops the decoding of its table, that one and the faulty one after it,
+ *        both counted, though the decoding pass never reaches the second; not a VarPackage past the
  *        4,096 elements of §6.1, nor VPK_, whose failed build counts no package padded, and the first of two
  *        `Name (DUP_)`, the decoding pass leaving the duplicate's package, which would not build, alone; the package
  *        33 deep, which needs the interpreter, counted, and TOP_ after it;
@@ -1360,8 +1362,8 @@ KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_
         {"a package 33 deep",                                NULL,                                 0u,                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
         {"a package 32 deep inside 480 Devices",             NULL,                                 0u,                            2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
     };
-    const uint32_t kept[] = {8u, 8u, 9u, 1u, 4u, 2u, 1u, 2u, 1u};
-    const uint32_t faults[] = {0u, 0u, 0u, 0u, 3u, 1u, 0u, 1u, 0u};
+    const uint32_t kept[] = {8u, 8u, 9u, 1u, 4u, 3u, 1u, 2u, 1u};
+    const uint32_t faults[] = {0u, 0u, 0u, 0u, 3u, 2u, 0u, 1u, 0u};
     const uint32_t named[] = {0u, 0u, 0u, 1u, 0u, 0u, 0u, 0u, 0u};
     const uint32_t count = sizeof(cases) / sizeof(cases[0]);
     uint32_t data_kept = 0u;
