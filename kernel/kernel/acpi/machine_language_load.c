@@ -1200,22 +1200,54 @@ static void machine_language_build_scope_object(MachineLanguageWalk_t *walk,
     }
 }
 
+#define MACHINE_LANGUAGE_DECLARES(opcode)                                                                              \
+    ((opcode) == MACHINE_LANGUAGE_OPCODE(NAME) || (opcode) == MACHINE_LANGUAGE_OPCODE(METHOD) ||                       \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(EXTERNAL) || (opcode) == MACHINE_LANGUAGE_OPCODE(MUTEX) ||                    \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(EVENT) || (opcode) == MACHINE_LANGUAGE_OPCODE(OPERATION_REGION) ||            \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(DATA_REGION) || (opcode) == MACHINE_LANGUAGE_OPCODE(DEVICE) ||                \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(PROCESSOR) || (opcode) == MACHINE_LANGUAGE_OPCODE(POWER_RESOURCE) ||          \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(THERMAL_ZONE) || (opcode) == MACHINE_LANGUAGE_OPCODE(CREATE_BIT_FIELD) ||     \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(CREATE_BYTE_FIELD) ||                                                         \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(CREATE_WORD_FIELD) ||                                                         \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(CREATE_DOUBLE_WORD_FIELD) ||                                                  \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(CREATE_QUAD_WORD_FIELD) ||                                                    \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(CREATE_FIELD) || (opcode) == MACHINE_LANGUAGE_OPCODE(SCOPE) ||                \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(ALIAS) || (opcode) == MACHINE_LANGUAGE_OPCODE(FIELD) ||                       \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD) ||                                                               \
+     (opcode) == MACHINE_LANGUAGE_OPCODE(BANK_FIELD)) /**< Whether @p opcode declares a name: those of                 \
+                                                         machine_language_declared_type, and a Scope, an Alias or a    \
+                                                         field list. */
+#define MACHINE_LANGUAGE_INERT(opcode)                                                                                 \
+    ((opcode) == MACHINE_LANGUAGE_OPCODE(NOOP) ||                                                                      \
+     ((opcode) >= MACHINE_LANGUAGE_OPCODE(LOCAL0) &&                                                                   \
+      (opcode) <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6))) /**< Whether @p opcode, not data, runs nothing: Noop, a local   \
+                                                          or an argument. */
+#define MACHINE_LANGUAGE_CODE_ENTRY(identifier, encoding, name, package_length, statement, data_object, ...)           \
+    [MACHINE_LANGUAGE_OPCODE(identifier)] =                                                                            \
+        !((data_object) || MACHINE_LANGUAGE_DECLARES(MACHINE_LANGUAGE_OPCODE(identifier)) ||                           \
+          MACHINE_LANGUAGE_INERT(MACHINE_LANGUAGE_OPCODE(identifier))), /**< The entry of                              \
+                                                                           machine_language_code_opcodes for a row of  \
+                                                                           the opcode X-macros. */
+
 /**
- * @brief Whether a statement is code the interpreter runs: one that is neither a declaration, data,
- *        a local, an argument nor Noop. A name there is a call or a reference to run.
+ * @brief Whether a statement of each opcode is code the interpreter runs: one that is neither a declaration, data, a
+ *        local, an argument nor Noop; the invalid opcode is.
+ */
+static const bool
+    machine_language_code_opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT] = {
+        [MACHINE_LANGUAGE_OPCODE(INVALID)] = true,
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ONE_BYTE_OPCODES(MACHINE_LANGUAGE_CODE_ENTRY)
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_EXTENDED_OPCODES(MACHINE_LANGUAGE_CODE_ENTRY)};
+
+/**
+ * @brief Whether a statement is code the interpreter runs, as machine_language_code_opcodes says of its opcode, an
+ *        opcode past the last one taken as the invalid one. A name there is a call or a reference to run.
  */
 static bool machine_language_is_code(bool name, uint32_t opcode)
 {
-    const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
-    const bool declares = machine_language_declared_type(opcode) != 0xFFu || opcode == MACHINE_LANGUAGE_OPCODE(SCOPE) ||
-                          opcode == MACHINE_LANGUAGE_OPCODE(ALIAS) || opcode == MACHINE_LANGUAGE_OPCODE(FIELD) ||
-                          opcode == MACHINE_LANGUAGE_OPCODE(INDEX_FIELD) ||
-                          opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD);
-    const bool inert = (flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) != 0u ||
-                       opcode == MACHINE_LANGUAGE_OPCODE(NOOP) ||
-                       (opcode >= MACHINE_LANGUAGE_OPCODE(LOCAL0) && opcode <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6));
-
-    return name || (!declares && !inert);
+    if (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT)
+        opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
+    return name || machine_language_code_opcodes[opcode];
 }
 
 /**
