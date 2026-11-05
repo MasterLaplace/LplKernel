@@ -2,10 +2,11 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Store (MREG (0x10040), R1__) and Store (MREG (0x10040), R2__): two calls of MREG at the same offset.
+ * @brief Store (MREG (MADR), R1__) and Store (MREG (MADR), R2__): two calls of MREG at the same offset, the one MADR
+ *        names.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    Store (MREG (0x00010040), R1__) __EXPECT__(6084)
-    Store (MREG (0x00010040), R2__) __EXPECT__(6084)
+    Store (MREG (MADR), R1__) __EXPECT__(6084)
+    Store (MREG (MADR), R2__) __EXPECT__(6084)
 }

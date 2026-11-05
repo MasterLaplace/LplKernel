@@ -21,6 +21,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_regions, KERNEL_TES
 #define REGIONS_STATUS(name) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
 #define REGIONS_ACCESS(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_##kind
 
+#define REGIONS_METHOD_MEMORY (REGIONS_MEMORY + 0x40u) /**< Where the region MREG creates lies, which MADR names. */
+
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t regions_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t regions_load;
 static uint8_t regions_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
@@ -1056,13 +1058,14 @@ KERNEL_TEST(a_method_creates_its_region_and_field_at_each_call)
     MadeUpAml_t body;
 
     regions_begin();
-    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY + 0x40u, memory,
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_METHOD_MEMORY, memory,
                                                                     sizeof(memory));
     made_up_aml_begin(&body);
     made_up_aml_raw(&body, regions_region_at_argument_aml, sizeof(regions_region_at_argument_aml));
     made_up_aml_field(&body, "MR__", REGIONS_BYTE_ACCESS, units, 2u);
     made_up_aml_raw(&body, regions_return_sum_aml, sizeof(regions_return_sum_aml));
     made_up_aml_method(&regions_aml, "MREG", 0x01u, &body);
+    made_up_aml_name_integer(&regions_aml, "MADR", REGIONS_METHOD_MEMORY);
     made_up_aml_name_integer(&regions_aml, "R1__", 0u);
     made_up_aml_name_integer(&regions_aml, "R2__", 0u);
     made_up_aml_raw(&regions_aml, regions_store_two_calls_aml, sizeof(regions_store_two_calls_aml));
@@ -1079,7 +1082,7 @@ KERNEL_TEST(a_method_creates_its_region_and_field_at_each_call)
     const uint32_t nodes = regions_load.space.live_nodes;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t base = {
         .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
-        .payload = REGIONS_MEMORY + 0x40u,
+        .payload = REGIONS_METHOD_MEMORY,
     };
     uint32_t sums = 0u;
 
