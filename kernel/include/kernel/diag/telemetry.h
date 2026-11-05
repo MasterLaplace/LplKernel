@@ -62,7 +62,7 @@ extern "C" {
 #define KERNEL_TELEMETRY_RECORD_PREFIX "[LPLTLM]"
 
 /** Fields one record may carry. Past this the field is dropped and counted. */
-#define KERNEL_TELEMETRY_MAX_FIELDS_PER_RECORD 32u
+#define KERNEL_TELEMETRY_MAX_FIELDS_PER_RECORD 64u
 
 /**
  * @brief Open a record for one domain.
