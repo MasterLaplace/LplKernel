@@ -189,6 +189,60 @@ static const uint8_t shortcuts_integers_refused[] = {
 };
 
 /**
+ * @brief `Name (HA__, Package (1) {Package (0) {}})`, whose inner PkgLength of 2 holds its count and nothing more.
+ */
+static const uint8_t shortcuts_head_count_only[] = {0x08u, 'H',   'A',   '_',   '_',  0x12u,
+                                                    0x05u, 0x01u, 0x12u, 0x02u, 0x00u};
+
+/**
+ * @brief `Name (HB__, Package (1) {...})`, whose inner PkgLength of 1 leaves its count outside the package.
+ */
+static const uint8_t shortcuts_head_without_count[] = {0x08u, 'H',   'B',   '_',   '_',  0x12u,
+                                                       0x05u, 0x01u, 0x12u, 0x01u, 0x00u};
+
+/**
+ * @brief `Name (HC__, Package (1) {Package (61) {Zero, ...}})`, whose inner PkgLength of 63, the most one byte holds,
+ *        reaches its parent's end exactly, the parent's PkgLength two bytes.
+ */
+static const uint8_t shortcuts_head_widest[] = {
+    0x08u, 'H',   'C',   '_',   '_',   0x12u, 0x43u, 0x04u, 0x01u, 0x12u, 0x3Fu, 0x3Du, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+};
+
+/**
+ * @brief `Name (HD__, Package (1) {...})`, whose inner PkgLength of 3 passes its parent's end by one byte.
+ */
+static const uint8_t shortcuts_head_past_parent[] = {0x08u, 'H',   'D',   '_',   '_',  0x12u,
+                                                     0x05u, 0x01u, 0x12u, 0x03u, 0x00u};
+
+/**
+ * @brief `Name (HE__, Package (1) {Package (1) {One}})`, whose inner PkgLength of 4 takes two bytes.
+ */
+static const uint8_t shortcuts_head_two_bytes[] = {0x08u, 'H',   'E',   '_',   '_',   0x12u, 0x07u,
+                                                   0x01u, 0x12u, 0x44u, 0x00u, 0x01u, 0x01u};
+
+/**
+ * @brief `Name (HG__, Package (1) {VarPackage (One) {One}})`, a VarPackage whose PkgLength is one byte.
+ */
+static const uint8_t shortcuts_head_variable[] = {0x08u, 'H',   'G',   '_',   '_',   0x12u,
+                                                  0x06u, 0x01u, 0x13u, 0x03u, 0x01u, 0x01u};
+
+/**
+ * @brief `Name (HV__, Package (1) {VarPackage (0x1000) {}})`, a VarPackage of the most elements §6.1 allows.
+ */
+static const uint8_t shortcuts_head_most_elements[] = {0x08u, 'H',   'V',   '_',   '_',   0x12u, 0x07u,
+                                                       0x01u, 0x13u, 0x04u, 0x0Bu, 0x00u, 0x10u};
+
+/**
+ * @brief `Name (HW__, Package (1) {VarPackage (0x1001) {}})`, a VarPackage of one element more than §6.1 allows.
+ */
+static const uint8_t shortcuts_head_too_many_elements[] = {0x08u, 'H',   'W',   '_',   '_',   0x12u, 0x07u,
+                                                           0x01u, 0x13u, 0x04u, 0x0Bu, 0x01u, 0x10u};
+
+/**
  * @brief Statements the declaration pass's decoder takes (O19), as iasl compiles them: `Name (N0__, One)`,
  *        `Name (N1__, Package (2) {1, "a"})`, `Method (M0__, 0) {Return (One)}`,
  *        `Method (M1__, 7, Serialized, 15) {Return (Arg6)}`, `OperationRegion (R0__, SystemMemory, 0x100000, 0x20)`,
@@ -1069,6 +1123,49 @@ KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_
                                        (deepest ? 0u : 1u),
                                    deepest ? SHORTCUTS_DEEP_DEVICES : 0u))
             return;
+        kernel_test_check(test, shortcuts_agree(test, &cases[index], &taken) && taken.data_kept == kept[index],
+                          cases[index].claim);
+        data_kept += taken.data_kept;
+    }
+    kernel_test_measure(test, "data_kept", data_kept);
+}
+
+/**
+ * @brief The check of kept data (O20) reads a Package's one-byte PkgLength without the general head reader, as that
+ *        reader reads it: each case loads to the namespace, the faults and the counts of a load without the shortcuts,
+ *        and keeps the packages it counts: a package whose PkgLength of 2 holds only its count, kept; one whose
+ *        PkgLength of 1 leaves its count outside, refused; one whose PkgLength of 63, the most one byte holds, reaches
+ *        its parent's end exactly, kept; one whose PkgLength passes its parent's end by one, refused; one whose
+ *        PkgLength takes two bytes, and a VarPackage, both read by the general reader, kept; a VarPackage of the 4,096
+ *        elements §6.1 allows, kept, and one of 4,097, refused.
+ */
+KERNEL_TEST(a_kept_package_s_one_byte_head_is_read_as_the_head_reader_reads_it)
+{
+    const ShortcutsCase_t cases[] = {
+        {"a PkgLength that holds only the count",           shortcuts_head_count_only,        sizeof(shortcuts_head_count_only),        2u,
+         NULL,                                                                                                                                    0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength that leaves the count outside",       shortcuts_head_without_count,
+         sizeof(shortcuts_head_without_count),                                                                                          2u, NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength of 63 that reaches the parent's end", shortcuts_head_widest,            sizeof(shortcuts_head_widest),            2u,
+         NULL,                                                                                                                                    0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength one past the parent's end",           shortcuts_head_past_parent,       sizeof(shortcuts_head_past_parent),       2u,
+         NULL,                                                                                                                                    0u, false, false, false, MADE_UP_MAX_NODES},
+        {"a PkgLength of two bytes",                        shortcuts_head_two_bytes,         sizeof(shortcuts_head_two_bytes),         2u, NULL, 0u, false,
+         false,                                                                                                                                                     false, MADE_UP_MAX_NODES},
+        {"a VarPackage",                                    shortcuts_head_variable,          sizeof(shortcuts_head_variable),          2u, NULL, 0u, false, false, false,
+         MADE_UP_MAX_NODES                                                                                                                                                                  },
+        {"a VarPackage of 4,096 elements",                  shortcuts_head_most_elements,     sizeof(shortcuts_head_most_elements),     2u, NULL,
+         0u,                                                                                                                                          false, false, false, MADE_UP_MAX_NODES},
+        {"a VarPackage of 4,097 elements",                  shortcuts_head_too_many_elements, sizeof(shortcuts_head_too_many_elements),
+         2u,                                                                                                                                NULL, 0u, false, false, false, MADE_UP_MAX_NODES},
+    };
+    const uint32_t kept[] = {1u, 0u, 1u, 0u, 1u, 1u, 1u, 0u};
+    uint32_t data_kept = 0u;
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+    {
+        ShortcutsTaken_t taken;
+
         kernel_test_check(test, shortcuts_agree(test, &cases[index], &taken) && taken.data_kept == kept[index],
                           cases[index].claim);
         data_kept += taken.data_kept;
