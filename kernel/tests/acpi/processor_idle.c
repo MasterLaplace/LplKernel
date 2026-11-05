@@ -130,6 +130,8 @@ static void idle_close(KernelTest_t *test)
 /**
  * @brief Appends ResourceTemplate () { Register (...) } for @p entry, as the Buffer of 17 bytes iasl
  *        writes: the Generic Register descriptor, then the End Tag.
+ *
+ * Its Buffer opcode and descriptor are raw bytes: a partial term around the fields of @p entry, which the test gives.
  */
 static void idle_register(MadeUpAml_t *aml, const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *entry)
 {
@@ -185,6 +187,8 @@ static void idle_states(MadeUpAml_t *aml, uint64_t count, const IdleState_t *sta
 
 /**
  * @brief Appends Name (@p name, ...) and the term at @p aml's end comes after it: Name's opcode and NameSeg.
+ *
+ * Its Name opcode is raw bytes: a partial term the term after it closes.
  */
 static void idle_name(MadeUpAml_t *aml, const char *name)
 {
@@ -213,6 +217,8 @@ static void idle_processor(const char *name, uint8_t identifier, const MadeUpAml
 
 /**
  * @brief Appends Device (@p name) { Name (_HID, @p hardware), Name (_UID, @p unique), @p body } to @p aml.
+ *
+ * Its _HID's String opcode and terminator are raw bytes: a partial term around @p hardware, which the test gives.
  */
 static void idle_device(MadeUpAml_t *aml, const char *name, const char *hardware, uint64_t unique,
                         const MadeUpAml_t *body)
@@ -437,6 +443,8 @@ static void idle_returning(const char *name, uint8_t identifier, const uint8_t *
 
 /**
  * @brief Appends a Buffer of the @p length bytes at @p bytes.
+ *
+ * Its Buffer opcode is raw bytes: a partial term around @p bytes, which the test gives.
  */
 static void idle_buffer_of(MadeUpAml_t *aml, const uint8_t *bytes, uint32_t length)
 {
