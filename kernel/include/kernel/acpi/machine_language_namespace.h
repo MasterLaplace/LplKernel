@@ -16,9 +16,9 @@
  * @brief The ACPI namespace: a node arena and one hash keyed by parent and NameSeg.
  *
  * Layer L2 of the specification (docs/acpi/specification.md, §3.4 and §5.1). Nodes are 40 bytes,
- * hold no pointer, and link to each other by index, index 0 meaning none; they live in runs of
- * pages the host gives. A lookup is one probe sequence in an open-addressing table, never a scan
- * of siblings.
+ * hold no pointer, and link to each other by index, index 0 meaning none; they live in one array
+ * the host reserves, committed a run of pages at a time. A lookup is one probe sequence in an
+ * open-addressing table, never a scan of siblings.
  *
  * @author @MasterLaplace
  * @version 0.0.0
