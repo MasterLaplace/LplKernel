@@ -1955,19 +1955,21 @@ KERNEL_TEST(processors_mutexes_and_identity_keep_their_fields)
 }
 
 /**
- * @brief An If and a Store at table level are code the interpreter would run, counted; a declaration,
+ * @brief An If, a Store and a name at table level are code the interpreter would run, counted; a declaration,
  *        Noop and orphan data are not.
  */
 KERNEL_TEST(table_level_code_is_counted)
 {
     static const uint8_t aml[] = {
-        0xA0u, 0x08u, 0x01u, 0x08u, 'N', '1', '_', '_', 0x01u, 0x70u, 0x01u, 'N', '1', '_', '_', 0xA3u, 0x00u,
+        0xA0u, 0x08u, 0x01u, 0x08u, 'N',   '1',   '_', '_', 0x01u, 0x70u, 0x01u,
+        'N',   '1',   '_',   '_',   0xA3u, 0x00u, 'N', '1', '_',   '_',
     };
 
     if (!made_up_load_one(test, aml, sizeof(aml)))
         return;
     kernel_test_measure(test, "table_level_code", made_up_load.table_level_code);
-    kernel_test_check(test, made_up_load.table_level_code == 2u, "the If and the Store are counted, nothing else");
+    kernel_test_check(test, made_up_load.table_level_code == 3u,
+                      "the If, the Store and the name are counted, nothing else");
     made_up_close(test);
 }
 
