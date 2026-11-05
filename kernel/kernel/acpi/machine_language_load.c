@@ -1912,7 +1912,7 @@ static bool machine_language_check_data(AdvancedConfigurationAndPowerInterfaceMa
  *        count a literal constant, a VarPackage within the 4,096 elements and a Buffer within the 64 KiB of §6.1, where
  *        the walk has room for every package it could nest and the node's parent is the scope its names are read in.
  *        Every load keeps it, with its shortcuts or without: its elements are neither checked nor built, until a name
- *        resolution reaches it (C4), and the decoding pass of a debug kernel and of the host tools checks them. The
+ *        resolution reaches it (C4), and a debug kernel and the host tools check them once the bodies are decoded. The
  *        node takes the object's type, and its place in the table as its value, and the walk goes on past it.
  *
  * @return Whether it kept the object.
@@ -1944,6 +1944,7 @@ static bool machine_language_keeps_data(MachineLanguageWalk_t *walk, uint32_t in
     node->value.handle = 0u;
     node->value.payload = offset;
     ++load->data_kept;
+    ++load->tables[walk->table].data_kept;
     walk->pc = after;
     return true;
 }
@@ -2999,22 +3000,34 @@ static void machine_language_check_kept(AdvancedConfigurationAndPowerInterfaceMa
 
 /**
  * @brief Checks, once the decoding pass has decoded the load's tables from @p first to before @p end, each Package and
- *        VarPackage a Name keeps in one of them (O20), over the namespace's nodes in index order, whatever fault the
- *        decoding met: a crossing PkgLength that abandons a table hides none of its kept data. A Buffer, whose head is
- *        all its check, is left alone.
+ *        VarPackage a Name keeps in one of them (O20), over the namespace's nodes, whatever fault the decoding met: a
+ *        crossing PkgLength that abandons a table hides none of its kept data. A Buffer, whose head is all its check,
+ *        is left alone.
+ *
+ * @details The nodes are read from the last, where a table just declared puts its own, and the reading stops once it
+ *          has met as many kept objects of those tables as their declarations kept: none when they kept nothing. A
+ *          node a freed one gave back to a later declaration may stand anywhere, and one a read has built since is no
+ *          longer kept; either way the count is not reached early, and every node is read.
  */
 static void machine_language_check_kept_data(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                              uint32_t first, uint32_t end)
 {
-    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT + 1u;
-         index < load->space.node_count; ++index)
+    uint32_t kept = 0u;
+
+    for (uint32_t table = first; table < end; ++table)
+        kept += load->tables[table].data_kept;
+    for (uint32_t index = load->space.node_count - 1u;
+         kept != 0u && index > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT; --index)
     {
         const MachineLanguageNode_t *node =
             advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
 
-        if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) == 0u &&
-            node->value.kind == MACHINE_LANGUAGE_VALUE(KEPT_DATA) && node->type == MACHINE_LANGUAGE_NODE(PACKAGE) &&
-            node->value.auxiliary > first && node->value.auxiliary <= end)
+        if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) != 0u ||
+            node->value.kind != MACHINE_LANGUAGE_VALUE(KEPT_DATA) || node->value.auxiliary <= first ||
+            node->value.auxiliary > end)
+            continue;
+        --kept;
+        if (node->type == MACHINE_LANGUAGE_NODE(PACKAGE))
             machine_language_check_kept(load, node);
     }
 }

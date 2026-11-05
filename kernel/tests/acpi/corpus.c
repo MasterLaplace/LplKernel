@@ -164,8 +164,8 @@ static void corpus_measure_load(KernelTest_t *test)
 /**
  * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
  *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform never switched to ACPI mode,
- *        as the host harness does, and prints what it ran and counted, the tables Load added included, and
- *        the fold of the C-states it published.
+ *        as the host harness does, and prints what it ran and counted, the tables Load added included, the
+ *        kept data found faulty by the check and by the reads (O20), and the fold of the C-states it published.
  */
 static void corpus_initialize(KernelTest_t *test)
 {
@@ -202,6 +202,8 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure(test, "tables_loaded", corpus_load.tables_loaded);
     kernel_test_measure(test, "load_duplicates", corpus_load.load_duplicates);
     kernel_test_measure(test, "table_bytes_copied", corpus_load.table_bytes_copied);
+    kernel_test_measure(test, "data_faults", corpus_load.data_faults);
+    kernel_test_measure(test, "data_faults_read", corpus_load.data_faults_read);
     kernel_test_measure(test, "idle_control", initialization.idle_control);
     kernel_test_measure(test, "processor_idle", initialization.processor_idle);
     kernel_test_measure(test, "processor_idle_failed", initialization.processor_idle_failed);

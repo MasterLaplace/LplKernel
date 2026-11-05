@@ -89,6 +89,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
     uint8_t origin;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_* origin. */
     uint16_t pages;              /**< Pages of the namespace arena its copy takes, 0 for a table read in place. */
     uint32_t terms;              /**< Opcodes the decoding pass decoded. */
+    uint32_t data_kept;          /**< Data objects of a Name its declaration kept in it (O20). */
     uint32_t decode_errors;      /**< Faults the decoding pass met. */
     uint32_t first_error_offset; /**< Offset of the first fault's term, in the table. */
     uint16_t first_error_opcode; /**< The descriptor of the first fault's term, or the invalid one. */
@@ -199,9 +200,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;     /**< The first of them. */
     uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
-    uint32_t data_faults;         /**< Data objects kept in their table (O20) that the decoding pass found would not
-                                       build, a fault in their bytes or a term that needs the interpreter. */
-    uint32_t data_named_sizes;    /**< Data objects kept in their table (O20) that the decoding pass found hold a
+    uint32_t data_faults;         /**< Data objects kept in their table (O20) that the check run once the bodies are
+                                       decoded found would not build, a fault in their bytes or a term that needs the
+                                       interpreter; one code read before that check is counted at that read. */
+    uint32_t data_named_sizes;    /**< Data objects kept in their table (O20) that the same check found hold a
                                        Buffer or a VarPackage whose size or count a name gives: their first read
                                        reads that name, where a load that built them read it as it declared them. */
     uint32_t declared_not_run;    /**< Declarations made in a branch whose predicate failed, without running its
@@ -217,8 +219,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t pending_peak;        /**< Most operators pending at once. */
     uint32_t blocks_peak;         /**< Most constructs open at once. */
     uint32_t values_deferred;     /**< Declarations whose object needs the interpreter: a Name, a region or a
-                                       buffer field built from an expression, and each unit of a BankField whose
-                                       BankValue is one. */
+                                       buffer field built from an expression, each unit of a BankField whose
+                                       BankValue is one, and each data object kept in its table (O20) whose first
+                                       read met such a term. */
     uint32_t table_level_code;    /**< Statements at table level that are neither declarations nor data. */
     uint32_t
         opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes the decoding
