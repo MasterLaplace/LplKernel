@@ -838,7 +838,12 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | `Connection` or a `BufferAcc` protocol on an unsupported space | same | same |
 
 "Loudly" means one log line naming the table, the offset, the opcode and the method path; the counter on the
-`[LPLTLM] acpi` boot line; and a typed error to the caller. Never a panic, never a silent no-op.
+`[LPLTLM] acpi` boot line; and a typed error to the caller. Never a panic, never a silent no-op. The line is
+`<counter> table=<signature>/<OEM table ID> offset=0x<8 digits> opcode=<name> method=<path>`, `scope=<path>` for
+table-level code, at the level `error`, for every fault an evaluation or a load meets, those of §6.2 included. Its term
+is the one that failed: the operator whose run failed, at its opcode, not past its operands; a name, at its first
+character. A fault met again is logged once: the declaration pass that steps over a statement that failed meets its
+fault again, and the decoding pass meets those of table-level code the declaration pass met.
 
 ---
 

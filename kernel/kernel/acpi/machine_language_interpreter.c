@@ -1625,15 +1625,20 @@ static void machine_language_count_failure(MachineLanguageEvaluation_t *evaluati
 
 /**
  * @brief Takes the back-edge of a While of a table's code at load, whose body @p block was, the running
- *        frame's pc at its predicate: once the table's budget is spent (§6.1), the failure is counted and
+ *        frame's pc at its predicate: once the table's budget is spent (§6.1), the failure is counted, logged, and
  *        the code goes on past the While instead.
  */
-static MachineLanguageStatus_t machine_language_take_table_back_edge(MachineLanguageEvaluation_t *evaluation,
+static MachineLanguageStatus_t machine_language_take_table_back_edge(MachineLanguageLoad_t *load,
                                                                      const MachineLanguageBlock_t *block)
 {
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
     if (machine_language_count_iteration(evaluation) == MACHINE_LANGUAGE_OK)
         return MACHINE_LANGUAGE_OK;
     machine_language_count_failure(evaluation, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS));
+    advanced_configuration_and_power_interface_machine_language_log_fault(
+        load, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS), machine_language_frame(evaluation)->table, block->start,
+        0u, block->scope);
     machine_language_frame(evaluation)->pc = block->end;
     return MACHINE_LANGUAGE_OK;
 }
@@ -1792,7 +1797,7 @@ static inline MachineLanguageStatus_t machine_language_close_block(MachineLangua
         return load->predecodes_loops ? machine_language_loop_again(load, &block) :
                                         machine_language_restart_while(evaluation, &block);
     frame->pc = block.start;
-    return machine_language_take_table_back_edge(evaluation, &block);
+    return machine_language_take_table_back_edge(load, &block);
 }
 
 /**
@@ -2148,6 +2153,16 @@ static MachineLanguageStatus_t machine_language_wait_for_attach(MachineLanguageL
 }
 
 /**
+ * @brief Keeps where the term whose run failed starts, for the line that logs the failure (§4.5): an operator, whose
+ *        operands the pc has passed, or a name, which the pc has passed before it is resolved.
+ */
+static void machine_language_keep_failed_term(MachineLanguageEvaluation_t *evaluation, uint32_t start)
+{
+    evaluation->failed_term_start = start;
+    evaluation->term_failed = true;
+}
+
+/**
  * @brief Runs a NameString read where @p kind is expected: a method is called, unless the operand is
  *        a SimpleName; a target position names the object; anywhere else the object gives its value.
  *        The SimpleName of a CondRefOf that names nothing, or only an External, gives a missing target.
@@ -2155,7 +2170,7 @@ static MachineLanguageStatus_t machine_language_wait_for_attach(MachineLanguageL
  *        for its internal frame and runs again after it. Kept data is built here, on the node already
  *        found, not through machine_language_reach, whose second lookup of the node every name term would pay.
  */
-static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t *load, uint32_t kind)
+static MachineLanguageStatus_t machine_language_run_name_term(MachineLanguageLoad_t *load, uint32_t kind)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
@@ -2226,6 +2241,20 @@ static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t 
         return machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_NODE, index));
     status = machine_language_read_node(load, index, &value);
     return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, value) : status;
+}
+
+/**
+ * @brief Runs a NameString read where @p kind is expected, as machine_language_run_name_term does; one whose run
+ *        fails is kept for the line that logs the failure, which names the name rather than the term after it.
+ */
+static MachineLanguageStatus_t machine_language_name_term(MachineLanguageLoad_t *load, uint32_t kind)
+{
+    const uint32_t start = machine_language_frame(&load->evaluation)->pc;
+    const MachineLanguageStatus_t status = machine_language_run_name_term(load, kind);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        machine_language_keep_failed_term(&load->evaluation, start);
+    return status;
 }
 
 /**
@@ -2424,6 +2453,8 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
     if (status != MACHINE_LANGUAGE_STATUS(LIMIT_BLOCKS) || !frame->declares)
         return status;
     advanced_configuration_and_power_interface_machine_language_count_load_error(load, status);
+    advanced_configuration_and_power_interface_machine_language_log_fault(load, status, frame->table, start, 0u,
+                                                                          machine_language_block(evaluation)->scope);
     frame->pc = end;
     frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
     return MACHINE_LANGUAGE_OK;
@@ -4171,7 +4202,7 @@ static MachineLanguageStatus_t machine_language_leave_table_loop(MachineLanguage
         evaluation->operator_count = block.pending_base;
         evaluation->block_count = index - 1u;
         frame->pc = again ? block.start : block.end;
-        return again ? machine_language_take_table_back_edge(evaluation, &block) : MACHINE_LANGUAGE_OK;
+        return again ? machine_language_take_table_back_edge(load, &block) : MACHINE_LANGUAGE_OK;
     }
     return MACHINE_LANGUAGE_OK;
 }
@@ -4221,8 +4252,8 @@ static MachineLanguageStatus_t machine_language_table_statement(MachineLanguageL
 /**
  * @brief Runs the active operator once its operands are on the stack.
  */
-static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *load,
-                                                        const MachineLanguagePendingOperator_t *active)
+static MachineLanguageStatus_t machine_language_run_operator(MachineLanguageLoad_t *load,
+                                                             const MachineLanguagePendingOperator_t *active)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const MachineLanguagePendingOperator_t operator_ = *active;
@@ -4309,6 +4340,21 @@ static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *l
     case MACHINE_LANGUAGE_OPCODE(LOAD_TABLE): return machine_language_load_table_operator(load);
     default: return machine_language_compute(load, operator_.opcode);
     }
+}
+
+/**
+ * @brief Runs the active operator once its operands are on the stack; one whose run fails is kept for the line that
+ *        logs the failure (§4.5), which names it rather than the term after its operands.
+ */
+static MachineLanguageStatus_t machine_language_execute(MachineLanguageLoad_t *load,
+                                                        const MachineLanguagePendingOperator_t *active)
+{
+    const uint32_t start = active->start;
+    const MachineLanguageStatus_t status = machine_language_run_operator(load, active);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        machine_language_keep_failed_term(&load->evaluation, start);
+    return status;
 }
 
 /**
@@ -5144,13 +5190,33 @@ static MachineLanguageStatus_t machine_language_fail_internal(MachineLanguageLoa
 }
 
 /**
+ * @brief Logs the failure the innermost frame met as an error (§4.5): at the operator or the name whose run failed, or
+ *        at the term its pc decodes, in its method, or in the scope of its table-level code; the failure stays the one
+ *        logged while the evaluation goes past it.
+ */
+static void machine_language_log_failure(MachineLanguageLoad_t *load, MachineLanguageStatus_t status)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const MachineLanguageFrame_t *frame =
+        &evaluation->frames[(evaluation->frame_count != 0u) ? evaluation->frame_count - 1u : 0u];
+
+    evaluation->logged_fault_table = (evaluation->frame_count != 0u) ? frame->table : 0u;
+    evaluation->logged_fault_offset = evaluation->term_failed ? evaluation->failed_term_start : frame->pc;
+    evaluation->term_failed = false;
+    advanced_configuration_and_power_interface_machine_language_log_fault(
+        load, status, evaluation->logged_fault_table, evaluation->logged_fault_offset, frame->method,
+        (evaluation->block_count != 0u) ? machine_language_block(evaluation)->scope :
+                                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT);
+}
+
+/**
  * @brief Goes on past a failure met above frame @p base, at the innermost of what takes it: an internal operator,
  *        unless the evaluation ran out of something, then, when the operator cannot take it either, or there is
  *        none, the frame of a table's code, which goes on past its statement (§3.6), or drops itself, counted,
  *        when it cannot; with neither, the failure stands.
  */
-static MachineLanguageStatus_t machine_language_take_failure(MachineLanguageLoad_t *load, uint32_t base,
-                                                             MachineLanguageStatus_t status)
+static MachineLanguageStatus_t machine_language_go_past_failure(MachineLanguageLoad_t *load, uint32_t base,
+                                                                MachineLanguageStatus_t status)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     uint32_t table = evaluation->frame_count;
@@ -5175,6 +5241,18 @@ static MachineLanguageStatus_t machine_language_take_failure(MachineLanguageLoad
         machine_language_drop_frame(load);
     machine_language_count_failure(evaluation, status);
     return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Logs a failure met above frame @p base, then goes past it as machine_language_go_past_failure does.
+ */
+static MachineLanguageStatus_t machine_language_take_failure(MachineLanguageLoad_t *load, uint32_t base,
+                                                             MachineLanguageStatus_t status)
+{
+    machine_language_log_failure(load, status);
+    status = machine_language_go_past_failure(load, base, status);
+    load->evaluation.logged_fault_table = 0u;
+    return status;
 }
 
 /**
