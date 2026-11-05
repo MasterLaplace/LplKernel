@@ -42,8 +42,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_directory, KERNEL_T
 #define MADE_UP_FIRMWARE_FADT_PM1A_CONTROL              64u            /**< Offset of a FADT's PM1a_CNT_BLK field. */
 #define MADE_UP_FIRMWARE_FADT_FLAGS                     112u           /**< Offset of a FADT's Flags field. */
 #define MADE_UP_FIRMWARE_FADT_EXTENDED_PM1B_CONTROL     184u           /**< Offset of a FADT's X_PM1b_CNT_BLK field. */
-#define MADE_UP_FIRMWARE_RSDP_VERSION_1                 20u  /**< Bytes the first checksum of a root pointer covers. */
-#define MADE_UP_FIRMWARE_SELF_ADDRESS                   8u   /**< Where SELF's region address lies in its AML. */
+#define MADE_UP_FIRMWARE_RSDP_VERSION_1                 20u /**< Bytes the first checksum of a root pointer covers. */
+#define MADE_UP_FIRMWARE_PLACEHOLDER                    0x12345678u /**< The region base an .asl leaves to write. */
+#define MADE_UP_FIRMWARE_SELF_ADDRESS                   8u          /**< Where SELF's region address lies in its AML. */
 #define MADE_UP_FIRMWARE_OTHER_ADDRESS                  35u  /**< Where the address of the region over TSTA lies. */
 #define MADE_UP_FIRMWARE_SELF_BOUND                     75u  /**< Where the bound of SELF's While lies in its AML. */
 #define MADE_UP_FIRMWARE_LATCH_BOUND                    81u  /**< Where it lies once the DSDT writes OTHR first. */
@@ -366,16 +367,39 @@ static void made_up_firmware_write_through(void *context, void *address, uint64_
 }
 
 /**
+ * @brief Whether each place of @p table where the test writes a region's address holds the placeholder its .asl
+ *        gives, so that a table whose layout drifted from the places its test names is refused, not patched.
+ */
+static bool made_up_firmware_places_hold_placeholders(const MadeUpWriteTable_t *table)
+{
+    for (uint32_t index = 0u; index < table->count; ++index)
+    {
+        uint32_t word = 0u;
+
+        if (table->places[index] + sizeof(word) > table->length)
+            return false;
+        memcpy(&word, table->aml + table->places[index], sizeof(word));
+        if (word != MADE_UP_FIRMWARE_PLACEHOLDER)
+            return false;
+    }
+    return true;
+}
+
+/**
  * @brief Writes the made-up firmware with @p table as its DSDT, served through a host whose writes go through to
  *        the page when @p through holds, reads its directory, then loads it, records on when @p predecodes holds.
  *
- * @return false, the host closed, when the directory is not read or the namespace does not open.
+ * @return false, the host closed, when the directory is not read or the namespace does not open; false when a place
+ *         the test writes an address at does not hold the placeholder.
  */
 static bool made_up_firmware_load_writes(KernelTest_t *test, const MadeUpWriteTable_t *table, bool through,
                                          bool predecodes)
 {
     MadeUpFirmware_t firmware;
 
+    if (!kernel_test_check(test, made_up_firmware_places_hold_placeholders(table),
+                           "every place the test writes a region's address at holds the placeholder 0x12345678"))
+        return false;
     made_up_firmware_open(&firmware);
     made_up_firmware_host_write = made_up_firmware_host.host.write_memory;
     if (through)
@@ -684,6 +708,8 @@ KERNEL_TEST(a_host_without_a_root_pointer_below_4_gib_gives_no_directory)
 /**
  * @brief The directory takes the PM1a and PM1b control ports from the FADT, a 32-bit block when it is
  *        set, else an extended block in the I/O space, and reads the hardware-reduced flag.
+ *
+ * Its generic addresses are FADT bytes, not AML.
  */
 KERNEL_TEST(the_power_management_control_ports_and_the_hardware_reduced_flag_are_read)
 {

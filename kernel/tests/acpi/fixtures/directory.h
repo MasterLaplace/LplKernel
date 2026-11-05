@@ -87,7 +87,7 @@ static const uint8_t made_up_firmware_evict_aml[] = {
 
 /**
  * @brief The DSDT of made_up_firmware_index_target's kind whose MAIN runs `Local0 = 0; Local1 = 0; While (Local0 < 4)
- *        { Local5 = IDXA; Local1 += IDXB + VALA; Local0++ }; Return (Local1)`, IDXI on the last character of VALA,
+ *        { Local5 = IDXA; Local1 = IDXB + VALA; Local0++ }; Return (Local1)`, IDXI on the last character of VALA,
  *        which the index turns into VALB.
  */
 static const uint8_t made_up_firmware_index_name_aml[] = {

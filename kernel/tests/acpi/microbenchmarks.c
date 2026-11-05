@@ -208,7 +208,7 @@ static void microbenchmark_put_declaration(MicrobenchmarkAml_t *aml, Microbenchm
     static const uint8_t buffer[] = {0x11u, 0x10u, 0x0Au, 0x0Du, 0x47u, 0x01u, 0x60u, 0x00u, 0x60u,
                                      0x00u, 0x01u, 0x01u, 0x22u, 0x02u, 0x00u, 0x79u, 0x00u};
     static const uint8_t method[] = {0x14u, 0x08u};
-    static const uint8_t method_body[] = {0x01u, 0xA4u, 0x68u};
+    static const uint8_t method_flags = 0x01u;
     static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u};
     static const uint8_t scope[] = {0x10u, 0x0Cu, '\\', '_', 'S', 'B', '_', 0x08u};
     static const uint8_t region[] = {0x5Bu, 0x80u};
@@ -236,7 +236,8 @@ static void microbenchmark_put_declaration(MicrobenchmarkAml_t *aml, Microbenchm
     case MICROBENCHMARK_METHODS:
         microbenchmark_put(aml, method, sizeof(method));
         microbenchmark_put_segment(aml, 'M', index);
-        microbenchmark_put(aml, method_body, sizeof(method_body));
+        microbenchmark_put(aml, &method_flags, 1u);
+        microbenchmark_put(aml, microbenchmark_return_arg0_aml, sizeof(microbenchmark_return_arg0_aml));
         return;
     case MICROBENCHMARK_DEVICES:
         microbenchmark_put(aml, device, sizeof(device));

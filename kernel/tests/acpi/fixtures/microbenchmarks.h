@@ -74,4 +74,12 @@ static const uint8_t microbenchmark_polling_aml[] = {
     0x61u, 0x0Au, 0x10u, 0xA5u, 0x76u, 0x62u, 0x75u, 0x60u, 0xA4u, 0x72u, 0x60u, 0x62u, 0x00u,
 };
 
+/**
+ * @brief Return (Arg0): the body of each method of a declaration load, after its flags.
+ */
+static const uint8_t microbenchmark_return_arg0_aml[] = {
+    0xA4u,
+    0x68u,
+};
+
 #endif /* KERNEL_TESTS_ACPI_FIXTURES_MICROBENCHMARKS_H */
