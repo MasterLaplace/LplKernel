@@ -7,7 +7,9 @@ Usage: tools/instructions.sh [options] <kernel>
 
 Counts what <kernel> executes under QEMU's TCG: instructions, memory loads and memory stores,
 in total and per function. The run uses -icount, so virtual time follows the instruction count
-and two runs of the same image count the same numbers, on any machine, unlike a clock.
+and two runs of the same image count the same numbers, on any machine, unlike a clock. QEMU puts
+the kernel's file name at the head of the command line, which the kernel reads through, so <kernel>
+boots alone as a copy named kernel/lpl.kernel: the path it was given does not move the counts.
 
   --test NAME     count one test declared with LPL_TEST: from its body to the line that reports it
   --from SYMBOL   start counting the first time SYMBOL runs (default: from the first instruction)
@@ -23,9 +25,7 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --until TEXT    without --from or --inside, stop when the serial output prints TEXT
                   (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
-  --append TEXT   kernel command line, after the kernel's name: QEMU puts that name at its head, and
-                  the kernel reads through it, so <kernel> boots as kernel/lpl.kernel, a copy in the
-                  run's directory, whatever its path: the length of that path does not move the counts
+  --append TEXT   kernel command line, after the kernel's name, kernel/lpl.kernel
   --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), named by its file
                   name alone, which the kernel reads up to 255 characters: a recorded machine of the
                   ACPI corpus, which tools/acpi-corpus.sh module <machine> writes, is found by its .acpi
