@@ -224,6 +224,92 @@ KERNEL_TEST(a_table_load_adds_while_bodies_are_skipped_is_declared_undecoded)
 }
 
 /**
+ * @brief The data a table Load adds keeps in its table (O20) is checked once that table is decoded, as the boot's
+ *        tables' are: `Name (PKFL, Package (1) {...})`, which holds the byte 0x02, which starts no data object, is
+ *        kept and counted in data_faults, once, the DSDT's own `Name (PKBT, Package (1) {...})` of the same byte not
+ *        counted again; a load that skips bodies, as a release kernel's (O2, §3.6), keeps it and counts nothing. The
+ *        DSDT's method TMPM declares two Names, whose nodes the decoding pass of its body gives back, so that PKFL
+ *        stands on a node given back, below the nodes the load held before the Load.
+ */
+KERNEL_TEST(a_table_load_adds_has_its_kept_data_checked_once_decoded)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t faulty[] = {0x08u, 'P', 'K', 'F', 'L', 0x12u, 0x03u, 0x01u, 0x02u};
+    static const uint8_t faulty_at_boot[] = {0x08u, 'P', 'K', 'B', 'T', 0x12u, 0x03u, 0x01u, 0x02u};
+    static const uint8_t temporaries[] = {0x08u, 'T', 'M', 'P', '1', 0x01u, 0x08u, 'T', 'M', 'P', '2', 0x01u};
+    uint32_t reused[2] = {0u, 0u};
+    uint32_t counted[2] = {0u, 0u};
+    uint32_t kept[2] = {0u, 0u};
+
+    for (uint32_t skips = 0u; skips < 2u; ++skips)
+    {
+        load_begin();
+        made_up_aml_raw(&load_loaded, faulty, sizeof(faulty));
+        load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+        load_method(&load_aml, "LDIT", loads, sizeof(loads));
+        made_up_aml_raw(&load_aml, faulty_at_boot, sizeof(faulty_at_boot));
+        load_method(&load_aml, "TMPM", temporaries, sizeof(temporaries));
+        if (!load_run(test))
+            return;
+        kernel_test_check(test, load_load.data_faults == 1u, "the boot's decoding pass counts PKBT");
+        load_load.skips_bodies = skips != 0u;
+
+        const uint32_t faults = load_load.data_faults;
+        const uint32_t data_kept = load_load.data_kept;
+        const uint32_t nodes = load_load.space.node_count;
+        uint32_t pkfl = 0u;
+
+        kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
+                          "LDIT loads the table");
+        counted[skips] = load_load.data_faults - faults;
+        kept[skips] = load_load.data_kept - data_kept;
+        pkfl = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+            &load_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+            advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "PKFL", 0u));
+        reused[skips] = (pkfl != 0u && pkfl < nodes) ? 1u : 0u;
+        load_close(test);
+    }
+    kernel_test_check(test, kept[0] == 1u && kept[1] == 1u && reused[0] == 1u && reused[1] == 1u,
+                      "the loaded table keeps PKFL either way, on a node the decoding pass gave back");
+    kernel_test_check(test, counted[0] == 1u && counted[1] == 0u,
+                      "decoding the loaded table counts PKFL in data_faults; skipping its bodies counts nothing");
+    kernel_test_measure(test, "data_faults", counted[0]);
+}
+
+/**
+ * @brief A kept package that a loaded table's code reads before the check of kept data runs is counted at that read,
+ *        and the check counts the others (O20, §3.6): the table Load adds keeps PKFL and PKF2, each of the byte 0x02,
+ *        which starts no data object, and PKOK, `Package (1) {One}`, then runs `If (LEqual (SizeOf (PKFL), One)) {}`;
+ *        data_faults_read rises by 1, for PKFL, data_faults by 1, for PKF2, and the three are kept.
+ */
+KERNEL_TEST(a_kept_package_a_loaded_table_reads_first_is_counted_at_that_read)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t code[] = {0x08u, 'P',   'K',   'F',   'L',   0x12u, 0x03u, 0x01u, 0x02u, 0x08u, 'P', 'K',
+                                   'F',   '2',   0x12u, 0x03u, 0x01u, 0x02u, 0x08u, 'P',   'K',   'O',   'K', 0x12u,
+                                   0x03u, 0x01u, 0x01u, 0xA0u, 0x08u, 0x93u, 0x87u, 'P',   'K',   'F',   'L', 0x01u};
+
+    load_begin();
+    made_up_aml_raw(&load_loaded, code, sizeof(code));
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    load_method(&load_aml, "LDIT", loads, sizeof(loads));
+    if (!load_run(test))
+        return;
+
+    const uint32_t kept = load_load.data_kept;
+    const uint32_t faults = load_load.data_faults;
+    const uint32_t faults_read = load_load.data_faults_read;
+
+    kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_load.table_count == 2u,
+                      "LDIT loads the table");
+    kernel_test_check(test,
+                      load_load.data_kept - kept == 3u && load_load.data_faults_read - faults_read == 1u &&
+                          load_load.data_faults - faults == 1u,
+                      "the read counts PKFL, the check PKF2, once each");
+    load_close(test);
+}
+
+/**
  * @brief Load from a field unit reads the unit as a Buffer and loads the table it holds (§5.1).
  */
 KERNEL_TEST(a_load_from_a_field_reads_the_unit_as_a_buffer)

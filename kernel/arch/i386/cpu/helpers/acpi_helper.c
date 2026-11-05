@@ -282,6 +282,8 @@ static void acpi_helper_write_decoding_counts(const AdvancedConfigurationAndPowe
     kernel_telemetry_write_unsigned("name_references", load->name_references);
     kernel_telemetry_write_unsigned("unresolved_names", load->unresolved_names);
     kernel_telemetry_write_unsigned("decode_errors", load->decode_errors);
+    kernel_telemetry_write_unsigned("data_faults", load->data_faults);
+    kernel_telemetry_write_unsigned("data_named_sizes", load->data_named_sizes);
     kernel_telemetry_write_unsigned("table_level_code", load->table_level_code);
     kernel_telemetry_write_unsigned("undeclared_faults", load->undeclared_faults);
 }
@@ -429,6 +431,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("values_deferred", load->values_deferred);
     kernel_telemetry_write_unsigned("data_kept", load->data_kept);
     kernel_telemetry_write_unsigned("data_materialized", load->data_materialized);
+    kernel_telemetry_write_unsigned("data_faults_read", load->data_faults_read);
     kernel_telemetry_write_unsigned("table_level_runs", load->evaluation.runs);
     kernel_telemetry_write_unsigned("table_level_failures", load->evaluation.failures);
     kernel_telemetry_write_unsigned("declared_not_run", load->declared_not_run);

@@ -11,6 +11,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh idle [quick|corpus|full]
        tools/acpi-corpus.sh load [quick|corpus|full]
        tools/acpi-corpus.sh differential [quick|corpus|full] [<mutants>]
+       tools/acpi-corpus.sh kept [quick|corpus|full] [<mutants>]
        tools/acpi-corpus.sh predecoding [quick|corpus|full]
        tools/acpi-corpus.sh records-cost [corpus|full]
        tools/acpi-corpus.sh uacpi
@@ -32,7 +33,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
          from the report's decoded tables, and the opcodes and method calls its definition blocks
          decode with what tools/acpi/aml_census.py counts, once tools/acpi/check_census.py has
-         checked that census against hand-made tables; then
+         checked that census against hand-made tables, and fails on a data object a Name kept in its
+         table that the check of kept data finds would not build (`aml faults data_faults=`); then
          tools/acpi/check_against_iasl.py compares the census's declarations, table by table, with
          the report's iASL disassembly, and lists the tables where they differ. Once fetch acpica has
          built acpiexec, the FADT is also compared with the local FADT ACPICA builds from the same table,
@@ -66,12 +68,18 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
          `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
          namespace, the faults, the counts and the initialisation, the objects allocated and freed apart, which
-         data a Name keeps in its table until it is read moves by construction, the namespace's lookups and
-         probes apart, which the shortcuts save, and the kept data the builder of kept data built apart, which only
-         the shortcuts build; with <mutants>, also that many
+         the builder of kept data moves when it gives back what it built from bytes it then hands to the general
+         data decoder, the namespace's lookups and probes apart, which the shortcuts save, and the kept data the
+         builder of kept data built apart, which only the shortcuts build; with <mutants>, also that many
          copies of each machine whose DSDT and SSDTs have bytes changed at random (`--mutate`), each seeded by its
          number. A load that fails the same way both ways agrees, and is listed with the first line the harness
          wrote to stderr; a run where every load fails compares nothing, and fails
+  kept   loads each machine of a list, and <mutants> copies of each whose bytes `--mutate` changes, with
+         `test-acpi --read-kept --namespace`, which ends by building every data object the load still keeps in
+         its tables (specification §3.6, O20), and checks that the objects the check of kept data counted in
+         data_faults are those the builds leave Uninitialized or waiting: as many, on the same nodes (a signature
+         of their indices), every build possible (none the heap refused). A load where they differ fails, and so
+         does one that prints no `aml kept` line
   predecoding  initialises each machine of a list with `test-acpi --loaded` twice, the statements of the
          loops that loop run from records, then with `--predecoding off`, and compares every line the two
          print, the namespace and `aml run namespace` (lookups, probes and back-edges) included, but `aml
@@ -400,11 +408,11 @@ load_check() {
 
 # Loads each machine of the list $1 with the load's shortcuts and without (specification §3.6), and compares what
 # the namespace and the initialisation views print each way, the objects the heap allocated and freed apart, which the
-# data a Name keeps in its table (O20) moves by construction, what the harness writes to stderr, a sanitizer's report
-# included, its process numbers and addresses apart, and how it exits; with $2 mutants, also that many copies of each
-# machine whose DSDT and SSDTs have bytes changed at random, seeded by the copy's number. A load that fails the same way
-# both ways agrees, and is listed with the first line the harness wrote to stderr; a run where every load fails
-# compares nothing, and fails.
+# builder of kept data (C4) moves when it gives back what it built from bytes it then hands to the general data decoder,
+# what the harness writes to stderr, a sanitizer's report included, its process numbers and addresses apart, and how it
+# exits; with $2 mutants, also that many copies of each machine whose DSDT and SSDTs have bytes changed at random,
+# seeded by the copy's number. A load that fails the same way both ways agrees, and is listed with the first line the
+# harness wrote to stderr; a run where every load fails compares nothing, and fails.
 differential_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local mutants="${2:-0}" number=0 agree=0 failed=0 subject seed view differences stopped exit_shortcut exit_general
@@ -456,6 +464,44 @@ differential_check() {
     echo "# differential: $agree of $number loads agree with and without the load's shortcuts, $failed of them" \
         "failing the same way both ways"
     [[ "$number" -gt 0 && "$agree" -eq "$number" && "$failed" -lt "$number" ]]
+}
+
+# Loads each machine of the list $1, and $2 mutated copies of each, with `test-acpi --read-kept --namespace`, and checks
+# on each load that the check of kept data counted in data_faults exactly the kept objects the builds that end the view
+# leave unbuilt (O20): as many, on the same nodes, and that the heap refused none of the builds. Prints a line per load
+# that breaks it, then the totals.
+kept_check() {
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local mutants="${2:-0}" number=0 agree=0 subject seed line kept=0 faults=0 unbuilt=0 refused=0
+    local -a mutation fields
+    [[ "$mutants" =~ ^[0-9]+$ ]] || { usage >&2; exit 2; }
+    while IFS= read -r subject; do
+        for seed in $(seq 0 "$mutants"); do
+            number=$((number + 1))
+            mutation=()
+            [[ "$seed" -eq 0 ]] || mutation=(--mutate "$seed")
+            line="$("$HARNESS" "${mutation[@]}" --read-kept --namespace "$LINUXHW/$subject.bin" 2>/dev/null |
+                grep '^aml kept ')" || true
+            read -ra fields <<<"$(sed -nE 's/^aml kept data_kept=([0-9]+) data_faults=([0-9]+) data_faults_signature=(0x[0-9A-F]+) data_faults_read=[0-9]+ read=[0-9]+ unbuilt=([0-9]+) unbuilt_signature=(0x[0-9A-F]+) refused=([0-9]+)$/\1 \2 \3 \4 \5 \6/p' <<<"$line")"
+            if [[ "${#fields[@]}" -ne 6 ]]; then
+                echo "not ok $number $subject${mutation[*]:+ ${mutation[*]}}: no aml kept line"
+                continue
+            fi
+            kept=$((kept + fields[0]))
+            faults=$((faults + fields[1]))
+            unbuilt=$((unbuilt + fields[3]))
+            refused=$((refused + fields[5]))
+            if [[ "${fields[1]}" -ne "${fields[3]}" || "${fields[2]}" != "${fields[4]}" || "${fields[5]}" -ne 0 ]]; then
+                echo "not ok $number $subject${mutation[*]:+ ${mutation[*]}}: data_faults=${fields[1]}" \
+                    "signature ${fields[2]}, unbuilt=${fields[3]} signature ${fields[4]}, refused=${fields[5]}"
+                continue
+            fi
+            agree=$((agree + 1))
+        done
+    done < <(reports "$1")
+    echo "# kept data: $agree of $number loads flag the nodes their builds leave unbuilt; $kept kept, $faults" \
+        "counted by the check, $unbuilt left unbuilt, $refused builds the heap refused"
+    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
 }
 
 # Prints the sum of the counter $1 over the lines $2.
@@ -747,7 +793,7 @@ decoded() {
 
 # Compares the directory, the FADT and the MADT the kernel's code reads from each dump of the list $1 with the
 # expected ones, then says how many FADTs, registers, CPU slots, I/O APICs, overrides and NMI connections the
-# comparison held.
+# comparison held; fails on kept data the check of kept data finds would not build.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables census
@@ -815,8 +861,13 @@ $(python3 -I "$ROOT/tools/acpi/expected_machine_language.py" "$dump")" || true
     echo "# load: $(grep -o 'load_errors=[0-9]*' <<<"$faults" | cut -d= -f2 | paste -sd+ | bc) faults on" \
         "$(grep -c 'load_errors=[1-9]' <<<"$faults") machines; $(grep -o 'unresolved_names=[0-9]*' <<<"$faults" |
             cut -d= -f2 | paste -sd+ | bc) names that resolve to nothing"
+    echo "# kept data: $(total_of data_faults "$faults") objects that would not build, on" \
+        "$(grep -c ' data_faults=[1-9]' <<<"$faults") machines; $(total_of data_named_sizes "$faults") whose size a" \
+        "name gives, read at their first read"
     [[ "$(grep -c ' iasl \(agrees\|differs\|missing\) ' <<<"$disassembly")" -eq "$tables" ]] ||
         { echo "# iASL comparison: not every table was compared" >&2; return 1; }
+    [[ "$(total_of data_faults "$faults")" -eq 0 ]] ||
+        { echo "# kept data: an object that would not build waits for its first read" >&2; return 1; }
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]] &&
         [[ "$oracle" -eq 2 || "$(grep -c '^fadt acpica agrees' <<<"$acpica")" -eq "$number" ]]
 }
@@ -992,6 +1043,7 @@ case "${1:-}" in
     idle) known_list "${2:-corpus}"; idle_check "${2:-corpus}" ;;
     load) known_list "${2:-corpus}"; load_check "${2:-corpus}" ;;
     differential) known_list "${2:-corpus}"; differential_check "${2:-corpus}" "${3:-0}" ;;
+    kept) known_list "${2:-corpus}"; kept_check "${2:-corpus}" "${3:-0}" ;;
     predecoding) known_list "${2:-corpus}"; predecoding_check "${2:-corpus}" ;;
     records-cost)
         case "${2:-corpus}" in

@@ -72,8 +72,29 @@ typedef struct KeptDataBuilt {
     uint32_t live_objects;   /**< Objects the heap holds once every kept object is built or has failed. */
     uint32_t object_bytes;   /**< Bytes they take. */
     uint32_t fold;           /**< The namespace's fold then. */
+    uint32_t faults_read;    /**< Kept objects left Uninitialized for a fault in their bytes. */
+    uint32_t deferred;       /**< Objects that wait for the interpreter, kept ones left Uninitialized included. */
     uint32_t built_directly; /**< Kept objects the builder of kept data built (C4). */
 } KeptDataBuilt_t;
+
+/**
+ * @brief What a load found of the data it kept in its table (O20), with the load's shortcuts or without.
+ */
+typedef struct KeptDataVerdict {
+    uint32_t kept;    /**< Data objects the load kept in its table. */
+    uint32_t faults;  /**< Of those, the ones the check of kept data found would not build. */
+    uint32_t untyped; /**< Of those, the ones their first build left Uninitialized, for a fault or a term that needs
+                           the interpreter. */
+} KeptDataVerdict_t;
+
+/**
+ * @brief What a load counted of a data object kept in its table (O20), at load, in the decoding pass, then once built.
+ */
+typedef struct KeptDataChecked {
+    uint32_t kept;        /**< Data objects the load kept in its table. */
+    uint32_t faults;      /**< Of those, the ones the check of kept data found would not build. */
+    uint32_t faults_read; /**< Of those, the ones whose build found a fault, left Uninitialized. */
+} KeptDataChecked_t;
 
 /**
  * @brief `Name (PKGX, Package (1) {One})`, its One the table's last byte.
@@ -194,6 +215,151 @@ static uint32_t kept_data_fold_after(const uint8_t *aml, uint32_t length, KeptDa
     advanced_configuration_and_power_interface_simulated_host_close(&host);
     free(copy);
     return fold;
+}
+
+/**
+ * @brief Loads the definition block @p aml from a copy of exactly its size, so that the address sanitizer catches a
+ *        read past its end, decodes its bodies as the debug kernel and the host tools do, then builds every data object
+ *        it kept in its table, as a name resolution reaching it would; @p out_checked receives what it counted.
+ *
+ * @return Whether the copy could be made.
+ */
+static bool kept_data_check_then_build(const uint8_t *aml, uint32_t length, KeptDataChecked_t *out_checked)
+{
+    uint8_t *copy = malloc(MADE_UP_TABLE_HEADER + length);
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+
+    memset(out_checked, 0, sizeof(*out_checked));
+    if (copy == NULL)
+        return false;
+    advanced_configuration_and_power_interface_simulated_host_open(&host);
+    advanced_configuration_and_power_interface_machine_language_open(&load, &host.host, MADE_UP_MAX_NODES,
+                                                                     MADE_UP_MAX_ARENA_BYTES);
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &load, made_up_definition_block(copy, "DSDT", 2u, aml, length));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         index < load.space.node_count; ++index)
+        (void) advanced_configuration_and_power_interface_machine_language_materialize(&load, index);
+    out_checked->kept = load.data_kept;
+    out_checked->faults = load.data_faults;
+    out_checked->faults_read = load.data_faults_read;
+    advanced_configuration_and_power_interface_machine_language_close(&load);
+    advanced_configuration_and_power_interface_simulated_host_close(&host);
+    free(copy);
+    return true;
+}
+
+/**
+ * @brief `Name (BUF0, Buffer (4) {1, 2})`, whose PkgLength, at offset 6, a rewrite makes cross the table's end.
+ */
+static const uint8_t kept_data_buffer_for_field[] = {0x08u, 'B',   'U',   'F',   '0',  0x11u,
+                                                     0x05u, 0x0Au, 0x04u, 0x01u, 0x02u};
+
+/**
+ * @brief `CreateByteField (BUF0, Zero, BYT0)` at table level, then `Name (LAST, One)`.
+ */
+static const uint8_t kept_data_field_over_buffer[] = {0x8Cu, 'B', 'U',   'F', '0', 0x00u, 'B', 'Y',
+                                                      'T',   '0', 0x08u, 'L', 'A', 'S',   'T', 0x01u};
+
+/**
+ * @brief `Name (CNT_, 4)`, then `Name (PALL, Package (15) {...})` of every kind of element a kept package holds: Zero,
+ *        One, Ones, a byte, a word, a double word and a quad word, the NameSeg ABCD, `\XYZ_`, the String "hi",
+ *        `Buffer (2) {1, 2, 3}`, `Buffer (CNT_) {}`, `Package (1) {One}`, `VarPackage (2) {One}` and
+ *        `VarPackage (CNT_) {}`; the Package starts at offset 12.
+ */
+static const uint8_t kept_data_every_element[] = {
+    0x08u, 'C',   'N',   'T',   '_',   0x0Au, 0x04u, 0x08u, 'P',   'A',   'L',   'L',   0x12u, 0x42u, 0x04u, 0x0Fu,
+    0x00u, 0x01u, 0xFFu, 0x0Au, 0x12u, 0x0Bu, 0x34u, 0x12u, 0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0x0Eu, 0xEFu, 0xCDu,
+    0xABu, 0x89u, 0x67u, 0x45u, 0x23u, 0x01u, 'A',   'B',   'C',   'D',   0x5Cu, 'X',   'Y',   'Z',   '_',   0x0Du,
+    'h',   'i',   0x00u, 0x11u, 0x06u, 0x0Au, 0x02u, 0x01u, 0x02u, 0x03u, 0x11u, 0x05u, 'C',   'N',   'T',   '_',
+    0x12u, 0x03u, 0x01u, 0x01u, 0x13u, 0x04u, 0x0Au, 0x02u, 0x01u, 0x13u, 0x05u, 'C',   'N',   'T',   '_',
+};
+
+/**
+ * @brief `Name (PBUF, Package (1) {Buffer (0x00010001) {}})`, whose Buffer is one byte past the 64 KiB of §6.1.
+ */
+static const uint8_t kept_data_buffer_past_limit[] = {0x08u, 'P',   'B',   'U',   'F',   0x12u, 0x09u, 0x01u,
+                                                      0x11u, 0x06u, 0x0Cu, 0x01u, 0x00u, 0x01u, 0x00u};
+
+/**
+ * @brief Loads the definition block @p aml from a copy of exactly its size, with the load's shortcuts or, when
+ *        @p general holds, without, decodes its bodies as the debug kernel and the host tools do, then builds every
+ * data object it kept in its table; @p out_verdict receives what it found.
+ *
+ * @return Whether the copy could be made.
+ */
+static bool kept_data_verdict(const uint8_t *aml, uint32_t length, bool general, KeptDataVerdict_t *out_verdict)
+{
+    uint8_t *copy = malloc(MADE_UP_TABLE_HEADER + length);
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+
+    memset(out_verdict, 0, sizeof(*out_verdict));
+    if (copy == NULL)
+        return false;
+    advanced_configuration_and_power_interface_simulated_host_open(&host);
+    advanced_configuration_and_power_interface_machine_language_open(&load, &host.host, MADE_UP_MAX_NODES,
+                                                                     MADE_UP_MAX_ARENA_BYTES);
+    load.general_load = general;
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &load, made_up_definition_block(copy, "DSDT", 2u, aml, length));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&load);
+
+    const uint32_t deferred = load.values_deferred;
+
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+         index < load.space.node_count; ++index)
+        (void) advanced_configuration_and_power_interface_machine_language_materialize(&load, index);
+    out_verdict->kept = load.data_kept;
+    out_verdict->faults = load.data_faults;
+    out_verdict->untyped = load.data_faults_read + load.values_deferred - deferred;
+    advanced_configuration_and_power_interface_machine_language_close(&load);
+    advanced_configuration_and_power_interface_simulated_host_close(&host);
+    free(copy);
+    return true;
+}
+
+/**
+ * @brief Whether @p aml loads to the same verdict with the load's shortcuts and without, the decoding pass counting as
+ *        many faults as the first builds leave objects Uninitialized; @p out_verdict receives the shortcuts' verdict.
+ */
+static bool kept_data_verdict_holds(const uint8_t *aml, uint32_t length, KeptDataVerdict_t *out_verdict)
+{
+    KeptDataVerdict_t general;
+
+    return kept_data_verdict(aml, length, false, out_verdict) && kept_data_verdict(aml, length, true, &general) &&
+           memcmp(out_verdict, &general, sizeof(general)) == 0 && out_verdict->faults == out_verdict->untyped;
+}
+
+/**
+ * @brief Writes into @p out_aml, which holds @p capacity bytes, `Name (PSTR, Package (1) {"aaa..."})`, its String one
+ *        character past the 64 KiB of §6.1.
+ *
+ * @return The bytes written, or 0 when they do not fit.
+ */
+static uint32_t kept_data_string_past_limit(uint8_t *out_aml, uint32_t capacity)
+{
+    static const uint8_t head[] = {0x08u, 'P', 'S', 'T', 'R', 0x12u};
+    const uint32_t characters = 0x10001u;
+    const uint32_t content = 1u + 1u + characters + 1u;
+    uint8_t encoded[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
+    const uint32_t encoded_bytes = made_up_aml_encode_package_length(content, true, encoded);
+    const uint32_t length = (uint32_t) sizeof(head) + encoded_bytes + content;
+
+    if (length > capacity)
+        return 0u;
+    memcpy(out_aml, head, sizeof(head));
+    memcpy(out_aml + sizeof(head), encoded, encoded_bytes);
+
+    uint8_t *body = out_aml + sizeof(head) + encoded_bytes;
+
+    body[0] = 0x01u;
+    body[1] = 0x0Du;
+    memset(body + 2u, 'a', characters);
+    body[2u + characters] = 0x00u;
+    return length;
 }
 
 /**
@@ -380,8 +546,8 @@ static uint32_t kept_data_two_long_strings(uint8_t *aml, uint32_t string_bytes)
 }
 
 /**
- * @brief Kept data whose table AML rewrote past the sizes of §6.1, which machine_language_check_data refuses to keep
- *        and the object it would build refuses to hold, each folding as unreadable data, as a PkgLength past the
+ * @brief Kept data whose table AML rewrote past the sizes of §6.1, which the object it would build refuses to hold,
+ *        each folding as unreadable data, as a PkgLength past the
  *        table does: `Name (BUFX, Buffer (0x00000002) {0xAA})`, its size now 0x00010002;
  *        `Name (VPKG, VarPackage (0x0002) {One})`, its count now 0x1002; `Name (PKGL, Package (2) {"A...", "B..."})`,
  *        two Strings of 40,000 characters, the NUL of the first now 'x', which makes one String of 80,002.
@@ -459,6 +625,8 @@ static bool kept_data_build_after(const uint8_t *aml, uint32_t length, uint8_t r
     out_built->live_objects = load.heap.objects - load.heap.objects_freed;
     out_built->object_bytes = load.heap.object_bytes;
     out_built->fold = advanced_configuration_and_power_interface_machine_language_namespace_fold(&load);
+    out_built->faults_read = load.data_faults_read;
+    out_built->deferred = load.values_deferred;
     out_built->built_directly = load.data_built_directly;
     advanced_configuration_and_power_interface_machine_language_close(&load);
     advanced_configuration_and_power_interface_simulated_host_close(&host);
@@ -641,28 +809,144 @@ KERNEL_TEST(every_one_byte_rewrite_of_kept_data_builds_the_same_through_its_buil
 }
 
 /**
- * @brief The check of kept data (O20) stops at each bound of a package's elements without reading a byte past the
- *        table, loaded from a copy of exactly its size: a package head whose PkgLength of 1 leaves its count outside,
- *        one whose PkgLength passes its parent's end, and a NameSeg element the table's end cuts, each refused, so that
- *        the load keeps nothing.
+ * @brief The check of kept data (O20), which the decoding pass runs, and the builder of kept data (C4), which the
+ *        object's first read runs, stop at each bound of a package's elements without reading a byte past the table,
+ *        loaded from a copy of exactly its size: a package head whose PkgLength of 1 leaves its count outside, one
+ *        whose PkgLength passes its parent's end, and a NameSeg element the table's end cuts. The load keeps each
+ *        package, whose own head reads; the decoding pass counts it in data_faults, and its build in data_faults_read.
  */
 KERNEL_TEST(the_kept_data_check_stops_at_each_bound_without_reading_past_the_table)
 {
     const KeptDataBound_t cases[] = {
-        {"a PkgLength of 1 is refused without reading past the table",                 kept_data_head_without_count,
+        {"a PkgLength of 1 is a fault found without reading past the table",                 kept_data_head_without_count,
          sizeof(kept_data_head_without_count)},
-        {"a PkgLength past its parent is refused without reading past the table",      kept_data_head_past_parent,
+        {"a PkgLength past its parent is a fault found without reading past the table",      kept_data_head_past_parent,
          sizeof(kept_data_head_past_parent)  },
-        {"a NameSeg cut by the table's end is refused without reading past the table", kept_data_cut_name,
+        {"a NameSeg cut by the table's end is a fault found without reading past the table", kept_data_cut_name,
          sizeof(kept_data_cut_name)          },
     };
-    const KeptDataRewrite_t intact = {KEPT_DATA_UNCHANGED, 0u};
 
     for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
     {
-        uint32_t kept = 1u;
+        KeptDataChecked_t checked;
 
-        (void) kept_data_fold_after(cases[index].aml, cases[index].length, intact, &kept);
-        kernel_test_check(test, kept == 0u, cases[index].claim);
+        kernel_test_check(test,
+                          kept_data_check_then_build(cases[index].aml, cases[index].length, &checked) &&
+                              checked.kept == 1u && checked.faults == 1u && checked.faults_read == 1u,
+                          cases[index].claim);
     }
+}
+
+/**
+ * @brief A table-level buffer field over a kept Buffer whose bytes AML rewrote so that they build no object waits for
+ *        the interpreter, as one over a Name left Uninitialized at load does (O20): BUF0 kept, its PkgLength then made
+ *        to cross the table's end, an SSDT's `CreateByteField (BUF0, Zero, BYT0)` leaves BUF0 Uninitialized, counted
+ *        as a fault, declares BYT0 without an object, counted as waiting, and the SSDT goes on to LAST.
+ */
+KERNEL_TEST(a_buffer_field_over_kept_data_that_builds_nothing_waits_for_the_interpreter)
+{
+    uint8_t *dsdt = malloc(MADE_UP_TABLE_HEADER + sizeof(kept_data_buffer_for_field));
+    uint8_t *ssdt = malloc(MADE_UP_TABLE_HEADER + sizeof(kept_data_field_over_buffer));
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load;
+
+    if (!kernel_test_check(test, dsdt != NULL && ssdt != NULL, "the tables are allocated"))
+    {
+        free(dsdt);
+        free(ssdt);
+        return;
+    }
+    advanced_configuration_and_power_interface_simulated_host_open(&host);
+    advanced_configuration_and_power_interface_machine_language_open(&load, &host.host, MADE_UP_MAX_NODES,
+                                                                     MADE_UP_MAX_ARENA_BYTES);
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &load,
+        made_up_definition_block(dsdt, "DSDT", 2u, kept_data_buffer_for_field, sizeof(kept_data_buffer_for_field)));
+    dsdt[MADE_UP_TABLE_HEADER + 6u] = 0x3Fu;
+    (void) advanced_configuration_and_power_interface_machine_language_declare_table(
+        &load,
+        made_up_definition_block(ssdt, "SSDT", 2u, kept_data_field_over_buffer, sizeof(kept_data_field_over_buffer)));
+
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *buffer = made_up_root_node(&load, "BUF0");
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *field = made_up_root_node(&load, "BYT0");
+
+    kernel_test_check(test,
+                      load.data_kept == 1u && load.data_faults_read == 1u && buffer != NULL &&
+                          buffer->type ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_UNINITIALIZED,
+                      "BUF0 is left Uninitialized, counted as a fault");
+    kernel_test_check(test,
+                      field != NULL &&
+                          field->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER_FIELD &&
+                          load.values_deferred == 1u && load.load_errors == 0u,
+                      "BYT0 is declared without an object, waiting for the interpreter, and nothing is a load error");
+    kernel_test_check(test, made_up_root_node(&load, "LAST") != NULL, "the SSDT goes on to LAST");
+    advanced_configuration_and_power_interface_machine_language_close(&load);
+    advanced_configuration_and_power_interface_simulated_host_close(&host);
+    free(dsdt);
+    free(ssdt);
+}
+
+/**
+ * @brief The check of kept data (O20) that the decoding pass runs finds the faults the object's first build finds, and
+ *        no other, with the load's shortcuts as without: a Package of every kind of element, each of its bytes changed
+ *        to each other value, the decoding pass counting in data_faults each kept object its first build leaves
+ *        Uninitialized, and only those; a String and a nested Buffer one byte past the 64 KiB of §6.1, each a fault.
+ */
+KERNEL_TEST(the_kept_data_check_finds_the_faults_the_first_build_finds)
+{
+    const uint32_t string_capacity = 0x10100u;
+    uint8_t *changed = malloc(sizeof(kept_data_every_element));
+    uint8_t *string = malloc(string_capacity);
+    uint32_t loads = 0u;
+    uint32_t kept = 0u;
+    uint32_t faults = 0u;
+    uint32_t refused = 0u;
+    KeptDataVerdict_t verdict;
+
+    if (!kernel_test_check(test, changed != NULL && string != NULL, "the tables are allocated"))
+    {
+        free(changed);
+        free(string);
+        return;
+    }
+    kernel_test_check(test,
+                      kept_data_verdict_holds(kept_data_every_element, sizeof(kept_data_every_element), &verdict) &&
+                          verdict.kept == 1u && verdict.faults == 0u,
+                      "the Package of every kind of element is kept, and builds");
+    for (uint32_t offset = 12u; offset < sizeof(kept_data_every_element); ++offset)
+        for (uint32_t value = 0u; value < 256u; ++value)
+        {
+            if (value == kept_data_every_element[offset])
+                continue;
+            memcpy(changed, kept_data_every_element, sizeof(kept_data_every_element));
+            changed[offset] = (uint8_t) value;
+            ++loads;
+            refused += kept_data_verdict_holds(changed, sizeof(kept_data_every_element), &verdict) ? 0u : 1u;
+            kept += verdict.kept;
+            faults += verdict.faults;
+        }
+    kernel_test_check(
+        test, loads == 255u * (sizeof(kept_data_every_element) - 12u) && kept != 0u && faults != 0u && faults < kept,
+        "every change was loaded both ways, some kept, some of those faults");
+    kernel_test_check(test, refused == 0u,
+                      "each change counts in data_faults the kept objects its builds leave Uninitialized, both ways");
+
+    const uint32_t string_length = kept_data_string_past_limit(string, string_capacity);
+
+    kernel_test_check(test,
+                      string_length != 0u && kept_data_verdict_holds(string, string_length, &verdict) &&
+                          verdict.kept == 1u && verdict.faults == 1u,
+                      "a String past 64 KiB inside a kept Package is a fault");
+    kernel_test_check(
+        test,
+        kept_data_verdict_holds(kept_data_buffer_past_limit, sizeof(kept_data_buffer_past_limit), &verdict) &&
+            verdict.kept == 1u && verdict.faults == 1u,
+        "a nested Buffer past 64 KiB is a fault");
+    kernel_test_measure(test, "loads", loads);
+    kernel_test_measure(test, "kept", kept);
+    kernel_test_measure(test, "data_faults", faults);
+    free(changed);
+    free(string);
 }

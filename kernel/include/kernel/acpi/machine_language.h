@@ -89,6 +89,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
     uint8_t origin;              /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_* origin. */
     uint16_t pages;              /**< Pages of the namespace arena its copy takes, 0 for a table read in place. */
     uint32_t terms;              /**< Opcodes the decoding pass decoded. */
+    uint32_t data_kept;          /**< Data objects of a Name its declaration kept in it (O20). */
     uint32_t decode_errors;      /**< Faults the decoding pass met. */
     uint32_t first_error_offset; /**< Offset of the first fault's term, in the table. */
     uint16_t first_error_opcode; /**< The descriptor of the first fault's term, or the invalid one. */
@@ -177,40 +178,55 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                              against (§5.3), or NULL. */
     uint32_t bytes;             /**< AML bytes of those tables, headers apart. */
     uint32_t declarations;      /**< Nodes the tables created. */
-    uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass stepped over instead of decoding
-                                     them as terms: built (O18), or kept in their table (O20). */
+    uint32_t data_stepped_over; /**< Data objects of a Name the declaration pass built, then stepped over instead of
+                                     decoding them as terms (O18); every load steps over the data it keeps in its
+                                     table, counted in data_kept (O20). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass took through its own decoder
                                                  instead of operand by operand through the walk (O19). */
     uint32_t integers_built_directly;       /**< Of the data objects stepped over, the integer constants the
                                                  declaration pass's decoder built itself instead of the general data
                                                  decoder (O19). */
-    uint32_t data_kept;           /**< Data objects of a Name the declaration pass checked, then kept in their table
-                                       unbuilt, and stepped over, until a name resolution reaches them (O20). */
+    uint32_t data_kept;           /**< Data objects of a Name the declaration pass kept in their table once their head
+                                       read, neither checked nor built, and stepped over, until a name resolution
+                                       reaches them (O20). */
     uint32_t data_materialized;   /**< Of those, the ones a name resolution has built since. */
+    uint32_t data_faults_read;    /**< Of those, the ones a name resolution found a fault in, left Uninitialized; one
+                                       that needs the interpreter is counted in values_deferred instead (O20). */
     uint32_t data_built_directly; /**< Of those, the ones the builder of kept data built (C4), not the general data
                                        decoder, which a load whose general_load is set uses. */
     uint32_t duplicates;          /**< Declarations of a name that already existed, skipped. */
     uint32_t externals_unplaced;  /**< Externals the declaration pass had nowhere to place, which the Externals
                                        pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
-    uint8_t first_load_error;     /**< The first of them. */
-    uint32_t decode_errors;       /**< Faults the decoding pass met, over every table. */
-    uint32_t declared_not_run;    /**< Declarations made in a branch whose predicate failed, without running its
-                                       code (§3.6). */
-    uint32_t undeclared_faults;   /**< Faults the decoding pass met inside a construct the declaration pass did not
-                                       declare: in a branch table-level code did not take, or in a Scope whose
-                                       target does not exist. Its names resolve against objects that do not
-                                       exist. */
-    uint32_t checksum_bad_loaded; /**< Tables whose checksum fails, loaded all the same. */
-    uint32_t name_references;     /**< NameStrings the decoding pass read in an operand. */
-    uint32_t method_calls;        /**< Of those, the ones that named a method. */
-    uint32_t unresolved_names;    /**< Of those, the ones that named nothing. */
-    uint32_t pending_peak;        /**< Most operators pending at once. */
-    uint32_t blocks_peak;         /**< Most constructs open at once. */
-    uint32_t values_deferred;     /**< Declarations whose object needs the interpreter: a Name, a region or a
-                                       buffer field built from an expression, and each unit of a BankField whose
-                                       BankValue is one. */
-    uint32_t table_level_code;    /**< Statements at table level that are neither declarations nor data. */
+    uint8_t first_load_error;       /**< The first of them. */
+    uint32_t decode_errors;         /**< Faults the decoding pass met, over every table. */
+    uint32_t data_faults;           /**< Data objects kept in their table (O20) that the check run once the bodies are
+                                         decoded found would not build, a fault in their bytes or a term that needs the
+                                         interpreter; one code read before that check is counted at that read. */
+    uint32_t data_faults_signature; /**< The sum, over the nodes the check counted in data_faults, of
+                                         advanced_configuration_and_power_interface_machine_language_kept_data_signature
+                                         of each node's index: two loads whose checks flag the same nodes hold the
+                                         same sum. */
+    uint32_t data_named_sizes;      /**< Data objects kept in their table (O20) that the same check found hold a
+                                         Buffer or a VarPackage whose size or count a name gives: their first read
+                                         reads that name, where a load that built them read it as it declared them. */
+    uint32_t declared_not_run;      /**< Declarations made in a branch whose predicate failed, without running its
+                                          code (§3.6). */
+    uint32_t undeclared_faults;     /**< Faults the decoding pass met inside a construct the declaration pass did not
+                                         declare: in a branch table-level code did not take, or in a Scope whose
+                                         target does not exist. Its names resolve against objects that do not
+                                         exist. */
+    uint32_t checksum_bad_loaded;   /**< Tables whose checksum fails, loaded all the same. */
+    uint32_t name_references;       /**< NameStrings the decoding pass read in an operand. */
+    uint32_t method_calls;          /**< Of those, the ones that named a method. */
+    uint32_t unresolved_names;      /**< Of those, the ones that named nothing. */
+    uint32_t pending_peak;          /**< Most operators pending at once. */
+    uint32_t blocks_peak;           /**< Most constructs open at once. */
+    uint32_t values_deferred;       /**< Declarations whose object needs the interpreter: a Name, a region or a
+                                         buffer field built from an expression, each unit of a BankField whose
+                                         BankValue is one, and each data object kept in its table (O20) whose first
+                                         read met such a term. */
+    uint32_t table_level_code;      /**< Statements at table level that are neither declarations nor data. */
     uint32_t
         opcodes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes the decoding
                                                                                               pass decoded, per
@@ -378,9 +394,9 @@ advanced_configuration_and_power_interface_machine_language_field_write(
  * @param result     What the method the previous call named returned, or NULL.
  * @param out_method The method, without arguments, whose result the attach waits for, or 0 once the
  *                   region is attached.
- * @return OK; TYPE_MISMATCH when @p region holds no PCI_Config region; when an object it reads, its data kept in its
- *         table (O20), cannot be built, what building it returned: OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap
- *         cannot hold it, the status of the data decoder or TYPE_MISMATCH when its bytes no longer build one.
+ * @return OK; TYPE_MISMATCH when @p region holds no PCI_Config region; OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the
+ *         heap cannot hold an object it reads, its data kept in its table (O20); kept data whose bytes build no object
+ *         is left Uninitialized, and read as such.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_peripheral_component_interconnect_attach(
@@ -909,21 +925,24 @@ advanced_configuration_and_power_interface_machine_language_memory_read(
  * @brief Builds the data object a Name kept in its table (O20), once a name resolution reaches its node: the
  *        Package, VarPackage or Buffer the load would have built, from the same bytes, its names read in the
  *        node's parent and its integers as wide as when its table was declared, by a builder of its own (C4); by
- *        the general data decoder when the load's general_load is set, or when AML has rewritten the bytes since the
- *        load so that they no longer read as kept data. Any other node is left as it is.
+ *        the general data decoder when the load's general_load is set, or when the bytes do not read as kept data,
+ *        which the load did not check or AML has rewritten since. Bytes that build no object, for a fault or a term
+ *        that needs the interpreter, leave the node Uninitialized, as a load that built the object as it declared it
+ *        would have left it, counted in data_faults_read or values_deferred. Any other node is left as it is.
  *
  * @param load  The load.
  * @param index The node a name resolved to.
- * @return OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object, the status of the data decoder
- *         or TYPE_MISMATCH when its bytes no longer build one, the node keeping its data either way; OK otherwise.
+ * @return OUT_OF_MEMORY or LIMIT_OBJECT_RUNS when the heap cannot hold the object, the node keeping its data; OK
+ *         otherwise.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_materialize(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t index);
 
 /**
- * @brief Reads what a data object kept in its table (O20) holds once built, without building it: a Package's or a
- *        VarPackage's element count, or a Buffer's length and the initialiser its bytes start with, zeros after it.
+ * @brief Reads what the head of a data object kept in its table (O20) declares, without building it: a Package's or a
+ *        VarPackage's element count, or a Buffer's length and the initialiser its bytes start with, zeros after it;
+ *        an object whose elements build nothing reads as Uninitialized once built.
  *
  * @param load            The load.
  * @param value           A node's value.
@@ -932,6 +951,17 @@ advanced_configuration_and_power_interface_machine_language_materialize(
  * @param out_initialised Receives the bytes of that initialiser, 0 for a package.
  * @return false when @p value holds no kept data.
  */
+/**
+ * @brief Adds node @p index to @p signature, a sum over a set of nodes that does not depend on their order: the FNV-1a
+ *        fold of the index's four bytes, so that two sets of nodes differ in their sums but by chance.
+ *
+ * @param signature The sum so far, 0 for an empty set.
+ * @param index     A node index.
+ * @return The sum with the node added.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_kept_data_signature(uint32_t signature,
+                                                                                                uint32_t index);
+
 extern bool advanced_configuration_and_power_interface_machine_language_describe_kept_data(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *value, uint32_t *out_length,

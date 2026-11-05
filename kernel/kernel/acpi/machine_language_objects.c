@@ -1185,11 +1185,12 @@ AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_evaluate_data(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, const MachineLanguageSource_t *source,
-    uint32_t offset, uint32_t limit, bool counts, MachineLanguageValue_t *out_value, bool *out_constant,
-    uint32_t *out_after)
+    uint32_t offset, uint32_t limit, MachineLanguageValue_t *out_value, bool *out_constant, uint32_t *out_after)
 {
     MachineLanguagePackageFrame_t frames[MACHINE_LANGUAGE_MAX_NESTED_PACKAGES];
     uint32_t depth = 0u;
+    uint32_t padded = 0u;
+    uint32_t truncated = 0u;
     uint32_t pc = offset;
     MachineLanguageStatus_t status = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 
@@ -1207,8 +1208,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
         if (depth != 0u && pc == end)
         {
             --depth;
-            heap->packages_padded += (counts && frames[depth].index < frames[depth].count) ? 1u : 0u;
-            heap->packages_truncated += (counts && frames[depth].index > frames[depth].count) ? 1u : 0u;
+            padded += (frames[depth].index < frames[depth].count) ? 1u : 0u;
+            truncated += (frames[depth].index > frames[depth].count) ? 1u : 0u;
             value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE;
             value.handle = frames[depth].handle;
         }
@@ -1281,6 +1282,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
         }
         if (depth == 0u)
         {
+            heap->packages_padded += padded;
+            heap->packages_truncated += truncated;
             *out_value = value;
             *out_constant = true;
             *out_after = pc;

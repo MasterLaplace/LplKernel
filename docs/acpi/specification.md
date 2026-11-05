@@ -219,7 +219,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | Permanent | the nodes a table load creates, their objects, the tables `Load` copies | the namespace arena: 64 KiB runs of pages from `kernel_vmm_alloc_pages`, up to a profile cap (§6.1); never the kernel heap, so the World's heap never competes | never (no `Unload`) |
 | Temporary | the nodes a method creates (`Name`, `CreateXField`, `OperationRegion`, `Field`, a nested `Method`) | the node arena's free list; their indices are pushed on the context's temporary-node stack | at frame exit, in reverse order: O(1) unlink each, no namespace walk |
 | Values | strings, buffers and packages built during an evaluation | the object heap, size classes over the same page runs | when the reference count reaches 0 |
-| Kept data | a Name's Package, VarPackage or Buffer whose sizes and counts are literal constants and which builds with no interpreter and no fault (O20) | none at load: its bytes stay in the table | becomes a value when a name resolution first reaches it, then lives as one |
+| Kept data | a Name's Package, VarPackage or Buffer whose own size or count is a literal constant (O20) | none at load: its bytes stay in the table, unchecked | becomes a value when a name resolution first reaches it, then lives as one; bytes that build none leave the node Uninitialized |
 | Evaluation scratch | frames, operator, block and value stacks | the evaluation context | reset at the end of each evaluation |
 | Pre-decoded records | the statements a loop that loops reached (§3.6) | the record cache of the load | emptied whole when its records, its operators or its constants are full, when the integer width changes, when a write lands on a table read in place (§5.3), and when the load is opened again |
 
@@ -234,7 +234,10 @@ Rules:
   value, of the interpreter, of a host evaluation, of a table-level buffer field or of a PCI_Config attach, builds a
   kept object first, from the same bytes, with the integer width its table was declared with; a field list, which reads
   only a node's type, already its object's, builds nothing. An arena exhausted then fails that evaluation with
-  `out_of_memory`, the object still kept, and stops no table but the one a buffer field declares over it.
+  `out_of_memory`, the object still kept, and stops no table but the one a buffer field declares over it. Bytes that
+  build no object, for a fault or a term that needs the interpreter, leave the node Uninitialized at that first
+  resolution, counted in `data_faults_read` or `values_deferred`, as a load that built the object as it declared it
+  would have left it, and the evaluation goes on with that node.
 - **Literals become objects when evaluated.** Candidate C5 (§7.3) would keep them in the table until written; if it
   is adopted, a buffer field, an `Index` or `RefOf` reference or a store target made over a literal materialises
   it first, and `literal_materialised[cause]` counts why.
@@ -273,14 +276,24 @@ own (O19), which reads the operator, its PkgLength and its NameString and declar
 would. It takes a Name whose data object it has built, or whose integer constant it builds itself as the general data
 decoder builds it, a Method whose body it records whole, and an OperationRegion whose object it builds from an offset
 and a length that need no interpreter; any other statement it gives back to the walk as the operator the walk would hold
-at that point, and the walk takes the rest: the content of its list, or the operand whose outcome differs. A Name of one
-NameSeg whose data object is a Package, a VarPackage or a Buffer that would build with no interpreter and no fault, its
-sizes and counts literal constants, is checked without being built, its padded and cut packages counted, and kept in its
-table (O20): the node takes the object's type, and the walk steps over it as O18 does. Any other data object, one a name
-sizes included, is built as before. A kept object is built by a builder of its own (C4), which decodes each element
-straight into its package and reads each byte again as the check read it, since AML can rewrite its table after the
-load: bytes that no longer read as kept data, and the kept objects of a load whose `general_load` is set, are built by
-the general data decoder, whose status a failure then gives.
+at that point, and the walk takes the rest: the content of its list, or the operand whose outcome differs. A Name whose
+data object is a Package, a VarPackage or a Buffer whose head reads, its own size or count a literal constant within
+§6.1, is kept in its table unchecked, by the general path as by the shortcuts, where the walk has room for every package
+the object could nest and the node's parent is the scope its names are read in (O20): the node takes the object's type,
+and the walk steps over it. This is a rule of the load, not a shortcut, so that both paths declare the same from
+malformed data. Any other data object is built as before. A kept object is built by a builder of its own (C4), which
+decodes each element straight into its package and reads each byte as it builds: bytes that do not read as kept data,
+which the load did not check or AML has rewritten since, and the kept objects of a load whose `general_load` is set, are
+built by the general data decoder, whose status then gives the object or leaves the node Uninitialized (§3.5). Once
+the pass that decodes every method body has run, a debug kernel and the host tools check each kept Package and
+VarPackage as the data decoder would build it, over the namespace's nodes, so that a fault that stops the decoding of a
+table hides none: one that would not build is counted in `data_faults`, which the corpus check fails on. One that
+table-level code reads before the check (at boot, or in a table Load adds) is counted at that read instead, in
+`data_faults_read`, which `acpi.aml` records, or in `values_deferred`, so that once the check has run each kept object
+that builds nothing has been counted once; a later read counts it again in `data_faults_read`. A release kernel, which skips that pass, meets such an object at its first read only, as it meets a
+faulty body only when it runs. One whose nested size or
+count a name gives is counted in `data_named_sizes`, since its first read reads that name where a load that built it
+at once read it as it declared it.
 
 **The loop**, in order of precedence at each step:
 
@@ -846,7 +859,7 @@ Each row is a decision, and has at least one test (§8).
 | Unresolved names | An error only when executed: in methods they sit behind `CondRefOf` or capability bits. | |
 | An `Alias` whose source does not exist | Counted as `name_not_found` and skipped alone: neither the alias nor its source is created, and the table goes on. ACPI says the source must already exist; `acpiexec` creates the alias and an Untyped node for its source. | [§19.6.4] |
 | Names inside packages | Kept as a lazy path with its scope, resolved when the element is read, at most 8 indirections, then `name_resolution_loop`. Resolving at creation would make the result depend on the order tables load in. | [§19.6.102] |
-| Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted where they are built: once for a Name's data object, when it is declared, kept or built; each time a method builds one. | [§19.6.102] |
+| Package size mismatches | Fewer initialisers than `NumElements`: padded with Uninitialized. More: truncated. Both counted where they are built: once for a Name's data object, when it is built, at load or at its first read; each time a method builds one. | [§19.6.102] |
 | Orphan data and `Noop` at table level | Evaluated and dropped. | [§5.4.2] |
 | Objects a method creates | Temporary: removed at the method's exit, even when created with a full path elsewhere. A second creation of the same name in the same frame (a `Name` inside a `While` body) is an error. | [§5.5.2.3], [§19.6.150] |
 | `Load` | From a SystemMemory region or a field that holds the whole table: the table is copied (§3.5), its checksum computed on the copy, its objects created relative to the root; True goes to its target and is its result. A table already loaded, compared over its whole length as ACPICA does, is refused: where ACPICA fails the evaluation, `Load` gives False. | [§19.6.77] |
@@ -960,7 +973,8 @@ The kernel never panics, traps or meets C undefined behaviour because of AML.
 
 | Fault | In a method | At definition-block level | Status |
 |---|---|---|---|
-| PkgLength crossing its parent | the evaluation fails | the rest of the table is abandoned, its objects kept, the next table loads | `pkglength_out_of_parent` |
+| PkgLength crossing its parent | the evaluation fails | the rest of the table is abandoned, its objects kept, the next table loads; one inside a data object a Name keeps in its table (O20) is read only at its first resolution, and abandons nothing at load, but the pass that decodes bodies in a debug kernel and the host tools, which decodes the object as terms, stops decoding that table there; the table's kept data is checked all the same | `pkglength_out_of_parent` |
+| Elements of a data object a Name keeps in its table (O20) that build no object | | nothing at load; the first name resolution that reaches it leaves the node Uninitialized, counted; a debug kernel and the host tools count it once the bodies are decoded, and the decoding pass again as a decode error where its bytes do not decode as terms | `data_faults_read`, `values_deferred`; `data_faults`, `decode_errors` |
 | Truncated operand, bad NameString | fails | the innermost enclosing construct is skipped | `truncated` |
 | A call of a method whose PkgLength ends before its flags, declared without a body | fails | construct skipped | `method_without_body` |
 | Invalid or unimplemented opcode | fails | construct skipped | `invalid_opcode`, `unimplemented_operator` |
@@ -1042,10 +1056,10 @@ reads a table in kernel memory. The costs to cut are:
 | O17 | The DSDT and the SSDTs the load declares from the directory are summed once: the load takes the checksum the directory computed over the same bytes; a table Load copies or LoadTable brings is summed when it is added | W1, which holds no call of `advanced_configuration_and_power_interface_checksum_holds` |
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list, a Name's integer constant built by the decoder itself, and an OperationRegion of one NameSeg whose offset and length need no interpreter | `declarations_decoded_directly`, `integers_built_directly`; W1 |
-| O20 | A Name's constant Package, VarPackage or Buffer kept in its table, checked but not built, until a name resolution reaches it or a write is about to land on its table's bytes (§3.5, §5.3) | `data_kept`, `data_materialized` in `acpi.aml`; W1 |
+| O20 | A Name's Package, VarPackage or Buffer kept in its table once its head reads, neither checked nor built until a name resolution reaches it or a write is about to land on its table's bytes; a debug kernel and the host tools check each one once they have decoded bodies (§3.5, §3.6, §5.3) | `data_kept`, `data_materialized`, `data_faults_read` in `acpi.aml`, and `data_faults`, `data_named_sizes` with its decoding counts; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
-| C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them; bytes rewritten since the load that no longer read as kept data are built by the decoder (§3.6) | `data_built_directly` in `acpi.load`; W2 and W3 on the MS-7E16 |
+| C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them; bytes that do not read as kept data, which the load did not check or AML has rewritten since, are built by the decoder (§3.6) | `data_built_directly` in `acpi.load`; W2 and W3 on the MS-7E16 |
 
 ### 7.3 Candidates, adopted only when a count asks for them
 
@@ -1077,7 +1091,8 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 
 W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
 instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
-more than the 300 per named object a first target set. The debug windows of W1
+more than the 300 per named object a first target set. That check has since left the load for the pass that decodes
+bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. The debug windows of W1
 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no count per declaration
 applies to them.
 

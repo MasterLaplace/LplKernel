@@ -47,14 +47,18 @@
     "       test-acpi --predecoding off ...  any of the above with the boot line lpl.acpi.predecoding=off: the\n"      \
     "                                    statements of loops that loop are decoded at each turn, never run from\n"     \
     "                                    records, so that the two runs compare\n"                                      \
-    "       test-acpi [--general-load] [--mutate <seed>] <form above>  with --general-load, every load takes\n"        \
-    "                                    none of its shortcuts (specification §3.6); with --mutate, a dump's DSDT\n"  \
-    "                                    and SSDTs have bytes changed at random, seeded by <seed>, before loading;\n"  \
-    "                                    tools/acpi-corpus.sh differential compares the two loads\n"
+    "       test-acpi [--general-load] [--mutate <seed>] [--read-kept] <form above>  with --general-load, every\n"     \
+    "                                    load takes none of its shortcuts (specification §3.6); with --mutate, a\n"   \
+    "                                    dump's DSDT and SSDTs have bytes changed at random, seeded by <seed>,\n"      \
+    "                                    before loading; tools/acpi-corpus.sh differential compares the two loads;\n"  \
+    "                                    with --read-kept, a view ends by building every data object the load\n"       \
+    "                                    still keeps (O20) and printing `aml kept`, which tools/acpi-corpus.sh kept\n" \
+    "                                    reads\n"
 
 static bool harness_general_load;      /**< Whether --general-load asks every load to take none of its shortcuts. */
 static bool harness_mutates;           /**< Whether --mutate asks to change bytes of a dump's AML before it loads. */
 static uint32_t harness_mutation_seed; /**< The seed --mutate gives. */
+static bool harness_reads_kept;        /**< Whether --read-kept asks a view to end by building every kept object. */
 
 /**
  * @brief Opens @p load on @p host with the server profile's caps, without its shortcuts when --general-load
@@ -119,7 +123,8 @@ static void harness_mutate_tables(const AdvancedConfigurationAndPowerInterfaceDi
 }
 
 /**
- * @brief Reads the options that come before the form of a run: --general-load, and --mutate with its seed.
+ * @brief Reads the options that come before the form of a run: --general-load, --mutate with its seed, and
+ *        --read-kept.
  *
  * @return The arguments those options took.
  */
@@ -139,6 +144,11 @@ static int harness_read_load_options(int argc, char **argv)
             harness_mutates = true;
             harness_mutation_seed = (uint32_t) strtoul(argv[2 + used], NULL, 10);
             used += 2;
+        }
+        else if (argc - used >= 2 && strcmp(argv[1 + used], "--read-kept") == 0)
+        {
+            harness_reads_kept = true;
+            used += 1;
         }
         else
             return used;
@@ -239,8 +249,9 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 
 /**
  * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
- *        operating system services it called, the tables Load and LoadTable added, the failures per
- *        status, the region spaces refused, and the opcodes that failed as unimplemented.
+ *        operating system services it called, the tables Load and LoadTable added, the kept data a first
+ *        read found a fault in (O20), the failures per status, the region spaces refused, and the opcodes
+ *        that failed as unimplemented.
  */
 static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
@@ -293,9 +304,10 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            load->services.released_at_end, load->services.held_peak,
            (unsigned long long) load->services.time_requested_peak, load->services.signals,
            load->services.notifications, load->services.notifications_dropped, load->services.notification_peak);
-    printf("aml run tables loaded=%u duplicates=%u missing=%u bytes_copied=%u data_built_directly=%u\n",
+    printf("aml run tables loaded=%u duplicates=%u missing=%u bytes_copied=%u data_faults_read=%u "
+           "data_built_directly=%u\n",
            load->tables_loaded, load->load_duplicates, load->load_tables_missing, load->table_bytes_copied,
-           load->data_built_directly);
+           load->data_faults_read, load->data_built_directly);
     printf("aml run pci attachments=%u internal_evaluations=%u internal_failures=%u protected_writes=%u "
            "lost_accesses=%u ecam_accesses=%u registrations=%u registration_failures=%u\n",
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
@@ -337,8 +349,9 @@ static void harness_load_every_table(AdvancedConfigurationAndPowerInterfaceMachi
 
 /**
  * @brief Loads every table of @p machine, as harness_load_every_table does, with the server profile's
- *        caps, and prints what the load counted: its tables and faults, then each opcode decoded, in
- *        descriptor order.
+ *        caps, and prints what the load counted: its tables and faults, among them the data it kept in its
+ *        tables (O20) that the check of kept data finds would not build or whose size a name gives, then each
+ *        opcode decoded, in descriptor order.
  */
 static void harness_print_machine_language(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
                                            const RecordedMachine_t *machine)
@@ -356,8 +369,8 @@ static void harness_print_machine_language(const AdvancedConfigurationAndPowerIn
     harness_load_every_table(&load, directory, machine);
     printf("aml tables=%u bytes=%u decode_errors=%u calls=%u\n", load.table_count, load.bytes, load.decode_errors,
            load.method_calls);
-    printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u\n", load.load_errors,
-           load.unresolved_names, load.undeclared_faults);
+    printf("aml faults load_errors=%u unresolved_names=%u undeclared_faults=%u data_faults=%u data_named_sizes=%u\n",
+           load.load_errors, load.unresolved_names, load.undeclared_faults, load.data_faults, load.data_named_sizes);
     for (uint32_t index = 0u; index < load.table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load.tables[index];
@@ -525,8 +538,9 @@ static void harness_print_buffer(uint32_t length, const uint8_t *initialiser, ui
 }
 
 /**
- * @brief Prints a data object a Name kept in its table (O20) as the object it builds into, without building it,
- *        so that printing the namespace leaves it to the evaluations that reach it.
+ * @brief Prints a data object a Name kept in its table (O20) as its head declares it, without building it, so that
+ *        printing the namespace leaves it to the evaluations that reach it; one whose elements build nothing reads
+ *        as Uninitialized once built.
  */
 static void harness_print_kept_data(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node)
@@ -874,9 +888,50 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
 }
 
 /**
+ * @brief Builds every data object @p load still keeps in its tables (O20), as a name resolution reaching it would, and
+ *        prints `aml kept`: what the load counted before (the objects kept, the faults the check found and the
+ *        signature of their nodes, the faults reads found before), then what the builds found (the objects read, those
+ *        left Uninitialized for a fault or a term that needs the interpreter and the signature of their nodes, and
+ *        those the heap refused to build, left kept).
+ */
+static void harness_read_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    const uint32_t faults_read = load->data_faults_read;
+    uint32_t read = 0u;
+    uint32_t unbuilt = 0u;
+    uint32_t refused = 0u;
+    uint32_t signature = 0u;
+
+    for (uint32_t index = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT + 1u;
+         index < load->space.node_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+            advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+
+        if ((node->flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_FREE) != 0u ||
+            node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_KEPT_DATA)
+            continue;
+        ++read;
+        if (advanced_configuration_and_power_interface_machine_language_materialize(load, index) !=
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+            ++refused;
+        else if (node->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_UNINITIALIZED)
+        {
+            ++unbuilt;
+            signature =
+                advanced_configuration_and_power_interface_machine_language_kept_data_signature(signature, index);
+        }
+    }
+    printf("aml kept data_kept=%u data_faults=%u data_faults_signature=0x%08X data_faults_read=%u read=%u unbuilt=%u "
+           "unbuilt_signature=0x%08X refused=%u\n",
+           load->data_kept, load->data_faults, load->data_faults_signature, faults_read, read, unbuilt, signature,
+           refused);
+}
+
+/**
  * @brief Prints what a load could not build, then the view of it asked for: its namespace, its closure,
  *        or what initialising its namespace for the machine @p directory describes, or none, ran, which
- *        the runs printed after it include.
+ *        the runs printed after it include; with --read-kept, ends by building every object it still keeps.
  */
 static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, HarnessView_t view)
@@ -892,6 +947,8 @@ static void harness_print_load(AdvancedConfigurationAndPowerInterfaceMachineLang
         harness_print_closure(load);
     else if (view == HARNESS_VIEW_NAMESPACE)
         harness_print_namespace(load);
+    if (harness_reads_kept)
+        harness_read_kept(load);
 }
 
 /**
