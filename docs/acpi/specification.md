@@ -1089,7 +1089,7 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
 instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
 more than the 300 per named object a first target set. That check has since left the load for the pass that decodes
-bodies (§3.6), which a release kernel skips, and W1 fell by 138 per declaration. The debug windows of W1
+bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. The debug windows of W1
 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no count per declaration
 applies to them.
 
