@@ -201,41 +201,49 @@ bool kernel_vmm_reserve_at(void *virt, uint32_t page_count)
     return true;
 }
 
-void *kernel_vmm_alloc_pages(uint32_t page_count)
+bool kernel_vmm_commit_pages(void *address, uint32_t page_count)
 {
-    void *virt_base = kernel_vmm_reserve_pages(page_count);
-    if (!virt_base)
-        return NULL;
+    const uint32_t start_virt = (uint32_t) (uintptr_t) address;
 
-    uint32_t start_virt = (uint32_t) (uintptr_t) virt_base;
+    if (!vmm_initialized || page_count == 0u || (start_virt & (PAGE_SIZE - 1u)) != 0u ||
+        start_virt < KERNEL_VMM_DYNAMIC_START || start_virt >= KERNEL_VMM_DYNAMIC_END ||
+        page_count > (KERNEL_VMM_DYNAMIC_END - start_virt) / PAGE_SIZE)
+        return false;
+
+    const uint32_t start_index = (start_virt - KERNEL_VMM_DYNAMIC_START) / PAGE_SIZE;
 
     for (uint32_t i = 0u; i < page_count; ++i)
     {
-        uint32_t phys = physical_memory_manager_page_frame_allocate();
-        if (phys == 0u)
+        if (!vmm_bitmap_test(start_index + i) || paging_is_mapped(start_virt + i * PAGE_SIZE))
+            return false;
+    }
+    for (uint32_t i = 0u; i < page_count; ++i)
+    {
+        const PageDirectoryEntry_t pde = {.present = 1u, .read_write = 1u};
+        const PageTableEntry_t pte = {.present = 1u, .read_write = 1u};
+        const uint32_t phys = physical_memory_manager_page_frame_allocate();
+
+        if (phys == 0u || !paging_map_page(start_virt + i * PAGE_SIZE, phys, pde, pte))
         {
-            kernel_vmm_free_pages(virt_base, i);
-            return NULL;
-        }
-
-        PageDirectoryEntry_t pde = {0};
-        pde.present = 1;
-        pde.read_write = 1;
-        pde.user_supervisor = 0;
-
-        PageTableEntry_t pte = {0};
-        pte.present = 1;
-        pte.read_write = 1;
-        pte.user_supervisor = 0;
-
-        if (!paging_map_page(start_virt + (i * PAGE_SIZE), phys, pde, pte))
-        {
-            physical_memory_manager_page_frame_free(phys);
-            kernel_vmm_free_pages(virt_base, i);
-            return NULL;
+            if (phys != 0u)
+                physical_memory_manager_page_frame_free(phys);
+            if (i != 0u && paging_unmap_range(start_virt, i, true) != 0u)
+                ++vmm_unmapped_range_count;
+            return false;
         }
     }
+    return true;
+}
 
+void *kernel_vmm_alloc_pages(uint32_t page_count)
+{
+    void *virt_base = kernel_vmm_reserve_pages(page_count);
+
+    if (virt_base != NULL && !kernel_vmm_commit_pages(virt_base, page_count))
+    {
+        kernel_vmm_free_pages(virt_base, page_count);
+        return NULL;
+    }
     return virt_base;
 }
 

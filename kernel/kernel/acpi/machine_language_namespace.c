@@ -132,6 +132,42 @@ static void machine_language_namespace_unplace(AdvancedConfigurationAndPowerInte
 }
 
 /**
+ * @brief Runs of nodes a node cap of @p max_nodes may need: those that hold every index the cap lets new_index give,
+ *        up to the root's plus the cap less one, at most
+ * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS.
+ */
+static uint32_t machine_language_namespace_runs_for(uint32_t max_nodes)
+{
+    const uint32_t most = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS;
+
+    if (max_nodes >= most * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN)
+        return most;
+    return (max_nodes + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT - 1u) /
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN +
+           1u;
+}
+
+/**
+ * @brief Commits the next run of the node array, within the arena cap, as a run of pages the arena counts.
+ *
+ * @return Whether the run is committed; when the arena cap or the host refuses it, nothing changes.
+ */
+static bool
+machine_language_namespace_commit_run(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
+{
+    const uint32_t bytes = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES *
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
+
+    if (bytes > space->max_arena_bytes - space->arena_bytes ||
+        !space->host->commit_pages(space->host->context, (uint8_t *) space->nodes + space->run_count * bytes,
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES))
+        return false;
+    space->arena_bytes += bytes;
+    ++space->run_count;
+    return true;
+}
+
+/**
  * @brief Takes the next unused node index, within the node cap, after growing the hash table or
  *        taking a run of nodes when the new node needs it.
  */
@@ -149,16 +185,10 @@ machine_language_namespace_new_index(AdvancedConfigurationAndPowerInterfaceMachi
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
     if (index / ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN == space->run_count)
     {
-        if (space->run_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS)
+        if (space->run_count == space->reserved_runs)
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_NAMESPACE_NODES;
-
-        AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *run =
-            advanced_configuration_and_power_interface_machine_language_namespace_take_pages(
-                space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
-
-        if (run == NULL)
+        if (!machine_language_namespace_commit_run(space))
             return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
-        space->runs[space->run_count++] = run;
     }
     ++space->node_count;
     *out_index = index;
@@ -301,6 +331,11 @@ advanced_configuration_and_power_interface_machine_language_namespace_open(
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
     space->slot_capacity = MACHINE_LANGUAGE_NAMESPACE_FIRST_SLOTS;
     memset(space->slots, 0, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES);
+    space->reserved_runs = machine_language_namespace_runs_for(max_nodes);
+    space->nodes = host->reserve_pages(
+        host->context, space->reserved_runs * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
+    if (space->nodes == NULL)
+        return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY;
 
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
         advanced_configuration_and_power_interface_machine_language_namespace_add_child(
@@ -325,13 +360,20 @@ advanced_configuration_and_power_interface_machine_language_namespace_open(
 void advanced_configuration_and_power_interface_machine_language_namespace_close(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
 {
-    for (uint32_t run = 0u; run < space->run_count; ++run)
-        advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
-            space, space->runs[run], ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
+    if (space->nodes != NULL)
+    {
+        space->host->release_reservation(
+            space->host->context, space->nodes,
+            space->reserved_runs * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES,
+            space->run_count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES);
+        space->arena_bytes -= space->run_count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES *
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
+    }
     if (space->slots != NULL)
         advanced_configuration_and_power_interface_machine_language_namespace_give_pages(
             space, space->slots, machine_language_namespace_slot_pages(space->slot_capacity));
     space->run_count = 0u;
+    space->nodes = NULL;
     space->slots = NULL;
     space->slot_capacity = 0u;
     space->node_count = 0u;

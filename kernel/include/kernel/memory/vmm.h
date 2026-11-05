@@ -58,6 +58,20 @@ void *kernel_vmm_alloc_pages(uint32_t page_count);
 void *kernel_vmm_reserve_pages(uint32_t page_count);
 
 /**
+ * @brief Maps physical frames under pages a reservation holds, so that they can be read and written.
+ *
+ * @details Every page from @p address must be reserved (kernel_vmm_reserve_pages) and not mapped yet; a commit that
+ *          fails, out of frames or of page tables, unmaps and frees what it mapped, so that the pages stay as they
+ *          were. kernel_vmm_free_pages gives back a reservation whatever part of it is committed.
+ *
+ * @param address    First page, page-aligned, of the dynamic region.
+ * @param page_count Pages to commit.
+ * @return Whether every page is now mapped; false, and none of them mapped, when a page is not reserved, is mapped
+ *         already, or a frame cannot be had.
+ */
+bool kernel_vmm_commit_pages(void *address, uint32_t page_count);
+
+/**
  * @brief Reserve a FIXED range of virtual pages without mapping them.
  *
  * @param virt Start virtual address (must be page-aligned).

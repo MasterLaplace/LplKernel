@@ -50,7 +50,7 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_ARENA_BYTES                              \
     (4u * 1024u * 1024u) /**< Namespace arena on the other profiles (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS                                           \
-    41u /**< Runs of nodes: enough for the server cap and the unused node 0. */
+    41u /**< Runs of nodes a namespace may reserve: enough for the server cap and the unused node 0. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT 1u /**< The root's node index. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PROCESSOR_IDENTIFIER_SHIFT                         \
     40u /**< Where a Processor node's payload keeps its ProcessorID, above its PblkAddr (bits 0 to 31) and its PblkLen \
@@ -142,19 +142,23 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNode {
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t;
 
 /**
- * @brief A namespace: its runs of nodes, its hash table, its caps and what its lookups cost.
+ * @brief A namespace: its array of nodes, its hash table, its caps and what its lookups cost.
  *
  * @details Opened by advanced_configuration_and_power_interface_machine_language_namespace_open,
  *          which creates the root and the predefined objects; every page it holds comes from its
  *          host and goes back with advanced_configuration_and_power_interface_machine_language_namespace_close.
+ *          Its nodes lie in one array, node i at nodes + i, in address space the host reserves at open for
+ *          every run the node cap may need; a run's pages are committed when the first node of that run is
+ *          taken, so that node i, which ends before byte 65,520 × (i / 1,638 + 1), lies in pages committed.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
-    const AdvancedConfigurationAndPowerInterfaceHost_t *host; /**< Where its pages come from. */
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t
-        *runs[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RUNS]; /**< Its runs of nodes. */
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host;           /**< Where its pages come from. */
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *nodes; /**< Its node array: the host's
+                                                                             reservation, or NULL. */
+    uint32_t reserved_runs;                                             /**< Runs of nodes the reservation spans. */
     uint32_t *slots;          /**< The hash table: a node index per slot, 0 when empty. */
     uint32_t slot_capacity;   /**< Slots, a power of two at least twice the nodes. */
-    uint32_t run_count;       /**< Runs taken. */
+    uint32_t run_count;       /**< Runs of nodes committed, from the reservation's start. */
     uint32_t node_count;      /**< Node indices used, the unused node 0 included. */
     uint32_t free_nodes;      /**< The last node removed, whose next_sibling links the others, or 0. */
     uint32_t live_nodes;      /**< Nodes in the namespace, the root included, the removed ones apart. */

@@ -271,6 +271,25 @@ static void acpi_host_release_pages(void *context, void *address, uint32_t count
     kernel_vmm_free_pages(address, count);
 }
 
+static void *acpi_host_reserve_pages(void *context, uint32_t count)
+{
+    (void) context;
+    return kernel_vmm_reserve_pages(count);
+}
+
+static bool acpi_host_commit_pages(void *context, void *address, uint32_t count)
+{
+    (void) context;
+    return kernel_vmm_commit_pages(address, count);
+}
+
+static void acpi_host_release_reservation(void *context, void *address, uint32_t reserved, uint32_t committed)
+{
+    (void) context;
+    (void) committed;
+    kernel_vmm_free_pages(address, reserved);
+}
+
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
     .root_system_description_pointer = acpi_host_root_system_description_pointer,
@@ -295,6 +314,9 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .reference_read = acpi_host_reference_read,
     .allocate_pages = acpi_host_allocate_pages,
     .release_pages = acpi_host_release_pages,
+    .reserve_pages = acpi_host_reserve_pages,
+    .commit_pages = acpi_host_commit_pages,
+    .release_reservation = acpi_host_release_reservation,
 };
 
 bool advanced_configuration_and_power_interface_boot_line_holds(const char *word)
