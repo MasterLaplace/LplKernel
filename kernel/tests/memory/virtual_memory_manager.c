@@ -44,6 +44,44 @@ KERNEL_TEST(page_runs_are_served_in_range)
 }
 
 /**
+ * @brief Pages of a reservation are mapped by a commit, each once, and only those: a commit of a page mapped already,
+ *        or of one no reservation holds, is refused and maps nothing; freeing the reservation gives back the frames of
+ *        the pages committed, the others never mapped.
+ */
+KERNEL_TEST(a_commit_maps_the_reserved_pages_it_names_and_no_other)
+{
+#if defined(LPL_KERNEL_REAL_TIME_MODE)
+    kernel_test_skip(test, "checked on the server profile only");
+#else
+    const uint32_t free_before = physical_memory_manager_get_free_page_count();
+    uint8_t *const pages = kernel_vmm_reserve_pages(4u);
+
+    if (!kernel_test_check(test, virtual_memory_manager_test_is_in_range(pages, 4u), "four pages are reserved"))
+        return;
+
+    const uint32_t first = (uint32_t) (uintptr_t) pages;
+
+    kernel_test_check(test, !paging_is_mapped(first), "a reserved page is not mapped");
+    kernel_test_check(test, kernel_vmm_commit_pages(pages + PAGE_SIZE, 2u), "two of them are committed");
+    kernel_test_check(test,
+                      !paging_is_mapped(first) && paging_is_mapped(first + PAGE_SIZE) &&
+                          paging_is_mapped(first + 2u * PAGE_SIZE) && !paging_is_mapped(first + 3u * PAGE_SIZE),
+                      "those two, and no other, are mapped");
+    kernel_test_check(test, physical_memory_manager_get_free_page_count() == free_before - 2u, "each took one frame");
+    kernel_test_check(test,
+                      !kernel_vmm_commit_pages(pages + 2u * PAGE_SIZE, 2u) && !paging_is_mapped(first + 3u * PAGE_SIZE),
+                      "a commit over a page mapped already is refused, and maps the page after it neither");
+    kernel_test_check(test, physical_memory_manager_get_free_page_count() == free_before - 2u, "and takes no frame");
+    kernel_vmm_free_pages(pages, 4u);
+    kernel_test_check(test, !paging_is_mapped(first + PAGE_SIZE) && !paging_is_mapped(first + 2u * PAGE_SIZE),
+                      "freeing the reservation unmaps what it committed");
+    kernel_test_check(test, physical_memory_manager_get_free_page_count() == free_before, "and gives back both frames");
+    kernel_test_check(test, !kernel_vmm_commit_pages(pages, 1u) && !paging_is_mapped(first),
+                      "a page no reservation holds any more is refused");
+#endif
+}
+
+/**
  * @brief A device window reads the device, and is given back without freeing a frame.
  *
  * @details The local interrupt controller serves as the device: its version register, read through

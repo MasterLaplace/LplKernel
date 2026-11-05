@@ -1,3 +1,4 @@
+#include "host_pages.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -835,6 +836,150 @@ KERNEL_TEST(a_child_found_or_added_at_once_is_the_one_found_then_added)
     made_up_find_or_add_until_refused(
         test, 4000u, 24u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY,
         4u * first_slots, 1u, "an arena with no room for a second run refuses the child that needs it");
+}
+
+/**
+ * @brief The simulated host keeps the reservation contract every host keeps, counts each page it commits until its
+ *        reservation goes back, and, told to refuse commits as a host out of frames would, commits nothing.
+ */
+KERNEL_TEST(the_simulated_host_reserves_commits_and_releases_pages)
+{
+    advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
+
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &made_up_host.host;
+    const uint32_t before = made_up_host.outstanding_pages;
+
+    (void) host_pages_keep_their_contract(test, host);
+    kernel_test_check(test, made_up_host.outstanding_pages == before,
+                      "every page committed goes back with its reservation");
+
+    uint8_t *page = host->reserve_pages(host->context, 1u);
+
+    made_up_host.refuses_commits = true;
+    kernel_test_check(test, page != NULL && !host->commit_pages(host->context, page, 1u),
+                      "a host that refuses commits refuses one");
+    kernel_test_check(test, made_up_host.outstanding_pages == before, "and counts no page");
+    made_up_host.refuses_commits = false;
+    kernel_test_check(test, page != NULL && host->commit_pages(host->context, page, 1u),
+                      "the page it refused commits once it no longer refuses");
+    if (page != NULL)
+        host->release_reservation(host->context, page, 1u, 1u);
+    kernel_test_check(test, made_up_host.outstanding_pages == before, "and goes back");
+}
+
+/**
+ * @brief Adds Devices named N000, N001 and on as children of the root of @p space until @p count are added or one is
+ *        refused.
+ *
+ * @return What the last addition returned.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+made_up_add_children(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint32_t first,
+                     uint32_t count)
+{
+    static const char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+    char name[5] = "N000";
+
+    for (uint32_t index = first;
+         index < first + count && status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+         ++index)
+    {
+        uint32_t node = 0u;
+
+        name[1] = digits[index / 1296u];
+        name[2] = digits[(index / 36u) % 36u];
+        name[3] = digits[index % 36u];
+        status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
+            space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, made_up_segment(name),
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE, 1u, &node);
+    }
+    return status;
+}
+
+/**
+ * @brief The second run of nodes is taken by node 1,638, the first a run of 16 pages of 4,096 bytes cannot hold at 40
+ *        bytes a node, and counted in the arena then: an arena of 24 pages, which holds the first run and a hash table
+ *        of 4,096 slots, refuses that node and leaves the namespace as it was; given 16 pages more, it takes it, the
+ *        nodes before it where they were and it right after the last of them. A host that refuses the run's pages,
+ *        as one out of frames would, leaves the namespace as it was too.
+ */
+KERNEL_TEST(a_run_of_nodes_is_taken_at_the_node_it_starts_with_and_moves_no_node)
+{
+    static AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t space;
+    const uint32_t page = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES;
+    const uint32_t first_of_second_run = 16u * 4096u / 40u;
+    const uint32_t refused_arena = (16u + 4u) * page;
+
+    advanced_configuration_and_power_interface_simulated_host_open(&made_up_host);
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_namespace_open(
+                               &space, &made_up_host.host, 4000u, 24u * page) ==
+                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK,
+                           "the namespace opens"))
+    {
+        advanced_configuration_and_power_interface_machine_language_namespace_close(&space);
+        return;
+    }
+
+    const uint32_t opened = space.node_count;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t full = made_up_add_children(&space, 0u, 4000u);
+    const uint32_t live = space.live_nodes;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *root =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(
+            &space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *last =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&space, first_of_second_run - 1u);
+
+    kernel_test_check(test,
+                      full == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY &&
+                          space.node_count == first_of_second_run && space.run_count == 1u &&
+                          space.arena_bytes == refused_arena,
+                      "an arena of 24 pages refuses node 1,638, its run and its count of arena bytes not taken");
+    space.max_arena_bytes = 40u * page;
+    kernel_test_check(test,
+                      made_up_add_children(&space, first_of_second_run - opened, 1u) ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          space.node_count == first_of_second_run + 1u && space.run_count == 2u &&
+                          space.arena_bytes == refused_arena + 16u * page && space.live_nodes == live + 1u,
+                      "16 pages more take it, and the arena counts them");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_namespace_node(
+                          &space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT) == root &&
+                          advanced_configuration_and_power_interface_machine_language_namespace_node(
+                              &space, first_of_second_run - 1u) == last &&
+                          advanced_configuration_and_power_interface_machine_language_namespace_node(
+                              &space, first_of_second_run) == last + 1,
+                      "the nodes before it stay where they were, and it follows the last of them");
+    advanced_configuration_and_power_interface_machine_language_namespace_close(&space);
+    kernel_test_check(test, made_up_host.outstanding_pages == 0u, "every page goes back to the host");
+
+    if (advanced_configuration_and_power_interface_machine_language_namespace_open(&space, &made_up_host.host, 4000u,
+                                                                                   256u * page) ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+    {
+        (void) made_up_add_children(&space, 0u, first_of_second_run - space.node_count);
+        made_up_host.refuses_commits = true;
+
+        const uint32_t live_before = space.live_nodes;
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t refused =
+            made_up_add_children(&space, first_of_second_run, 1u);
+
+        kernel_test_check(test,
+                          refused == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OUT_OF_MEMORY &&
+                              space.node_count == first_of_second_run && space.run_count == 1u &&
+                              space.arena_bytes == refused_arena && space.live_nodes == live_before,
+                          "a host that refuses the run's pages leaves the namespace as an arena with no room does");
+        made_up_host.refuses_commits = false;
+        kernel_test_check(test,
+                          made_up_add_children(&space, first_of_second_run, 1u) ==
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                              space.node_count == first_of_second_run + 1u && space.run_count == 2u,
+                          "and the node takes the run once the host gives it");
+    }
+    advanced_configuration_and_power_interface_machine_language_namespace_close(&space);
+    kernel_test_check(test, made_up_host.outstanding_pages == 0u, "every page goes back to the host, again");
 }
 
 /**
