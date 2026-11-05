@@ -2,8 +2,8 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Named Integers, Strings, Buffers, a Package and a Device, and methods that store Strings, Buffers, Integers
- *        and Packages to them.
+ * @brief Named Integers, Strings, Buffers, a Package and a Device, and table-level stores of Strings, Buffers,
+ *        Integers and Packages to them.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {

@@ -200,19 +200,20 @@ KERNEL_TEST(control_flow_runs_loops_branches_and_their_exits)
  * @brief A While whose PkgLength takes two bytes restarts at its predicate on each turn:
  *        `While (LLess (Local0, 2)) { Increment (Local0); Noop... }` returns 2.
  *
- * Its table is raw bytes, built around a run of Noops (§8.2) whose length the test sets.
+ * Its table is built around a run of EVALUATION_LONG_LOOP_NOOPS Noops (§8.2), the length the test is about: its head,
+ * a Method and a While opened over that run, stays raw bytes.
  */
 KERNEL_TEST(a_while_whose_package_length_takes_two_bytes_restarts_at_its_predicate)
 {
     static const uint8_t head[] = {0x14u, 0x40u, 0x05u, 'L',   'O',   'N',   'G',   0x00u, 0xA2u,
                                    0x46u, 0x04u, 0x95u, 0x60u, 0x0Au, 0x02u, 0x75u, 0x60u};
-    static const uint8_t tail[] = {0xA4u, 0x60u};
-    uint8_t aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS + sizeof(tail)];
+    uint8_t aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS + sizeof(evaluation_return_local0_aml)];
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
     memcpy(aml, head, sizeof(head));
     memset(&aml[sizeof(head)], 0xA3, EVALUATION_LONG_LOOP_NOOPS);
-    memcpy(&aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS], tail, sizeof(tail));
+    memcpy(&aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS], evaluation_return_local0_aml,
+           sizeof(evaluation_return_local0_aml));
     if (!evaluation_run(test, 2u, aml, sizeof(aml)))
         return;
 

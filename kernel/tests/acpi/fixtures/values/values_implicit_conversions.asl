@@ -2,8 +2,8 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Methods whose operators take, where they need an Integer, Strings with and without a 0x prefix, a Buffer,
- *        an empty String, an empty Buffer and a Package.
+ * @brief Table-level stores of operators that take, where they need an Integer, Strings with and without a 0x
+ *        prefix, a Buffer, an empty String, an empty Buffer and a Package.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
