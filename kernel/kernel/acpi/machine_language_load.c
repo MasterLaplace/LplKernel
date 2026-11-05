@@ -676,8 +676,8 @@ static void machine_language_keep_external(MachineLanguageWalk_t *walk, const Ma
  *        one it cannot find in the scope the walk is in, the Externals pass skips it, and both skip the
  *        body of one another construct declared.
  *
- * @details Always inlined into the walk and into each declaration decoder, which knows its opcode, so that the
- *          compiler drops the branches that opcode never takes.
+ * @details Always inlined into each declaration decoder, which knows its opcode, so that the compiler drops the
+ *          branches that opcode never takes; the walk calls it out of line, through machine_language_use_operand_name.
  */
 __attribute__((always_inline)) static inline MachineLanguageStatus_t
 machine_language_use_name(MachineLanguageWalk_t *walk, MachineLanguagePendingOperator_t *active,
@@ -752,6 +752,18 @@ machine_language_use_name(MachineLanguageWalk_t *walk, MachineLanguagePendingOpe
     if (status == MACHINE_LANGUAGE_OK && type == MACHINE_LANGUAGE_NODE(ALIAS) && active->node == walk->last_created)
         machine_language_node(walk, active->node)->value.handle = target;
     return status;
+}
+
+/**
+ * @brief machine_language_use_name, out of line, for a NameString the walk's operand step reads: the walk runs every
+ *        pass and every method body, and the declaration's code in line in it costs the decoding pass of the debug
+ *        kernel and the host tools more in register spills than the call it saves the declaration pass.
+ */
+__attribute__((noinline)) static MachineLanguageStatus_t
+machine_language_use_operand_name(MachineLanguageWalk_t *walk, MachineLanguagePendingOperator_t *active,
+                                  const MachineLanguageNameString_t *name)
+{
+    return machine_language_use_name(walk, active, name);
 }
 
 /**
@@ -1620,7 +1632,7 @@ static MachineLanguageStatus_t machine_language_operand(MachineLanguageWalk_t *w
             walk->bytes, walk->pc, active->end, &name, &after);
         if (status != MACHINE_LANGUAGE_OK)
             return status;
-        status = machine_language_use_name(walk, active, &name);
+        status = machine_language_use_operand_name(walk, active, &name);
         if (status != MACHINE_LANGUAGE_OK)
             return status;
         walk->pc = after;
