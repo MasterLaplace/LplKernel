@@ -457,7 +457,7 @@ static const uint8_t load_traces_nine_aml[] = {
 };
 
 /**
- * @brief A _CST that adds 2 to the trace, then returns one state: FFixedHW C1 of latency 1 and power 1000.
+ * @brief A _CST that appends the digit 2 to the trace, then returns one state: FFixedHW C1 of latency 1 and power 1000.
  */
 static const uint8_t load_traces_two_and_returns_one_c_state_aml[] = {
     0x70u, 0x72u, 0x77u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u, 0x0Au, 0x10u, 0x00u, 0x0Au, 0x02u, 0x00u,

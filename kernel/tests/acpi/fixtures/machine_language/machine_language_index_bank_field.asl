@@ -20,8 +20,7 @@ DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
         R0,     8
     }
 
-    BankField (REG0, BNK, 0x02
-, ByteAcc, NoLock, Preserve)
+    BankField (REG0, BNK, 0x02, ByteAcc, NoLock, Preserve)
     {
         B0,     8
     }

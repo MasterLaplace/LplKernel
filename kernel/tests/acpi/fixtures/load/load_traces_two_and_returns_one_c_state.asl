@@ -2,7 +2,7 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief A _CST that adds 2 to the trace, then returns one state: FFixedHW C1 of latency 1 and power 1000.
+ * @brief A _CST that appends the digit 2 to the trace, then returns one state: FFixedHW C1 of latency 1 and power 1000.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
