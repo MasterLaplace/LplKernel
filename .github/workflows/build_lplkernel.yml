@@ -198,6 +198,9 @@ jobs:
     - name: The rule the oracle of _CST publishes processors by
       run: python3 -I -B tools/acpi/acpiexec_idle.py --self-test
 
+    - name: The rule the slack oracle compares acpiexec's two runs by
+      run: python3 -I -B tools/acpi/acpiexec_slack.py --self-test
+
     - name: The ACPI tests on the host
       run: |
         set -eo pipefail
