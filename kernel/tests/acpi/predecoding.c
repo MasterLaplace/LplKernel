@@ -259,14 +259,14 @@ static void predecoding_write_pools(void)
  *        PREDECODING_SEVEN_CALLS calls in the last argument of the one around them, each holding six values while
  *        LOOP runs, under PREDECODING_SEVEN_PADS Adds: LOOP's If at its third turn needs more values than are left.
  *
- * Its pieces are raw bytes, partial terms it nests PREDECODING_SEVEN_CALLS deep: a Return and Adds without their
- * operands, calls without their last argument, and the NullNames that close them.
+ * Its innermost call comes from a fixture; its other pieces are raw bytes, partial terms it nests
+ * PREDECODING_SEVEN_CALLS deep: a Return opcode, Adds of One whose second operand is what they nest, calls of FSEV
+ * whose last argument is what they nest, and the NullNames that close the Adds.
  */
 static void predecoding_write_values_nearly_full(void)
 {
     static const uint8_t add_one[] = {0x72u, 0x01u};
     static const uint8_t seven[] = {'F', 'S', 'E', 'V', 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u};
-    static const uint8_t loop_call[] = {'L', 'O', 'O', 'P'};
     static const uint8_t null_name[] = {0x00u};
     static const uint8_t returns[] = {0xA4u};
 
@@ -276,7 +276,7 @@ static void predecoding_write_values_nearly_full(void)
         made_up_aml_raw(&predecoding_body, add_one, sizeof(add_one));
     for (uint32_t call = 0u; call < PREDECODING_SEVEN_CALLS; ++call)
         made_up_aml_raw(&predecoding_body, seven, sizeof(seven));
-    made_up_aml_raw(&predecoding_body, loop_call, sizeof(loop_call));
+    made_up_aml_raw(&predecoding_body, predecoding_loop_call_aml, sizeof(predecoding_loop_call_aml));
     for (uint32_t pad = 0u; pad < PREDECODING_SEVEN_PADS; ++pad)
         made_up_aml_raw(&predecoding_body, null_name, sizeof(null_name));
     made_up_aml_begin(&predecoding_method);
@@ -289,24 +289,25 @@ static void predecoding_write_values_nearly_full(void)
  *        ROOM ()))))`, PREDECODING_SEVEN_CALLS calls nested in the last argument under @p pads Adds: the first call
  *        links ROOM's tight loop, the second runs it @p pads values deeper.
  *
- * Its pieces are raw bytes, partial terms it nests @p pads deep: Adds without their operands, calls without their
- * last argument, and the NullNames that close them.
+ * Its first Store and its innermost call come from fixtures; its other pieces are raw bytes, partial terms it nests
+ * @p pads deep: a Return opcode, Adds of One whose second operand is what they nest, calls of FSEV whose last argument
+ * is what they nest, and the NullNames that close the Adds.
  */
 static void predecoding_write_room(uint32_t pads)
 {
-    static const uint8_t first_call[] = {0x70u, 'R', 'O', 'O', 'M', 0x60u, 0xA4u};
+    static const uint8_t returns[] = {0xA4u};
     static const uint8_t add_one[] = {0x72u, 0x01u};
     static const uint8_t seven[] = {'F', 'S', 'E', 'V', 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u};
-    static const uint8_t room_call[] = {'R', 'O', 'O', 'M'};
     static const uint8_t null_name[] = {0x00u};
 
     made_up_aml_begin(&predecoding_body);
-    made_up_aml_raw(&predecoding_body, first_call, sizeof(first_call));
+    made_up_aml_raw(&predecoding_body, predecoding_store_room_call_aml, sizeof(predecoding_store_room_call_aml));
+    made_up_aml_raw(&predecoding_body, returns, sizeof(returns));
     for (uint32_t pad = 0u; pad < pads; ++pad)
         made_up_aml_raw(&predecoding_body, add_one, sizeof(add_one));
     for (uint32_t call = 0u; call < PREDECODING_SEVEN_CALLS; ++call)
         made_up_aml_raw(&predecoding_body, seven, sizeof(seven));
-    made_up_aml_raw(&predecoding_body, room_call, sizeof(room_call));
+    made_up_aml_raw(&predecoding_body, predecoding_room_call_aml, sizeof(predecoding_room_call_aml));
     for (uint32_t pad = 0u; pad < pads; ++pad)
         made_up_aml_raw(&predecoding_body, null_name, sizeof(null_name));
     made_up_aml_begin(&predecoding_method);
