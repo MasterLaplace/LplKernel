@@ -2,14 +2,18 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Intel's pattern for HWP: GNVS, an NVS region at 0x320000, holds HWPA and HWPL, where the HWP table lies and
- *        its length, and GRNT, the bits the platform grants unasked; \_SB._OSC grants CDW2 | GRNT and keeps it in
- *        OSCP; CPU0's _PDC calls GCAP, which Loads the HWP table from HWPA and HWPL only when OSCP holds bit 6.
+ * @brief Intel's pattern for HWP, after the NVS region GNVS the test declares: its fields HWPA and HWPL, where the HWP
+ *        table lies and its length, and GRNT, the bits the platform grants unasked; \_SB._OSC grants CDW2 | GRNT and
+ *        keeps it in OSCP; CPU0's _PDC calls GCAP, which Loads the HWP table from HWPA and HWPL only when OSCP holds
+ *        bit 6.
+ *
+ * GRNT is a device of the test: real firmware keeps in OSCP what the OS asked for, and this kernel never asks for
+ * bit 6, so no real machine grants it unasked. Granting it reaches the kernel's handling of a loaded HWP table; GRNT
+ * at zero is the faithful branch.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    OperationRegion (GNVS, SystemMemory, 0x00320000, 0x0C)
-    Field (GNVS, DWordAcc, NoLock, Preserve)
+    Field (GNVS, DWordAcc, NoLock, Preserve) __EXPECT__(6084)
     {
         HWPA,   32,
         HWPL,   32,

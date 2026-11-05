@@ -455,6 +455,7 @@ static bool initialization_run_hardware_p_states(KernelTest_t *test, uint32_t gr
                                                                     initialization_nvs, sizeof(initialization_nvs));
     advanced_configuration_and_power_interface_simulated_host_place(
         &initialization_host, INITIALIZATION_HWP_ADDRESS, initialization_hwp_table, sizeof(initialization_hwp_table));
+    made_up_aml_region(&initialization_aml, "GNVS", 0x00u, INITIALIZATION_NVS_ADDRESS, sizeof(initialization_nvs));
     made_up_aml_raw(&initialization_aml, initialization_intel_hardware_p_states_aml,
                     sizeof(initialization_intel_hardware_p_states_aml));
     return initialization_run(test, true);
