@@ -24,7 +24,7 @@ typedef struct PlatformReservation {
 static PlatformReservation_t platform_reservations[PLATFORM_MAX_RESERVATIONS];
 
 /**
- * @brief The reservation that holds @p address, or, for NULL, a free entry; NULL when there is none.
+ * @brief The reservation that holds @p address, or NULL when none does.
  */
 static PlatformReservation_t *platform_reservation_holding(const void *address)
 {
@@ -33,10 +33,22 @@ static PlatformReservation_t *platform_reservation_holding(const void *address)
         PlatformReservation_t *reservation = &platform_reservations[index];
         const uint8_t *start = reservation->address;
 
-        if (address == NULL ? start == NULL :
-                              start != NULL && (const uint8_t *) address >= start &&
-                                  (const uint8_t *) address < start + reservation->bytes)
+        if (start != NULL && (const uint8_t *) address >= start &&
+            (const uint8_t *) address < start + reservation->bytes)
             return reservation;
+    }
+    return NULL;
+}
+
+/**
+ * @brief An entry of the table no reservation holds, or NULL when every one does.
+ */
+static PlatformReservation_t *platform_free_reservation(void)
+{
+    for (uint32_t index = 0u; index < PLATFORM_MAX_RESERVATIONS; ++index)
+    {
+        if (platform_reservations[index].address == NULL)
+            return &platform_reservations[index];
     }
     return NULL;
 }
@@ -248,7 +260,7 @@ void *kernel_vmm_alloc_pages(uint32_t page_count)
 
 void *kernel_vmm_reserve_pages(uint32_t page_count)
 {
-    PlatformReservation_t *free_entry = platform_reservation_holding(NULL);
+    PlatformReservation_t *free_entry = platform_free_reservation();
     void *pages = NULL;
 
     if (page_count == 0u || free_entry == NULL)
@@ -276,11 +288,13 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count)
     PlatformReservation_t *reservation = platform_reservation_holding(ptr);
 
     (void) page_count;
-    if (ptr == NULL || reservation == NULL || reservation->address != ptr)
+    if (reservation == NULL)
     {
         free(ptr);
         return;
     }
+    if (reservation->address != ptr)
+        return;
     munmap(reservation->address, reservation->bytes);
     reservation->address = NULL;
     reservation->bytes = 0u;

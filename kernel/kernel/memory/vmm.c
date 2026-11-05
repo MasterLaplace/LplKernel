@@ -138,13 +138,14 @@ uint32_t kernel_vmm_first_free_run(const uint8_t *bitmap, uint32_t page_count, u
         return KERNEL_VMM_NO_FREE_RUN;
     while (index <= page_count - run_pages)
     {
-        uint32_t taken = 0u;
+        uint32_t free_pages = 0u;
 
-        while (taken < run_pages && (bitmap[(index + taken) / 8u] & (1u << ((index + taken) % 8u))) == 0u)
-            ++taken;
-        if (taken == run_pages)
+        while (free_pages < run_pages &&
+               (bitmap[(index + free_pages) / 8u] & (1u << ((index + free_pages) % 8u))) == 0u)
+            ++free_pages;
+        if (free_pages == run_pages)
             return index;
-        index += taken + 1u;
+        index += free_pages + 1u;
         while (index % 8u == 0u && index + 8u <= page_count && bitmap[index / 8u] == 0xFFu)
             index += 8u;
     }

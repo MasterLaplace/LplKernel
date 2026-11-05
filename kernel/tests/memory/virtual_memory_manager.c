@@ -111,6 +111,11 @@ KERNEL_TEST(the_first_fit_search_finds_the_run_a_page_by_page_search_finds)
                       kernel_vmm_first_free_run(bitmap, pages, 4u) == pages - 4u &&
                           kernel_vmm_first_free_run(bitmap, pages, 5u) == KERNEL_VMM_NO_FREE_RUN,
                       "a run that ends at the last page is found, and one larger than every hole is not");
+    memset(bitmap, 0x00, sizeof(bitmap));
+    kernel_test_check(test,
+                      kernel_vmm_first_free_run(bitmap, pages, pages) == 0u &&
+                          kernel_vmm_first_free_run(bitmap, pages, pages + 1u) == KERNEL_VMM_NO_FREE_RUN,
+                      "a run of every page fits a bitmap with every page free, and one page more does not");
     kernel_test_check(test, kernel_vmm_first_free_run(bitmap, pages, 0u) == KERNEL_VMM_NO_FREE_RUN,
                       "a run of no page is not");
     kernel_test_check(test, agree == searches, "every search finds the run a page-by-page search finds");
