@@ -884,7 +884,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length,
     MachineLanguageValue_t *out_value)
 {
-    memset(out_value, 0, sizeof(*out_value));
+    *out_value = (MachineLanguageValue_t){0};
 
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, kind, length, &out_value->handle);
@@ -1060,7 +1060,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
             0u &&
         length != 0u && length <= integer_bits)
     {
-        memset(out_value, 0, sizeof(*out_value));
+        *out_value = (MachineLanguageValue_t){0};
         out_value->kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER;
         for (uint32_t bit = 0u; bit < length; ++bit)
             out_value->payload |= (uint64_t) machine_language_bit((const uint8_t *) (buffer + 1), offset + bit) << bit;
@@ -1193,7 +1193,7 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
     uint32_t pc = offset;
     MachineLanguageStatus_t status = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 
-    memset(out_value, 0, sizeof(*out_value));
+    *out_value = (MachineLanguageValue_t){0};
     *out_constant = false;
     *out_after = offset;
     for (;;)
