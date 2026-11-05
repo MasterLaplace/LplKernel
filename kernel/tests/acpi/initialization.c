@@ -396,10 +396,10 @@ static void initialization_slots(const uint32_t *identifiers, uint32_t count)
 }
 
 /**
- * @brief How many writes to the I/O port @p port the simulated host logged, of @p value, or of any value when
- *        @p value is above 0xFF.
+ * @brief How many writes to the I/O port @p port the simulated host logged from its access @p from on, of @p value,
+ *        or of any value when @p value is above 0xFF.
  */
-static uint32_t initialization_port_writes(uint16_t port, uint32_t value)
+static uint32_t initialization_port_writes(uint32_t from, uint16_t port, uint32_t value)
 {
     const uint32_t logged =
         initialization_host.access_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES ?
@@ -407,7 +407,7 @@ static uint32_t initialization_port_writes(uint16_t port, uint32_t value)
             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES;
     uint32_t writes = 0u;
 
-    for (uint32_t index = 0u; index < logged; ++index)
+    for (uint32_t index = from; index < logged; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &initialization_host.accesses[index];
 
@@ -1300,23 +1300,29 @@ KERNEL_TEST(an_amd_interrupt_model_rewrites_its_links_only_when_given_one)
         return;
     kernel_test_check(test,
                       initialization_integer("PICM") == 0u && initialization_counts.pic_mode_deferred == 1u &&
-                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 0x100u) == 0u &&
-                          initialization_port_writes(INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
+                          initialization_port_writes(0u, INITIALIZATION_ROUTER_INDEX, 0x100u) == 0u &&
+                          initialization_port_writes(0u, INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
                       "the initialisation leaves _PIC uncalled, counts its deferral, and writes no link");
+
+    const uint32_t before_classic = initialization_host.access_count;
+
     kernel_test_check(test,
                       initialization_interrupt_model(0u) == INITIALIZATION_STATUS(OK) &&
                           initialization_integer("PICM") == 0u &&
-                          initialization_port_writes(INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
+                          initialization_port_writes(before_classic, INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
                       "_PIC (0) keeps the 8259's model and writes no link");
+
+    const uint32_t before_apic = initialization_host.access_count;
+
     kernel_test_check(
         test, initialization_interrupt_model(1u) == INITIALIZATION_STATUS(OK) && initialization_integer("PICM") == 1u,
         "_PIC (1) runs and keeps the APIC's model in PICM");
     kernel_test_check(test,
-                      initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 0u) == 1u &&
-                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 1u) == 1u &&
-                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 2u) == 1u &&
-                          initialization_port_writes(INITIALIZATION_ROUTER_INDEX, 3u) == 1u &&
-                          initialization_port_writes(INITIALIZATION_ROUTER_DATA, 0x1Fu) == 4u &&
+                      initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 0u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 1u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 2u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 3u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_DATA, 0x1Fu) == 4u &&
                           initialization_host.access_count <=
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES,
                       "it selects links 0 to 3 and writes 0x1F to each");
