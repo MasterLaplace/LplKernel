@@ -289,6 +289,26 @@ extern void asmutils_monitor(const void *address, uint32_t extensions, uint32_t 
 extern void asmutils_monitor_wait(uint32_t hints, uint32_t extensions);
 
 /**
+ * @brief Writes back the cache line containing @p address if it is modified, and evicts it from every cache of the
+ *        coherence domain (CLFLUSH).
+ *
+ * @details The memory type of the page does not matter, and the line leaves the caches of the other processors too.
+ *          The instruction exists only when CPUID leaf 1 sets EDX bit 19; without it, it raises #UD. It is not
+ *          reordered with writes nor with another CLFLUSH (Intel SDM vol. 3, §11.2.2).
+ *
+ * @param address Address inside the line to flush.
+ */
+extern void asmutils_flush_cache_line(const volatile void *address);
+
+/**
+ * @brief Writes back every modified line of this processor's caches and invalidates them all (WBINVD).
+ *
+ * @details Every processor since the 486 has it. Only this processor's caches, and the caches it shares with others,
+ *          are flushed: another processor's own caches are not (Intel SDM vol. 3, §2.8.6).
+ */
+extern void asmutils_write_back_and_invalidate_caches(void);
+
+/**
  * @brief Stores a zero at @p target, publishing first the address to resume at if it faults.
  *
  * @details
