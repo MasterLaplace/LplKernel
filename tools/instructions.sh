@@ -23,7 +23,9 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --until TEXT    without --from or --inside, stop when the serial output prints TEXT
                   (default: "# Totals:")
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
-  --append TEXT   kernel command line
+  --append TEXT   kernel command line, after the kernel's name: QEMU puts that name at its head, and
+                  the kernel reads through it, so <kernel> boots as kernel/lpl.kernel, a copy in the
+                  run's directory, whatever its path: the length of that path does not move the counts
   --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), named by its file
                   name alone, which the kernel reads up to 255 characters: a recorded machine of the
                   ACPI corpus, which tools/acpi-corpus.sh module <machine> writes, is found by its .acpi
@@ -194,8 +196,13 @@ if [ -n "$inside_symbol" ]; then
     plugin_args="$plugin_args,inside=$inside,times=$times,skip=$skip"
 fi
 
-boot=(-kernel "$(cd "$(dirname "$kernel")" && pwd)/$(basename "$kernel")")
-[ -z "$cdrom" ] || boot=(-cdrom "$(cd "$(dirname "$cdrom")" && pwd)/$(basename "$cdrom")")
+if [ -n "$cdrom" ]; then
+    boot=(-cdrom "$(cd "$(dirname "$cdrom")" && pwd)/$(basename "$cdrom")")
+else
+    mkdir "$work/kernel"
+    cp "$kernel" "$work/kernel/lpl.kernel"
+    boot=(-kernel kernel/lpl.kernel)
+fi
 if [ -n "$module" ]; then
     module_name="$(basename "$module" | tr -c 'A-Za-z0-9.\n-' '_')"
     cp "$module" "$work/$module_name"
