@@ -2,8 +2,11 @@
 #include "made_up_table.h"
 #include "simulated_host.h"
 
+#include <kernel/acpi/initialization.h>
 #include <kernel/acpi/log.h>
 #include <kernel/acpi/machine_language.h>
+#include <kernel/acpi/processor_idle.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
 #include <stdint.h>
@@ -11,11 +14,20 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_log, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define LOG_LEVEL(name)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_##name
-#define LOG_TABLE_ADDRESS  0x00300000u /**< Where the table Load reads is placed. */
-#define LOG_SYSTEM_MEMORY  0x00u       /**< The RegionSpace byte of SystemMemory. */
-#define LOG_CHECKSUM_INDEX 9u          /**< The offset of a table's checksum byte. */
-#define LOG_LONG_VALUE     300u        /**< Characters of a value no line holds. */
+#define LOG_LEVEL(name)      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_##name
+#define LOG_TABLE_ADDRESS    0x00300000u /**< Where the table Load reads is placed. */
+#define LOG_SYSTEM_MEMORY    0x00u       /**< The RegionSpace byte of SystemMemory. */
+#define LOG_CHECKSUM_INDEX   9u          /**< The offset of a table's checksum byte. */
+#define LOG_LONG_VALUE       300u        /**< Characters of a value no line holds. */
+#define LOG_FIRMWARE_ADDRESS 0x000E0000u /**< Where the made-up firmware's page lies. */
+#define LOG_RSDT_OFFSET      0x040u      /**< Where its RSDT lies in the page. */
+#define LOG_FADT_OFFSET      0x080u      /**< Its FADT. */
+#define LOG_SSDT_OFFSET      0x100u      /**< Its SSDT. */
+#define LOG_TSTA_OFFSET      0x140u      /**< A table nothing reads but the directory. */
+#define LOG_DSDT_OFFSET      0x180u      /**< Its DSDT, which the FADT names. */
+#define LOG_FADT_LENGTH      116u        /**< An ACPI 1.0 FADT. */
+#define LOG_FADT_DSDT        40u         /**< Where a FADT names its DSDT. */
+#define LOG_STATUS(name)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t log_host;
 static AdvancedConfigurationAndPowerInterfaceHost_t log_silent_host;
@@ -24,6 +36,12 @@ static uint8_t log_dsdt[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
 static uint8_t log_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
 static MadeUpAml_t log_aml;
 static MadeUpAml_t log_body;
+static uint8_t log_firmware[0x200u];
+static uint8_t log_second[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static uint8_t log_third[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static AdvancedConfigurationAndPowerInterfaceDirectory_t log_directory;
+static AdvancedConfigurationAndPowerInterfaceInitialization_t log_initialization;
+static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t log_idle;
 
 /**
  * @brief Prints @p text as one record of the running test.
@@ -562,4 +580,188 @@ KERNEL_TEST(a_space_without_a_handler_and_a_load_from_a_buffer_are_logged)
                                       "method=\\LDBF"),
                       "one line names FLD0 at 0x43 in \\RDEC, one the Load at 0x5F in \\LDBF");
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief Writes a table header at @p offset of the made-up firmware's page: @p signature, @p length, OEM table ID
+ *        "LOGTEST", its checksum made to hold, then broken by one when @p breaks says so.
+ */
+static void log_firmware_table(uint32_t offset, const char *signature, uint32_t length, bool breaks)
+{
+    uint8_t *table = log_firmware + offset;
+    uint8_t sum = 0u;
+
+    memcpy(table, signature, 4u);
+    memcpy(table + 4u, &length, 4u);
+    table[8] = 1u;
+    memcpy(table + 16u, "LOGTEST ", 8u);
+    table[9] = 0u;
+    for (uint32_t byte = 0u; byte < length; ++byte)
+        sum = (uint8_t) (sum + table[byte]);
+    table[9] = (uint8_t) (0u - sum + (breaks ? 1u : 0u));
+}
+
+/**
+ * @brief Writes the made-up firmware and serves it: an RSDP of revision 0, an RSDT that lists a FADT, an SSDT and
+ *        TSTA, the FADT naming a DSDT, each checksum but the RSDP's and the RSDT's broken.
+ */
+static void log_firmware_open(void)
+{
+    static const uint8_t ssdt_aml[] = {0x08u, 'S', 'N', 'A', 'M', 0x01u};
+    static const uint8_t dsdt_aml[] = {0x08u, 'D', 'N', 'A', 'M', 0x01u};
+    const uint32_t entries[] = {LOG_FIRMWARE_ADDRESS + LOG_FADT_OFFSET, LOG_FIRMWARE_ADDRESS + LOG_SSDT_OFFSET,
+                                LOG_FIRMWARE_ADDRESS + LOG_TSTA_OFFSET};
+    const uint32_t rsdt = LOG_FIRMWARE_ADDRESS + LOG_RSDT_OFFSET;
+    const uint32_t dsdt = LOG_FIRMWARE_ADDRESS + LOG_DSDT_OFFSET;
+    uint8_t sum = 0u;
+
+    memset(log_firmware, 0, sizeof(log_firmware));
+    memcpy(log_firmware, "RSD PTR ", 8u);
+    memcpy(log_firmware + 16u, &rsdt, 4u);
+    for (uint32_t byte = 0u; byte < 20u; ++byte)
+        sum = (uint8_t) (sum + log_firmware[byte]);
+    log_firmware[8] = (uint8_t) (0u - sum);
+    memcpy(log_firmware + LOG_RSDT_OFFSET + MADE_UP_TABLE_HEADER, entries, sizeof(entries));
+    log_firmware_table(LOG_RSDT_OFFSET, "RSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(entries), false);
+    memcpy(log_firmware + LOG_FADT_OFFSET + LOG_FADT_DSDT, &dsdt, 4u);
+    log_firmware_table(LOG_FADT_OFFSET, "FACP", LOG_FADT_LENGTH, true);
+    memcpy(log_firmware + LOG_SSDT_OFFSET + MADE_UP_TABLE_HEADER, ssdt_aml, sizeof(ssdt_aml));
+    log_firmware_table(LOG_SSDT_OFFSET, "SSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(ssdt_aml), true);
+    log_firmware_table(LOG_TSTA_OFFSET, "TSTA", MADE_UP_TABLE_HEADER, true);
+    memcpy(log_firmware + LOG_DSDT_OFFSET + MADE_UP_TABLE_HEADER, dsdt_aml, sizeof(dsdt_aml));
+    log_firmware_table(LOG_DSDT_OFFSET, "DSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(dsdt_aml), true);
+    advanced_configuration_and_power_interface_simulated_host_open(&log_host);
+    (void) advanced_configuration_and_power_interface_simulated_host_place(&log_host, LOG_FIRMWARE_ADDRESS,
+                                                                           log_firmware, sizeof(log_firmware));
+    log_host.root_system_description_pointer = LOG_FIRMWARE_ADDRESS;
+}
+
+/**
+ * @brief The directory counts in checksum_bad_parsed each table it reads whose checksum fails, the definition blocks
+ *        apart, and logs each as a warning (§3.9): the FADT and TSTA, not the SSDT nor the DSDT, which the load then
+ *        counts in checksum_bad_loaded as it declares them, each logged too.
+ */
+KERNEL_TEST(the_directory_counts_and_logs_the_static_tables_whose_checksum_fails)
+{
+    log_firmware_open();
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_read_directory(&log_host.host, &log_directory),
+                           "the directory is read") ||
+        !kernel_test_check(test, log_directory.table_count == 4u && log_directory.fixed_description.present,
+                           "it records the FADT, the SSDT, TSTA and the DSDT, the FADT read"))
+        return;
+    kernel_test_check(test, log_directory.checksum_bad_parsed == 2u, "two static tables are counted");
+    kernel_test_check(test,
+                      log_host.log_count == 2u &&
+                          log_line_is(&log_host, 0u, LOG_LEVEL(WARNING), "checksum_bad_parsed table=FACP/LOGTEST") &&
+                          log_line_is(&log_host, 1u, LOG_LEVEL(WARNING), "checksum_bad_parsed table=TSTA/LOGTEST"),
+                      "the FADT and TSTA are logged, in the order the directory reads them");
+    if (kernel_test_check(test,
+                          advanced_configuration_and_power_interface_machine_language_open(
+                              &log_load, &log_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+                          "the namespace opens"))
+        advanced_configuration_and_power_interface_machine_language_load_directory(&log_load, &log_directory);
+    log_print_lines(test, &log_host);
+    kernel_test_check(test,
+                      log_load.checksum_bad_loaded == 2u && log_host.log_count == 4u &&
+                          log_line_is(&log_host, 2u, LOG_LEVEL(WARNING), "checksum_bad_loaded table=DSDT/LOGTEST") &&
+                          log_line_is(&log_host, 3u, LOG_LEVEL(WARNING), "checksum_bad_loaded table=SSDT/LOGTEST"),
+                      "the load counts and logs the DSDT, then the SSDT");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+    advanced_configuration_and_power_interface_release_directory(&log_directory);
+}
+
+/**
+ * @brief A table whose load meets faults is counted once in table_load_failed, and the next one loads (§3.8 step 1):
+ *        the DSDT meets two, FindSetLeftBit, which its table-level code fails on, and the byte 0x02, which the load
+ *        meets; the first SSDT none; the second the byte 0x02 alone, the third FindSetLeftBit alone. Each fault is
+ *        counted once in faults, under its status.
+ */
+KERNEL_TEST(a_table_whose_load_meets_faults_is_counted_once_in_table_load_failed)
+{
+    static const uint8_t faulty[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u, 0x5Bu, 0x82u, 0x06u, 'D', 'E', 'V', '2', 0x02u};
+    static const uint8_t clean[] = {0x08u, 'C', 'L', 'E', 'N', 0x01u};
+    static const uint8_t invalid[] = {0x02u};
+    static const uint8_t unimplemented[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u};
+
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, faulty, sizeof(faulty)))
+        return;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &log_load, made_up_definition_block(log_second, "SSDT", 2u, clean, sizeof(clean)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &log_load, made_up_definition_block(log_third, "SSDT", 2u, invalid, sizeof(invalid)));
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &log_load, made_up_definition_block(log_table, "SSDT", 2u, unimplemented, sizeof(unimplemented)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&log_load);
+    log_print_lines(test, &log_host);
+    kernel_test_measure(test, "table_load_failed", log_load.table_load_failed);
+    kernel_test_check(test,
+                      log_load.table_count == 4u && log_load.tables[0].load_failed && !log_load.tables[1].load_failed &&
+                          log_load.tables[2].load_failed && log_load.tables[3].load_failed,
+                      "the DSDT, the second SSDT and the third met faults, the first SSDT none");
+    kernel_test_check(test, log_load.table_load_failed == 3u, "three tables are counted, the DSDT once");
+    kernel_test_check(test,
+                      log_load.faults[LOG_STATUS(UNIMPLEMENTED_OPERATOR)] == 2u &&
+                          log_load.faults[LOG_STATUS(INVALID_OPCODE)] == 2u && log_host.log_count == 4u,
+                      "four faults, one line and one count each");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief A table Load adds whose code fails is marked, and not counted in table_load_failed, which counts the tables
+ *        the root table lists (§3.8 step 1): LDIT loads an SSDT whose table-level code fails on FindSetLeftBit.
+ */
+KERNEL_TEST(a_table_load_adds_whose_code_fails_is_marked_and_not_counted)
+{
+    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
+    static const uint8_t ssdt_aml[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt =
+        made_up_definition_block(log_table, "SSDT", 2u, ssdt_aml, sizeof(ssdt_aml));
+
+    advanced_configuration_and_power_interface_simulated_host_open(&log_host);
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&log_host, LOG_TABLE_ADDRESS, log_table,
+                                                                          ssdt->length);
+    made_up_aml_begin(&log_aml);
+    made_up_aml_region(&log_aml, "TBLR", LOG_SYSTEM_MEMORY, LOG_TABLE_ADDRESS, ssdt->length);
+    made_up_aml_name_integer(&log_aml, "HND1", 0u);
+    made_up_aml_begin(&log_body);
+    made_up_aml_raw(&log_body, loads, sizeof(loads));
+    made_up_aml_method(&log_aml, "LDIT", 0x00u, &log_body);
+    if (!kernel_test_check(test, !log_aml.overflowed, "the made-up AML fits") ||
+        !made_up_load_on(test, &log_load, &log_host.host, log_dsdt, 2u, log_aml.bytes, log_aml.length))
+        return;
+    (void) advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, "\\LDIT", NULL, 0u, &result);
+    advanced_configuration_and_power_interface_machine_language_value_release(&log_load.heap, &log_load.space, &result);
+    kernel_test_check(test,
+                      log_load.tables_loaded == 1u && log_load.tables[1].load_failed && !log_load.tables[0].load_failed,
+                      "the table Load added is marked, the DSDT is not");
+    kernel_test_check(test, log_load.table_load_failed == 0u && log_load.evaluation.failures == 1u,
+                      "its failure is counted, the table is not");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+    advanced_configuration_and_power_interface_simulated_host_close(&log_host);
+}
+
+/**
+ * @brief The initialisation counts acpi_mode_failed when step 0 ended with SCI_EN still clear, and only then (§3.8):
+ *        the same namespace initialised after a switch that succeeded counts 0.
+ */
+KERNEL_TEST(a_switch_to_acpi_mode_that_failed_is_counted_in_acpi_mode_failed)
+{
+    static const uint8_t aml[] = {0x08u, 'D', 'N', 'A', 'M', 0x01u};
+    const uint8_t outcomes[] = {ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED,
+                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED};
+    AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {0};
+
+    for (uint32_t pass = 0u; pass < 2u; ++pass)
+    {
+        if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+            return;
+        machine.mode = outcomes[pass];
+        advanced_configuration_and_power_interface_initialize_namespace(&log_load, &machine, &log_initialization,
+                                                                        &log_idle);
+        kernel_test_check(test, log_initialization.acpi_mode_failed == ((pass == 0u) ? 1u : 0u),
+                          (pass == 0u) ? "a switch that failed counts 1" : "a switch that succeeded counts 0");
+        advanced_configuration_and_power_interface_machine_language_close(&log_load);
+    }
 }

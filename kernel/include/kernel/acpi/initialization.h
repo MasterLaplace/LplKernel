@@ -66,6 +66,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitializationMachine {
  * @brief What the initialisation of a namespace ran and counted (§3.8 steps 2 to 9).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
+    uint32_t acpi_mode_failed;              /**< 1 when step 0 wrote ACPI_ENABLE and SCI_EN stayed clear past its bound:
+                                                 the platform goes on in legacy mode, and step 8 writes no CST_CNT. */
     uint32_t initializations;               /**< _INI methods run, \_INI and \_SB._INI included. */
     uint32_t initialization_failed;         /**< Of those, the ones that failed. */
     uint32_t registrations;                 /**< _REG (PCI_Config, 1) run, one per scope that declares such a region. */

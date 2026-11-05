@@ -230,30 +230,31 @@ static uint32_t machine_language_walk_method(const MachineLanguageWalk_t *walk)
 }
 
 /**
- * @brief Logs a fault the walk meets at @p offset of its table as an error (§4.5), unless it is the failure the
- *        interpreter logged and goes past, whose statement the walk steps over.
+ * @brief Reports a fault the walk meets at @p offset of its table, counted under its status and logged (§4.5), unless
+ *        it is the failure the interpreter reported and goes past, whose statement the walk steps over.
  */
-static void machine_language_log_walk_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status,
-                                            uint32_t offset)
+static void machine_language_report_walk_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status,
+                                               uint32_t offset)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &walk->load->evaluation;
 
     if (evaluation->logged_fault_table == walk->table + 1u && evaluation->logged_fault_offset == offset)
         return;
-    advanced_configuration_and_power_interface_machine_language_log_fault(walk->load, status, walk->table + 1u, offset,
-                                                                          machine_language_walk_method(walk),
-                                                                          machine_language_top_block(walk)->scope);
+    advanced_configuration_and_power_interface_machine_language_report_fault(walk->load, status, walk->table + 1u,
+                                                                             offset, machine_language_walk_method(walk),
+                                                                             machine_language_top_block(walk)->scope);
 }
 
 /**
- * @brief Counts a fault of the declaration pass or of the Externals pass, the first one kept, and logs it at
- *        @p offset of the walk's table.
+ * @brief Counts a fault of the declaration pass or of the Externals pass, the first one kept, against the walk's
+ *        table too, and logs it at @p offset of that table.
  */
 static void machine_language_report_load_error(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status,
                                                uint32_t offset)
 {
     machine_language_count_load_error(walk->load, status);
-    machine_language_log_walk_fault(walk, status, offset);
+    advanced_configuration_and_power_interface_machine_language_count_table_failure(walk->load, walk->table + 1u);
+    machine_language_report_walk_fault(walk, status, offset);
 }
 
 /**
@@ -285,7 +286,7 @@ static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLa
 
     ++load->decode_errors;
     if (load->frame_count != 0u)
-        machine_language_log_walk_fault(walk, status, walk->pc);
+        machine_language_report_walk_fault(walk, status, walk->pc);
     if (table->decode_errors++ == 0u)
     {
         table->first_error = (uint8_t) status;
@@ -3699,11 +3700,26 @@ void advanced_configuration_and_power_interface_machine_language_count_load_erro
     machine_language_count_load_error(load, status);
 }
 
-void advanced_configuration_and_power_interface_machine_language_log_fault(
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, MachineLanguageStatus_t status,
-    uint32_t table, uint32_t offset, uint32_t method, uint32_t scope)
+void advanced_configuration_and_power_interface_machine_language_count_table_failure(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table)
+{
+    if (table == 0u || table > load->table_count || load->tables[table - 1u].load_failed)
+        return;
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *entry = &load->tables[table - 1u];
+
+    entry->load_failed = true;
+    load->table_load_failed +=
+        (entry->origin == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_STATIC) ? 1u : 0u;
+}
+
+void advanced_configuration_and_power_interface_machine_language_report_fault(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, MachineLanguageStatus_t status, uint32_t table,
+    uint32_t offset, uint32_t method, uint32_t scope)
 {
     AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    ++load->faults[status];
 
     advanced_configuration_and_power_interface_log_open(
         &line, advanced_configuration_and_power_interface_machine_language_status_name(status));
