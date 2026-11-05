@@ -214,6 +214,16 @@ static const uint8_t shortcuts_crossing[] = {
 };
 
 /**
+ * @brief `Name (VPX_, VarPackage (0x1001) {})`, one element past the 4,096 of §6.1, which no load keeps, and
+ *        `Name (DUP_, Package (1) {One})` then `Name (DUP_, Package (1) {...})` again, whose duplicate holds the byte
+ *        0x02, which starts no data object.
+ */
+static const uint8_t shortcuts_kept_refused_and_duplicate[] = {
+    0x08u, 'V',   'P',   'X',   '_',   0x13u, 0x04u, 0x0Bu, 0x01u, 0x10u, 0x08u, 'D',   'U',   'P',
+    '_',   0x12u, 0x03u, 0x01u, 0x01u, 0x08u, 'D',   'U',   'P',   '_',   0x12u, 0x03u, 0x01u, 0x02u,
+};
+
+/**
  * @brief Integers of a Name the declaration pass's decoder leaves to the general path: `Name (IR__, Revision)`,
  *        `Name (IN__, IR__)`, then `Name (IO__, One)`, which it builds, `Name (IO__, Ones)` again, and a QWord whose
  *        last byte the table's end cuts, `Name (IQ__, ...)`.
@@ -519,15 +529,18 @@ static const uint8_t shortcuts_unbuilt_string_cut[] = {0x12u, 0x05u, 0x01u, 0x0D
 /**
  * @brief Sizes a name gives inside kept packages, read when a method reads them: `Name (CNT_, 4)`,
  *        `Name (PNS_, Package (1) {Buffer (CNT_) {}})`, `Name (PLT_, Package (1) {Buffer (LATE) {}})` before
- *        `Name (LATE, 2)`, then table-level code that stores 8 to CNT_; `MNS_` returns the SizeOf of PNS_'s Buffer,
+ *        `Name (LATE, 2)`, `Name (BIG_, 0x1001)` and `Name (PVC_, Package (1) {VarPackage (BIG_) {}})`, one element
+ * past the 4,096 of §6.1, then table-level code that stores 8 to CNT_; `MNS_` returns the SizeOf of PNS_'s Buffer,
  *        `MLT_` that of PLT_'s.
  */
 static const uint8_t shortcuts_nested_named_sizes[] = {
-    0x08u, 'C',   'N', 'T', '_',   0x0Au, 0x04u, 0x08u, 'P',   'N',   'S',   '_',   0x12u, 0x08u, 0x01u, 0x11u, 0x05u,
-    'C',   'N',   'T', '_', 0x08u, 'P',   'L',   'T',   '_',   0x12u, 0x08u, 0x01u, 0x11u, 0x05u, 'L',   'A',   'T',
-    'E',   0x08u, 'L', 'A', 'T',   'E',   0x0Au, 0x02u, 0x70u, 0x0Au, 0x08u, 'C',   'N',   'T',   '_',   0x14u, 0x10u,
-    'M',   'N',   'S', '_', 0x00u, 0xA4u, 0x87u, 0x83u, 0x88u, 'P',   'N',   'S',   '_',   0x00u, 0x00u, 0x14u, 0x10u,
-    'M',   'L',   'T', '_', 0x00u, 0xA4u, 0x87u, 0x83u, 0x88u, 'P',   'L',   'T',   '_',   0x00u, 0x00u,
+    0x08u, 'C',   'N',   'T',   '_',   0x0Au, 0x04u, 0x08u, 'P',   'N', 'S',   '_',   0x12u, 0x08u, 0x01u,
+    0x11u, 0x05u, 'C',   'N',   'T',   '_',   0x08u, 'P',   'L',   'T', '_',   0x12u, 0x08u, 0x01u, 0x11u,
+    0x05u, 'L',   'A',   'T',   'E',   0x08u, 'L',   'A',   'T',   'E', 0x0Au, 0x02u, 0x08u, 'B',   'I',
+    'G',   '_',   0x0Bu, 0x01u, 0x10u, 0x08u, 'P',   'V',   'C',   '_', 0x12u, 0x08u, 0x01u, 0x13u, 0x05u,
+    'B',   'I',   'G',   '_',   0x70u, 0x0Au, 0x08u, 'C',   'N',   'T', '_',   0x14u, 0x10u, 'M',   'N',
+    'S',   '_',   0x00u, 0xA4u, 0x87u, 0x83u, 0x88u, 'P',   'N',   'S', '_',   0x00u, 0x00u, 0x14u, 0x10u,
+    'M',   'L',   'T',   '_',   0x00u, 0xA4u, 0x87u, 0x83u, 0x88u, 'P', 'L',   'T',   '_',   0x00u, 0x00u,
 };
 
 /**
@@ -1318,31 +1331,35 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_s
  *        revision 1, none of which the decoding pass counts; of the sizes a name gives, the Package whose inner Buffer
  *        takes one, counted in data_named_sizes, but not a Buffer whose own size a name gives; of the data the decoder
  *        refuses, the 4 Packages, 3 of which the decoding pass counts in data_faults, but not the Buffer past 64 KiB;
- *        the Package before a PkgLength that abandons the table and that one, counted; the package 33 deep, which
+ *        the Package before a PkgLength that abandons the table and that one, counted; not a VarPackage past the
+ *        4,096 elements of §6.1, and the first of two `Name (DUP_)`, the decoding pass leaving the duplicate's package,
+ *        which would not build, alone; the package 33 deep, which
  *        needs the interpreter, counted, and TOP_ after it; and TOP_ after one 32 deep inside 480 Devices, which is
  *        decoded as terms.
  */
 KERNEL_TEST(a_name_s_constant_package_or_buffer_stays_in_its_table_until_a_name_reaches_it)
 {
     ShortcutsCase_t cases[] = {
-        {"data of every kind under revision 2",          shortcuts_constants,   sizeof(shortcuts_constants),   2u, NULL, 0u,                     false,
-         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
-        {"data of every kind under revision 1",          shortcuts_constants,   sizeof(shortcuts_constants),   1u, NULL, 0u,                     false,
-         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
-        {"an SSDT declared before a DSDT of revision 1", shortcuts_constants,   sizeof(shortcuts_constants),   1u,
-         shortcuts_wide,                                                                                                 sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
-        {"sizes a name gives",                           shortcuts_named_sizes, sizeof(shortcuts_named_sizes), 2u, NULL, 0u,                     false, false, true,
-         MADE_UP_MAX_NODES                                                                                                                                                            },
-        {"data the decoder refuses",                     shortcuts_malformed,   sizeof(shortcuts_malformed),   2u, NULL, 0u,                     false, false, true,
-         MADE_UP_MAX_NODES                                                                                                                                                            },
-        {"a PkgLength that abandons the table",          shortcuts_crossing,    sizeof(shortcuts_crossing),    2u, NULL, 0u,                     false,
-         false,                                                                                                                                                true, MADE_UP_MAX_NODES},
-        {"a package 33 deep",                            NULL,                  0u,                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
-        {"a package 32 deep inside 480 Devices",         NULL,                  0u,                            2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
+        {"data of every kind under revision 2",              shortcuts_constants,                  sizeof(shortcuts_constants),   2u, NULL, 0u,                     false,
+         false,                                                                                                                                                                   true, MADE_UP_MAX_NODES},
+        {"data of every kind under revision 1",              shortcuts_constants,                  sizeof(shortcuts_constants),   1u, NULL, 0u,                     false,
+         false,                                                                                                                                                                   true, MADE_UP_MAX_NODES},
+        {"an SSDT declared before a DSDT of revision 1",     shortcuts_constants,                  sizeof(shortcuts_constants),   1u,
+         shortcuts_wide,                                                                                                                    sizeof(shortcuts_wide), true,  false, true, MADE_UP_MAX_NODES},
+        {"sizes a name gives",                               shortcuts_named_sizes,                sizeof(shortcuts_named_sizes), 2u, NULL, 0u,                     false, false, true,
+         MADE_UP_MAX_NODES                                                                                                                                                                               },
+        {"data the decoder refuses",                         shortcuts_malformed,                  sizeof(shortcuts_malformed),   2u, NULL, 0u,                     false, false, true,
+         MADE_UP_MAX_NODES                                                                                                                                                                               },
+        {"a PkgLength that abandons the table",              shortcuts_crossing,                   sizeof(shortcuts_crossing),    2u, NULL, 0u,                     false,
+         false,                                                                                                                                                                   true, MADE_UP_MAX_NODES},
+        {"a VarPackage past 4,096 elements and a duplicate", shortcuts_kept_refused_and_duplicate,
+         sizeof(shortcuts_kept_refused_and_duplicate),                                                                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
+        {"a package 33 deep",                                NULL,                                 0u,                            2u, NULL, 0u,                     false, false, true, MADE_UP_MAX_NODES},
+        {"a package 32 deep inside 480 Devices",             NULL,                                 0u,                            2u, NULL, 0u,                     false, true,  true, MADE_UP_MAX_NODES},
     };
-    const uint32_t kept[] = {8u, 8u, 9u, 1u, 4u, 2u, 2u, 1u};
-    const uint32_t faults[] = {0u, 0u, 0u, 0u, 3u, 1u, 1u, 0u};
-    const uint32_t named[] = {0u, 0u, 0u, 1u, 0u, 0u, 0u, 0u};
+    const uint32_t kept[] = {8u, 8u, 9u, 1u, 4u, 2u, 1u, 2u, 1u};
+    const uint32_t faults[] = {0u, 0u, 0u, 0u, 3u, 1u, 0u, 1u, 0u};
+    const uint32_t named[] = {0u, 0u, 0u, 1u, 0u, 0u, 0u, 0u, 0u};
     const uint32_t count = sizeof(cases) / sizeof(cases[0]);
     uint32_t data_kept = 0u;
     uint32_t data_faults = 0u;
@@ -1476,8 +1493,8 @@ KERNEL_TEST(a_kept_package_whose_elements_do_not_build_is_counted_at_boot_and_le
  * @brief A kept package (O20) whose Buffer takes its size from a name reads that name at its first read, where a load
  *        that built it read the name as it declared it (I7): PNS_'s `Buffer (CNT_)` is 8 bytes once table-level code
  *        has stored 8 to CNT_, not 4; PLT_'s `Buffer (LATE)`, whose name is declared after it, is 2 bytes, not left
- *        Uninitialized for want of LATE. The decoding pass counts both in data_named_sizes and neither in data_faults;
- *        with the load's shortcuts and without, alike.
+ *        Uninitialized for want of LATE. The decoding pass counts both in data_named_sizes, and in data_faults PVC_,
+ *        whose `VarPackage (BIG_)` passes the 4,096 elements of §6.1; with the load's shortcuts and without, alike.
  */
 KERNEL_TEST(a_kept_package_s_size_a_name_gives_is_read_at_its_first_read_and_counted_at_boot)
 {
@@ -1493,11 +1510,11 @@ KERNEL_TEST(a_kept_package_s_size_a_name_gives_is_read_at_its_first_read_and_cou
         shortcuts_declare(shortcuts_nested_named_sizes, sizeof(shortcuts_nested_named_sizes));
         advanced_configuration_and_power_interface_machine_language_decode_tables(&shortcuts_load);
         kernel_test_check(test,
-                          shortcuts_load.data_kept == 2u && shortcuts_load.values_deferred == 0u &&
+                          shortcuts_load.data_kept == 3u && shortcuts_load.values_deferred == 0u &&
                               shortcuts_load.load_errors == 0u,
-                          "both packages are kept at load, none waiting");
-        kernel_test_check(test, shortcuts_load.data_named_sizes == 2u && shortcuts_load.data_faults == 0u,
-                          "the decoding pass counts both sizes, and no fault");
+                          "the three packages are kept at load, none waiting");
+        kernel_test_check(test, shortcuts_load.data_named_sizes == 2u && shortcuts_load.data_faults == 1u,
+                          "the decoding pass counts the two sizes it reads, and PVC_'s past 4,096 elements as a fault");
         kernel_test_check(test,
                           shortcuts_evaluate("\\MNS_", &current) ==
                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
