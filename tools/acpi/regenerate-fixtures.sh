@@ -18,12 +18,16 @@ iasl's __EXPECT__(<id>): the ones its table makes on purpose. Remarks are not re
                byte for byte; a header that differs is printed as a diff
   --write      writes the headers, once a source is added or changed
 
-iasl is the one `tools/acpi-corpus.sh fetch acpica` builds in build/acpi-corpus/acpica/, at the commit
-that script pins: another iasl may emit other bytes. A header keeps the @date it was created on.
+iasl is the one `tools/acpi-corpus.sh fetch acpica` builds in build/acpi-corpus/acpica/, whose checkout
+must stand at the commit that script pins, unchanged: another iasl may emit other bytes. fetch acpica
+rebuilds iasl whenever it moves the checkout; the binary itself is not compared. A documentation line
+is at most 120 columns wide, which clang-format would otherwise rewrap in the header. A header keeps
+the @date it was created on.
 
 Exit status: 0 when every header holds what its sources compile to, 1 when one differs, is missing or
-has no source, when a source does not compile, when iasl is missing or built at another commit, or when
-the sandbox cannot run; 2 on a usage error.
+has no source, when a source does not compile or its documentation does not close or is too wide, when
+iasl is missing or its checkout stands elsewhere or is changed, or when the sandbox cannot run; 2 on a
+usage error.
 USAGE
 }
 
@@ -35,6 +39,7 @@ readonly IASL="$ACPICA/generate/unix/bin/iasl"
 readonly SANDBOX="$ROOT/tools/acpi/sandbox.sh"
 readonly TABLE_HEADER_BYTES=36
 readonly BYTES_PER_LINE=16
+readonly COLUMN_LIMIT=120
 readonly IDENTIFIER='^[a-z][a-z0-9_]*$'
 WORK="$(mktemp -d)"
 readonly WORK
@@ -45,7 +50,7 @@ pinned_acpica_commit() {
     sed -n 's/^readonly ACPICA_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' "$ROOT/tools/acpi-corpus.sh"
 }
 
-# Exits when iasl is missing or built at another commit than the pinned one.
+# Exits when iasl is missing, or when its checkout stands at another commit than the pinned one or is changed.
 require_pinned_iasl() {
     local pinned built
     pinned="$(pinned_acpica_commit)"
@@ -59,7 +64,12 @@ require_pinned_iasl() {
     fi
     built="$(git -C "$ACPICA" rev-parse HEAD)"
     if [[ "$built" != "$pinned" ]]; then
-        echo "not ok: iasl is built at ACPICA $built, not at the pinned $pinned: run tools/acpi-corpus.sh" \
+        echo "not ok: iasl's checkout stands at ACPICA $built, not at the pinned $pinned: run" \
+            "tools/acpi-corpus.sh fetch acpica" >&2
+        exit 1
+    fi
+    if ! git -C "$ACPICA" diff --quiet HEAD; then
+        echo "not ok: iasl's checkout ${ACPICA#"$ROOT"/} is changed: restore it, then run tools/acpi-corpus.sh" \
             "fetch acpica" >&2
         exit 1
     fi
@@ -91,6 +101,18 @@ compile() {
 # Prints the first /** */ block of the source $1, as it stands.
 documentation() {
     awk '/^\/\*\*$/ { inside = 1 } inside { print } inside && /^ \*\/$/ { exit }' "$1"
+}
+
+# Prints why the documentation block $2 of the source $1 cannot go into a header, if it cannot.
+documentation_fault() {
+    local wide
+    if [[ -z "$2" ]]; then
+        echo "has no /** */ block to document its array"
+    elif [[ "$(tail -n 1 <<<"$2")" != " */" ]]; then
+        echo "its /** block ends with no line ' */' that closes it"
+    elif wide="$(LC_ALL=C.UTF-8 grep -n ".\{$((COLUMN_LIMIT + 1)),\}" <<<"$2")"; then
+        echo "line ${wide%%:*} of its /** */ block is wider than $COLUMN_LIMIT columns"
+    fi
 }
 
 # Prints the AML of the table $1, its header left out, as the lines of a C initialiser laid out as clang-format lays
@@ -153,7 +175,7 @@ HEADER
 
 # Writes into $WORK the header of the suite directory $1, or prints why it cannot and fails.
 generate_suite() {
-    local directory="$1" suite="${1##*/}" source name documented failures=0
+    local directory="$1" suite="${1##*/}" source name documented fault failures=0
     local output="$WORK/$suite.h"
     local sources=("$directory"/*.asl)
     if [[ ! "$suite" =~ $IDENTIFIER ]]; then
@@ -174,8 +196,9 @@ generate_suite() {
             failures=$((failures + 1))
             continue
         fi
-        if [[ -z "$documented" ]]; then
-            echo "not ok ${source#"$ROOT"/}: has no /** */ block to document its array"
+        fault="$(documentation_fault "$source" "$documented")"
+        if [[ -n "$fault" ]]; then
+            echo "not ok ${source#"$ROOT"/}: $fault"
             failures=$((failures + 1))
             continue
         fi
