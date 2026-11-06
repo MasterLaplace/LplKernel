@@ -1,0 +1,20 @@
+# The corpus machines whose needs path differs between acpiexec and acpiexec -es, which tools/acpi-corpus.sh slack
+# lists (specification §8.6), each after the section of the specification that decides how the kernel runs it. A
+# listed machine that differs is decided; one that differs unlisted fails the run, and so does one listed that does not
+# differ, so that the list stays true.
+#
+# §5.2 returns Integer 0 where a method whose caller uses its result ends without Return. On each machine below a
+# method of the needs path does that: acpiexec returns no object and fails what uses it, acpiexec -es returns Integer 0,
+# and so does the host harness, on the tables `test-acpi --loaded` writes. The difference makes the rule necessary;
+# it does not change it.
+#
+# Dell Precision T3600: the _CST of processors CP04 to CP0B; `test-acpi --evaluate \_PR_.CP04._CST` gives int 0.
+§5.2 Desktop/Dell/Precision/Precision T3600/0B35AA5C5E30
+# Supermicro X7DB8: \_SB._OSC; `test-acpi --loaded` counts its implicit return, and step 6 refuses the Integer as
+# type_mismatch.
+§5.2 Desktop/Supermicro/X7/X7DB8/22C25EDFF9A3
+# ASUS Zenbook S 16: \_SB.PCI0.SBRG.EC0._INI uses the result of a method that returns none;
+# `test-acpi --evaluate \_SB_.PCI0.SBRG.EC0_._INI` gives status ok.
+§5.2 Notebook/ASUSTek Computer/ASUS/ASUS Zenbook S 16 UM5606WA_UM5606WA/4AF98851C2C6
+# HP ProLiant DL165 G7: \_SB._OSC, as on the X7DB8.
+§5.2 Server/Hewlett-Packard/ProLiant/ProLiant DL165 G7/1979FBF2D488

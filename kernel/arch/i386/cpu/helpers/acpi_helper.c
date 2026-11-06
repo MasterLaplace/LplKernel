@@ -200,7 +200,7 @@ static uint32_t acpi_helper_saturate(uint64_t count) { return (count > UINT32_MA
 /**
  * @brief Writes the `[LPLTLM] acpi.services` record: the Windows identity AML asked for, the time it
  *        requested and the time the host waited, its sleeps and its busy-waits apart (§3.3, §5.5), its
- *        mutexes and its Notifies.
+ *        mutexes, its Events, its Fatals and BreakPoints (§5.2), and its Notifies.
  */
 static void
 acpi_helper_write_services_record(Serial_t *serial,
@@ -226,6 +226,8 @@ acpi_helper_write_services_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("released_at_end", services->released_at_end);
     kernel_telemetry_write_unsigned("held_peak", services->held_peak);
     kernel_telemetry_write_unsigned("signals", services->signals);
+    kernel_telemetry_write_unsigned("fatals", services->fatals);
+    kernel_telemetry_write_unsigned("break_points", services->break_points);
     kernel_telemetry_write_unsigned("notifications", services->notifications);
     kernel_telemetry_write_unsigned("notifications_dropped", services->notifications_dropped);
     kernel_telemetry_write_unsigned("notifications_taken", services->notifications_taken);
@@ -476,6 +478,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("tables_loaded", load->tables_loaded);
     kernel_telemetry_write_unsigned("load_duplicates", load->load_duplicates);
     kernel_telemetry_write_unsigned("load_tables_missing", load->load_tables_missing);
+    kernel_telemetry_write_unsigned("unload_refused", load->unload_refused);
     kernel_telemetry_write_unsigned("table_bytes_copied", load->table_bytes_copied);
     kernel_telemetry_write_unsigned("data_built_directly", load->data_built_directly);
     kernel_telemetry_end_record();

@@ -301,7 +301,9 @@ KERNEL_TEST(an_opcode_the_loop_does_not_run_is_counted_unimplemented_only)
  * @brief The run list says which opcodes the needs path executes (§4.1): in a method, the operators the interpreter
  *        runs and the constants, locals and arguments it reads, never a declaration the load makes or an opcode that
  *        fails as unimplemented; at table level, those and every declaration the load takes, never code the
- *        interpreter does not run, nor a data object it does not build, such as Revision.
+ *        interpreter does not run, nor a data object it does not build, such as Revision, nor a DataTableRegion, whose
+ *        statement the interpreter refuses (§4.5). The opcodes a row of §4.5, §5.2 or §6.3 gives a behaviour of their
+ *        own run where they stand.
  */
 KERNEL_TEST(the_run_list_says_which_opcodes_the_needs_path_executes)
 {
@@ -341,6 +343,28 @@ KERNEL_TEST(the_run_list_says_which_opcodes_the_needs_path_executes)
             advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(PACKAGE), true) &&
             advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(STRING_PREFIX), true),
         "table-level code builds a Package and a String, but no Revision, which no one builds");
+    kernel_test_check(
+        test,
+        advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(UNLOAD), false) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(FATAL), false) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(BREAK_POINT), false) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(WAIT), false) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(RESET), false) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(FIND_SET_LEFT_BIT),
+                                                                                 false) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(FIND_SET_RIGHT_BIT),
+                                                                                 false),
+        "a method runs Unload, Fatal, BreakPoint, Wait, Reset, FindSetLeftBit and FindSetRightBit");
+    kernel_test_check(
+        test,
+        advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(BREAK_POINT), true) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(FATAL), true),
+        "table-level code runs BreakPoint and Fatal");
+    kernel_test_check(
+        test,
+        !advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(DATA_REGION), true) &&
+            !advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(DATA_REGION), false),
+        "a DataTableRegion runs neither at table level, where the load does not take it, nor in a method");
 }
 
 /**

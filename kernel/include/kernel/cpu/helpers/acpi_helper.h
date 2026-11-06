@@ -71,7 +71,7 @@ extern void write_advanced_configuration_and_power_interface_power_management_ti
  *        declared and built, what waits for the interpreter, the data it kept in its tables and what of it
  *        was built since, its faults, what its namespace and stacks took, and the namespace fold; then the
  *        `[LPLTLM] acpi.init` record of the initialisation; then the `[LPLTLM] acpi.load` record: the tables
- *        Load and LoadTable added, refused and found missing, and the bytes Load copied; then the
+ *        Load and LoadTable added, refused and found missing, the Unloads refused, and the bytes Load copied; then the
  *        `[LPLTLM] acpi.regions` record: its field accesses and what reaching their regions took; then the
  *        `[LPLTLM] acpi.values` record: the objects its heap allocated, freed and held at most, the releases
  *        that found nothing to release, and the conversions it counted.
