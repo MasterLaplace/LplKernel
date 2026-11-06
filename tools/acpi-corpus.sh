@@ -621,7 +621,7 @@ predecoding_check() {
         fi
         shapes="$(declined_shapes "$(grep '^aml run predecoding declined_shape' "$on")")"
         [[ "$shapes" == " none" ]] || echo "    # handed back for their shape:$shapes"
-        counts+="$(grep '^aml run predecoding \|^aml run namespace ' "$on")"$'\n'
+        counts+="$(grep '^aml run predecoding \|^aml run namespace ' "$on" || true)"$'\n'
     done < <(reports "$1")
     rm -rf "$on" "$off" "$tables"
     echo -n "# predecoding: $agree of $number machines leave the same lines with records and without;"
