@@ -637,6 +637,27 @@ bool advanced_configuration_and_power_interface_simulated_host_set_port(
     return true;
 }
 
+void advanced_configuration_and_power_interface_simulated_host_boot_platform(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
+{
+    const uint16_t control =
+        advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_control_blocks[0], 2u);
+
+    if (!fadt->present || fadt->hardware_reduced || control == 0u)
+        return;
+    simulated->firmware_control_port = control;
+    simulated->firmware_enable_milliseconds = 0u;
+    if (fadt->system_management_interrupt_command == 0u || fadt->enable_command == 0u)
+    {
+        simulated->firmware_enabled_at = 0u;
+        return;
+    }
+    if (fadt->system_management_interrupt_command <= UINT16_MAX)
+        simulated->firmware_command_port = (uint16_t) fadt->system_management_interrupt_command;
+    simulated->firmware_enable_command = fadt->enable_command;
+}
+
 uint64_t advanced_configuration_and_power_interface_simulated_host_peek(
     const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, uint8_t width)
 {
