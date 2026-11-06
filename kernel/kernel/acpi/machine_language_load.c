@@ -2710,6 +2710,24 @@ static uint32_t machine_language_fold_unreadable(uint32_t fold)
 }
 
 /**
+ * @brief The kind of the value an element of kept data of class @p class builds into, which a package folds before
+ *        each of its elements: an Integer, a String, a Buffer, a Package, or a name.
+ */
+static uint8_t machine_language_kept_kind(uint8_t class)
+{
+    if ((class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
+        return MACHINE_LANGUAGE_VALUE(INTEGER);
+    switch (class)
+    {
+    case MACHINE_LANGUAGE_DATA_STRING: return MACHINE_LANGUAGE_VALUE(STRING);
+    case MACHINE_LANGUAGE_DATA_BUFFER: return MACHINE_LANGUAGE_VALUE(BUFFER);
+    case MACHINE_LANGUAGE_DATA_PACKAGE:
+    case MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE: return MACHINE_LANGUAGE_VALUE(PACKAGE);
+    default: return MACHINE_LANGUAGE_VALUE(NAME_REFERENCE);
+    }
+}
+
+/**
  * @brief The integers of kept data @p value hold all their bits, or 32 of them when its table was declared under a
  *        DSDT whose revision is below 2.
  */
@@ -2787,7 +2805,8 @@ __attribute__((always_inline)) static inline bool machine_language_read_kept(con
 /**
  * @brief Folds a data object kept in its table (O20) as machine_language_fold_value folds the object it builds
  *        into: an Integer masked to its width, a String's or a Buffer's length and bytes, zeros past a Buffer's
- *        initialiser, a Package's count and each element it keeps, none past its count, a name as its path bytes.
+ *        initialiser, a Package's count and each element it keeps, its kind first, none past its count, then a zero
+ *        kind for each element its count adds past its initialisers, a name as its path bytes.
  *        Bytes that machine_language_read_kept does not read as data, which the load did not check or AML has
  *        rewritten since, fold as machine_language_fold_unreadable folds them: an object or a name cut by the end of
  *        the table or of its package, a byte that starts no data object, packages nested past the levels of §6.1, a
@@ -2816,6 +2835,8 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
 
         if (depth != 0u && pc == end)
         {
+            if (hidden == 0u && seen[depth - 1u] < counts[depth - 1u])
+                fold = machine_language_fold_zeros(fold, counts[depth - 1u] - seen[depth - 1u]);
             hidden = (--depth < hidden) ? 0u : hidden;
             if (depth == 0u)
                 return fold;
@@ -2828,6 +2849,8 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
 
         if (!machine_language_read_kept(bytes, pc, end, depth, mask, &element))
             return machine_language_fold_unreadable(before);
+        if (folds && depth != 0u)
+            fold = machine_language_fold_unsigned(fold, machine_language_kept_kind(element.class), 1u);
         if ((element.class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
             fold = folds ? machine_language_fold_unsigned(fold, element.integer, 8u) : fold;
         else if (element.class == MACHINE_LANGUAGE_DATA_SEGMENT || element.class == MACHINE_LANGUAGE_DATA_PREFIX)
@@ -3209,7 +3232,7 @@ static void machine_language_check_kept_data(AdvancedConfigurationAndPowerInterf
 
 /**
  * @brief Folds one value: an Integer, a String's or Buffer's length and bytes, a Package's count and
- *        each element, nested packages through an explicit stack, a name element as its path bytes.
+ *        each element, its kind first, nested packages through an explicit stack, a name element as its path bytes.
  */
 static uint32_t machine_language_fold_value(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                             uint32_t fold,
@@ -3266,6 +3289,7 @@ static uint32_t machine_language_fold_value(const AdvancedConfigurationAndPowerI
         if (depth == 0u)
             return fold;
         value = &stack[depth - 1u].elements[stack[depth - 1u].index++];
+        fold = machine_language_fold_unsigned(fold, value->kind, 1u);
     }
 }
 

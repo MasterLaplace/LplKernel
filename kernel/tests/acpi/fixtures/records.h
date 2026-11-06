@@ -55,4 +55,27 @@ static const uint8_t records_every_kind_aml[] = {
     0x48u, 0x5Fu, 0x00u, 0xA4u, 0x72u, 0x49u, 0x4Eu, 0x54u, 0x5Fu, 0x01u, 0x00u,
 };
 
+/**
+ * @brief PKG_ a Package of a Buffer of four zeros, whose bytes, without the element's type, fold as those of a
+ *        Package of the Integer 4.
+ */
+static const uint8_t records_package_of_a_buffer_aml[] = {
+    0x08u, 0x50u, 0x4Bu, 0x47u, 0x5Fu, 0x12u, 0x0Au, 0x01u, 0x11u, 0x07u, 0x0Au, 0x04u, 0x00u, 0x00u, 0x00u, 0x00u,
+};
+
+/**
+ * @brief PKG_ a Package of the Integer 4, whose bytes, without the element's type, fold as those of a Package of a
+ *        Buffer of four zeros.
+ */
+static const uint8_t records_package_of_an_integer_aml[] = {
+    0x08u, 0x50u, 0x4Bu, 0x47u, 0x5Fu, 0x12u, 0x04u, 0x01u, 0x0Au, 0x04u,
+};
+
+/**
+ * @brief PKG_ a Package of two elements given one initialiser, the Integer 4: its second element is Uninitialized.
+ */
+static const uint8_t records_package_padded_aml[] = {
+    0x08u, 0x50u, 0x4Bu, 0x47u, 0x5Fu, 0x12u, 0x04u, 0x02u, 0x0Au, 0x04u,
+};
+
 #endif /* KERNEL_TESTS_ACPI_FIXTURES_RECORDS_H */
