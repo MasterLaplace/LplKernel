@@ -68,10 +68,7 @@ advanced_configuration_and_power_interface_machine_language_namespace_find_or_ad
         slot = (slot + 1u) & mask;
     }
     *out_created = true;
-    if (space->free_nodes != 0u ||
-        index - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT >= space->max_nodes ||
-        (index + 1u) * 2u > space->slot_capacity ||
-        index >= space->run_count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN)
+    if (index >= space->insertion_limit)
         return advanced_configuration_and_power_interface_machine_language_namespace_add_child(space, parent, name,
                                                                                                type, owner, out_index);
 

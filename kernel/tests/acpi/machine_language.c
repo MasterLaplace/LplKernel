@@ -712,11 +712,44 @@ typedef struct MadeUpTwoNamespaces {
     uint32_t differences;  /**< Declarations whose status, node or report differ between the two. */
     uint32_t found;        /**< Declarations that found their child. */
     uint32_t taken_again;  /**< Children created on an index the free list gave. */
+    uint32_t out_of_step;  /**< Namespaces whose insertion limit disagreed with made_up_creation_in_line, counted after
+                                each opening, declaration, removal and closing. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
         last_status; /**< What the last declaration returned. */
 } MadeUpTwoNamespaces_t;
 
 static MadeUpTwoNamespaces_t made_up_two;
+
+/**
+ * @brief Whether a child created in @p space now takes the next unused index in line, as O5 of §7.2 says: no node on
+ *        the free list, the node cap not met, room in the hash table for one node more without growing it, and that
+ *        index in a run of nodes committed.
+ */
+static bool made_up_creation_in_line(const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
+{
+    const uint32_t index = space->node_count;
+
+    return space->free_nodes == 0u &&
+           index - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT < space->max_nodes &&
+           (index + 1u) * 2u <= space->slot_capacity &&
+           index < space->run_count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN;
+}
+
+/**
+ * @brief Counts in made_up_two each of its two namespaces whose insertion limit lets find_or_add_child create the
+ *        next child in line when made_up_creation_in_line says it does not, or keeps it from doing so when it does.
+ */
+static void made_up_check_insertion_limits(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *spaces[] = {&made_up_two.found_then_added,
+                                                                                        &made_up_two.found_or_added};
+
+    for (uint32_t index = 0u; index < sizeof(spaces) / sizeof(spaces[0]); ++index)
+        made_up_two.out_of_step +=
+            ((spaces[index]->node_count < spaces[index]->insertion_limit) != made_up_creation_in_line(spaces[index])) ?
+                1u :
+                0u;
+}
 
 /**
  * @brief Whether the two namespaces of made_up_two hold as many nodes, live and free, runs, slots and arena bytes, and
@@ -789,6 +822,7 @@ static uint32_t made_up_declare_in_both(uint32_t parent, uint32_t name)
          expected < unused) ?
             1u :
             0u;
+    made_up_check_insertion_limits();
     return (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK) ? expected : 0u;
 }
 
@@ -831,6 +865,7 @@ static uint32_t made_up_declare_until_refused(void)
                                                                                      children[index]);
         advanced_configuration_and_power_interface_machine_language_namespace_remove(&made_up_two.found_or_added,
                                                                                      children[index]);
+        made_up_check_insertion_limits();
     }
     name[0] = 'R';
     for (uint32_t index = 0u; index < 20u; ++index)
@@ -842,7 +877,7 @@ static uint32_t made_up_declare_until_refused(void)
     alike += made_up_namespaces_alike() ? 1u : 0u;
     name[0] = 'N';
     for (uint32_t index = 0u;
-         index < 4000u && made_up_two.differences == 0u &&
+         index < 4000u && made_up_two.differences == 0u && made_up_two.out_of_step == 0u &&
          made_up_two.last_status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
          ++index)
     {
@@ -859,7 +894,8 @@ static uint32_t made_up_declare_until_refused(void)
  * @brief Opens both namespaces of made_up_two with a node cap of @p max_nodes and an arena of @p arena_pages pages,
  *        declares in them as made_up_declare_until_refused does, then checks that every declaration and every phase
  *        agreed, and that the last declaration was refused with @p refusal once the hash table held @p slot_capacity
- *        slots and the namespace @p run_count runs, as @p what says; last, closes both.
+ *        slots and the namespace @p run_count runs, as @p what says; last, closes both, and checks that the insertion
+ *        limit of each kept in step from its opening to its closing.
  */
 static void made_up_find_or_add_until_refused(KernelTest_t *test, uint32_t max_nodes, uint32_t arena_pages,
                                               AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t refusal,
@@ -879,6 +915,7 @@ static void made_up_find_or_add_until_refused(KernelTest_t *test, uint32_t max_n
                             &made_up_two.found_or_added, &made_up_host.host, max_nodes, arena) ==
                             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 
+    made_up_check_insertion_limits();
     if (opened)
         alike = made_up_declare_until_refused();
     kernel_test_check(test, opened, "both namespaces open");
@@ -895,13 +932,19 @@ static void made_up_find_or_add_until_refused(KernelTest_t *test, uint32_t max_n
                       what);
     advanced_configuration_and_power_interface_machine_language_namespace_close(&made_up_two.found_then_added);
     advanced_configuration_and_power_interface_machine_language_namespace_close(&made_up_two.found_or_added);
+    made_up_check_insertion_limits();
+    kernel_test_check(test, made_up_two.out_of_step == 0u,
+                      "after each opening, declaration, removal and closing, each namespace's insertion limit lets the "
+                      "next child be created in line exactly when no free node, node cap, hash table growth or new run "
+                      "of nodes needs add_child");
     kernel_test_check(test, made_up_host.outstanding_pages == 0u, "every page goes back to the host");
 }
 
 /**
  * @brief A child found or added by find_or_add_child is the one find_child then add_child give, whatever the
  *        declaration meets: a first child, a duplicate, the free list, the hash table growing, a new run of nodes,
- *        then the node cap; with an arena too small, the growth or the run refused.
+ *        then the node cap; with an arena too small, the growth or the run refused. Each of the four is met where
+ *        none of the others is, so that the one limit the namespace keeps for them is checked for each.
  */
 KERNEL_TEST(a_child_found_or_added_at_once_is_the_one_found_then_added)
 {

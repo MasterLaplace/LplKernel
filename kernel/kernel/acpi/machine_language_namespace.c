@@ -14,6 +14,26 @@ static uint32_t machine_language_namespace_segment(const char *characters)
 }
 
 /**
+ * @brief Brings the insertion limit of @p space back in step with its free list, node cap, hash table and runs: 0
+ *        while the free list holds a node, else the first index the node cap refuses, half the slots, or the first
+ *        index past the runs committed, whichever comes first.
+ */
+static void
+machine_language_namespace_keep_insertion_limit(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
+{
+    const uint32_t root = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT;
+    const uint32_t runs_end =
+        space->run_count * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODES_PER_RUN;
+    uint32_t limit = space->slot_capacity / 2u;
+
+    if (runs_end < limit)
+        limit = runs_end;
+    if (limit > root && limit - root > space->max_nodes)
+        limit = root + space->max_nodes;
+    space->insertion_limit = (space->free_nodes != 0u) ? 0u : limit;
+}
+
+/**
  * @brief Pages a hash table of @p slot_capacity slots takes.
  */
 static uint32_t machine_language_namespace_slot_pages(uint32_t slot_capacity)
@@ -66,6 +86,7 @@ machine_language_namespace_grow_slots(AdvancedConfigurationAndPowerInterfaceMach
         space, space->slots, machine_language_namespace_slot_pages(space->slot_capacity));
     space->slots = slots;
     space->slot_capacity = capacity;
+    machine_language_namespace_keep_insertion_limit(space);
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
 
@@ -166,6 +187,7 @@ machine_language_namespace_commit_run(AdvancedConfigurationAndPowerInterfaceMach
     if (space->arena_bytes > space->arena_bytes_peak)
         space->arena_bytes_peak = space->arena_bytes;
     ++space->run_count;
+    machine_language_namespace_keep_insertion_limit(space);
     return true;
 }
 
@@ -382,6 +404,7 @@ void advanced_configuration_and_power_interface_machine_language_namespace_close
     space->slots = NULL;
     space->slot_capacity = 0u;
     space->node_count = 0u;
+    machine_language_namespace_keep_insertion_limit(space);
 }
 
 uint32_t advanced_configuration_and_power_interface_machine_language_namespace_find_child(
@@ -479,8 +502,11 @@ advanced_configuration_and_power_interface_machine_language_namespace_add_child(
     uint32_t index = space->free_nodes;
 
     if (index != 0u)
+    {
         space->free_nodes =
             advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->next_sibling;
+        machine_language_namespace_keep_insertion_limit(space);
+    }
     else
     {
         const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
@@ -546,6 +572,7 @@ void advanced_configuration_and_power_interface_machine_language_namespace_remov
     --space->live_nodes;
     node->next_sibling = space->free_nodes;
     space->free_nodes = index;
+    space->insertion_limit = 0u;
 }
 
 AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
