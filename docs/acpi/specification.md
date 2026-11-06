@@ -151,6 +151,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/lib/asmutils.s`, `kernel/include/kernel/lib/asmutils.h` | the 8-, 16- and 32-bit port accesses of the ring-0 host |
 | `kernel/tests/acpi/simulated_host.c`, `simulated_host.h` | the simulated host: sparse memory, zero-filled ports, simulated PCI, virtual clock, target parameters; one source for the host harness and the ring-0 corpus test |
 | `kernel/tests/acpi/*.c` | `KERNEL_TEST`s with made-up AML, and the ring-0 corpus test; also compiled into the host harness |
+| `kernel/tests/acpi/fixtures/` | the made-up tables in ASL, one `<suite>/<name>.asl` per table, and the header `<suite>.h` that `tools/acpi/regenerate-fixtures.sh` compiles them to, iasl run in the sandbox of `tools/acpi/sandbox.sh`, and `<suite>.c` includes; a table several suites use is in `common/`, whose `common.h` each of them includes (§8.2) |
 | `tools/acpi/host/` | the host harness, an xmake target of this repository (`test-acpi`): its entry point, the acpidump reader, the corpus runner, the needs-path closure; it compiles the simulated host, `kernel/tests/acpi/` and the kernel's test runner, which prints its KTAP, from `kernel/` |
 | `tools/acpi-corpus.sh` | fetches the pinned corpora by commit into `build/acpi-corpus/` and writes the full list; checks each machine's directory (§8.4); builds one Multiboot module per machine; never commits their bytes |
 | `tools/acpi/` | the quick list and the corpus (§8.4); the rule that picks 90 machines of the corpus from the tree listing; the census of each dump; the directory each dump must give |
@@ -1130,10 +1131,13 @@ published image. The made-up ASL is ours, under MIT.
 
 - Written in ASL, compiled with the pinned `iasl` in a sandbox, committed as the `.asl` source and a generated C
   array; `tools/acpi/regenerate-fixtures.sh` recompiles them and fails on a byte difference.
-- Raw-byte cases for what `iasl` does not emit: a crossing PkgLength, orphan `Package` terms at the root, `Noop`
-  runs, a 4-byte PkgLength, both forms of `CondRefOf` and `Load`, an unterminated string.
+- Raw-byte cases for what `iasl` does not emit: a crossing PkgLength, orphan `Package` terms at the root, a 4-byte
+  PkgLength, both forms of `CondRefOf` and `Load`, an unterminated string.
 - Region tests build their AML at run time, with the physical address of a frame the test owns patched into the
   region's base.
+- A table whose length or depth a test names, as a constant it also computes with or as a parameter (a run of
+  `Noop`s, a ladder, nested `If`s), is built at run time, so that the length has one source; its whole terms come
+  from fixtures.
 - Bit-exact field tests: every bit offset from 0 to 63 and length from 1 to 64, for buffer fields and for each
   access width of a SystemMemory field, read and write, on the host. Their expected values come from an independent
   bit model, checked once against `acpiexec`. Ring 0 runs a fixed stratified sample (each width, the boundary
@@ -1177,7 +1181,10 @@ published image. The made-up ASL is ours, under MIT.
   reads from the same dump, apart from the kernel's code.
 - **For each machine** the harness prints the decode errors, the namespace dump and its fold, the census counts,
   the needs-path closure, and the needs-path run (§3.8, steps 0 to 9) with the opcodes, spaces and access types it
-  executed.
+  executed. Step 0 meets the firmware the FADT describes, as it boots ([§4.8.2.5]): with a legacy mode, SMI_CMD and
+  ACPI_ENABLE both set, SCI_EN reads clear until ACPI_ENABLE is written to SMI_CMD, and set once the write returns,
+  the SMI handler's last action ([§5.2.9]); without one, SCI_EN reads set from the start, as on a platform that only
+  supports ACPI.
 - **The static tables**: the parsed FADT, MADT, MCFG and HPET fields of every machine equal the decoded `[xxxh]`
   lines that ship with each dump. The FADT also equals the local FADT ACPICA builds from the same bytes
   (`tools/acpi/acpica_fadt.c`), with ACPICA's rewrite of PM block widths (`AcpiGbl_UseDefaultRegisterWidths`)
@@ -1319,6 +1326,7 @@ its page.
 [§3.11.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=120
 [§4.8.1.2]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=138
 [§4.8.2.2.1.3]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=143
+[§4.8.2.5]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=148
 [§4.8.3.2.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=153
 [§5.2.9]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=182
 [§5.2.10.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=200

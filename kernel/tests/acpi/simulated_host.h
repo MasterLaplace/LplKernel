@@ -29,6 +29,7 @@
 
 #include <kernel/acpi/host.h>
 #include <kernel/acpi/log.h>
+#include <kernel/acpi/tables.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -325,6 +326,24 @@ extern bool advanced_configuration_and_power_interface_simulated_host_add_functi
  */
 extern bool advanced_configuration_and_power_interface_simulated_host_set_port(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint16_t port, uint32_t value);
+
+/**
+ * @brief Gives a simulated host the firmware of the platform a normalised FADT describes, as it boots
+ *        (ACPI 6.6 §4.8.2.5): a platform with a legacy mode, SMI_CMD and ACPI_ENABLE both not 0,
+ *        boots in it, SCI_EN clear in its PM1a control register until ACPI_ENABLE is written to
+ *        SMI_CMD, and set once the write returns, as an SMI handler sets it; a platform without one
+ *        reads SCI_EN set from the start.
+ *
+ * @details A platform without a FADT, a hardware-reduced one, and one whose PM1a control register
+ *          is not a port have no SCI_EN to give: their host is left as it is. An SMI_CMD past port
+ *          0xFFFF is answered at no port, not at its low 16 bits.
+ *
+ * @param simulated The host, opened.
+ * @param fadt      The platform's normalised FADT.
+ */
+extern void advanced_configuration_and_power_interface_simulated_host_boot_platform(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt);
 
 /**
  * @brief Reads simulated memory as read_memory would, without logging it.

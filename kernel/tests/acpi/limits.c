@@ -1,3 +1,4 @@
+#include "fixtures/limits.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -70,7 +71,8 @@ static uint32_t limits_package_length(uint32_t end, uint32_t content)
 
 /**
  * @brief Writes a ladder of @p depth If and Else at the end of the AML buffer, from the inside out:
- *        level k returns k when Arg0 is k, the innermost Else returns Ones.
+ *        level k returns k when Arg0 is k, the innermost Else returns Ones. Its bytes are written at run time, from
+ *        raw ones: the depth is a parameter.
  *
  * @return Where the ladder starts.
  */
@@ -106,11 +108,11 @@ static uint32_t limits_ladder(uint32_t depth)
 
 /**
  * @brief Loads a table that declares RES_ as 5, a method M008 of one argument whose body is a ladder
- *        of @p depth, and stores M008 (@p depth - 1) to RES_, which reaches its deepest level.
+ *        of @p depth, and stores M008 (@p depth - 1) to RES_, which reaches its deepest level. The Store is raw
+ *        bytes: its constant is @p depth - 1.
  */
 static bool limits_run_ladder(KernelTest_t *test, uint32_t depth)
 {
-    static const uint8_t name[] = {0x08u, 'R', 'E', 'S', '_', 0x0Au, 0x05u};
     const uint8_t store[] = {0x70u, 'M', '0', '0', '8', 0x0Bu, (uint8_t) (depth - 1u), (uint8_t) ((depth - 1u) >> 8u),
                              'R',   'E', 'S', '_'};
     uint32_t start = limits_ladder(depth);
@@ -120,8 +122,8 @@ static bool limits_run_ladder(KernelTest_t *test, uint32_t depth)
     memcpy(limits_aml + start, "M008", 4u);
     start = limits_package_length(start, LIMITS_AML_CAPACITY - start);
     limits_aml[--start] = 0x14u;
-    start -= (uint32_t) sizeof(name);
-    memcpy(limits_aml + start, name, sizeof(name));
+    start -= (uint32_t) sizeof(limits_result_five_aml);
+    memcpy(limits_aml + start, limits_result_five_aml, sizeof(limits_result_five_aml));
     memmove(limits_aml, limits_aml + start, LIMITS_AML_CAPACITY - start);
     memcpy(limits_aml + (LIMITS_AML_CAPACITY - start), store, sizeof(store));
     return made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_aml,
@@ -134,14 +136,8 @@ static bool limits_run_ladder(KernelTest_t *test, uint32_t depth)
  */
 KERNEL_TEST(a_recursion_past_64_frames_is_refused)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '0',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '1',   0x0Au, 0x05u, 0x14u,
-        0x14u, 'M',   '0',   '0',   '7',   0x01u, 0xA0u, 0x0Bu, 0x68u, 0xA4u, 'M',   '0',   '0',   '7',   0x74u,
-        0x68u, 0x01u, 0x00u, 0xA4u, 0x00u, 0x70u, 'M',   '0',   '0',   '7',   0x0Au, 0x3Eu, 'R',   'E',   'S',
-        '0',   0x70u, 'M',   '0',   '0',   '7',   0x0Au, 0x3Fu, 'R',   'E',   'S',   '1',
-    };
-
-    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_recursion_aml,
+                            sizeof(limits_recursion_aml)))
         return;
     kernel_test_measure(test, "frames_peak", limits_load.evaluation.frames_peak);
     kernel_test_check(test, limits_integer("RES0") == 0u, "M007 (62) returns through 64 frames");
@@ -197,16 +193,8 @@ KERNEL_TEST(an_else_if_ladder_runs_up_to_the_block_limit)
  */
 KERNEL_TEST(an_endless_loop_is_stopped)
 {
-    static const uint8_t aml[] = {
-        0x14u, 0x0Au, 'M',   '0',   '0',   '9',   0x00u, 0xA2u, 0x03u, 0x01u, 0xA3u, 'M', '0', '0',   '9',
-        0xA2u, 0x03u, 0x01u, 0x9Fu, 0xA2u, 0x03u, 0x01u, 0xA3u, 0x08u, 'A',   'F',   'T', 'R', 0x01u,
-    };
-    static const uint8_t second[] = {
-        0x08u, 'C', 'N', 'T',   '2',   0x00u, 0xA2u, 0x0Du, 0x95u, 'C',
-        'N',   'T', '2', 0x0Au, 0x20u, 0x75u, 'C',   'N',   'T',   '2',
-    };
-
-    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_endless_loops_aml,
+                            sizeof(limits_endless_loops_aml)))
         return;
     kernel_test_check(
         test,
@@ -216,7 +204,8 @@ KERNEL_TEST(an_endless_loop_is_stopped)
         "the method's loop is stopped past 2^20 back-edges, the two table-level loops at their first");
     kernel_test_check(test, limits_integer("AFTR") == 1u, "the Name after them is declared");
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &limits_load, made_up_definition_block(limits_second_table, "SSDT", 2u, second, sizeof(second)));
+        &limits_load, made_up_definition_block(limits_second_table, "SSDT", 2u, limits_endless_loops_second_aml,
+                                               sizeof(limits_endless_loops_second_aml)));
     kernel_test_check(test, limits_integer("CNT2") == 0x20u,
                       "the SSDT's While (LLess (CNT2, 0x20)) completes in a budget of its own");
     limits_close(test);
@@ -226,14 +215,15 @@ KERNEL_TEST(an_endless_loop_is_stopped)
  * @brief A Device the decoding pass meets in a branch the declaration pass did not take, 511 If deep,
  *        fails with limit_blocks before its TermList opens, and leaves no mark behind: a fault in the
  *        body of the If (One) after it is a decode error of a declared construct, not an undeclared one.
+ *
+ * The If (One) after the 511 If (Zero) is raw bytes: iasl does not emit the byte 0x02, which opens no term, in a body.
  */
 KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
 {
-    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u, 'D', 'E', 'V', 'X'};
     static const uint8_t after[] = {0xA0u, 0x03u, 0x01u, 0x02u};
-    uint32_t start = LIMITS_AML_CAPACITY - (uint32_t) sizeof(device);
+    uint32_t start = LIMITS_AML_CAPACITY - (uint32_t) sizeof(limits_refused_device_aml);
 
-    memcpy(limits_aml + start, device, sizeof(device));
+    memcpy(limits_aml + start, limits_refused_device_aml, sizeof(limits_refused_device_aml));
     for (uint32_t level = 0u; level < 511u; ++level)
     {
         limits_aml[--start] = 0x00u;
@@ -253,7 +243,7 @@ KERNEL_TEST(a_construct_refused_at_the_block_limit_leaves_no_mark_behind)
 
 /**
  * @brief Loads a table whose code nests @p depth If (One), the @p length bytes at @p inner at the deepest
- *        level.
+ *        level. The If (One) are written at run time, from raw bytes: their depth is a parameter.
  */
 static bool limits_run_nested(KernelTest_t *test, uint32_t depth, const uint8_t *inner, uint32_t length)
 {
@@ -278,14 +268,12 @@ static bool limits_run_nested(KernelTest_t *test, uint32_t depth, const uint8_t 
  */
 KERNEL_TEST(table_level_code_nests_up_to_the_block_limit)
 {
-    static const uint8_t name[] = {0x08u, 'D', 'E', 'E', 'P', 0x01u};
-
-    if (!limits_run_nested(test, 511u, name, sizeof(name)))
+    if (!limits_run_nested(test, 511u, limits_deep_name_aml, sizeof(limits_deep_name_aml)))
         return;
     kernel_test_check(test, limits_integer("DEEP") == 1u && limits_load.load_errors == 0u,
                       "511 If (One) fill the 512 blocks: DEEP is declared");
     limits_close(test);
-    if (!limits_run_nested(test, 512u, name, sizeof(name)))
+    if (!limits_run_nested(test, 512u, limits_deep_name_aml, sizeof(limits_deep_name_aml)))
         return;
     kernel_test_check(test,
                       made_up_root_node(&limits_load, "DEEP") == NULL && limits_load.load_errors == 1u &&
@@ -304,10 +292,7 @@ KERNEL_TEST(table_level_code_nests_up_to_the_block_limit)
  */
 KERNEL_TEST(a_device_at_the_block_limit_is_declared_without_its_body)
 {
-    static const uint8_t device[] = {0x5Bu, 0x82u, 0x0Bu, 'D',   'E', 'V', 'X', 0x08u, 'I',  'N',
-                                     'N',   'R',   0x01u, 0x08u, 'A', 'F', 'T', 'D',   0x01u};
-
-    if (!limits_run_nested(test, 511u, device, sizeof(device)))
+    if (!limits_run_nested(test, 511u, limits_deep_device_aml, sizeof(limits_deep_device_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node = made_up_root_node(&limits_load, "DEVX");
@@ -330,13 +315,7 @@ KERNEL_TEST(a_device_at_the_block_limit_is_declared_without_its_body)
  */
 KERNEL_TEST(a_taken_if_refused_at_the_block_limit_steps_over_its_else_after_a_turn_that_ran_it)
 {
-    static const uint8_t loop[] = {
-        0x08u, 'C',   'N',   'T',   '2',   0x00u, 0x08u, 'E', 'L',   'S',   'C',   0x00u, 0xA2u, 0x23u, 0x95u, 'C',
-        'N',   'T',   '2',   0x0Au, 0x02u, 0x75u, 'C',   'N', 'T',   '2',   0xA0u, 0x0Eu, 0x93u, 'C',   'N',   'T',
-        '2',   0x0Au, 0x02u, 0x08u, 'I',   'N',   'I',   'F', 0x01u, 0xA1u, 0x06u, 0x75u, 'E',   'L',   'S',   'C',
-    };
-
-    if (!limits_run_nested(test, 510u, loop, sizeof(loop)))
+    if (!limits_run_nested(test, 510u, limits_deep_loop_aml, sizeof(limits_deep_loop_aml)))
         return;
     kernel_test_check(test,
                       limits_integer("CNT2") == 2u && limits_integer("ELSC") == 0u &&
@@ -357,16 +336,15 @@ KERNEL_TEST(a_taken_if_refused_at_the_block_limit_steps_over_its_else_after_a_tu
  */
 KERNEL_TEST(a_table_level_run_refuses_full_stacks)
 {
-    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '_', 0x00u};
-
-    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_result_zero_aml,
+                            sizeof(limits_result_zero_aml)))
         return;
     limits_load.evaluation.frame_count =
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES;
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_run_table_term(
                           &limits_load, 0u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
-                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml)) ==
+                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(limits_result_zero_aml)) ==
                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FRAMES,
                       "64 frames held: limit_frames");
     limits_load.evaluation.frame_count = 0u;
@@ -375,7 +353,7 @@ KERNEL_TEST(a_table_level_run_refuses_full_stacks)
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_run_table_term(
                           &limits_load, 0u, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
-                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(aml)) ==
+                          MADE_UP_TABLE_HEADER, MADE_UP_TABLE_HEADER + sizeof(limits_result_zero_aml)) ==
                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PENDING_OPERATORS,
                       "256 operators held: limit_pending_operators");
     limits_load.evaluation.operator_count = 0u;
@@ -395,18 +373,14 @@ KERNEL_TEST(a_table_level_run_refuses_full_stacks)
  */
 KERNEL_TEST(a_table_with_no_room_for_its_frame_is_declared_without_running)
 {
-    static const uint8_t aml[] = {0x08u, 'R', 'E', 'S', '_', 0x0Au, 0x05u};
-    static const uint8_t loaded[] = {
-        0x08u, 'L', 'D', 'E',   'D',   0x01u, 0xA0u, 0x08u, 0x01u, 0x08u, 'I',
-        'N',   'I', 'F', 0x01u, 0x70u, 0x00u, 'R',   'E',   'S',   '_',
-    };
-
-    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_result_five_aml,
+                            sizeof(limits_result_five_aml)))
         return;
     limits_load.evaluation.frame_count =
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &limits_load, made_up_definition_block(limits_second_table, "SSDT", 2u, loaded, sizeof(loaded)));
+        &limits_load, made_up_definition_block(limits_second_table, "SSDT", 2u, limits_frameless_loaded_aml,
+                                               sizeof(limits_frameless_loaded_aml)));
     limits_load.evaluation.frame_count = 0u;
     kernel_test_check(test, limits_integer("LDED") == 1u && limits_integer("INIF") == 1u,
                       "LDED, and INIF in the If (One) after it, are declared");

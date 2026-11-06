@@ -30,6 +30,7 @@ static uint32_t corpus_image_length;
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t corpus_host;
 static AdvancedConfigurationAndPowerInterfaceDirectory_t corpus_directory;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t corpus_load;
+static AdvancedConfigurationAndPowerInterfaceModeSwitch_t corpus_mode;
 
 /**
  * @brief Appends @p value to the made-up image, as @p width little-endian bytes, written one by one
@@ -162,10 +163,33 @@ static void corpus_measure_load(KernelTest_t *test)
 }
 
 /**
+ * @brief Puts the recorded machine of the directory read in ACPI mode, as step 0 does at boot before any
+ *        AML runs (§3.8), its firmware answering as the platform its FADT describes boots, as the host
+ *        harness does, and prints how the switch ended and what it counted.
+ */
+static void corpus_enter_mode(KernelTest_t *test)
+{
+    advanced_configuration_and_power_interface_simulated_host_boot_platform(&corpus_host,
+                                                                            &corpus_directory.fixed_description);
+    advanced_configuration_and_power_interface_enter_mode(&corpus_host.host, &corpus_directory.fixed_description,
+                                                          &corpus_mode);
+    kernel_test_check(test,
+                      !corpus_directory.fixed_description.present ||
+                          corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_NOT_RUN,
+                      "step 0 runs on the recorded machine's FADT, when it has one");
+    kernel_test_check(test, corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED,
+                      "the recorded machine's firmware answers ACPI_ENABLE");
+    kernel_test_measure(test, "mode_outcome", corpus_mode.outcome);
+    kernel_test_measure(test, "mode_enables_cleared", corpus_mode.enable_registers_cleared);
+    kernel_test_measure(test, "mode_polls", corpus_mode.polls);
+    kernel_test_measure(test, "mode_waited_ms", corpus_mode.waited_milliseconds);
+}
+
+/**
  * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
- *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform never switched to ACPI mode,
- *        as the host harness does, and prints what it ran and counted, the tables Load added included, the
- *        kept data found faulty by the check and by the reads (O20), and the fold of the C-states it published.
+ *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform as step 0 left it, as the
+ *        host harness does, and prints what it ran and counted, the tables Load added included, the kept
+ *        data found faulty by the check and by the reads (O20), and the fold of the C-states it published.
  */
 static void corpus_initialize(KernelTest_t *test)
 {
@@ -179,9 +203,16 @@ static void corpus_initialize(KernelTest_t *test)
                     NULL,
         .monitor_wait = true,
         .fadt = &corpus_directory.fixed_description,
+        .mode = corpus_mode.outcome,
     };
 
     advanced_configuration_and_power_interface_initialize_namespace(&corpus_load, &machine, &initialization, &idle);
+    kernel_test_check(test,
+                      corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED ||
+                          corpus_directory.fixed_description.idle_state_command == 0u ||
+                          initialization.idle_control ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_WRITTEN,
+                      "step 8 writes CST_CNT to SMI_CMD once step 0 switched a platform whose FADT names it");
     kernel_test_measure(test, "initializations", initialization.initializations);
     kernel_test_measure(test, "initialization_failed", initialization.initialization_failed);
     kernel_test_measure(test, "registrations", initialization.registrations);
@@ -375,6 +406,7 @@ KERNEL_TEST(the_boot_module_machine_loads)
         advanced_configuration_and_power_interface_release_directory(&corpus_directory);
         return;
     }
+    corpus_enter_mode(test);
     corpus_load_directory(test, true);
     kernel_test_check(test, corpus_host.outstanding_maps == 0u && corpus_host.mismatched_unmaps == 0u,
                       "every window is unmapped as it was mapped");
