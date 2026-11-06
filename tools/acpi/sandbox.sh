@@ -17,6 +17,8 @@ HOME and TMPDIR the output directory.
     bound back read-only;
   - socket() and io_uring are refused, as any system call of another architecture: a network
     namespace does not cut AF_VSOCK, the channel to the hypervisor;
+  - no user namespace can be made in it, which would make the command root in one, and open to it
+    the kernel code only such a root reaches;
   - the command reads an empty standard input, and no descriptor above 2 the caller left open;
   - the caller stands in this repository, where the command starts, so that relative paths keep
     their meaning; a command whose directory is the root, a masked directory or holds one is refused.
@@ -28,7 +30,8 @@ does not vouch for what the command writes to its output directory.
                repository, that files outside the output directory, in the repository and in
                /var/tmp, are read-only, that one inside can be written, that no socket is left on any
                file system it sees, that its only network interface is the loopback, that socket()
-               and io_uring_setup() are refused, and that descriptors the caller left open are closed
+               and io_uring_setup() are refused, that unshare(CLONE_NEWUSER) is, and that descriptors
+               the caller left open are closed
 
 Exit status: the command's; 1 when bwrap is missing, when the caller or the command stands where the
 sandbox would uncover a masked directory, or bwrap's own when it cannot make the sandbox; 2 on a usage
@@ -136,7 +139,7 @@ run_sandboxed() {
     system_call_filter >"$filter"
     exec 3<"$filter"
     rm -f "$filter"
-    exec bwrap --unshare-all --die-with-parent --new-session --seccomp 3 \
+    exec bwrap --unshare-all --unshare-user --disable-userns --die-with-parent --new-session --seccomp 3 \
         --ro-bind / / --dev /dev --proc /proc "${masks[@]}" \
         --ro-bind "$root" "$root" --ro-bind "$command" "$command" --bind "$output" "$output" --chdir "$PWD" \
         --clearenv --setenv PATH "$PATH" --setenv LC_ALL "${LC_ALL:-C}" --setenv HOME "$output" \
@@ -223,6 +226,15 @@ if [[ "$uring" == "-1 1" ]]; then
     echo "ok: io_uring_setup() is refused, so no IORING_OP_SOCKET makes a socket"
 else
     fail "io_uring_setup() gave $uring instead of -1 and EPERM"
+fi
+nested="$(python3 -I -c '
+import ctypes
+libc = ctypes.CDLL(None, use_errno=True)
+print(libc.unshare(0x10000000), ctypes.get_errno())')"
+if [[ "$nested" == "-1 28" ]]; then
+    echo "ok: unshare(CLONE_NEWUSER) is refused, so no user namespace is made inside the sandbox"
+else
+    fail "unshare(CLONE_NEWUSER) gave $nested instead of -1 and ENOSPC"
 fi
 if (echo inherited >&7) 2>/dev/null || (echo inherited >&255) 2>/dev/null; then
     fail "a descriptor the caller left open, 7 or 255, is still open"
