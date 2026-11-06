@@ -292,6 +292,21 @@ static void acpi_helper_write_unimplemented_record(
 }
 
 /**
+ * @brief Writes the `[LPLTLM] acpi.limits` record (§6.1): per limit, the times the boot's load reached it, counted
+ *        under its status as every fault is (§4.5), then the most it held at once.
+ */
+static void acpi_helper_write_limits_record(Serial_t *serial,
+                                            const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    kernel_telemetry_begin_record(serial, "acpi.limits");
+    kernel_telemetry_write_unsigned(
+        "limit_internal_nesting",
+        load->faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_INTERNAL_NESTING]);
+    kernel_telemetry_write_unsigned("internal_nesting_peak", load->regions.internal_nesting_peak);
+    kernel_telemetry_end_record();
+}
+
+/**
  * @brief Writes the counts the decoding pass fills, the terms of every table among them, which a load that skips
  *        bodies, or declared no table, leaves uncounted.
  */
@@ -482,6 +497,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     acpi_helper_write_regions_record(serial, &load->regions);
     acpi_helper_write_services_record(serial, &load->services);
     acpi_helper_write_predecoding_record(serial, load);
+    acpi_helper_write_limits_record(serial, load);
     acpi_helper_write_unimplemented_record(serial, &load->evaluation);
     kernel_telemetry_begin_record(serial, "acpi.values");
     kernel_telemetry_write_unsigned("objects", load->heap.objects);

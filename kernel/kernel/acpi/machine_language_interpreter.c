@@ -2104,6 +2104,28 @@ static MachineLanguageStatus_t machine_language_attach_step(MachineLanguageLoad_
 }
 
 /**
+ * @brief Takes room for one more internal frame, of an attach or of a _REG: limit_internal_nesting when as many as
+ *        §6.1 allows run already, nested in one another, each waited for by its operator; the most that ran at once is
+ *        kept.
+ */
+static MachineLanguageStatus_t machine_language_nest_internal(MachineLanguageLoad_t *load)
+{
+    const MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    uint32_t nesting = 1u;
+
+    for (uint32_t index = 0u; index < evaluation->operator_count; ++index)
+        nesting += (evaluation->operators[index].opcode == MACHINE_LANGUAGE_ATTACH ||
+                    evaluation->operators[index].opcode == MACHINE_LANGUAGE_REGISTER) ?
+                       1u :
+                       0u;
+    if (nesting > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_INTERNAL_NESTING)
+        return MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING);
+    if (nesting > load->regions.internal_nesting_peak)
+        load->regions.internal_nesting_peak = nesting;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
  * @brief Pushes an internal frame (§3.6): @p method, called without arguments, whose result an attach
  *        operator hands to the attach of @p region.
  */
@@ -2115,6 +2137,11 @@ static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_
     if (evaluation->operator_count ==
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
+
+    const MachineLanguageStatus_t nested = machine_language_nest_internal(load);
+
+    if (nested != MACHINE_LANGUAGE_OK)
+        return nested;
 
     MachineLanguagePendingOperator_t *attach = &evaluation->operators[evaluation->operator_count++];
 
@@ -2167,6 +2194,11 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
     if (evaluation->operator_count ==
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
+
+    const MachineLanguageStatus_t nested = machine_language_nest_internal(load);
+
+    if (nested != MACHINE_LANGUAGE_OK)
+        return nested;
 
     MachineLanguagePendingOperator_t *registration = &evaluation->operators[evaluation->operator_count++];
 
@@ -5235,7 +5267,8 @@ static bool machine_language_exhausted(MachineLanguageStatus_t status)
     case MACHINE_LANGUAGE_STATUS(LIMIT_TIME_REQUESTED):
     case MACHINE_LANGUAGE_STATUS(LIMIT_HELD_MUTEXES):
     case MACHINE_LANGUAGE_STATUS(LIMIT_TABLES):
-    case MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES): return true;
+    case MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING): return true;
     default: return false;
     }
 }

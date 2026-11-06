@@ -259,8 +259,9 @@ static void corpus_enter_mode(KernelTest_t *test)
  * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
  *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform as step 0 left it, as the
  *        host harness does, and prints what it ran and counted, the tables Load added included, the kept
- *        data found faulty by the check and by the reads (O20), the fold of the C-states it published, and what
- *        the load and the initialisation executed, which must hold no opcode the interpreter does not run (§4.1).
+ *        data found faulty by the check and by the reads (O20), the fold of the C-states it published, the limits of
+ *        §6.1 it reached and their peaks, and what the load and the initialisation executed, which must hold no
+ *        opcode the interpreter does not run (§4.1).
  */
 static void corpus_initialize(KernelTest_t *test)
 {
@@ -316,6 +317,10 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure_hexadecimal(test, "idle_fold",
                                     advanced_configuration_and_power_interface_processor_idle_fold(&idle));
     kernel_test_measure(test, "first_failure", initialization.first_failure);
+    kernel_test_measure(
+        test, "limit_internal_nesting",
+        corpus_load.faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_INTERNAL_NESTING]);
+    kernel_test_measure(test, "internal_nesting_peak", corpus_load.regions.internal_nesting_peak);
     corpus_measure_executed(test);
     kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
                       "the initialisation leaves no frame and no temporary node behind");

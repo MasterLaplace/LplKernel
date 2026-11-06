@@ -45,6 +45,8 @@
     (1u << 20u) /**< While back-edges one evaluation takes (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FIELD_ACCESSES                                 \
     (1u << 20u) /**< Field accesses one evaluation makes (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_INTERNAL_NESTING                               \
+    2u /**< Internal frames an evaluation runs nested in one another: the evaluations a region needs (§3.6, §6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ARGUMENTS 7u /**< Arg0 to Arg6. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LOCALS    8u /**< Local0 to Local7. */
 

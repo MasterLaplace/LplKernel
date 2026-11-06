@@ -73,6 +73,7 @@ extern void write_advanced_configuration_and_power_interface_power_management_ti
  *        `[LPLTLM] acpi.init` record of the initialisation; then the `[LPLTLM] acpi.load` record: the tables
  *        Load and LoadTable added, refused and found missing, and the bytes Load copied; then the
  *        `[LPLTLM] acpi.regions` record: its field accesses and what reaching their regions took; then the
+ *        `[LPLTLM] acpi.limits` record: per limit of §6.1, the times the load reached it and its peak; then the
  *        `[LPLTLM] acpi.values` record: the objects its heap allocated, freed and held at most, the releases
  *        that found nothing to release, and the conversions it counted.
  *

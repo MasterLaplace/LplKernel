@@ -292,7 +292,8 @@ static void harness_print_executed(const AdvancedConfigurationAndPowerInterfaceM
 /**
  * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
  *        operating system services it called, the tables Load and LoadTable added, the kept data a first
- *        read found a fault in (O20), the failures per status, the region spaces refused, the opcodes
+ *        read found a fault in (O20), the limits of §6.1 it reached and their peaks, the failures per status,
+ *        the region spaces refused, the opcodes
  *        that failed as unimplemented, and the opcodes, spaces and AccessTypes it executed.
  */
 static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
@@ -355,6 +356,9 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
            regions->pci_protected_writes, regions->pci_lost_accesses, regions->pci_ecam_accesses,
            regions->pci_registrations, regions->pci_registration_failures);
+    printf("aml run limits limit_internal_nesting=%u internal_nesting_peak=%u\n",
+           load->faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_INTERNAL_NESTING],
+           regions->internal_nesting_peak);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);

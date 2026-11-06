@@ -303,6 +303,7 @@ namespace_check() {
         "$(grep -o ' declared_not_run=[0-9]*' <<<"$runs" | cut -d= -f2 | paste -sd+ | bc) declarations made without running"
     [[ "$1" == qemu ]] || echo "# field accesses: at most $(grep -o ' field_accesses_peak=[0-9]*' <<<"$runs" | cut -d= -f2 |
         sort -n | tail -1) in one table load"
+    [[ "$1" == qemu ]] || limits_summary "$runs"
     [[ "$1" == qemu ]] || echo "# PCI_Config: $(pci_total attachments "$runs") regions attached through" \
         "$(pci_total internal_evaluations "$runs") internal evaluations, $(pci_total internal_failures "$runs") of" \
         "them failed; $(pci_total protected_writes "$runs")" \
@@ -368,7 +369,7 @@ initialize_check() {
             continue
         fi
         modes+="$(grep '^aml mode ' "$output")"$'\n'
-        counts+="$(grep -E '^aml (init|idle|load) |^aml run tables ' "$output")"$'\n'
+        counts+="$(grep -E '^aml (init|idle|load) |^aml run (tables|limits) ' "$output")"$'\n'
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
@@ -407,6 +408,7 @@ initialize_check() {
         $(grep -o '^aml mode outcome=[a-z-]*' <<<"$modes" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# CST_CNT, machines per outcome:" \
         $(grep -o '^aml idle control=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
+    limits_summary "$counts"
     echo "# machines with a failure: $(grep -c '^aml init first_failure ' <<<"$counts")"
     grep '^aml init failed ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
         END { for (key in total) printf "#   %s %u\n", key, total[key] }' | sort -k3,3nr || true
@@ -744,6 +746,18 @@ idle_check() {
     echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots and $states states, $none" \
         "publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
     [[ "$agree" -eq $((number - stopped)) ]]
+}
+
+# Prints, over the `aml run limits` lines of the runs $1, the times each limit of §6.1 was reached, summed, and the
+# most each held at once, its peak.
+limits_summary() {
+    echo "# limits of §6.1, hits summed and peaks at most: $(grep '^aml run limits ' <<<"$1" | awk '
+        { for (field = 4; field <= NF; ++field) {
+              split($field, pair, "=")
+              if (!(pair[1] in total)) total[pair[1]] = 0
+              if (pair[1] !~ /_peak$/) total[pair[1]] += pair[2]
+              else if (pair[2] + 0 > total[pair[1]]) total[pair[1]] = pair[2] + 0 } }
+        END { for (name in total) print name "=" total[name] }' | sort | paste -sd' ')"
 }
 
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.

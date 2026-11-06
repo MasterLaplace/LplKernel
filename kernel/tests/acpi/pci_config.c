@@ -666,6 +666,64 @@ KERNEL_TEST(a_limit_inside_an_attach_method_still_fails_the_access)
 }
 
 /**
+ * @brief Internal frames nest two deep (§6.1): the load reads DEVD's unit, whose attach runs DEVD's _ADR, whose read
+ *        of DEVE's unit runs DEVE's; a host's read of DEVA's unit runs DEVA's _ADR, then DEVB's, and DEVC's, a third,
+ *        is refused with limit_internal_nesting, a limit no attach takes as an absent object (§3.6).
+ */
+KERNEL_TEST(internal_frames_nest_two_deep_and_a_third_fails_with_limit_internal_nesting)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value;
+
+    pci_begin();
+    pci_other_space[0x00u] = 0x86u;
+    pci_other_space[0x01u] = 0x80u;
+    advanced_configuration_and_power_interface_simulated_host_add_function(&pci_host, 0u, 0u, 3u, 1u, pci_other_space);
+    made_up_aml_raw(&pci_aml, pci_nested_attaches_aml, sizeof(pci_nested_attaches_aml));
+    if (!pci_run(test))
+        return;
+    kernel_test_measure(test, "internal_nesting_peak", pci_load.regions.internal_nesting_peak);
+    kernel_test_check(test,
+                      pci_load.evaluation.failures == 0u && pci_integer("RES_") == 0x8086u &&
+                          pci_load.regions.internal_evaluations == 2u && pci_load.regions.internal_nesting_peak == 2u,
+                      "two internal frames nested in one another attach DEVE's region, then DEVD's");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &pci_load, "\\PCI0.DEVA.VID_", NULL, 0u, &value) == PCI_STATUS(LIMIT_INTERNAL_NESTING),
+                      "the host's read fails with limit_internal_nesting");
+    kernel_test_check(
+        test,
+        pci_load.regions.internal_evaluations == 4u && pci_load.regions.internal_failures == 0u &&
+            pci_load.regions.internal_nesting_peak == 2u && pci_load.faults[PCI_STATUS(LIMIT_INTERNAL_NESTING)] == 1u,
+        "DEVA's and DEVB's _ADR ran, DEVC's did not, nothing was taken as absent, and the hit is counted");
+    pci_close(test);
+}
+
+/**
+ * @brief A _REG a region's creation runs is an internal frame too (§3.6): once registers_at_creation holds, as step 3
+ *        of the initialisation leaves it, MKRG's region runs RDEV's _REG, whose read of DEVB's unit runs DEVB's _ADR,
+ *        and DEVC's, a third, is refused: MKRG fails with limit_internal_nesting, which no _REG drops (§6.1).
+ */
+KERNEL_TEST(a_registration_counts_among_the_nested_internal_frames)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value;
+
+    pci_begin();
+    made_up_aml_raw(&pci_aml, pci_nested_attaches_aml, sizeof(pci_nested_attaches_aml));
+    if (!pci_run(test))
+        return;
+    pci_load.regions.registers_at_creation = true;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &pci_load, "\\RDEV.MKRG", NULL, 0u, &value) == PCI_STATUS(LIMIT_INTERNAL_NESTING),
+                      "MKRG fails with limit_internal_nesting");
+    kernel_test_check(test,
+                      pci_load.regions.pci_registrations == 1u && pci_load.regions.pci_registration_failures == 0u &&
+                          pci_load.regions.internal_evaluations == 3u && pci_load.regions.internal_nesting_peak == 2u,
+                      "_REG and DEVB's _ADR ran nested, DEVC's _ADR did not, and _REG was not dropped");
+    pci_close(test);
+}
+
+/**
  * @brief A host-initiated read of a field unit by its path attaches the region first, its methods in
  *        internal frames above a host frame; the next read needs none.
  */
