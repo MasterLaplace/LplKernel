@@ -1,3 +1,4 @@
+#include <kernel/acpi/log.h>
 #include <kernel/acpi/machine_language.h>
 
 #include <stddef.h>
@@ -3210,6 +3211,21 @@ static bool machine_language_holds_table(const AdvancedConfigurationAndPowerInte
 }
 
 /**
+ * @brief Counts a definition block whose checksum fails, loaded all the same, and logs it as a warning that names
+ *        it (§3.9, §5.1).
+ */
+static void machine_language_count_bad_checksum(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                                const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
+{
+    AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    ++load->checksum_bad_loaded;
+    advanced_configuration_and_power_interface_log_open(&line, "checksum_bad_loaded");
+    advanced_configuration_and_power_interface_log_table(&line, header);
+    advanced_configuration_and_power_interface_log_warning(load->space.host, &line);
+}
+
+/**
  * @brief Adds a table Load or LoadTable brings to the registry, last, for the evaluation that runs the Load to run
  *        its code in a frame of its own. A table the load holds already is refused, counted.
  */
@@ -3237,7 +3253,8 @@ machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguage
     table->checksum_valid = advanced_configuration_and_power_interface_checksum_holds(header, length);
     table->origin = origin;
     table->pages = pages;
-    load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
+    if (!table->checksum_valid)
+        machine_language_count_bad_checksum(load, header);
     load->bytes += length - (uint32_t) sizeof(*header);
     ++load->tables_loaded;
     *out_added = true;
@@ -3403,7 +3420,8 @@ static void machine_language_declare_accepted_table(AdvancedConfigurationAndPowe
     table->header = header;
     table->length = header->length;
     table->checksum_valid = checksum_valid;
-    load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
+    if (!checksum_valid)
+        machine_language_count_bad_checksum(load, header);
     load->bytes += header->length - (uint32_t) sizeof(*header);
     if (memcmp(header->signature, "DSDT", sizeof(header->signature)) == 0 && load->integer_bits == 0u)
         load->integer_bits = (header->revision < 2u) ? 32u : 64u;

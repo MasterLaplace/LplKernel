@@ -130,6 +130,7 @@ architecture supplies the host interface.
 |---|---|
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode and the power management timer (§3.9), all behind the host interface |
+| `kernel/kernel/acpi/log.c`, `kernel/include/kernel/acpi/log.h` | the lines the layer writes to its host's log, and the level below which a build compiles their calls out (O16) |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
 | `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h`, `kernel/include/kernel/acpi/machine_language_regions.h`, `kernel/include/kernel/acpi/machine_language_services.h` | the decoder's, the namespace's, the objects', the interpreter's, the regions' and the services' interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
@@ -177,7 +178,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
 | `reserve_pages(count)` → address or NULL: address space, none of it usable; `commit_pages(address, count)` → whether `count` pages from `address`, each reserved and not committed yet, are now usable; `release_reservation(address, reserved, committed)`: the namespace's node array, reserved at open for the node cap and committed a 64 KiB run at a time | `kernel_vmm_reserve_pages`, `kernel_vmm_commit_pages`, `kernel_vmm_free_pages`, which gives back a reservation whatever part of it is committed | the same calls; the host harness maps a reservation with no access and opens the pages committed, so that a node past them faults as in ring 0; the host counts the pages committed |
-| `log(level, text)` | serial, compiled out below the build's level | stdout |
+| `log(level, text)`: one line, at the level `error` (a fault, §4.5), `warning` (firmware used all the same, such as a checksum that fails, §3.9) or `debug` (§5.2); a debug build keeps every level, a release build `warning` and `error` | serial, compiled out below the build's level | the first four lines, the others counted; a test prints those it checks as records, which `tools/parity.sh` compares (§8.7) |
 
 A host is a value, `AdvancedConfigurationAndPowerInterfaceHost_t` in `kernel/include/kernel/acpi/host.h`, with one
 function pointer per call, each given the host's context first. The tables and the interpreter are given the host

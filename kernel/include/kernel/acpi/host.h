@@ -34,6 +34,21 @@
     0xFFFFFFFFu /**< What reference_read gives once its count passed what it can hold. */
 
 /**
+ * @name The levels of a line of the ACPI layer's log (§3.3)
+ *
+ * A lower number matters more. A build keeps the lines of its level and those above it, and compiles out the
+ * calls of the others (O16, kernel/include/kernel/acpi/log.h).
+ * @{
+ */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_ERROR                                                           \
+    1u /**< A fault: AML that failed, named by its table, its offset, its opcode and its method (§4.5). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_WARNING                                                         \
+    2u /**< Firmware the layer uses all the same, such as a table whose checksum fails (§3.9). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_DEBUG                                                           \
+    3u /**< What firmware writes for whoever debugs it: a store to Debug (§5.2). */
+/** @} */
+
+/**
  * @brief What the memory at a physical address is, as the boot memory map says (§5.3).
  */
 typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
@@ -75,7 +90,9 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
  *          commit_pages makes count pages of a reservation usable, from address, page-aligned, up, each
  *          reserved and not committed yet, and returns whether it could: one that fails leaves those pages
  *          as they were. release_reservation gives back a whole reservation, given the pages it reserved
- *          and how many, from its start, were committed.
+ *          and how many, from its start, were committed. log writes one line of the layer's log at an
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_* level, given without its end of line and kept by
+ *          the caller only for the call; a host that keeps no log leaves it NULL.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     void *context;                                              /**< The host's own state, or NULL. */
@@ -112,6 +129,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     bool (*commit_pages)(void *context, void *address, uint32_t count); /**< Makes pages of a reservation usable. */
     void (*release_reservation)(void *context, void *address, uint32_t reserved,
                                 uint32_t committed); /**< Gives a reservation back, its committed pages with it. */
+    void (*log)(void *context, uint8_t level, const char *text); /**< Writes a line of the layer's log. */
 } AdvancedConfigurationAndPowerInterfaceHost_t;
 
 /**

@@ -1,7 +1,9 @@
 #include "platform.h"
 
 #include <kernel/acpi/host.h>
+#include <kernel/acpi/log.h>
 #include <kernel/boot/boot_module.h>
+#include <kernel/config.h>
 #include <kernel/drivers/serial.h>
 #include <kernel/memory/vmm.h>
 
@@ -226,6 +228,13 @@ static void platform_release_reservation(void *context, void *address, uint32_t 
     kernel_vmm_free_pages(address, reserved);
 }
 
+static void platform_log(void *context, uint8_t level, const char *text)
+{
+    (void) context;
+    printf("[" KERNEL_SYSTEM_STRING "]: ACPI %s: %s\n",
+           advanced_configuration_and_power_interface_log_level_name(level), text);
+}
+
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
     .root_system_description_pointer = platform_root_system_description_pointer,
@@ -251,6 +260,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .reserve_pages = platform_reserve_pages,
     .commit_pages = platform_commit_pages,
     .release_reservation = platform_release_reservation,
+    .log = platform_log,
 };
 
 void *kernel_vmm_alloc_pages(uint32_t page_count)
