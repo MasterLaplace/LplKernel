@@ -3,7 +3,7 @@
 # the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh --server). The boot runs the
 # same function on q35's own tables first, hence skip=1. tools/acpi-corpus.sh module
 # 'Desktop/MSI/MS-7/MS-7E16/B75C85853132' writes the module. The gap to a release kernel is measured on q35's tables
-# only (tools/acpi-load-q35.release-path.debug.budget): 3,642 instructions (2.15 %) fewer, all of them in mapping the
+# only (tools/acpi-load-q35.release-path.debug.budget): 3,826 instructions (2.26 %) fewer, all of them in mapping the
 # firmware's windows, a cost that grows with the windows a machine maps. Checked by tools/instructions.sh --budget
 # tools/acpi-load-ms-7e16.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records the new
 # one.

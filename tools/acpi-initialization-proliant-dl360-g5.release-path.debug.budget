@@ -4,7 +4,7 @@
 # the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh --server). The boot runs the
 # same function on q35's own tables first, hence skip=1. tools/acpi-corpus.sh module
 # 'Server/Hewlett-Packard/ProLiant/ProLiant DL360 G5/A8DA802364DF' writes the module. The gap to a release kernel is
-# measured on q35's tables only (tools/acpi-initialization-q35.release-path.debug.budget): 32 instructions (0.04 %)
+# measured on q35's tables only (tools/acpi-initialization-q35.release-path.debug.budget): 19 instructions (0.03 %)
 # more. Checked by tools/instructions.sh --budget tools/acpi-initialization-proliant-dl360-g5.release-path.debug.budget
 # kernel/lpl.kernel; a change that moves the count records the new one.
 inside=advanced_configuration_and_power_interface_initialize_namespace
@@ -13,6 +13,6 @@ times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
 module=build/acpi-corpus/modules/Server_Hewlett-Packard_ProLiant_ProLiant_DL360_G5_A8DA802364DF.acpi
-instructions=1071908
-accesses=526363
+instructions=1069215
+accesses=527657
 tolerance=1
