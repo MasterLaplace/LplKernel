@@ -3,8 +3,9 @@
 Usage: python3 -I tools/acpi/check_census.py
 
 Each case is one or two definition blocks, and its count of method calls is derived from a rule of
-docs/acpi/specification.md, never read from the census or the kernel's decoder. A rule no recorded machine
-exercises can still be wrong, and only a case written for it can show it. Exits 1 when a case disagrees.
+docs/acpi/specification.md, never read from the census or the kernel's decoder; so are the methods that read Timer, in
+their body or through the methods they call, which the slack oracle compares on status only (§8.6). A rule no recorded
+machine exercises can still be wrong, and only a case written for it can show it. Exits 1 when a case disagrees.
 """
 import os
 import sys
@@ -103,7 +104,26 @@ CASES = [
 ]
 
 
-def main():
+TIMER = b"\x5B\x33"
+STORE = b"\x70"
+
+TIMER_CASES = [
+    ("a method whose body reads Timer reads it", {"\\TIMR"}, [block(b"SSDT",
+        method(b"TIMR", 0, STORE + TIMER + LOCAL0) + method(b"NONE", 0, STORE + ONE + LOCAL0))]),
+    ("a method that calls one that reads Timer reads it, and so does its own caller", {"\\TIMR", "\\CALL", "\\TOP_"},
+     [block(b"SSDT", method(b"TIMR", 0, STORE + TIMER + LOCAL0) + method(b"CALL", 0, b"TIMR")
+                     + method(b"TOP_", 0, b"CALL") + method(b"NONE", 0, b"\x5B\x12TIMR" + LOCAL0))]),
+    ("two methods that call each other, one of them reading Timer, both read it", {"\\MTHA", "\\MTHB"},
+     [block(b"SSDT", method(b"MTHA", 0, b"MTHB") + method(b"MTHB", 0, STORE + TIMER + LOCAL0 + b"MTHA"))]),
+    ("a method in a Device reads Timer under the Device's path", {"\\DEV0._STA"}, [block(b"SSDT",
+        device(b"DEV0", method(b"_STA", 0, b"\xA4" + TIMER)))]),
+    ("Timer read by table-level code is read by no method", set(), [block(b"SSDT",
+        b"\x08TVAL" + ZERO + STORE + TIMER + b"TVAL" + method(b"NONE", 0, STORE + ONE + LOCAL0))]),
+]
+
+
+def check_calls():
+    """Checks the method calls of CASES; returns the count of cases that disagree."""
     disagreements = 0
     for name, expected, blocks in CASES:
         labelled = [("case:%s%u" % (data[:4].decode(), index + 1), data) for index, data in enumerate(blocks)]
@@ -112,7 +132,25 @@ def main():
         agrees = calls == expected and census["parse_errors"] == 0
         disagreements += 0 if agrees else 1
         print("%s %s: %u calls, %u expected" % ("ok" if agrees else "not ok", name, calls, expected))
-    print("# census: %u of %u cases agree" % (len(CASES) - disagreements, len(CASES)))
+    return disagreements
+
+
+def check_timer_readers():
+    """Checks the methods TIMER_CASES read Timer in; returns the count of cases that disagree."""
+    disagreements = 0
+    for name, expected, blocks in TIMER_CASES:
+        labelled = [("case:%s%u" % (data[:4].decode(), index + 1), data) for index, data in enumerate(blocks)]
+        readers = aml_census.methods_reading_timer(labelled)
+        agrees = readers == expected
+        disagreements += 0 if agrees else 1
+        print("%s %s: %s, %s expected" % ("ok" if agrees else "not ok", name, sorted(readers), sorted(expected)))
+    return disagreements
+
+
+def main():
+    disagreements = check_calls() + check_timer_readers()
+    cases = len(CASES) + len(TIMER_CASES)
+    print("# census: %u of %u cases agree" % (cases - disagreements, cases))
     return 1 if disagreements else 0
 
 

@@ -1669,7 +1669,7 @@ static MachineLanguageStatus_t machine_language_take_table_back_edge(MachineLang
                                    MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS));
     advanced_configuration_and_power_interface_machine_language_report_fault(
         load, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS), machine_language_frame(evaluation)->table, block->start,
-        0u, block->scope);
+        block->end, 0u, block->scope);
     machine_language_frame(evaluation)->pc = block->end;
     return MACHINE_LANGUAGE_OK;
 }
@@ -1858,8 +1858,10 @@ static inline MachineLanguageStatus_t machine_language_leave_loop(MachineLanguag
 /**
  * @brief Whether the interpreter runs an opcode that pushes an operator: control flow, Store and
  *        CopyObject, Name and the buffer fields in a method, the operators on integers, strings,
- *        buffers, packages and references, and the operating system services the needs-path closure
- *        reaches (§4.1): Notify, Sleep, Stall, Timer, Acquire, Release and Signal.
+ *        buffers, packages and references, the operating system services the needs-path closure
+ *        reaches (§4.1): Notify, Sleep, Stall, Timer, Acquire, Release and Signal, and those the
+ *        specification gives a behaviour of their own: Wait, Reset and Fatal (§5.2), and Unload, refused
+ *        (§4.5).
  */
 static bool machine_language_runs(uint32_t opcode)
 {
@@ -1887,6 +1889,8 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(OR):
     case MACHINE_LANGUAGE_OPCODE(XOR):
     case MACHINE_LANGUAGE_OPCODE(NOT):
+    case MACHINE_LANGUAGE_OPCODE(FIND_SET_LEFT_BIT):
+    case MACHINE_LANGUAGE_OPCODE(FIND_SET_RIGHT_BIT):
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_AND):
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_OR):
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT):
@@ -1924,6 +1928,10 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(ACQUIRE):
     case MACHINE_LANGUAGE_OPCODE(RELEASE):
     case MACHINE_LANGUAGE_OPCODE(SIGNAL):
+    case MACHINE_LANGUAGE_OPCODE(WAIT):
+    case MACHINE_LANGUAGE_OPCODE(RESET):
+    case MACHINE_LANGUAGE_OPCODE(FATAL):
+    case MACHINE_LANGUAGE_OPCODE(UNLOAD):
     case MACHINE_LANGUAGE_OPCODE(LOAD):
     case MACHINE_LANGUAGE_OPCODE(LOAD_TABLE): return true;
     default: return false;
@@ -1932,8 +1940,8 @@ static bool machine_language_runs(uint32_t opcode)
 
 /**
  * @brief Whether the loop takes an opcode of a method where it reads it, with no operator pushed
- *        (machine_language_term): a constant, a String, a local, an argument, Debug, Noop, Break, Continue,
- *        or an Else.
+ *        (machine_language_term): a constant, a String, a local, an argument, Debug, Noop, BreakPoint, Break,
+ *        Continue, or an Else.
  */
 static bool machine_language_takes_in_place(uint32_t opcode)
 {
@@ -1949,6 +1957,7 @@ static bool machine_language_takes_in_place(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(STRING_PREFIX):
     case MACHINE_LANGUAGE_OPCODE(DEBUG):
     case MACHINE_LANGUAGE_OPCODE(NOOP):
+    case MACHINE_LANGUAGE_OPCODE(BREAK_POINT):
     case MACHINE_LANGUAGE_OPCODE(BREAK):
     case MACHINE_LANGUAGE_OPCODE(CONTINUE):
     case MACHINE_LANGUAGE_OPCODE(ELSE): return true;
@@ -2467,6 +2476,11 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
         machine_language_count_executed(evaluation, opcode);
         frame->pc = after;
         return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPCODE(BREAK_POINT):
+        machine_language_count_executed(evaluation, opcode);
+        frame->pc = after;
+        ++load->services.break_points;
+        return MACHINE_LANGUAGE_OK;
     case MACHINE_LANGUAGE_OPCODE(BREAK):
     case MACHINE_LANGUAGE_OPCODE(CONTINUE):
         machine_language_count_executed(evaluation, opcode);
@@ -2586,8 +2600,9 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
         return status;
     advanced_configuration_and_power_interface_machine_language_count_load_error(load, status);
     advanced_configuration_and_power_interface_machine_language_count_table_failure(load, frame->table);
-    advanced_configuration_and_power_interface_machine_language_report_fault(load, status, frame->table, start, 0u,
-                                                                             machine_language_block(evaluation)->scope);
+    advanced_configuration_and_power_interface_machine_language_report_fault(
+        load, status, frame->table, start, machine_language_block(evaluation)->end, 0u,
+        machine_language_block(evaluation)->scope);
     frame->pc = end;
     frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
     return MACHINE_LANGUAGE_OK;
@@ -2937,6 +2952,22 @@ static MachineLanguageStatus_t machine_language_logical(MachineLanguageLoad_t *l
 }
 
 /**
+ * @brief FindSetLeftBit of @p integer: the position of its highest bit set, counted from 1, or 0 when none is.
+ */
+static uint64_t machine_language_find_set_left_bit(uint64_t integer)
+{
+    return (integer == 0u) ? 0u : 64u - (uint64_t) __builtin_clzll(integer);
+}
+
+/**
+ * @brief FindSetRightBit of @p integer: the position of its lowest bit set, counted from 1, or 0 when none is.
+ */
+static uint64_t machine_language_find_set_right_bit(uint64_t integer)
+{
+    return (integer == 0u) ? 0u : (uint64_t) __builtin_ctzll(integer) + 1u;
+}
+
+/**
  * @brief Runs an operator that computes an integer from integers, and stores it to its target when it
  *        has one.
  */
@@ -2964,6 +2995,12 @@ static MachineLanguageStatus_t machine_language_compute(MachineLanguageLoad_t *l
     {
     case MACHINE_LANGUAGE_OPCODE(NOT):
         result = machine_language_integer(machine_language_mask(load, ~operands[0]));
+        break;
+    case MACHINE_LANGUAGE_OPCODE(FIND_SET_LEFT_BIT):
+        result = machine_language_integer(machine_language_find_set_left_bit(operands[0]));
+        break;
+    case MACHINE_LANGUAGE_OPCODE(FIND_SET_RIGHT_BIT):
+        result = machine_language_integer(machine_language_find_set_right_bit(operands[0]));
         break;
     case MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT): result = machine_language_truth(load, operands[0] == 0u); break;
     default:
@@ -4010,7 +4047,7 @@ static MachineLanguageStatus_t machine_language_acquire(MachineLanguageLoad_t *l
 }
 
 /**
- * @brief Runs Release or Signal on the object its SuperName names (§5.2).
+ * @brief Runs Release, Signal or Reset on the object its SuperName names (§5.2).
  */
 static MachineLanguageStatus_t machine_language_synchronize(MachineLanguageLoad_t *load, uint32_t opcode)
 {
@@ -4020,9 +4057,73 @@ static MachineLanguageStatus_t machine_language_synchronize(MachineLanguageLoad_
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    return (opcode == MACHINE_LANGUAGE_OPCODE(RELEASE)) ?
-               advanced_configuration_and_power_interface_machine_language_release(load, node) :
-               advanced_configuration_and_power_interface_machine_language_signal(load, node);
+    switch (opcode)
+    {
+    case MACHINE_LANGUAGE_OPCODE(RELEASE):
+        return advanced_configuration_and_power_interface_machine_language_release(load, node);
+    case MACHINE_LANGUAGE_OPCODE(RESET):
+        return advanced_configuration_and_power_interface_machine_language_reset(load, node);
+    default: return advanced_configuration_and_power_interface_machine_language_signal(load, node);
+    }
+}
+
+/**
+ * @brief Runs Wait on the Event its SuperName names, its timeout evaluated: 0 when it took a pending signal, True when
+ *        none was pending, a timeout reported at once (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_wait_on_event(MachineLanguageLoad_t *load)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    MachineLanguageValue_t timeout = machine_language_pop(evaluation);
+    MachineLanguageValue_t object = machine_language_pop(evaluation);
+    uint64_t integer = 0u;
+    uint32_t node = 0u;
+    bool timed_out = false;
+    MachineLanguageStatus_t status = machine_language_integer_of(load, &timeout, &integer);
+
+    machine_language_release(load, &timeout);
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_release(load, &object);
+        return status;
+    }
+    status = machine_language_named_object(load, &object, &node);
+    if (status == MACHINE_LANGUAGE_OK)
+        status = advanced_configuration_and_power_interface_machine_language_wait(load, node, &timed_out);
+    return (status == MACHINE_LANGUAGE_OK) ? machine_language_deliver(load, machine_language_truth(load, timed_out)) :
+                                             status;
+}
+
+/**
+ * @brief Runs the Fatal @p active once its type, its code and its argument, which must convert to an Integer, are on
+ *        the stack: it is counted and logged as §4.5 names a fault, and execution goes on (§5.2).
+ */
+static MachineLanguageStatus_t machine_language_fatal(MachineLanguageLoad_t *load,
+                                                      const MachineLanguagePendingOperator_t *active)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
+    uint64_t operands[3];
+    const MachineLanguageStatus_t status = machine_language_pop_integers(load, 3u, operands);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    ++load->services.fatals;
+    advanced_configuration_and_power_interface_machine_language_log_fatal(
+        load, frame->table, active->start, frame->method, machine_language_block(evaluation)->scope);
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Runs Unload once its operand is evaluated: it is refused, nothing else done, and counted (§4.5).
+ */
+static MachineLanguageStatus_t machine_language_unload(MachineLanguageLoad_t *load)
+{
+    MachineLanguageValue_t operand = machine_language_pop(&load->evaluation);
+
+    machine_language_release(load, &operand);
+    ++load->unload_refused;
+    return MACHINE_LANGUAGE_OK;
 }
 
 /**
@@ -4475,7 +4576,11 @@ static MachineLanguageStatus_t machine_language_run_operator(MachineLanguageLoad
             load, machine_language_integer(advanced_configuration_and_power_interface_machine_language_timer(load)));
     case MACHINE_LANGUAGE_OPCODE(ACQUIRE): return machine_language_acquire(load);
     case MACHINE_LANGUAGE_OPCODE(RELEASE):
-    case MACHINE_LANGUAGE_OPCODE(SIGNAL): return machine_language_synchronize(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(SIGNAL):
+    case MACHINE_LANGUAGE_OPCODE(RESET): return machine_language_synchronize(load, operator_.opcode);
+    case MACHINE_LANGUAGE_OPCODE(WAIT): return machine_language_wait_on_event(load);
+    case MACHINE_LANGUAGE_OPCODE(FATAL): return machine_language_fatal(load, &operator_);
+    case MACHINE_LANGUAGE_OPCODE(UNLOAD): return machine_language_unload(load);
     case MACHINE_LANGUAGE_OPCODE(LOAD): return machine_language_load_operator(load);
     case MACHINE_LANGUAGE_OPCODE(LOAD_TABLE): return machine_language_load_table_operator(load);
     default: return machine_language_compute(load, operator_.opcode);
@@ -5378,21 +5483,25 @@ static MachineLanguageStatus_t machine_language_fail_internal(MachineLanguageLoa
 /**
  * @brief Reports the failure the innermost frame met, counted under its status and logged (§4.5): at the operator or
  *        the name whose run failed, or at the term its pc decodes, in its method, or in the scope of its table-level
- *        code; the failure stays the one reported while the evaluation goes past it.
+ *        code; the failure stays the one reported while the evaluation goes past it. A host's frame, which runs no
+ *        term, reports nothing: the host's evaluation reports its failure with the object it evaluated.
  */
 static void machine_language_report_failure(MachineLanguageLoad_t *load, MachineLanguageStatus_t status)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const MachineLanguageFrame_t *frame =
         &evaluation->frames[(evaluation->frame_count != 0u) ? evaluation->frame_count - 1u : 0u];
+    const bool runs_code = evaluation->frame_count != 0u && (frame->method != 0u || frame->declares);
 
-    evaluation->logged_fault_table = (evaluation->frame_count != 0u) ? frame->table : 0u;
+    evaluation->logged_fault_table = runs_code ? frame->table : 0u;
     evaluation->logged_fault_offset = evaluation->term_failed ? evaluation->failed_term_start : frame->pc;
     evaluation->term_failed = false;
+    if (!runs_code)
+        return;
+    evaluation->failure_logged = true;
     advanced_configuration_and_power_interface_machine_language_report_fault(
-        load, status, evaluation->logged_fault_table, evaluation->logged_fault_offset, frame->method,
-        (evaluation->block_count != 0u) ? machine_language_block(evaluation)->scope :
-                                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT);
+        load, status, frame->table, evaluation->logged_fault_offset, machine_language_block(evaluation)->end,
+        frame->method, machine_language_block(evaluation)->scope);
 }
 
 /**
@@ -5433,14 +5542,17 @@ static MachineLanguageStatus_t machine_language_go_past_failure(MachineLanguageL
 }
 
 /**
- * @brief Reports a failure met above frame @p base, then goes past it as machine_language_go_past_failure does.
+ * @brief Reports a failure met above frame @p base, then goes past it as machine_language_go_past_failure does; a
+ *        failure gone past, which the evaluation does not return, leaves the one it returns to be reported. Kept out
+ *        of line, so that the loops that step leave their registers to the steps that do not fail.
  */
-static MachineLanguageStatus_t machine_language_take_failure(MachineLanguageLoad_t *load, uint32_t base,
-                                                             MachineLanguageStatus_t status)
+__attribute__((noinline)) static MachineLanguageStatus_t
+machine_language_take_failure(MachineLanguageLoad_t *load, uint32_t base, MachineLanguageStatus_t status)
 {
     machine_language_report_failure(load, status);
     status = machine_language_go_past_failure(load, base, status);
     load->evaluation.logged_fault_table = 0u;
+    load->evaluation.failure_logged = load->evaluation.failure_logged && status != MACHINE_LANGUAGE_OK;
     return status;
 }
 
@@ -5508,6 +5620,8 @@ static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageL
                       ->value.handle);
         if (status == MACHINE_LANGUAGE_OK)
             status = machine_language_push_attach(load, region, method, 0u, 0u);
+        if (status != MACHINE_LANGUAGE_OK)
+            advanced_configuration_and_power_interface_machine_language_report_object_fault(load, status, method);
         if (status != MACHINE_LANGUAGE_OK && evaluation->operator_count > slot)
             status = machine_language_take_failure(load, base, status);
         while (status == MACHINE_LANGUAGE_OK && evaluation->operator_count > slot)
@@ -5520,28 +5634,15 @@ static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageL
     return status;
 }
 
-MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_run_table_term(
-    MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit)
-{
-    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    const uint32_t base = evaluation->frame_count;
-    MachineLanguageStatus_t status = machine_language_push_table_frame(load, table, scope, start, limit);
-
-    if (status != MACHINE_LANGUAGE_OK)
-    {
-        machine_language_count_failure(load, table + 1u, status);
-        return status;
-    }
-    while (status == MACHINE_LANGUAGE_OK && evaluation->frame_count > base)
-        status = machine_language_step_above(load, base);
-    while (evaluation->frame_count > base)
-        machine_language_drop_frame(load);
-    return MACHINE_LANGUAGE_OK;
-}
-
-MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(
-    MachineLanguageLoad_t *load, uint32_t index, const MachineLanguageValue_t *arguments, uint32_t argument_count,
-    MachineLanguageValue_t *out_result)
+/**
+ * @brief Evaluates the object at node @p index for the host, as
+ *        advanced_configuration_and_power_interface_machine_language_evaluate_node does, without logging a failure
+ *        no term met.
+ */
+static MachineLanguageStatus_t machine_language_evaluate_object(MachineLanguageLoad_t *load, uint32_t index,
+                                                                const MachineLanguageValue_t *arguments,
+                                                                uint32_t argument_count,
+                                                                MachineLanguageValue_t *out_result)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const uint32_t base = evaluation->frame_count;
@@ -5606,6 +5707,40 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         machine_language_drop_frame(load);
     machine_language_drop_frame(load);
     advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
+    return status;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_run_table_term(
+    MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const uint32_t base = evaluation->frame_count;
+    MachineLanguageStatus_t status = machine_language_push_table_frame(load, table, scope, start, limit);
+
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_count_failure(load, table + 1u, status);
+        return status;
+    }
+    while (status == MACHINE_LANGUAGE_OK && evaluation->frame_count > base)
+        status = machine_language_step_above(load, base);
+    while (evaluation->frame_count > base)
+        machine_language_drop_frame(load);
+    return MACHINE_LANGUAGE_OK;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(
+    MachineLanguageLoad_t *load, uint32_t index, const MachineLanguageValue_t *arguments, uint32_t argument_count,
+    MachineLanguageValue_t *out_result)
+{
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    status = machine_language_evaluate_object(load, index, arguments, argument_count, out_result);
+    if (status == MACHINE_LANGUAGE_OK)
+        return status;
+    if (!load->evaluation.failure_logged)
+        advanced_configuration_and_power_interface_machine_language_report_object_fault(load, status, index);
+    load->evaluation.failure_logged = false;
     return status;
 }
 

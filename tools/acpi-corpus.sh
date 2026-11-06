@@ -9,6 +9,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh closure [quick|corpus|full|qemu]
        tools/acpi-corpus.sh initialize [quick|corpus|full|qemu]
        tools/acpi-corpus.sh idle [quick|corpus|full]
+       tools/acpi-corpus.sh slack [quick|corpus|full]
        tools/acpi-corpus.sh load [quick|corpus|full]
        tools/acpi-corpus.sh differential [quick|corpus|full] [<mutants>]
        tools/acpi-corpus.sh kept [quick|corpus|full] [<mutants>]
@@ -16,6 +17,7 @@ Usage: tools/acpi-corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi-corpus.sh records-cost [corpus|full]
        tools/acpi-corpus.sh uacpi
        tools/acpi-corpus.sh module <machine>...
+       tools/acpi-corpus.sh module qemu q35|pc <kernel>
        tools/acpi-corpus.sh ring0 quick|corpus|full|qemu <kernel>
 
 The firmware of recorded machines, which the ACPI layer is checked on. linuxhw/ACPI is fetched at a
@@ -25,9 +27,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          (tools/acpi/corpus.list, the default) or full (every report with a dump, written to
          build/acpi-corpus/full.list); each report's decoded tables come too, kept in the clone's
          objects and never checked out
-         acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit; qemu fetches the
-         reference tables of QEMU at a pinned release, its 47 x86 configurations; uacpi fetches uACPI's
-         test cases at a pinned commit
+         acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit, unchanged and cleaned
+         of what git does not track, in the sandbox of tools/acpi/sandbox.sh, which needs bubblewrap
+         (apt install bubblewrap); qemu fetches the reference tables of QEMU at a pinned release, its 47
+         x86 configurations; uacpi fetches uACPI's test cases at a pinned commit
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
          directory with what tools/acpi/expected_directory.py reads from the same dump, its FADT
          and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
@@ -71,6 +74,15 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          decoded MADT, their states from the _CST acpiexec evaluates after the same handshake, given the
          tables the initialisation ended with and the same presets; a machine where acpiexec stops before an
          evaluation it was given is counted apart
+  slack  initialises each machine of a list with `test-acpi --loaded`, its presets given; then
+         tools/acpi/acpiexec_slack.py has acpiexec evaluate the needs path a host can ask it for, in the
+         order of §3.8, on the tables the initialisation ended with, once as acpiexec runs and once in its
+         slack mode (`acpiexec -es`); the mode lists the machines whose load or results differ, those that
+         rely on slack behaviour, which reopen the implicit-return and uninitialised-operand rules
+         (specification §8.6): one that tools/acpi/slack-decided.list names is decided by the section it
+         gives, and one it does not name fails the run, as does one it names that does not differ; an _INI,
+         a _REG, a _PDC and a method that reads Timer compare on status only, and a machine where acpiexec
+         stops before the same evaluation in both runs is counted apart
   differential  loads each machine of a list twice, with the load's shortcuts and with --general-load,
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
          `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
@@ -102,14 +114,18 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          or exits other than 0 under callgrind, or when callgrind counts nothing; so does a list on which the harness
          prints no count, or where no machine asks the records anything. It needs valgrind (`apt install valgrind`),
          or the one VALGRIND names; quick is no list for it, none of its machines asking the records anything
-  uacpi  compiles each of uACPI's test cases with the iasl acpica built and evaluates its \MAIN with
-         `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
+  uacpi  compiles each of uACPI's test cases with the iasl acpica built, in the sandbox, and evaluates its
+         \MAIN with `test-acpi --evaluate` (specification §8.5); a case passes, diverges as
          tools/acpi/uacpi-divergences.list says, is skipped, or waits for what the kernel does not run
          yet; any other result fails
   module  writes the firmware of each machine named, as `test-acpi --write-module` serves it, as one
-         Multiboot module in build/acpi-corpus/modules/, and prints its path
+         Multiboot module in build/acpi-corpus/modules/, and prints its path; qemu boots <kernel> on that
+         QEMU machine as tools/instructions.sh boots it, its tables printed, and writes those tables, as
+         `test-acpi --write-printed-module` serves them, as build/acpi-corpus/modules/q35.acpi or pc.acpi:
+         the same tables a release kernel loads in its windows, given to a debug kernel's corpus tests
   ring0  boots the debug kernel <kernel> on QEMU once per machine of a list, its module given with
-         -initrd, runs the ACPI tests with `lpl.test=advanced_configuration_and_power_interface*`,
+         -initrd, runs the ACPI tests with `lpl.test=advanced_configuration_and_power_interface*`, the
+         two that load the module required, the debug kernel's path and the release kernel's,
          and compares the records with those `test-acpi --boot-module` prints on the same module,
          with tools/parity.sh; qemu boots it on q35 and pc with lpl.acpi.tables=print instead, and
          compares with `test-acpi --firmware-log` on the tables it printed; a boot that ends no test run,
@@ -194,14 +210,23 @@ known_list() {
 }
 
 # Clones ACPICA at the pinned commit, its blobs fetched as the checkout needs them, and builds the three
-# tools the oracles use.
+# tools the oracles use in the sandbox of tools/acpi/sandbox.sh (specification §8.6): once the sources are
+# fetched, the build reaches no network and writes nowhere but in the checkout. A checkout with local changes is
+# refused, since the oracles are built from the pinned sources alone, and everything git does not track in it, a
+# build made before included, is removed before the build.
 fetch_acpica() {
     if [[ ! -d "$ACPICA/.git" ]]; then
         git clone -q --filter=blob:none --no-checkout "$ACPICA_URL" "$ACPICA"
     fi
     git -C "$ACPICA" fetch -q --depth 1 origin "$ACPICA_COMMIT"
     git -C "$ACPICA" checkout -q --detach "$ACPICA_COMMIT"
-    make -C "$ACPICA" -s -j"$(nproc)" iasl acpiexec acpixtract >/dev/null
+    if ! git -C "$ACPICA" diff --quiet HEAD; then
+        echo "fetch: ${ACPICA#"$ROOT"/} is changed: restore it, since ACPICA is built from its pinned sources" >&2
+        exit 1
+    fi
+    git -C "$ACPICA" clean -fdxq
+    (cd "$ROOT" && "$ROOT/tools/acpi/sandbox.sh" "$ACPICA" make -C "$ACPICA" -s -j"$(nproc)" iasl acpiexec acpixtract \
+        >/dev/null)
 }
 
 # Fetches QEMU's reference ACPI tables at the pinned release, and nothing else of QEMU.
@@ -760,6 +785,82 @@ limits_summary() {
         END { for (name in total) print name "=" total[name] }' | sort | paste -sd' ')"
 }
 
+# Prints, one per line, the section, a space and the machine of each line of tools/acpi/slack-decided.list but its
+# comments.
+slack_decided() {
+    grep -v '^#' "$ROOT/tools/acpi/slack-decided.list" | grep -v '^$' || true
+}
+
+# Evaluates the needs path of each machine of the list $1 with acpiexec, then with `acpiexec -es`, through
+# tools/acpi/acpiexec_slack.py, on the tables `test-acpi --loaded` ends with, and lists the machines whose results
+# differ: those that rely on slack behaviour (specification §8.6). One that tools/acpi/slack-decided.list names is
+# decided; one it does not name fails the run, and so does one it names that does not differ, and a machine the oracle
+# gives no verdict on.
+slack_check() {
+    [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "slack: no acpiexec, run fetch acpica first" >&2; exit 1; }
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local number=0 agree=0 stopped=0 failed=0 decided=0 undecided=0 stale=0 evaluations=0 status_only=0 subject verdict
+    local madt tables section machine relying=""
+    local -a written
+    local -A sections=()
+    while read -r section machine; do
+        sections["$machine"]="$section"
+    done < <(slack_decided)
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        if ! has_decoded "$subject"; then
+            echo "not ok $number $subject: no decoded report, run fetch first"
+            failed=$((failed + 1))
+            continue
+        fi
+        madt="$(mktemp -p "$HARNESS_WORK")" tables="$(mktemp -d -p "$HARNESS_WORK")"
+        "$HARNESS" --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" >/dev/null 2>&1 || true
+        mapfile -t written < <(find "$tables" -name '*.dat' | sort)
+        if [[ "${#written[@]}" -eq 0 ]]; then
+            echo "not ok $number $subject: the harness wrote no table"
+            failed=$((failed + 1))
+            continue
+        fi
+        decoded "$subject" | python3 -I "$ROOT/tools/acpi/expected_madt.py" "$LINUXHW/$subject.bin" - >"$madt" || true
+        verdict="$(python3 -I "$ROOT/tools/acpi/acpiexec_slack.py" "$ACPICA_BIN" "$madt" "$PRESETS" "${written[@]}" \
+            2>&1)" || true
+        section="${sections["$subject"]:-}"
+        if grep -q '^aml slack differ ' <<<"$verdict"; then
+            if [[ -n "$section" ]]; then
+                echo "ok $number $subject: relies on slack behaviour, as $section decides"
+                decided=$((decided + 1))
+            else
+                echo "not ok $number $subject: relies on slack behaviour, undecided by tools/acpi/slack-decided.list"
+                relying+="$subject"$'\n'
+                undecided=$((undecided + 1))
+            fi
+            grep '^aml slack differ ' <<<"$verdict" | head -8 | cut -c1-200 | sed 's/^/    # /'
+        elif [[ -n "$section" ]] && grep -q '^aml slack \(agree\|unevaluated\) ' <<<"$verdict"; then
+            echo "not ok $number $subject: tools/acpi/slack-decided.list names it, and it does not differ:" \
+                "$(cut -d' ' -f3- <<<"$verdict")"
+            stale=$((stale + 1))
+        elif grep -q '^aml slack agree ' <<<"$verdict"; then
+            echo "ok $number $subject: $(cut -d' ' -f4- <<<"$verdict")"
+            agree=$((agree + 1))
+            evaluations=$((evaluations + $(grep -o ' evaluations=[0-9]*' <<<"$verdict" | cut -d= -f2)))
+            status_only=$((status_only + $(grep -o ' status_only=[0-9]*' <<<"$verdict" | cut -d= -f2)))
+        elif grep -q '^aml slack unevaluated ' <<<"$verdict"; then
+            echo "ok $number $subject # SKIP acpiexec stops before $(cut -d' ' -f4 <<<"$verdict") in both runs"
+            stopped=$((stopped + 1))
+        else
+            echo "not ok $number $subject: the oracle gave no verdict"
+            tail -5 <<<"$verdict" | sed 's/^/    # /'
+            failed=$((failed + 1))
+        fi
+    done < <(reports "$1")
+    echo "# slack: $((decided + undecided)) of $((number - stopped - failed - stale)) machines rely on" \
+        "slack behaviour, $decided as the specification decides; $agree agree over $evaluations evaluations," \
+        "$status_only of them on status only; acpiexec stops before the same evaluation in both runs on $stopped;" \
+        "listed but not differing: $stale; no verdict on $failed"
+    [[ -z "$relying" ]] || sed 's/^/# relies on slack behaviour, undecided: /' <<<"${relying%$'\n'}"
+    [[ "$number" -gt 0 && -z "$relying" && "$stale" -eq 0 && "$failed" -eq 0 ]]
+}
+
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
 pci_total() {
     grep '^aml run pci ' <<<"$2" | grep -o " $1=[0-9]*" | cut -d= -f2 | paste -sd+ | bc
@@ -1006,6 +1107,25 @@ modules() {
     done
 }
 
+# Boots the kernel $2 on the QEMU machine $1 as tools/instructions.sh boots it, until it has printed its tables,
+# and writes them as that machine's module, whose path it prints: the tables of a release kernel's windows.
+qemu_module() {
+    [[ "$#" -eq 2 && ( "$1" == q35 || "$1" == pc ) && -f "$2" ]] || { usage >&2; exit 2; }
+    (cd "$ROOT" && xmake build -q test-acpi)
+    mkdir -p "$MODULES"
+    local printed module="$MODULES/$1.acpi"
+    printed="$(mktemp -d)"
+    if ! "$ROOT/tools/instructions.sh" --top 0 --until '[acpidump] end' --machine "$1" \
+        --append lpl.acpi.tables=print --keep "$printed" "$2" >/dev/null; then
+        rm -rf "$printed"
+        echo "module: $2 printed no tables on $1" >&2
+        exit 1
+    fi
+    "$HARNESS" --write-printed-module "$printed/serial.log" "$module" || { rm -rf "$printed"; exit 1; }
+    rm -rf "$printed"
+    echo "$module"
+}
+
 # Boots the kernel $1 on the QEMU machine $2, its serial port written to the log $3, with the boot line $4
 # and the module $5 when there is one, until its tests print their totals or BOOT_SECONDS pass. Both are
 # copied under a short path first: QEMU puts the kernel's path at the head of the boot line, of which the
@@ -1037,10 +1157,10 @@ boot() {
 }
 
 # Compares the host log $1 with the serial log $2, and prints `ok` or `not ok` for the subject $3, numbered
-# $4, with what differs. tools/parity.sh compares only the tests the host ran, so the test $5, which reads the
-# subject's tables, must have run on the host; ring 0 is held to it by lpl.test.require.
+# $4, with what differs. tools/parity.sh compares only the tests the host ran, so the tests $5, which read the
+# subject's tables, must have run on the host; ring 0 is held to them by lpl.test.require.
 compare_ring0() {
-    local result
+    local result test
     if ! grep -qaE '^# Totals: ' "$2"; then
         echo "not ok $4 $3: the boot printed no '# Totals:': it hung or crashed in its tests"
         return 1
@@ -1050,11 +1170,13 @@ compare_ring0() {
         echo "    # field past a record's cap: $(grep -aE '^\[LPLTLM\] telemetry ' "$2" || echo 'no telemetry record')"
         return 1
     fi
-    if ! grep -qE "^    ok [0-9]+ $5\$" "$1"; then
-        echo "not ok $4 $3: $5 did not run on the host"
-        grep -E "^test-acpi: | $5( |\$)" "$1" | sed 's/^/    # /'
-        return 1
-    fi
+    for test in $5; do
+        if ! grep -qE "^    ok [0-9]+ $test\$" "$1"; then
+            echo "not ok $4 $3: $test did not run on the host"
+            grep -E "^test-acpi: | $test( |\$)" "$1" | sed 's/^/    # /'
+            return 1
+        fi
+    done
     if result="$("$ROOT/tools/parity.sh" "$1" "$2")"; then
         echo "ok $4 $3: $(tail -1 <<<"$result" | sed 's/^# //')"
         return 0
@@ -1072,27 +1194,27 @@ ring0() {
     grep -qaF 'KTAP version 1' "$2" || { echo "ring0: $2: a kernel without tests, build a debug one" >&2; exit 1; }
     (cd "$ROOT" && xmake build -q test-acpi)
     mkdir -p "$RING0_LOGS"
-    local number=0 agree=0 subject logs test
+    local number=0 agree=0 subject logs tests
     while IFS= read -r subject; do
         number=$((number + 1))
         logs="$RING0_LOGS/$(module_name "$subject")"
         mkdir -p "$logs"
         if [[ "$1" == qemu ]]; then
-            test=the_booted_machine_loads
+            tests=the_booted_machine_loads
             boot "$2" "$subject" "$logs/serial.log" \
-                "lpl.acpi.tables=print lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.$test"
+                "lpl.acpi.tables=print lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.$tests"
             "$HARNESS" --firmware-log "$logs/serial.log" >"$logs/host.log" 2>&1 || true
         else
-            test=the_boot_module_machine_loads
+            tests="the_boot_module_machine_loads the_boot_module_machine_loads_on_the_release_path"
             if ! "$HARNESS" --write-module "$LINUXHW/$subject.bin" "$logs/machine.acpi" 2>"$logs/host.log"; then
                 echo "not ok $number $subject: $(cat "$logs/host.log")"
                 continue
             fi
             "$HARNESS" --boot-module "$logs/machine.acpi" >"$logs/host.log" 2>&1 || true
-            boot "$2" q35 "$logs/serial.log" "lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.$test" \
-                "$logs/machine.acpi"
+            boot "$2" q35 "$logs/serial.log" \
+                "lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.the_boot_module_machine_loads*" "$logs/machine.acpi"
         fi
-        compare_ring0 "$logs/host.log" "$logs/serial.log" "$subject" "$number" "$test" && agree=$((agree + 1))
+        compare_ring0 "$logs/host.log" "$logs/serial.log" "$subject" "$number" "$tests" && agree=$((agree + 1))
     done < <(if [[ "$1" == qemu ]]; then printf 'q35\npc\n'; else reports "$1"; fi)
     echo "# ring 0: $agree of $number agree with the host"
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
@@ -1112,6 +1234,7 @@ case "${1:-}" in
     closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
     initialize) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; initialize_check "${2:-corpus}" ;;
     idle) known_list "${2:-corpus}"; idle_check "${2:-corpus}" ;;
+    slack) known_list "${2:-corpus}"; slack_check "${2:-corpus}" ;;
     load) known_list "${2:-corpus}"; load_check "${2:-corpus}" ;;
     differential) known_list "${2:-corpus}"; differential_check "${2:-corpus}" "${3:-0}" ;;
     kept) known_list "${2:-corpus}"; kept_check "${2:-corpus}" "${3:-0}" ;;
@@ -1123,7 +1246,10 @@ case "${1:-}" in
         esac ;;
     check) known_list "${2:-corpus}"; check "${2:-corpus}" ;;
     uacpi) uacpi_check ;;
-    module) shift; modules "$@" ;;
+    module)
+        shift
+        if [[ "${1:-}" == qemu ]]; then shift; qemu_module "$@"; else modules "$@"; fi
+        ;;
     ring0)
         [[ "$#" -eq 3 ]] || { usage >&2; exit 2; }
         [[ "$2" == qemu ]] || known_list "$2"

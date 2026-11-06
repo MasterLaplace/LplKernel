@@ -158,12 +158,15 @@ static const uint32_t made_up_declaring_opcodes[] = {
 /**
  * @brief Whether a statement of @p opcode is code the interpreter runs at table level, as §3.6 defines it and the
  *        load decided it opcode by opcode before its table: neither a declaration, data, a local, an argument nor
- *        Noop. An opcode past the last one is the invalid one, which is code.
+ *        Noop, but for DataTableRegion, a declaration whose statement the interpreter refuses before the load steps
+ *        over it (§4.5). An opcode past the last one is the invalid one, which is code.
  */
 static bool made_up_runs_at_table_level(uint32_t opcode)
 {
     const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
 
+    if (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_DATA_REGION)
+        return true;
     if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) != 0u ||
         opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOOP ||
         (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_LOCAL0 &&

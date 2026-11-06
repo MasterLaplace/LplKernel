@@ -1,0 +1,19 @@
+# Window W2 of the ACPI specification (§7.4) on the release path, on QEMU's own q35 tables given as a module: the
+# initialisation of the namespace of q35, steps 2 to 9 of §3.8, once loaded as a release kernel loads it (O2), inside
+# the ring-0 corpus test the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh
+# --server). The boot runs the same function on the tables it reads from the machine first, hence skip=1.
+# tools/acpi-corpus.sh module qemu q35 kernel/lpl.kernel writes the module. It measures the gap of the other W2 windows
+# on the release path to a release kernel, on the same tables: this window counts 19 instructions (0.03 %) more than the
+# 73,716 a release kernel counts at this commit (tools/instructions.sh --budget tools/acpi-initialization.budget, whose
+# file records 73,718, within 0.1 % of it). Checked by tools/instructions.sh --budget
+# tools/acpi-initialization-q35.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records the
+# new one.
+inside=advanced_configuration_and_power_interface_initialize_namespace
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
+module=build/acpi-corpus/modules/q35.acpi
+instructions=73735
+accesses=35198
+tolerance=1

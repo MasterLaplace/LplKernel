@@ -66,8 +66,6 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitializationMachine {
  * @brief What the initialisation of a namespace ran and counted (§3.8 steps 2 to 9).
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
-    uint32_t acpi_mode_failed;              /**< 1 when step 0 wrote ACPI_ENABLE and SCI_EN stayed clear past its bound:
-                                                 the platform goes on in legacy mode, and step 8 writes no CST_CNT. */
     uint32_t initializations;               /**< _INI methods run, \_INI and \_SB._INI included. */
     uint32_t initialization_failed;         /**< Of those, the ones that failed. */
     uint32_t registrations;                 /**< _REG (PCI_Config, 1) run, one per scope that declares such a region. */
@@ -120,7 +118,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; leaves
  *        \_PIC uncalled; asks \_SB._OSC for nothing, a query then a commit; gives every processor object
  *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC, one that a table
- *        loaded meanwhile declares behind that walk as soon as the evaluation that loaded it returns;
+ *        loaded meanwhile declares, or gives its first _OSC or _PDC, behind that walk as soon as the evaluation
+ *        that loaded it returns;
  *        publishes the C-states of each CPU slot from its processor object's _CST, a processor object a table
  *        loaded meanwhile declares given those capabilities first, after the others; then takes the Notifies
  *        the load and the sequence raised, a _CST changed since its evaluation evaluated once more, the tables

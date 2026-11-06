@@ -507,15 +507,19 @@ step 4; the others get the `_STA` and `_INI` walk of step 4 over their subtrees 
 whose `_STA` step 4 did not read, in subtrees it skipped, have it read first, from the top down, under step 4's rule,
 so that the result does not depend on where the loader is declared; nothing below a device found neither present nor
 functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything. A
-processor object that a table loaded during step 7 declares is left to step 7 when its walk still reaches it, as
-step 4 leaves a device; one behind the walk gets the capabilities of step 7 once the evaluation that loaded the
-table returns, in declaration order, until these evaluations load no other table. A processor object that a table
-loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux scans the namespace again once a
-table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the capabilities of step 7, then the
-`_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`; a round that loads a table is
-followed by another. The tables step 9 loads get that pass, then step 9 again for the Notifies queued since. A
-table that adds an `_OSC` or a `_PDC` to a processor object declared already, without declaring one, gives it to
-step 7 only when step 7's walk still reaches that processor.
+processor object that a table loaded during step 7 declares, or gives the first `_OSC` or `_PDC` it holds, is left to
+step 7 when its walk still reaches it, as step 4 leaves a device; one behind the walk, those above the processor step
+7 is at included, gets the capabilities of step 7 once the evaluation that loaded the table returns, in declaration
+order, until these evaluations load no other table, so that the result does not depend on where the loader is
+declared. One that held an `_OSC` or a `_PDC` already is left as step 7 left it: OSPM evaluates `_PDC` once, before
+any other object of the processor ([Intel ACPI] §2.1). Linux evaluates them only in its walks at early boot (v7.3
+`acpi_early_processor_control_setup`): a method that a table adds behind the last of them is never evaluated. A
+processor object that a table loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux
+scans the namespace again once a table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the
+capabilities of step 7, then the `_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`;
+a round that loads a table is followed by another. The tables step 9 loads get that pass, then step 9 again for the
+Notifies queued since. A table loaded during step 8 or step 9 that gives a processor object declared already its first
+`_OSC` or `_PDC` gives that processor nothing (#755).
 
 ### 3.9 The static tables
 
@@ -630,11 +634,13 @@ step 7 only when step 7's walk still reaches that processor.
    `invalid_opcode`.
 2. **Execute what the needs path reaches.** The host harness computes the static closure of the needs path (§1.3)
    on every corpus machine. Being static, it covers every branch, so it is a superset of what runs. Every opcode the
-   closure reaches on any machine is executed; every other fails with `unimplemented_operator`, counted, until a
-   count asks for it. A later need adds the closure of its own entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and
-   `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure reaches with the run list where it reaches it:
-   in a method body, what the interpreter runs; in table-level code, that and the declarations the load takes. An
-   opcode the run list leaves out there fails it.
+   closure reaches on any machine is executed, and so is every opcode a row of §4.5, §5.2 or §6.3 gives a behaviour of
+   its own: `Unload`, `Fatal`, `BreakPoint`, `Wait`, `Reset`, `FindSetLeftBit` and `FindSetRightBit`; every other
+   fails with `unimplemented_operator`, counted, until a count asks for it. A later need adds the closure of its own
+   entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure
+   reaches with the run list where it reaches it: in a method body, what the interpreter runs; in table-level code,
+   that and the declarations the load takes, but `DataTableRegion`, whose statement fails (§4.5). An opcode the run
+   list leaves out there fails it.
 3. **Three region spaces have a handler:** SystemMemory, SystemIO and PCI_Config. Every other space decodes and
    fails loudly at access (§4.5).
 4. **The needs path is run too.** The host harness and the ring-0 corpus test run §3.8 and `_CST` on every corpus
@@ -675,8 +681,8 @@ step 7 only when step 7's walk still reaches that processor.
 
 ### 4.3 The opcodes
 
-An opcode marked "executed" runs when the needs-path closure reaches it (§4.1), and fails with
-`unimplemented_operator` otherwise.
+An opcode marked "executed" runs when the needs-path closure reaches it or a row of the specification gives it a
+behaviour of its own (§4.1), and fails with `unimplemented_operator` otherwise.
 
 **Data objects and constants**: built at load and in methods.
 
@@ -851,8 +857,13 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 `<counter> table=<signature>/<OEM table ID> offset=0x<8 digits> opcode=<name> method=<path>`, `scope=<path>` for
 table-level code, at the level `error`, for every fault an evaluation or a load meets, those of §6.2 included. Its term
 is the one that failed: the operator whose run failed, at its opcode, not past its operands; a name, at its first
-character. A fault met again is logged once: the declaration pass that steps over a statement that failed meets its
-fault again, and the decoding pass meets those of table-level code the declaration pass met.
+character; `End` at the end of the construct it stands in. A host's evaluation that fails where no term runs, such as
+the read of a field or the call of a method without a body, logs `<counter> object=<path>`. A data object a Name keeps
+in its table (O20) is logged by the check of a debug kernel, beside `data_faults`, and by its first read, which a
+release kernel alone makes. Each pass that meets a fault logs it under its own counter, so the decoding pass of a debug
+kernel logs a fault of a method body an evaluation logged too; the same pass logs it once: the declaration pass that
+steps over a statement whose run failed meets its fault again, and the decoding pass meets those of table-level code
+the declaration pass met.
 
 ---
 
@@ -1097,13 +1108,16 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
   client whose `_PDC` runs `Load`; the MSI MS-7E16, an AMD client; the HP ProLiant DL360 G5, a server whose eight
   processors publish their `_CST`. The boot runs the load and the initialisation on QEMU's tables before the test
   runs them on the machine's, so their windows skip that first call (`--skip 1`), the machine given as a module
-  (`--module`). Their files end in `.debug.budget`.
+  (`--module`). Their files end in `.debug.budget`. A second corpus test runs the release path on the same machines:
+  it loads them as a release kernel loads (O2), so that a change made for the release kernel is judged on real
+  firmware. Its files end in `.release-path.debug.budget`, q35's included: QEMU's own tables, given the same way
+  (`tools/acpi-corpus.sh module qemu q35 <kernel>`), measure its gap to a release kernel, which each header states.
 
 | Window | Command | Budget files | First target |
 |---|---|---|---|
-| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside --skip 1` during the ring-0 corpus test | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget` | the count #584 closed on: 309,831 instructions on q35, 1,229 per declaration of its 252; 0 allocations per method declared |
-| W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same `--skip 1` during the ring-0 corpus test | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget` | its first measurement |
-| W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget`; `tools/acpi-cst-<machine>.debug.budget` | its first measurement |
+| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside --skip 1` during the ring-0 corpus test, then during its release path | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget`; `tools/acpi-load-<machine>.release-path.debug.budget` | the count #584 closed on: 309,831 instructions on q35, 1,229 per declaration of its 252; 0 allocations per method declared |
+| W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same `--skip 1` during the ring-0 corpus test, then during its release path | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget`; `tools/acpi-initialization-<machine>.release-path.debug.budget` | its first measurement |
+| W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test, then during its release path; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget`; `tools/acpi-cst-<machine>.debug.budget`; `tools/acpi-cst-<machine>.release-path.debug.budget` | its first measurement |
 | W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT; a polling loop of 1,000 turns, shaped like those real firmware runs at boot, that masks a SystemMemory field into a local, tests it in an If, and steps two locals | debug: `--inside kernel_test_body_<test>` | `tools/acpi-microbenchmark.debug.budget` | at most 200 instructions per iteration of the counting loop, its first measurement for the polling loop, 0 allocations |
 
 W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
@@ -1208,9 +1222,9 @@ published image. The made-up ASL is ours, under MIT.
   widths, which neither reads; and, on a hardware-reduced FADT, the fields ACPI tells OSPM to ignore, which ACPICA
   keeps.
 - **Ring 0**: `tools/acpi-corpus.sh module <machine>` writes that machine's tables as one Multiboot module. A debug
-  kernel booted with it runs a `KERNEL_TEST` that loads the tables through the simulated host and prints the same
-  records as the host harness; without a module the test is skipped, and `tools/acpi-corpus.sh ring0`, which passes
-  one, names it on `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so
+  kernel booted with it runs two `KERNEL_TEST`s that load the tables through the simulated host, one as a debug
+  kernel loads and one as a release kernel does (§3.6), and print the same records as the host harness; without a
+  module they are skipped, and `tools/acpi-corpus.sh ring0`, which passes one, names both on `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so
   the 64-bit integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
 - **The census oracle**: every opcode count of every machine equals that of the census script, the tables loaded
   declaring every branch of table-level code and running none of it, as the census reads them; running it, which
@@ -1304,8 +1318,10 @@ a `_CST` table with one latency changed by one.
   below 1 MiB, so this needs #278 and #279 first.
 - Under Linux on the same machine, `acpidump` goes through the host harness and `acpiexec`; the `_CST` packages
   match ours in structure (state count, register kinds, types). Latency and power come from NVS values a dump does
-  not hold, so they are compared with `/sys/devices/system/cpu/cpu0/cpuidle`, when
-  `/sys/devices/system/cpu/cpuidle/current_driver` says Linux took its states from ACPI.
+  not hold. The latency is compared with `/sys/devices/system/cpu/cpu0/cpuidle` (`tools/acpi/against_linux_cpuidle.py`),
+  when `/sys/devices/system/cpu/cpuidle/current_driver` says Linux took its states from ACPI; the power is compared
+  with nothing, since Linux publishes none of the `_CST`'s (v7.3 `acpi_processor_setup_cstates` sets no
+  `power_usage`).
 - The machines are named in no public document.
 
 ### 8.9 Failure first

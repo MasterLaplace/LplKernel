@@ -30,6 +30,13 @@
 #include <stdint.h>
 
 /**
+ * @brief Alias (\PDCM, _PDC): a _PDC that names a method another table declared before it.
+ */
+static const uint8_t load_aliases_pdcm_as_pdc_aml[] = {
+    0x06u, 0x5Cu, 0x50u, 0x44u, 0x43u, 0x4Du, 0x5Fu, 0x50u, 0x44u, 0x43u,
+};
+
+/**
  * @brief Load (\TBL2, \HND2).
  */
 static const uint8_t load_code_loaded_loads_inner_aml[] = {
@@ -454,6 +461,14 @@ static const uint8_t load_tables_loaded_during_registers_aml[] = {
 static const uint8_t load_traces_nine_aml[] = {
     0x70u, 0x72u, 0x77u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u, 0x0Au, 0x10u,
     0x00u, 0x0Au, 0x09u, 0x00u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u,
+};
+
+/**
+ * @brief An _OSC that appends the digit 6 to the trace, then gives back the capabilities Buffer it was given.
+ */
+static const uint8_t load_traces_six_and_returns_capabilities_aml[] = {
+    0x70u, 0x72u, 0x77u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u, 0x0Au, 0x10u, 0x00u,
+    0x0Au, 0x06u, 0x00u, 0x5Cu, 0x54u, 0x52u, 0x41u, 0x43u, 0xA4u, 0x6Bu,
 };
 
 /**

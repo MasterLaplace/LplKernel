@@ -674,6 +674,7 @@ static void acpi_mode_wait_for_system_control_interrupt(const AdvancedConfigurat
             out_switch->waited_milliseconds >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_MAXIMUM_MILLISECONDS)
         {
             out_switch->outcome = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED;
+            out_switch->acpi_mode_failed = 1u;
             return;
         }
 

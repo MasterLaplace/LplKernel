@@ -173,6 +173,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
                                        past it: the load that steps over its statement meets it again, and does not
                                        log it twice; 0 otherwise. */
     uint32_t logged_fault_offset; /**< Where that failure lies in its table. */
+    bool failure_logged;          /**< Whether the failure the host's evaluation returns was logged at the term that
+                                       met it, until the evaluation returns it; one that was not is logged with the
+                                       object the host evaluated (§4.5). Set and cleared on failures alone. */
     bool term_failed; /**< Whether the failure being taken is the run of an operator, or of a name, once the pc has
                            left it: the line that logs it (§4.5) names that term rather than the pc, then clears it. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t;

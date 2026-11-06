@@ -191,6 +191,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
     uint32_t load_duplicates;     /**< Load and LoadTable calls refused, False returned, for a table the load holds. */
     uint32_t load_tables_missing; /**< LoadTable calls that found no table, False returned. */
+    uint32_t unload_refused;      /**< Unloads refused, their operand evaluated and nothing else done (§4.5). */
     uint32_t table_bytes_copied;  /**< Bytes Load copied. */
     uint32_t declaring;           /**< Passes and table frames that declare: not 0 while a table is declared. */
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, and
@@ -219,13 +220,16 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                        pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;   /**< The first of them. */
-    uint32_t table_load_failed; /**< Tables the root table lists whose load met a fault, counted once each, the next
-                                     table loaded all the same (§3.8 step 1). */
-    uint32_t faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT]; /**< Faults the
-                                                                                                   evaluations and the
-                                                                                                   passes met, per
-                                                                                                   status, each logged
-                                                                                                   once (§4.5). */
+    uint32_t table_load_failed; /**< Tables the load declares from the directory, the DSDT and the SSDTs of the root
+                                     table, whose load met a fault, counted once each, the next table loaded all the
+                                     same (§3.8 step 1). */
+    uint32_t faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT]; /**< The lines
+                                                                                                   logged per status
+                                                                                                   (§4.5): a debug
+                                                                                                   kernel's decoding
+                                                                                                   pass adds those it
+                                                                                                   meets in method
+                                                                                                   bodies. */
     uint32_t decode_errors;         /**< Faults the decoding pass met, over every table. */
     uint32_t data_faults;           /**< Data objects kept in their table (O20) that the check run once the bodies are
                                          decoded found would not build, a fault in their bytes or a term that needs the
@@ -387,8 +391,8 @@ extern void advanced_configuration_and_power_interface_machine_language_count_lo
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
 
 /**
- * @brief Marks a table whose load met a fault, counted once in table_load_failed when the root table lists it
- *        (§3.8 step 1).
+ * @brief Marks a table whose load met a fault, counted once in table_load_failed when the load declared it from the
+ *        directory, as the DSDT and the SSDTs of the root table are (§3.8 step 1).
  *
  * @param load  The load.
  * @param table The table, counted from 1; 0, which names none, is ignored.
@@ -405,15 +409,29 @@ extern void advanced_configuration_and_power_interface_machine_language_count_ta
  * @details The path is built here alone, from the node: a load that meets no fault builds none.
  * @param load   The load, which counts it, and whose host's log the line goes to.
  * @param status The fault, its counter's name.
- * @param table  The table the term lies in, counted from 1, or 0 for none, such as the frame of a host's evaluation.
+ * @param table  The table the term lies in, counted from 1, or 0 for none.
  * @param offset Where the term starts in that table.
+ * @param end    The end of the construct the term stands in: a term at or past it is named `End`.
  * @param method The node of the method whose body holds the term, or 0 for table-level code.
  * @param scope  The node the code runs in, named when @p method is 0.
  */
 extern void advanced_configuration_and_power_interface_machine_language_report_fault(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t table, uint32_t offset,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t table, uint32_t offset, uint32_t end,
     uint32_t method, uint32_t scope);
+
+/**
+ * @brief Counts in faults, under its status, a fault a host's evaluation meets outside any term, such as the read of a
+ *        field in a space without a handler, or a call of a method without a body, and logs it as an error: its
+ *        status, then the object the host evaluated, such as `space_unsupported object=\_SB_.PCI0.EC0_.FLD0`.
+ *
+ * @param load   The load, which counts it, and whose host's log the line goes to.
+ * @param status The fault, its counter's name.
+ * @param node   The object the host evaluated.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_report_object_fault(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t node);
 
 /**
  * @brief Reads a field unit (§5.3): one access per datum of its access width, in its region for a
@@ -762,6 +780,30 @@ advanced_configuration_and_power_interface_machine_language_signal(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
 
 /**
+ * @brief Runs Reset (§5.2): the Event's pending signals are cleared.
+ *
+ * @param load The load.
+ * @param node The object named.
+ * @return OK; TYPE_MISMATCH when the object is no Event.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_reset(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
+ * @brief Runs Wait (§5.2): takes one of the Event's pending signals, or, with none, reports a timeout at once,
+ *        whatever the timeout, since nothing else can signal while the only AML owner waits.
+ *
+ * @param load          The load.
+ * @param node          The object named.
+ * @param out_timed_out Receives whether no signal was pending; untouched on a refusal.
+ * @return OK; TYPE_MISMATCH when the object is no Event.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_wait(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, bool *out_timed_out);
+
+/**
  * @brief Enters a method whose MethodFlags are @p flags: a Serialized one raises the sync level to
  *        its SyncLevel, and is refused below the current level (§5.2).
  *
@@ -821,6 +863,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate(
  *        advanced_configuration_and_power_interface_machine_language_evaluate evaluates the one a path
  *        names.
  *
+ * @details A failure is logged once (§4.5): at the term that met it, or, when no term did, with the object
+ *          (advanced_configuration_and_power_interface_machine_language_report_object_fault).
  * @param load           A load whose tables are decoded, its stacks free.
  * @param node           The node, which holds the object.
  * @param arguments      The method's arguments, or NULL when it takes none.
@@ -1066,6 +1110,20 @@ extern bool advanced_configuration_and_power_interface_machine_language_describe
  */
 extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_fold(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Logs a Fatal that code ran (§5.2) as an error under its counter, fatals, with the fields §4.5 gives a fault:
+ *        its table, its offset, its opcode, and its method or, in table-level code, its scope.
+ *
+ * @param load   The load, whose host's log the line goes to.
+ * @param table  The table the Fatal lies in, counted from 1.
+ * @param offset Where its opcode lies in that table.
+ * @param method The method that ran it, or 0 in table-level code.
+ * @param scope  The scope table-level code runs it in, named when @p method is 0.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_log_fatal(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t offset,
+    uint32_t method, uint32_t scope);
 
 /**
  * @brief Gives a load's pages back to its host.

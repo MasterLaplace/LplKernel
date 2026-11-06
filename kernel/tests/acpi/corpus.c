@@ -348,11 +348,25 @@ static void corpus_initialize(KernelTest_t *test)
 }
 
 /**
- * @brief Loads the definition blocks of the directory read, with the server profile's caps as the
- *        host harness does, prints the records of the load, initialises its namespace when
- *        @p initialize holds, then closes it and releases the directory.
+ * @brief Counts the opcodes the decoding pass decoded, over every table the load holds, those Load added
+ *        included.
  */
-static void corpus_load_directory(KernelTest_t *test, bool initialize)
+static uint32_t corpus_terms_decoded(void)
+{
+    uint32_t terms = 0u;
+
+    for (uint32_t table = 0u; table < corpus_load.table_count; ++table)
+        terms += corpus_load.tables[table].terms;
+    return terms;
+}
+
+/**
+ * @brief Loads the definition blocks of the directory read, with the server profile's caps as the
+ *        host harness does, decoding no method body when @p skips_bodies holds, as a release kernel
+ *        loads (O2), prints the records of the load, initialises its namespace when @p initialize
+ *        holds, then closes it and releases the directory.
+ */
+static void corpus_load_directory(KernelTest_t *test, bool initialize, bool skips_bodies)
 {
     if (kernel_test_check(test,
                           advanced_configuration_and_power_interface_machine_language_open(
@@ -361,14 +375,57 @@ static void corpus_load_directory(KernelTest_t *test, bool initialize)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES),
                           "the namespace opens with the server profile's caps"))
     {
+        corpus_load.skips_bodies = skips_bodies;
         advanced_configuration_and_power_interface_machine_language_load_directory(&corpus_load, &corpus_directory);
         kernel_test_check(test, corpus_load.declarations != 0u, "the machine's definition blocks declare objects");
         corpus_measure_load(test);
         if (initialize)
             corpus_initialize(test);
+        if (skips_bodies)
+            kernel_test_check(test, corpus_terms_decoded() == 0u && corpus_load.name_references == 0u,
+                              "the load decodes no method body, nor those of a table Load added");
     }
     advanced_configuration_and_power_interface_machine_language_close(&corpus_load);
     advanced_configuration_and_power_interface_release_directory(&corpus_directory);
+}
+
+/**
+ * @brief Loads and initialises the recorded machine a boot module holds, as an image, through a simulated
+ *        host, once step 0 has put it in ACPI mode, decoding no method body when @p skips_bodies holds, then
+ *        gives back the pages of simulated memory its AML wrote; skips @p test without a module.
+ */
+static void corpus_load_boot_module(KernelTest_t *test, bool skips_bodies)
+{
+    const uint8_t *image = NULL;
+    uint32_t length = 0u;
+    const char *error = NULL;
+
+    if (!boot_module_find(CORPUS_MODULE_SUFFIX, &image, &length))
+    {
+        kernel_test_skip(test, "no boot module is named *" CORPUS_MODULE_SUFFIX);
+        return;
+    }
+    if (!kernel_test_check(
+            test,
+            advanced_configuration_and_power_interface_simulated_host_open_image(&corpus_host, image, length, &error),
+            "the boot module is a whole image"))
+    {
+        kernel_test_note(test, error);
+        return;
+    }
+    if (!kernel_test_check(
+            test, advanced_configuration_and_power_interface_read_directory(&corpus_host.host, &corpus_directory),
+            "the recorded machine's directory is read"))
+    {
+        advanced_configuration_and_power_interface_release_directory(&corpus_directory);
+        return;
+    }
+    corpus_enter_mode(test);
+    corpus_load_directory(test, true, skips_bodies);
+    kernel_test_check(test, corpus_host.outstanding_maps == 0u && corpus_host.mismatched_unmaps == 0u,
+                      "every window is unmapped as it was mapped");
+    kernel_test_check(test, corpus_host.outstanding_pages == 0u, "every page goes back to the host");
+    advanced_configuration_and_power_interface_simulated_host_close(&corpus_host);
 }
 
 /**
@@ -478,38 +535,15 @@ KERNEL_TEST(a_malformed_image_is_refused_and_says_why)
  *        its tables build the same namespace, and initialise it the same way, in ring 0 as on the build
  *        machine.
  */
-KERNEL_TEST(the_boot_module_machine_loads)
-{
-    const uint8_t *image = NULL;
-    uint32_t length = 0u;
-    const char *error = NULL;
+KERNEL_TEST(the_boot_module_machine_loads) { corpus_load_boot_module(test, false); }
 
-    if (!boot_module_find(CORPUS_MODULE_SUFFIX, &image, &length))
-    {
-        kernel_test_skip(test, "no boot module is named *" CORPUS_MODULE_SUFFIX);
-        return;
-    }
-    if (!kernel_test_check(
-            test,
-            advanced_configuration_and_power_interface_simulated_host_open_image(&corpus_host, image, length, &error),
-            "the boot module is a whole image"))
-    {
-        kernel_test_note(test, error);
-        return;
-    }
-    if (!kernel_test_check(
-            test, advanced_configuration_and_power_interface_read_directory(&corpus_host.host, &corpus_directory),
-            "the recorded machine's directory is read"))
-    {
-        advanced_configuration_and_power_interface_release_directory(&corpus_directory);
-        return;
-    }
-    corpus_enter_mode(test);
-    corpus_load_directory(test, true);
-    kernel_test_check(test, corpus_host.outstanding_maps == 0u && corpus_host.mismatched_unmaps == 0u,
-                      "every window is unmapped as it was mapped");
-    kernel_test_check(test, corpus_host.outstanding_pages == 0u, "every page goes back to the host");
-}
+/**
+ * @brief The recorded machine a boot module holds loads and initialises as a release kernel loads its own
+ *        tables: no method body decoded, nor the data its Names keep in their tables checked (O2, O20). Its
+ *        windows count the release path on real firmware (§7.4), and its records, compared with the host
+ *        harness's, show that the path ends the same in ring 0.
+ */
+KERNEL_TEST(the_boot_module_machine_loads_on_the_release_path) { corpus_load_boot_module(test, true); }
 
 /**
  * @brief The tables of the machine the kernel boots on load: in ring 0 they are the firmware's, on the
@@ -526,5 +560,5 @@ KERNEL_TEST(the_booted_machine_loads)
         kernel_test_skip(test, "the machine gives no ACPI directory");
         return;
     }
-    corpus_load_directory(test, false);
+    corpus_load_directory(test, false, false);
 }
