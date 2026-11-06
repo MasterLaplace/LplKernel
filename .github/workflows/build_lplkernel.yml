@@ -178,6 +178,21 @@ jobs:
           exit 1
         fi
 
+    # O15 and O16 of the ACPI specification (§7.2): the release objects of kernel/kernel/acpi/ hold no
+    # lock prefix and no log call below the release level. The check is seen refusing both first; the
+    # release build cleans first, since build.sh's fingerprint of the build mode does not hold SMOKE_TESTS.
+    - name: The release ACPI objects hold no lock prefix and no log call below the release level
+      env:
+        LPLPLUGIN_ROOT: none
+        LPLASSISTANT_ROOT: none
+        LPLKNOWLEDGE_ROOT: none
+      run: |
+        set -e
+        tools/acpi/check-release-objects.sh --self-test
+        ./clean.sh
+        SMOKE_TESTS=0 ./build.sh
+        tools/acpi/check-release-objects.sh
+
   # The ACPI layer on the host: the tests ring 0 runs too, then the directory of each machine of
   # the quick list of recorded firmware.
   acpi_host:
