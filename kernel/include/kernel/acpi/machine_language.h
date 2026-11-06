@@ -1060,6 +1060,20 @@ extern uint32_t advanced_configuration_and_power_interface_machine_language_name
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
+ * @brief Logs a Fatal that code ran (§5.2) as an error under its counter, fatals, with the fields §4.5 gives a fault:
+ *        its table, its offset, its opcode, and its method or, in table-level code, its scope.
+ *
+ * @param load   The load, whose host's log the line goes to.
+ * @param table  The table the Fatal lies in, counted from 1.
+ * @param offset Where its opcode lies in that table.
+ * @param method The method that ran it, or 0 in table-level code.
+ * @param scope  The scope table-level code runs it in, named when @p method is 0.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_log_fatal(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t offset,
+    uint32_t method, uint32_t scope);
+
+/**
  * @brief Gives a load's pages back to its host.
  *
  * @param load The load; its nodes must not be used afterwards.

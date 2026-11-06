@@ -1923,8 +1923,8 @@ static bool machine_language_runs(uint32_t opcode)
 
 /**
  * @brief Whether the loop takes an opcode of a method where it reads it, with no operator pushed
- *        (machine_language_term): a constant, a String, a local, an argument, Debug, Noop, Break, Continue,
- *        or an Else.
+ *        (machine_language_term): a constant, a String, a local, an argument, Debug, Noop, BreakPoint, Break,
+ *        Continue, or an Else.
  */
 static bool machine_language_takes_in_place(uint32_t opcode)
 {
@@ -1940,6 +1940,7 @@ static bool machine_language_takes_in_place(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(STRING_PREFIX):
     case MACHINE_LANGUAGE_OPCODE(DEBUG):
     case MACHINE_LANGUAGE_OPCODE(NOOP):
+    case MACHINE_LANGUAGE_OPCODE(BREAK_POINT):
     case MACHINE_LANGUAGE_OPCODE(BREAK):
     case MACHINE_LANGUAGE_OPCODE(CONTINUE):
     case MACHINE_LANGUAGE_OPCODE(ELSE): return true;
@@ -4022,18 +4023,22 @@ static MachineLanguageStatus_t machine_language_wait_on_event(MachineLanguageLoa
 }
 
 /**
- * @brief Runs Fatal once its type, its code and its argument, which must convert to an Integer, are on the stack: it
- *        is counted, and execution goes on (§5.2).
+ * @brief Runs the Fatal @p active once its type, its code and its argument, which must convert to an Integer, are on
+ *        the stack: it is counted and logged as §4.5 names a fault, and execution goes on (§5.2).
  */
-static MachineLanguageStatus_t machine_language_fatal(MachineLanguageLoad_t *load)
+static MachineLanguageStatus_t machine_language_fatal(MachineLanguageLoad_t *load,
+                                                      const MachineLanguagePendingOperator_t *active)
 {
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
     uint64_t operands[3];
     const MachineLanguageStatus_t status = machine_language_pop_integers(load, 3u, operands);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    /* TODO(#712): log the Fatal: its type, code and argument, operands[0] to operands[2] (§5.2). */
     ++load->services.fatals;
+    advanced_configuration_and_power_interface_machine_language_log_fatal(
+        load, frame->table, active->start, frame->method, machine_language_block(evaluation)->scope);
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -4502,7 +4507,7 @@ static MachineLanguageStatus_t machine_language_run_operator(MachineLanguageLoad
     case MACHINE_LANGUAGE_OPCODE(SIGNAL):
     case MACHINE_LANGUAGE_OPCODE(RESET): return machine_language_synchronize(load, operator_.opcode);
     case MACHINE_LANGUAGE_OPCODE(WAIT): return machine_language_wait_on_event(load);
-    case MACHINE_LANGUAGE_OPCODE(FATAL): return machine_language_fatal(load);
+    case MACHINE_LANGUAGE_OPCODE(FATAL): return machine_language_fatal(load, &operator_);
     case MACHINE_LANGUAGE_OPCODE(UNLOAD): return machine_language_unload(load);
     case MACHINE_LANGUAGE_OPCODE(LOAD): return machine_language_load_operator(load);
     case MACHINE_LANGUAGE_OPCODE(LOAD_TABLE): return machine_language_load_table_operator(load);

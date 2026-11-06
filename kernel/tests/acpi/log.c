@@ -352,16 +352,16 @@ KERNEL_TEST(a_line_names_a_table_by_its_signature_and_identifier)
 
 /**
  * @brief A fault in a method is logged once as an error that names its table, the offset and the opcode of the term
- *        that met it, and the method (§3.6, §4.5): FindSetLeftBit, which no handler runs, at 0x33 of the table in
- *        \DEV0.MTH0, met as its term is decoded, and Divide by Zero at 0x3F in \DEV0.MTH1, met as it runs, which the
- *        line names rather than the term after its operands; MTH0 run again after it names FindSetLeftBit again. The
+ *        that met it, and the method (§3.6, §4.5): Revision, which §5.2 leaves unimplemented, at 0x33 of the table in
+ *        \DEV0.MTH0, met as its term is decoded, and Divide by Zero at 0x3E in \DEV0.MTH1, met as it runs, which the
+ *        line names rather than the term after its operands; MTH0 run again after it names Revision again. The
  *        offsets are the header's 36 bytes and the AML's, counted by hand.
  */
 KERNEL_TEST(a_fault_in_a_method_names_its_table_offset_opcode_and_method)
 {
     static const uint8_t aml[] = {
-        0x5Bu, 0x82u, 0x1Fu, 'D',   'E', 'V', '0', 0x14u, 0x0Bu, 'M',   'T',   'H',   '0',   0x00u, 0x70u, 0x81u, 0x01u,
-        0x00u, 0x60u, 0x14u, 0x0Du, 'M', 'T', 'H', '1',   0x00u, 0x70u, 0x78u, 0x01u, 0x00u, 0x61u, 0x62u, 0x60u,
+        0x5Bu, 0x82u, 0x1Eu, 'D',   'E', 'V', '0', 0x14u, 0x0Au, 'M',   'T',   'H',   '0',   0x00u, 0x70u, 0x5Bu,
+        0x30u, 0x60u, 0x14u, 0x0Du, 'M', 'T', 'H', '1',   0x00u, 0x70u, 0x78u, 0x01u, 0x00u, 0x61u, 0x62u, 0x60u,
     };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t unimplemented;
@@ -388,33 +388,33 @@ KERNEL_TEST(a_fault_in_a_method_names_its_table_offset_opcode_and_method)
     kernel_test_check(test, log_host.log_count == 3u, "three faults, three lines");
     kernel_test_check(test,
                       log_line_is(&log_host, 0u, LOG_LEVEL(ERROR),
-                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=FindSetLeftBit "
+                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=Revision "
                                   "method=\\DEV0.MTH0"),
-                      "the first names FindSetLeftBit at 0x33 in \\DEV0.MTH0");
+                      "the first names Revision at 0x33 in \\DEV0.MTH0");
     kernel_test_check(
         test,
         log_line_is(&log_host, 1u, LOG_LEVEL(ERROR),
-                    "divide_by_zero table=DSDT/MADEUPML offset=0x0000003F opcode=Divide method=\\DEV0.MTH1"),
-        "the second names the Divide that ran, at 0x3F in \\DEV0.MTH1");
+                    "divide_by_zero table=DSDT/MADEUPML offset=0x0000003E opcode=Divide method=\\DEV0.MTH1"),
+        "the second names the Divide that ran, at 0x3E in \\DEV0.MTH1");
     kernel_test_check(test,
                       log_line_is(&log_host, 2u, LOG_LEVEL(ERROR),
-                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=FindSetLeftBit "
+                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=Revision "
                                   "method=\\DEV0.MTH0"),
-                      "the third names FindSetLeftBit at 0x33 again, not the Divide before it");
+                      "the third names Revision at 0x33 again, not the Divide before it");
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
 }
 
 /**
- * @brief A fault of table-level code is logged once, in the scope the code runs in (§4.5, §6.2): FindSetLeftBit at
- *        0x2C, which the interpreter runs in \DEV1 and counts in table_level_failures, and the byte 0x02 at 0x37 in
+ * @brief A fault of table-level code is logged once, in the scope the code runs in (§4.5, §6.2): Revision at 0x2C,
+ *        which the interpreter runs in \DEV1 and counts in table_level_failures, and the byte 0x02 at 0x36 in
  *        \DEV2, which the load meets and counts in load_errors; the decoding pass, which meets 0x02 again, counts it
  *        in decode_errors but does not log it twice. AFTR, declared after both, shows the load went on.
  */
 KERNEL_TEST(a_fault_of_table_level_code_names_its_scope)
 {
     static const uint8_t aml[] = {
-        0x5Bu, 0x82u, 0x0Au, 'D', 'E', 'V', '1',   0x70u, 0x81u, 0x01u, 0x00u, 0x60u, 0x5Bu,
-        0x82u, 0x06u, 'D',   'E', 'V', '2', 0x02u, 0x08u, 'A',   'F',   'T',   'R',   0x01u,
+        0x5Bu, 0x82u, 0x09u, 'D', 'E', 'V',   '1',   0x70u, 0x5Bu, 0x30u, 0x60u, 0x5Bu, 0x82u,
+        0x06u, 'D',   'E',   'V', '2', 0x02u, 0x08u, 'A',   'F',   'T',   'R',   0x01u,
     };
 
     if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
@@ -427,13 +427,13 @@ KERNEL_TEST(a_fault_of_table_level_code_names_its_scope)
                       "one failure of table-level code and one load error, one line each");
     kernel_test_check(test,
                       log_line_is(&log_host, 0u, LOG_LEVEL(ERROR),
-                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x0000002C opcode=FindSetLeftBit "
+                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x0000002C opcode=Revision "
                                   "scope=\\DEV1"),
-                      "the first names FindSetLeftBit at 0x2C, in the scope \\DEV1");
+                      "the first names Revision at 0x2C, in the scope \\DEV1");
     kernel_test_check(test,
                       log_line_is(&log_host, 1u, LOG_LEVEL(ERROR),
-                                  "invalid_opcode table=DSDT/MADEUPML offset=0x00000037 opcode=Invalid scope=\\DEV2"),
-                      "the second names the byte at 0x37, in the scope \\DEV2");
+                                  "invalid_opcode table=DSDT/MADEUPML offset=0x00000036 opcode=Invalid scope=\\DEV2"),
+                      "the second names the byte at 0x36, in the scope \\DEV2");
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
 }
 
@@ -673,16 +673,16 @@ KERNEL_TEST(the_directory_counts_and_logs_the_static_tables_whose_checksum_fails
 
 /**
  * @brief A table whose load meets faults is counted once in table_load_failed, and the next one loads (§3.8 step 1):
- *        the DSDT meets two, FindSetLeftBit, which its table-level code fails on, and the byte 0x02, which the load
- *        meets; the first SSDT none; the second the byte 0x02 alone, the third FindSetLeftBit alone. Each fault is
+ *        the DSDT meets two, Revision, which its table-level code fails on, and the byte 0x02, which the load meets;
+ *        the first SSDT none; the second the byte 0x02 alone, the third Revision alone. Each fault is
  *        counted once in faults, under its status.
  */
 KERNEL_TEST(a_table_whose_load_meets_faults_is_counted_once_in_table_load_failed)
 {
-    static const uint8_t faulty[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u, 0x5Bu, 0x82u, 0x06u, 'D', 'E', 'V', '2', 0x02u};
+    static const uint8_t faulty[] = {0x70u, 0x5Bu, 0x30u, 0x60u, 0x5Bu, 0x82u, 0x06u, 'D', 'E', 'V', '2', 0x02u};
     static const uint8_t clean[] = {0x08u, 'C', 'L', 'E', 'N', 0x01u};
     static const uint8_t invalid[] = {0x02u};
-    static const uint8_t unimplemented[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u};
+    static const uint8_t unimplemented[] = {0x70u, 0x5Bu, 0x30u, 0x60u};
 
     if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, faulty, sizeof(faulty)))
         return;
@@ -709,12 +709,12 @@ KERNEL_TEST(a_table_whose_load_meets_faults_is_counted_once_in_table_load_failed
 
 /**
  * @brief A table Load adds whose code fails is marked, and not counted in table_load_failed, which counts the tables
- *        the root table lists (§3.8 step 1): LDIT loads an SSDT whose table-level code fails on FindSetLeftBit.
+ *        the root table lists (§3.8 step 1): LDIT loads an SSDT whose table-level code fails on Revision.
  */
 KERNEL_TEST(a_table_load_adds_whose_code_fails_is_marked_and_not_counted)
 {
     static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t ssdt_aml[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u};
+    static const uint8_t ssdt_aml[] = {0x70u, 0x5Bu, 0x30u, 0x60u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt =
         made_up_definition_block(log_table, "SSDT", 2u, ssdt_aml, sizeof(ssdt_aml));

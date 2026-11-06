@@ -3756,6 +3756,25 @@ void advanced_configuration_and_power_interface_machine_language_close(
     advanced_configuration_and_power_interface_machine_language_namespace_close(&load->space);
 }
 
+void advanced_configuration_and_power_interface_machine_language_log_fatal(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t offset,
+    uint32_t method, uint32_t scope)
+{
+    AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    advanced_configuration_and_power_interface_log_open(&line, "fatals");
+    advanced_configuration_and_power_interface_log_table(&line, load->tables[table - 1u].header);
+    advanced_configuration_and_power_interface_log_hexadecimal(&line, "offset", offset, 8u);
+    advanced_configuration_and_power_interface_log_text(
+        &line, "opcode",
+        advanced_configuration_and_power_interface_machine_language_opcode_name(MACHINE_LANGUAGE_OPCODE(FATAL)));
+    if (method != 0u)
+        machine_language_log_path(&line, load, "method", method);
+    else
+        machine_language_log_path(&line, load, "scope", scope);
+    advanced_configuration_and_power_interface_log_error(load->space.host, &line);
+}
+
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_materialize(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t index)
 {

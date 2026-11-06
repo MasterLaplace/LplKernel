@@ -81,6 +81,20 @@ static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t evaluation_
 }
 
 /**
+ * @brief Whether the host's log kept, at @p index, the error @p text.
+ */
+static bool evaluation_logged_error(uint32_t index, const char *text)
+{
+    const AdvancedConfigurationAndPowerInterfaceSimulatedLogLine_t *line = &evaluation_host.log_lines[index];
+    const size_t length = strlen(text);
+
+    return index < evaluation_host.log_count &&
+           index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_LOG_LINES &&
+           line->level == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_ERROR && strlen(line->text) == length &&
+           memcmp(line->text, text, length) == 0;
+}
+
+/**
  * @brief Checks that every run left the evaluation's stacks empty, then closes the load.
  */
 static void evaluation_close(KernelTest_t *test)
@@ -378,9 +392,11 @@ KERNEL_TEST(find_set_left_bit_and_find_set_right_bit_work_with_a_target_and_with
 }
 
 /**
- * @brief A BreakPoint is a counted no-op and a Fatal is counted, its argument evaluated, then execution goes on past
- *        both (§5.2), at table level and in a method; a Fatal whose argument is no Integer fails, as an impossible
- *        conversion (§5.2); an Unload is refused, its operand evaluated and nothing else done, counted (§4.5).
+ * @brief A BreakPoint is a counted no-op and a Fatal is counted and logged, its argument evaluated, then execution
+ *        goes on past both (§5.2), at table level and in a method; a Fatal's line names its table, its offset, its
+ *        opcode and its scope or method (§4.5): 0xB8 at table level and 0x6E in FATL, where iasl placed them; a Fatal
+ *        whose argument is no Integer fails, as an impossible conversion (§5.2), neither counted nor logged as one;
+ *        an Unload is refused, its operand evaluated and nothing else done, counted (§4.5).
  */
 KERNEL_TEST(break_point_and_fatal_are_counted_and_unload_is_refused)
 {
@@ -392,17 +408,26 @@ KERNEL_TEST(break_point_and_fatal_are_counted_and_unload_is_refused)
                           evaluation_load.evaluation.failures == 0u,
                       "the table's BreakPoint and Fatal are counted, and fail nothing");
     kernel_test_check(test, evaluation_integer("RES_") == 7u, "the table's code goes on past both");
+    kernel_test_check(test,
+                      evaluation_logged_error(0u, "fatals table=DSDT/MADEUPML offset=0x000000B8 opcode=Fatal scope=\\"),
+                      "the table's Fatal is logged in the scope of the table's code");
     kernel_test_check(test, evaluation_call("\\BRKP") == 1u && evaluation_load.services.break_points == 2u,
                       "BRKP counts its BreakPoint and returns 1");
     kernel_test_check(test,
                       evaluation_call("\\FATL") == 2u && evaluation_load.services.fatals == 2u &&
                           evaluation_integer("CNT0") == 1u,
                       "FATL counts its Fatal, whose argument called ARGM, and returns 2");
+    kernel_test_check(
+        test, evaluation_logged_error(1u, "fatals table=DSDT/MADEUPML offset=0x0000006E opcode=Fatal method=\\FATL"),
+        "FATL's Fatal is logged in its method");
     kernel_test_check(test,
                       evaluation_status("\\FATP") ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH &&
                           evaluation_load.services.fatals == 2u,
                       "FATP's Fatal, whose argument is a Package, fails with type_mismatch and is not counted");
+    kernel_test_check(test,
+                      evaluation_host.log_count == 3u && memcmp(evaluation_host.log_lines[2].text, "fatals ", 7u) != 0,
+                      "FATP's failure is logged as its fault, not as a Fatal");
     kernel_test_check(test,
                       evaluation_call("\\UNLD") == 3u && evaluation_load.unload_refused == 1u &&
                           evaluation_integer("TBLX") == 0u,
