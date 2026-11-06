@@ -35,6 +35,8 @@
     64u /**< Entries of the region mapping cache (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES                                             \
     256u /**< Region spaces, as AML encodes them in a byte. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ACCESS_TYPES                                       \
+    16u /**< AccessTypes, as the 4 low bits of a field's flags encode them, the reserved ones included. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION    \
     0x02u /**< The RegionSpace byte of PCI_Config, the space a _REG is told of (§3.8 step 3). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_GLOBAL_LOCK_POLLS                                  \
@@ -97,6 +99,20 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t space_unsupported[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES]; /**< Accesses
                                                                                                         refused, per
                                                                                                         space. */
+    uint32_t space_accesses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES]; /**< Accesses made, per
+                                                                                                     space, those
+                                                                                                     refused included,
+                                                                                                     in a build that
+                                                                                                     counts them
+                                                                                                     (§4.1). */
+    uint32_t type_accesses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ACCESS_TYPES]; /**< Reads and
+                                                                                                        writes begun
+                                                                                                        of units AML
+                                                                                                        names, per
+                                                                                                        AccessType,
+                                                                                                        in a build
+                                                                                                        that counts
+                                                                                                        them (§4.1). */
     uint64_t global_lock_address; /**< The physical address of the FACS's GlobalLock word, or 0 without a global
                                        lock. */
     uint8_t *global_lock_word;    /**< Where the lock word is mapped, for the whole load, or NULL: a pointer, never

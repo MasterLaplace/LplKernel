@@ -158,6 +158,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
                                                                                                           failed with
                                                                                                           unimplemented_
                                                                                                           operator. */
+    uint32_t executed[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Operations run,
+                                                                                                     per opcode, in a
+                                                                                                     build that counts
+                                                                                                     them (§4.1). */
     uint32_t failed_term_start;   /**< Where the term whose run failed starts, while term_failed holds. */
     uint32_t logged_fault_table;  /**< The table of the failure being taken, counted from 1, while the evaluation goes
                                        past it: the load that steps over its statement meets it again, and does not

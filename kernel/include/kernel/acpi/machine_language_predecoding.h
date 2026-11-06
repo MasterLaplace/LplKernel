@@ -145,7 +145,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName {
     uint32_t generation;   /**< The namespace's generation when it was checked. */
     uint32_t scope;        /**< The scope it was resolved from. */
     uint8_t values_before; /**< Values the loop held for its statement at most before reading it. */
-    uint8_t reserved[3];   /**< Unused, 0. */
+    uint8_t nodes_before;  /**< In a build that counts what the loop runs, the operators of its record the loop runs
+                                before reading it: the first ones, in the record's order. */
+    uint8_t reserved[2];   /**< Unused, 0. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t;
 
 /**
@@ -187,7 +189,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
                                  or Return. */
     uint16_t first_name;    /**< Its first name among the cache's. */
     uint8_t name_count;     /**< The names it reads, in the order the loop reads them. */
-    uint8_t reserved;       /**< Unused, 0. */
+    uint8_t statement;      /**< In a build that counts what the loop runs, the opcode of its statement when no
+                                 operator of the record is one: While, If, Break, Store, Increment or Decrement; 0 for
+                                 an operator that stands as a statement. A record that runs nothing counts nothing. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**

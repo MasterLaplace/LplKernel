@@ -250,10 +250,50 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 }
 
 /**
+ * @brief The name ACPI gives an AccessType, or NULL for a reserved one.
+ */
+static const char *harness_access_type_name(uint32_t access)
+{
+    static const char *const names[] = {"AnyAcc", "ByteAcc", "WordAcc", "DWordAcc", "QWordAcc", "BufferAcc"};
+
+    return (access < sizeof(names) / sizeof(names[0])) ? names[access] : NULL;
+}
+
+/**
+ * @brief Prints, one line each, what the load executed (§4.1): each opcode it ran, by name, each region space a field
+ *        access reached, in hexadecimal, and each AccessType of a unit AML read or wrote, by name, a reserved one in
+ *        hexadecimal; only those counted at least once.
+ */
+static void harness_print_executed(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t *regions = &load->regions;
+
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (load->evaluation.executed[opcode] != 0u)
+            printf("aml run executed opcode %s=%u\n",
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
+                   load->evaluation.executed[opcode]);
+    for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
+        if (regions->space_accesses[space] != 0u)
+            printf("aml run executed space 0x%02X=%u\n", space, regions->space_accesses[space]);
+    for (uint32_t access = 0u; access < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ACCESS_TYPES;
+         ++access)
+    {
+        if (regions->type_accesses[access] == 0u)
+            continue;
+        if (harness_access_type_name(access) != NULL)
+            printf("aml run executed access %s=%u\n", harness_access_type_name(access), regions->type_accesses[access]);
+        else
+            printf("aml run executed access 0x%X=%u\n", access, regions->type_accesses[access]);
+    }
+}
+
+/**
  * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
  *        operating system services it called, the tables Load and LoadTable added, the kept data a first
- *        read found a fault in (O20), the failures per status, the region spaces refused, and the opcodes
- *        that failed as unimplemented.
+ *        read found a fault in (O20), the failures per status, the region spaces refused, the opcodes
+ *        that failed as unimplemented, and the opcodes, spaces and AccessTypes it executed.
  */
 static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
@@ -330,6 +370,7 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
             printf("aml run unimplemented %s=%u\n",
                    advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
                    evaluation->unimplemented[opcode]);
+    harness_print_executed(load);
 }
 
 /**
@@ -770,23 +811,35 @@ static bool harness_observe(AdvancedConfigurationAndPowerInterfaceMachineLanguag
 }
 
 /**
- * @brief Walks the needs path of a decoded load and prints its counts, then each opcode it reaches,
- *        in descriptor order.
+ * @brief Walks the needs path of a decoded load and prints its counts, the reached opcodes the run list leaves out
+ *        among them, then each opcode it reaches, in descriptor order, and each of those it leaves out (§4.1).
  */
 static void harness_print_closure(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     uint32_t opcodes = 0u;
+    uint32_t unexecuted = 0u;
 
     needs_path_closure_walk(&harness_closure, load);
     for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
          ++opcode)
-        opcodes += needs_path_closure_reaches_opcode(&harness_closure, opcode) ? 1u : 0u;
-    printf("aml closure entries=%u methods=%u opcodes=%u dropped=%u\n", harness_closure.entries,
-           harness_closure.methods, opcodes, harness_closure.dropped);
+    {
+        if (!needs_path_closure_reaches_opcode(&harness_closure, opcode))
+            continue;
+        ++opcodes;
+        unexecuted += needs_path_closure_executes(&harness_closure, opcode) ? 0u : 1u;
+    }
+    printf("aml closure entries=%u methods=%u opcodes=%u unexecuted=%u dropped=%u\n", harness_closure.entries,
+           harness_closure.methods, opcodes, unexecuted, harness_closure.dropped);
     for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
          ++opcode)
         if (needs_path_closure_reaches_opcode(&harness_closure, opcode))
             printf("aml closure opcode %s\n",
+                   advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
+    for (uint32_t opcode = 1u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (needs_path_closure_reaches_opcode(&harness_closure, opcode) &&
+            !needs_path_closure_executes(&harness_closure, opcode))
+            printf("aml closure unexecuted %s\n",
                    advanced_configuration_and_power_interface_machine_language_opcode_name(opcode));
 }
 

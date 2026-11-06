@@ -164,6 +164,7 @@ void needs_path_closure_walk(NeedsPathClosure_t *closure,
 {
     memset(closure->reached, 0, closure->node_capacity * sizeof(*closure->reached));
     memset(closure->reached_opcodes, 0, sizeof(closure->reached_opcodes));
+    memset(closure->method_opcodes, 0, sizeof(closure->method_opcodes));
     closure->entries = 0u;
     closure->methods = 0u;
     needs_path_closure_mark_entries(closure, load);
@@ -174,7 +175,10 @@ void needs_path_closure_walk(NeedsPathClosure_t *closure,
             continue;
         closure->methods += (index != 0u) ? 1u : 0u;
         for (uint32_t word = 0u; word < NEEDS_PATH_CLOSURE_OPCODE_WORDS; ++word)
+        {
             closure->reached_opcodes[word] |= closure->opcodes[index][word];
+            closure->method_opcodes[word] |= (index != 0u) ? closure->opcodes[index][word] : 0u;
+        }
     }
 }
 
@@ -182,6 +186,14 @@ bool needs_path_closure_reaches_opcode(const NeedsPathClosure_t *closure, uint32
 {
     return opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT &&
            ((closure->reached_opcodes[opcode / 32u] >> (opcode % 32u)) & 1u) != 0u;
+}
+
+bool needs_path_closure_executes(const NeedsPathClosure_t *closure, uint32_t opcode)
+{
+    const bool in_methods = opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT &&
+                            ((closure->method_opcodes[opcode / 32u] >> (opcode % 32u)) & 1u) != 0u;
+
+    return advanced_configuration_and_power_interface_machine_language_executes(opcode, !in_methods);
 }
 
 void needs_path_closure_release(NeedsPathClosure_t *closure)

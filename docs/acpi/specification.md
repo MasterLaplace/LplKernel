@@ -212,7 +212,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8`, and whether its load met a fault `u8` (§3.8 step 1) | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 50 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. |
-| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8`, whether a While runs as a tight loop `u8`, for a record that runs nothing whether its statement always goes on to the next `u8`, first name `u16`, names `u8` | 40 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant or name index). A name is 28 bytes: its NameString, where it ends `u32`, the node it named when last checked `u32` with the namespace's generation and the scope of that check `u32`, and the values the loop held for the statement before reading it `u8`. |
+| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8`, whether a While runs as a tight loop `u8`, for a record that runs nothing whether its statement always goes on to the next `u8`, first name `u16`, names `u8`, in a build that counts what the loop runs (§4.1) the opcode of its statement when no operator of it is one `u8` | 40 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant or name index). A name is 28 bytes: its NameString, where it ends `u32`, the node it named when last checked `u32` with the namespace's generation and the scope of that check `u32`, the values the loop held for the statement before reading it `u8`, and in a build that counts what the loop runs the operators of its record the loop runs before reading it `u8`. |
 | **Record cache** | 128 records, 256 operators, 256 constants (`u64`, masked to the width), 256 hash slots (`u16`), 64 names, the values the running record read by name, 64 recent slots (`u16`, the record last found or built at an offset of each, the offset modulo 64), the frame and loop start watched for a turn handed back whole, the integer width they were built under, what running them counted | about 10 KiB, the last member of the load | Opening the load empties the hash slots and the counters alone, word by word: a record is one only below the count and under its own key (table, `pc`), the one a recent slot names included. |
 
 ### 3.5 Memory strategy
@@ -632,12 +632,21 @@ step 7 only when step 7's walk still reaches that processor.
    on every corpus machine. Being static, it covers every branch, so it is a superset of what runs. Every opcode the
    closure reaches on any machine is executed; every other fails with `unimplemented_operator`, counted, until a
    count asks for it. A later need adds the closure of its own entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and
-   `\_S5`.
+   `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure reaches with the run list where it reaches it:
+   in a method body, what the interpreter runs; in table-level code, that and the declarations the load takes. An
+   opcode the run list leaves out there fails it.
 3. **Three region spaces have a handler:** SystemMemory, SystemIO and PCI_Config. Every other space decodes and
    fails loudly at access (§4.5).
 4. **The needs path is run too.** The host harness and the ring-0 corpus test run §3.8 and `_CST` on every corpus
    machine and print the opcodes, spaces and access types they executed. One executed and not implemented is a red
-   test.
+   test: `tools/acpi-corpus.sh initialize` fails on the machine, and the ring-0 corpus test fails. An opcode is
+   executed each time the loop runs its operation: an operator once its operands are there, If and While each time
+   they read their predicate, an Else when its body is entered, Break, Continue and Noop when they run; a constant,
+   a String, a local, an argument and Debug are operands, and the declarations the load makes are not the loop's.
+   A loop's records count what the loop would (§3.6). A space counts each field access made in it, one it refuses
+   included, but not one past the evaluation's budget of field accesses (§6.1), which is never made; an access type
+   counts each read or write of a unit AML names. A debug kernel and the host tools count them; a release kernel,
+   which runs no `KERNEL_TEST` and so prints no record of them (§7.4), counts none.
 
 ### 4.2 The decoder's alphabet
 

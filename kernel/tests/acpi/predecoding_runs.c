@@ -25,6 +25,16 @@ static uint32_t predecoding_fold_word(uint32_t fold, uint64_t word)
 }
 
 /**
+ * @brief Folds @p count counters into an FNV-1a fold, each as 8 little-endian bytes.
+ */
+static uint32_t predecoding_fold_counts(uint32_t fold, const uint32_t *counts, uint32_t count)
+{
+    for (uint32_t index = 0u; index < count; ++index)
+        fold = predecoding_fold_word(fold, counts[index]);
+    return fold;
+}
+
+/**
  * @brief Folds every access the simulated host logged: its kind, width, port or offset, value and address.
  */
 static uint32_t predecoding_fold_accesses(uint32_t fold)
@@ -48,7 +58,8 @@ static uint32_t predecoding_fold_accesses(uint32_t fold)
 
 /**
  * @brief Folds what an evaluation left: its status and result, everything the evaluations of the load
- *        counted, the namespace's lookups, probes and nodes, the heap's objects, the field accesses,
+ *        counted, the opcodes they executed and those that failed as unimplemented included, the namespace's
+ *        lookups, probes and nodes, the heap's objects, the field accesses, per space and AccessType too,
  *        every access the host saw, and the namespace itself.
  */
 static uint32_t predecoding_fold(AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status,
@@ -82,12 +93,21 @@ static uint32_t predecoding_fold(AdvancedConfigurationAndPowerInterfaceMachineLa
         predecoding_load.regions.field_writes,
         advanced_configuration_and_power_interface_machine_language_namespace_fold(&predecoding_load),
     };
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions_t *regions = &predecoding_load.regions;
     uint32_t fold = PREDECODING_FOLD_OFFSET;
 
     for (uint32_t index = 0u; index < sizeof(words) / sizeof(words[0]); ++index)
         fold = predecoding_fold_word(fold, words[index]);
-    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT; ++index)
-        fold = predecoding_fold_word(fold, evaluation->statuses[index]);
+    fold = predecoding_fold_counts(fold, evaluation->statuses,
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT);
+    fold = predecoding_fold_counts(fold, evaluation->unimplemented,
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT);
+    fold = predecoding_fold_counts(fold, evaluation->executed,
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT);
+    fold = predecoding_fold_counts(fold, regions->space_accesses,
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES);
+    fold = predecoding_fold_counts(fold, regions->type_accesses,
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ACCESS_TYPES);
     return predecoding_fold_accesses(fold);
 }
 

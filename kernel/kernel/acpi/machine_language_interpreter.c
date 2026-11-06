@@ -202,6 +202,15 @@ static bool machine_language_holds_operands(const MachineLanguageEvaluation_t *e
 }
 
 /**
+ * @brief Counts one operation of @p opcode the loop runs, in a build that counts them (§4.1).
+ */
+static inline void machine_language_count_executed(MachineLanguageEvaluation_t *evaluation, uint32_t opcode)
+{
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        ++evaluation->executed[opcode];
+}
+
+/**
  * @brief The first offset the next term may not reach: the active operator's end, else the
  *        construct's.
  */
@@ -1670,7 +1679,8 @@ static MachineLanguageStatus_t machine_language_skip_else(MachineLanguageEvaluat
 }
 
 /**
- * @brief Enters the body of an Else that starts at the running frame's pc, after an If not taken.
+ * @brief Enters the body of an Else that starts at the running frame's pc, after an If not taken, the Else counted
+ *        as run.
  */
 static MachineLanguageStatus_t machine_language_enter_else(MachineLanguageEvaluation_t *evaluation)
 {
@@ -1688,6 +1698,7 @@ static MachineLanguageStatus_t machine_language_enter_else(MachineLanguageEvalua
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
+    machine_language_count_executed(evaluation, MACHINE_LANGUAGE_OPCODE(ELSE));
     frame->pc = after;
     return machine_language_open(evaluation, MACHINE_LANGUAGE_RUN_TERMS, start, end,
                                  machine_language_block(evaluation)->scope);
@@ -1900,6 +1911,47 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(LOAD_TABLE): return true;
     default: return false;
     }
+}
+
+/**
+ * @brief Whether the loop takes an opcode of a method where it reads it, with no operator pushed
+ *        (machine_language_term): a constant, a String, a local, an argument, Debug, Noop, Break, Continue,
+ *        or an Else.
+ */
+static bool machine_language_takes_in_place(uint32_t opcode)
+{
+    switch (opcode)
+    {
+    case MACHINE_LANGUAGE_OPCODE(ZERO):
+    case MACHINE_LANGUAGE_OPCODE(ONE):
+    case MACHINE_LANGUAGE_OPCODE(ONES):
+    case MACHINE_LANGUAGE_OPCODE(BYTE_PREFIX):
+    case MACHINE_LANGUAGE_OPCODE(WORD_PREFIX):
+    case MACHINE_LANGUAGE_OPCODE(DOUBLE_WORD_PREFIX):
+    case MACHINE_LANGUAGE_OPCODE(QUAD_WORD_PREFIX):
+    case MACHINE_LANGUAGE_OPCODE(STRING_PREFIX):
+    case MACHINE_LANGUAGE_OPCODE(DEBUG):
+    case MACHINE_LANGUAGE_OPCODE(NOOP):
+    case MACHINE_LANGUAGE_OPCODE(BREAK):
+    case MACHINE_LANGUAGE_OPCODE(CONTINUE):
+    case MACHINE_LANGUAGE_OPCODE(ELSE): return true;
+    default:
+        return (opcode >= MACHINE_LANGUAGE_OPCODE(LOCAL0) && opcode <= MACHINE_LANGUAGE_OPCODE(LOCAL7)) ||
+               (opcode >= MACHINE_LANGUAGE_OPCODE(ARGUMENT0) && opcode <= MACHINE_LANGUAGE_OPCODE(ARGUMENT6));
+    }
+}
+
+/**
+ * @brief Whether the load takes an opcode of table-level code without the interpreter: a declaration, a local, an
+ *        argument or Noop, but no data object, which a Name's object the load cannot build sends to the interpreter
+ *        (§3.6, §5.1).
+ */
+static bool machine_language_declared_at_table_level(uint32_t opcode)
+{
+    const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
+
+    return !advanced_configuration_and_power_interface_machine_language_runs_at_table_level(opcode) &&
+           (flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) == 0u;
 }
 
 /**
@@ -2343,9 +2395,13 @@ static MachineLanguageStatus_t machine_language_term(MachineLanguageLoad_t *load
         frame->pc = after;
         return target ? machine_language_deliver(load, machine_language_target(MACHINE_LANGUAGE_TARGET_DEBUG, 0u)) :
                         MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
-    case MACHINE_LANGUAGE_OPCODE(NOOP): frame->pc = after; return MACHINE_LANGUAGE_OK;
+    case MACHINE_LANGUAGE_OPCODE(NOOP):
+        machine_language_count_executed(evaluation, opcode);
+        frame->pc = after;
+        return MACHINE_LANGUAGE_OK;
     case MACHINE_LANGUAGE_OPCODE(BREAK):
     case MACHINE_LANGUAGE_OPCODE(CONTINUE):
+        machine_language_count_executed(evaluation, opcode);
         frame->pc = after;
         return machine_language_leave_loop(evaluation, opcode == MACHINE_LANGUAGE_OPCODE(CONTINUE));
     case MACHINE_LANGUAGE_OPCODE(ELSE): return machine_language_skip_else(evaluation);
@@ -2467,9 +2523,9 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
 }
 
 /**
- * @brief Runs the TermList of an If or a While once its predicate is on the stack: a true predicate
- *        opens the body; a false one skips it, and an If then enters the Else that follows, or, in a
- *        table's code at load, lets the next statement run it.
+ * @brief Runs the TermList of an If or a While once its predicate is on the stack, the If or the While counted as
+ *        executed (§4.1): a true predicate opens the body; a false one skips it, and an If then enters the Else
+ *        that follows, or, in a table's code at load, lets the next statement run it.
  */
 static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *load,
                                                        const MachineLanguagePendingOperator_t *active)
@@ -2480,6 +2536,7 @@ static MachineLanguageStatus_t machine_language_branch(MachineLanguageLoad_t *lo
 
     if (!machine_language_frame_holds(evaluation, MACHINE_LANGUAGE_VALUES_BEFORE_LIST))
         return MACHINE_LANGUAGE_STATUS(OPERANDS_MISSING);
+    machine_language_count_executed(evaluation, branch.opcode);
 
     MachineLanguageValue_t predicate = machine_language_pop(evaluation);
     uint64_t truth = 0u;
@@ -3420,8 +3477,8 @@ static MachineLanguageStatus_t machine_language_dereference_of(MachineLanguageLo
 }
 
 /**
- * @brief Gives DerefOf (Index (...)) its result in DerefOf's place (§7.2, O8): what the reference
- *        refers to, read at once and the reference, whose count it takes, released; where DerefOf
+ * @brief Gives DerefOf (Index (...)) its result in DerefOf's place (§7.2, O8), the DerefOf counted as run: what the
+ *        reference refers to, read at once and the reference, whose count it takes, released; where DerefOf
  *        stands for a target, the reference itself, counted.
  */
 static MachineLanguageStatus_t machine_language_read_at_once(MachineLanguageLoad_t *load,
@@ -3431,6 +3488,7 @@ static MachineLanguageStatus_t machine_language_read_at_once(MachineLanguageLoad
     MachineLanguageValue_t value;
 
     --evaluation->operator_count;
+    machine_language_count_executed(evaluation, MACHINE_LANGUAGE_OPCODE(DEREFERENCE_OF));
     if (machine_language_names_target(evaluation))
     {
         ++evaluation->references_built;
@@ -4168,8 +4226,8 @@ static MachineLanguageStatus_t machine_language_run_table_statement(MachineLangu
 
 /**
  * @brief Runs an Else of a table's code at load as the If before it says (§3.6): its body runs after a
- *        false predicate, is declared without running after a failed one, and is stepped over otherwise.
- *        One whose PkgLength does not decode is handed to the load, which counts the fault.
+ *        false predicate, the Else counted as executed, is declared without running after a failed one, and is
+ *        stepped over otherwise. One whose PkgLength does not decode is handed to the load, which counts the fault.
  */
 static MachineLanguageStatus_t machine_language_table_else(MachineLanguageLoad_t *load, uint32_t after, uint32_t limit)
 {
@@ -4183,6 +4241,8 @@ static MachineLanguageStatus_t machine_language_table_else(MachineLanguageLoad_t
     if (advanced_configuration_and_power_interface_machine_language_read_package_end(frame->code, after, limit, &end,
                                                                                      &after) != MACHINE_LANGUAGE_OK)
         return machine_language_declare(load, false);
+    if (rule == MACHINE_LANGUAGE_ELSE_RUN)
+        machine_language_count_executed(&load->evaluation, MACHINE_LANGUAGE_OPCODE(ELSE));
     frame->pc = (rule == MACHINE_LANGUAGE_ELSE_RUN) ? after : end;
     return (rule == MACHINE_LANGUAGE_ELSE_RUN) ?
                machine_language_open_construct(load, MACHINE_LANGUAGE_RUN_TERMS, start, end) :
@@ -4215,8 +4275,8 @@ static MachineLanguageStatus_t machine_language_leave_table_loop(MachineLanguage
 
 /**
  * @brief Takes the next statement of a table's code at load (§3.6): the interpreter runs code, an If's
- *        or a While's predicate included, Break and Continue, and an Else as the If before it says; it
- *        hands the load any other statement, and one whose opcode or PkgLength does not decode.
+ *        or a While's predicate included, Break and Continue, counted as executed, and an Else as the If before it
+ *        says; it hands the load any other statement, and one whose opcode or PkgLength does not decode.
  */
 static MachineLanguageStatus_t machine_language_table_statement(MachineLanguageLoad_t *load)
 {
@@ -4246,6 +4306,7 @@ static MachineLanguageStatus_t machine_language_table_statement(MachineLanguageL
     case MACHINE_LANGUAGE_OPCODE(ELSE): return machine_language_table_else(load, after, limit);
     case MACHINE_LANGUAGE_OPCODE(BREAK):
     case MACHINE_LANGUAGE_OPCODE(CONTINUE):
+        machine_language_count_executed(evaluation, opcode);
         frame->pc = after;
         return machine_language_leave_table_loop(load, opcode == MACHINE_LANGUAGE_OPCODE(CONTINUE));
     default:
@@ -4256,7 +4317,7 @@ static MachineLanguageStatus_t machine_language_table_statement(MachineLanguageL
 }
 
 /**
- * @brief Runs the active operator once its operands are on the stack.
+ * @brief Runs the active operator once its operands are on the stack, counted as executed (§4.1).
  */
 static MachineLanguageStatus_t machine_language_run_operator(MachineLanguageLoad_t *load,
                                                              const MachineLanguagePendingOperator_t *active)
@@ -4267,6 +4328,8 @@ static MachineLanguageStatus_t machine_language_run_operator(MachineLanguageLoad
     --evaluation->operator_count;
     if (!machine_language_holds_operands(evaluation, &operator_))
         return MACHINE_LANGUAGE_STATUS(OPERANDS_MISSING);
+    if (operator_.opcode < MACHINE_LANGUAGE_CALL)
+        machine_language_count_executed(evaluation, operator_.opcode);
     switch (operator_.opcode)
     {
     case MACHINE_LANGUAGE_CALL: return machine_language_enter_method(load, operator_.node, operator_.operand_count);
@@ -4517,6 +4580,40 @@ static bool machine_language_record_write(const MachineLanguageLoad_t *load, Mac
 }
 
 /**
+ * @brief Counts the first @p count operators of @p record @p runs times, as the loop counts them when it runs them, an
+ *        LNot a comparison takes at once with it (§4.1).
+ */
+static void machine_language_count_record_nodes(MachineLanguageLoad_t *load, const MachineLanguageRecord_t *record,
+                                                uint32_t count, uint32_t runs)
+{
+    uint32_t *executed = load->evaluation.executed;
+
+    if (!ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        return;
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        const MachineLanguageRecordNode_t *node = &load->predecoding.nodes[record->first_node + index];
+
+        executed[node->opcode] += runs;
+        if (node->negated != 0u)
+            executed[MACHINE_LANGUAGE_OPCODE(LOGICAL_NOT)] += runs;
+    }
+}
+
+/**
+ * @brief Counts what @p runs runs of a record ran, as the loop counts it (§4.1): its operators, then its statement.
+ */
+static void machine_language_count_record(MachineLanguageLoad_t *load, const MachineLanguageRecord_t *record,
+                                          uint32_t runs)
+{
+    if (!ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        return;
+    machine_language_count_record_nodes(load, record, record->node_count, runs);
+    if (record->statement != MACHINE_LANGUAGE_OPCODE(INVALID))
+        load->evaluation.executed[record->statement] += runs;
+}
+
+/**
  * @brief Runs a statement that writes from its record, the frame then past it.
  *
  * @return false, the reason counted, when the record hands the statement back, nothing changed.
@@ -4651,8 +4748,8 @@ static bool machine_language_record_names_hold(MachineLanguageLoad_t *load, cons
  *        node the record checked read whatever that resolution found, a difference counted as a stale name; the
  *        record's first effect, after which nothing hands its statement back.
  *
- * @return OK; or what a read failed with, the frame's pc past the name and the values peak at what the loop held
- *         before reading it, as the loop leaves them.
+ * @return OK; or what a read failed with, the frame's pc past the name, the values peak at what the loop held
+ *         before reading it and the operators the loop runs before it counted as executed, as the loop leaves them.
  */
 static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguageLoad_t *load,
                                                                   MachineLanguageFrame_t *frame,
@@ -4675,6 +4772,7 @@ static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguag
 
         if (status != MACHINE_LANGUAGE_OK)
         {
+            machine_language_count_record_nodes(load, record, entry->nodes_before, 1u);
             frame->pc = entry->after;
             if (evaluation->value_count + entry->values_before > evaluation->values_peak)
                 evaluation->values_peak = evaluation->value_count + entry->values_before;
@@ -4786,8 +4884,9 @@ static const MachineLanguageRecord_t *machine_language_tight_body(const MachineL
 
 /**
  * @brief Runs a While that machine_language_tight_body accepts, turn after turn as its two records would
- *        run: the predicate, the body, the back-edge, no block opened; the frame is left as the records
- *        would leave it, the While's block open when its body is handed back.
+ *        run: the predicate, the body, the back-edge, no block opened; once it stops, each record is counted as many
+ *        times as it ran, as the loop counts what its turns ran. The frame is left as the records would leave it, the
+ *        While's block open when its body is handed back.
  *
  * @param load          The load.
  * @param frame         The running frame, at the While.
@@ -4850,6 +4949,8 @@ static bool machine_language_run_tight_while(MachineLanguageLoad_t *load, Machin
     }
     cache->records_run += ran + turns;
     cache->tight_turns += turns;
+    machine_language_count_record(load, loop, ran);
+    machine_language_count_record(load, body, turns);
     *inout_ran = *inout_ran || ran != 0u;
     if (ran != 0u && loop->values_peak > *inout_values)
         *inout_values = loop->values_peak;
@@ -4966,6 +5067,7 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
         }
         else if (!machine_language_record_branch(load, frame, record, &status))
             break;
+        machine_language_count_record(load, record, 1u);
         ++cache->records_run;
         values_peak = (record->values_peak > values_peak) ? record->values_peak : values_peak;
         *out_ran = true;
@@ -5484,4 +5586,13 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         MACHINE_LANGUAGE_NODE(METHOD))
         return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
     return advanced_configuration_and_power_interface_machine_language_evaluate_node(load, node, NULL, 0u, out_value);
+}
+
+bool advanced_configuration_and_power_interface_machine_language_executes(uint32_t opcode, bool table_level)
+{
+    if (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT)
+        return false;
+    if (table_level && machine_language_declared_at_table_level(opcode))
+        return true;
+    return machine_language_takes_in_place(opcode) || machine_language_runs(opcode);
 }

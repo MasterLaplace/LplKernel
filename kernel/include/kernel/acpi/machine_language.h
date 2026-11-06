@@ -331,6 +331,19 @@ extern void advanced_configuration_and_power_interface_machine_language_declare_
 extern bool advanced_configuration_and_power_interface_machine_language_runs_at_table_level(uint32_t opcode);
 
 /**
+ * @brief Whether the needs path executes an opcode where it stands (§4.1): the run list the needs-path closure is
+ *        compared with.
+ *
+ * @param opcode      A descriptor index.
+ * @param table_level Whether it stands in table-level code, where the load takes the declarations, rather than in a
+ *                    method body.
+ * @return true when the interpreter runs it, reads it as a constant, a local, an argument or Debug, or, at table
+ *         level, the load declares it; false when it fails with unimplemented_operator there, a data object the
+ *         interpreter does not build, such as Revision, at table level too.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_executes(uint32_t opcode, bool table_level);
+
+/**
  * @brief Counts a fault of the declaration or the Externals pass, the first one kept.
  *
  * @param load   The load.
