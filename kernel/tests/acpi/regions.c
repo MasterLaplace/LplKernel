@@ -543,8 +543,8 @@ KERNEL_TEST(the_mapping_cache_maps_each_page_once_and_follows_the_memory_type)
                           regions_load.evaluation.failures == 0u,
                       "65 pages mapped once each, P01_ again from the cache, P00_ mapped again once evicted");
     kernel_test_check(test,
-                      regions_load.regions.mapping_count == 64u && regions_host.outstanding_maps == 64u &&
-                          regions_host.mismatched_unmaps == 0u,
+                      made_up_limit_peak(&regions_load, "mappings_peak") == 64u &&
+                          regions_host.outstanding_maps == 64u && regions_host.mismatched_unmaps == 0u,
                       "the cache holds 64 entries, and every eviction unmapped what it mapped");
     for (uint32_t index = 0u; index < regions_host.outstanding_maps; ++index)
         cached += (regions_host.maps[index].kind ==

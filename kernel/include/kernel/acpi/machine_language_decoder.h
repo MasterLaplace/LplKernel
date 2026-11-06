@@ -388,7 +388,11 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
                                                                                                of the interpreter pushed
                                                                                                none, a defect of the
                                                                                                kernel. */
-    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,               /**< Statuses. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_INTERNAL_NESTING, /**< An internal frame
+                                                                                                   would nest deeper
+                                                                                                   than §6.1
+                                                                                                   allows. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT,                  /**< Statuses. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t;
 
 /**

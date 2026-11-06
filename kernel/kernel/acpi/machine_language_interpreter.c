@@ -649,6 +649,8 @@ static MachineLanguageStatus_t machine_language_locate(MachineLanguageLoad_t *lo
         {
             if (++indirections > MACHINE_LANGUAGE_MAX_NAME_INDIRECTIONS)
                 return MACHINE_LANGUAGE_STATUS(NAME_RESOLUTION_LOOP);
+            if (indirections > load->evaluation.name_indirections_peak)
+                load->evaluation.name_indirections_peak = indirections;
             status = machine_language_resolve_element_name(load, &current, &node);
             if (status != MACHINE_LANGUAGE_OK)
                 return status;
@@ -1406,6 +1408,19 @@ static MachineLanguageStatus_t machine_language_finish(MachineLanguageLoad_t *lo
 }
 
 /**
+ * @brief Takes the next slot of the operator stack, which has room for it, and keeps the most operators pending at
+ *        once.
+ */
+static MachineLanguagePendingOperator_t *machine_language_take_operator(MachineLanguageEvaluation_t *evaluation)
+{
+    MachineLanguagePendingOperator_t *slot = &evaluation->operators[evaluation->operator_count++];
+
+    if (evaluation->operator_count > evaluation->operators_peak)
+        evaluation->operators_peak = evaluation->operator_count;
+    return slot;
+}
+
+/**
  * @brief Opens a construct of the running frame, in the scope of the one around it.
  */
 static MachineLanguageStatus_t machine_language_open(MachineLanguageEvaluation_t *evaluation, uint8_t kind,
@@ -1416,6 +1431,8 @@ static MachineLanguageStatus_t machine_language_open(MachineLanguageEvaluation_t
 
     MachineLanguageBlock_t *block = &evaluation->blocks[evaluation->block_count++];
 
+    if (evaluation->block_count > evaluation->blocks_peak)
+        evaluation->blocks_peak = evaluation->block_count;
     block->kind = kind;
     block->placement = 0u;
     block->pending_base = (uint16_t) evaluation->operator_count;
@@ -1715,7 +1732,7 @@ static MachineLanguageStatus_t machine_language_push_pending(MachineLanguageEval
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    MachineLanguagePendingOperator_t *pending = &evaluation->operators[evaluation->operator_count++];
+    MachineLanguagePendingOperator_t *pending = machine_language_take_operator(evaluation);
 
     pending->opcode = (uint16_t) opcode;
     pending->operands_done = 0u;
@@ -2113,6 +2130,47 @@ static MachineLanguageStatus_t machine_language_attach_step(MachineLanguageLoad_
 }
 
 /**
+ * @brief The internal frames, of an attach or of a _REG, the evaluation runs nested in one another: the operators
+ *        that wait for them.
+ */
+static uint32_t machine_language_internal_nesting(const MachineLanguageEvaluation_t *evaluation)
+{
+    uint32_t nesting = 0u;
+
+    for (uint32_t index = 0u; index < evaluation->operator_count; ++index)
+        nesting += (evaluation->operators[index].opcode == MACHINE_LANGUAGE_ATTACH ||
+                    evaluation->operators[index].opcode == MACHINE_LANGUAGE_REGISTER) ?
+                       1u :
+                       0u;
+    return nesting;
+}
+
+/**
+ * @brief Whether one more internal frame fits: limit_internal_nesting when as many as §6.1 allows run already.
+ */
+static MachineLanguageStatus_t machine_language_nest_internal(const MachineLanguageEvaluation_t *evaluation)
+{
+    return (machine_language_internal_nesting(evaluation) <
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_INTERNAL_NESTING) ?
+               MACHINE_LANGUAGE_OK :
+               MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING);
+}
+
+/**
+ * @brief Keeps the most internal frames that ran at once, once the one just pushed has entered its method:
+ *        @p status, what entering it gave, is handed back.
+ */
+static MachineLanguageStatus_t machine_language_entered_internal(MachineLanguageLoad_t *load,
+                                                                 MachineLanguageStatus_t status)
+{
+    const uint32_t nesting = machine_language_internal_nesting(&load->evaluation);
+
+    if (status == MACHINE_LANGUAGE_OK && nesting > load->regions.internal_nesting_peak)
+        load->regions.internal_nesting_peak = nesting;
+    return status;
+}
+
+/**
  * @brief Pushes an internal frame (§3.6): @p method, called without arguments, whose result an attach
  *        operator hands to the attach of @p region.
  */
@@ -2125,7 +2183,12 @@ static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    MachineLanguagePendingOperator_t *attach = &evaluation->operators[evaluation->operator_count++];
+    const MachineLanguageStatus_t nested = machine_language_nest_internal(evaluation);
+
+    if (nested != MACHINE_LANGUAGE_OK)
+        return nested;
+
+    MachineLanguagePendingOperator_t *attach = machine_language_take_operator(evaluation);
 
     attach->opcode = MACHINE_LANGUAGE_ATTACH;
     attach->operands_done = 1u;
@@ -2134,7 +2197,7 @@ static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_
     attach->end = end;
     attach->node = region;
     ++load->regions.internal_evaluations;
-    return machine_language_enter_method(load, method, 0u);
+    return machine_language_entered_internal(load, machine_language_enter_method(load, method, 0u));
 }
 
 /**
@@ -2177,7 +2240,12 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    MachineLanguagePendingOperator_t *registration = &evaluation->operators[evaluation->operator_count++];
+    const MachineLanguageStatus_t nested = machine_language_nest_internal(evaluation);
+
+    if (nested != MACHINE_LANGUAGE_OK)
+        return nested;
+
+    MachineLanguagePendingOperator_t *registration = machine_language_take_operator(evaluation);
 
     registration->opcode = MACHINE_LANGUAGE_REGISTER;
     registration->operands_done = 1u;
@@ -2196,7 +2264,7 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
     if (status == MACHINE_LANGUAGE_OK)
         status = machine_language_push(load, &connected);
     if (status == MACHINE_LANGUAGE_OK)
-        status = machine_language_enter_method(load, method, 2u);
+        status = machine_language_entered_internal(load, machine_language_enter_method(load, method, 2u));
     while (evaluation->value_count > values)
         machine_language_release(load, &evaluation->values[--evaluation->value_count]);
     return status;
@@ -2293,7 +2361,7 @@ static MachineLanguageStatus_t machine_language_run_name_term(MachineLanguageLoa
             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
             return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-        MachineLanguagePendingOperator_t *call = &evaluation->operators[evaluation->operator_count++];
+        MachineLanguagePendingOperator_t *call = machine_language_take_operator(evaluation);
 
         call->opcode = MACHINE_LANGUAGE_CALL;
         call->operands_done = 0u;
@@ -2455,8 +2523,11 @@ static MachineLanguageStatus_t machine_language_create_temporary(MachineLanguage
         return MACHINE_LANGUAGE_STATUS(LIMIT_TEMPORARY_NODES);
     status = advanced_configuration_and_power_interface_machine_language_namespace_add_child(
         &load->space, parent, segment, type, frame->table, out_node);
-    if (status == MACHINE_LANGUAGE_OK)
-        load->temporaries[load->temporary_count++] = *out_node;
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    load->temporaries[load->temporary_count++] = *out_node;
+    if (load->temporary_count > load->temporary_nodes_peak)
+        load->temporary_nodes_peak = load->temporary_count;
     return status;
 }
 
@@ -4082,7 +4153,7 @@ static MachineLanguageStatus_t machine_language_push_loaded(MachineLanguageLoad_
     if (target != NULL)
         (void) machine_language_push(load, target);
 
-    MachineLanguagePendingOperator_t *loaded = &evaluation->operators[evaluation->operator_count++];
+    MachineLanguagePendingOperator_t *loaded = machine_language_take_operator(evaluation);
 
     loaded->opcode = MACHINE_LANGUAGE_LOADED;
     loaded->operands_done = (target != NULL) ? 1u : 0u;
@@ -4230,7 +4301,7 @@ static MachineLanguageStatus_t machine_language_ask(MachineLanguageLoad_t *load)
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    MachineLanguagePendingOperator_t *answer = &evaluation->operators[evaluation->operator_count++];
+    MachineLanguagePendingOperator_t *answer = machine_language_take_operator(evaluation);
 
     answer->opcode = (uint16_t) MACHINE_LANGUAGE_ANSWER;
     answer->operands_done = 0u;
@@ -4881,6 +4952,8 @@ static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguag
             frame->pc = entry->after;
             if (evaluation->value_count + entry->values_before > evaluation->values_peak)
                 evaluation->values_peak = evaluation->value_count + entry->values_before;
+            if (evaluation->operator_count + entry->operators_before > evaluation->operators_peak)
+                evaluation->operators_peak = evaluation->operator_count + entry->operators_before;
             return status;
         }
     }
@@ -5088,6 +5161,7 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
         evaluation->operator_count;
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
     uint32_t values_peak = 0u;
+    uint32_t operators_peak = 0u;
     uint16_t index = first;
     uint16_t previous = 0u;
 
@@ -5175,12 +5249,15 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
         machine_language_count_record(load, record, 1u);
         ++cache->records_run;
         values_peak = (record->values_peak > values_peak) ? record->values_peak : values_peak;
+        operators_peak = (record->operators_peak > operators_peak) ? record->operators_peak : operators_peak;
         *out_ran = true;
         previous = (frame->pc == record->after) ? index : 0u;
         index = (frame->pc == record->after) ? record->next : 0u;
     }
     if (evaluation->value_count + values_peak > evaluation->values_peak)
         evaluation->values_peak = evaluation->value_count + values_peak;
+    if (evaluation->operator_count + operators_peak > evaluation->operators_peak)
+        evaluation->operators_peak = evaluation->operator_count + operators_peak;
     return status;
 }
 
@@ -5340,7 +5417,8 @@ static bool machine_language_exhausted(MachineLanguageStatus_t status)
     case MACHINE_LANGUAGE_STATUS(LIMIT_TIME_REQUESTED):
     case MACHINE_LANGUAGE_STATUS(LIMIT_HELD_MUTEXES):
     case MACHINE_LANGUAGE_STATUS(LIMIT_TABLES):
-    case MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES): return true;
+    case MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES):
+    case MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING): return true;
     default: return false;
     }
 }
@@ -5603,7 +5681,7 @@ static MachineLanguageStatus_t machine_language_evaluate_object(MachineLanguageL
     status = machine_language_push_host_frame(load, node->value.handle);
     if (status == MACHINE_LANGUAGE_OK)
     {
-        MachineLanguagePendingOperator_t *result = &evaluation->operators[evaluation->operator_count++];
+        MachineLanguagePendingOperator_t *result = machine_language_take_operator(evaluation);
 
         memset(result, 0, sizeof(*result));
         result->opcode = (uint16_t) MACHINE_LANGUAGE_RESULT;

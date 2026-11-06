@@ -95,4 +95,15 @@ extern bool made_up_load_on(KernelTest_t *test, AdvancedConfigurationAndPowerInt
 extern const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *
 made_up_root_node(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *name);
 
+/**
+ * @brief The peak the load reports for the limit of §6.1 whose peak is printed under @p peak_name, as
+ *        advanced_configuration_and_power_interface_machine_language_limits lists it.
+ *
+ * @param load      The load.
+ * @param peak_name The key, such as `frames_peak`.
+ * @return The peak, or 0xDEAD when no limit is printed under that key.
+ */
+extern uint32_t made_up_limit_peak(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                   const char *peak_name);
+
 #endif /* KERNEL_TESTS_ACPI_MADE_UP_TABLE_H */

@@ -694,6 +694,8 @@ KERNEL_TEST(a_full_cache_is_emptied_and_its_loop_builds_no_more_record)
     kernel_test_check(test, run.flushes == 2u,
                       "the cache is emptied once per loop that fills it: the inner, the outer");
     kernel_test_check(test, run.built == 256u, "each loop builds the 128 records it fills the cache with, then none");
+    kernel_test_check(test, run.records_peak == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORDS,
+                      "the cache held its 128 records at most");
     kernel_test_measure(test, "declined", run.declined);
 }
 
@@ -713,6 +715,33 @@ KERNEL_TEST(full_operators_or_constants_empty_the_cache)
                                                      "\\MAIN", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.flushes == 1u, "the cache is emptied once, its operators full");
+    kernel_test_measure(test, "record_operators_peak", run.nodes_peak);
+    kernel_test_measure(test, "record_constants_peak", run.constants_peak);
+    kernel_test_check(test,
+                      run.nodes_peak == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NODES &&
+                          run.constants_peak ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_CONSTANTS,
+                      "the records held their 256 operators and 256 constants at most");
+}
+
+/**
+ * @brief A loop whose statements read more names than the records of a load hold empties the cache, counted, and
+ *        builds no more record (§6.1): MAIN's 65 statements read one name each, past the 64, with records as without.
+ */
+KERNEL_TEST(full_names_empty_the_cache)
+{
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_names_full_aml, sizeof(predecoding_names_full_aml), 2u, "\\MAIN",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
+
+    kernel_test_check(
+        test, run.status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK && run.result == 130u,
+        "MAIN adds the 65 names twice");
+    kernel_test_check(test,
+                      run.flushes == 1u &&
+                          run.names_peak ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_RECORD_NAMES,
+                      "the cache is emptied once, its 64 names read");
 }
 
 /**

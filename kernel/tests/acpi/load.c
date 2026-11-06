@@ -492,11 +492,14 @@ KERNEL_TEST(table_loads_stop_at_their_limits)
         return;
     kernel_test_check(test, load_call("\\LDEA") == LOAD_STATUS(LIMIT_TABLES),
                       "loading a new table each turn fails with limit_tables");
-    if (!kernel_test_check(
-            test,
-            load_load.table_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
-                load_load.tables_loaded == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES - 1u,
-            "the load holds 128 tables: the DSDT and the 127 Load added"))
+    if (!kernel_test_check(test,
+                           load_load.table_count ==
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES &&
+                               load_load.tables_loaded ==
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES - 1u &&
+                               made_up_limit_peak(&load_load, "tables_peak") ==
+                                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLES,
+                           "the load holds 128 tables: the DSDT and the 127 Load added"))
     {
         load_close(test);
         return;
@@ -511,7 +514,10 @@ KERNEL_TEST(table_loads_stop_at_their_limits)
     load_load.table_bytes_copied =
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLE_BYTES - MADE_UP_TABLE_HEADER;
     kernel_test_check(test,
-                      load_call("\\LDON") == LOAD_STATUS(LIMIT_TABLE_BYTES) && load_integer("HND1") == LOAD_UNTOUCHED,
+                      load_call("\\LDON") == LOAD_STATUS(LIMIT_TABLE_BYTES) && load_integer("HND1") == LOAD_UNTOUCHED &&
+                          made_up_limit_peak(&load_load, "table_bytes_peak") ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TABLE_BYTES -
+                                  MADE_UP_TABLE_HEADER,
                       "a table longer than the bytes Load may still copy fails with limit_table_bytes");
     kernel_test_check(test,
                       load_load.space.arena_bytes +

@@ -146,9 +146,10 @@ KERNEL_TEST(an_evaluation_may_request_30_s_and_no_more)
     (void) time_evaluate("\\SLPN", 1u, 11u, &status);
     kernel_test_check(test, status == TIME_STATUS(LIMIT_TIME_REQUESTED) && time_turns() == 10u,
                       "in the next evaluation, ten run again and the eleventh is refused");
-    kernel_test_check(
-        test, time_host.clock_100ns == 60000u * TIME_MILLISECOND && time_load.services.time_requested_peak == 30000000u,
-        "the host slept 60 s in all, and no evaluation requested more than 30 s");
+    kernel_test_check(test,
+                      time_host.clock_100ns == 60000u * TIME_MILLISECOND &&
+                          made_up_limit_peak(&time_load, "time_requested_peak_us") == 30000000u,
+                      "the host slept 60 s in all, and no evaluation requested more than 30 s");
     time_close();
 }
 

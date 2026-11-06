@@ -204,15 +204,18 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap {
                                                                                                                last, 0
                                                                                                                when
                                                                                                                none. */
-    uint32_t objects;            /**< Objects allocated. */
-    uint32_t objects_freed;      /**< Of those, the ones freed: objects - objects_freed are alive. */
-    uint32_t stale_handles;      /**< Retains and releases of an object already freed, dying or left with no
-                                      reference: each is a defect, and changes nothing. A release whose block
-                                      another object took meanwhile is not seen. */
-    uint32_t object_bytes;       /**< Bytes the live objects' blocks take, headers included. */
-    uint32_t object_bytes_peak;  /**< The most object_bytes reached. */
-    uint32_t packages_padded;    /**< Packages with fewer initialisers than elements, padded with Uninitialized. */
-    uint32_t packages_truncated; /**< Packages with more initialisers than elements, the extra ones dropped. */
+    uint32_t objects;              /**< Objects allocated. */
+    uint32_t objects_freed;        /**< Of those, the ones freed: objects - objects_freed are alive. */
+    uint32_t stale_handles;        /**< Retains and releases of an object already freed, dying or left with no
+                                        reference: each is a defect, and changes nothing. A release whose block
+                                        another object took meanwhile is not seen. */
+    uint32_t object_bytes;         /**< Bytes the live objects' blocks take, headers included. */
+    uint32_t object_bytes_peak;    /**< The most object_bytes reached. */
+    uint32_t length_peaks[3];      /**< The longest String, Buffer and Package built, in this order: characters,
+                                        bytes and elements, each kind's index from its kind less the String's. */
+    uint32_t nested_packages_peak; /**< The most packages a data object the decoders built nested. */
+    uint32_t packages_padded;      /**< Packages with fewer initialisers than elements, padded with Uninitialized. */
+    uint32_t packages_truncated;   /**< Packages with more initialisers than elements, the extra ones dropped. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t;
 
 /**

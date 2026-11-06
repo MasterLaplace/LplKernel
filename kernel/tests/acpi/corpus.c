@@ -256,11 +256,31 @@ static void corpus_enter_mode(KernelTest_t *test)
 }
 
 /**
+ * @brief Prints the limits of §6.1 the load counted, the hits of each, then its peak when it is the same on every
+ *        target: the pages and runs memory takes are left out (§8.7).
+ */
+static void corpus_measure_limits(KernelTest_t *test)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS];
+
+    advanced_configuration_and_power_interface_machine_language_limits(&corpus_load, limits);
+    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS; ++index)
+    {
+        if (limits[index].hits_name != NULL)
+            kernel_test_measure(test, limits[index].hits_name, limits[index].hits);
+        if (limits[index].comparable)
+            kernel_test_measure(test, limits[index].peak_name, limits[index].peak);
+    }
+}
+
+/**
  * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
  *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform as step 0 left it, as the
  *        host harness does, and prints what it ran and counted, the tables Load added included, the kept
- *        data found faulty by the check and by the reads (O20), the fold of the C-states it published, and what
- *        the load and the initialisation executed, which must hold no opcode the interpreter does not run (§4.1).
+ *        data found faulty by the check and by the reads (O20), the fold of the C-states it published, the limits of
+ *        §6.1 it reached and their peaks, and what the load and the initialisation executed, which must hold no
+ *        opcode the interpreter does not run (§4.1).
  */
 static void corpus_initialize(KernelTest_t *test)
 {
@@ -316,6 +336,12 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure_hexadecimal(test, "idle_fold",
                                     advanced_configuration_and_power_interface_processor_idle_fold(&idle));
     kernel_test_measure(test, "first_failure", initialization.first_failure);
+    corpus_measure_limits(test);
+    kernel_test_measure(test, "flushes", corpus_load.predecoding.flushes);
+    kernel_test_measure(test, "records_peak", corpus_load.predecoding.records_peak);
+    kernel_test_measure(test, "record_operators_peak", corpus_load.predecoding.nodes_peak);
+    kernel_test_measure(test, "record_constants_peak", corpus_load.predecoding.constants_peak);
+    kernel_test_measure(test, "record_names_peak", corpus_load.predecoding.names_peak);
     corpus_measure_executed(test);
     kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
                       "the initialisation leaves no frame and no temporary node behind");

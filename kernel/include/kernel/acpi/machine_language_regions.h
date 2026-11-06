@@ -134,6 +134,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
     uint32_t pci_attachments;           /**< PCI_Config regions attached: their address resolved (§4.4). */
     uint32_t internal_evaluations;      /**< Methods evaluated in internal frames for those attaches (§3.6, O13). */
     uint32_t internal_failures;         /**< Of those, the ones that failed, their object taken as absent. */
+    uint32_t internal_nesting_peak;     /**< Most internal frames, of attaches and of _REG, nested in one another
+                                             at once, each counted once it entered its method (§6.1). */
     uint32_t pci_protected_writes;      /**< Writes to the predefined header of a PCI function, dropped. */
     uint32_t pci_lost_accesses;         /**< Accesses to a function the attach could not reach: all ones read,
                                              writes dropped. */

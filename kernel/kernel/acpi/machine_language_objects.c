@@ -29,6 +29,11 @@ _Static_assert(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE
                        MACHINE_LANGUAGE_FINE_CLASS_BYTES / MACHINE_LANGUAGE_OBJECT_ALIGNMENT +
                            4u * MACHINE_LANGUAGE_CLASSES_PER_DOUBLING,
                "the size classes are the fine ones, then four doublings from 256 bytes to the large objects");
+_Static_assert(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER ==
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING + 1 &&
+                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE ==
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING + 2,
+               "the heap's length_peaks hold a String's, a Buffer's and a Package's in their kinds' order");
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t MachineLanguageValue_t;
@@ -783,6 +788,10 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     header->references = 1u;
     header->kind = kind;
     header->length = length;
+    if ((uint32_t) (kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING) <
+            sizeof(heap->length_peaks) / sizeof(heap->length_peaks[0]) &&
+        length > heap->length_peaks[kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING])
+        heap->length_peaks[kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING] = length;
     ++heap->objects;
     heap->object_bytes += block_bytes;
     if (heap->object_bytes > heap->object_bytes_peak)
@@ -1266,7 +1275,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate_data(
                                                            &frames[depth], &first, &constant);
                     if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK && constant)
                     {
-                        ++depth;
+                        if (++depth > heap->nested_packages_peak)
+                            heap->nested_packages_peak = depth;
                         pc = first;
                         continue;
                     }

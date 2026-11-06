@@ -293,9 +293,30 @@ static void harness_print_executed(const AdvancedConfigurationAndPowerInterfaceM
 }
 
 /**
+ * @brief Prints the limits of §6.1 the load counted on one line, `aml run limits`: per limit, its hits, then its
+ *        peak.
+ */
+static void harness_print_limits(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS];
+
+    advanced_configuration_and_power_interface_machine_language_limits(load, limits);
+    printf("aml run limits");
+    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS; ++index)
+    {
+        if (limits[index].hits_name != NULL)
+            printf(" %s=%u", limits[index].hits_name, limits[index].hits);
+        printf(" %s=%u", limits[index].peak_name, limits[index].peak);
+    }
+    printf("\n");
+}
+
+/**
  * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
  *        operating system services it called, the tables Load and LoadTable added, the kept data a first
- *        read found a fault in (O20), the failures per status, the region spaces refused, the opcodes
+ *        read found a fault in (O20), the limits of §6.1 it reached and their peaks, the failures per status,
+ *        the region spaces refused, the opcodes
  *        that failed as unimplemented, and the opcodes, spaces and AccessTypes it executed.
  */
 static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
@@ -311,12 +332,14 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            evaluation->forbidden_conversions, load->heap.objects, load->heap.objects_freed);
     printf("aml run namespace lookups=%u probes=%u back_edges=%u\n", load->space.lookups, load->space.probes,
            evaluation->back_edges);
-    printf("aml run predecoding records_run=%u built=%u flushes=%u records_peak=%u fused_comparisons=%u "
+    printf("aml run predecoding records_run=%u built=%u flushes=%u records_peak=%u record_operators_peak=%u "
+           "record_constants_peak=%u record_names_peak=%u fused_comparisons=%u "
            "tight_turns=%u searches=%u handed_back_loops=%u stale_names=%u declined_shape=%u declined_limit=%u "
            "declined_operand=%u declined_room=%u declined_operation=%u declined_full=%u declined_target=%u "
            "declined_name=%u\n",
            load->predecoding.records_run, load->predecoding.built, load->predecoding.flushes,
-           load->predecoding.records_peak, load->predecoding.fused_comparisons, load->predecoding.tight_turns,
+           load->predecoding.records_peak, load->predecoding.nodes_peak, load->predecoding.constants_peak,
+           load->predecoding.names_peak, load->predecoding.fused_comparisons, load->predecoding.tight_turns,
            load->predecoding.searches, load->predecoding.handed_back_loops, load->predecoding.stale_names,
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_SHAPE],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_LIMIT],
@@ -359,6 +382,7 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            regions->pci_attachments, regions->internal_evaluations, regions->internal_failures,
            regions->pci_protected_writes, regions->pci_lost_accesses, regions->pci_ecam_accesses,
            regions->pci_registrations, regions->pci_registration_failures);
+    harness_print_limits(load);
     for (uint32_t space = 0u; space < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SPACES; ++space)
         if (regions->space_unsupported[space] != 0u)
             printf("aml run space 0x%02X=%u\n", space, regions->space_unsupported[space]);

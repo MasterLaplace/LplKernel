@@ -11,6 +11,6 @@
 inside=kernel_test_body_the_window_w4_loop_of_a_thousand_turns
 times=1
 append=lpl.test=advanced_configuration_and_power_interface_microbenchmarks.the_window_w4_loop_of_a_thousand_turns
-instructions=6140356
-accesses=2781217
+instructions=6177211
+accesses=2805592
 tolerance=1

@@ -156,6 +156,8 @@ static const char
         [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_METHOD_WITHOUT_BODY] =
             "method_without_body",
         [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OPERANDS_MISSING] = "operands_missing",
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_INTERNAL_NESTING] =
+            "limit_internal_nesting",
 };
 
 const char *advanced_configuration_and_power_interface_machine_language_opcode_name(uint32_t opcode)

@@ -44,6 +44,10 @@ typedef struct PredecodingRun {
     uint32_t declined_names;  /**< Of those, the ones handed back for a name they read. */
     uint32_t stale_names;     /**< Names whose counted resolution found another node than their record checked. */
     uint32_t flushes;         /**< Times the cache was emptied. */
+    uint32_t records_peak;    /**< Most records the cache held at once. */
+    uint32_t nodes_peak;      /**< Most operators they held at once. */
+    uint32_t constants_peak;  /**< Most constants they held at once. */
+    uint32_t names_peak;      /**< Most names they read at once. */
     uint32_t built;           /**< Records built. */
     uint32_t tight_turns;     /**< Turns of While run as tight loops. */
     uint32_t searches;        /**< Statements whose record was searched in the hash. */

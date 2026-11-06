@@ -112,7 +112,7 @@ KERNEL_TEST(a_table_s_fields_make_at_most_two_to_the_twenty_accesses)
                       field_engine_limited() == 1u &&
                           field_engine_load.evaluation.field_accesses ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FIELD_ACCESSES &&
-                          field_engine_load.regions.field_accesses_peak ==
+                          made_up_limit_peak(&field_engine_load, "field_accesses_peak") ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_FIELD_ACCESSES,
                       "the loop stops at 2^20 accesses, with limit_field_accesses");
     kernel_test_check(test, field_engine_load.regions.field_writes == 17u,

@@ -526,6 +526,8 @@ static MachineLanguageStatus_t machine_language_declare_temporary(MachineLanguag
     if (status == MACHINE_LANGUAGE_OK)
     {
         load->temporaries[load->temporary_count++] = *out_index;
+        if (load->temporary_count > load->temporary_nodes_peak)
+            load->temporary_nodes_peak = load->temporary_count;
         walk->last_created = *out_index;
     }
     return status;
@@ -2990,7 +2992,8 @@ machine_language_build_kept(AdvancedConfigurationAndPowerInterfaceMachineLanguag
                 status = machine_language_open_kept(load, &element, &frames[depth]);
                 if (status != MACHINE_LANGUAGE_OK)
                     return machine_language_abandon_kept(load, frames, depth, status);
-                ++depth;
+                if (++depth > load->heap.nested_packages_peak)
+                    load->heap.nested_packages_peak = depth;
                 pc = element.first;
                 continue;
             }
@@ -3548,6 +3551,39 @@ static void machine_language_declare_accepted_table(AdvancedConfigurationAndPowe
     machine_language_walk_table(load, load->table_count++, MACHINE_LANGUAGE_PASS_DECLARE);
 }
 
+/**
+ * @brief The larger of @p first and @p second.
+ */
+static uint32_t machine_language_larger(uint32_t first, uint32_t second) { return (first > second) ? first : second; }
+
+/**
+ * @brief A limit whose hits @p hits_name counts, @p hits of them, and whose peak is @p peak.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+machine_language_bound(const char *hits_name, uint32_t hits, const char *peak_name, uint32_t peak, bool comparable)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t limit = {
+        .hits_name = hits_name,
+        .peak_name = peak_name,
+        .hits = hits,
+        .peak = peak,
+        .comparable = comparable,
+    };
+
+    return limit;
+}
+
+/**
+ * @brief The limit a fault of @p status reaches, its hits the faults counted under that status.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+machine_language_status_limit(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                              MachineLanguageStatus_t status, const char *peak_name, uint32_t peak, bool comparable)
+{
+    return machine_language_bound(advanced_configuration_and_power_interface_machine_language_status_name(status),
+                                  load->faults[status], peak_name, peak, comparable);
+}
+
 bool advanced_configuration_and_power_interface_machine_language_open(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes)
@@ -3922,4 +3958,65 @@ uint32_t advanced_configuration_and_power_interface_machine_language_namespace_f
                 advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->next_sibling;
     }
     return fold;
+}
+
+void advanced_configuration_and_power_interface_machine_language_limits(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        out_limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS])
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const uint64_t time_requested = load->services.time_requested_peak;
+    uint32_t index = 0u;
+
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES), "frames_peak",
+                                                        evaluation->frames_peak, true);
+    out_limits[index++] =
+        machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_BLOCKS), "blocks_peak",
+                                      machine_language_larger(evaluation->blocks_peak, load->blocks_peak), true);
+    out_limits[index++] =
+        machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS), "pending_operators_peak",
+                                      machine_language_larger(evaluation->operators_peak, load->pending_peak), true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_VALUES), "values_peak",
+                                                        evaluation->values_peak, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_TEMPORARY_NODES),
+                                                        "temporary_nodes_peak", load->temporary_nodes_peak, true);
+    out_limits[index++] =
+        machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING), "internal_nesting_peak",
+                                      load->regions.internal_nesting_peak, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS),
+                                                        "loop_iterations_peak", evaluation->iterations_peak, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_FIELD_ACCESSES),
+                                                        "field_accesses_peak", load->regions.field_accesses_peak, true);
+    out_limits[index++] =
+        machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_TIME_REQUESTED), "time_requested_peak_us",
+                                      (time_requested > UINT32_MAX) ? UINT32_MAX : (uint32_t) time_requested, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_PACKAGE_ELEMENTS),
+                                                        "package_elements_peak", load->heap.length_peaks[2], true);
+    out_limits[index++] = machine_language_status_limit(
+        load, MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES), "buffer_bytes_peak",
+        (load->heap.length_peaks[0] > load->heap.length_peaks[1]) ? load->heap.length_peaks[0] :
+                                                                    load->heap.length_peaks[1],
+        true);
+    out_limits[index++] =
+        machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(NAME_RESOLUTION_LOOP), "name_indirections_peak",
+                                      evaluation->name_indirections_peak, true);
+    out_limits[index++] =
+        machine_language_bound(NULL, 0u, "nested_packages_peak", load->heap.nested_packages_peak, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_OBJECT_RUNS),
+                                                        "object_runs_peak", load->heap.run_count, false);
+    out_limits[index++] = machine_language_status_limit(
+        load, MACHINE_LANGUAGE_STATUS(LIMIT_NAMESPACE_NODES), "namespace_nodes_peak",
+        load->space.node_count - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY),
+                                                        "arena_bytes_peak", load->space.arena_bytes_peak, false);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_TABLES), "tables_peak",
+                                                        load->table_count, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES),
+                                                        "table_bytes_peak", load->table_bytes_copied, true);
+    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_HELD_MUTEXES),
+                                                        "held_mutexes_peak", load->services.held_peak, true);
+    out_limits[index++] = machine_language_bound("notifications_dropped", load->services.notifications_dropped,
+                                                 "notifications_peak", load->services.notification_peak, true);
+    out_limits[index] = machine_language_bound(NULL, 0u, "mappings_peak", load->regions.mapping_count, true);
 }

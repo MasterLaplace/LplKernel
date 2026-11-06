@@ -1631,11 +1631,13 @@ KERNEL_TEST(an_external_past_the_node_cap_is_counted_once)
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(0u, "DSDT", aml, sizeof(aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
-    kernel_test_check(test,
-                      made_up_load.load_errors == 1u &&
-                          made_up_load.first_load_error ==
-                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_NAMESPACE_NODES,
-                      "the External is counted once, as limit_namespace_nodes");
+    kernel_test_check(
+        test,
+        made_up_load.load_errors == 1u &&
+            made_up_load.first_load_error ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_NAMESPACE_NODES &&
+            made_up_limit_peak(&made_up_load, "namespace_nodes_peak") == nodes,
+        "the External is counted once, as limit_namespace_nodes, the cap's nodes all taken");
     made_up_close(test);
 }
 
@@ -2470,6 +2472,8 @@ KERNEL_TEST(the_object_heap_refuses_a_run_past_its_last)
                       "one buffer is refused, as limit_object_runs");
     kernel_test_check(test,
                       made_up_object(&made_up_node("L254")->value)->length == 0x1000u &&
+                          made_up_limit_peak(&made_up_load, "object_runs_peak") ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_OBJECT_RUNS &&
                           made_up_node("L255")->value.kind !=
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
                       "the first run holds the small objects, 255 hold a buffer each, the 256th buffer has none");
@@ -2575,8 +2579,10 @@ KERNEL_TEST(a_string_of_the_largest_length_is_built)
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_definition_block(table, "DSDT", 2u, aml, length));
-    kernel_test_check(test, made_up_object(&made_up_node("SBIG")->value)->length == 65536u,
-                      "a String of 65,536 characters is built");
+    kernel_test_check(test,
+                      made_up_object(&made_up_node("SBIG")->value)->length == 65536u &&
+                          made_up_limit_peak(&made_up_load, "buffer_bytes_peak") == 65536u,
+                      "a String of 65,536 characters is built, the most one holds");
     kernel_test_check(test,
                       made_up_node("SOVR")->value.kind !=
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING &&
