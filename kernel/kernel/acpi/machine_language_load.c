@@ -101,6 +101,8 @@ typedef struct MachineLanguageWalk {
                            so those it has are all the first statement's that needed one. */
     bool closes_body; /**< Whether a TermList the statement opened reached its end. */
     bool abandons;    /**< Whether a fault abandoned the rest of the table. */
+    uint32_t entered; /**< TermLists of scopes it has entered for the interpreter and not left yet (O21): its first
+                           construct is then the innermost one's, which it leaves at its end. */
 } MachineLanguageWalk_t;
 
 /**
@@ -1567,10 +1569,65 @@ static void machine_language_record_method(MachineLanguageWalk_t *walk, const Ma
 }
 
 /**
+ * @brief Hands the interpreter the TermList of the scope-opening statement @p active declares in a table's code, to run
+ *        in @p scope, as a load whose general_load is set does: the walk goes on past the statement, and stops there.
+ */
+static MachineLanguageStatus_t machine_language_hand_list_back(MachineLanguageWalk_t *walk,
+                                                               const MachineLanguagePendingOperator_t *active,
+                                                               uint32_t scope)
+{
+    walk->declaration->body = walk->pc;
+    walk->declaration->scope = scope;
+    --walk->pending_count;
+    machine_language_count_stepped_over(walk, walk->pc, active->end);
+    walk->pc = active->end;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Enters the TermList of the scope-opening statement @p active declares in a table's code, to run in @p scope,
+ *        where the interpreter would run it (O21): its construct opened in the interpreter's frame, the walk's first
+ *        construct becomes that TermList, whose statements the walk takes up to one the interpreter runs, and which it
+ *        leaves at its end.
+ */
+static MachineLanguageStatus_t
+machine_language_enter_list(MachineLanguageWalk_t *walk, const MachineLanguagePendingOperator_t *active, uint32_t scope)
+{
+    MachineLanguageBlock_t *block = machine_language_top_block(walk);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_enter_table_scope(walk->load, active->start,
+                                                                                      active->end, scope);
+
+    if (status != MACHINE_LANGUAGE_OK)
+        return status;
+    --walk->pending_count;
+    block->scope = scope;
+    block->end = active->end;
+    block->start = active->start;
+    ++walk->entered;
+    ++walk->load->scopes_entered;
+    return MACHINE_LANGUAGE_OK;
+}
+
+/**
+ * @brief Leaves, at its end, the TermList the walk entered last (O21): the interpreter's construct for it closed, the
+ *        walk's first construct becomes the one around it again.
+ */
+static void machine_language_leave_list(MachineLanguageWalk_t *walk)
+{
+    MachineLanguageBlock_t *block = machine_language_top_block(walk);
+
+    advanced_configuration_and_power_interface_machine_language_leave_table_scope(walk->load, &block->scope,
+                                                                                  &block->end);
+    --walk->entered;
+}
+
+/**
  * @brief Opens the list that ends the active operator: a TermList, a FieldList or a
  *        PackageElementList, run as a construct up to the operator's end. A method body is skipped
  *        but in the decoding pass, and the body of a duplicate declaration in every pass. The TermList
- *        of a statement whose code the interpreter runs, which opens a scope, is left to the interpreter.
+ *        of a statement whose code the interpreter runs, which opens a scope, is entered for the interpreter
+ *        (O21), or left to it by a load whose general_load is set.
  *
  * @return OK, a fault, or ASKS when a BankField waits for the interpreter to run its BankValue.
  */
@@ -1631,14 +1688,8 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     if (machine_language_builds(walk, active.node))
         machine_language_build_scope_object(walk, &active);
     if (walk->declaration != NULL && opens_scope && walk->block_count == 1u)
-    {
-        walk->declaration->body = walk->pc;
-        walk->declaration->scope = scope;
-        --walk->pending_count;
-        machine_language_count_stepped_over(walk, walk->pc, active.end);
-        walk->pc = active.end;
-        return MACHINE_LANGUAGE_OK;
-    }
+        return load->general_load ? machine_language_hand_list_back(walk, &active, scope) :
+                                    machine_language_enter_list(walk, &active, scope);
     if (placement == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_METHOD_BODY)
     {
         load->frame_methods[load->frame_count] = active.node;
@@ -2498,6 +2549,11 @@ static MachineLanguageStatus_t machine_language_step(MachineLanguageWalk_t *walk
         --walk->pending_count;
         return MACHINE_LANGUAGE_OK;
     }
+    if (walk->pc == block->end && walk->entered != 0u && walk->block_count == 1u)
+    {
+        machine_language_leave_list(walk);
+        return MACHINE_LANGUAGE_OK;
+    }
     if (walk->pc == block->end)
     {
         walk->closes_body =
@@ -2542,6 +2598,7 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
     walk->asked = 0u;
     walk->closes_body = false;
     walk->abandons = false;
+    walk->entered = 0u;
     block->kind = MACHINE_LANGUAGE_OPERAND(NONE);
     block->placement = placement;
     block->pending_base = 0u;
@@ -2553,8 +2610,9 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
 }
 
 /**
- * @brief Whether a walk's first construct ends at its pc, or the statement there is one the interpreter runs:
- *        either ends the run of declarations the walk takes for the interpreter.
+ * @brief Whether a walk's first construct ends at its pc, unless it is a TermList the walk entered (O21), which it
+ *        leaves instead, or the statement there is one the interpreter runs: either ends the run of declarations the
+ *        walk takes for the interpreter.
  */
 static bool machine_language_code_follows(MachineLanguageWalk_t *walk)
 {
@@ -2562,8 +2620,9 @@ static bool machine_language_code_follows(MachineLanguageWalk_t *walk)
     uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
     uint32_t after = 0u;
 
-    if (walk->pc >= block->end ||
-        advanced_configuration_and_power_interface_machine_language_starts_name(walk->bytes[walk->pc]))
+    if (walk->pc >= block->end)
+        return walk->entered == 0u;
+    if (advanced_configuration_and_power_interface_machine_language_starts_name(walk->bytes[walk->pc]))
         return true;
     return advanced_configuration_and_power_interface_machine_language_read_opcode(
                walk->bytes, walk->pc, block->end, &opcode, &after) == MACHINE_LANGUAGE_OK &&

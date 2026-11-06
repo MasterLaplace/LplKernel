@@ -207,6 +207,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t integers_built_directly;       /**< Of the data objects stepped over, the integer constants the
                                                  declaration pass's decoder built itself instead of the general data
                                                  decoder (O19). */
+    uint32_t scopes_entered;                /**< TermLists of a Scope, Device, Processor, PowerResource or
+                                                 ThermalZone the declaration pass entered itself while the interpreter
+                                                 runs a table's code, instead of handing each back to it (O21). */
     uint32_t data_kept;           /**< Data objects of a Name the declaration pass kept in their table once their head
                                        read, neither checked nor built, and stepped over, until a name resolution
                                        reaches them (O20). */
@@ -330,13 +333,40 @@ advanced_configuration_and_power_interface_machine_language_run_table_term(
     uint32_t limit);
 
 /**
+ * @brief Opens, in the running frame of a table's code, the construct the TermList of a Scope, Device, Processor,
+ *        PowerResource or ThermalZone the declaration pass enters runs in, as the interpreter opens it for a TermList
+ *        handed back to it (§3.6, O21).
+ *
+ * @param load  The load.
+ * @param start Where the statement that declares the scope starts.
+ * @param end   Where its TermList ends.
+ * @param scope The node its names are resolved from.
+ * @return OK, or LIMIT_BLOCKS when the evaluation holds 512 constructs open (§6.1), and nothing opened.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_enter_table_scope(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t start, uint32_t end, uint32_t scope);
+
+/**
+ * @brief Closes the construct advanced_configuration_and_power_interface_machine_language_enter_table_scope opened
+ *        last, once the declaration pass reaches the end of its TermList, as the interpreter closes it.
+ *
+ * @param load      The load.
+ * @param out_scope Receives the node the construct around it resolves names from.
+ * @param out_end   Receives where that construct ends.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_leave_table_scope(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t *out_scope, uint32_t *out_end);
+
+/**
  * @brief Takes statements of table-level code the interpreter does not run itself, in load->declaration
  *        (§3.6): from @p start, a declaration, data or Noop, a statement whose decoding faults, or one that
  *        failed to run and is stepped over, then every such statement after it up to one the interpreter
- *        runs, the end of the construct, or the TermList of a scope it declared; or, @p not_run holding,
- *        the one If, While or Else at @p start, whose code is declared without running. A statement waits
- *        for a term when load->declaration.asks is not 0 on entry, which it then goes on from with
- *        load->declaration's answers.
+ *        runs or the end of the construct; it enters the TermList of each scope it declares, the interpreter's
+ *        construct for it opened, and leaves it at its end (O21), where a load whose general_load is set stops
+ *        at that TermList instead; or, @p not_run holding, the one If, While or Else at @p start, whose code is
+ *        declared without running. A statement waits for a term when load->declaration.asks is not 0 on entry,
+ *        which it then goes on from with load->declaration's answers.
  *
  * @param load    The load.
  * @param table   The table's index in the load.

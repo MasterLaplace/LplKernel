@@ -4349,7 +4349,9 @@ static MachineLanguageStatus_t machine_language_ask(MachineLanguageLoad_t *load)
  * @brief Hands the load the statement of a table's code the running frame is at, a statement it does not
  *        run itself, then goes on as the load says: past the statement, into the TermList of the scope it
  *        declared, at the term it waits for, past the construct a fault left, the next statement stepping
- *        over the Else after it when it is the body of an If, or past the table, whose frame it drops.
+ *        over the Else after it when it is the body of an If, or past the table, whose frame it drops. The load
+ *        may have entered TermLists of scopes, their constructs opened (O21): the term it waits for and the
+ *        statement it goes on at then stand in the innermost of them, and the construct a fault left is that one.
  *
  * @param load    The load.
  * @param not_run Whether the statement's code is declared without running it.
@@ -4358,11 +4360,11 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageLoad_t *l
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     MachineLanguageFrame_t *frame = machine_language_frame(evaluation);
-    const MachineLanguageBlock_t *block = machine_language_block(evaluation);
+    const MachineLanguageBlock_t *around = machine_language_block(evaluation);
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t *declaration = &load->declaration;
 
     advanced_configuration_and_power_interface_machine_language_declare_statement(
-        load, frame->table - 1u, block->scope, frame->statement, block->end, not_run);
+        load, frame->table - 1u, around->scope, frame->statement, around->end, not_run);
     if (declaration->asks != 0u)
         return machine_language_ask(load);
     if (declaration->abandons)
@@ -4372,6 +4374,8 @@ static MachineLanguageStatus_t machine_language_declare(MachineLanguageLoad_t *l
     }
     if (declaration->leaves)
     {
+        const MachineLanguageBlock_t *block = machine_language_block(evaluation);
+
         frame->pc = block->end;
         if (block->kind == MACHINE_LANGUAGE_RUN_IF)
             frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
@@ -5768,6 +5772,26 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     while (evaluation->frame_count > base)
         machine_language_drop_frame(load);
     return MACHINE_LANGUAGE_OK;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_enter_table_scope(
+    MachineLanguageLoad_t *load, uint32_t start, uint32_t end, uint32_t scope)
+{
+    return machine_language_open(&load->evaluation, MACHINE_LANGUAGE_RUN_TERMS, start, end, scope);
+}
+
+void advanced_configuration_and_power_interface_machine_language_leave_table_scope(MachineLanguageLoad_t *load,
+                                                                                   uint32_t *out_scope,
+                                                                                   uint32_t *out_end)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+
+    --evaluation->block_count;
+
+    const MachineLanguageBlock_t *block = machine_language_block(evaluation);
+
+    *out_scope = block->scope;
+    *out_end = block->end;
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(

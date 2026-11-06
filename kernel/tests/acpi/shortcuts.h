@@ -38,6 +38,7 @@ typedef enum ShortcutsTable {
     SHORTCUTS_TABLE_DATA,       /**< Names of every kind of constant data. */
     SHORTCUTS_TABLE_STATEMENTS, /**< Statements of every shape the declaration pass's decoder takes (O19). */
     SHORTCUTS_TABLE_REGIONS,    /**< OperationRegions the decoder takes, hands back, or leaves to the walk (O19). */
+    SHORTCUTS_TABLE_SCOPES, /**< Table-level code inside the nested TermLists of the scopes a table declares (O21). */
 } ShortcutsTable_t;
 
 /**
@@ -47,6 +48,7 @@ typedef struct ShortcutsTaken {
     uint32_t data_stepped_over;             /**< Data objects of a Name stepped over (O18). */
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass's decoder took (O19). */
     uint32_t integers_built_directly;       /**< Integer constants of a Name the decoder built itself (O19). */
+    uint32_t scopes_entered;                /**< TermLists of table-level code the declaration pass entered (O21). */
 } ShortcutsTaken_t;
 
 /**
