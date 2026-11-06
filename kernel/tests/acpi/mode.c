@@ -1,5 +1,8 @@
+#include "fixtures/mode.h"
+#include "made_up_table.h"
 #include "simulated_host.h"
 
+#include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
@@ -31,6 +34,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_mode, KERNEL_TEST_S
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t mode_host;
 static AdvancedConfigurationAndPowerInterfaceFixedDescription_t mode_fadt;
 static AdvancedConfigurationAndPowerInterfaceModeSwitch_t mode_switch;
+static AdvancedConfigurationAndPowerInterfaceDirectory_t mode_directory;
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t mode_load;
+static uint8_t mode_dsdt[MADE_UP_TABLE_HEADER + sizeof(mode_table_code_reads_sci_enable_aml)];
 
 /**
  * @brief A register of @p bits bits at port @p port.
@@ -428,6 +434,75 @@ KERNEL_TEST(a_booted_platform_with_a_legacy_mode_is_switched_at_the_first_read)
     mode_boot();
     kernel_test_check(test, mode_host.firmware_command_port == 0u,
                       "an SMI_CMD past port 0xFFFF is answered at no port, not at its low 16 bits");
+}
+
+/**
+ * @brief Gives the made-up platform a directory of its FADT and one DSDT, the table whose table-level code reads
+ *        SCI_EN, then opens a load on its host.
+ *
+ * @return false when the namespace could not be opened, which the test is told.
+ */
+static bool mode_open_directory(KernelTest_t *test)
+{
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *dsdt =
+        made_up_definition_block(mode_dsdt, "DSDT", 2u, mode_table_code_reads_sci_enable_aml,
+                                 (uint32_t) sizeof(mode_table_code_reads_sci_enable_aml));
+    AdvancedConfigurationAndPowerInterfaceTable_t *entry = &mode_directory.tables[0];
+
+    memset(&mode_directory, 0, sizeof(mode_directory));
+    mode_directory.host = &mode_host.host;
+    mode_directory.fixed_description = mode_fadt;
+    mode_directory.table_count = 1u;
+    memcpy(entry->signature, "DSDT", sizeof(entry->signature));
+    entry->length = dsdt->length;
+    entry->revision = dsdt->revision;
+    entry->checksum_valid = true;
+    entry->header = dsdt;
+    return kernel_test_check(test,
+                             advanced_configuration_and_power_interface_machine_language_open(
+                                 &mode_load, &mode_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+                             "the namespace opens");
+}
+
+/**
+ * @brief The Integer SCIS holds once the table's code ran, or 0xDEAD when it holds none.
+ */
+static uint64_t mode_sci_enable_read(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node = made_up_root_node(&mode_load, "SCIS");
+
+    if (node == NULL || node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+        return 0xDEADu;
+    return node->value.payload;
+}
+
+/**
+ * @brief Step 0 runs before any AML (§3.8), table-level code included: on a platform in legacy mode, a DSDT whose
+ *        code at load reads SCI_EN through a SystemIO field over PM1a_CNT stores 1 once the simulated host boots it
+ *        as the kernel boots, where the same table loaded before the switch stores 0.
+ */
+KERNEL_TEST(step_zero_runs_before_the_table_level_code_that_reads_sci_en)
+{
+    mode_open_platform();
+    if (mode_open_directory(test))
+    {
+        mode_boot();
+        advanced_configuration_and_power_interface_machine_language_load_directory(&mode_load, &mode_directory);
+        kernel_test_check(test, mode_sci_enable_read() == 0u, "loaded before the switch, the table reads SCI_EN clear");
+    }
+    advanced_configuration_and_power_interface_machine_language_close(&mode_load);
+
+    mode_open_platform();
+    if (mode_open_directory(test))
+    {
+        advanced_configuration_and_power_interface_simulated_host_boot(&mode_host, &mode_directory, &mode_load,
+                                                                       &mode_switch);
+        kernel_test_check(test,
+                          mode_switch.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED &&
+                              mode_sci_enable_read() == 1u,
+                          "booted, the platform is switched first and the table reads SCI_EN set");
+    }
+    advanced_configuration_and_power_interface_machine_language_close(&mode_load);
 }
 
 /**

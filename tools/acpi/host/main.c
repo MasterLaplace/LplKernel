@@ -845,18 +845,6 @@ static AdvancedConfigurationAndPowerInterfaceModeSwitch_t harness_mode;
 static uint32_t harness_unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT];
 
 /**
- * @brief Puts the recorded machine @p simulated serves in ACPI mode, as step 0 does at boot before any AML
- *        runs (§3.8), its firmware answering as the platform @p directory's FADT describes boots.
- */
-static void harness_enter_mode(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
-                               const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
-{
-    advanced_configuration_and_power_interface_simulated_host_boot_platform(simulated, &directory->fixed_description);
-    advanced_configuration_and_power_interface_enter_mode(&simulated->host, &directory->fixed_description,
-                                                          &harness_mode);
-}
-
-/**
  * @brief The machine a namespace is initialised for: the CPU slots of @p directory's MADT and its FADT,
  *        none without a directory, a processor that implements MONITOR/MWAIT, since a recorded machine's
  *        processor is not recorded, and the platform as step 0 left it: not run for raw definition blocks,
@@ -1244,8 +1232,8 @@ static int harness_dump_namespace(const char *path, HarnessView_t view, const ch
         {
             if (view == HARNESS_VIEW_INITIALIZATION)
             {
-                harness_enter_mode(&machine.simulated, &directory);
-                advanced_configuration_and_power_interface_machine_language_load_directory(&load, &directory);
+                advanced_configuration_and_power_interface_simulated_host_boot(&machine.simulated, &directory, &load,
+                                                                               &harness_mode);
                 printf("aml load placed=%u presets=%u\n", machine.placed_count,
                        (presets != NULL) ? harness_apply_presets(&load, presets) : 0u);
             }

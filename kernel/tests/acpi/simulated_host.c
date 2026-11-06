@@ -703,6 +703,17 @@ void advanced_configuration_and_power_interface_simulated_host_boot_platform(
     simulated->firmware_enable_command = fadt->enable_command;
 }
 
+void advanced_configuration_and_power_interface_simulated_host_boot(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_mode)
+{
+    advanced_configuration_and_power_interface_simulated_host_boot_platform(simulated, &directory->fixed_description);
+    advanced_configuration_and_power_interface_enter_mode(&simulated->host, &directory->fixed_description, out_mode);
+    advanced_configuration_and_power_interface_machine_language_load_directory(load, directory);
+}
+
 uint64_t advanced_configuration_and_power_interface_simulated_host_peek(
     const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint64_t physical_address, uint8_t width)
 {
