@@ -298,8 +298,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                        services hold and counted. */
     uint32_t bytes_decoded; /**< AML bytes the walks of every pass decoded, those they stepped over left out (a method
                                  body the declaration pass records, data kept in its table past its head, a construct
-                                 left to the interpreter, a duplicate's list, what a fault skips), and the bytes of the
-                                 statements loop records were decoded from, in a build that counts what runs (§4.1). */
+                                 left to the interpreter, a duplicate's list, what a fault skips), in a build that
+                               counts what runs (§4.1); none for the statements a loop's records are decoded from, so
+                               that a run with records and one without do the same work (§8.1). */
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t
         predecoding; /**< The records of the loops that loop: last, past what opening the load zeroes. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;

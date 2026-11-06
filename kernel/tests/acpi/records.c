@@ -17,8 +17,6 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_records, KERNEL_TES
              head of 7 bytes but its body of 13. */
 #define RECORDS_TABLE_BYTES                                                                                            \
     51u /**< The AML bytes of the table of decoded bytes, all of which the decoding pass decodes. */
-#define RECORDS_RECORDED_BYTES                                                                                         \
-    8u /**< What LOOP's records are decoded from: its While's head and predicate, 6 bytes, then its Increment, 2. */
 #define RECORDS_WORK_COUNTERS 5u /**< The counters the work record folds after the operations executed. */
 #define RECORDS_WORK_BYTES                                                                                             \
     (4u * (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT +                                  \
@@ -230,10 +228,10 @@ KERNEL_TEST(one_more_evaluation_changes_the_work_fold)
 }
 
 /**
- * @brief The bytes decoded are those the walks decode and the loop records are decoded from, counted by hand from the
- *        table's bytes: the declaration pass steps over a method body and the initialiser of data it keeps in its
- *        table, the decoding pass decodes every byte, and a While that loops adds the statements its records hold,
- *        unless the boot line asks for no record (lpl.acpi.predecoding=off).
+ * @brief The bytes decoded are those the walks decode, counted by hand from the table's bytes: the declaration pass
+ *        steps over a method body and the initialiser of data it keeps in its table, and the decoding pass decodes
+ *        every byte; a While that loops adds none, run from records or not, so that a run with records and one
+ *        without (lpl.acpi.predecoding=off) print the same work record (§8.1).
  */
 KERNEL_TEST(the_bytes_decoded_leave_out_what_the_walks_step_over)
 {
@@ -241,16 +239,15 @@ KERNEL_TEST(the_bytes_decoded_leave_out_what_the_walks_step_over)
     uint32_t debug_recorded = 0u;
     const uint32_t release = records_decoded_by(test, true, &release_recorded);
     const uint32_t debug = records_decoded_by(test, false, &debug_recorded);
-    const uint32_t recorded = records_load.predecodes_loops ? RECORDS_RECORDED_BYTES : 0u;
 
     kernel_test_check(test, release == RECORDS_DECLARED_BYTES,
                       "a load that decodes no body decodes the declarations, not LOOP's body nor BUF_'s initialiser");
     kernel_test_check(test, debug == RECORDS_DECLARED_BYTES + RECORDS_TABLE_BYTES,
                       "the decoding pass decodes the whole table once more");
-    kernel_test_check(test, release_recorded == recorded && debug_recorded == recorded,
-                      "LOOP's records add the bytes of its While's head and predicate and of its Increment");
-    kernel_test_measure(test, "bytes_decoded_release", release);
-    kernel_test_measure(test, "bytes_decoded_debug", debug);
+    kernel_test_check(test, release_recorded == 0u && debug_recorded == 0u,
+                      "running LOOP's While, from records or not, adds nothing to the bytes decoded");
+    kernel_test_measure(test, "bytes_decoded_release", release + release_recorded);
+    kernel_test_measure(test, "bytes_decoded_debug", debug + debug_recorded);
 }
 
 /**
