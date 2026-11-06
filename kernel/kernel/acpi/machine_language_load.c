@@ -1315,6 +1315,15 @@ static MachineLanguageStatus_t machine_language_build_field_unit(MachineLanguage
 }
 
 /**
+ * @brief The 32 bits of the four little-endian bytes at @p bytes.
+ */
+static uint32_t machine_language_little_endian_32(const uint8_t *bytes)
+{
+    return (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8u) | ((uint32_t) bytes[2] << 16u) |
+           ((uint32_t) bytes[3] << 24u);
+}
+
+/**
  * @brief Builds what a Processor or a PowerResource holds in its node, from the fixed fields the
  *        walk has just passed: a Processor's ID, block address and block length, a PowerResource's
  *        system level and resource order.
@@ -1327,8 +1336,7 @@ static void machine_language_build_scope_object(MachineLanguageWalk_t *walk,
 
     if (active->opcode == MACHINE_LANGUAGE_OPCODE(PROCESSOR))
     {
-        const uint32_t block = (uint32_t) fields[-5] | ((uint32_t) fields[-4] << 8u) | ((uint32_t) fields[-3] << 16u) |
-                               ((uint32_t) fields[-2] << 24u);
+        const uint32_t block = machine_language_little_endian_32(fields - 5);
 
         node->value.payload =
             block | ((uint64_t) fields[-1] << 32u) |
@@ -1572,7 +1580,7 @@ static void machine_language_record_method(MachineLanguageWalk_t *walk, const Ma
  * @brief Hands the interpreter the TermList of the scope-opening statement @p active declares in a table's code, to run
  *        in @p scope, as a load whose general_load is set does: the walk goes on past the statement, and stops there.
  */
-static MachineLanguageStatus_t machine_language_hand_list_back(MachineLanguageWalk_t *walk,
+static MachineLanguageStatus_t machine_language_give_list_back(MachineLanguageWalk_t *walk,
                                                                const MachineLanguagePendingOperator_t *active,
                                                                uint32_t scope)
 {
@@ -1689,7 +1697,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     if (machine_language_builds(walk, active.node))
         machine_language_build_scope_object(walk, &active);
     if (walk->declaration != NULL && opens_scope && walk->block_count == 1u)
-        return load->general_load ? machine_language_hand_list_back(walk, &active, scope) :
+        return load->general_load ? machine_language_give_list_back(walk, &active, scope) :
                                     machine_language_enter_list(walk, &active, scope);
     if (placement == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_METHOD_BODY)
     {
@@ -1795,15 +1803,6 @@ static const uint8_t machine_language_data_classes[256] = {
     ['Z'] = MACHINE_LANGUAGE_DATA_SEGMENT,
     ['_'] = MACHINE_LANGUAGE_DATA_SEGMENT,
 };
-
-/**
- * @brief The 32 bits of the four little-endian bytes at @p bytes.
- */
-static uint32_t machine_language_little_endian_32(const uint8_t *bytes)
-{
-    return (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8u) | ((uint32_t) bytes[2] << 16u) |
-           ((uint32_t) bytes[3] << 24u);
-}
 
 /**
  * @brief The Integer the constant of class @p class at @p pc holds, masked by @p mask: Zero, One, Ones, or the
@@ -2629,9 +2628,9 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
 }
 
 /**
- * @brief Whether the statement at @p pc, before @p end, starts as one the declaration pass's decoder takes (O19), by
- *        its lead bytes alone: a Name, a Method, a Scope, a Device, a Field or an OperationRegion, each a declaration,
- *        which the interpreter never runs.
+ * @brief Whether the statement at @p pc, before @p end, starts, by its lead bytes alone, as a Name, a Method, a Scope,
+ *        a Device, a Field or an OperationRegion, the most frequent of the declarations the declaration pass's decoder
+ *        takes (O19), none of which the interpreter runs.
  */
 static bool machine_language_leads_declaration(const uint8_t *bytes, uint32_t pc, uint32_t end)
 {
@@ -3481,8 +3480,7 @@ machine_language_answer_identity(AdvancedConfigurationAndPowerInterfaceMachineLa
  */
 static uint32_t machine_language_header_length(const uint8_t *bytes)
 {
-    return (uint32_t) bytes[4] | ((uint32_t) bytes[5] << 8u) | ((uint32_t) bytes[6] << 16u) |
-           ((uint32_t) bytes[7] << 24u);
+    return machine_language_little_endian_32(bytes + 4u);
 }
 
 /**
