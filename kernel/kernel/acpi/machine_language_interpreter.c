@@ -5432,6 +5432,11 @@ static bool machine_language_exhausted(MachineLanguageStatus_t status)
  *        or declares an If's or a While's TermList without running its code when its predicate failed, the
  *        Else after such an If then declared the same way, or stepped over when a fault cut that TermList
  *        short; a term a statement waits for gives it nothing, and the statement goes on.
+ *
+ * That declaration finds the room it needs, so it does not fail (§6.1): machine_language_push_table_frame refuses a
+ * frame at 256 pending operators, and the count is reset to the base of the innermost block, which a table's code
+ * opens at its frame's own count, so an ask always finds its operator; and the declaration walk never hands back a
+ * body while the blocks are full, so no TermList opens past the 512th.
  */
 static MachineLanguageStatus_t machine_language_table_failure(MachineLanguageLoad_t *load, uint32_t base,
                                                               MachineLanguageStatus_t status)

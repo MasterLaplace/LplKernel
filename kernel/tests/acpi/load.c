@@ -26,6 +26,10 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_load, KERNEL_TEST_S
 #define LOAD_PROCESSOR_IDENTIFIER 1u                    /**< The ACPI Processor UID of the made-up CPU slot. */
 #define LOAD_FULL_DEPTH                                                                                                \
     62u /**< The Arg0 of REC_ that fills the evaluation's 64 frames: the host's, then 63 of REC_'s. */
+#define LOAD_OPERATOR_CAP_ADDS                                                                                         \
+    252u /**< The Adds of LDIT that start its loaded table's frame at the 255th of the 256 operators (§6.1). */
+#define LOAD_BLOCK_CAP_IFS                                                                                             \
+    509u /**< The If (One) of LDIT that start its loaded table's frame at the 512th of the 512 blocks (§6.1). */
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t load_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t load_load;
@@ -40,6 +44,9 @@ static MadeUpAml_t load_aml;
 static MadeUpAml_t load_loaded;
 static MadeUpAml_t load_body;
 static MadeUpAml_t load_inner;
+static MadeUpAml_t load_long_method;
+static uint8_t load_long_aml[2u * MADE_UP_AML_CAPACITY];
+static uint8_t load_long_dsdt[MADE_UP_TABLE_HEADER + 2u * MADE_UP_AML_CAPACITY];
 
 /**
  * @brief Opens the simulated host and empties both builders: load_aml, the DSDT, starts with Name (TRAC, 0)
@@ -628,6 +635,167 @@ KERNEL_TEST(a_table_whose_frame_finds_no_room_is_declared_without_running)
                       load_load.evaluation.statuses[LOAD_STATUS(LIMIT_FRAMES)] == 1u && load_integer("LDED") == 0x2Au &&
                           load_integer("TRAC") == 0u,
                       "its table finds no frame, counted: LDED is declared, the Store to TRAC never runs");
+    load_close(test);
+}
+
+/**
+ * @brief Whether DEVB, which the table load_table_at_caps_fails declares at the root, holds INDV.
+ */
+static bool load_device_holds_its_name(void)
+{
+    const uint32_t device = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &load_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "DEVB", 0u));
+
+    return device != 0u && advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                               &load_load.space, device,
+                               advanced_configuration_and_power_interface_machine_language_name_segment(
+                                   (const uint8_t *) "INDV", 0u)) != 0u;
+}
+
+/**
+ * @brief Writes in the DSDT Method (INNR) { Load (\TBLR, \HND1) } and Method (LDIT) { Store (Add (One, Add (One, ...
+ *        INNR () ...)), Local0) }, @p adds Add deep, over the table load_table_at_caps_fails. The Store and the Adds
+ *        are raw bytes, written at run time: they are partial terms, and their depth is a parameter (§8.2).
+ */
+static void load_write_operator_loader(uint32_t adds)
+{
+    static const uint8_t store[] = {0x70u};
+    static const uint8_t add_one[] = {0x72u, 0x01u};
+    static const uint8_t no_target[] = {0x00u};
+    static const uint8_t local0[] = {0x60u};
+
+    load_begin();
+    made_up_aml_raw(&load_loaded, load_table_at_caps_fails_aml, sizeof(load_table_at_caps_fails_aml));
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    load_method(&load_aml, "INNR", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
+    made_up_aml_begin(&load_inner);
+    made_up_aml_raw(&load_inner, store, sizeof(store));
+    for (uint32_t add = 0u; add < adds; ++add)
+        made_up_aml_raw(&load_inner, add_one, sizeof(add_one));
+    made_up_aml_name(&load_inner, "INNR");
+    for (uint32_t add = 0u; add < adds; ++add)
+        made_up_aml_raw(&load_inner, no_target, sizeof(no_target));
+    made_up_aml_raw(&load_inner, local0, sizeof(local0));
+    made_up_aml_method(&load_aml, "LDIT", 0x00u, &load_inner);
+}
+
+/**
+ * @brief The operator cap of §6.1 and a table's code (§3.6): LDIT's Store, its 252 Adds and the evaluation's own
+ *        result hold 254 operators, the one Load leaves to wait for the table's frame the 255th, and that frame starts
+ *        there. Both Stores of \NOPE fail, and so does the offset of RGNA, whose Add finds no operator left once the
+ *        one that waits for that offset holds the 256th; each failure is counted once, and the declarations the
+ *        failures hand the load are made: RGNA, without its offset, then DEVB with INDV, and AFTR. One Add more puts
+ *        the operator Load leaves 256th: the frame finds no room, and the table is declared without running, counted.
+ */
+KERNEL_TEST(a_table_loaded_at_the_operator_cap_goes_on_past_its_failed_statements)
+{
+    for (uint32_t adds = LOAD_OPERATOR_CAP_ADDS; adds <= LOAD_OPERATOR_CAP_ADDS + 1u; ++adds)
+    {
+        const bool runs = adds == LOAD_OPERATOR_CAP_ADDS;
+        const uint32_t *statuses = load_load.evaluation.statuses;
+
+        load_write_operator_loader(adds);
+        if (!load_run(test))
+            return;
+        kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                          "the Load succeeds and stores True");
+        kernel_test_check(
+            test,
+            runs ?
+                statuses[LOAD_STATUS(NAME_NOT_FOUND)] == 2u && statuses[LOAD_STATUS(LIMIT_PENDING_OPERATORS)] == 1u &&
+                    load_load.evaluation.operators_peak ==
+                        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS :
+                statuses[LOAD_STATUS(NAME_NOT_FOUND)] == 0u && statuses[LOAD_STATUS(LIMIT_PENDING_OPERATORS)] == 1u &&
+                    load_load.declared_not_run == 5u,
+            runs ? "the table's code runs at the 255th operator: both Stores and RGNA's offset fail, "
+                   "each counted once, no declaration after them" :
+                   "at the 256th the table's frame finds no room, counted, and its five names are "
+                   "declared without running");
+        kernel_test_check(test,
+                          made_up_root_node(&load_load, "RGNA") != NULL && load_device_holds_its_name() &&
+                              load_integer("AFTR") == 7u,
+                          "RGNA, DEVB with INDV, and AFTR are declared");
+        load_close(test);
+    }
+}
+
+/**
+ * @brief Writes in @p method Method (LDIT) { If (One) { ... Load (\TBLR, \HND1) ... } }, @p depth If (One) deep. The
+ *        If (One) are raw bytes, written at run time: they are partial terms, and their depth is a parameter (§8.2).
+ */
+static void load_write_nested_loader(MadeUpAml_t *method, uint32_t depth)
+{
+    static const uint8_t if_lead[] = {0xA0u};
+    static const uint8_t one[] = {0x01u};
+    bool overflowed = false;
+
+    made_up_aml_begin(&load_inner);
+    made_up_aml_raw(&load_inner, load_loads_table_into_first_handle_aml,
+                    sizeof(load_loads_table_into_first_handle_aml));
+    for (uint32_t level = 0u; level < depth; ++level)
+    {
+        made_up_aml_begin(&load_body);
+        made_up_aml_raw(&load_body, one, sizeof(one));
+        made_up_aml_raw(&load_body, load_inner.bytes, load_inner.length);
+        overflowed = overflowed || load_inner.overflowed || load_body.overflowed;
+        made_up_aml_begin(&load_inner);
+        made_up_aml_construct(&load_inner, if_lead, sizeof(if_lead), &load_body);
+    }
+    made_up_aml_begin(method);
+    made_up_aml_method(method, "LDIT", 0x00u, &load_inner);
+    method->overflowed = method->overflowed || overflowed;
+}
+
+/**
+ * @brief Loads the DSDT written followed by @p method, which together hold more than one builder does.
+ */
+static bool load_run_with(KernelTest_t *test, const MadeUpAml_t *method)
+{
+    if (!kernel_test_check(test, !load_aml.overflowed && !load_loaded.overflowed && !method->overflowed,
+                           "the made-up AML fits"))
+        return false;
+    memcpy(load_long_aml, load_aml.bytes, load_aml.length);
+    memcpy(load_long_aml + load_aml.length, method->bytes, method->length);
+    return made_up_load_on(test, &load_load, &load_host.host, load_long_dsdt, 2u, load_long_aml,
+                           load_aml.length + method->length);
+}
+
+/**
+ * @brief The block cap of §6.1 and a table's code (§3.6): the host's frame, LDIT's body and its 509 If (One) hold 511
+ *        blocks, and the frame of the table LDIT loads opens the 512th. Both Stores of \NOPE fail, counted, and the
+ *        declarations each hands the load are made: RGNA, then DEVB, whose TermList finds no block and is refused, a
+ *        fault of the load and no failure of the evaluation, so that INDV is not declared, and AFTR after it.
+ */
+KERNEL_TEST(a_table_loaded_at_the_block_cap_goes_on_past_its_failed_statements)
+{
+    const uint32_t *statuses = load_load.evaluation.statuses;
+
+    load_begin();
+    made_up_aml_raw(&load_loaded, load_table_at_caps_fails_aml, sizeof(load_table_at_caps_fails_aml));
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    load_write_nested_loader(&load_long_method, LOAD_BLOCK_CAP_IFS);
+    if (!load_run_with(test, &load_long_method))
+        return;
+
+    const uint32_t load_errors = load_load.load_errors;
+
+    kernel_test_check(test, load_call("\\LDIT") == LOAD_STATUS(OK) && load_integer("HND1") == LOAD_ONES,
+                      "the Load succeeds and stores True");
+    kernel_test_check(test,
+                      load_load.evaluation.blocks_peak ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS &&
+                          statuses[LOAD_STATUS(NAME_NOT_FOUND)] == 2u && statuses[LOAD_STATUS(LIMIT_BLOCKS)] == 0u,
+                      "the table's code runs at the 512th block: both Stores fail, counted, and no declaration "
+                      "after them");
+    kernel_test_check(
+        test, load_load.load_errors == load_errors + 1u && load_load.first_load_error == LOAD_STATUS(LIMIT_BLOCKS),
+        "DEVB's TermList is refused with limit_blocks, the one fault of the load");
+    kernel_test_check(test,
+                      made_up_root_node(&load_load, "RGNA") != NULL && made_up_root_node(&load_load, "DEVB") != NULL &&
+                          !load_device_holds_its_name() && load_integer("AFTR") == 7u,
+                      "RGNA, DEVB without INDV, and AFTR are declared");
     load_close(test);
 }
 
