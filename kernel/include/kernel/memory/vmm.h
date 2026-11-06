@@ -123,10 +123,12 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
  *          effective type; any other page is write-back when the first 64 entries of the boot memory
  *          map call it RAM, ACPI reclaimable or ACPI NVS memory, or call it reserved and the memory
  *          type range registers say write-back over it, as Linux maps ACPI memory, and uncached
- *          otherwise. A device's registers lie where no entry reaches, or in reserved memory the
- *          registers leave uncached, so they are cache-disabled and write-through: a cached read would
- *          return whatever the line held when it was filled, which for a status register is the answer
- *          to a question nobody asked. A window that reaches usable
+ *          otherwise. A device's registers usually lie where no entry reaches, or in reserved memory
+ *          the registers leave uncached, so they are cache-disabled and write-through: a cached read
+ *          would return whatever the line held when it was filled, which for a status register is the
+ *          answer to a question nobody asked. Where the firmware leaves reserved registers write-back,
+ *          as SeaBIOS leaves q35's PCI Express configuration space at 0xB0000000, the window is
+ *          write-back too (#58). A window that reaches usable
  *          RAM past the first MiB is refused and counted, as Linux refuses ioremap on System RAM: those
  *          frames belong to the physical memory manager. Registers the map calls ACPI reclaimable or
  *          NVS memory are mapped, write-back. A window that cannot be mapped whole is given back

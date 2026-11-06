@@ -164,13 +164,23 @@ extern uint32_t physical_memory_manager_memory_type(uint64_t physical_address, u
 
 /**
  * @brief Says whether a boot memory map type names memory: what ACPI 6.6, Table 15.1, calls RAM, ACPI
- *        reclaimable or ACPI NVS memory, the ranges a window maps cached.
+ *        reclaimable or ACPI NVS memory, the ranges a window always maps cached.
  *
  * @param type A Multiboot type, as physical_memory_manager_memory_type gives it.
  * @return true for 1 (usable RAM), 3 (ACPI reclaimable) and 4 (ACPI NVS); false for 0 (no entry), 2
  *         (reserved), 5 (defective) and every other type, persistent memory (7) among them.
  */
 extern bool physical_memory_manager_type_is_memory(uint32_t type);
+
+/**
+ * @brief Says whether a boot memory map type names reserved memory, which a window maps cached only where
+ *        the memory type range registers say write-back over it.
+ *
+ * @param type A Multiboot type, as physical_memory_manager_memory_type gives it.
+ * @return true for 2 (reserved); false for 0 (no entry), the memory types, 5 (defective) and every other
+ *         type, persistent memory (7) among them.
+ */
+extern bool physical_memory_manager_type_is_reserved(uint32_t type);
 
 /**
  * @brief Says whether a range reaches usable RAM past the first MiB: whether one of its pages lies whole in a

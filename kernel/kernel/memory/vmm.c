@@ -9,7 +9,6 @@
 
 #define VMM_PAGE_COUNT  (KERNEL_VMM_DYNAMIC_SIZE / PAGE_SIZE)
 #define VMM_BITMAP_SIZE (VMM_PAGE_COUNT / 8)
-#define VMM_RESERVED    2u /**< The boot memory map's type of reserved memory. */
 
 static uint8_t vmm_bitmap[VMM_BITMAP_SIZE];
 static uint32_t vmm_last_search_index = 0u;
@@ -59,7 +58,7 @@ static bool vmm_frame_is_write_back(uint32_t frame)
     const uint32_t type = physical_memory_manager_memory_type(frame, PAGE_SIZE);
 
     return physical_memory_manager_type_is_memory(type) ||
-           (type == VMM_RESERVED && memory_type_range_registers_frame_is_write_back(frame));
+           (physical_memory_manager_type_is_reserved(type) && memory_type_range_registers_frame_is_write_back(frame));
 }
 
 /**

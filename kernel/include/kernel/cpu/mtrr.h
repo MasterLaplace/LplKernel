@@ -85,8 +85,8 @@ bool memory_type_range_registers_make_write_back(const MemoryTypeRangeRegisters_
  * @brief Reads the bootstrap processor's memory type range registers once, before any window is mapped.
  *
  * @details Without CPUID's MTRR flag, the snapshot holds disabled registers, and no page is write-back by them.
- *          The firmware programs the same registers on every processor (§14.11.8), so the bootstrap processor's
- *          stand for all of them.
+ *          §14.11.8 requires every processor to hold the same values, and the kernel loads none: it relies on the
+ *          firmware for that (SeaBIOS writes them on every processor), so the bootstrap processor's stand for all.
  */
 void memory_type_range_registers_initialize(void);
 

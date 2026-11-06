@@ -398,6 +398,22 @@ KERNEL_TEST(the_memory_map_types_that_name_memory_are_ram_acpi_and_nvs)
 }
 
 /**
+ * @brief The one boot memory map type that names reserved memory, which a window maps cached where the memory type
+ *        range registers say write-back, is 2: no entry (0), the memory types, an unusable (5), disabled (6),
+ *        persistent (7) or unaccepted (8) range and an undefined type are not.
+ */
+KERNEL_TEST(the_memory_map_type_that_names_reserved_memory_is_two)
+{
+    static const uint32_t not_reserved[] = {0u, 1u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 12u, 0xFFFFFFFFu};
+    uint32_t wrong = !physical_memory_manager_type_is_reserved(2u);
+
+    for (uint32_t index = 0u; index < sizeof(not_reserved) / sizeof(not_reserved[0]); ++index)
+        wrong += physical_memory_manager_type_is_reserved(not_reserved[index]);
+    kernel_test_measure(test, "types_misread", wrong);
+    kernel_test_check(test, wrong == 0u, "type 2 is reserved memory, and no other");
+}
+
+/**
  * @brief The copy of the boot memory map says what a range is: a frame the allocator gives is usable
  *        memory; an empty range, one that wraps, and one past every entry are nothing.
  */

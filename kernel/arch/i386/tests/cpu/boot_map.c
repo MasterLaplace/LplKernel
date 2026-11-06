@@ -907,15 +907,17 @@ KERNEL_TEST(the_windows_on_one_page_give_it_one_memory_type)
 
 /**
  * @brief The windows on a reserved page are write-back where the memory type range registers say write-back over it,
- *        as Linux maps ACPI memory, and uncached where they say anything else; a page no entry of the memory map
- *        holds stays uncached under a write-back range.
+ *        as Linux maps ACPI memory, and uncached where they say anything else.
  *
  * @details Linux v7.3 maps every ACPI table and AML region with ioremap_cache, and pat_x_mtrr_type keeps write-back
  *          only where the MTRR type over the range is write-back. SeaBIOS (src/fw/mtrr.c) makes memory write-back by
  *          default and uncached from the start of PCI memory to 4 GiB, and puts its ACPI tables in reserved memory at
  *          the top of RAM: those pages are write-back, its pages below 4 GiB uncached. The expected type comes from
  *          the test's own reading of the registers (boot_map_test_range_type), not from the kernel's snapshot. A
- *          processor without the registers, such as QEMU's qemu32, gives nothing to check.
+ *          processor without the registers, such as QEMU's qemu32, gives nothing to check, nor does a memory map
+ *          without a reserved page of each kind. SeaBIOS enables one variable range, an uncached one, so no QEMU boot
+ *          makes a page write-back by a variable range: the memory_type_range_registers suite checks that on made-up
+ *          registers.
  */
 KERNEL_TEST(a_reserved_page_is_write_back_where_the_memory_type_range_registers_say_write_back)
 {
@@ -926,22 +928,41 @@ KERNEL_TEST(a_reserved_page_is_write_back_where_the_memory_type_range_registers_
     }
 
     BootMapTestReservedPages_t pages = {0u};
-    const uint32_t hole = boot_map_test_hole_under_write_back();
-    const int hole_agrees = hole != 0u ? boot_map_test_windows_agree(hole) : -1;
 
     boot_map_test_check_reserved_pages(&pages);
     kernel_test_measure(test, "reserved_write_back_pages", pages.write_back);
     kernel_test_measure(test, "reserved_uncached_pages", pages.uncached);
     kernel_test_measure(test, "pages_agreeing", pages.agreeing);
     kernel_test_measure_hexadecimal(test, "first_disagreeing_page", pages.first_disagreeing);
-    kernel_test_measure_hexadecimal(test, "hole_under_write_back", hole);
-    kernel_test_check(test, pages.write_back != 0u && pages.uncached != 0u,
-                      "the memory map holds a reserved page under a write-back range and one under another type");
     kernel_test_check(test, pages.refused == 0u, "every window is mapped");
     kernel_test_check(test, pages.agreeing == pages.write_back + pages.uncached,
                       "the windows on each reserved page are write-back exactly where the registers say write-back");
-    kernel_test_check(test, hole != 0u && hole_agrees == 1,
-                      "a page no entry holds stays uncached under a write-back range");
+    if (pages.write_back == 0u || pages.uncached == 0u)
+        kernel_test_skip(test, "the memory map holds no reserved page under a write-back range, or none under another");
+}
+
+/**
+ * @brief The windows on a page no entry of the memory map holds stay uncached under a write-back range: the rule that
+ *        follows the memory type range registers is for reserved memory alone, since a device's registers lie in
+ *        such holes, where SeaBIOS's registers say write-back below the start of PCI memory.
+ */
+KERNEL_TEST(a_page_no_entry_holds_stays_uncached_under_a_write_back_range)
+{
+    if (!boot_map_test_has_range_registers())
+    {
+        kernel_test_skip(test, "the processor has no memory type range registers");
+        return;
+    }
+
+    const uint32_t hole = boot_map_test_hole_under_write_back();
+
+    kernel_test_measure_hexadecimal(test, "hole_under_write_back", hole);
+    if (hole == 0u)
+    {
+        kernel_test_skip(test, "no page no entry holds lies under a write-back range below 4 GiB");
+        return;
+    }
+    kernel_test_check(test, boot_map_test_windows_agree(hole) == 1, "every window on it is uncached");
 }
 
 /**
