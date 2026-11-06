@@ -4998,6 +4998,18 @@ static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguag
 }
 
 /**
+ * @brief Counts the statement of @p record, which runs nothing, as handed back for its shape (§3.6), and in a build
+ *        that counts what the loop runs, under the opcode of its statement.
+ */
+static inline void machine_language_decline_shape(MachineLanguagePredecoding_t *cache,
+                                                  const MachineLanguageRecord_t *record)
+{
+    ++cache->declined[MACHINE_LANGUAGE_DECLINED(SHAPE)];
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        ++cache->declined_shape_opcodes[record->statement];
+}
+
+/**
  * @brief The record of the statement at the running frame's pc, found by @p index when it holds that
  *        statement's key, as the recent record of its offset otherwise, searched in the cache's hash when it is
  *        not, built when the cache holds none: NULL, the reason counted, when a record built under another end of
@@ -5243,11 +5255,14 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
 
         if (record == NULL)
             break;
-        if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL) || record->values_peak > value_room ||
-            record->operators_peak > operator_room)
+        if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL))
         {
-            ++cache->declined[(record->shape == MACHINE_LANGUAGE_RECORD(GENERAL)) ? MACHINE_LANGUAGE_DECLINED(SHAPE) :
-                                                                                    MACHINE_LANGUAGE_DECLINED(ROOM)];
+            machine_language_decline_shape(cache, record);
+            break;
+        }
+        if (record->values_peak > value_room || record->operators_peak > operator_room)
+        {
+            ++cache->declined[MACHINE_LANGUAGE_DECLINED(ROOM)];
             break;
         }
         if (record->name_count != 0u)
@@ -5303,21 +5318,23 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
 /**
  * @brief Whether the statement at the running frame's pc goes to the loop before any record runs (§3.6): the
  *        recent record of its offset holds it and runs nothing, whatever the end of the construct around it, the
- *        statement counted as handed back.
+ *        statement counted as handed back. In line where it is called, at each back-edge and each statement of the
+ *        frame's loop, whose call cost more than its body.
  *
  * @param cache     The cache.
  * @param frame     The running frame.
  * @param out_index Receives the statement's recent record, plus 1; 0 when the slot holds another, or none.
  * @return Whether the statement was handed back.
  */
-static bool machine_language_records_hand_back(MachineLanguagePredecoding_t *cache, const MachineLanguageFrame_t *frame,
-                                               uint16_t *out_index)
+__attribute__((always_inline)) static inline bool
+machine_language_records_hand_back(MachineLanguagePredecoding_t *cache, const MachineLanguageFrame_t *frame,
+                                   uint16_t *out_index)
 {
     *out_index =
         advanced_configuration_and_power_interface_machine_language_record_recent(cache, frame->table, frame->pc);
     if (*out_index == 0u || cache->records[*out_index - 1u].shape != MACHINE_LANGUAGE_RECORD(GENERAL))
         return false;
-    ++cache->declined[MACHINE_LANGUAGE_DECLINED(SHAPE)];
+    machine_language_decline_shape(cache, &cache->records[*out_index - 1u]);
     return true;
 }
 
@@ -5386,34 +5403,44 @@ static MachineLanguageStatus_t machine_language_loop_again(MachineLanguageLoad_t
 }
 
 /**
+ * @brief Runs the statement at the running frame's pc, which lies in the frame's loop, from records, unless the recent
+ *        record of its offset hands it back at once, which ends the watch of a loop when the statement may not go on
+ *        to the next; the statement they stop at, unless a construct's end, is decoded at once, so that a statement a
+ *        record hands back is never offered to the records twice. Kept out of line, so that the step of every other
+ *        statement, a table's among them, leaves its registers to the statement it decodes.
+ */
+__attribute__((noinline)) static MachineLanguageStatus_t machine_language_loop_statement(MachineLanguageLoad_t *load,
+                                                                                         MachineLanguageFrame_t *frame)
+{
+    uint16_t first = 0u;
+    bool ran = false;
+
+    if (machine_language_records_hand_back(&load->predecoding, frame, &first))
+    {
+        if (load->predecoding.records[first - 1u].goes_on == 0u)
+            load->predecoding.watched_serial = 0u;
+        return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
+    }
+
+    const MachineLanguageStatus_t status = machine_language_run_records(load, first, &ran);
+
+    if (status != MACHINE_LANGUAGE_OK || frame->pc >= machine_language_block(&load->evaluation)->end)
+        return status;
+    return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
+}
+
+/**
  * @brief Runs the statement at the running frame's pc: a table's code hands it to the load; a method's
- *        runs from records while its pc lies in the frame's loop, unless the recent record of its offset hands it
- *        back at once, which ends the watch of a loop when the statement may not go on to the next, and the statement
- *        they stop at, unless a construct's end, is decoded at once, so that a statement a record hands back is never
- *        offered to the records twice.
+ *        runs from records while its pc lies in the frame's loop (§3.6), and is decoded otherwise.
  */
 static MachineLanguageStatus_t machine_language_statement(MachineLanguageLoad_t *load)
 {
     MachineLanguageFrame_t *frame = machine_language_frame(&load->evaluation);
-    uint16_t first = 0u;
-    bool ran = false;
 
     if (frame->declares)
         return machine_language_table_statement(load);
     if (frame->pc - frame->looping_start < frame->looping_end - frame->looping_start && load->predecodes_loops)
-    {
-        if (machine_language_records_hand_back(&load->predecoding, frame, &first))
-        {
-            if (load->predecoding.records[first - 1u].goes_on == 0u)
-                load->predecoding.watched_serial = 0u;
-            return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
-        }
-
-        const MachineLanguageStatus_t status = machine_language_run_records(load, first, &ran);
-
-        if (status != MACHINE_LANGUAGE_OK || frame->pc >= machine_language_block(&load->evaluation)->end)
-            return status;
-    }
+        return machine_language_loop_statement(load, frame);
     return machine_language_term(load, MACHINE_LANGUAGE_OPERAND(NONE));
 }
 

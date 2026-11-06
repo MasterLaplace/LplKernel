@@ -192,7 +192,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
     uint8_t name_count;     /**< The names it reads, in the order the loop reads them. */
     uint8_t statement;      /**< In a build that counts what the loop runs, the opcode of its statement when no
                                  operator of the record is one: While, If, Break, Store, Increment or Decrement; 0 for
-                                 an operator that stands as a statement. A record that runs nothing counts nothing. */
+                                 an operator that stands as a statement. A record that runs nothing counts nothing, and
+                                 keeps the opcode of its statement whatever it is, 0 for a name or for bytes that read
+                                 as no opcode, under which the statements handed back for their shape are counted. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**
@@ -215,7 +217,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES]; /**< Statements handed back
                                                                                                 to the interpreter's
                                                                                                 loop, per reason. */
-    uint32_t built;                                                                          /**< Records built. */
+    uint32_t declined_shape_opcodes
+        [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< In a build that counts what the
+                                                                                       loop runs, the statements handed
+                                                                                       back for their shape, per opcode
+                                                                                       of the statement, 0 for a name or
+                                                                                       for bytes that read as no
+                                                                                       opcode. */
+    uint32_t built;                                                                 /**< Records built. */
     uint32_t flushes;           /**< Times the cache was emptied whole. */
     uint32_t records_peak;      /**< Most records held at once. */
     uint32_t nodes_peak;        /**< Most operators those records held at once. */
