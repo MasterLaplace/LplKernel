@@ -666,6 +666,39 @@ KERNEL_TEST(a_limit_inside_an_attach_method_still_fails_the_access)
 }
 
 /**
+ * @brief An attach method that reads a package element through more names than the cap of 8 (§6.1) fails the
+ *        access with name_resolution_loop, as every other limit does, rather than making its object absent (§3.6).
+ */
+KERNEL_TEST(a_name_resolution_loop_inside_an_attach_method_still_fails_the_access)
+{
+    static const MadeUpFieldUnit_t units[] = {
+        {"VID_", 16u},
+    };
+
+    pci_begin();
+    made_up_aml_name_integer(&pci_aml, "V1__", 7u);
+    made_up_aml_begin(&pci_device_body);
+    made_up_aml_name_integer(&pci_device_body, "_ADR", 0x00030001u);
+    pci_region(&pci_device_body, "PCFG", units, 1u);
+    made_up_aml_store_name(&pci_device_body, "VID_", "V1__");
+    made_up_aml_begin(&pci_root_body);
+    made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
+    made_up_aml_begin(&pci_method_body);
+    made_up_aml_raw(&pci_method_body, pci_name_resolution_loop_aml, sizeof(pci_name_resolution_loop_aml));
+    made_up_aml_method(&pci_root_body, "_BBN", 0x08u, &pci_method_body);
+    made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
+    made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
+    if (!pci_run(test))
+        return;
+    kernel_test_check(test,
+                      pci_load.evaluation.statuses[PCI_STATUS(NAME_RESOLUTION_LOOP)] == 1u &&
+                          pci_integer("V1__") == 7u && pci_load.regions.internal_failures == 0u &&
+                          pci_load.regions.pci_attachments == 0u,
+                      "the read fails as name_resolution_loop, and nothing is attached");
+    pci_close(test);
+}
+
+/**
  * @brief Internal frames nest two deep (§6.1): the load reads DEVD's unit, whose attach runs DEVD's _ADR, whose read
  *        of DEVE's unit runs DEVE's; a host's read of DEVA's unit runs DEVA's _ADR, then DEVB's, and DEVC's, a third,
  *        is refused with limit_internal_nesting, a limit no attach takes as an absent object (§3.6).
