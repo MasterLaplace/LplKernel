@@ -16,7 +16,8 @@ static uint32_t machine_language_namespace_segment(const char *characters)
 /**
  * @brief Brings the insertion room of @p space back in step with its node cap, hash table and runs, as the first index
  *        the node cap refuses, half the slots, or the first index past the runs committed, whichever comes first, and
- *        its insertion limit with them and its free list.
+ *        its insertion limit with it: the hash table grows and a run is taken only for a new index, which is taken
+ *        with the free list empty, and a closed namespace has no room.
  */
 static void
 machine_language_namespace_keep_insertion_limit(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
@@ -31,7 +32,7 @@ machine_language_namespace_keep_insertion_limit(AdvancedConfigurationAndPowerInt
     if (limit > root && limit - root > space->max_nodes)
         limit = root + space->max_nodes;
     space->insertion_room = limit;
-    space->insertion_limit = (space->free_nodes != 0u) ? 0u : limit;
+    space->insertion_limit = limit;
 }
 
 /**
