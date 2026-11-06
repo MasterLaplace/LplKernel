@@ -1,0 +1,18 @@
+# Window W2 of the ACPI specification (§7.4) on a recorded machine, on the release path: the initialisation of the
+# namespace of the Lenovo IdeaPad Z470, a revision-2 Intel client whose _PDC Loads two SSDTs, steps 2 to 9 of §3.8, once
+# loaded as a release kernel loads it (O2), inside the ring-0 corpus test
+# the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh --server). The boot runs the
+# same function on q35's own tables first, hence skip=1. tools/acpi-corpus.sh module 'Notebook/Lenovo/IdeaPad/IdeaPad
+# Z470/C7F3CC0C50BF' writes the module. The gap to a release kernel is measured on q35's tables only
+# (tools/acpi-initialization-q35.release-path.debug.budget): 19 instructions (0.03 %) more. Checked by
+# tools/instructions.sh --budget tools/acpi-initialization-ideapad-z470.release-path.debug.budget kernel/lpl.kernel; a
+# change that moves the count records the new one.
+inside=advanced_configuration_and_power_interface_initialize_namespace
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
+module=build/acpi-corpus/modules/Notebook_Lenovo_IdeaPad_IdeaPad_Z470_C7F3CC0C50BF.acpi
+instructions=2145274
+accesses=1068048
+tolerance=1
