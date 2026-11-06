@@ -117,13 +117,21 @@ uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text,
     return length - kept;
 }
 
+const char *boot_command_line_source(const MultibootInfo_t *info)
+{
+    if (!info || !(info->flags & MULTIBOOT_FLAG_COMMAND_LINE) || !info->cmdline ||
+        info->cmdline >= KERNEL_BOOT_MAPPED_END)
+        return NULL;
+    return (const char *) boot_module_phys_to_virt(info->cmdline);
+}
+
 void boot_command_line_capture(void)
 {
-    if (!multiboot_info || !(multiboot_info->flags & MULTIBOOT_FLAG_COMMAND_LINE) || !multiboot_info->cmdline ||
-        multiboot_info->cmdline >= KERNEL_BOOT_MAPPED_END)
+    const char *const text = boot_command_line_source(multiboot_info);
+
+    if (!text)
         return;
 
-    const char *const text = (const char *) boot_module_phys_to_virt(multiboot_info->cmdline);
     const uint32_t mapped = KERNEL_BOOT_MAPPED_END - multiboot_info->cmdline;
 
     boot_command_line_dropped_count =

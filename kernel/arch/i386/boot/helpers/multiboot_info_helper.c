@@ -1,3 +1,4 @@
+#include <kernel/boot/boot_module.h>
 #include <kernel/boot/helpers/multiboot_info_helper.h>
 #include <kernel/cpu/paging.h>
 
@@ -801,7 +802,7 @@ void write_multiboot_info(Serial_t *serial, uint32_t kernel_start, MultibootInfo
 
     if (mbi->flags & (1 << 2))
     {
-        char *s = (char *) physical_to_virtual_low(mbi->cmdline, kernel_start);
+        const char *s = boot_command_line_source(mbi);
         if (s)
         {
             serial_write_string(serial, "Command line: ");
