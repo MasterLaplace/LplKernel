@@ -26,10 +26,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          (tools/acpi/corpus.list, the default) or full (every report with a dump, written to
          build/acpi-corpus/full.list); each report's decoded tables come too, kept in the clone's
          objects and never checked out
-         acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit, unchanged, in the
-         sandbox of tools/acpi/sandbox.sh, which needs bubblewrap (apt install bubblewrap); qemu fetches the
-         reference tables of QEMU at a pinned release, its 47 x86 configurations; uacpi fetches uACPI's
-         test cases at a pinned commit
+         acpica builds iasl, acpiexec and acpixtract from ACPICA at a pinned commit, unchanged and cleaned
+         of what git does not track, in the sandbox of tools/acpi/sandbox.sh, which needs bubblewrap
+         (apt install bubblewrap); qemu fetches the reference tables of QEMU at a pinned release, its 47
+         x86 configurations; uacpi fetches uACPI's test cases at a pinned commit
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
          directory with what tools/acpi/expected_directory.py reads from the same dump, its FADT
          and its MADT with what tools/acpi/expected_fadt.py and tools/acpi/expected_madt.py read
@@ -205,7 +205,8 @@ known_list() {
 # Clones ACPICA at the pinned commit, its blobs fetched as the checkout needs them, and builds the three
 # tools the oracles use in the sandbox of tools/acpi/sandbox.sh (specification §8.6): once the sources are
 # fetched, the build reaches no network and writes nowhere but in the checkout. A checkout with local changes is
-# refused, since the oracles are built from the pinned sources alone.
+# refused, since the oracles are built from the pinned sources alone, and everything git does not track in it, a
+# build made before included, is removed before the build.
 fetch_acpica() {
     if [[ ! -d "$ACPICA/.git" ]]; then
         git clone -q --filter=blob:none --no-checkout "$ACPICA_URL" "$ACPICA"
@@ -216,6 +217,7 @@ fetch_acpica() {
         echo "fetch: ${ACPICA#"$ROOT"/} is changed: restore it, since ACPICA is built from its pinned sources" >&2
         exit 1
     fi
+    git -C "$ACPICA" clean -fdxq
     (cd "$ROOT" && "$ROOT/tools/acpi/sandbox.sh" "$ACPICA" make -C "$ACPICA" -s -j"$(nproc)" iasl acpiexec acpixtract \
         >/dev/null)
 }

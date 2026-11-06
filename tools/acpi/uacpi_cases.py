@@ -14,7 +14,8 @@ output that is not a plain file is refused unread, and without the sandbox no ca
               divergences list names for it, and fails;
   not ok      otherwise: a listed case that passes, so that the list stays true, and a harness that runs past 120 s
               included.
-Prints one line per case, then the counts; exits 1 when a case is not ok, or when the sandbox cannot run.
+Prints one line per case, then the counts; exits 1 when a case is not ok, or when the sandbox cannot run, or iasl in
+it.
 """
 import os
 import re
@@ -53,9 +54,9 @@ def expectation(path):
     return None, None
 
 
-def sandbox_runs(work):
-    """Whether the sandbox runs a command, the sandbox's own words on its error output when it does not."""
-    return subprocess.run([SANDBOX, work, "true"], cwd=ROOT, timeout=60).returncode == 0
+def sandboxed_runs(work, command):
+    """Whether the sandbox runs @p command, the sandbox's own words on its error output when it does not."""
+    return subprocess.run([SANDBOX, work, *command], cwd=ROOT, stdout=subprocess.DEVNULL, timeout=60).returncode == 0
 
 
 def compile_case(iasl, case, work):
@@ -141,8 +142,11 @@ def main():
     counts = {"ok": 0, "divergence": 0, "skip": 0, "waits": 0, "not ok": 0}
     names = sorted(name for name in os.listdir(cases) if name.endswith(".asl"))
     with tempfile.TemporaryDirectory() as work:
-        if not sandbox_runs(work):
+        if not sandboxed_runs(work, ["true"]):
             print("not ok: the sandbox of tools/acpi/sandbox.sh cannot run, and iasl compiles no case outside it")
+            sys.exit(1)
+        if not sandboxed_runs(work, [iasl, "-v"]):
+            print("not ok: %s does not run in the sandbox of tools/acpi/sandbox.sh, which compiles every case" % iasl)
             sys.exit(1)
         for name in names:
             case = name[:-4]
