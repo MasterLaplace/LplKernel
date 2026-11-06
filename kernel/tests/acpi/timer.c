@@ -353,6 +353,69 @@ static uint64_t timer_stall(uint32_t microseconds, uint32_t *out_waited)
 }
 
 /**
+ * @brief Resets the made-up machine as timer_open does, and the waits made on its reference to none.
+ */
+static void timer_open_reference(void)
+{
+    timer_open(0u);
+    memset(&timer_reference_waits, 0, sizeof(timer_reference_waits));
+}
+
+/**
+ * @brief Busy-waits @p microseconds on the made-up machine's reference through @p host, and gives the
+ *        nanoseconds that passed on the machine meanwhile.
+ */
+static uint64_t timer_reference_stall(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t microseconds,
+                                      uint32_t *out_waited)
+{
+    const uint64_t before = timer_machine.nanoseconds;
+
+    *out_waited =
+        advanced_configuration_and_power_interface_reference_stall(host, &timer_reference_waits, microseconds);
+    return timer_machine.nanoseconds - before;
+}
+
+/**
+ * @brief Sleeps @p microseconds on the made-up machine's reference, idling through timer_idle, and gives the
+ *        nanoseconds that passed on the machine meanwhile.
+ */
+static uint64_t timer_reference_sleep(uint32_t microseconds, uint32_t *out_waited)
+{
+    const uint64_t before = timer_machine.nanoseconds;
+
+    *out_waited = advanced_configuration_and_power_interface_reference_sleep(
+        &timer_host, &timer_reference_waits, microseconds, TIMER_IDLE_LONGEST, timer_idle);
+    return timer_machine.nanoseconds - before;
+}
+
+/**
+ * @brief Busy-waits TIMER_REFERENCE_DERAIL_STALL on the made-up machine's reference as it is set, and checks
+ *        that it derails there, that the host's own stall waits what it left, which @p whole says is all of
+ *        it, and that a later stall waits nothing, reads nothing and calls no stall of the host.
+ */
+static void timer_reference_derails(KernelTest_t *test, bool whole, const char *claim)
+{
+    uint32_t waited;
+    uint32_t later_waited;
+
+    (void) timer_reference_stall(&timer_host, TIMER_REFERENCE_DERAIL_STALL, &waited);
+
+    const uint32_t reads = timer_machine.reference_reads;
+    const uint32_t starts = timer_machine.reference_starts;
+    const uint64_t later = timer_reference_stall(&timer_host, TIMER_REFERENCE_DERAIL_STALL, &later_waited);
+
+    kernel_test_check(test,
+                      timer_reference_waits.state == REFERENCE_STATE(DERAILED) && timer_machine.host_stalls == 1u &&
+                          waited >= TIMER_REFERENCE_DERAIL_STALL &&
+                          (timer_machine.host_microseconds == TIMER_REFERENCE_DERAIL_STALL) == whole,
+                      claim);
+    kernel_test_check(test,
+                      later == 0u && later_waited == 0u && timer_machine.reference_reads == reads &&
+                          timer_machine.reference_starts == starts && timer_machine.host_stalls == 1u,
+                      "and a later stall waits nothing, neither reading nor starting it, nor calling the host's stall");
+}
+
+/**
  * @brief A platform without a FADT, a hardware-reduced one, one without PM_TMR_BLK, and one whose
  *        PM_TMR_BLK lies in memory or past the last port have no timer to wait on, and no port is read.
  */
@@ -1236,69 +1299,6 @@ KERNEL_TEST(each_timer_state_has_its_name)
         test,
         timer_name_is(advanced_configuration_and_power_interface_power_management_timer_state_name(9u), "unknown"),
         "and 9 is unknown");
-}
-
-/**
- * @brief Resets the made-up machine as timer_open does, and the waits made on its reference to none.
- */
-static void timer_open_reference(void)
-{
-    timer_open(0u);
-    memset(&timer_reference_waits, 0, sizeof(timer_reference_waits));
-}
-
-/**
- * @brief Busy-waits @p microseconds on the made-up machine's reference through @p host, and gives the
- *        nanoseconds that passed on the machine meanwhile.
- */
-static uint64_t timer_reference_stall(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t microseconds,
-                                      uint32_t *out_waited)
-{
-    const uint64_t before = timer_machine.nanoseconds;
-
-    *out_waited =
-        advanced_configuration_and_power_interface_reference_stall(host, &timer_reference_waits, microseconds);
-    return timer_machine.nanoseconds - before;
-}
-
-/**
- * @brief Sleeps @p microseconds on the made-up machine's reference, idling through timer_idle, and gives the
- *        nanoseconds that passed on the machine meanwhile.
- */
-static uint64_t timer_reference_sleep(uint32_t microseconds, uint32_t *out_waited)
-{
-    const uint64_t before = timer_machine.nanoseconds;
-
-    *out_waited = advanced_configuration_and_power_interface_reference_sleep(
-        &timer_host, &timer_reference_waits, microseconds, TIMER_IDLE_LONGEST, timer_idle);
-    return timer_machine.nanoseconds - before;
-}
-
-/**
- * @brief Busy-waits TIMER_REFERENCE_DERAIL_STALL on the made-up machine's reference as it is set, and checks
- *        that it derails there, that the host's own stall waits what it left, which @p whole says is all of
- *        it, and that a later stall waits nothing, reads nothing and calls no stall of the host.
- */
-static void timer_reference_derails(KernelTest_t *test, bool whole, const char *claim)
-{
-    uint32_t waited;
-    uint32_t later_waited;
-
-    (void) timer_reference_stall(&timer_host, TIMER_REFERENCE_DERAIL_STALL, &waited);
-
-    const uint32_t reads = timer_machine.reference_reads;
-    const uint32_t starts = timer_machine.reference_starts;
-    const uint64_t later = timer_reference_stall(&timer_host, TIMER_REFERENCE_DERAIL_STALL, &later_waited);
-
-    kernel_test_check(test,
-                      timer_reference_waits.state == REFERENCE_STATE(DERAILED) && timer_machine.host_stalls == 1u &&
-                          waited >= TIMER_REFERENCE_DERAIL_STALL &&
-                          (timer_machine.host_microseconds == TIMER_REFERENCE_DERAIL_STALL) == whole,
-                      claim);
-    kernel_test_check(test,
-                      later == 0u && later_waited == 0u && timer_machine.reference_reads == reads &&
-                          timer_machine.reference_starts == starts && timer_machine.host_stalls == 1u,
-                      "and a later stall waits nothing, neither reading nor starting it, nor calling the host's stall");
 }
 
 /**

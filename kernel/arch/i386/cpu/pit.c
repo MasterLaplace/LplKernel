@@ -50,11 +50,13 @@ uint32_t programmable_interval_timer_get_frequency_hz(void) { return programmabl
 uint32_t programmable_interval_timer_start_channel_2(void)
 {
     const uint8_t port_b = asmutils_input_byte(PIT_SYSTEM_CONTROL_PORT_B);
+    uint32_t loaded;
 
     asmutils_output_byte(PIT_SYSTEM_CONTROL_PORT_B, (uint8_t) ((port_b & ~PIT_SPEAKER_DATA) | PIT_CHANNEL2_GATE));
     asmutils_output_byte(PIT_COMMAND_PORT, PIT_CHANNEL2_LOHIBYTE_MODE0_BINARY);
     asmutils_output_byte(PIT_CHANNEL2_DATA_PORT, (uint8_t) (PIT_CHANNEL2_FULL_COUNT & 0x00FFu));
     asmutils_output_byte(PIT_CHANNEL2_DATA_PORT, (uint8_t) ((PIT_CHANNEL2_FULL_COUNT >> 8u) & 0x00FFu));
+    (void) programmable_interval_timer_read_channel_2(&loaded);
     return PIT_INPUT_FREQUENCY_HZ;
 }
 

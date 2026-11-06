@@ -173,7 +173,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor, one access of the width asked; offsets from 0x100 and segments other than 0 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
-| `reference_start()` → its rate in hertz, or 0; `reference_read()` → what it counted since, or spent past its range: a count no interrupt drives, which the power management timer's rate is measured against and waits count on without a usable timer (§3.9) | PIT channel 2 from 65,535 in mode 0, its latched count read by polling, spent once its output rises, 54.9 ms later | none; the timer's tests give their own |
+| `reference_start()` → its rate in hertz, or 0; `reference_read()` → what it counted since, or spent past its range: a count no interrupt drives, which the power management timer's rate is measured against and waits count on without a usable timer (§3.9) | PIT channel 2 from 65,535 in mode 0, read once at its start, so that a later read counts from the count it was given, which the 8254 loads at the next edge of its clock; its latched count read by polling, spent once its output rises, 54.9 ms later | none; the timer's tests give their own |
 | `sleep_microseconds(u32)` → the microseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, on the ACPI power management timer the boot checked (§3.9), `Sleep` halts while more than a tick and an eighth remain, the eighth for the 5 % the timer's rate may stray and an interrupt taken late, then spins the rest on the timer, and `Stall` spins on it; without one, both wait so on the reference, and only without a usable reference does `Sleep` halt until a deadline on the tick and `Stall` spin on the tick, each rounded up to a whole tick; each returns what it waited; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
@@ -567,7 +567,7 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   timer that counts half a second while the reference moves short of 30 ms (`ran-ahead`).
   Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which
   is going back, is `derailed`, and so is one that stands still while the halts of a `Sleep` see the tick step
-  twice: the wait finishes on the tick, and so do the later ones. A pause between two reads of
+  twice: the wait finishes as one without a usable timer does (below), and so do the later ones. A pause between two reads of
   a wait reads modulo 4.69 s, the 24-bit range, so one of 2.34 s to 4.69 s demotes a healthy timer for the rest of
   the boot, which is accepted: nothing at boot holds a wait off the processor that long.
 - **Without a usable timer**, and on a hardware-reduced platform, `Sleep` and `Stall` wait the same way on the host's
@@ -1204,6 +1204,8 @@ published image. The made-up ASL is ours, under MIT.
   `./qemu.sh --server` boots QEMU's default, `pc`): the kernel switches to ACPI mode, loads what QEMU generates, runs
   the initialisation and prints its counters and statuses. A debug kernel can also print each table as hex lines on
   COM1; `tools/acpi/host` reads them back from `serial.log`, so the host harness loads exactly the bytes ring 0 saw.
+- **No power management timer.** `-machine pc,acpi=off` gives no ACPI table, so the machine host's waits run on the
+  reference (§3.9), which the ring-0 tests of the waits check there.
 - **Reference tables** (`tests/data/acpi/x86` at v10.2.1): 42 configurations, and 5 `microvm` ones (revision-2
   DSDT, hardware-reduced FADT). They test the namespace, not the table walk.
 - **What QEMU cannot test**, and the corpus and the made-up tables test instead: `_CST`, `_PSS`, `_CPC`, `_LPI`,
