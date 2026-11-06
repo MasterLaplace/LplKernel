@@ -120,9 +120,11 @@ typedef void (*AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t)(
  *        the code goes on, the TermList the interpreter runs next, or the term the statement waits for.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration {
-    uint32_t after;    /**< Where table-level code goes on: past the statements, or past the TermList they open. */
+    uint32_t after;    /**< Where table-level code goes on: past the statements, in the innermost TermList the load
+                            entered (O21), or past the TermList they open. */
     uint32_t body;     /**< Where the TermList of the Scope, Device, Processor, PowerResource or ThermalZone the
-                            statement declared starts, which the interpreter runs up to after, or 0. */
+                            statement declared starts, which the interpreter runs up to after, when a load whose
+                            general_load is set hands it back; else 0. */
     uint32_t scope;    /**< The node that TermList runs in. */
     uint32_t asks;     /**< Where the term the statement waits for starts, an OperationRegion's offset or length or
                             a BankField's BankValue that is no constant, or 0 when it waits for none. */
@@ -142,7 +144,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration 
     uint32_t answers_for; /**< The offset of the statement the answers belong to, or 0. */
     uint8_t answered;     /**< Terms answered so far, in the order that statement asked for them. */
     bool closed;          /**< Whether the TermList of an If declared without running its code reached its end. */
-    bool leaves;          /**< Whether a fault skipped the rest of the construct the statement stands in (§6.2). */
+    bool leaves;          /**< Whether a fault skipped the rest of the construct the statement stands in (§6.2): the
+                               innermost TermList the load entered (O21), else the interpreter's innermost construct. */
     bool abandons;        /**< Whether a fault abandoned the rest of the table (§6.2). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t;
 
