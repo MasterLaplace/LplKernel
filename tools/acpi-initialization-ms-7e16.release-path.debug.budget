@@ -2,10 +2,10 @@
 # namespace of the MSI MS-7E16, an AMD client, steps 2 to 9 of §3.8, once loaded as a release kernel loads it (O2),
 # inside the ring-0 corpus test the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh
 # --server). The boot runs the same function on q35's own tables first, hence skip=1. tools/acpi-corpus.sh module
-# 'Desktop/MSI/MS-7/MS-7E16/B75C85853132' writes the module. Its gap to a release kernel, measured on q35's tables by
-# tools/acpi-initialization-q35.release-path.debug.budget: 32 instructions (0.04 %) more than a release kernel. Checked
-# by tools/instructions.sh --budget tools/acpi-initialization-ms-7e16.release-path.debug.budget kernel/lpl.kernel; a
-# change that moves the count records the new one.
+# 'Desktop/MSI/MS-7/MS-7E16/B75C85853132' writes the module. The gap to a release kernel is measured on q35's tables
+# only (tools/acpi-initialization-q35.release-path.debug.budget): 32 instructions (0.04 %) more. Checked by
+# tools/instructions.sh --budget tools/acpi-initialization-ms-7e16.release-path.debug.budget kernel/lpl.kernel; a change
+# that moves the count records the new one.
 inside=advanced_configuration_and_power_interface_initialize_namespace
 skip=1
 times=1

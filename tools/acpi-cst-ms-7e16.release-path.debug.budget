@@ -2,10 +2,10 @@
 # of the _CST objects of the MSI MS-7E16, an AMD client, once loaded as a release kernel loads it (O2), inside the
 # ring-0 corpus test the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh --server).
 # The boot runs the same function on q35's own tables first, hence skip=1. tools/acpi-corpus.sh module
-# 'Desktop/MSI/MS-7/MS-7E16/B75C85853132' writes the module. Its gap to a release kernel, measured on q35's tables by
-# tools/acpi-cst-q35.release-path.debug.budget: none on the walk to its processors, which hold no _CST, so the gap of an
-# evaluation is not measured. Checked by tools/instructions.sh --budget tools/acpi-cst-ms-7e16.release-path.debug.budget
-# kernel/lpl.kernel; a change that moves the count records the new one.
+# 'Desktop/MSI/MS-7/MS-7E16/B75C85853132' writes the module. The gap of an evaluation to a release kernel is not
+# measured: q35's processors hold no _CST, and the walk to them alone counts the same as a release kernel's
+# (tools/acpi-cst-q35.release-path.debug.budget). Checked by tools/instructions.sh --budget
+# tools/acpi-cst-ms-7e16.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records the new one.
 inside=advanced_configuration_and_power_interface_processor_idle_publish
 skip=1
 times=1
