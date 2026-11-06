@@ -634,11 +634,13 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
    `invalid_opcode`.
 2. **Execute what the needs path reaches.** The host harness computes the static closure of the needs path (§1.3)
    on every corpus machine. Being static, it covers every branch, so it is a superset of what runs. Every opcode the
-   closure reaches on any machine is executed; every other fails with `unimplemented_operator`, counted, until a
-   count asks for it. A later need adds the closure of its own entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and
-   `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure reaches with the run list where it reaches it:
-   in a method body, what the interpreter runs; in table-level code, that and the declarations the load takes. An
-   opcode the run list leaves out there fails it.
+   closure reaches on any machine is executed, and so is every opcode a row of §4.5, §5.2 or §6.3 gives a behaviour of
+   its own: `Unload`, `Fatal`, `BreakPoint`, `Wait`, `Reset`, `FindSetLeftBit` and `FindSetRightBit`; every other
+   fails with `unimplemented_operator`, counted, until a count asks for it. A later need adds the closure of its own
+   entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure
+   reaches with the run list where it reaches it: in a method body, what the interpreter runs; in table-level code,
+   that and the declarations the load takes, but `DataTableRegion`, whose statement fails (§4.5). An opcode the run
+   list leaves out there fails it.
 3. **Three region spaces have a handler:** SystemMemory, SystemIO and PCI_Config. Every other space decodes and
    fails loudly at access (§4.5).
 4. **The needs path is run too.** The host harness and the ring-0 corpus test run §3.8 and `_CST` on every corpus
@@ -679,8 +681,8 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
 
 ### 4.3 The opcodes
 
-An opcode marked "executed" runs when the needs-path closure reaches it (§4.1), and fails with
-`unimplemented_operator` otherwise.
+An opcode marked "executed" runs when the needs-path closure reaches it or a row of the specification gives it a
+behaviour of its own (§4.1), and fails with `unimplemented_operator` otherwise.
 
 **Data objects and constants**: built at load and in methods.
 
@@ -1313,8 +1315,10 @@ a `_CST` table with one latency changed by one.
   below 1 MiB, so this needs #278 and #279 first.
 - Under Linux on the same machine, `acpidump` goes through the host harness and `acpiexec`; the `_CST` packages
   match ours in structure (state count, register kinds, types). Latency and power come from NVS values a dump does
-  not hold, so they are compared with `/sys/devices/system/cpu/cpu0/cpuidle`, when
-  `/sys/devices/system/cpu/cpuidle/current_driver` says Linux took its states from ACPI.
+  not hold. The latency is compared with `/sys/devices/system/cpu/cpu0/cpuidle` (`tools/acpi/against_linux_cpuidle.py`),
+  when `/sys/devices/system/cpu/cpuidle/current_driver` says Linux took its states from ACPI; the power is compared
+  with nothing, since Linux publishes none of the `_CST`'s (v7.3 `acpi_processor_setup_cstates` sets no
+  `power_usage`).
 - The machines are named in no public document.
 
 ### 8.9 Failure first

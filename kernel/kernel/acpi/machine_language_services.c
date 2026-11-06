@@ -388,6 +388,33 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     return MACHINE_LANGUAGE_OK;
 }
 
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_reset(MachineLanguageLoad_t *load,
+                                                                                          uint32_t node)
+{
+    MachineLanguageNode_t *event =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
+
+    if (event->type != MACHINE_LANGUAGE_NODE(EVENT))
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    event->value.payload = 0u;
+    return MACHINE_LANGUAGE_OK;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_wait(MachineLanguageLoad_t *load,
+                                                                                         uint32_t node,
+                                                                                         bool *out_timed_out)
+{
+    MachineLanguageNode_t *event =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
+
+    if (event->type != MACHINE_LANGUAGE_NODE(EVENT))
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    *out_timed_out = event->value.payload == 0u;
+    if (!*out_timed_out)
+        --event->value.payload;
+    return MACHINE_LANGUAGE_OK;
+}
+
 MachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_enter_method(MachineLanguageLoad_t *load, uint8_t flags,
                                                                          uint8_t *out_saved)

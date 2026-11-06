@@ -48,6 +48,53 @@ static uint32_t evaluation_failed(AdvancedConfigurationAndPowerInterfaceMachineL
 }
 
 /**
+ * @brief Evaluates the method at @p path, which takes no argument, and gives its Integer, or 0xDEAD when it fails or
+ *        returns no Integer.
+ */
+static uint64_t evaluation_call(const char *path)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    uint64_t integer = 0xDEADu;
+
+    if (advanced_configuration_and_power_interface_machine_language_evaluate(&evaluation_load, path, NULL, 0u,
+                                                                             &result) ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+        result.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+        integer = result.payload;
+    advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
+                                                                              &evaluation_load.space, &result);
+    return integer;
+}
+
+/**
+ * @brief Evaluates the method at @p path, which takes no argument, and gives the status it ends with.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t evaluation_status(const char *path)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&evaluation_load, path, NULL, 0u, &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&evaluation_load.heap,
+                                                                              &evaluation_load.space, &result);
+    return status;
+}
+
+/**
+ * @brief Whether the host's log kept, at @p index, the error @p text.
+ */
+static bool evaluation_logged_error(uint32_t index, const char *text)
+{
+    const AdvancedConfigurationAndPowerInterfaceSimulatedLogLine_t *line = &evaluation_host.log_lines[index];
+    const size_t length = strlen(text);
+
+    return index < evaluation_host.log_count &&
+           index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_LOG_LINES &&
+           line->level == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_ERROR && strlen(line->text) == length &&
+           memcmp(line->text, text, length) == 0;
+}
+
+/**
  * @brief Checks that every run left the evaluation's stacks empty, then closes the load.
  */
 static void evaluation_close(KernelTest_t *test)
@@ -292,21 +339,131 @@ KERNEL_TEST(a_field_read_that_fails_keeps_both_branches)
 }
 
 /**
- * @brief An opcode the needs-path closure does not reach fails with unimplemented_operator, counted
- *        per opcode (§4.5).
+ * @brief Nor, an opcode the specification leaves decoded only (§1.4), fails with unimplemented_operator, counted per
+ *        opcode (§4.5).
  */
-KERNEL_TEST(an_opcode_outside_the_closure_is_unimplemented)
+KERNEL_TEST(an_opcode_decoded_only_is_unimplemented)
 {
     if (!evaluation_run(test, 2u, evaluation_unimplemented_opcode_aml, sizeof(evaluation_unimplemented_opcode_aml)))
         return;
     kernel_test_check(
         test,
-        evaluation_load.evaluation.unimplemented
-                    [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_FIND_SET_LEFT_BIT] == 1u &&
+        evaluation_load.evaluation
+                    .unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOR] == 1u &&
             evaluation_failed(
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_UNIMPLEMENTED_OPERATOR) == 1u,
-        "FindSetLeftBit is counted as unimplemented");
+        "Nor is counted as unimplemented");
     kernel_test_check(test, evaluation_integer("RES_") == 5u, "RES_ keeps its value");
+    evaluation_close(test);
+}
+
+/**
+ * @brief FindSetLeftBit and FindSetRightBit give the one-based position of the highest and of the lowest bit set, 0
+ *        for none, with a target and without (§6.3): the values worked out by hand, at the width of the table's
+ *        integers (§5.1).
+ */
+KERNEL_TEST(find_set_left_bit_and_find_set_right_bit_work_with_a_target_and_without)
+{
+    if (!evaluation_run(test, 2u, evaluation_find_set_bits_aml, sizeof(evaluation_find_set_bits_aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("R00_") == 5u && evaluation_integer("R01_") == 5u,
+                      "0x10 sets bit 5 alone, counted from 1, for both");
+    kernel_test_check(test, evaluation_integer("R02_") == 10u, "FindSetLeftBit (0x0300, R02_) stores 10");
+    kernel_test_check(test, evaluation_integer("R03_") == 9u && evaluation_integer("R04_") == 9u,
+                      "FindSetRightBit (0x0300, R04_) stores 9 and gives it");
+    kernel_test_check(test, evaluation_integer("R05_") == 0u && evaluation_integer("R06_") == 0u,
+                      "Zero has no bit set: both give 0");
+    kernel_test_check(test, evaluation_integer("R07_") == 64u && evaluation_integer("R08_") == 1u,
+                      "Ones: the highest bit set is 64, the lowest 1");
+    kernel_test_check(test, evaluation_integer("R09_") == 32u && evaluation_integer("R10_") == 32u,
+                      "0x80000000 sets bit 32 alone");
+    kernel_test_check(test, evaluation_integer("R11_") == 64u && evaluation_integer("R12_") == 64u,
+                      "One shifted left by 63 sets bit 64 alone");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails");
+    evaluation_close(test);
+    if (!evaluation_run(test, 1u, evaluation_find_set_bits_aml, sizeof(evaluation_find_set_bits_aml)))
+        return;
+    kernel_test_check(test, evaluation_integer("R07_") == 32u && evaluation_integer("R08_") == 1u,
+                      "under revision 1, Ones is 32 bits wide: the highest bit set is 32");
+    kernel_test_check(test, evaluation_integer("R11_") == 0u && evaluation_integer("R12_") == 0u,
+                      "under revision 1, One shifted left by 63 is 0: both give 0");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 0u, "nothing fails under revision 1 either");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A BreakPoint is a counted no-op and a Fatal is counted and logged, its argument evaluated, then execution
+ *        goes on past both (§5.2), at table level and in a method; a Fatal's line names its table, its offset, its
+ *        opcode and its scope or method (§4.5): 0xB8 at table level and 0x6E in FATL, where iasl placed them; a Fatal
+ *        whose argument is no Integer fails, as an impossible conversion (§5.2), neither counted nor logged as one;
+ *        an Unload is refused, its operand evaluated and nothing else done, counted (§4.5).
+ */
+KERNEL_TEST(break_point_and_fatal_are_counted_and_unload_is_refused)
+{
+    if (!evaluation_run(test, 2u, evaluation_fatal_break_point_unload_aml,
+                        sizeof(evaluation_fatal_break_point_unload_aml)))
+        return;
+    kernel_test_check(test,
+                      evaluation_load.services.break_points == 1u && evaluation_load.services.fatals == 1u &&
+                          evaluation_load.evaluation.failures == 0u,
+                      "the table's BreakPoint and Fatal are counted, and fail nothing");
+    kernel_test_check(test, evaluation_integer("RES_") == 7u, "the table's code goes on past both");
+    kernel_test_check(test,
+                      evaluation_logged_error(0u, "fatals table=DSDT/MADEUPML offset=0x000000B8 opcode=Fatal scope=\\"),
+                      "the table's Fatal is logged in the scope of the table's code");
+    kernel_test_check(test, evaluation_call("\\BRKP") == 1u && evaluation_load.services.break_points == 2u,
+                      "BRKP counts its BreakPoint and returns 1");
+    kernel_test_check(test,
+                      evaluation_call("\\FATL") == 2u && evaluation_load.services.fatals == 2u &&
+                          evaluation_integer("CNT0") == 1u,
+                      "FATL counts its Fatal, whose argument called ARGM, and returns 2");
+    kernel_test_check(
+        test, evaluation_logged_error(1u, "fatals table=DSDT/MADEUPML offset=0x0000006E opcode=Fatal method=\\FATL"),
+        "FATL's Fatal is logged in its method");
+    kernel_test_check(test,
+                      evaluation_status("\\FATP") ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_TYPE_MISMATCH &&
+                          evaluation_load.services.fatals == 2u,
+                      "FATP's Fatal, whose argument is a Package, fails with type_mismatch and is not counted");
+    kernel_test_check(test,
+                      evaluation_host.log_count == 3u && memcmp(evaluation_host.log_lines[2].text, "fatals ", 7u) != 0,
+                      "FATP's failure is logged as its fault, not as a Fatal");
+    kernel_test_check(test,
+                      evaluation_call("\\UNLD") == 3u && evaluation_load.unload_refused == 1u &&
+                          evaluation_integer("TBLX") == 0u,
+                      "UNLD's Unload is refused and counted, TBLX untouched, and UNLD returns 3");
+    kernel_test_check(test,
+                      evaluation_call("\\UNLI") == 4u && evaluation_load.unload_refused == 2u &&
+                          evaluation_integer("CNT0") == 2u,
+                      "UNLI's Unload is refused once its operand called INDM, and UNLI returns 4");
+    evaluation_close(test);
+}
+
+/**
+ * @brief A DataTableRegion at table level, which the kernel decodes but does not run (§1.4), fails its statement,
+ *        counted in unimplemented_operator, and the load goes on (§4.5); the name it declares stays, with no region
+ *        object, since a failure never takes an object out of the namespace (§3.6).
+ */
+KERNEL_TEST(a_data_table_region_at_table_level_fails_and_the_load_goes_on)
+{
+    if (!evaluation_run(test, 2u, evaluation_table_level_data_table_region_aml,
+                        sizeof(evaluation_table_level_data_table_region_aml)))
+        return;
+    kernel_test_check(
+        test,
+        evaluation_load.evaluation
+                    .unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_DATA_REGION] ==
+                1u &&
+            evaluation_failed(
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_UNIMPLEMENTED_OPERATOR) == 1u,
+        "the DataTableRegion fails as unimplemented, counted under its opcode");
+    kernel_test_check(test, evaluation_load.evaluation.failures == 1u && evaluation_integer("RES_") == 7u,
+                      "its statement alone fails, and the code after it runs");
+    kernel_test_check(test,
+                      made_up_root_node(&evaluation_load, "DTR0") != NULL &&
+                          made_up_root_node(&evaluation_load, "DTR0")->value.kind !=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_REGION,
+                      "DTR0 is declared, and holds no region");
     evaluation_close(test);
 }
 

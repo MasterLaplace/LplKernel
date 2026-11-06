@@ -9,7 +9,7 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_synchronization, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define SYNCHRONIZATION_TABLE_CAPACITY 1024u                 /**< Bytes of the buffer a made-up DSDT is written in. */
+#define SYNCHRONIZATION_TABLE_CAPACITY 2048u                 /**< Bytes of the buffer a made-up DSDT is written in. */
 #define SYNCHRONIZATION_ONES           0xFFFFFFFFFFFFFFFFull /**< Ones, under a revision-2 table. */
 #define SYNCHRONIZATION_STATUS(name)   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
 
@@ -18,12 +18,30 @@ static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t synchronization_hos
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t synchronization_load;
 
 /**
+ * @brief Loads the table as a DSDT of @p revision on a fresh simulated host.
+ */
+static bool synchronization_run_revision(KernelTest_t *test, uint8_t revision)
+{
+    return made_up_load_table(test, &synchronization_load, &synchronization_host, synchronization_table, revision,
+                              synchronization_aml, sizeof(synchronization_aml));
+}
+
+/**
  * @brief Loads the table as a DSDT of revision 2 on a fresh simulated host.
  */
-static bool synchronization_run(KernelTest_t *test)
+static bool synchronization_run(KernelTest_t *test) { return synchronization_run_revision(test, 2u); }
+
+/**
+ * @brief The integer the Name at the root called @p name holds, or 0xDEAD when it holds none.
+ */
+static uint64_t synchronization_integer(const char *name)
 {
-    return made_up_load_table(test, &synchronization_load, &synchronization_host, synchronization_table, 2u,
-                              synchronization_aml, sizeof(synchronization_aml));
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+        made_up_root_node(&synchronization_load, name);
+
+    if (node == NULL || node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+        return 0xDEADu;
+    return node->value.payload;
 }
 
 /**
@@ -185,8 +203,7 @@ KERNEL_TEST(acquire_and_signal_refuse_an_object_of_another_type)
 }
 
 /**
- * @brief Signal counts the Event's pending signals up; Wait, which no boot path reaches, still fails
- *        with unimplemented_operator (§4.1).
+ * @brief Signal counts the Event's pending signals up, and Wait takes one of them (§5.2).
  */
 KERNEL_TEST(signal_counts_an_event_up)
 {
@@ -201,8 +218,54 @@ KERNEL_TEST(signal_counts_an_event_up)
                       status == SYNCHRONIZATION_STATUS(OK) && event != NULL && event->value.payload == 2u &&
                           synchronization_load.services.signals == 2u,
                       "two signals pend on EVT0");
-    (void) synchronization_evaluate("\\EWAI", &status);
-    kernel_test_check(test, status == SYNCHRONIZATION_STATUS(UNIMPLEMENTED_OPERATOR), "Wait is not run yet");
+    kernel_test_check(test,
+                      synchronization_evaluate("\\EWAI", &status) == 0u && status == SYNCHRONIZATION_STATUS(OK) &&
+                          event->value.payload == 1u,
+                      "Wait takes one of them and gives 0: one still pends");
+    synchronization_close(test);
+}
+
+/**
+ * @brief Wait consumes a pending signal and gives 0, or reports a timeout at once, True, whatever the timeout it was
+ *        given, which is evaluated and must convert to an Integer; Reset clears every pending signal; both refuse an
+ *        object that is no Event (§5.2).
+ *        True is Ones at the width of the table's integers (§5.2).
+ */
+KERNEL_TEST(wait_consumes_a_signal_and_reset_clears_them)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status = SYNCHRONIZATION_STATUS(OK);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *event = NULL;
+
+    if (!synchronization_run(test))
+        return;
+    (void) synchronization_evaluate("\\CONS", &status);
+    event = made_up_root_node(&synchronization_load, "EVT0");
+    kernel_test_check(test,
+                      status == SYNCHRONIZATION_STATUS(OK) && synchronization_integer("WAI0") == 0u &&
+                          synchronization_integer("WAI1") == 0u,
+                      "the first two Waits each take one of the two signals and give 0");
+    kernel_test_check(
+        test, synchronization_integer("WAI2") == SYNCHRONIZATION_ONES && event != NULL && event->value.payload == 0u,
+        "the third, with no signal left, times out at once and gives True");
+    kernel_test_check(test, synchronization_integer("CNT0") == 1u, "the second Wait's timeout called TMO_");
+    kernel_test_check(test,
+                      synchronization_evaluate("\\RSTE", &status) == SYNCHRONIZATION_ONES &&
+                          status == SYNCHRONIZATION_STATUS(OK) && event != NULL && event->value.payload == 0u,
+                      "Reset clears both signals: the Wait after it times out");
+    (void) synchronization_evaluate("\\RSTI", &status);
+    kernel_test_check(test, status == SYNCHRONIZATION_STATUS(TYPE_MISMATCH), "Reset of an Integer is refused");
+    (void) synchronization_evaluate("\\WAII", &status);
+    kernel_test_check(test, status == SYNCHRONIZATION_STATUS(TYPE_MISMATCH), "Wait on an Integer is refused");
+    (void) synchronization_evaluate("\\WAIP", &status);
+    kernel_test_check(test,
+                      status == SYNCHRONIZATION_STATUS(TYPE_MISMATCH) && event != NULL && event->value.payload == 1u,
+                      "a Wait whose timeout is a Package fails, the signal WAIP raised still pending");
+    synchronization_close(test);
+    if (!synchronization_run_revision(test, 1u))
+        return;
+    kernel_test_check(
+        test, synchronization_evaluate("\\RSTE", &status) == 0xFFFFFFFFu && status == SYNCHRONIZATION_STATUS(OK),
+        "under revision 1, the timeout's True is 0xFFFFFFFF");
     synchronization_close(test);
 }
 

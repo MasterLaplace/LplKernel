@@ -3,8 +3,10 @@
 Usage: python3 -I tools/acpi/acpiexec_namespace.py <acpica bin directory> <acpidump text file>
        python3 -I tools/acpi/acpiexec_namespace.py <acpica bin directory> --tables <DSDT> [<SSDT>...]
 
-An acpidump file is split with acpixtract; its DSDT, then its SSDTs in the dump's order, go to `acpiexec -l -di`, which
-loads them without running _INI, and its `namespace` command prints every node. Each line becomes
+An acpidump file is split with acpixtract; its DSDT, then its SSDTs in the dump's order, go to `acpiexec -l -di -fv 0`,
+which loads them without running _INI, every region it has not written reading 0 as the simulated regions of the
+harness read for a recorded machine, memory, ports and PCI configuration alike (specification §8.4), and its
+`namespace` command prints every node. Each line becomes
 `aml node <path> <type> <value>`: the addresses ACPICA prints (Aml, Object, Notify Object, an alias's target node) are
 dropped, and so are the nodes ACPICA creates for an External with no object, and its own `\\_TI_` test scope.
 """
@@ -15,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 
+REGION_FILL = "0"
 LINE = re.compile(r"^\s*(\d+)\s+(\S{4})\s+(\S+)\s+(?:0x[0-9a-f]+|\(nil\))\s+[0-9A-F]{3}\s?(.*)$")
 
 
@@ -29,8 +32,8 @@ def tables_of_dump(bin_directory, dump, work):
 
 def namespace(bin_directory, tables, work):
     """acpiexec's namespace dump of tables, as normalised lines."""
-    output = subprocess.run([os.path.join(bin_directory, "acpiexec"), "-l", "-di", "-b", "namespace"] + tables,
-                            cwd=work, capture_output=True, text=True, errors="replace", timeout=600).stdout
+    command = [os.path.join(bin_directory, "acpiexec"), "-l", "-di", "-fv", REGION_FILL, "-b", "namespace"] + tables
+    output = subprocess.run(command, cwd=work, capture_output=True, text=True, errors="replace", timeout=600).stdout
     lines, path, started, skipped_depth = [], [], False, None
     for line in output.splitlines():
         if line.startswith("ACPI Namespace (from Namespace Root)"):

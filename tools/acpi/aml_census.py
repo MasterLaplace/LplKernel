@@ -321,6 +321,7 @@ class Census:
         self.named_objects_in_methods = collections.Counter()
         self.predefined_root_references = collections.Counter()
         self.call_edges = collections.defaultdict(set)
+        self.timer_readers = set()
         self.pkglength_bytes = collections.Counter()
         self.errors = []
 
@@ -507,6 +508,8 @@ class Walker:
         self.census.opcodes_by_table[self.label][name] += 1
         if self.method_stack:
             self.census.opcodes_method[name] += 1
+            if name == "Timer":
+                self.census.timer_readers.add(self.method_stack[-1])
         else:
             self.census.opcodes_block[name] += 1
 
@@ -1149,9 +1152,10 @@ def static_call_depth(edges):
     return longest, len(on_cycle)
 
 
-def census_of_machine(name, blocks, top):
+def walk_machine(blocks):
     """Load every definition block of one machine into one namespace and count its AML: the DSDT, then each
-    SSDT in the dump's order, declared in one pass (docs/acpi/specification.md §3.8 step 1, §5.1), then counted."""
+    SSDT in the dump's order, declared in one pass (docs/acpi/specification.md §3.8 step 1, §5.1), then counted.
+    Return the namespace, the census, the table headers and the tables walked."""
     namespace = Namespace()
     census = Census()
     tables = []
@@ -1173,6 +1177,26 @@ def census_of_machine(name, blocks, top):
             walker = Walker(data, TABLE_HEADER_SIZE, namespace, census, label, counting)
             walker.term_list(TABLE_HEADER_SIZE, len(data), (), 0)
         namespace.place_externals()
+    return namespace, census, tables, parsed
+
+
+def methods_reading_timer(blocks):
+    """Return the paths of the methods of one machine that read Timer, in their own body or through a method they
+    call, as `\\SEG.SEG` strings: two evaluations of one differ by the clock, so an oracle that runs it twice
+    compares its results on status only (docs/acpi/specification.md §8.6)."""
+    _, census, _, _ = walk_machine(blocks)
+    readers = set(census.timer_readers)
+    grown = True
+    while grown:
+        callers = {caller for caller, callees in census.call_edges.items() if callees & readers}
+        grown = not callers <= readers
+        readers |= callers
+    return {"\\" + ".".join(path) for path in readers}
+
+
+def census_of_machine(name, blocks, top):
+    """Load and count one machine (walk_machine), and return its census as a dictionary."""
+    _, census, tables, parsed = walk_machine(blocks)
     dsdt = [table for table in tables if table["signature"] == "DSDT"]
     integer_bits = None
     if dsdt:
