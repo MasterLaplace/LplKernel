@@ -312,7 +312,9 @@ static bool initialization_is_system_bus(const InitializationLoad_t *load, uint3
 /**
  * @brief Initialises one device, processor or thermal zone (§3.8 step 4): present, its _INI runs,
  *        but for \_SB_'s; a subtree without _INI, or a device neither present nor functioning, marked
- *        absent, is not walked.
+ *        absent, is not walked. A device a walk has decided already, which a late walk reaches again
+ *        below a device a later table declares, keeps that decision: its _STA is not read again, and no
+ *        _INI runs twice (§3.8).
  *
  * @return Whether the walk descends into its children.
  */
@@ -323,6 +325,8 @@ static bool initialization_initialize_device(InitializationLoad_t *load, Initial
 
     if ((initialization_node(load, device)->flags & INITIALIZATION_HOLDS) == 0u)
         return false;
+    if ((initialization_node(load, device)->flags & INITIALIZATION_WALKED) != 0u)
+        return (initialization_node(load, device)->flags & INITIALIZATION_ABSENT) == 0u;
     initialization_node(load, device)->flags |= INITIALIZATION_WALKED;
     if (!initialization_read_status(load, initialization, device, &status))
         return true;
