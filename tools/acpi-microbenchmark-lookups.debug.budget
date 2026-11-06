@@ -1,14 +1,14 @@
 # Window W4 of the ACPI specification (§7.4), its lookups: the test a_thousand_lookups_in_a_wide_scope builds a scope
-# of 3,346 children at the root, then microbenchmark_look_up_a_thousand_children looks 1,000 of them up by name, the
-# window counting that function alone, without the scope built before it; on a debug server kernel
-# (./build.sh --server), the test alone selected so that no other test changes the page allocator it starts from.
-# Checked by tools/instructions.sh --budget tools/acpi-microbenchmark-lookups.debug.budget kernel/lpl.kernel; a change
-# that moves the namespace's lookup records the new counts. With --top, the lookups themselves,
-# advanced_configuration_and_power_interface_machine_language_namespace_find_child, count 58,517 instructions, 58.5
-# per lookup; the loop that names each child counts the rest.
+# of 3,346 children at the root and writes the names of 1,000 of them, then microbenchmark_look_up_a_thousand_children
+# looks them up, the window counting that function alone, without the scope nor the names written before it; on a debug
+# server kernel (./build.sh --server), the test alone selected so that no other test changes the page allocator it
+# starts from. Checked by tools/instructions.sh --budget tools/acpi-microbenchmark-lookups.debug.budget
+# kernel/lpl.kernel; a change that moves the namespace's lookup records the new counts. With --top, the lookups
+# themselves, advanced_configuration_and_power_interface_machine_language_namespace_find_child, count 58,517
+# instructions, 58.5 per lookup; the loop around them counts the rest.
 inside=microbenchmark_look_up_a_thousand_children
 times=1
 append=lpl.test=advanced_configuration_and_power_interface_microbenchmarks.a_thousand_lookups_in_a_wide_scope
-instructions=121490
-accesses=49431
+instructions=80518
+accesses=43430
 tolerance=1
