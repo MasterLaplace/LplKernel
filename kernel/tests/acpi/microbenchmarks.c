@@ -431,6 +431,34 @@ static void microbenchmark_polling(KernelTest_t *test)
 }
 
 /**
+ * @brief Looks 1,000 children of @p scope up by name, every seventh of its 3,346 in turn: the window of W4's lookups
+ *        (§7.4), kept out of line and unspecialised so that `tools/instructions.sh --inside` finds it by its name and
+ *        counts it without the scope built before.
+ *
+ * @return The lookups that found the child they named.
+ */
+__attribute__((noipa)) static uint32_t
+microbenchmark_look_up_a_thousand_children(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
+                                           uint32_t scope)
+{
+    uint32_t found = 0u;
+
+    for (uint32_t turn = 0u; turn < MICROBENCHMARK_TURNS; ++turn)
+    {
+        const uint32_t name = microbenchmark_child_name((turn * 7u) % MICROBENCHMARK_SCOPE_CHILDREN);
+        const uint32_t index =
+            advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, scope, name);
+
+        found +=
+            (index != 0u &&
+             advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->name == name) ?
+                1u :
+                0u;
+    }
+    return found;
+}
+
+/**
  * @brief Builds a scope of 3,346 children at the root, then looks 1,000 of them up by name, and checks
  *        that each lookup finds its child.
  */
@@ -439,7 +467,6 @@ static void microbenchmark_lookups(KernelTest_t *test)
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &microbenchmark_load.space;
     uint32_t scope = 0u;
     uint32_t child = 0u;
-    uint32_t found = 0u;
     bool built = true;
 
     advanced_configuration_and_power_interface_simulated_host_open(&microbenchmark_host);
@@ -466,19 +493,8 @@ static void microbenchmark_lookups(KernelTest_t *test)
 
     const uint32_t lookups = space->lookups;
     const uint32_t probes = space->probes;
+    const uint32_t found = microbenchmark_look_up_a_thousand_children(space, scope);
 
-    for (uint32_t turn = 0u; turn < MICROBENCHMARK_TURNS; ++turn)
-    {
-        const uint32_t name = microbenchmark_child_name((turn * 7u) % MICROBENCHMARK_SCOPE_CHILDREN);
-        const uint32_t index =
-            advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, scope, name);
-
-        found +=
-            (index != 0u &&
-             advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->name == name) ?
-                1u :
-                0u;
-    }
     kernel_test_check(test, found == MICROBENCHMARK_TURNS && space->lookups - lookups == MICROBENCHMARK_TURNS,
                       "each of the 1,000 lookups finds its child");
     kernel_test_measure(test, "probes", space->probes - probes);
@@ -501,8 +517,8 @@ KERNEL_TEST(the_window_w4_loop_of_a_thousand_turns)
 
 /**
  * @brief The third microbenchmark of window W4: 1,000 lookups in a scope of 3,346 children, counted
- *        with `tools/instructions.sh --inside kernel_test_body_a_thousand_lookups_in_a_wide_scope`; the
- *        scope it builds first costs more than the lookups, so it has no budget of its own.
+ *        with `tools/instructions.sh --inside microbenchmark_look_up_a_thousand_children` against
+ *        tools/acpi-microbenchmark-lookups.debug.budget, without the scope it builds first, which costs more.
  */
 KERNEL_TEST(a_thousand_lookups_in_a_wide_scope) { microbenchmark_lookups(test); }
 
