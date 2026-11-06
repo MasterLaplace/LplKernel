@@ -256,6 +256,25 @@ static void corpus_enter_mode(KernelTest_t *test)
 }
 
 /**
+ * @brief Prints the limits of §6.1 the load counted, the hits of each, then its peak when it is the same on every
+ *        target: the pages and runs memory takes are left out (§8.7).
+ */
+static void corpus_measure_limits(KernelTest_t *test)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS];
+
+    advanced_configuration_and_power_interface_machine_language_limits(&corpus_load, limits);
+    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS; ++index)
+    {
+        if (limits[index].hits_name != NULL)
+            kernel_test_measure(test, limits[index].hits_name, limits[index].hits);
+        if (limits[index].comparable)
+            kernel_test_measure(test, limits[index].peak_name, limits[index].peak);
+    }
+}
+
+/**
  * @brief Initialises the namespace of the load as the boot does, its processor objects bound to the
  *        directory's MADT, MONITOR/MWAIT taken as implemented and the platform as step 0 left it, as the
  *        host harness does, and prints what it ran and counted, the tables Load added included, the kept
@@ -317,10 +336,7 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure_hexadecimal(test, "idle_fold",
                                     advanced_configuration_and_power_interface_processor_idle_fold(&idle));
     kernel_test_measure(test, "first_failure", initialization.first_failure);
-    kernel_test_measure(
-        test, "limit_internal_nesting",
-        corpus_load.faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_INTERNAL_NESTING]);
-    kernel_test_measure(test, "internal_nesting_peak", corpus_load.regions.internal_nesting_peak);
+    corpus_measure_limits(test);
     corpus_measure_executed(test);
     kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
                       "the initialisation leaves no frame and no temporary node behind");

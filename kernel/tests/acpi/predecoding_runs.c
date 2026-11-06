@@ -83,6 +83,11 @@ static uint32_t predecoding_fold(AdvancedConfigurationAndPowerInterfaceMachineLa
         evaluation->references_built,
         evaluation->frames_peak,
         evaluation->values_peak,
+        evaluation->operators_peak,
+        evaluation->blocks_peak,
+        evaluation->iterations_peak,
+        evaluation->name_indirections_peak,
+        predecoding_load.temporary_nodes_peak,
         predecoding_load.space.lookups,
         predecoding_load.space.probes,
         predecoding_load.space.live_nodes,
@@ -125,6 +130,10 @@ static void predecoding_counts(PredecodingRun_t *run)
     run->declined_names = cache->declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_NAME];
     run->stale_names = cache->stale_names;
     run->flushes = cache->flushes;
+    run->records_peak = cache->records_peak;
+    run->nodes_peak = cache->nodes_peak;
+    run->constants_peak = cache->constants_peak;
+    run->names_peak = cache->names_peak;
     run->built = cache->built;
     run->tight_turns = cache->tight_turns;
     run->searches = cache->searches;

@@ -154,6 +154,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
     uint32_t frame_serial;           /**< The serial of the last frame pushed. */
     uint32_t frames_peak;            /**< Most frames in use at once. */
     uint32_t values_peak;            /**< Most values in use at once. */
+    uint32_t operators_peak;         /**< Most operators pending at once. */
+    uint32_t blocks_peak;            /**< Most constructs open at once. */
+    uint32_t iterations_peak;        /**< Most back-edges one evaluation took, up to the most §6.1 allows. */
+    uint32_t name_indirections_peak; /**< Most names inside packages one read followed (§5.1). */
     uint32_t statuses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT];      /**< Failures, per
                                                                                                           status. */
     uint32_t unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT]; /**< Opcodes that

@@ -156,9 +156,10 @@ KERNEL_TEST(the_33rd_mutex_held_is_refused)
         return;
     (void) synchronization_evaluate("\\MANY", &status);
     kernel_test_check(test, status == SYNCHRONIZATION_STATUS(LIMIT_HELD_MUTEXES), "MANY fails with limit_held_mutexes");
-    kernel_test_check(
-        test, synchronization_load.services.held_peak == 32u && synchronization_load.services.released_at_end == 32u,
-        "32 were held, and released when the evaluation failed");
+    kernel_test_check(test,
+                      made_up_limit_peak(&synchronization_load, "held_mutexes_peak") == 32u &&
+                          synchronization_load.services.released_at_end == 32u,
+                      "32 were held, and released when the evaluation failed");
     kernel_test_measure(test, "held_peak", synchronization_load.services.held_peak);
     synchronization_close(test);
 }

@@ -122,7 +122,7 @@ KERNEL_TEST(the_ring_drops_the_65th_notify)
     kernel_test_check(test, in_order && notifications_ring_is_empty(), "the values 0 to 63 come out, in order");
     kernel_test_check(test,
                       notifications_load.services.notifications_dropped == 1u &&
-                          notifications_load.services.notification_peak == 64u,
+                          made_up_limit_peak(&notifications_load, "notifications_peak") == 64u,
                       "the 65th is dropped and counted; the ring held 64 at most");
     notifications_close();
 }

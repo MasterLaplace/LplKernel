@@ -167,7 +167,8 @@ KERNEL_TEST(references_follow_names_locals_and_arguments)
         test,
         references_integer("R017") == 7u &&
             references_failed(
-                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_RESOLUTION_LOOP) == 1u,
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_NAME_RESOLUTION_LOOP) == 1u &&
+            made_up_limit_peak(&references_load, "name_indirections_peak") == 8u,
         "an element naming the name that refers to it fails after 8 names with name_resolution_loop");
     kernel_test_check(
         test,

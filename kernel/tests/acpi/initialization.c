@@ -834,7 +834,7 @@ KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back
         return;
     kernel_test_check(test,
                       initialization_call("\\RDEV.MKRG") == INITIALIZATION_STATUS(OK) &&
-                          initialization_load.evaluation.values_peak ==
+                          made_up_limit_peak(&initialization_load, "values_peak") ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES,
                       "before the initialisation no _REG is called, and the VarPackage and its count fill the stack");
     advanced_configuration_and_power_interface_initialize_namespace(&initialization_load, &initialization_machine,

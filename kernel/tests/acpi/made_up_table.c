@@ -2,6 +2,19 @@
 
 #include <string.h>
 
+/**
+ * @brief Whether the texts @p lhs and @p rhs hold the same characters.
+ */
+static bool made_up_same_text(const char *lhs, const char *rhs)
+{
+    while (*lhs != '\0' && *lhs == *rhs)
+    {
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == *rhs;
+}
+
 const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
 made_up_definition_block(uint8_t *table, const char *signature, uint8_t revision, const uint8_t *aml, uint32_t length)
 {
@@ -57,4 +70,17 @@ made_up_root_node(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *l
 
     (void) advanced_configuration_and_power_interface_machine_language_materialize(load, index);
     return advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+}
+
+uint32_t made_up_limit_peak(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                            const char *peak_name)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS];
+
+    advanced_configuration_and_power_interface_machine_language_limits(load, limits);
+    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS; ++index)
+        if (made_up_same_text(limits[index].peak_name, peak_name))
+            return limits[index].peak;
+    return 0xDEADu;
 }

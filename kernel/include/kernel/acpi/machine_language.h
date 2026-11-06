@@ -146,6 +146,24 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration 
     bool abandons;        /**< Whether a fault abandoned the rest of the table (§6.2). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t;
 
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS                                             \
+    21u /**< Limits of §6.1 a load counts, the record cache's apart. */
+
+/**
+ * @brief One limit of §6.1, as a load counted it: the times it was reached, and the most it held at once.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit {
+    const char *hits_name; /**< What its hits are counted under: the status a fault reaching it fails with (§6.2), or
+                                the counter of what it drops; NULL when reaching it is no fault and drops nothing, as
+                                a deeper package waits for the interpreter and a full mapping cache gives its oldest
+                                entry back. */
+    const char *peak_name; /**< The key its peak is printed under. */
+    uint32_t hits;         /**< The faults counted under that status (§4.5), or what that counter holds. */
+    uint32_t peak;         /**< The most it held at once, never past its cap. */
+    bool comparable;       /**< Whether the peak is the same on every target, which a parity record compares; false
+                                for the pages and runs memory takes (§8.7). */
+} AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t;
+
 /**
  * @brief A load: its namespace, its tables, what it counted, and the stacks its passes use.
  *
@@ -248,9 +266,11 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageBlock_t
         blocks[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BLOCKS]; /**< The block stack. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t
-        declaration;          /**< The last statement of table-level code the interpreter handed the load. */
-    uint32_t temporary_count; /**< Temporary nodes alive. */
-    uint32_t frame_count;     /**< Method bodies being decoded. */
+        declaration;               /**< The last statement of table-level code the interpreter handed the load. */
+    uint32_t temporary_count;      /**< Temporary nodes alive. */
+    uint32_t temporary_nodes_peak; /**< Most of them an evaluation held at once: the decoding pass, which runs no
+                                        method, is left out. */
+    uint32_t frame_count;          /**< Method bodies being decoded. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t
         observer;           /**< Told of each opcode and call the decoding pass decodes, or NULL. */
     void *observer_context; /**< What the observer is given back. */
@@ -342,6 +362,18 @@ extern bool advanced_configuration_and_power_interface_machine_language_runs_at_
  *         interpreter does not build, such as Revision, at table level too.
  */
 extern bool advanced_configuration_and_power_interface_machine_language_executes(uint32_t opcode, bool table_level);
+
+/**
+ * @brief Lists the limits of §6.1 a load counted, in the specification's order, each with its hits and its peak: the
+ *        record cache's are printed with the records (§3.6), since a load without records holds none.
+ *
+ * @param load       The load.
+ * @param out_limits Receives the limits.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_limits(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        out_limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS]);
 
 /**
  * @brief Counts a fault of the declaration or the Externals pass, the first one kept.

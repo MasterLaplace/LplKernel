@@ -201,6 +201,13 @@ void advanced_configuration_and_power_interface_machine_language_begin_evaluatio
 void advanced_configuration_and_power_interface_machine_language_end_evaluation(MachineLanguageLoad_t *load)
 {
     MachineLanguageServices_t *services = &load->services;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const uint32_t iterations =
+        (evaluation->iterations > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS) ?
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS :
+            evaluation->iterations;
+
+    evaluation->iterations_peak = (iterations > evaluation->iterations_peak) ? iterations : evaluation->iterations_peak;
 
     services->released_at_end += services->held_count;
     while (services->held_count != 0u)

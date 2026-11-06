@@ -140,14 +140,15 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordOperan
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNameString_t name; /**< Its NameString, in its table. */
-    uint32_t after;        /**< Where its NameString ends: the pc the loop leaves when reading it fails. */
-    uint32_t node;         /**< The node it named when last checked, or 0. */
-    uint32_t generation;   /**< The namespace's generation when it was checked. */
-    uint32_t scope;        /**< The scope it was resolved from. */
-    uint8_t values_before; /**< Values the loop held for its statement at most before reading it. */
-    uint8_t nodes_before;  /**< In a build that counts what the loop runs, the operators of its record the loop runs
-                                before reading it: the first ones, in the record's order. */
-    uint8_t reserved[2];   /**< Unused, 0. */
+    uint32_t after;           /**< Where its NameString ends: the pc the loop leaves when reading it fails. */
+    uint32_t node;            /**< The node it named when last checked, or 0. */
+    uint32_t generation;      /**< The namespace's generation when it was checked. */
+    uint32_t scope;           /**< The scope it was resolved from. */
+    uint8_t values_before;    /**< Values the loop held for its statement at most before reading it. */
+    uint8_t nodes_before;     /**< In a build that counts what the loop runs, the operators of its record the loop runs
+                                   before reading it: the first ones, in the record's order. */
+    uint8_t operators_before; /**< Operators the loop held pending for its statement at most before reading it. */
+    uint8_t reserved;         /**< Unused, 0. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordName_t;
 
 /**
@@ -217,6 +218,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding 
     uint32_t built;                                                                          /**< Records built. */
     uint32_t flushes;           /**< Times the cache was emptied whole. */
     uint32_t records_peak;      /**< Most records held at once. */
+    uint32_t nodes_peak;        /**< Most operators those records held at once. */
+    uint32_t constants_peak;    /**< Most constants they held at once. */
+    uint32_t names_peak;        /**< Most names they read at once. */
     uint32_t fused_comparisons; /**< LNot and a comparison decoded as one operator (§7.2, O7). */
     uint32_t tight_turns;       /**< Turns of a While run as a tight loop (§3.6). */
     uint32_t searches;          /**< Searches of the hash for a statement that neither a link nor its recent slot gave,

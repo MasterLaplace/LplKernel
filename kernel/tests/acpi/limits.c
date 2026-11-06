@@ -131,6 +131,118 @@ static bool limits_run_ladder(KernelTest_t *test, uint32_t depth)
 }
 
 /**
+ * @brief Loads, in a namespace of @p max_nodes nodes, a table that declares RES_ as 5, the @p before_length bytes of
+ *        table-level terms at @p before, a method M009 whose body is the @p length bytes at the end of the AML
+ *        buffer, and stores M009 to RES_.
+ */
+static bool limits_run_method(KernelTest_t *test, uint32_t length, uint32_t max_nodes, const uint8_t *before,
+                              uint32_t before_length)
+{
+    static const uint8_t name[] = {0x08u, 'R', 'E', 'S', '_', 0x0Au, 0x05u};
+    static const uint8_t store[] = {0x70u, 'M', '0', '0', '9', 'R', 'E', 'S', '_'};
+    uint32_t start = LIMITS_AML_CAPACITY - length;
+
+    limits_aml[--start] = 0x00u;
+    start -= 4u;
+    memcpy(limits_aml + start, "M009", 4u);
+    start = limits_package_length(start, LIMITS_AML_CAPACITY - start);
+    limits_aml[--start] = 0x14u;
+    start -= before_length;
+    memcpy(limits_aml + start, before, before_length);
+    start -= (uint32_t) sizeof(name);
+    memcpy(limits_aml + start, name, sizeof(name));
+    memmove(limits_aml, limits_aml + start, LIMITS_AML_CAPACITY - start);
+    memcpy(limits_aml + (LIMITS_AML_CAPACITY - start), store, sizeof(store));
+    advanced_configuration_and_power_interface_simulated_host_open(&limits_host);
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &limits_load, &limits_host.host, max_nodes, MADE_UP_MAX_ARENA_BYTES),
+                           "the namespace opens"))
+    {
+        advanced_configuration_and_power_interface_machine_language_close(&limits_load);
+        return false;
+    }
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &limits_load, made_up_definition_block(limits_table, "DSDT", 2u, limits_aml,
+                                               LIMITS_AML_CAPACITY - start + (uint32_t) sizeof(store)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&limits_load);
+    return true;
+}
+
+/**
+ * @brief Runs M009 { Return (Add (Add (... Add (One, One) ..., One), One)) }, @p adds Add deep, which gives
+ *        @p adds + 1 and holds @p adds + 2 operators pending at once with the table's Store; no term comes before.
+ */
+static bool limits_run_adds(KernelTest_t *test, uint32_t adds)
+{
+    const uint32_t length = 3u * adds + 2u;
+    uint8_t *body = limits_aml + LIMITS_AML_CAPACITY - length;
+
+    body[0] = 0xA4u;
+    memset(body + 1u, 0x72, adds);
+    body[1u + adds] = 0x01u;
+    for (uint32_t add = 0u; add < adds; ++add)
+    {
+        body[2u + adds + 2u * add] = 0x01u;
+        body[3u + adds + 2u * add] = 0x00u;
+    }
+    return limits_run_method(test, length, MADE_UP_MAX_NODES, body, 0u);
+}
+
+/**
+ * @brief Appends, from @p at on, Name (Txxx, Zero) for each of the @p count numbers from @p first on, Txxx the number
+ *        in hexadecimal.
+ *
+ * @return Where the Names end.
+ */
+static uint8_t *limits_write_names(uint8_t *at, uint32_t first, uint32_t count)
+{
+    static const char digits[] = "0123456789ABCDEF";
+
+    for (uint32_t index = first; index < first + count; ++index)
+    {
+        const uint8_t declaration[] = {0x08u,
+                                       'T',
+                                       (uint8_t) digits[(index >> 8u) & 0xFu],
+                                       (uint8_t) digits[(index >> 4u) & 0xFu],
+                                       (uint8_t) digits[index & 0xFu],
+                                       0x00u};
+
+        memcpy(at, declaration, sizeof(declaration));
+        at += sizeof(declaration);
+    }
+    return at;
+}
+
+/**
+ * @brief Runs M009 { Name (T000, Zero) ... Return (M00A) }, which names 512, where M00A { Name (T200, Zero) ...
+ *        Return (One) } names @p inner: the evaluation holds 512 + @p inner temporary nodes at once, where the
+ *        decoding pass, which decodes one body at a time, meets 512, in a namespace with room for them all.
+ */
+static bool limits_run_names(KernelTest_t *test, uint32_t inner)
+{
+    static uint8_t other[1u + MADE_UP_AML_PACKAGE_LENGTH_BYTES + 5u + 6u * 513u + 2u];
+    static const uint8_t inner_head[] = {'M', '0', '0', 'A', 0x00u};
+    static const uint8_t return_one[] = {0xA4u, 0x01u};
+    static const uint8_t return_inner[] = {0xA4u, 'M', '0', '0', 'A'};
+    uint8_t encoded[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
+    const uint32_t inner_content = (uint32_t) sizeof(inner_head) + 6u * inner + (uint32_t) sizeof(return_one);
+    const uint32_t encoded_bytes = made_up_aml_encode_package_length(inner_content, true, encoded);
+    const uint32_t length = 6u * 512u + (uint32_t) sizeof(return_inner);
+    uint8_t *at = other;
+
+    *at++ = 0x14u;
+    memcpy(at, encoded, encoded_bytes);
+    at += encoded_bytes;
+    memcpy(at, inner_head, sizeof(inner_head));
+    at = limits_write_names(at + sizeof(inner_head), 512u, inner);
+    memcpy(at, return_one, sizeof(return_one));
+    at += sizeof(return_one);
+    memcpy(limits_write_names(limits_aml + LIMITS_AML_CAPACITY - length, 0u, 512u), return_inner, sizeof(return_inner));
+    return limits_run_method(test, length, 2u * MADE_UP_MAX_NODES, other, (uint32_t) (at - other));
+}
+
+/**
  * @brief An evaluation holds 64 frames, the table's own included: a recursion 63 calls deep returns,
  *        one call deeper fails with limit_frames (§6.1).
  */
@@ -165,6 +277,11 @@ KERNEL_TEST(an_else_if_ladder_runs_up_to_the_block_limit)
     kernel_test_check(
         test, limits_integer("RES_") == 509u && limits_load.evaluation.failures == 0u,
         "510 levels fill the 512 blocks exactly: the table's, the method's, 509 Else bodies, the last If");
+    kernel_test_measure(test, "blocks_peak", made_up_limit_peak(&limits_load, "blocks_peak"));
+    kernel_test_check(test,
+                      made_up_limit_peak(&limits_load, "blocks_peak") ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS,
+                      "the blocks' peak is 512");
     limits_close(test);
     if (!limits_run_ladder(test, 511u))
         return;
@@ -202,6 +319,11 @@ KERNEL_TEST(an_endless_loop_is_stopped)
             limits_load.evaluation.iterations ==
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS + 3u,
         "the method's loop is stopped past 2^20 back-edges, the two table-level loops at their first");
+    kernel_test_measure(test, "loop_iterations_peak", made_up_limit_peak(&limits_load, "loop_iterations_peak"));
+    kernel_test_check(test,
+                      made_up_limit_peak(&limits_load, "loop_iterations_peak") ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_LOOP_ITERATIONS,
+                      "the back-edges' peak is the 2^20 the evaluation took, not the one refused");
     kernel_test_check(test, limits_integer("AFTR") == 1u, "the Name after them is declared");
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &limits_load, made_up_definition_block(limits_second_table, "SSDT", 2u, limits_endless_loops_second_aml,
@@ -390,4 +512,132 @@ KERNEL_TEST(a_table_with_no_room_for_its_frame_is_declared_without_running)
         test, limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_FRAMES) == 1u,
         "the refusal of the frame is counted");
     limits_close(test);
+}
+
+/**
+ * @brief An evaluation holds 256 pending operators (§6.1): the table's Store, M009's Return and 254 Add hold them all
+ *        and give 255; one Add more fails with limit_pending_operators, counted with the faults.
+ */
+KERNEL_TEST(nested_operators_fill_the_operator_stack_and_one_more_fails)
+{
+    if (!limits_run_adds(test, 254u))
+        return;
+    kernel_test_measure(test, "pending_operators_peak", made_up_limit_peak(&limits_load, "pending_operators_peak"));
+    kernel_test_check(test,
+                      limits_integer("RES_") == 255u && limits_load.evaluation.failures == 0u &&
+                          made_up_limit_peak(&limits_load, "pending_operators_peak") ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS,
+                      "254 Add deep give 255, the 256 operators held at once");
+    limits_close(test);
+    if (!limits_run_adds(test, 255u))
+        return;
+    kernel_test_check(
+        test,
+        limits_integer("RES_") == 5u &&
+            limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PENDING_OPERATORS) ==
+                1u &&
+            limits_load.faults
+                    [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PENDING_OPERATORS] != 0u,
+        "255 Add deep fail with limit_pending_operators, counted with the faults");
+    limits_close(test);
+}
+
+/**
+ * @brief An evaluation holds 1,024 temporary nodes (§6.1): a method that declares a method and 512 names, then calls
+ *        the one it declared, which names 511, runs; one whose inner method names 512 fails with
+ *        limit_temporary_nodes, counted with the faults.
+ */
+KERNEL_TEST(a_method_names_up_to_1024_temporary_nodes)
+{
+    if (!limits_run_names(test, 512u))
+        return;
+    kernel_test_measure(test, "temporary_nodes_peak", made_up_limit_peak(&limits_load, "temporary_nodes_peak"));
+    kernel_test_check(test,
+                      limits_integer("RES_") == 1u && limits_load.evaluation.failures == 0u &&
+                          made_up_limit_peak(&limits_load, "temporary_nodes_peak") ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TEMPORARY_NODES,
+                      "1,024 names are made, the most an evaluation holds");
+    limits_close(test);
+    if (!limits_run_names(test, 513u))
+        return;
+    kernel_test_check(
+        test,
+        limits_integer("RES_") == 5u &&
+            limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TEMPORARY_NODES) ==
+                1u &&
+            limits_load
+                    .faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TEMPORARY_NODES] !=
+                0u,
+        "1,025 fail with limit_temporary_nodes, counted with the faults");
+    limits_close(test);
+}
+
+/**
+ * @brief A VarPackage holds 4,096 elements (§6.1): one of 4,096 is built, one of 4,097 fails with
+ *        limit_package_elements, counted with the faults.
+ */
+KERNEL_TEST(a_variable_package_holds_4096_elements)
+{
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_variable_packages_aml,
+                            sizeof(limits_variable_packages_aml)))
+        return;
+    kernel_test_measure(test, "package_elements_peak", made_up_limit_peak(&limits_load, "package_elements_peak"));
+    kernel_test_check(test,
+                      limits_integer("FULL") == 4096u && limits_integer("OVER") == 5u &&
+                          made_up_limit_peak(&limits_load, "package_elements_peak") == 4096u,
+                      "4,096 elements are built, 4,097 are not");
+    kernel_test_check(
+        test,
+        limits_failed(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PACKAGE_ELEMENTS) ==
+                1u &&
+            limits_load.faults
+                    [ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_PACKAGE_ELEMENTS] == 1u,
+        "the refusal is counted with the faults");
+    limits_close(test);
+}
+
+/**
+ * @brief A data object nests 32 packages (§6.1): DP32, kept in its table (O20), is built 32 deep by the general data
+ *        decoder, which a load whose general_load is set uses and which checks the kept data once bodies are decoded,
+ *        then by the builder of kept data (C4) at its first read in a load that skips bodies, as a release kernel's
+ *        does; DP33 waits for the interpreter, counted in values_deferred, and builds nothing deeper.
+ */
+KERNEL_TEST(a_data_object_nests_32_packages)
+{
+    for (uint32_t mode = 0u; mode < 2u; ++mode)
+    {
+        advanced_configuration_and_power_interface_simulated_host_open(&limits_host);
+        if (!kernel_test_check(test,
+                               advanced_configuration_and_power_interface_machine_language_open(
+                                   &limits_load, &limits_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+                               "the namespace opens"))
+        {
+            advanced_configuration_and_power_interface_machine_language_close(&limits_load);
+            return;
+        }
+        limits_load.general_load = mode == 0u;
+        limits_load.skips_bodies = mode == 1u;
+        advanced_configuration_and_power_interface_machine_language_declare_table(
+            &limits_load, made_up_definition_block(limits_table, "DSDT", 2u, limits_nested_packages_aml,
+                                                   sizeof(limits_nested_packages_aml)));
+        advanced_configuration_and_power_interface_machine_language_decode_tables(&limits_load);
+
+        const uint32_t deferred = limits_load.values_deferred;
+        const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *deepest =
+            made_up_root_node(&limits_load, "DP32");
+
+        kernel_test_measure(test, "nested_packages_peak", made_up_limit_peak(&limits_load, "nested_packages_peak"));
+        kernel_test_check(test,
+                          deepest->value.kind ==
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE &&
+                              made_up_limit_peak(&limits_load, "nested_packages_peak") ==
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_NESTED_PACKAGES,
+                          "DP32 is built 32 deep, the most a data object nests");
+        kernel_test_check(test,
+                          made_up_root_node(&limits_load, "DP33")->value.kind !=
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE &&
+                              limits_load.values_deferred == deferred + 1u,
+                          "DP33 waits for the interpreter");
+        limits_close(test);
+    }
 }

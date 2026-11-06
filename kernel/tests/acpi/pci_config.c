@@ -681,10 +681,11 @@ KERNEL_TEST(internal_frames_nest_two_deep_and_a_third_fails_with_limit_internal_
     made_up_aml_raw(&pci_aml, pci_nested_attaches_aml, sizeof(pci_nested_attaches_aml));
     if (!pci_run(test))
         return;
-    kernel_test_measure(test, "internal_nesting_peak", pci_load.regions.internal_nesting_peak);
+    kernel_test_measure(test, "internal_nesting_peak", made_up_limit_peak(&pci_load, "internal_nesting_peak"));
     kernel_test_check(test,
                       pci_load.evaluation.failures == 0u && pci_integer("RES_") == 0x8086u &&
-                          pci_load.regions.internal_evaluations == 2u && pci_load.regions.internal_nesting_peak == 2u,
+                          pci_load.regions.internal_evaluations == 2u &&
+                          made_up_limit_peak(&pci_load, "internal_nesting_peak") == 2u,
                       "two internal frames nested in one another attach DEVE's region, then DEVD's");
     kernel_test_check(test,
                       advanced_configuration_and_power_interface_machine_language_evaluate(

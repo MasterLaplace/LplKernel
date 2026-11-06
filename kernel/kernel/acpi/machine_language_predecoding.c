@@ -209,6 +209,7 @@ static bool machine_language_record_name(MachineLanguageRecordBuilder_t *builder
         .name = name,
         .after = after,
         .values_before = (uint8_t) builder->values_peak,
+        .operators_before = (uint8_t) builder->operators_peak,
         .nodes_before =
             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED ? record->node_count : 0u,
     };
@@ -545,6 +546,9 @@ void advanced_configuration_and_power_interface_machine_language_predecoding_ope
     cache->built = 0u;
     cache->flushes = 0u;
     cache->records_peak = 0u;
+    cache->nodes_peak = 0u;
+    cache->constants_peak = 0u;
+    cache->names_peak = 0u;
     cache->fused_comparisons = 0u;
     cache->tight_turns = 0u;
     cache->searches = 0u;
@@ -634,6 +638,10 @@ uint16_t advanced_configuration_and_power_interface_machine_language_record_buil
     ++cache->built;
     if (cache->record_count > cache->records_peak)
         cache->records_peak = cache->record_count;
+    cache->nodes_peak = (cache->node_count > cache->nodes_peak) ? cache->node_count : cache->nodes_peak;
+    cache->constants_peak =
+        (cache->constant_count > cache->constants_peak) ? cache->constant_count : cache->constants_peak;
+    cache->names_peak = (cache->name_count > cache->names_peak) ? cache->name_count : cache->names_peak;
     machine_language_record_insert(cache, (uint16_t) cache->record_count);
     return (uint16_t) cache->record_count;
 }

@@ -31,7 +31,6 @@ acpi_helper_write_regions_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("unaligned_accesses", regions->unaligned_accesses);
     kernel_telemetry_write_unsigned("protected_port_accesses", regions->protected_port_accesses);
     kernel_telemetry_write_unsigned("region_lengths_rounded", regions->region_lengths_rounded);
-    kernel_telemetry_write_unsigned("field_accesses_peak", regions->field_accesses_peak);
     kernel_telemetry_write_unsigned("table_writes", regions->table_writes);
     kernel_telemetry_write_unsigned("space_unsupported", refused);
     kernel_telemetry_write_unsigned("global_lock_acquisitions", regions->global_lock_acquisitions);
@@ -201,7 +200,7 @@ static uint32_t acpi_helper_saturate(uint64_t count) { return (count > UINT32_MA
 /**
  * @brief Writes the `[LPLTLM] acpi.services` record: the Windows identity AML asked for, the time it
  *        requested and the time the host waited, its sleeps and its busy-waits apart (§3.3, §5.5), its
- *        mutexes and its Notifies.
+ *        mutexes and its Notifies; their peaks are on acpi.limits.
  */
 static void
 acpi_helper_write_services_record(Serial_t *serial,
@@ -219,25 +218,22 @@ acpi_helper_write_services_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("stalls_slept", services->stalls_slept);
     kernel_telemetry_write_unsigned("sleep_waited_us", acpi_helper_saturate(services->sleep_waited_microseconds));
     kernel_telemetry_write_unsigned("stall_waited_us", acpi_helper_saturate(services->stall_waited_microseconds));
-    kernel_telemetry_write_unsigned("time_requested_peak_us", acpi_helper_saturate(services->time_requested_peak));
     kernel_telemetry_write_unsigned("timer_reads", services->timer_reads);
     kernel_telemetry_write_unsigned("acquisitions", services->acquisitions);
     kernel_telemetry_write_unsigned("acquisitions_ignored", services->acquisitions_ignored);
     kernel_telemetry_write_unsigned("releases_ignored", services->releases_ignored);
     kernel_telemetry_write_unsigned("released_at_end", services->released_at_end);
-    kernel_telemetry_write_unsigned("held_peak", services->held_peak);
     kernel_telemetry_write_unsigned("signals", services->signals);
     kernel_telemetry_write_unsigned("notifications", services->notifications);
-    kernel_telemetry_write_unsigned("notifications_dropped", services->notifications_dropped);
     kernel_telemetry_write_unsigned("notifications_taken", services->notifications_taken);
-    kernel_telemetry_write_unsigned("notification_peak", services->notification_peak);
     kernel_telemetry_end_record();
 }
 
 /**
  * @brief Writes the `[LPLTLM] acpi.predecoding` record (§3.6, §6.1): whether loops run from records, the
  *        back-edges every evaluation took, the statements records ran, those they handed back per reason,
- *        the records built, the times the cache was emptied, its peak, the comparisons decoded with their
+ *        the records built, the times the cache was emptied, its peaks of records, operators, constants and names
+ *        (§6.1), the comparisons decoded with their
  *        LNot, the turns of While run as tight loops, the statements searched in the hash, and the loops handed back
  *        whole.
  */
@@ -260,6 +256,9 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
     kernel_telemetry_write_unsigned("built", cache->built);
     kernel_telemetry_write_unsigned("flushes", cache->flushes);
     kernel_telemetry_write_unsigned("records_peak", cache->records_peak);
+    kernel_telemetry_write_unsigned("record_operators_peak", cache->nodes_peak);
+    kernel_telemetry_write_unsigned("record_constants_peak", cache->constants_peak);
+    kernel_telemetry_write_unsigned("record_names_peak", cache->names_peak);
     kernel_telemetry_write_unsigned("fused_comparisons", cache->fused_comparisons);
     kernel_telemetry_write_unsigned("tight_turns", cache->tight_turns);
     kernel_telemetry_write_unsigned("searches", cache->searches);
@@ -292,17 +291,24 @@ static void acpi_helper_write_unimplemented_record(
 }
 
 /**
- * @brief Writes the `[LPLTLM] acpi.limits` record (§6.1): per limit, the times the boot's load reached it, counted
- *        under its status as every fault is (§4.5), then the most it held at once.
+ * @brief Writes the `[LPLTLM] acpi.limits` record (§6.1): per limit, in the specification's order, the times the
+ *        boot's load reached it, counted under its status as every fault is (§4.5) or by what it drops, then the most
+ *        it held at once; the record cache's limits are on acpi.predecoding.
  */
 static void acpi_helper_write_limits_record(Serial_t *serial,
                                             const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS];
+
+    advanced_configuration_and_power_interface_machine_language_limits(load, limits);
     kernel_telemetry_begin_record(serial, "acpi.limits");
-    kernel_telemetry_write_unsigned(
-        "limit_internal_nesting",
-        load->faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_INTERNAL_NESTING]);
-    kernel_telemetry_write_unsigned("internal_nesting_peak", load->regions.internal_nesting_peak);
+    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS; ++index)
+    {
+        if (limits[index].hits_name != NULL)
+            kernel_telemetry_write_unsigned(limits[index].hits_name, limits[index].hits);
+        kernel_telemetry_write_unsigned(limits[index].peak_name, limits[index].peak);
+    }
     kernel_telemetry_end_record();
 }
 
@@ -481,8 +487,6 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("table_level_runs", load->evaluation.runs);
     kernel_telemetry_write_unsigned("table_level_failures", load->evaluation.failures);
     kernel_telemetry_write_unsigned("declared_not_run", load->declared_not_run);
-    kernel_telemetry_write_unsigned("frames_peak", load->evaluation.frames_peak);
-    kernel_telemetry_write_unsigned("values_peak", load->evaluation.values_peak);
     kernel_telemetry_write_hexadecimal(
         "namespace_fold", advanced_configuration_and_power_interface_machine_language_namespace_fold(load));
     kernel_telemetry_end_record();
