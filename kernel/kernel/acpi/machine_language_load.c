@@ -2669,7 +2669,8 @@ static bool machine_language_code_follows(MachineLanguageWalk_t *walk)
 
 /**
  * @brief Whether a walk that takes statements for the interpreter stops at its pc: past its first statement,
- *        once a TermList is left to the interpreter, or before a statement the interpreter runs; one that
+ *        once a TermList is left to the interpreter by a load whose general_load is set, at the end of its first
+ *        construct but for a TermList it entered (O21), or before a statement the interpreter runs; one that
  *        declares without running stops past its first statement.
  */
 static bool machine_language_statements_end(MachineLanguageWalk_t *walk, uint32_t start)

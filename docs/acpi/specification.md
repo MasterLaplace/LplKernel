@@ -342,9 +342,12 @@ declared; one whose parent exists is placed where it stands.
 
 **The loop runs table-level code, and the load declares.** The declaration pass runs a table's code in the table's
 frame: the loop runs its statements and its control flow as a method body's, and hands the load each run of statements
-that declare or hold data; the load declares them, gives back the TermList of a `Scope`, `Device`, `Processor`,
-`PowerResource` or `ThermalZone` to run in its scope, and waits for the loop to run an `OperationRegion`'s offset or
-length, or a `BankField`'s BankValue, that is no constant. An untaken branch is skipped, and declares nothing. A
+that declare or hold data; the load declares them, enters the TermList of a `Scope`, `Device`, `Processor`,
+`PowerResource` or `ThermalZone` to run in its scope, the loop's construct for it opened as the loop opens it, takes its
+statements as part of the run up to the first one the loop runs, and leaves it at its end (O21), and waits for the loop
+to run an `OperationRegion`'s offset or length, or a `BankField`'s BankValue, that is no constant. A load whose
+`general_load` is set gives each such TermList back to the loop instead, so that the differential tests compare the two
+(§8.1). An untaken branch is skipped, and declares nothing. A
 predicate that fails declares both its branches without running their code, counted (`declared_not_run`), so that a
 failure never takes an object out of the namespace; an object both branches declare is the first branch's, the second's
 a duplicate (§5.1), as any later declaration is. A table whose frame finds the stacks full (§6.1), as one a Load at the
@@ -1088,6 +1091,7 @@ reads a table in kernel memory. The costs to cut are:
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list, a Name's integer constant built by the decoder itself, and an OperationRegion of one NameSeg whose offset and length need no interpreter | `declarations_decoded_directly`, `integers_built_directly`; W1 |
 | O20 | A Name's Package, VarPackage or Buffer kept in its table once its head reads, neither checked nor built until a name resolution reaches it or a write is about to land on its table's bytes; a debug kernel and the host tools check each one once they have decoded bodies (§3.5, §3.6, §5.3) | `data_kept`, `data_materialized`, `data_faults_read` in `acpi.aml`, and `data_faults`, `data_named_sizes` with its decoding counts; W1 |
+| O21 | The TermList of a table-level Scope, Device, Processor, PowerResource or ThermalZone entered by the declaration pass itself, the loop's construct for it opened, its statements taken as part of the run up to the first one the loop runs, instead of handed back to the loop, which hands each run back to the load; a load whose `general_load` is set hands it back (§3.6) | `scopes_entered`; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
 | C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them; bytes that do not read as kept data, which the load did not check or AML has rewritten since, are built by the decoder (§3.6) | `data_built_directly` in `acpi.load`; W2 and W3 on the MS-7E16 |
@@ -1126,9 +1130,15 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
 instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
 more than the 300 per named object a first target set. That check has since left the load for the pass that decodes
-bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. The debug windows of W1
-count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no count per declaration
-applies to them.
+bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. Handing each table-level TermList back
+to the loop cost 82 more, which entering it (O21) took off. W1 now costs 146,012 instructions on q35, 579 per declaration,
+and 300 is out of reach of the walk the declaration pass runs on: the walk alone takes 78,070 of them, 310 per
+declaration, with the decoder of O19, the namespace's insertion (O5) and the check that ends a run in line in it
+(`tools/instructions.sh --budget tools/acpi-load.budget kernel/lpl.kernel`, which lists the functions), and the levers
+#702 measured in the code it shares with the interpreter would take less than 8,000 more off it. Creating a node at its first lookup
+saves nothing: step 3 of §3.8 walks every node for `_REG`, so W2 would create every node W1 no longer does. The
+debug windows of W1 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no
+count per declaration applies to them.
 
 `_PRT` gets a window once #59 gives it a boot consumer.
 
