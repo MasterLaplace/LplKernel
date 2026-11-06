@@ -296,6 +296,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                        accesses counted. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageServices_t services;     /**< What the operating system
                                                                                        services hold and counted. */
+    uint32_t bytes_decoded; /**< AML bytes the walks of every pass decoded, those they stepped over left out (a method
+                                 body the declaration pass records, data kept in its table past its head, a construct
+                                 left to the interpreter, a duplicate's list, what a fault skips), and the bytes of the
+                                 statements loop records were decoded from, in a build that counts what runs (§4.1). */
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t
         predecoding; /**< The records of the loops that loop: last, past what opening the load zeroes. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;
@@ -1099,8 +1103,8 @@ extern bool advanced_configuration_and_power_interface_machine_language_describe
  * @brief Folds a load's namespace as the parity record of the specification (§8.7) does: FNV-1a,
  *        32 bits, over a depth-first walk in declaration order, External nodes apart. Per node: its
  *        depth, its name and its type, then an Integer; a String's or a Buffer's length and bytes; a
- *        Package's count and each element the same way, a name element as its path bytes; a
- *        method's flags and body length; a region's space, offset and length; a field unit's kind,
+ *        Package's count and each element the same way, its kind first (an uninitialised one 0), a name element as its
+ *        path bytes; a method's flags and body length; a region's space, offset and length; a field unit's kind,
  *        bit offset, bit length, access and update rule; a Processor's ID, block address and block
  *        length. A data object kept in its table folds as the object it builds into. Nothing that holds an
  *        address or an index is folded.
@@ -1109,6 +1113,38 @@ extern bool advanced_configuration_and_power_interface_machine_language_describe
  * @return The fold.
  */
 extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_fold(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Folds the evaluations record of the specification (§8.7): FNV-1a, 32 bits, over each path of @p paths in
+ *        order, evaluated with no argument: its status, two bytes, then, once it succeeded, its result as the
+ *        namespace fold folds a node's type and object: the type, one byte, then an Integer's eight bytes; a String's
+ *        or a Buffer's length and bytes; a Package's count and each element the same way, its kind first, a name
+ *        element as its path bytes. Nothing that holds an address or an index is folded.
+ *
+ * @details Each result is given back once folded. The evaluations run as any other, so they change the namespace and
+ *          the counters as the methods they call do.
+ * @param load          A load whose tables are decoded, its stacks free.
+ * @param paths         Absolute paths, such as `\_SB_.PCI0._HID`.
+ * @param count         How many.
+ * @param out_succeeded Receives how many of them evaluated with OK.
+ * @return The fold.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_evaluations_fold(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *const *paths, uint32_t count,
+    uint32_t *out_succeeded);
+
+/**
+ * @brief Folds the work record of the specification (§8.7): FNV-1a, 32 bits, over the operations executed per
+ *        opcode, four little-endian bytes each in descriptor order, then four bytes each of the lookups, the probes,
+ *        the objects allocated, the bytes decoded and the maps its cache asked the host for.
+ *
+ * @details The operations executed and the bytes decoded are counted only in a build that counts what runs (§4.1):
+ *          elsewhere they fold as zeros.
+ * @param load A load.
+ * @return The fold.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_work_fold(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**

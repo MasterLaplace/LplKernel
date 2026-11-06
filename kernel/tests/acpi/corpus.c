@@ -361,10 +361,52 @@ static uint32_t corpus_terms_decoded(void)
 }
 
 /**
+ * @brief Prints the work record of §8.7 over what the load, and the initialisation when it ran, did: the operations
+ *        executed, the bytes decoded and the maps the cache asked the host for, the counters that tell a run that did
+ *        nothing apart, then the fold.
+ */
+static void corpus_measure_work(KernelTest_t *test)
+{
+    uint32_t executed = 0u;
+
+    for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        executed += corpus_load.evaluation.executed[opcode];
+    kernel_test_measure(test, "operations_executed", executed);
+    kernel_test_measure(test, "bytes_decoded", corpus_load.bytes_decoded);
+    kernel_test_measure(test, "map_calls", corpus_load.regions.map_calls);
+    kernel_test_measure_hexadecimal(
+        test, "work_fold", advanced_configuration_and_power_interface_machine_language_work_fold(&corpus_load));
+}
+
+/**
+ * @brief Prints the evaluations record of §8.7 once the initialisation has run, over a fixed list of objects that
+ *        take no argument and that the boot or a consumer of the namespace reads: the sleep states, the year the
+ *        `_OSI` ladder of `_INI` sets (§5.4), and the identity, bus, resources and interrupt routing of the host
+ *        bridge under both names firmware gives it. A path that names nothing on a machine folds its status alone.
+ *        How many evaluated comes first, then the fold.
+ */
+static void corpus_measure_evaluations(KernelTest_t *test)
+{
+    static const char *const paths[] = {
+        "\\_S0_",           "\\_S3_",           "\\_S4_",           "\\_S5_",           "\\OSYS",
+        "\\_SB_.PCI0._HID", "\\_SB_.PCI0._BBN", "\\_SB_.PCI0._UID", "\\_SB_.PCI0._CRS", "\\_SB_.PCI0._PRT",
+        "\\_SB_.PC00._HID", "\\_SB_.PC00._BBN", "\\_SB_.PC00._UID", "\\_SB_.PC00._CRS", "\\_SB_.PC00._PRT",
+    };
+    uint32_t succeeded = 0u;
+    const uint32_t fold = advanced_configuration_and_power_interface_machine_language_evaluations_fold(
+        &corpus_load, paths, sizeof(paths) / sizeof(paths[0]), &succeeded);
+
+    kernel_test_measure(test, "evaluations_succeeded", succeeded);
+    kernel_test_measure_hexadecimal(test, "evaluations_fold", fold);
+}
+
+/**
  * @brief Loads the definition blocks of the directory read, with the server profile's caps as the
  *        host harness does, decoding no method body when @p skips_bodies holds, as a release kernel
  *        loads (O2), prints the records of the load, initialises its namespace when @p initialize
- *        holds, then closes it and releases the directory.
+ *        holds, prints the work record of both, then, once initialised, the evaluations record, and closes
+ *        it and releases the directory.
  */
 static void corpus_load_directory(KernelTest_t *test, bool initialize, bool skips_bodies)
 {
@@ -384,6 +426,9 @@ static void corpus_load_directory(KernelTest_t *test, bool initialize, bool skip
         if (skips_bodies)
             kernel_test_check(test, corpus_terms_decoded() == 0u && corpus_load.name_references == 0u,
                               "the load decodes no method body, nor those of a table Load added");
+        corpus_measure_work(test);
+        if (initialize)
+            corpus_measure_evaluations(test);
     }
     advanced_configuration_and_power_interface_machine_language_close(&corpus_load);
     advanced_configuration_and_power_interface_release_directory(&corpus_directory);
@@ -532,8 +577,8 @@ KERNEL_TEST(a_malformed_image_is_refused_and_says_why)
 /**
  * @brief The recorded machine a boot module holds, as an image, loads and initialises through a
  *        simulated host: its records, compared with the host harness's on the same module, show that
- *        its tables build the same namespace, and initialise it the same way, in ring 0 as on the build
- *        machine.
+ *        its tables build the same namespace, and initialise it the same way, with the same work and the
+ *        same results (§8.7), in ring 0 as on the build machine.
  */
 KERNEL_TEST(the_boot_module_machine_loads) { corpus_load_boot_module(test, false); }
 

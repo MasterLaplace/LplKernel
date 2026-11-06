@@ -207,6 +207,25 @@ static void machine_language_count_opcode(MachineLanguageWalk_t *walk, uint32_t 
 }
 
 /**
+ * @brief Counts as decoded, in a build that counts what runs (§4.1), the bytes a walk went over from @p from to its pc.
+ */
+static void machine_language_count_decoded(MachineLanguageWalk_t *walk, uint32_t from)
+{
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        walk->load->bytes_decoded += walk->pc - from;
+}
+
+/**
+ * @brief Takes back from the bytes decoded, in a build that counts what runs (§4.1), those from @p from to @p to, which
+ *        the walk steps over without decoding them.
+ */
+static void machine_language_count_stepped_over(MachineLanguageWalk_t *walk, uint32_t from, uint32_t to)
+{
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED && to > from)
+        walk->load->bytes_decoded -= to - from;
+}
+
+/**
  * @brief Counts a fault of the declaration pass or of the Externals pass.
  */
 static void machine_language_count_load_error(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
@@ -357,6 +376,7 @@ static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguag
             {
                 if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) == 0u)
                     machine_language_forget_marks(walk);
+                machine_language_count_stepped_over(walk, walk->pc, pending->end);
                 walk->pc = pending->end;
                 walk->pending_count = index - 1u;
                 return;
@@ -365,6 +385,7 @@ static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguag
         machine_language_forget_marks(walk);
         if (walk->block_count > 1u)
         {
+            machine_language_count_stepped_over(walk, walk->pc, block->end);
             walk->pc = block->end;
             walk->pending_count = block->pending_base;
             machine_language_close_block(walk);
@@ -1570,6 +1591,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     {
         machine_language_forget_marks(walk);
         --walk->pending_count;
+        machine_language_count_stepped_over(walk, walk->pc, active.end);
         walk->pc = active.end;
         return MACHINE_LANGUAGE_OK;
     }
@@ -1579,6 +1601,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
         if (walk->pass != MACHINE_LANGUAGE_PASS_DECODE)
         {
             --walk->pending_count;
+            machine_language_count_stepped_over(walk, walk->pc, active.end);
             walk->pc = active.end;
             return MACHINE_LANGUAGE_OK;
         }
@@ -1612,6 +1635,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
         walk->declaration->body = walk->pc;
         walk->declaration->scope = scope;
         --walk->pending_count;
+        machine_language_count_stepped_over(walk, walk->pc, active.end);
         walk->pc = active.end;
         return MACHINE_LANGUAGE_OK;
     }
@@ -2007,6 +2031,7 @@ static bool machine_language_keeps_data(MachineLanguageWalk_t *walk, uint32_t in
     node->value.payload = offset;
     ++load->data_kept;
     ++load->tables[walk->table].data_kept;
+    machine_language_count_stepped_over(walk, first, after);
     walk->pc = after;
     return true;
 }
@@ -2248,6 +2273,7 @@ static MachineLanguageStatus_t machine_language_method_statement(MachineLanguage
     }
     walk->pc = name_start + 5u;
     machine_language_record_method(walk, &state);
+    machine_language_count_stepped_over(walk, walk->pc, end);
     walk->pc = end;
     ++walk->load->declarations_decoded_directly;
     return MACHINE_LANGUAGE_OK;
@@ -2557,24 +2583,31 @@ static bool machine_language_statements_end(MachineLanguageWalk_t *walk, uint32_
 
 /**
  * @brief Takes the steps of a walk, past every fault, recorded, until its first construct ends; with
- *        @p statements, until it has taken the statements from @p start the interpreter hands the load.
+ *        @p statements, until it has taken the statements from @p start the interpreter hands the load. The bytes it
+ *        went over count as decoded, but for those its steps take back as stepped over.
  *
  * @return OK, or ASKS when a statement waits for a term the interpreter runs.
  */
 static MachineLanguageStatus_t machine_language_walk(MachineLanguageWalk_t *walk, uint32_t start, bool statements)
 {
+    const uint32_t from = walk->pc;
+
     while (walk->block_count != 0u && !(statements && machine_language_statements_end(walk, start)))
     {
         const MachineLanguageStatus_t status = machine_language_step(walk);
 
         if (status == MACHINE_LANGUAGE_ASKS)
+        {
+            machine_language_count_decoded(walk, from);
             return status;
+        }
         if (status != MACHINE_LANGUAGE_OK)
         {
             machine_language_record_fault(walk, status);
             machine_language_recover(walk, status);
         }
     }
+    machine_language_count_decoded(walk, from);
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -2627,6 +2660,16 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
 #define MACHINE_LANGUAGE_FOLD_UNREADABLE                                                                               \
     0xFFFFFFFFu /**< What kept data whose bytes no longer read as data folds as: a count or a length no object has. */
 
+_Static_assert((int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_INTEGER &&
+                   (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_STRING &&
+                   (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_BUFFER &&
+                   (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_PACKAGE,
+               "an evaluation's result folds its kind as the type of a node holding the same data (§8.7)");
+
 /**
  * @brief Folds @p width little-endian bytes of @p value into @p fold.
  */
@@ -2664,6 +2707,24 @@ static uint32_t machine_language_fold_zeros(uint32_t fold, uint32_t length)
 static uint32_t machine_language_fold_unreadable(uint32_t fold)
 {
     return machine_language_fold_unsigned(fold, MACHINE_LANGUAGE_FOLD_UNREADABLE, 4u);
+}
+
+/**
+ * @brief The kind of the value an element of kept data of class @p class builds into, which a package folds before
+ *        each of its elements: an Integer, a String, a Buffer, a Package, or a name.
+ */
+static uint8_t machine_language_kept_kind(uint8_t class)
+{
+    if ((class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
+        return MACHINE_LANGUAGE_VALUE(INTEGER);
+    switch (class)
+    {
+    case MACHINE_LANGUAGE_DATA_STRING: return MACHINE_LANGUAGE_VALUE(STRING);
+    case MACHINE_LANGUAGE_DATA_BUFFER: return MACHINE_LANGUAGE_VALUE(BUFFER);
+    case MACHINE_LANGUAGE_DATA_PACKAGE:
+    case MACHINE_LANGUAGE_DATA_VARIABLE_PACKAGE: return MACHINE_LANGUAGE_VALUE(PACKAGE);
+    default: return MACHINE_LANGUAGE_VALUE(NAME_REFERENCE);
+    }
 }
 
 /**
@@ -2744,7 +2805,8 @@ __attribute__((always_inline)) static inline bool machine_language_read_kept(con
 /**
  * @brief Folds a data object kept in its table (O20) as machine_language_fold_value folds the object it builds
  *        into: an Integer masked to its width, a String's or a Buffer's length and bytes, zeros past a Buffer's
- *        initialiser, a Package's count and each element it keeps, none past its count, a name as its path bytes.
+ *        initialiser, a Package's count and each element it keeps, its kind first, none past its count, then a zero
+ *        kind for each element its count adds past its initialisers, a name as its path bytes.
  *        Bytes that machine_language_read_kept does not read as data, which the load did not check or AML has
  *        rewritten since, fold as machine_language_fold_unreadable folds them: an object or a name cut by the end of
  *        the table or of its package, a byte that starts no data object, packages nested past the levels of §6.1, a
@@ -2773,6 +2835,8 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
 
         if (depth != 0u && pc == end)
         {
+            if (hidden == 0u && seen[depth - 1u] < counts[depth - 1u])
+                fold = machine_language_fold_zeros(fold, counts[depth - 1u] - seen[depth - 1u]);
             hidden = (--depth < hidden) ? 0u : hidden;
             if (depth == 0u)
                 return fold;
@@ -2785,6 +2849,8 @@ static uint32_t machine_language_fold_kept(const AdvancedConfigurationAndPowerIn
 
         if (!machine_language_read_kept(bytes, pc, end, depth, mask, &element))
             return machine_language_fold_unreadable(before);
+        if (folds && depth != 0u)
+            fold = machine_language_fold_unsigned(fold, machine_language_kept_kind(element.class), 1u);
         if ((element.class & MACHINE_LANGUAGE_DATA_WIDTH) != 0u)
             fold = folds ? machine_language_fold_unsigned(fold, element.integer, 8u) : fold;
         else if (element.class == MACHINE_LANGUAGE_DATA_SEGMENT || element.class == MACHINE_LANGUAGE_DATA_PREFIX)
@@ -3166,7 +3232,7 @@ static void machine_language_check_kept_data(AdvancedConfigurationAndPowerInterf
 
 /**
  * @brief Folds one value: an Integer, a String's or Buffer's length and bytes, a Package's count and
- *        each element, nested packages through an explicit stack, a name element as its path bytes.
+ *        each element, its kind first, nested packages through an explicit stack, a name element as its path bytes.
  */
 static uint32_t machine_language_fold_value(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                             uint32_t fold,
@@ -3223,6 +3289,7 @@ static uint32_t machine_language_fold_value(const AdvancedConfigurationAndPowerI
         if (depth == 0u)
             return fold;
         value = &stack[depth - 1u].elements[stack[depth - 1u].index++];
+        fold = machine_language_fold_unsigned(fold, value->kind, 1u);
     }
 }
 
@@ -3958,6 +4025,46 @@ uint32_t advanced_configuration_and_power_interface_machine_language_namespace_f
                 advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->next_sibling;
     }
     return fold;
+}
+
+uint32_t advanced_configuration_and_power_interface_machine_language_evaluations_fold(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *const *paths, uint32_t count,
+    uint32_t *out_succeeded)
+{
+    uint32_t fold = MACHINE_LANGUAGE_FOLD_OFFSET;
+
+    *out_succeeded = 0u;
+    for (uint32_t path = 0u; path < count; ++path)
+    {
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+        const MachineLanguageStatus_t status =
+            advanced_configuration_and_power_interface_machine_language_evaluate(load, paths[path], NULL, 0u, &result);
+
+        fold = machine_language_fold_unsigned(fold, status, 2u);
+        if (status == MACHINE_LANGUAGE_OK)
+        {
+            fold = machine_language_fold_unsigned(fold, result.kind, 1u);
+            fold = machine_language_fold_value(load, fold, &result);
+            ++*out_succeeded;
+        }
+        advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, &result);
+    }
+    return fold;
+}
+
+uint32_t advanced_configuration_and_power_interface_machine_language_work_fold(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    uint32_t fold = MACHINE_LANGUAGE_FOLD_OFFSET;
+
+    for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        fold = machine_language_fold_unsigned(fold, load->evaluation.executed[opcode], 4u);
+    fold = machine_language_fold_unsigned(fold, load->space.lookups, 4u);
+    fold = machine_language_fold_unsigned(fold, load->space.probes, 4u);
+    fold = machine_language_fold_unsigned(fold, load->heap.objects, 4u);
+    fold = machine_language_fold_unsigned(fold, load->bytes_decoded, 4u);
+    return machine_language_fold_unsigned(fold, load->regions.map_calls, 4u);
 }
 
 void advanced_configuration_and_power_interface_machine_language_limits(

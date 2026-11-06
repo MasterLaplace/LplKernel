@@ -128,7 +128,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          two that load the module required, the debug kernel's path and the release kernel's,
          and compares the records with those `test-acpi --boot-module` prints on the same module,
          with tools/parity.sh; qemu boots it on q35 and pc with lpl.acpi.tables=print instead, and
-         compares with `test-acpi --firmware-log` on the tables it printed; a boot that ends no test run,
+         compares with `test-acpi --firmware-log` on the tables it printed, then boots it again with those
+         tables as its module, `test-acpi --write-printed-module` writing it, and compares as for a list,
+         so that what initialising QEMU's tables evaluates is compared too (§8.7); a boot that ends no test run,
          has no telemetry record, or whose telemetry kept a duplicate key, sanitised a character or lost a
          field past a record's cap, fails. The logs of the last run
          stay in build/acpi-corpus/ring0/. BOOT_SECONDS (300) bounds each boot
@@ -1186,35 +1188,51 @@ compare_ring0() {
     return 1
 }
 
+# Boots the debug kernel $1 on q35 with the module $2/machine.acpi, its logs in $2, and compares its records with the
+# host harness's on the same module, as the subject $3 numbered $4.
+ring0_module() {
+    "$HARNESS" --boot-module "$2/machine.acpi" >"$2/host.log" 2>&1 || true
+    boot "$1" q35 "$2/serial.log" \
+        "lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.the_boot_module_machine_loads*" "$2/machine.acpi"
+    compare_ring0 "$2/host.log" "$2/serial.log" "$3" "$4" \
+        "the_boot_module_machine_loads the_boot_module_machine_loads_on_the_release_path"
+}
+
 # Boots the debug kernel $2 with the module of each machine of the list $1, and compares its records with the
-# host harness's on the same module; with qemu, boots it on q35 and pc and compares the tables it printed.
+# host harness's on the same module; with qemu, boots it on q35 and pc and compares the tables it printed, then
+# boots it with those tables as its module and compares again.
 ring0() {
     command -v qemu-system-i386 >/dev/null || { echo "ring0: no qemu-system-i386" >&2; exit 1; }
     [[ -f "$2" ]] || { echo "ring0: $2: no kernel" >&2; exit 1; }
     grep -qaF 'KTAP version 1' "$2" || { echo "ring0: $2: a kernel without tests, build a debug one" >&2; exit 1; }
     (cd "$ROOT" && xmake build -q test-acpi)
     mkdir -p "$RING0_LOGS"
-    local number=0 agree=0 subject logs tests
+    local number=0 agree=0 subject logs
     while IFS= read -r subject; do
         number=$((number + 1))
         logs="$RING0_LOGS/$(module_name "$subject")"
         mkdir -p "$logs"
-        if [[ "$1" == qemu ]]; then
-            tests=the_booted_machine_loads
-            boot "$2" "$subject" "$logs/serial.log" \
-                "lpl.acpi.tables=print lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.$tests"
-            "$HARNESS" --firmware-log "$logs/serial.log" >"$logs/host.log" 2>&1 || true
-        else
-            tests="the_boot_module_machine_loads the_boot_module_machine_loads_on_the_release_path"
+        if [[ "$1" != qemu ]]; then
             if ! "$HARNESS" --write-module "$LINUXHW/$subject.bin" "$logs/machine.acpi" 2>"$logs/host.log"; then
                 echo "not ok $number $subject: $(cat "$logs/host.log")"
                 continue
             fi
-            "$HARNESS" --boot-module "$logs/machine.acpi" >"$logs/host.log" 2>&1 || true
-            boot "$2" q35 "$logs/serial.log" \
-                "lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.the_boot_module_machine_loads*" "$logs/machine.acpi"
+            ring0_module "$2" "$logs" "$subject" "$number" && agree=$((agree + 1))
+            continue
         fi
-        compare_ring0 "$logs/host.log" "$logs/serial.log" "$subject" "$number" "$tests" && agree=$((agree + 1))
+        boot "$2" "$subject" "$logs/serial.log" \
+            "lpl.acpi.tables=print lpl.test=$SUITES* lpl.test.require=${SUITES}_corpus.the_booted_machine_loads"
+        "$HARNESS" --firmware-log "$logs/serial.log" >"$logs/host.log" 2>&1 || true
+        compare_ring0 "$logs/host.log" "$logs/serial.log" "$subject" "$number" the_booted_machine_loads &&
+            agree=$((agree + 1))
+        number=$((number + 1))
+        mkdir -p "$logs/module"
+        if ! "$HARNESS" --write-printed-module "$logs/serial.log" "$logs/module/machine.acpi" \
+            2>"$logs/module/host.log"; then
+            echo "not ok $number $subject's tables as a module: $(cat "$logs/module/host.log")"
+            continue
+        fi
+        ring0_module "$2" "$logs/module" "$subject's tables as a module" "$number" && agree=$((agree + 1))
     done < <(if [[ "$1" == qemu ]]; then printf 'q35\npc\n'; else reports "$1"; fi)
     echo "# ring 0: $agree of $number agree with the host"
     [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
