@@ -2,9 +2,12 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Noop: the body of a method that does nothing.
+ * @brief Name (BUFF, Buffer (0x24) { 0x53, 0x53 }).
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    Noop
+    Name (BUFF, Buffer (0x24)
+    {
+         0x53, 0x53
+    })
 }

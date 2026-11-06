@@ -2,9 +2,9 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief RES0, an Integer 0.
+ * @brief Load (\TBL3, \HND1).
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    Name (RES0, Zero)
+    Load (\TBL3, \HND1) __EXPECT__(6084)
 }

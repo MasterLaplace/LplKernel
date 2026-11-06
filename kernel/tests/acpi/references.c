@@ -1,4 +1,5 @@
 #include "fixtures/references.h"
+#include "fixtures/common.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -422,7 +423,7 @@ KERNEL_TEST(buffer_fields_read_and_write_every_bit_offset_and_length)
     uint32_t wrong_writes = 0u;
     uint32_t fold = REFERENCES_FOLD_OFFSET;
 
-    if (!references_run(test, references_result_zero_aml, sizeof(references_result_zero_aml)))
+    if (!references_run(test, common_result_zero_aml, sizeof(common_result_zero_aml)))
         return;
     for (uint32_t byte = 0u; byte < REFERENCES_FIELD_BYTES; ++byte)
         pattern[byte] = (uint8_t) (0x5Bu + 0x1Du * byte);

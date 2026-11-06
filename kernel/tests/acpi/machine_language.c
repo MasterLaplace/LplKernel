@@ -1,3 +1,5 @@
+#include "fixtures/machine_language.h"
+#include "fixtures/common.h"
 #include "host_pages.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -176,6 +178,8 @@ static bool made_up_runs_at_table_level(uint32_t opcode)
 /**
  * @brief A PkgLength of 1 to 4 bytes gives the value its bytes encode, and the construct it opens
  *        ends at its own first byte plus that value: the length counts its own bytes.
+ *
+ * Its PkgLength encodings are raw bytes: the test reads each alone, outside any table.
  */
 KERNEL_TEST(a_package_length_of_one_to_four_bytes_ends_where_it_says)
 {
@@ -216,6 +220,9 @@ KERNEL_TEST(a_package_length_of_one_to_four_bytes_ends_where_it_says)
 /**
  * @brief A PkgLength that ends past the construct around it, that is shorter than its own bytes, or
  *        whose bytes pass the limit, is refused, each with its own status.
+ *
+ * Its PkgLengths are raw bytes: iasl does not emit one that crosses its parent, one shorter than its content or one
+ * cut short (§8.2).
  */
 KERNEL_TEST(a_package_length_that_crosses_its_parent_is_refused)
 {
@@ -266,6 +273,8 @@ static bool made_up_continues_segment(uint32_t byte)
  * @brief Each of the 256 bytes may start a NameSeg exactly when ACPI's grammar makes it a LeadNameChar, and follow its
  *        first character exactly when it makes it a NameChar; a NameString of one NameSeg whose first or last
  *        character is that byte reads exactly then.
+ *
+ * Its NameStrings are raw bytes: the test builds one from each of the 256 bytes and reads it alone, outside any table.
  */
 KERNEL_TEST(each_byte_is_a_name_segment_character_as_the_grammar_says)
 {
@@ -309,6 +318,9 @@ KERNEL_TEST(each_byte_is_a_name_segment_character_as_the_grammar_says)
  * @brief NameStrings of every prefix and length are read: the root alone, two parent prefixes, a
  *        dual path, a multi path of 255 segments; a multi path of 0 segments, a NameSeg with a
  *        lower-case character and a root followed by a parent prefix are refused.
+ *
+ * Its NameStrings are raw bytes: the test reads each alone, outside any table, and iasl emits no empty
+ * MultiNamePrefix, no lower-case NameSeg and no parent prefix after the root.
  */
 KERNEL_TEST(name_strings_of_every_prefix_and_length_are_read)
 {
@@ -376,6 +388,8 @@ KERNEL_TEST(name_strings_of_every_prefix_and_length_are_read)
 /**
  * @brief Every descriptor is found again from its own encoding, and the bytes the byte table leaves
  *        out, 0x5B 0x10 and 0x5B 0x11 and 0xA9 included, are no opcode.
+ *
+ * Its not_opcodes and bytes arrays are encodings the test looks up alone, outside any table.
  */
 KERNEL_TEST(every_descriptor_is_found_by_its_encoding)
 {
@@ -1067,14 +1081,7 @@ KERNEL_TEST(a_single_name_searches_up_to_the_root_and_a_path_does_not)
  */
 KERNEL_TEST(a_method_call_takes_the_arguments_its_method_declares)
 {
-    static const uint8_t aml[] = {
-        0x14u, 0x20u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 'M',   'T',   'H',   'A',   0x01u,
-        0x00u, 0x60u, 0x70u, 'M',   'T',   'H',   'A',   0x00u, 0x01u, 0x61u, 0x70u, 'M',   'T',
-        'H',   '4',   0x00u, 0x00u, 0x00u, 0x00u, 0x62u, 0x14u, 0x08u, 'M',   'T',   'H',   'A',
-        0x02u, 0xA4u, 0x68u, 0x14u, 0x08u, 'M',   'T',   'H',   '4',   0x04u, 0xA4u, 0x6Bu,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_method_call_takes_aml, sizeof(machine_language_method_call_takes_aml)))
         return;
     kernel_test_check(test, made_up_load.decode_errors == 0u, "the table decodes without a fault");
     kernel_test_check(test, made_up_load.method_calls == 3u, "every call is seen as a call");
@@ -1093,12 +1100,7 @@ KERNEL_TEST(a_method_call_takes_the_arguments_its_method_declares)
  */
 KERNEL_TEST(cond_ref_of_never_calls_its_operand)
 {
-    static const uint8_t aml[] = {
-        0x14u, 0x08u, 'M',   'T',   'H', 'B', 0x01u, 0xA4u, 0x68u, 0x14u, 0x16u, 'M', 'A', 'I', 'N',   0x00u,
-        0xA0u, 0x0Fu, 0x5Bu, 0x12u, 'M', 'T', 'H',   'B',   0x60u, 0x70u, 'M',   'T', 'H', 'B', 0x00u, 0x61u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_cond_ref_never_aml, sizeof(machine_language_cond_ref_never_aml)))
         return;
     kernel_test_check(test, made_up_load.decode_errors == 0u, "the table decodes without a fault");
     kernel_test_check(test, made_up_load.method_calls == 1u, "only the call in the body calls the method");
@@ -1117,14 +1119,8 @@ KERNEL_TEST(cond_ref_of_never_calls_its_operand)
  */
 KERNEL_TEST(a_name_a_method_declares_lasts_as_long_as_the_method)
 {
-    static const uint8_t aml[] = {
-        0x14u, 0x08u, 'F',   'O', 'O', '_', 0x01u, 0xA4u, 0x68u, 0x14u, 0x1Au, 'M', 'A', 'I',
-        'N',   0x00u, 0x08u, 'F', 'O', 'O', '_',   0x0Au, 0x05u, 0x70u, 'F',   'O', 'O', '_',
-        0x60u, 0x08u, '\\',  'T', 'M', 'P', 'N',   0x01u, 0x14u, 0x13u, 'A',   'F', 'T', 'R',
-        0x00u, 0x70u, 'F',   'O', 'O', '_', 0x00u, 0x61u, 0x70u, 'T',   'M',   'P', 'N', 0x62u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_name_method_declares_aml,
+                          sizeof(machine_language_name_method_declares_aml)))
         return;
     kernel_test_check(test, made_up_load.decode_errors == 0u, "the table decodes without a fault");
     kernel_test_check(test, made_up_load.method_calls == 1u, "FOO_ is a call only in AFTR");
@@ -1138,6 +1134,8 @@ KERNEL_TEST(a_name_a_method_declares_lasts_as_long_as_the_method)
  * @brief An External gives the argument count of a method no table declares, under a path that
  *        exists or that no table declares either: `\_SB_.PCI0.ECRD (Zero)` and `\_SB_.MTHE (Zero)`
  *        keep their Zero as an argument.
+ *
+ * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(an_external_names_a_method_no_table_declares)
 {
@@ -1166,13 +1164,10 @@ KERNEL_TEST(an_external_names_a_method_no_table_declares)
  */
 KERNEL_TEST(a_declaration_whose_path_does_not_exist_is_skipped_alone)
 {
-    static const uint8_t aml[] = {
-        0x08u, '\\',  0x2Eu, 'N',   'O', 'P', 'E', 'A', 'B',   'C',
-        'D',   0x01u, 0x14u, 0x07u, 'G', 'O', 'O', 'D', 0x00u, 0xA3u,
-    };
     uint32_t good = 0u;
 
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_declaration_whose_path_aml,
+                          sizeof(machine_language_declaration_whose_path_aml)))
         return;
     kernel_test_check(test, made_up_load.load_errors == 1u && made_up_load.decode_errors == 0u,
                       "the missing path is the one fault, met while declaring");
@@ -1189,6 +1184,8 @@ KERNEL_TEST(a_declaration_whose_path_does_not_exist_is_skipped_alone)
 /**
  * @brief A Connection to an inline buffer decodes the buffer as a term, and the unit after it is
  *        declared.
+ *
+ * Its table is raw bytes: iasl's grammar refuses a Connection to a Buffer.
  */
 KERNEL_TEST(a_connection_buffer_is_decoded_as_a_buffer)
 {
@@ -1219,6 +1216,8 @@ KERNEL_TEST(a_connection_buffer_is_decoded_as_a_buffer)
 /**
  * @brief Loads, as a DSDT, Name (VAL_, 0x2A) then BAD2, a method whose Store takes an If as an operand, with method
  *        bodies decoded or, when @p skips holds, skipped as a release kernel loads (O2, §3.6); then evaluates BAD2.
+ *
+ * Its table is raw bytes: iasl's grammar refuses an If where an operand is expected.
  *
  * @return BAD2's status, or OK when the load does not open.
  */
@@ -1282,11 +1281,12 @@ KERNEL_TEST(a_load_that_skips_bodies_declares_the_same_names_and_decodes_none)
 /**
  * @brief A load that skips method bodies still places the Externals the declaration pass could not: the DSDT's
  *        External (\ZDEV.ZINT, IntObj) names a device the SSDT declares after it.
+ *
+ * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(a_load_that_skips_bodies_still_places_its_externals)
 {
     static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'Z', 'D', 'E', 'V', 'Z', 'I', 'N', 'T', 0x01u, 0x00u};
-    static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u, 'Z', 'D', 'E', 'V'};
 
     if (!made_up_open(test))
         return;
@@ -1294,7 +1294,7 @@ KERNEL_TEST(a_load_that_skips_bodies_still_places_its_externals)
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(0u, "DSDT", external, sizeof(external)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", device, sizeof(device)));
+        &made_up_load, made_up_table(1u, "SSDT", common_device_zdev_aml, sizeof(common_device_zdev_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
 
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &made_up_load.space;
@@ -1316,12 +1316,14 @@ KERNEL_TEST(a_load_that_skips_bodies_still_places_its_externals)
  * @brief A PkgLength that passes its method's end abandons the rest of its table, an unterminated
  *        string is cut, a statement where an operand is expected is refused, and each next table loads
  *        all the same.
+ *
+ * Its faulty tables are raw bytes: iasl does not emit a crossing PkgLength, an unterminated string or a statement
+ * where an operand is expected (§8.2).
  */
 KERNEL_TEST(a_faulty_table_gives_way_to_the_next)
 {
     static const uint8_t crossing[] = {0x14u, 0x0Au, 'B', 'A', 'D', '_', 0x00u, 0xA0u, 0x3Fu, 0x00u, 0xA3u};
     static const uint8_t unterminated[] = {0x08u, 'S', 'T', 'R', '_', 0x0Du, 'a', 'b', 'c'};
-    static const uint8_t good[] = {0x14u, 0x07u, 'G', 'O', 'O', 'D', 0x00u, 0xA3u};
     static const uint8_t statement_operand[] = {0x14u, 0x0Cu, 'B',   'A',   'D',   '2',  0x00u,
                                                 0x70u, 0xA0u, 0x03u, 0x01u, 0xA3u, 0x60u};
 
@@ -1332,7 +1334,8 @@ KERNEL_TEST(a_faulty_table_gives_way_to_the_next)
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(1u, "SSDT", unterminated, sizeof(unterminated)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(2u, "SSDT", good, sizeof(good)));
+        &made_up_load, made_up_table(2u, "SSDT", machine_language_faulty_table_gives_good_aml,
+                                     sizeof(machine_language_faulty_table_gives_good_aml)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(3u, "SSDT", statement_operand, sizeof(statement_operand)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
@@ -1362,6 +1365,8 @@ KERNEL_TEST(a_faulty_table_gives_way_to_the_next)
 /**
  * @brief An External cut short after its name at the end of its table reads nothing past the table,
  *        and an External of NullName creates no node and is counted.
+ *
+ * Its Externals are raw bytes: iasl does not emit an External cut short or one without a name.
  */
 KERNEL_TEST(an_external_cut_short_or_without_a_name_creates_nothing)
 {
@@ -1386,6 +1391,8 @@ KERNEL_TEST(an_external_cut_short_or_without_a_name_creates_nothing)
 /**
  * @brief Three hundred Externals on paths no table declares are all placed, with no cap: a call to
  *        the last keeps its argument.
+ *
+ * Its Externals are raw bytes, written from an index: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
 {
@@ -1408,12 +1415,9 @@ KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
         aml[length++] = 0x01u;
     }
     {
-        static const uint8_t main_method[] = {0x14u, 0x18u, 'M', 'A', 'I', 'N',   0x00u, 0x70u, '\\',
-                                              0x2Fu, 0x03u, '_', 'S', 'B', '_',   'D',   '2',   '9',
-                                              '9',   'M',   'T', 'H', '_', 0x00u, 0x60u};
-
-        memcpy(aml + length, main_method, sizeof(main_method));
-        length += (uint32_t) sizeof(main_method);
+        memcpy(aml + length, machine_language_three_hundred_externals_main_aml,
+               sizeof(machine_language_three_hundred_externals_main_aml));
+        length += (uint32_t) sizeof(machine_language_three_hundred_externals_main_aml);
     }
     if (!made_up_open(test))
         return;
@@ -1438,17 +1442,14 @@ KERNEL_TEST(three_hundred_externals_on_missing_paths_are_all_placed)
  */
 KERNEL_TEST(an_alias_keeps_its_first_target)
 {
-    static const uint8_t first[] = {0x08u, 'T',   'G', 'T', '1', 0x01u, 0x08u, 'T', 'G', 'T', '2',
-                                    0x01u, 0x06u, 'T', 'G', 'T', '1',   'A',   'L', 'I', '_'};
-    static const uint8_t second[] = {0x06u, 'T', 'G',   'T',   '2', 'A', 'L', 'I', '_',  0x14u, 0x10u, 'M', 'A',
-                                     'I',   'N', 0x00u, 0x06u, 'T', 'G', 'T', '2', '\\', 'A',   'L',   'I', '_'};
-
     if (!made_up_open(test))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(0u, "DSDT", first, sizeof(first)));
+        &made_up_load, made_up_table(0u, "DSDT", machine_language_alias_keeps_first_first_aml,
+                                     sizeof(machine_language_alias_keeps_first_first_aml)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", second, sizeof(second)));
+        &made_up_load, made_up_table(1u, "SSDT", machine_language_alias_keeps_first_second_aml,
+                                     sizeof(machine_language_alias_keeps_first_second_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
 
     uint32_t alias = 0u;
@@ -1474,10 +1475,7 @@ KERNEL_TEST(an_alias_keeps_its_first_target)
  */
 KERNEL_TEST(load_may_stand_where_a_value_is_expected)
 {
-    static const uint8_t aml[] = {0x14u, 0x10u, 'L', 'D', 'T', 'B', 0x00u, 0xA0u, 0x08u,
-                                  0x5Bu, 0x20u, 'R', 'G', '0', '0', 0x60u, 0xA3u};
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_load_may_stand_aml, sizeof(machine_language_load_may_stand_aml)))
         return;
     kernel_test_check(test, made_up_load.decode_errors == 0u, "the If around Load decodes");
     made_up_close(test);
@@ -1485,6 +1483,8 @@ KERNEL_TEST(load_may_stand_where_a_value_is_expected)
 
 /**
  * @brief The same External on a missing path, in two tables, makes one node, not two.
+ *
+ * Its Externals are raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(the_same_external_twice_makes_one_node)
 {
@@ -1509,6 +1509,8 @@ KERNEL_TEST(the_same_external_twice_makes_one_node)
 /**
  * @brief Two Externals through an Alias a later table declares make one node, under the Alias, which
  *        the namespace finds by its parent and name.
+ *
+ * Its Externals are raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(two_externals_through_a_later_alias_make_one_node)
 {
@@ -1516,14 +1518,14 @@ KERNEL_TEST(two_externals_through_a_later_alias_make_one_node)
         0x15u, '\\', 0x2Eu, 'A', 'L', 'S', '_', 'F', 'O', 'O', '_', 0x08u, 0x01u,
         0x15u, '\\', 0x2Eu, 'A', 'L', 'S', '_', 'F', 'O', 'O', '_', 0x08u, 0x01u,
     };
-    static const uint8_t alias[] = {0x06u, '\\', '_', 'S', 'B', '_', '\\', 'A', 'L', 'S', '_'};
 
     if (!made_up_open(test))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(0u, "DSDT", externals, sizeof(externals)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", alias, sizeof(alias)));
+        &made_up_load, made_up_table(1u, "SSDT", machine_language_two_externals_through_alias_aml,
+                                     sizeof(machine_language_two_externals_through_alias_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(test, made_up_load.load_errors == 0u, "both Externals are placed without a fault");
     made_up_close(test);
@@ -1533,6 +1535,8 @@ KERNEL_TEST(two_externals_through_a_later_alias_make_one_node)
  * @brief The Externals pass places nothing from a Scope or a Device it cannot find: the External in
  *        their body names no path any table declares, and a name that climbs to the root still
  *        resolves to nothing. An External on a missing path makes the pass run.
+ *
+ * Its table is raw bytes: iasl emits an External only inside an If (Zero).
  */
 KERNEL_TEST(an_external_in_a_scope_that_cannot_be_found_is_not_placed)
 {
@@ -1566,13 +1570,8 @@ KERNEL_TEST(an_external_in_a_scope_that_cannot_be_found_is_not_placed)
  */
 KERNEL_TEST(a_second_alias_in_a_body_keeps_the_first_target)
 {
-    static const uint8_t aml[] = {
-        0x14u, 0x07u, 'M', 'T', 'H', '1', 0x01u, 0xA3u, 0x14u, 0x07u, 'M', 'T', 'H', '2',   0x02u, 0xA3u,
-        0x14u, 0x1Eu, 'M', 'A', 'I', 'N', 0x00u, 0x06u, 'M',   'T',   'H', '1', 'A', 'L',   'I',   '_',
-        0x06u, 'M',   'T', 'H', '2', 'A', 'L',   'I',   '_',   'A',   'L', 'I', '_', 0x01u, 0xA3u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_second_alias_in_body_aml,
+                          sizeof(machine_language_second_alias_in_body_aml)))
         return;
     kernel_test_check(test, made_up_load.decode_errors == 0u, "ALI_ (One) takes one argument, and Noop follows it");
     made_up_close(test);
@@ -1581,6 +1580,8 @@ KERNEL_TEST(a_second_alias_in_a_body_keeps_the_first_target)
 /**
  * @brief An External in a method body never rewrites the argument count of the External the table
  *        declares.
+ *
+ * Its table is raw bytes: iasl emits an External only inside an If (Zero).
  */
 KERNEL_TEST(an_external_in_a_body_keeps_the_table_s_argument_count)
 {
@@ -1606,6 +1607,8 @@ KERNEL_TEST(an_external_in_a_body_keeps_the_table_s_argument_count)
 /**
  * @brief An External the namespace has no node for is counted once, by the Externals pass, not by
  *        the declaration pass as well.
+ *
+ * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(an_external_past_the_node_cap_is_counted_once)
 {
@@ -1636,21 +1639,20 @@ KERNEL_TEST(an_external_past_the_node_cap_is_counted_once)
 /**
  * @brief An External through an Alias a later table declares, to an object that exists, places
  *        nothing: the Alias stays without a child.
+ *
+ * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(an_external_through_a_later_alias_to_an_object_places_nothing)
 {
     static const uint8_t external[] = {0x15u, '\\', 0x2Eu, 'A', 'L', 'S', '_', 'F', 'O', 'O', '_', 0x01u, 0x00u};
-    static const uint8_t declarations[] = {
-        0x06u, '\\',  '_', 'S', 'B', '_', '\\', 'A', 'L', 'S', '_',   0x08u,
-        '\\',  0x2Eu, '_', 'S', 'B', '_', 'F',  'O', 'O', '_', 0x01u,
-    };
 
     if (!made_up_open(test))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &made_up_load, made_up_table(0u, "DSDT", external, sizeof(external)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", declarations, sizeof(declarations)));
+        &made_up_load, made_up_table(1u, "SSDT", machine_language_external_through_later_declarations_aml,
+                                     sizeof(machine_language_external_through_later_declarations_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *alias =
@@ -1732,6 +1734,12 @@ static const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *m
                                                                                        1);
 }
 
+/**
+ * @brief Data objects of every kind a Name declares: an Integer, a String, a Buffer padded to its size, a Package that
+ *        nests a Package holding a name, and VPK_, a VarPackage of two elements.
+ *
+ * It is raw bytes: iasl emits a VarPackage of a constant size below 256 as a Package.
+ */
 static const uint8_t made_up_data_objects[] = {
     0x08u, 'I', 'N',   'T',   '_',   0x0Bu, 0x34u, 0x12u, 0x08u, 'S',   'T',   'R',   '_',   0x0Du, 'a',
     'b',   'c', 0x00u, 0x08u, 'B',   'U',   'F',   '_',   0x11u, 0x05u, 0x0Au, 0x04u, 0x01u, 0x02u, 0x08u,
@@ -1743,6 +1751,8 @@ static const uint8_t made_up_data_objects[] = {
  * @brief A Name holds the data object it declares: an Integer, a String, a Buffer padded to its size,
  *        a Package whose third element is a Package holding a name kept as a name, and a VarPackage
  *        of two elements with one initialiser, the other left Uninitialized.
+ *
+ * Its buffer_bytes array is the bytes the test expects, not AML.
  */
 KERNEL_TEST(a_name_holds_the_data_object_it_declares)
 {
@@ -1825,6 +1835,9 @@ KERNEL_TEST(the_namespace_fold_follows_the_values)
  * @brief A Buffer takes the longer of its size and its initialiser, a Package with more initialisers
  *        than elements keeps the first, the cut is counted once, when the package is first built, not at load
  *        (O20), and the dropped initialiser writes nothing; a Name declared twice keeps its first value.
+ *
+ * Its table is raw bytes: iasl raises the count of a Package and the size of a Buffer that hold more initialisers
+ * than they declare.
  */
 KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
 {
@@ -1878,21 +1891,8 @@ KERNEL_TEST(a_package_or_buffer_whose_size_and_initialisers_differ)
  */
 KERNEL_TEST(a_duplicate_declaration_is_skipped_with_its_body)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'M',   'A',   'I',   'N',   0x0Au, 0x00u, 0x5Bu, 0x85u, 0x05u, 'T',   'E',   'S',   'T',   0x5Bu, 0x85u,
-        0x13u, 'T',   'E',   'S',   'T',   0x08u, 'I',   'N',   'N',   'R',   0x0Au, 0x01u, 0x70u, 0x0Au, 0x55u, 'M',
-        'A',   'I',   'N',   0x5Bu, 0x82u, 0x0Cu, 'D',   'E',   'V',   '0',   0x08u, 'A',   'A',   'A',   'A',   0x0Au,
-        0x01u, 0x5Bu, 0x82u, 0x0Du, 'D',   'E',   'V',   '0',   0x08u, 'B',   'B',   'B',   'B',   0x0Au, 0x02u, 0xA3u,
-        0x14u, 0x08u, 'M',   'T',   'H',   '0',   0x00u, 0xA4u, 0x01u, 0x14u, 0x0Du, 'M',   'T',   'H',   '0',   0x00u,
-        0x5Bu, 0x21u, 0x0Au, 0x01u, 0xA4u, 0x0Au, 0x02u, 0x5Bu, 0x83u, 0x12u, 'C',   'P',   'U',   '0',   0x01u, 0x10u,
-        0x04u, 0x00u, 0x00u, 0x06u, 0x08u, 'P',   'R',   'A',   '_',   0x0Au, 0x01u, 0x5Bu, 0x83u, 0x12u, 'C',   'P',
-        'U',   '0',   0x02u, 0x20u, 0x04u, 0x00u, 0x00u, 0x06u, 0x08u, 'P',   'R',   'B',   '_',   0x0Au, 0x02u, 0x5Bu,
-        0x84u, 0x0Fu, 'P',   'W',   'R',   '0',   0x00u, 0x00u, 0x00u, 0x08u, 'P',   'W',   'A',   '_',   0x0Au, 0x01u,
-        0x5Bu, 0x84u, 0x0Fu, 'P',   'W',   'R',   '0',   0x01u, 0x01u, 0x00u, 0x08u, 'P',   'W',   'B',   '_',   0x0Au,
-        0x02u, 0x10u, 0x0Cu, 'D',   'E',   'V',   '0',   0x08u, 'C',   'C',   'C',   'C',   0x0Au, 0x03u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_duplicate_declarations_aml,
+                          sizeof(machine_language_duplicate_declarations_aml)))
         return;
     kernel_test_measure(test, "duplicates", made_up_load.duplicates);
     kernel_test_check(test, made_up_load.duplicates == 5u, "the five second declarations are counted");
@@ -1956,16 +1956,14 @@ KERNEL_TEST(a_duplicate_declaration_is_skipped_with_its_body)
  */
 KERNEL_TEST(a_duplicate_at_the_same_offset_of_another_table_is_skipped)
 {
-    static const uint8_t first[] = {0x5Bu, 0x82u, 0x0Cu, 'D', 'E', 'V', '0', 0x08u, 'A', 'A', 'A', 'A', 0x0Au, 0x01u};
-    static const uint8_t second[] = {0x5Bu, 0x82u, 0x0Du, 'D', 'E', 'V',   '0',  0xA3u,
-                                     0x08u, 'B',   'B',   'B', 'B', 0x0Au, 0x02u};
-
     if (!made_up_open(test))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(0u, "DSDT", first, sizeof(first)));
+        &made_up_load, made_up_table(0u, "DSDT", machine_language_duplicate_same_offset_first_aml,
+                                     sizeof(machine_language_duplicate_same_offset_first_aml)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", second, sizeof(second)));
+        &made_up_load, made_up_table(1u, "SSDT", machine_language_duplicate_same_offset_second_aml,
+                                     sizeof(machine_language_duplicate_same_offset_second_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(test,
                       made_up_load.duplicates == 1u && made_up_node_at("\x2E"
@@ -1985,10 +1983,8 @@ KERNEL_TEST(a_duplicate_at_the_same_offset_of_another_table_is_skipped)
  */
 KERNEL_TEST(a_device_of_the_name_of_a_name_is_a_duplicate)
 {
-    static const uint8_t aml[] = {0x08u, 'N',   'D', 'E', 'V', 0x0Au, 0x01u, 0x5Bu,
-                                  0x82u, 0x06u, 'N', 'D', 'E', 'V',   0xA3u};
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_device_named_as_name_aml,
+                          sizeof(machine_language_device_named_as_name_aml)))
         return;
     kernel_test_check(test, made_up_load.duplicates == 1u && made_up_node("NDEV")->value.payload == 1u,
                       "the Device is counted as a duplicate, and NDEV stays the Name 1");
@@ -2004,12 +2000,8 @@ KERNEL_TEST(a_device_of_the_name_of_a_name_is_a_duplicate)
  */
 KERNEL_TEST(a_device_whose_path_names_nothing_is_still_decoded)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x82u, 0x05u, 'D',   'E',   'V',   '0',  0x5Bu, 0x82u, 0x05u, 'D', 'E', 'V', '0', 0x10u, 0x13u, 'D',
-        'E',   'V',   '0',   0x5Bu, 0x82u, 0x0Cu, '\\', 0x2Eu, 'N',   'O',   'P', 'E', 'X', 'X', 'X',   'X',   0xA3u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_device_path_names_nothing_aml,
+                          sizeof(machine_language_device_path_names_nothing_aml)))
         return;
     kernel_test_check(test, made_up_load.duplicates == 1u && made_up_load.load_errors == 1u,
                       "the second DEV0 is a duplicate, and \\NOPE.XXXX a fault of the declaration pass");
@@ -2026,13 +2018,8 @@ KERNEL_TEST(a_device_whose_path_names_nothing_is_still_decoded)
  */
 KERNEL_TEST(a_duplicate_that_names_its_own_scope_is_skipped)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x82u, 0x05u, 'D',   'E',   'V',   '0', 0x10u, 0x0Eu, 'D',   'E',   'V',   '0',
-        0x5Bu, 0x82u, 0x07u, '\\',  'D',   'E',   'V', '0',   0xA3u, 0x5Bu, 0x82u, 0x0Eu, 'D',
-        'E',   'V',   '1',   0x5Bu, 0x82u, 0x07u, '^', 'D',   'E',   'V',   '1',   0xA3u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_duplicate_naming_own_scope_aml,
+                          sizeof(machine_language_duplicate_naming_own_scope_aml)))
         return;
     kernel_test_check(test, made_up_load.duplicates == 2u && made_up_load.decode_errors == 0u,
                       "Device (\\DEV0) and Device (^DEV1) are the two duplicates");
@@ -2045,6 +2032,8 @@ KERNEL_TEST(a_duplicate_that_names_its_own_scope_is_skipped)
 /**
  * @brief The Externals pass skips a duplicate's body too: an External a second Device holds, whose parent
  *        does not exist, is never placed, as in acpiexec, while an External outside it is.
+ *
+ * Its table is raw bytes: iasl emits an External only inside an If (Zero).
  */
 KERNEL_TEST(the_externals_pass_skips_a_duplicate_s_body)
 {
@@ -2075,10 +2064,8 @@ KERNEL_TEST(the_externals_pass_skips_a_duplicate_s_body)
  */
 KERNEL_TEST(an_alias_of_a_missing_object_is_skipped_alone)
 {
-    static const uint8_t aml[] = {0x06u, 'Z',   'O', 'O', '_', 'B', 'A',   'R',
-                                  '_',   0x08u, 'A', 'F', 'T', 'R', 0x0Au, 0x07u};
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_alias_missing_object_aml,
+                          sizeof(machine_language_alias_missing_object_aml)))
         return;
     kernel_test_check(test, made_up_load.load_errors == 1u && made_up_load.decode_errors == 0u,
                       "the missing object is the one fault, met while declaring");
@@ -2094,14 +2081,8 @@ KERNEL_TEST(an_alias_of_a_missing_object_is_skipped_alone)
  */
 KERNEL_TEST(a_region_and_its_field_units_take_their_layout)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R', 'E', 'G',   '0',   0x01u, 0x0Au, 0x80u, 0x0Au, 0x10u, 0x5Bu, 0x80u,
-        'R',   'E',   'G', '1', 0x00u, 0x72u, 0x01u, 0x01u, 0x00u, 0x0Au, 0x04u, 0x5Bu, 0x81u,
-        0x1Au, 'R',   'E', 'G', '0',   0x01u, 'F',   '0',   '_',   '_',   0x08u, 0x00u, 0x08u,
-        'F',   '1',   '_', '_', 0x10u, 0x01u, 0x03u, 0x00u, 'F',   '2',   '_',   '_',   0x20u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_region_field_units_aml,
+                          sizeof(machine_language_region_field_units_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region =
@@ -2151,12 +2132,8 @@ static const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *made
  */
 KERNEL_TEST(regions_built_from_expressions_each_take_what_their_declaration_computes)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R', 'G', 'A', '_', 0x01u, 0x72u, 0x01u, 0x01u, 0x00u, 0x72u, 0x01u, 0x0Au, 0x02u, 0x00u,
-        0x5Bu, 0x80u, 'R', 'G', 'B', '_', 0x01u, 0x72u, 0x0Au, 0x02u, 0x0Au, 0x02u, 0x00u, 0x0Au, 0x08u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_regions_built_expressions_aml,
+                          sizeof(machine_language_regions_built_expressions_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *first = made_up_region("RGA_");
@@ -2177,16 +2154,14 @@ KERNEL_TEST(regions_built_from_expressions_each_take_what_their_declaration_comp
  */
 KERNEL_TEST(regions_at_the_same_offset_of_two_tables_each_take_their_own_offset)
 {
-    static const uint8_t first[] = {0x5Bu, 0x80u, 'R', 'G', 'A', '_', 0x01u, 0x72u, 0x01u, 0x01u, 0x00u, 0x0Au, 0x04u};
-    static const uint8_t second[] = {0x5Bu, 0x80u, 'R',   'G',   'C',   '_',   0x01u, 0x72u,
-                                     0x0Au, 0x02u, 0x0Au, 0x03u, 0x00u, 0x0Au, 0x04u};
-
     if (!made_up_open(test))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(0u, "DSDT", first, sizeof(first)));
+        &made_up_load, made_up_table(0u, "DSDT", machine_language_regions_same_offset_first_aml,
+                                     sizeof(machine_language_regions_same_offset_first_aml)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", second, sizeof(second)));
+        &made_up_load, made_up_table(1u, "SSDT", machine_language_regions_same_offset_second_aml,
+                                     sizeof(machine_language_regions_same_offset_second_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
     kernel_test_check(test, made_up_region("RGA_")->state == 1u && made_up_region("RGA_")->offset == 2u,
                       "RGA_ takes the offset Add (One, One)");
@@ -2201,12 +2176,8 @@ KERNEL_TEST(regions_at_the_same_offset_of_two_tables_each_take_their_own_offset)
  */
 KERNEL_TEST(a_region_whose_offset_fails_waits_for_the_interpreter)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'P',   'K',   'G', '_', 0x12u, 0x03u, 0x01u, 0x00u, 0x5Bu, 0x80u, 'R',   'G',   'F',   '_',
-        0x01u, 0x83u, 0x88u, 'P', 'K', 'G',   '_',   0x0Au, 0x05u, 0x00u, 0x72u, 0x01u, 0x01u, 0x00u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_region_whose_offset_aml,
+                          sizeof(machine_language_region_whose_offset_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRegion_t *region = made_up_region("RGF_");
@@ -2224,15 +2195,7 @@ KERNEL_TEST(a_region_whose_offset_fails_waits_for_the_interpreter)
  */
 KERNEL_TEST(index_and_bank_field_units_name_their_registers)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R', 'E',   'G',   '0',   0x01u, 0x0Au, 0x80u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x15u,
-        'R',   'E',   'G', '0',   0x01u, 'I',   'D',   'X',   '_',   0x08u, 'D',   'A',   'T',   '_',
-        0x08u, 'B',   'N', 'K',   '_',   0x08u, 0x5Bu, 0x86u, 0x0Fu, 'I',   'D',   'X',   '_',   'D',
-        'A',   'T',   '_', 0x01u, 'R',   '0',   '_',   '_',   0x08u, 0x5Bu, 0x87u, 0x11u, 'R',   'E',
-        'G',   '0',   'B', 'N',   'K',   '_',   0x0Au, 0x02u, 0x01u, 'B',   '0',   '_',   '_',   0x08u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_index_bank_field_aml, sizeof(machine_language_index_bank_field_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageFieldUnit_t *indexed = made_up_unit("R0__");
@@ -2260,13 +2223,8 @@ KERNEL_TEST(index_and_bank_field_units_name_their_registers)
  */
 KERNEL_TEST(a_buffer_field_holds_its_buffer_and_bits)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'B',   'U',   'F', '_', 0x11u, 0x03u, 0x0Au, 0x08u, 0x8Au, 'B',   'U',   'F', '_', 0x0Au,
-        0x02u, 'D',   'W',   '_', '_', 0x8Du, 'B',   'U',   'F',   '_',   0x0Au, 0x03u, 'B', 'I', 'T',
-        '_',   0x5Bu, 0x13u, 'B', 'U', 'F',   '_',   0x0Au, 0x04u, 0x0Au, 0x0Cu, 'C',   'F', '_', '_',
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_buffer_field_holds_aml,
+                          sizeof(machine_language_buffer_field_holds_aml)))
         return;
 
     const uint32_t buffer = made_up_node("BUF_")->value.handle;
@@ -2302,12 +2260,8 @@ KERNEL_TEST(a_buffer_field_holds_its_buffer_and_bits)
  */
 KERNEL_TEST(processors_mutexes_and_identity_keep_their_fields)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x83u, 0x0Bu, 'C', 'P',   'U',   '0',   0x01u, 0x10u, 0x08u, 0x00u, 0x00u, 0x06u, 0x5Bu, 0x01u,
-        'M',   'U',   'T',   '_', 0x05u, 0x5Bu, 0x84u, 0x08u, 'P',   'W',   'R',   '_',   0x01u, 0x03u, 0x02u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_processors_mutexes_identity_aml,
+                          sizeof(machine_language_processors_mutexes_identity_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *name =
@@ -2331,6 +2285,8 @@ KERNEL_TEST(processors_mutexes_and_identity_keep_their_fields)
 /**
  * @brief An If, a Store and a name at table level are code the interpreter would run, counted; a declaration,
  *        Noop and orphan data are not.
+ *
+ * Its table is raw bytes: iasl's grammar refuses a constant and a name alone as statements.
  */
 KERNEL_TEST(table_level_code_is_counted)
 {
@@ -2353,11 +2309,8 @@ KERNEL_TEST(table_level_code_is_counted)
  */
 KERNEL_TEST(a_package_keeps_a_name_that_exists_as_a_name)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'T', 'G', 'T', '_', 0x0Au, 0x05u, 0x08u, 'P', 'K', 'N', '_', 0x12u, 0x06u, 0x01u, 'T', 'G', 'T', '_',
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_package_keeps_name_aml,
+                          sizeof(machine_language_package_keeps_name_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *package =
@@ -2397,6 +2350,8 @@ KERNEL_TEST(objects_take_the_sizes_the_specification_gives)
  *        @p letter then three digits: a size a name gives, so that the load builds each buffer, where it keeps
  *        in its table a buffer whose size is a literal (O20).
  *
+ * Its pieces are raw bytes: partial terms around @p size and the names it writes from each index.
+ *
  * @return The bytes written.
  */
 static uint32_t made_up_buffers(uint8_t *aml, char letter, uint32_t count, uint16_t size)
@@ -2431,19 +2386,20 @@ static uint32_t made_up_buffers(uint8_t *aml, char letter, uint32_t count, uint1
  *        Scope, each in a block of 4 KiB, does not fit, the Name after the Scope is never declared, and
  *        a String a second table builds afterwards lands past the buffers, never over them. A name gives
  *        the buffers their size, so that the load builds them rather than keep them in the table (O20).
+ *
+ * Its Scope is raw bytes: the head of a Scope the test fills with as many buffers as it names.
  */
 KERNEL_TEST(an_exhausted_arena_stops_the_table_and_spoils_nothing)
 {
     static uint8_t aml[5u + 8u + 16u * 11u + 6u];
     static const uint8_t scope[] = {0x10u, 0x4Cu, 0x0Bu, '\\', 0x00u};
-    static const uint8_t string[] = {0x08u, 'S', 'T', 'R', '1', 0x0Du, 'a', 'b', 'c', 0x00u};
-    static const uint8_t last[] = {0x08u, 'L', 'A', 'S', 'T', 0x01u};
     const uint32_t length = (uint32_t) sizeof(scope) + made_up_buffers(aml + sizeof(scope), 'B', 16u, 0x0FA0u);
     uint32_t arena = 0u;
     bool untouched = true;
 
     memcpy(aml, scope, sizeof(scope));
-    memcpy(aml + length, last, sizeof(last));
+    memcpy(aml + length, machine_language_exhausted_arena_stops_last_aml,
+           sizeof(machine_language_exhausted_arena_stops_last_aml));
     if (!made_up_open(test))
         return;
     arena = made_up_load.space.arena_bytes;
@@ -2455,9 +2411,11 @@ KERNEL_TEST(an_exhausted_arena_stops_the_table_and_spoils_nothing)
                            "the namespace opens with no room past its first run of objects"))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(0u, "DSDT", aml, length + (uint32_t) sizeof(last)));
+        &made_up_load,
+        made_up_table(0u, "DSDT", aml, length + (uint32_t) sizeof(machine_language_exhausted_arena_stops_last_aml)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &made_up_load, made_up_table(1u, "SSDT", string, sizeof(string)));
+        &made_up_load, made_up_table(1u, "SSDT", machine_language_exhausted_arena_stops_string_aml,
+                                     sizeof(machine_language_exhausted_arena_stops_string_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&made_up_load);
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *first =
@@ -2519,6 +2477,9 @@ KERNEL_TEST(the_object_heap_refuses_a_run_past_its_last)
  * @brief An offset past 32 bits is refused as index_out_of_range and builds nothing: a DWord field at
  *        byte 2^29, a CreateField at bit 2^32, a field list whose reserved bits pass 2^32 before its
  *        unit.
+ *
+ * Its table is raw bytes: iasl, run with revision 1 as §8.6 says, truncates its 64-bit CreateField offset, and the
+ * test repeats the reserved bits of its field list past 2^32.
  */
 KERNEL_TEST(an_offset_past_32_bits_is_refused)
 {
@@ -2563,14 +2524,7 @@ KERNEL_TEST(an_offset_past_32_bits_is_refused)
  */
 KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R', 'E',   'G',   '0',   0x00u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',   'G',
-        '0',   0x01u, 'B', 'N',   'K',   '_',   0x08u, 0x5Bu, 0x81u, 0x10u, 'N',   'O',   'P',   'E',   0x01u, 'F',
-        '8',   '_',   '_', 0x08u, 'F',   '7',   '_',   '_',   0x08u, 0x5Bu, 0x87u, 0x13u, 'R',   'E',   'G',   '0',
-        'B',   'N',   'K', '_',   0x72u, 0x01u, 0x01u, 0x00u, 0x01u, 'B',   '1',   '_',   '_',   0x08u,
-    };
-
-    if (!made_up_load_one(test, aml, sizeof(aml)))
+    if (!made_up_load_one(test, machine_language_field_list_cannot_aml, sizeof(machine_language_field_list_cannot_aml)))
         return;
     kernel_test_check(test,
                       made_up_node("F8__")->value.kind !=
@@ -2592,6 +2546,8 @@ KERNEL_TEST(a_field_list_that_cannot_be_laid_out_builds_no_unit)
 /**
  * @brief A String of 65,536 characters, the cap of §6.1, is built with its NUL; one of 65,537 is
  *        refused as limit_buffer_bytes.
+ *
+ * Its names are raw bytes: partial terms around Strings whose length the test names (§8.2).
  */
 KERNEL_TEST(a_string_of_the_largest_length_is_built)
 {

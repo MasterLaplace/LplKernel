@@ -2,9 +2,10 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Store (One, \FLAG): the body of the _INI that makes the _STA above present.
+ * @brief Load (\CSTR, \HC0) Return ("ACPI0007").
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    \FLAG = One __EXPECT__(6084)
+    Load (\CSTR, \HC0) __EXPECT__(6084)
+    Return ("ACPI0007")
 }

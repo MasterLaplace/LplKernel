@@ -2,9 +2,14 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief Return (One): an _OSC that returns an Integer.
+ * @brief If (\FLAG) { Return (0x0F) } Return (Zero).
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    Return (One)
+    If (\FLAG) __EXPECT__(6084)
+    {
+        Return (0x0F)
+    }
+
+    Return (Zero)
 }

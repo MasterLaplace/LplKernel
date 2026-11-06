@@ -898,7 +898,7 @@ KERNEL_TEST(a_notify_0x81_after_an_evaluation_evaluates_that_cst_once_more)
     made_up_aml_name_integer(&idle_aml, "C0RN", 0u);
     made_up_aml_name_integer(&idle_aml, "C1RN", 0u);
     made_up_aml_name_integer(&idle_aml, "C2RN", 0u);
-    idle_notifying("CPU0", 1u, "C0RN", idle_notifies_cpu1_c_states_aml, sizeof(idle_notifies_cpu1_c_states_aml),
+    idle_notifying("CPU0", 1u, "C0RN", common_notifies_cpu1_c_states_aml, sizeof(common_notifies_cpu1_c_states_aml),
                    idle_notifies_cpu2_c_states_aml, sizeof(idle_notifies_cpu2_c_states_aml));
     idle_notifying("CPU1", 2u, "C1RN", idle_notifies_cpu0_and_cpu1_c_states_aml,
                    sizeof(idle_notifies_cpu0_and_cpu1_c_states_aml), NULL, 0u);
@@ -944,7 +944,7 @@ KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
     made_up_aml_raw(&body, idle_absent_dsta_aml, sizeof(idle_absent_dsta_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
+    made_up_aml_raw(&body, common_noop_aml, sizeof(common_noop_aml));
     made_up_aml_method(&device, "_INI", 0x00u, &body);
     made_up_aml_processor(&device, "CPU0", 1u, 0x410u, 6u, &idle_scope);
     made_up_aml_device(&idle_aml, "DEVA", &device);
@@ -953,7 +953,7 @@ KERNEL_TEST(a_processor_below_a_device_found_absent_is_out_unread)
     made_up_aml_raw(&body, idle_absent_p1st_aml, sizeof(idle_absent_p1st_aml));
     made_up_aml_method(&idle_scope, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
+    made_up_aml_raw(&body, common_noop_aml, sizeof(common_noop_aml));
     made_up_aml_method(&idle_scope, "_INI", 0x00u, &body);
     idle_static(&idle_scope, 1u, &only, 1u);
     idle_processor("CPU1", 2u, &idle_scope);
@@ -1000,7 +1000,7 @@ KERNEL_TEST(a_device_below_one_found_absent_is_not_read)
     made_up_aml_raw(&body, idle_absent_dsta_aml, sizeof(idle_absent_dsta_aml));
     made_up_aml_method(&outer, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
+    made_up_aml_raw(&body, common_noop_aml, sizeof(common_noop_aml));
     made_up_aml_method(&outer, "_INI", 0x00u, &body);
     made_up_aml_device(&outer, "DEVC", &middle);
     made_up_aml_device(&idle_aml, "DEVA", &outer);
@@ -1032,16 +1032,16 @@ KERNEL_TEST(a_status_an_initialization_changes_after_step_four_decides_step_eigh
     idle_static(&idle_scope, 1u, &only, 1u);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_status_by_flag_aml, sizeof(idle_status_by_flag_aml));
+    made_up_aml_raw(&body, common_status_by_flag_aml, sizeof(common_status_by_flag_aml));
     made_up_aml_method(&device, "_STA", 0x00u, &body);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_noop_aml, sizeof(idle_noop_aml));
+    made_up_aml_raw(&body, common_noop_aml, sizeof(common_noop_aml));
     made_up_aml_method(&device, "_INI", 0x00u, &body);
     made_up_aml_processor(&device, "CPU0", 1u, 0x410u, 6u, &idle_scope);
     made_up_aml_device(&idle_aml, "DEVB", &device);
     made_up_aml_begin(&device);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, idle_sets_flag_aml, sizeof(idle_sets_flag_aml));
+    made_up_aml_raw(&body, common_sets_flag_aml, sizeof(common_sets_flag_aml));
     made_up_aml_method(&device, "_INI", 0x00u, &body);
     made_up_aml_device(&idle_aml, "LATE", &device);
     if (!idle_run(test))

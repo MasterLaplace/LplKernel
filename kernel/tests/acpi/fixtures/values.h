@@ -212,13 +212,6 @@ static const uint8_t values_mid_size_of_and_object_type_aml[] = {
 };
 
 /**
- * @brief RES0, an Integer 0.
- */
-static const uint8_t values_result_zero_aml[] = {
-    0x08u, 0x52u, 0x45u, 0x53u, 0x30u, 0x00u,
-};
-
-/**
  * @brief MCPY stores BUF0 to Local0, then 0xFF to BUF0, and returns Local0; MARG stores "ZZ" to its argument; the
  *        table's code copies their results to RES0 and RES1, MARG given BUF0, then "STR" to INT0.
  */

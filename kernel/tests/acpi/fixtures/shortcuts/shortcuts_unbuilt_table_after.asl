@@ -2,9 +2,9 @@
 // Copyright © 2026 by @MasterLaplace. See the LICENSE file.
 
 /**
- * @brief A Noop: the whole revision-1 DSDT declared after an SSDT, and each Noop of the full loop's run.
+ * @brief Name (AFTR, 7): the name after the package the declaration pass leaves unbuilt.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
-    Noop
+    Name (AFTR, 0x07)
 }

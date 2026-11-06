@@ -1,4 +1,5 @@
 #include "fixtures/values.h"
+#include "fixtures/common.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -730,7 +731,7 @@ KERNEL_TEST(the_object_heap_reuses_what_it_frees)
     uint32_t inner = 0u;
     uint32_t text = 0u;
 
-    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
+    if (!values_run(test, 2u, common_result_zero_aml, sizeof(common_result_zero_aml)))
         return;
 
     const uint32_t live = values_live_objects();
@@ -795,7 +796,7 @@ KERNEL_TEST(a_saturated_reference_count_is_never_freed)
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &values_load.space;
     uint32_t handle = 0u;
 
-    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
+    if (!values_run(test, 2u, common_result_zero_aml, sizeof(common_result_zero_aml)))
         return;
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 3u, &handle);
@@ -827,7 +828,7 @@ KERNEL_TEST(a_dead_handle_is_counted_and_changes_nothing)
     uint32_t handle = 0u;
     uint32_t again = 0u;
 
-    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
+    if (!values_run(test, 2u, common_result_zero_aml, sizeof(common_result_zero_aml)))
         return;
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 3u, &handle);
@@ -899,7 +900,7 @@ KERNEL_TEST(a_name_whose_object_waits_or_is_cut_keeps_nothing_else)
  */
 KERNEL_TEST(a_growing_string_reuses_the_blocks_it_gives_back)
 {
-    if (!values_run(test, 2u, values_result_zero_aml, sizeof(values_result_zero_aml)))
+    if (!values_run(test, 2u, common_result_zero_aml, sizeof(common_result_zero_aml)))
         return;
 
     const uint32_t arena = values_load.space.arena_bytes;

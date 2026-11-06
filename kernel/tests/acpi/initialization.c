@@ -197,8 +197,7 @@ static void initialization_failing(MadeUpAml_t *aml, const char *name, uint8_t a
  */
 static void initialization_registration(MadeUpAml_t *aml)
 {
-    initialization_method(aml, "_REG", 0x02u, initialization_registration_traces_aml,
-                          sizeof(initialization_registration_traces_aml));
+    initialization_method(aml, "_REG", 0x02u, common_traces_two_arguments_aml, sizeof(common_traces_two_arguments_aml));
 }
 
 /**
@@ -1070,8 +1069,7 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
 
     initialization_begin();
     made_up_aml_begin(&system_bus);
-    initialization_method(&system_bus, "_OSC", 0x04u, initialization_return_one_aml,
-                          sizeof(initialization_return_one_aml));
+    initialization_method(&system_bus, "_OSC", 0x04u, common_return_one_aml, sizeof(common_return_one_aml));
     made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
     if (!initialization_run(test, true))
         return;

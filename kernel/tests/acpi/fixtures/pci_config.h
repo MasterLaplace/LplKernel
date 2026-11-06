@@ -103,13 +103,6 @@ static const uint8_t pci_return_bus_aml[] = {
 };
 
 /**
- * @brief Return (\NOPE), a name no table declares: the body of a method that fails.
- */
-static const uint8_t pci_return_missing_name_aml[] = {
-    0xA4u, 0x5Cu, 0x4Eu, 0x4Fu, 0x50u, 0x45u,
-};
-
-/**
  * @brief Store (\FALT, \V2__): the statement of a loaded table that calls a method that fails.
  */
 static const uint8_t pci_stores_failing_call_aml[] = {
