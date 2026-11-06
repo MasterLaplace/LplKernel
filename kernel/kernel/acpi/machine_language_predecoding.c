@@ -490,6 +490,23 @@ static bool machine_language_record_goes_on(const uint8_t *code, uint32_t pc, ui
 }
 
 /**
+ * @brief In a build that counts what the loop runs, the opcode of the statement at @p pc, which no record runs, under
+ *        which it is counted when it is handed back for its shape: 0 for a name, or for bytes that read as no opcode,
+ *        and in any other build.
+ */
+static uint8_t machine_language_record_declined_opcode(const uint8_t *code, uint32_t pc, uint32_t limit)
+{
+    uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
+    uint32_t after = 0u;
+
+    if (!ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED ||
+        advanced_configuration_and_power_interface_machine_language_read_opcode(code, pc, limit, &opcode, &after) !=
+            MACHINE_LANGUAGE_OK)
+        return MACHINE_LANGUAGE_OPCODE(INVALID);
+    return (uint8_t) opcode;
+}
+
+/**
  * @brief Whether a record that reads names holds a modulo, whose divisor would be known only once a name is read,
  *        past the record's first effect.
  */
@@ -543,6 +560,10 @@ void advanced_configuration_and_power_interface_machine_language_predecoding_ope
     cache->records_run = 0u;
     for (uint32_t reason = 0u; reason < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINES; ++reason)
         cache->declined[reason] = 0u;
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+             ++opcode)
+            cache->declined_shapes[opcode] = 0u;
     cache->built = 0u;
     cache->flushes = 0u;
     cache->records_peak = 0u;
@@ -626,6 +647,7 @@ uint16_t advanced_configuration_and_power_interface_machine_language_record_buil
     {
         *record = empty;
         record->goes_on = machine_language_record_goes_on(code, pc, limit) ? 1u : 0u;
+        record->statement = machine_language_record_declined_opcode(code, pc, limit);
         cache->node_count = nodes;
         cache->constant_count = constants;
         cache->name_count = names;

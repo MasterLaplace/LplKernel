@@ -367,9 +367,30 @@ static void harness_print_limits(const AdvancedConfigurationAndPowerInterfaceMac
 }
 
 /**
+ * @brief Prints, on one line, the statements the records handed back for their shape (§3.6), per opcode of the
+ *        statement, by name, a name's under `name`; only those counted at least once.
+ */
+static void harness_print_declined_shapes(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    const uint32_t *declined = load->predecoding.declined_shapes;
+
+    printf("aml run predecoding shapes");
+    for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (declined[opcode] != 0u)
+            printf(" %s=%u",
+                   (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INVALID) ?
+                       "name" :
+                       advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
+                   declined[opcode]);
+    printf("\n");
+}
+
+/**
  * @brief Prints what running table-level code did: its runs and failures, its field accesses, the
  *        operating system services it called, the tables Load and LoadTable added, the kept data a first
- *        read found a fault in (O20), the limits of §6.1 it reached and their peaks, the failures per status,
+ *        read found a fault in (O20), the statements the records handed back for their shape per opcode, the limits
+ *        of §6.1 it reached and their peaks, the failures per status,
  *        the region spaces refused, the opcodes
  *        that failed as unimplemented, and the opcodes, spaces and AccessTypes it executed.
  */
@@ -403,6 +424,7 @@ static void harness_print_runs(const AdvancedConfigurationAndPowerInterfaceMachi
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_FULL],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_TARGET],
            load->predecoding.declined[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_DECLINED_NAME]);
+    harness_print_declined_shapes(load);
     printf("aml run regions field_reads=%u field_fast_path=%u field_writes=%u map_calls=%u mapping_cache_hits=%u "
            "split_qword_accesses=%u unaligned_accesses=%u protected_port_accesses=%u region_lengths_rounded=%u "
            "field_accesses_peak=%u table_writes=%u\n",

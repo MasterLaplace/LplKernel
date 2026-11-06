@@ -102,9 +102,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
   predecoding  initialises each machine of a list with `test-acpi --loaded` twice, the statements of the
          loops that loop run from records, then with `--predecoding off`, and compares every line the two
          print, the namespace and `aml run namespace` (lookups, probes and back-edges) included, but `aml
-         run predecoding`, whose counts it sums: the statements records ran and handed back, per reason
-         (specification §3.6, §8.4); a machine whose two runs differ fails it, and so does a name a record read
-         that found another node than the one the record checked (`stale_names`)
+         run predecoding`, whose counts it sums: the statements records ran and handed back, per reason, and
+         those handed back for their shape per opcode, a call or a name under `name`, on each machine and over
+         the list, most first (specification §3.6, §8.4); a machine whose two runs differ fails it, and so does
+         a name a record read that found another node than the one the record checked (`stale_names`)
   records-cost  initialises each machine of a list with `test-acpi-cost --initialize`, the harness `xmake build
          test-acpi-cost` builds without sanitizers, keeps those whose loops ask the records anything (`aml run
          predecoding` counts a statement run or handed back), and counts the instructions each executes with records
@@ -586,11 +587,22 @@ total_of() {
     { grep -o " $1=[0-9]*" <<<"$2" || true; echo " $1=0"; } | cut -d= -f2 | paste -sd+ | bc
 }
 
+# Prints the statements handed back for their shape, per opcode, summed over the `aml run predecoding shapes` lines
+# $1, most first, as opcode=count pairs.
+declined_shapes() {
+    awk '$1 == "aml" && $2 == "run" && $3 == "predecoding" && $4 == "shapes" {
+            for (field = 5; field <= NF; ++field) { split($field, pair, "="); total[pair[1]] += pair[2] }
+        }
+        END { for (opcode in total) print total[opcode], opcode }' <<<"$1" |
+        sort -k1,1nr -k2,2 | awk '{ printf " %s=%s", $2, $1 }'
+}
+
 # Initialises each machine of the list $1 with records and without, and compares every line the two runs print but
-# the counts of the records, which it sums (specification §3.6, §8.4).
+# the counts of the records, which it sums, the statements handed back for their shape counted per opcode on each
+# machine and over the list (specification §3.6, §8.4).
 predecoding_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 subject on off tables counts=""
+    local number=0 agree=0 subject on off tables shapes counts=""
     on="$(mktemp)" off="$(mktemp)" tables="$(mktemp -d)"
     while IFS= read -r subject; do
         number=$((number + 1))
@@ -601,12 +613,14 @@ predecoding_check() {
             sed 's/^/    # /' "$on" | tail -5
         elif diff <(grep -v '^aml run predecoding ' "$on") <(grep -v '^aml run predecoding ' "$off") >/dev/null; then
             agree=$((agree + 1))
-            echo "ok $number $subject: $(grep '^aml run predecoding ' "$on" | cut -d' ' -f4-)"
+            echo "ok $number $subject: $(grep '^aml run predecoding records_run=' "$on" | cut -d' ' -f4-)"
         else
             echo "not ok $number $subject: the runs differ"
             diff <(grep -v '^aml run predecoding ' "$off") <(grep -v '^aml run predecoding ' "$on") >"$tables/diff" || true
             head -6 "$tables/diff" | sed 's/^/    # /'
         fi
+        shapes="$(declined_shapes "$(grep '^aml run predecoding shapes' "$on")")"
+        [[ -z "$shapes" ]] || echo "    # handed back for their shape:$shapes"
         counts+="$(grep '^aml run predecoding \|^aml run namespace ' "$on")"$'\n'
     done < <(reports "$1")
     rm -rf "$on" "$off" "$tables"
@@ -617,6 +631,7 @@ predecoding_check() {
         echo -n " $key=$(total_of "$key" "$counts")"
     done
     echo
+    echo "# handed back for their shape, per opcode:$(declined_shapes "$counts")"
     [[ "$number" -gt 0 && "$agree" -eq "$number" && "$(total_of stale_names "$counts")" -eq 0 ]]
 }
 

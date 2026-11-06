@@ -4994,6 +4994,18 @@ static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguag
 }
 
 /**
+ * @brief Counts the statement of @p record, which runs nothing, as handed back for its shape (§3.6), and in a build
+ *        that counts what the loop runs, under the opcode of its statement.
+ */
+static inline void machine_language_decline_shape(MachineLanguagePredecoding_t *cache,
+                                                  const MachineLanguageRecord_t *record)
+{
+    ++cache->declined[MACHINE_LANGUAGE_DECLINED(SHAPE)];
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        ++cache->declined_shapes[record->statement];
+}
+
+/**
  * @brief The record of the statement at the running frame's pc, found by @p index when it holds that
  *        statement's key, as the recent record of its offset otherwise, searched in the cache's hash when it is
  *        not, built when the cache holds none: NULL, the reason counted, when a record built under another end of
@@ -5239,11 +5251,14 @@ static MachineLanguageStatus_t machine_language_run_records(MachineLanguageLoad_
 
         if (record == NULL)
             break;
-        if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL) || record->values_peak > value_room ||
-            record->operators_peak > operator_room)
+        if (record->shape == MACHINE_LANGUAGE_RECORD(GENERAL))
         {
-            ++cache->declined[(record->shape == MACHINE_LANGUAGE_RECORD(GENERAL)) ? MACHINE_LANGUAGE_DECLINED(SHAPE) :
-                                                                                    MACHINE_LANGUAGE_DECLINED(ROOM)];
+            machine_language_decline_shape(cache, record);
+            break;
+        }
+        if (record->values_peak > value_room || record->operators_peak > operator_room)
+        {
+            ++cache->declined[MACHINE_LANGUAGE_DECLINED(ROOM)];
             break;
         }
         if (record->name_count != 0u)
@@ -5313,7 +5328,7 @@ static bool machine_language_records_hand_back(MachineLanguagePredecoding_t *cac
         advanced_configuration_and_power_interface_machine_language_record_recent(cache, frame->table, frame->pc);
     if (*out_index == 0u || cache->records[*out_index - 1u].shape != MACHINE_LANGUAGE_RECORD(GENERAL))
         return false;
-    ++cache->declined[MACHINE_LANGUAGE_DECLINED(SHAPE)];
+    machine_language_decline_shape(cache, &cache->records[*out_index - 1u]);
     return true;
 }
 
