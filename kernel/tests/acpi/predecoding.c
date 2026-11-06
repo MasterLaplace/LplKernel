@@ -1,3 +1,4 @@
+#include "fixtures/predecoding.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "predecoding_runs.h"
@@ -50,270 +51,6 @@ static MadeUpAml_t predecoding_body;
 static uint8_t predecoding_noops[256];
 
 /**
- * @brief W4's loop, as LOOP: `Local0 = 0; While (Local0 < 1000) { Local0++ }; Return (Local0)`.
- */
-static const uint8_t predecoding_w4[] = {
-    0x14u, 0x14u, 'L',   'O',   'O',   'P',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
-    0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
- * @brief Every comparison and operator a record runs, as MAIN: 20 turns of `Local0++`, then Ifs on
- *        `Local0 > 15`, `== 7`, `!= 9`, `<= 3`, `>= 18`, `!(Local0 & 1)`, `(Local0 << 62) > 0`,
- *        `(Local0 << 64) == 0` and `((Local0 * 3) - 1) % 5 == 0`, each adding its own power of ten to
- *        Local1, which MAIN returns; at the fifth turn only, an If whose predicate `1 + (2 + (3 + (4 +
- *        Local0))) == 15` holds 6 values, more than the loop held before, first run from its record.
- */
-static const uint8_t predecoding_comparisons[] = {
-    0x14u, 0x4Eu, 0x0Bu, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x4Eu,
-    0x0Au, 0x95u, 0x60u, 0x0Au, 0x14u, 0x75u, 0x60u, 0xA0u, 0x07u, 0x94u, 0x60u, 0x0Au, 0x0Fu, 0x75u, 0x61u, 0xA0u,
-    0x0Au, 0x93u, 0x60u, 0x0Au, 0x07u, 0x72u, 0x61u, 0x0Au, 0x64u, 0x61u, 0xA0u, 0x0Cu, 0x92u, 0x93u, 0x60u, 0x0Au,
-    0x09u, 0x72u, 0x61u, 0x0Bu, 0xE8u, 0x03u, 0x61u, 0xA0u, 0x0Cu, 0x92u, 0x94u, 0x60u, 0x0Au, 0x03u, 0x72u, 0x61u,
-    0x0Bu, 0x10u, 0x27u, 0x61u, 0xA0u, 0x0Eu, 0x92u, 0x95u, 0x60u, 0x0Au, 0x12u, 0x72u, 0x61u, 0x0Cu, 0xA0u, 0x86u,
-    0x01u, 0x00u, 0x61u, 0xA0u, 0x0Eu, 0x92u, 0x7Bu, 0x60u, 0x01u, 0x00u, 0x72u, 0x61u, 0x0Cu, 0x40u, 0x42u, 0x0Fu,
-    0x00u, 0x61u, 0xA0u, 0x10u, 0x94u, 0x79u, 0x60u, 0x0Au, 0x3Eu, 0x00u, 0x00u, 0x72u, 0x61u, 0x0Cu, 0x80u, 0x96u,
-    0x98u, 0x00u, 0x61u, 0xA0u, 0x10u, 0x93u, 0x79u, 0x60u, 0x0Au, 0x40u, 0x00u, 0x00u, 0x72u, 0x61u, 0x0Cu, 0x00u,
-    0xE1u, 0xF5u, 0x05u, 0x61u, 0xA0u, 0x17u, 0x93u, 0x85u, 0x74u, 0x77u, 0x60u, 0x0Au, 0x03u, 0x00u, 0x01u, 0x00u,
-    0x0Au, 0x05u, 0x00u, 0x00u, 0x72u, 0x61u, 0x0Cu, 0x00u, 0xCAu, 0x9Au, 0x3Bu, 0x61u, 0xA0u, 0x20u, 0x93u, 0x60u,
-    0x0Au, 0x05u, 0xA0u, 0x1Au, 0x93u, 0x72u, 0x0Au, 0x01u, 0x72u, 0x0Au, 0x02u, 0x72u, 0x0Au, 0x03u, 0x72u, 0x0Au,
-    0x04u, 0x60u, 0x00u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x0Fu, 0x72u, 0x61u, 0x0Au, 0x0Au, 0x61u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief A revision-1 MAIN (Arg0) that counts up to its argument: `Local0 = 0; While (Local0 < Arg0)
- *        { Local0++ }; Return (Local0)`.
- */
-static const uint8_t predecoding_argument[] = {
-    0x14u, 0x12u, 'M',   'A',   'I',   'N',   0x01u, 0x70u, 0x00u, 0x60u,
-    0xA2u, 0x06u, 0x95u, 0x60u, 0x68u, 0x75u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
- * @brief Control flow inside loops, as MAIN (Arg0): a While (One) whose inner While breaks when Local2
- *        reaches 13, then `Local0++`, a Continue when Local0 is a multiple of 3, else `Local1 += TWCE
- *        (Local0)` (a call), a Return when Local0 is Arg0, a Break at 10.
- */
-static const uint8_t predecoding_control[] = {
-    0x14u, 0x0Cu, 'T',   'W',   'C',   'E',   0x01u, 0xA4u, 0x77u, 0x68u, 0x0Au, 0x02u, 0x00u, 0x14u, 0x4Eu, 0x05u,
-    'M',   'A',   'I',   'N',   0x01u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0x70u, 0x00u, 0x62u, 0xA2u, 0x44u,
-    0x04u, 0x01u, 0x70u, 0x00u, 0x63u, 0xA2u, 0x10u, 0x95u, 0x63u, 0x0Au, 0x05u, 0x75u, 0x63u, 0x75u, 0x62u, 0xA0u,
-    0x06u, 0x93u, 0x62u, 0x0Au, 0x0Du, 0xA5u, 0x75u, 0x60u, 0xA0u, 0x09u, 0x93u, 0x85u, 0x60u, 0x0Au, 0x03u, 0x00u,
-    0x00u, 0x9Fu, 0xA1u, 0x09u, 0x72u, 0x61u, 'T',   'W',   'C',   'E',   0x60u, 0x61u, 0xA0u, 0x0Eu, 0x93u, 0x60u,
-    0x68u, 0xA4u, 0x72u, 0x61u, 0x77u, 0x62u, 0x0Bu, 0xE8u, 0x03u, 0x00u, 0x00u, 0xA0u, 0x07u, 0x92u, 0x95u, 0x60u,
-    0x0Au, 0x0Au, 0xA5u, 0xA4u, 0x72u, 0x61u, 0x0Cu, 0x00u, 0x00u, 0x10u, 0x00u, 0x00u,
-};
-
-/**
- * @brief Operands a record hands back, as MAIN: a While whose bound is the String "4", Ifs on an
- *        uninitialized Local5, on `DerefOf (Local2)` with Local2 = RefOf (INT0), on a Buffer, and on a
- *        String; and as MODZ, a modulo by a local that reaches 0 on the third turn, which fails the
- *        evaluation.
- */
-static const uint8_t predecoding_guards[] = {
-    0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x05u, 0x14u, 0x42u, 0x07u, 'M',   'A',   'I',   'N',   0x00u,
-    0x70u, 0x00u, 0x61u, 0x70u, 0x71u, 'I',   'N',   'T',   '0',   0x62u, 0x70u, 0x0Du, 0x34u, 0x00u, 0x63u,
-    0x70u, 0x11u, 0x03u, 0x01u, 0x02u, 0x64u, 0xA2u, 0x46u, 0x04u, 0x95u, 0x61u, 0x63u, 0x75u, 0x61u, 0xA0u,
-    0x09u, 0x93u, 0x65u, 0x00u, 0x75u, 'I',   'N',   'T',   '0',   0xA0u, 0x11u, 0x94u, 0x83u, 0x62u, 0x0Au,
-    0x05u, 0x72u, 'I',   'N',   'T',   '0',   0x0Au, 0x0Au, 'I',   'N',   'T',   '0',   0xA0u, 0x0Fu, 0x94u,
-    0x64u, 0x01u, 0x72u, 'I',   'N',   'T',   '0',   0x0Au, 0x64u, 'I',   'N',   'T',   '0',   0xA0u, 0x12u,
-    0x93u, 0x63u, 0x0Du, 0x34u, 0x00u, 0x72u, 'I',   'N',   'T',   '0',   0x0Bu, 0xE8u, 0x03u, 'I',   'N',
-    'T',   '0',   0xA4u, 0x72u, 'I',   'N',   'T',   '0',   0x77u, 0x61u, 0x0Cu, 0x00u, 0x00u, 0x01u, 0x00u,
-    0x00u, 0x00u, 0x14u, 0x28u, 'M',   'O',   'D',   'Z',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x0Au, 0x03u,
-    0x61u, 0xA2u, 0x18u, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0x76u, 0x61u, 0xA0u, 0x0Eu, 0x93u, 0x85u,
-    0x0Au, 0x0Au, 0x61u, 0x00u, 0x0Au, 0x07u, 0x72u, 0x60u, 0x0Au, 0x10u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
- * @brief Operands that hold a reference, read only by records, as CALL: `Return (MAIN (RefOf (INT0)))`, MAIN (Arg0)
- *        setting Local2 to RefOf (INT0) and Local3 to Index (PKG0, 0), then running `While (Local0 < 4) { Local0++;
- *        If (Local0 == 2) { If (Local2 > Local0) { Local1++ }; If (Local3 > Local0) { Local1++ }; If (Arg0 >
- *        Local0) { Local1++ } } }`: the three Ifs are reached at the second turn, the first from records.
- */
-static const uint8_t predecoding_references[] = {
-    0x08u, 'I',   'N',   'T',   '0',   0x0Au, 0x09u, 0x08u, 'P',   'K',   'G',   '0',   0x12u, 0x04u, 0x01u,
-    0x0Au, 0x09u, 0x14u, 0x42u, 0x04u, 'M',   'A',   'I',   'N',   0x01u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u,
-    0x61u, 0x70u, 0x71u, 'I',   'N',   'T',   '0',   0x62u, 0x70u, 0x88u, 'P',   'K',   'G',   '0',   0x00u,
-    0x00u, 0x63u, 0xA2u, 0x22u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x1Au, 0x93u, 0x60u, 0x0Au,
-    0x02u, 0xA0u, 0x06u, 0x94u, 0x62u, 0x60u, 0x75u, 0x61u, 0xA0u, 0x06u, 0x94u, 0x63u, 0x60u, 0x75u, 0x61u,
-    0xA0u, 0x06u, 0x94u, 0x68u, 0x60u, 0x75u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x10u, 'C',   'A',   'L',   'L',
-    0x00u, 0xA4u, 'M',   'A',   'I',   'N',   0x71u, 'I',   'N',   'T',   '0',
-};
-
-/**
- * @brief The operator stack nearly full, as MAIN: `Return (RECU (50))`, RECU (Arg0) returning `LOOP ()` at 0 and
- *        `RECU (Arg0 - 1) + 1 + 1 + 1 + 1` otherwise, each frame holding four Adds pending; LOOP's If at its third
- *        turn, `If (((Local0 + 1) + 1) + 1 == 6)`, needs more operators than are left.
- */
-static const uint8_t predecoding_operators_nearly_full[] = {
-    0x14u, 0x2Du, 'L',   'O',   'O',   'P',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u,
-    0x1Eu, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x16u, 0x93u, 0x60u, 0x0Au, 0x03u, 0xA0u,
-    0x10u, 0x93u, 0x72u, 0x72u, 0x72u, 0x60u, 0x01u, 0x00u, 0x01u, 0x00u, 0x01u, 0x00u, 0x0Au, 0x06u,
-    0x75u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x25u, 'R',   'E',   'C',   'U',   0x01u, 0xA0u, 0x09u, 0x93u,
-    0x68u, 0x00u, 0xA4u, 'L',   'O',   'O',   'P',   0xA4u, 0x72u, 0x72u, 0x72u, 0x72u, 'R',   'E',
-    'C',   'U',   0x74u, 0x68u, 0x01u, 0x00u, 0x01u, 0x00u, 0x01u, 0x00u, 0x01u, 0x00u, 0x01u, 0x00u,
-    0x14u, 0x0Du, 'M',   'A',   'I',   'N',   0x00u, 0xA4u, 'R',   'E',   'C',   'U',   0x0Au, 0x32u,
-};
-
-/**
- * @brief LOOP, whose If at its third turn holds 4 values: `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local0++;
- *        If (Local0 == 3) { If (1 + (1 + (1 + Local0)) == 6) { Local1++ } } }; Return (Local1)`, then FSEV (Arg0
- *        to Arg6), which returns Arg6.
- */
-static const uint8_t predecoding_values_loop[] = {
-    0x14u, 0x2Du, 'L',   'O',   'O',   'P',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u,
-    0x1Eu, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x16u, 0x93u, 0x60u, 0x0Au, 0x03u, 0xA0u,
-    0x10u, 0x93u, 0x72u, 0x01u, 0x72u, 0x01u, 0x72u, 0x01u, 0x60u, 0x00u, 0x00u, 0x00u, 0x0Au, 0x06u,
-    0x75u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x08u, 'F',   'S',   'E',   'V',   0x07u, 0xA4u, 0x6Eu,
-};
-
-/**
- * @brief An SSDT whose method WIDE counts three turns where `Ones == 0xFFFFFFFF`: none under 64-bit
- *        integers, three under 32-bit ones.
- */
-static const uint8_t predecoding_width[] = {
-    0x14u, 0x21u, 'W',   'I',   'D',   'E',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u,
-    0x61u, 0xA2u, 0x12u, 0x95u, 0x61u, 0x0Au, 0x03u, 0x75u, 0x61u, 0xA0u, 0x0Au, 0x93u,
-    0xFFu, 0x0Cu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0x75u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
- * @brief Statements no record runs after ones that do, as ONCE: `Local0 = 0; Local2 = 0; While (Local0 < 4) {
- *        Local0 = INCR (Local0); If (Local0 > 99) { Noop }; Local2 = INCR (Local2) }; Return (Local0 + Local2)`,
- *        INCR (Arg0) returning `Arg0 + 1`: at each of the three turns that run from records, the While's record
- *        runs, then the first Store of a call is handed back at the back-edge, then the If's record runs and the
- *        second Store is handed back where a statement is run.
- */
-static const uint8_t predecoding_once[] = {
-    0x14u, 0x0Bu, 'I', 'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x2Cu, 'O',
-    'N',   'C',   'E', 0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x62u, 0xA2u, 0x1Au, 0x95u, 0x60u, 0x0Au,
-    0x04u, 0x70u, 'I', 'N',   'C',   'R',   0x60u, 0x60u, 0xA0u, 0x06u, 0x94u, 0x60u, 0x0Au, 0x63u, 0xA3u,
-    0x70u, 'I',   'N', 'C',   'R',   0x62u, 0x62u, 0xA4u, 0x72u, 0x60u, 0x62u, 0x00u,
-};
-
-/**
- * @brief A revision-1 STOR (Arg0) that stores its argument whole: `Local0 = 0; While (Local0 < 2)
- *        { Local1 = Arg0; Local0++ }; Return (Local1)`.
- */
-static const uint8_t predecoding_store_whole[] = {
-    0x14u, 0x16u, 'S',   'T',   'O',   'R',   0x01u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Au,
-    0x95u, 0x60u, 0x0Au, 0x02u, 0x70u, 0x68u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief Targets a record hands back, as UNIN: `Local0 = 0; Local1 = "7"; While (Local0 < 3) { Local0++;
- *        If (Local0 == 2) { Local6++; Local1 = Local0 } }; Return (Local6 + Local1)`: at the second turn,
- *        the first from records, Local6 holds nothing to step and Local1 a String to give back.
- */
-static const uint8_t predecoding_targets[] = {
-    0x14u, 0x26u, 'U',   'N',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x0Du, 0x37u,
-    0x00u, 0x61u, 0xA2u, 0x12u, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x0Au, 0x93u,
-    0x60u, 0x0Au, 0x02u, 0x75u, 0x66u, 0x70u, 0x60u, 0x61u, 0xA4u, 0x72u, 0x66u, 0x61u, 0x00u,
-};
-
-/**
- * @brief A Store first run from a record, as PEAK: `Local0++` three times, then `While (Local0) { Local0--;
- *        If (Local1) { Local2 = Local0 }; Local1++ }; Return (Local2)`; nothing before its second turn holds
- *        2 values, and the Store, its If false at the first turn, first runs at the second, from its record.
- */
-static const uint8_t predecoding_store_peak[] = {
-    0x14u, 0x1Bu, 'P',   'E',   'A',   'K',   0x00u, 0x75u, 0x60u, 0x75u, 0x60u, 0x75u, 0x60u, 0xA2u,
-    0x0Cu, 0x60u, 0x76u, 0x60u, 0xA0u, 0x05u, 0x61u, 0x70u, 0x60u, 0x62u, 0x75u, 0x61u, 0xA4u, 0x62u,
-};
-
-/**
- * @brief Three While that run as tight loops, as MAIN: `Local0 = 0; While (!(Local0 > 9)) { Local0 += 3 }`,
- *        `Local1 = Local0; While (Local1 > 0) { Local1-- }`, `Local2 = 0; While (Local2 < 5) { Local2 =
- *        Local2 + 2 }`, then `Return (Local0 + Local2)`: 12 and 6, so 18.
- */
-static const uint8_t predecoding_tight[] = {
-    0x14u, 0x34u, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Bu, 0x92u, 0x94u,
-    0x60u, 0x0Au, 0x09u, 0x72u, 0x60u, 0x0Au, 0x03u, 0x60u, 0x70u, 0x60u, 0x61u, 0xA2u, 0x06u, 0x94u,
-    0x61u, 0x00u, 0x76u, 0x61u, 0x70u, 0x00u, 0x62u, 0xA2u, 0x0Cu, 0x95u, 0x62u, 0x0Au, 0x05u, 0x70u,
-    0x72u, 0x62u, 0x0Au, 0x02u, 0x00u, 0x62u, 0xA4u, 0x72u, 0x60u, 0x62u, 0x00u,
-};
-
-/**
- * @brief A tight loop whose body divides by zero at its fifth turn, as MODT: `Local0 = 0; While (Local0 <
- *        10) { Local0 += 1 + (0 % (4 - Local0)) }; Return (Local0)`.
- */
-static const uint8_t predecoding_tight_modulo[] = {
-    0x14u, 0x1Fu, 'M',   'O',   'D',   'T',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x13u, 0x95u, 0x60u, 0x0Au, 0x0Au,
-    0x72u, 0x60u, 0x72u, 0x01u, 0x85u, 0x00u, 0x74u, 0x0Au, 0x04u, 0x60u, 0x00u, 0x00u, 0x00u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
- * @brief Tight loops whose body runs first in a call deeper than the one that linked it, as PKTL: `Local0 = INNR ();
- *        Return (Local0 + (1 + (1 + INNR ())))`, INNR running `Local0 = 0; Local1 = 0; While (Local0 < 3) { While
- *        (Local1 < Local0) { Local1 += 1 }; Local0++ }; Return (Local1)`: the second call enters its tight loops at
- *        once, their records linked by the first, two values deeper, so 6.
- */
-static const uint8_t predecoding_deeper_tight[] = {
-    0x14u, 0x1Fu, 'I',   'N',   'N',   'R',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x10u,
-    0x95u, 0x60u, 0x0Au, 0x03u, 0xA2u, 0x08u, 0x95u, 0x61u, 0x60u, 0x72u, 0x61u, 0x01u, 0x61u, 0x75u, 0x60u,
-    0xA4u, 0x61u, 0x14u, 0x1Au, 'P',   'K',   'T',   'L',   0x00u, 0x70u, 'I',   'N',   'N',   'R',   0x60u,
-    0xA4u, 0x72u, 0x60u, 0x72u, 0x01u, 0x72u, 0x01u, 'I',   'N',   'N',   'R',   0x00u, 0x00u, 0x00u,
-};
-
-/**
- * @brief A While whose body is a Break, as BRKB (Arg0): `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local0++; While
- *        (Local1 < 5) { Break } }; Return (Arg0)`: never a tight loop.
- */
-static const uint8_t predecoding_break_body[] = {
-    0x14u, 0x1Du, 'B',   'R',   'K',   'B',   0x01u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x0Eu,
-    0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA2u, 0x06u, 0x95u, 0x61u, 0x0Au, 0x05u, 0xA5u, 0xA4u, 0x68u,
-};
-
-/**
- * @brief A tight loop whose bound becomes a String between two of its entries, as TOPR: `Local0 = 0; Local1 = 0;
- *        Local2 = 5; While (Local0 < 4) { Local0++; If (Local0 == 3) { Local2 = "9" }; While (Local1 < Local2) {
- *        Local1++ } }; Return (Local1)`, so 9.
- */
-static const uint8_t predecoding_string_bound[] = {
-    0x14u, 0x2Cu, 'T',   'O',   'P',   'R',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0x70u, 0x0Au,
-    0x05u, 0x62u, 0xA2u, 0x19u, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x0Au, 0x93u, 0x60u, 0x0Au,
-    0x03u, 0x70u, 0x0Du, 0x39u, 0x00u, 0x62u, 0xA2u, 0x06u, 0x95u, 0x61u, 0x62u, 0x75u, 0x61u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief A While whose predicate is an operator and no comparison, as ANDW: `Local0 = 5; While (Local0 & 0x0F) {
- *        Local0-- }; Return (Local0)`, so 0; and one whose predicate is two LNot over a comparison, as NNOT: `Local0 =
- *        0; While (!!(Local0 < 5)) { Local0++ }; Return (Local0)`, so 5: never tight loops.
- */
-static const uint8_t predecoding_and_predicate[] = {
-    0x14u, 0x15u, 'A',   'N',   'D',   'W',   0x00u, 0x70u, 0x0Au, 0x05u, 0x60u,
-    0xA2u, 0x08u, 0x7Bu, 0x60u, 0x0Au, 0x0Fu, 0x00u, 0x76u, 0x60u, 0xA4u, 0x60u,
-};
-static const uint8_t predecoding_two_lnot[] = {
-    0x14u, 0x15u, 'N',   'N',   'O',   'T',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
-    0x09u, 0x92u, 0x92u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x75u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
- * @brief ROOM, whose inner While runs as a tight loop from its first record in a call, the If before it false at the
- *        first turn: `Local0 = 0; Local1 = 0; While (Local0 < 3) { Local0++; If (Local0 > 1) { Local1 = 0; While
- *        (Local1 < 4) { Local1 = Local1 + 1 } } }; Return (Local1)`, its body 3 values deep and its predicate 2; then
- *        FSEV (Arg0 to Arg6), which returns Arg6.
- */
-static const uint8_t predecoding_room_loop[] = {
-    0x14u, 0x2Au, 'R',   'O',   'O',   'M',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u,
-    0xA2u, 0x1Bu, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x13u, 0x94u, 0x60u, 0x01u,
-    0x70u, 0x00u, 0x61u, 0xA2u, 0x0Bu, 0x95u, 0x61u, 0x0Au, 0x04u, 0x70u, 0x72u, 0x61u, 0x01u,
-    0x00u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x08u, 'F',   'S',   'E',   'V',   0x07u, 0xA4u, 0x6Eu,
-};
-
-/**
- * @brief CNTR, BUMP, which increments it, then REFU: `CNTR = 0; While (CNTR < 100 && One) { BUMP () }; Return (CNTR)`,
- *        so 100: a While and a body no record runs, LAnd and a call staying for the loop, as `While (APMS) { Stall
- * (One)
- *        }` of the HP machines of the corpus.
- */
-static const uint8_t predecoding_refused_loop[] = {
-    0x08u, 'C',   'N',   'T', 'R', 0x00u, 0x14u, 0x0Bu, 'B',   'U',   'M', 'P', 0x00u, 0x75u, 'C',   'N',   'T',
-    'R',   0x14u, 0x20u, 'R', 'E', 'F',   'U',   0x00u, 0x70u, 0x00u, 'C', 'N', 'T',   'R',   0xA2u, 0x0Eu, 0x90u,
-    0x95u, 'C',   'N',   'T', 'R', 0x0Au, 0x64u, 0x01u, 'B',   'U',   'M', 'P', 0xA4u, 'C',   'N',   'T',   'R',
-};
-
-/**
  * @brief Where @p pattern first starts in @p bytes, or @p length when it does not.
  */
 static uint32_t predecoding_offset_of(const uint8_t *bytes, uint32_t length, const uint8_t *pattern,
@@ -335,19 +72,18 @@ static uint32_t predecoding_offset_of(const uint8_t *bytes, uint32_t length, con
  * @brief Writes INCR, then SLOT: `Local0 = 0; Local2 = 0; While (Local0 < 10) { Local2 = INCR (Local2); Local3 =
  *        Buffer (51) {}; Local0++ }; Return (Local2)`, so 10: its call, which no record runs, and its Increment,
  *        which one runs, 64 bytes apart, so that they share their offset's recent slot.
+ *
+ * Its whole terms come from fixtures; its other pieces are raw bytes: the While and the Buffer it opens over
+ * PREDECODING_SLOT_BUFFER bytes, whose PkgLengths it writes, and the partial terms around them.
  */
 static void predecoding_write_shared_slot(void)
 {
-    static const uint8_t increment_method[] = {0x14u, 0x0Bu, 'I',   'N',   'C',   'R',
-                                               0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u};
-    static const uint8_t start[] = {0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x62u};
     static const uint8_t head[] = {0x95u, 0x60u, 0x0Au, 0x0Au, 0x70u, 'I', 'N', 'C', 'R', 0x62u, 0x62u, 0x70u};
     static const uint8_t buffer_lead[] = {0x11u};
     static const uint8_t buffer_size[] = {0x0Au, PREDECODING_SLOT_BUFFER};
     static const uint8_t buffer_byte[] = {0x00u};
     static const uint8_t tail[] = {0x63u, 0x75u, 0x60u};
     static const uint8_t while_lead[] = {0xA2u};
-    static const uint8_t finish[] = {0xA4u, 0x62u};
 
     made_up_aml_begin(&predecoding_inner);
     made_up_aml_raw(&predecoding_inner, buffer_size, sizeof(buffer_size));
@@ -358,11 +94,12 @@ static void predecoding_write_shared_slot(void)
     made_up_aml_construct(&predecoding_outer, buffer_lead, sizeof(buffer_lead), &predecoding_inner);
     made_up_aml_raw(&predecoding_outer, tail, sizeof(tail));
     made_up_aml_begin(&predecoding_body);
-    made_up_aml_raw(&predecoding_body, start, sizeof(start));
+    made_up_aml_raw(&predecoding_body, predecoding_clear_local0_local2_aml,
+                    sizeof(predecoding_clear_local0_local2_aml));
     made_up_aml_construct(&predecoding_body, while_lead, sizeof(while_lead), &predecoding_outer);
-    made_up_aml_raw(&predecoding_body, finish, sizeof(finish));
+    made_up_aml_raw(&predecoding_body, predecoding_return_local2_aml, sizeof(predecoding_return_local2_aml));
     made_up_aml_begin(&predecoding_method);
-    made_up_aml_raw(&predecoding_method, increment_method, sizeof(increment_method));
+    made_up_aml_raw(&predecoding_method, predecoding_increment_method_aml, sizeof(predecoding_increment_method_aml));
     made_up_aml_method(&predecoding_method, "SLOT", 0x00u, &predecoding_body);
 }
 
@@ -370,12 +107,12 @@ static void predecoding_write_shared_slot(void)
  * @brief Writes INCR, then EVIC: `Local0 = 0; Local1 = 0; While (Local0 < 10) { Local2 = INCR (Local2); Local1++;
  *        Local4 = Buffer (51) {}; If (Local0 == 1) { Local5 = INCR (Local5) }; Local0++ }; Return (Local1)`, so 10: the
  *        call in the If, at the second turn alone, 64 bytes past the Increment of Local1, takes its recent slot.
+ *
+ * Its whole terms come from fixtures; its other pieces are raw bytes: the While and the Buffer it opens over
+ * PREDECODING_SLOT_BUFFER bytes, whose PkgLengths it writes, and the partial terms around them.
  */
 static void predecoding_write_evicted(void)
 {
-    static const uint8_t increment_method[] = {0x14u, 0x0Bu, 'I',   'N',   'C',   'R',
-                                               0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u};
-    static const uint8_t start[] = {0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u};
     static const uint8_t head[] = {0x95u, 0x60u, 0x0Au, 0x0Au, 0x70u, 'I',   'N',
                                    'C',   'R',   0x62u, 0x62u, 0x75u, 0x61u, 0x70u};
     static const uint8_t buffer_lead[] = {0x11u};
@@ -384,7 +121,6 @@ static void predecoding_write_evicted(void)
     static const uint8_t tail[] = {0x64u, 0xA0u, 0x0Bu, 0x93u, 0x60u, 0x01u, 0x70u, 'I',
                                    'N',   'C',   'R',   0x65u, 0x65u, 0x75u, 0x60u};
     static const uint8_t while_lead[] = {0xA2u};
-    static const uint8_t finish[] = {0xA4u, 0x61u};
 
     made_up_aml_begin(&predecoding_inner);
     made_up_aml_raw(&predecoding_inner, buffer_size, sizeof(buffer_size));
@@ -395,242 +131,22 @@ static void predecoding_write_evicted(void)
     made_up_aml_construct(&predecoding_outer, buffer_lead, sizeof(buffer_lead), &predecoding_inner);
     made_up_aml_raw(&predecoding_outer, tail, sizeof(tail));
     made_up_aml_begin(&predecoding_body);
-    made_up_aml_raw(&predecoding_body, start, sizeof(start));
+    made_up_aml_raw(&predecoding_body, predecoding_clear_local0_local1_aml,
+                    sizeof(predecoding_clear_local0_local1_aml));
     made_up_aml_construct(&predecoding_body, while_lead, sizeof(while_lead), &predecoding_outer);
-    made_up_aml_raw(&predecoding_body, finish, sizeof(finish));
+    made_up_aml_raw(&predecoding_body, predecoding_return_local1_aml, sizeof(predecoding_return_local1_aml));
     made_up_aml_begin(&predecoding_method);
-    made_up_aml_raw(&predecoding_method, increment_method, sizeof(increment_method));
+    made_up_aml_raw(&predecoding_method, predecoding_increment_method_aml, sizeof(predecoding_increment_method_aml));
     made_up_aml_method(&predecoding_method, "EVIC", 0x00u, &predecoding_body);
 }
-
-/**
- * @brief INCR, then LPA_: `Local0 = 0; Local1 = 0; While (Local0 < 5) { Local2 = INCR (Local2); Local1 = Local1 + 1;
- *        Local0++ }; Return (Local1)`, so 5; as a DSDT.
- */
-static const uint8_t predecoding_adding_table[] = {
-    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x21u, 'L',   'P',
-    'A',   '_',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x12u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x70u,
-    'I',   'N',   'C',   'R',   0x62u, 0x62u, 0x72u, 0x61u, 0x01u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief FILL, 12 bytes, then LPB_ at the offsets of LPA_, its Add a Subtract: so -5; as an SSDT.
- */
-static const uint8_t predecoding_subtracting_table[] = {
-    0x08u, 'F', 'I',   'L',   'L',   0x0Cu, 0x78u, 0x56u, 0x34u, 0x12u, 0xA3u, 0xA3u, 0x14u, 0x21u, 'L',   'P',
-    'B',   '_', 0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x12u, 0x95u, 0x60u, 0x0Au, 0x05u, 0x70u,
-    'I',   'N', 'C',   'R',   0x62u, 0x62u, 0x74u, 0x61u, 0x01u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief INCR, then RECU (Arg0): `Local0 = 0; Local1 = 0; While (Local0 < 4 && One) { If (Arg0 && Local0 == 3) {
- *        Local1++ }; If (Arg0) { RECU (0) }; Local0 = INCR (Local0) }; Return (Local1)`, so 1 for RECU (1): the call
- *        runs the same loop in a deeper frame, whose last back-edge leaves its watch behind.
- */
-static const uint8_t predecoding_recursive_loop[] = {
-    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x2Fu, 'R',
-    'E',   'C',   'U',   0x01u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x20u, 0x90u, 0x95u, 0x60u,
-    0x0Au, 0x04u, 0x01u, 0xA0u, 0x09u, 0x90u, 0x68u, 0x93u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x61u, 0xA0u, 0x07u,
-    0x68u, 'R',   'E',   'C',   'U',   0x00u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief INCR, then BRAN: `Local0 = 0; Local1 = 0; While (Local0 < 100 && One) { If (Local0 > 50 && One) { Local1++
- *        }; Local0 = INCR (Local0) }; Return (Local1)`, so 49: a While, an If and a call no record runs, the If's body
- *        an Increment one runs, from the 52nd turn.
- */
-static const uint8_t predecoding_branching_loop[] = {
-    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
-    0x27u, 'B',   'R',   'A',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u,
-    0x18u, 0x90u, 0x95u, 0x60u, 0x0Au, 0x64u, 0x01u, 0xA0u, 0x09u, 0x90u, 0x94u, 0x60u, 0x0Au,
-    0x32u, 0x01u, 0x75u, 0x61u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief INCR, then MIXD: `Local0 = 0; Local1 = 0; While (Local0 < 100 && One) { Local1++; Local0 = INCR (Local0) };
- *        Return (Local1)`, so 100: a While and a call no record runs around an Increment one runs.
- */
-static const uint8_t predecoding_mixed_loop[] = {
-    0x14u, 0x0Bu, 'I',   'N',   'C',   'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u, 0x1Fu, 'M',
-    'I',   'X',   'D',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x10u, 0x90u, 0x95u, 0x60u,
-    0x0Au, 0x64u, 0x01u, 0x75u, 0x61u, 0x70u, 'I',   'N',   'C',   'R',   0x60u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief CNTR, BUMP, RSET, which zeroes it, then NEST: `Local1 = 0; While (Local1 < 3) { Local1++; Local0 = 0; RSET
- *        (); While (CNTR < 10 && One) { BUMP () } }; Return (CNTR)`, so 10: an outer loop records run around an inner
- *        one no record runs.
- */
-static const uint8_t predecoding_nested_refused_loop[] = {
-    0x08u, 'C',   'N',   'T',   'R', 0x00u, 0x14u, 0x0Bu, 'B',   'U',   'M',   'P',   0x00u, 0x75u, 'C',   'N',
-    'T',   'R',   0x14u, 0x0Cu, 'R', 'S',   'E',   'T',   0x00u, 0x70u, 0x00u, 'C',   'N',   'T',   'R',   0x14u,
-    0x2Cu, 'N',   'E',   'S',   'T', 0x00u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x1Du, 0x95u, 0x61u, 0x0Au, 0x03u, 0x75u,
-    0x61u, 0x70u, 0x00u, 0x60u, 'R', 'S',   'E',   'T',   0xA2u, 0x0Eu, 0x90u, 0x95u, 'C',   'N',   'T',   'R',
-    0x0Au, 0x0Au, 0x01u, 'B',   'U', 'M',   'P',   0xA4u, 'C',   'N',   'T',   'R',
-};
-
-/**
- * @brief INCR, then NEXT: `Local0 = 0; While (Local0 < 100) { Local1 = INCR (Local0); Local0++ }; Return (Local1)`,
- *        so 100: a statement no record runs, between statements records run.
- */
-static const uint8_t predecoding_refused_statement[] = {
-    0x14u, 0x0Bu, 'I',   'N', 'C', 'R',   0x01u, 0xA4u, 0x72u, 0x68u, 0x01u, 0x00u, 0x14u,
-    0x1Au, 'N',   'E',   'X', 'T', 0x00u, 0x70u, 0x00u, 0x60u, 0xA2u, 0x0Eu, 0x95u, 0x60u,
-    0x0Au, 0x64u, 0x70u, 'I', 'N', 'C',   'R',   0x60u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief Fields read in a loop, as MAIN: STS_ and CNT_, bytes 0 and 1 of a DWordAcc field of a SystemMemory
- *        region at 0x10000, and STEP, an Integer; `Local0 = 0; Local1 = 0; While (Local0 < 6) { CNT_ = Local0;
- *        Local2 = (STS_ & 0x10); If (CNT_ == Local0) { Local1 += STEP }; Local3 = CNT_; Local0++ };
- *        Return (Local1 + Local3)`: 6 turns of 3, and 5, so 23.
- */
-static const uint8_t predecoding_fields[] = {
-    0x5Bu, 0x80u, 'P',   'R',   'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x01u, 0x00u, 0x0Au, 0x04u, 0x5Bu,
-    0x81u, 0x10u, 'P',   'R',   'E',   'G',   0x03u, 'S',   'T',   'S',   '_',   0x08u, 'C',   'N',   'T',
-    '_',   0x08u, 0x08u, 'S',   'T',   'E',   'P',   0x0Au, 0x03u, 0x14u, 0x3Cu, 'M',   'A',   'I',   'N',
-    0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x2Au, 0x95u, 0x60u, 0x0Au, 0x06u, 0x70u, 0x60u,
-    'C',   'N',   'T',   '_',   0x7Bu, 'S',   'T',   'S',   '_',   0x0Au, 0x10u, 0x62u, 0xA0u, 0x0Eu, 0x93u,
-    'C',   'N',   'T',   '_',   0x60u, 0x72u, 0x61u, 'S',   'T',   'E',   'P',   0x61u, 0x70u, 'C',   'N',
-    'T',   '_',   0x63u, 0x75u, 0x60u, 0xA4u, 0x72u, 0x61u, 0x63u, 0x00u,
-};
-
-/**
- * @brief A revision-1 STOR (Arg0) that copies its argument whole into the Integer WIDE, then reads it in a
- *        loop: `CopyObject (Arg0, WIDE); Local0 = 0; While (Local0 < 2) { Local1 = WIDE; Local2 = (CNTR + WIDE);
- *        Local0++ }; Return (Local1)`, CNTR holding 7.
- */
-static const uint8_t predecoding_named_whole[] = {
-    0x08u, 'W',   'I',   'D',   'E',   0x00u, 0x08u, 'C',   'N',   'T',   'R',   0x0Au, 0x07u, 0x14u,
-    0x29u, 'S',   'T',   'O',   'R',   0x01u, 0x9Du, 0x68u, 'W',   'I',   'D',   'E',   0x70u, 0x00u,
-    0x60u, 0xA2u, 0x17u, 0x95u, 0x60u, 0x0Au, 0x02u, 0x70u, 'W',   'I',   'D',   'E',   0x61u, 0x72u,
-    'C',   'N',   'T',   'R',   'W',   'I',   'D',   'E',   0x62u, 0x75u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief A name whose object changes type in the loop, as COPY: NAMX holds 5; `Local0 = 0; Local1 = 0;
- *        While (Local0 < 4) { Local0++; If (Local0 == 3) { CopyObject ("7", NAMX) }; Local1 += NAMX };
- *        Return (Local1)`: 5 + 5 + 7 + 7, the String converted, so 24.
- */
-static const uint8_t predecoding_copied[] = {
-    0x08u, 'N',   'A',   'M',   'X',   0x0Au, 0x05u, 0x14u, 0x2Bu, 'C',   'O',   'P',   'Y',
-    0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x1Cu, 0x95u, 0x60u, 0x0Au, 0x04u,
-    0x75u, 0x60u, 0xA0u, 0x0Du, 0x93u, 0x60u, 0x0Au, 0x03u, 0x9Du, 0x0Du, 0x37u, 0x00u, 'N',
-    'A',   'M',   'X',   0x72u, 0x61u, 'N',   'A',   'M',   'X',   0x61u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief A name the loop declares that masks the one it reads, as MASK: VALU holds 1 at the root; `Local0 = 0;
- *        Local1 = 0; While (Local0 < 4) { Local0++; If (Local0 == 3) { Name (VALU, 100) }; Local1 += VALU };
- *        Return (Local1)`: 1 + 1 + 100 + 100, so 202, the method's VALU gone when it returns.
- */
-static const uint8_t predecoding_masked[] = {
-    0x08u, 'V',   'A',   'L',   'U',   0x01u, 0x14u, 0x2Au, 'M',   'A',   'S',   'K',   0x00u,
-    0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x1Bu, 0x95u, 0x60u, 0x0Au, 0x04u, 0x75u,
-    0x60u, 0xA0u, 0x0Cu, 0x93u, 0x60u, 0x0Au, 0x03u, 0x08u, 'V',   'A',   'L',   'U',   0x0Au,
-    0x64u, 0x72u, 0x61u, 'V',   'A',   'L',   'U',   0x61u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief A table the loop loads that masks the name it reads: VALU holds 1 at the root, TBLR is a
- *        SystemMemory region of 0x32 bytes at PREDECODING_LOADED_ADDRESS, and \XDEV.MAIN runs `Local0 = 0;
- *        Local1 = 0; While (Local0 < 4) { Local0++; If (Local0 == 3) { Load (TBLR, HNDL) }; Local1 += VALU };
- *        Return (Local1)`: 1 + 1 + 100 + 100, so 202, once the table declares \XDEV.VALU, 100.
- */
-static const uint8_t predecoding_loads[] = {
-    0x08u, 'V',   'A',   'L',   'U',   0x01u, 0x08u, 'H',   'N',   'D',   'L',   0x00u, 0x5Bu, 0x80u, 'T',   'B',
-    'L',   'R',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x30u, 0x00u, 0x0Au, 0x32u, 0x5Bu, 0x82u, 0x33u, 'X',   'D',   'E',
-    'V',   0x14u, 0x2Du, 'M',   'A',   'I',   'N',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x1Eu,
-    0x95u, 0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x0Fu, 0x93u, 0x60u, 0x0Au, 0x03u, 0x5Bu, 0x20u, 'T',   'B',
-    'L',   'R',   'H',   'N',   'D',   'L',   0x72u, 0x61u, 'V',   'A',   'L',   'U',   0x61u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief The table XDEV.MAIN's loop loads, 50 bytes as an SSDT: `Scope (\XDEV) { Name (VALU, 100) }`.
- */
-static const uint8_t predecoding_loaded[] = {
-    0x10u, 0x0Du, 0x5Cu, 'X', 'D', 'E', 'V', 0x08u, 'V', 'A', 'L', 'U', 0x0Au, 0x64u,
-};
-
-/**
- * @brief A field whose read fails in a loop, as FAIL: BADF, a byte of an EmbeddedControl region, which no
- *        handler serves; `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local0++; If (Local0 == 2) { Local1 =
- *        (((Local0 + 1) + Local0) + BADF) } }; Return (Local1)`: the loop holds 3 values for that statement before
- *        it reads BADF, more than anything before, and fails there with space_unsupported at the second turn.
- */
-static const uint8_t predecoding_failing_field[] = {
-    0x5Bu, 0x80u, 'E',   'C',   'R',   'G',   0x03u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu,
-    'E',   'C',   'R',   'G',   0x01u, 'B',   'A',   'D',   'F',   0x08u, 0x14u, 0x29u, 'F',
-    'A',   'I',   'L',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x1Au, 0x95u,
-    0x60u, 0x0Au, 0x04u, 0x75u, 0x60u, 0xA0u, 0x12u, 0x93u, 0x60u, 0x0Au, 0x02u, 0x72u, 0x72u,
-    0x72u, 0x60u, 0x01u, 0x00u, 0x60u, 0x00u, 'B',   'A',   'D',   'F',   0x61u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief Names a record hands back, as the revision-1 DECL: ONE_ a method that returns 1, and WIDF a 64-bit
- *        QWordAcc field, which reads as a Buffer under 32-bit integers; `Local0 = 0; Local1 = 0; While (Local0 <
- *        3) { Local0++; Local1 += ONE_; Local2 = WIDF }; Return (Local1)`, so 3.
- */
-static const uint8_t predecoding_unread_names[] = {
-    0x5Bu, 0x80u, 'W',   'R',   'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x02u, 0x00u, 0x0Au, 0x08u, 0x5Bu,
-    0x81u, 0x0Cu, 'W',   'R',   'E',   'G',   0x04u, 'W',   'I',   'D',   'F',   0x40u, 0x04u, 0x14u, 0x08u,
-    'O',   'N',   'E',   '_',   0x00u, 0xA4u, 0x01u, 0x14u, 0x23u, 'D',   'E',   'C',   'L',   0x00u, 0x70u,
-    0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x14u, 0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0x72u, 0x61u,
-    'O',   'N',   'E',   '_',   0x61u, 0x70u, 'W',   'I',   'D',   'F',   0x62u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief A field of a PCI_Config region the loop reads first at its second turn, as PCIR: \PCI0, a host
- *        bridge whose _BBN is 0, holds DEV1, function 1 of device 3, whose region PCFG has the byte VID0;
- *        `Local0 = 0; Local1 = 0; While (Local0 < 3) { Local0++; If (Local0 >= 2) { Local1 +=
- *        \PCI0.DEV1.VID0 } }; Return (Local1)`.
- */
-static const uint8_t predecoding_unattached[] = {
-    0x5Bu, 0x82u, 0x3Eu, 'P',   'C',   'I',   '0',   0x08u, '_',   'H',   'I',   'D',   0x0Cu, 0x41u, 0xD0u, 0x0Au,
-    0x03u, 0x08u, '_',   'B',   'B',   'N',   0x00u, 0x5Bu, 0x82u, 0x27u, 'D',   'E',   'V',   '1',   0x08u, '_',
-    'A',   'D',   'R',   0x0Cu, 0x01u, 0x00u, 0x03u, 0x00u, 0x5Bu, 0x80u, 'P',   'C',   'F',   'G',   0x02u, 0x00u,
-    0x0Bu, 0x00u, 0x01u, 0x5Bu, 0x81u, 0x0Bu, 'P',   'C',   'F',   'G',   0x01u, 'V',   'I',   'D',   '0',   0x08u,
-    0x14u, 0x2Fu, 'P',   'C',   'I',   'R',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x20u, 0x95u,
-    0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0xA0u, 0x18u, 0x92u, 0x95u, 0x60u, 0x0Au, 0x02u, 0x72u, 0x61u, 0x5Cu, 0x2Fu,
-    0x03u, 'P',   'C',   'I',   '0',   'D',   'E',   'V',   '1',   'V',   'I',   'D',   '0',   0x61u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief Statements at offset 0 that read names: `If (LEqual (And (STS_, 0x10), FLAG)) {}`, and `Local1 =
- *        \_SB.PCI0.ECRD`.
- */
-static const uint8_t predecoding_name_compare[] = {
-    0xA0u, 0x0Eu, 0x93u, 0x7Bu, 'S', 'T', 'S', '_', 0x0Au, 0x10u, 0x00u, 'F', 'L', 'A', 'G',
-};
-static const uint8_t predecoding_name_path[] = {
-    0x70u, 0x5Cu, 0x2Fu, 0x03u, '_', 'S', 'B', '_', 'P', 'C', 'I', '0', 'E', 'C', 'R', 'D', 0x61u,
-};
-
-/**
- * @brief A revision-1 MASK (Arg0) that copies its argument whole into the Integer WIDE, then compares it in a loop:
- *        `CopyObject (Arg0, WIDE); Local0 = 0; Local1 = 0; While (Local0 < 2) { If (WIDE == 1) { Local1++ };
- *        Local0++ }; Return (Local1)`: WIDE is masked to 32 bits where the comparison reads it.
- */
-static const uint8_t predecoding_named_masked[] = {
-    0x08u, 'W',   'I',   'D',   'E',   0x00u, 0x14u, 0x26u, 'M',   'A',   'S',   'K',   0x01u, 0x9Du, 0x68u,
-    'W',   'I',   'D',   'E',   0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u, 0xA2u, 0x11u, 0x95u, 0x60u, 0x0Au,
-    0x02u, 0xA0u, 0x09u, 0x93u, 'W',   'I',   'D',   'E',   0x01u, 0x75u, 0x61u, 0x75u, 0x60u, 0xA4u, 0x61u,
-};
-
-/**
- * @brief A While whose predicate reads a name and whose body steps a local, as TIGN: LIMT holds 5; `Local0 = 0;
- *        While (Local0 < LIMT) { Local0++ }; Return (Local0)`: never a tight loop, each turn resolving LIMT.
- */
-static const uint8_t predecoding_tight_name[] = {
-    0x08u, 'L',   'I',   'M',   'T',   0x0Au, 0x05u, 0x14u, 0x15u, 'T', 'I',   'G',   'N',   0x00u, 0x70u,
-    0x00u, 0x60u, 0xA2u, 0x09u, 0x95u, 0x60u, 'L',   'I',   'M',   'T', 0x75u, 0x60u, 0xA4u, 0x60u,
-};
 
 /**
  * @brief An External a table the loop loads fills with an Alias, as MAIN: `External (\FOO_); Scope (\FOO_) { Name
  *        (BAR_, 1) }`, DEVB.BAR_ holding 100, then `Local0 = 0; Local1 = 0; While (Local0 < 4) { Local0++; If (Local0
  * == 3) { Load (TBLR, HNDL) }; Local1 += \FOO_.BAR_ }; Return (Local1)`, the table loaded declaring `Alias (\DEVB,
  *        \FOO_)`: 1 + 1 + 100 + 100, so 202.
+ *
+ * It is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 static const uint8_t predecoding_alias_fills[] = {
     0x15u, 0x5Cu, 'F',   'O',   'O',   '_',   0x06u, 0x00u, 0x10u, 0x0Cu, 0x5Cu, 'F',   'O',   'O',   '_',   0x08u,
@@ -641,46 +157,15 @@ static const uint8_t predecoding_alias_fills[] = {
     0x0Au, 0x03u, 0x5Bu, 0x20u, 'T',   'B',   'L',   'R',   'H',   'N',   'D',   'L',   0x72u, 0x61u, 0x5Cu, 0x2Eu,
     'F',   'O',   'O',   '_',   'B',   'A',   'R',   '_',   0x61u, 0xA4u, 0x61u,
 };
-static const uint8_t predecoding_alias_loaded[] = {0x06u, 0x5Cu, 'D', 'E', 'V', 'B', 0x5Cu, 'F', 'O', 'O', '_'};
 
 /**
- * @brief A While at offset 0 as a statement alone: `While (Local0 < 1000) { Local0++ }`.
+ * @brief Statements no record runs, at offset 0 under their own lengths, raw bytes iasl does not emit: a While whose
+ *        PkgLength cuts its constant, a While whose PkgLength passes the end (§8.2), and `Increment (NAME)`, whose
+ *        name iasl's lexer reads as the keyword Name.
  */
-static const uint8_t predecoding_while[] = {0xA2u, 0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u};
-
-/**
- * @brief An If at offset 0 whose predicate is `LNotEqual (Arg1, 5)`: LNot over LEqual.
- */
-static const uint8_t predecoding_not_equal[] = {0xA0u, 0x08u, 0x92u, 0x93u, 0x69u, 0x0Au, 0x05u, 0x75u, 0x60u};
-
-/**
- * @brief Statements no record runs, each at offset 0 under its own length: a modulo in a statement that
- *        reads a name, `Local0 = Mod (Local0, ^CNT_)`, an If that reads five names, `If (LEqual (Add (Add (AAAA,
- *        BBBB), Add (CCCC, DDDD)), EEEE)) {}`, a While whose operator stores to a local, a While whose constant
- *        is cut by its PkgLength, a While whose PkgLength passes the end, and a Continue.
- */
-static const uint8_t predecoding_name_modulo[] = {0x70u, 0x85u, 0x60u, 0x5Eu, 'C', 'N', 'T', '_', 0x00u, 0x60u};
-static const uint8_t predecoding_five_names[] = {
-    0xA0u, 0x1Cu, 0x93u, 0x72u, 0x72u, 'A', 'A', 'A', 'A',   'B',   'B', 'B', 'B', 0x00u, 0x72u,
-    'C',   'C',   'C',   'C',   'D',   'D', 'D', 'D', 0x00u, 0x00u, 'E', 'E', 'E', 'E',
-};
-static const uint8_t predecoding_inner_target[] = {0xA2u, 0x07u, 0x72u, 0x60u, 0x01u, 0x61u, 0x75u, 0x60u};
 static const uint8_t predecoding_cut_constant[] = {0xA2u, 0x04u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u};
 static const uint8_t predecoding_crossing[] = {0xA2u, 0x10u, 0x95u, 0x60u, 0x01u, 0x75u, 0x60u};
-static const uint8_t predecoding_continue[] = {0x9Fu};
-static const uint8_t predecoding_store_debug[] = {0x70u, 0x60u, 0x5Bu, 0x31u};
-static const uint8_t predecoding_add_debug[] = {0x72u, 0x60u, 0x01u, 0x5Bu, 0x31u};
 static const uint8_t predecoding_increment_name[] = {0x75u, 'N', 'A', 'M', 'E'};
-
-/**
- * @brief Statements that write a local or an argument, each at offset 0: `Local2 = Local0 + Arg1`,
- *        `Local1 = Arg0`, `Local0 = Local0 - 1` as Subtract with a target, `Arg3++` and `Local7--`.
- */
-static const uint8_t predecoding_store_sum[] = {0x70u, 0x72u, 0x60u, 0x69u, 0x00u, 0x62u};
-static const uint8_t predecoding_store_leaf[] = {0x70u, 0x68u, 0x61u};
-static const uint8_t predecoding_subtract[] = {0x74u, 0x60u, 0x01u, 0x60u};
-static const uint8_t predecoding_increment[] = {0x75u, 0x6Bu};
-static const uint8_t predecoding_decrement[] = {0x76u, 0x67u};
 
 /**
  * @brief Runs @p path of @p aml with records off, then on, and checks that both left the same fold;
@@ -709,27 +194,27 @@ static PredecodingRun_t predecoding_compare(KernelTest_t *test, const uint8_t *a
 /**
  * @brief Writes MAIN: `Local0 = 0; While (Local0 < 3) { Local0++; Local1 = 0; While (Local1 < 2)
  *        { Local1++; Noop... } }; Return (Local0 + Local1)`, its inner loop holding PREDECODING_NOOPS Noops.
+ *
+ * Its whole terms come from fixtures; its other pieces are raw bytes: the two While it opens over PREDECODING_NOOPS
+ * Noops, whose PkgLengths it writes, and their heads, partial terms.
  */
 static void predecoding_write_full_loop(void)
 {
     static const uint8_t while_lead[] = {0xA2u};
     static const uint8_t outer_head[] = {0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u, 0x70u, 0x00u, 0x61u};
     static const uint8_t inner_head[] = {0x95u, 0x61u, 0x0Au, 0x02u, 0x75u, 0x61u};
-    static const uint8_t noop[] = {0xA3u};
-    static const uint8_t start[] = {0x70u, 0x00u, 0x60u};
-    static const uint8_t finish[] = {0xA4u, 0x72u, 0x60u, 0x61u, 0x00u};
 
     made_up_aml_begin(&predecoding_inner);
     made_up_aml_raw(&predecoding_inner, inner_head, sizeof(inner_head));
     for (uint32_t index = 0u; index < PREDECODING_NOOPS; ++index)
-        made_up_aml_raw(&predecoding_inner, noop, sizeof(noop));
+        made_up_aml_raw(&predecoding_inner, predecoding_noop_aml, sizeof(predecoding_noop_aml));
     made_up_aml_begin(&predecoding_outer);
     made_up_aml_raw(&predecoding_outer, outer_head, sizeof(outer_head));
     made_up_aml_construct(&predecoding_outer, while_lead, sizeof(while_lead), &predecoding_inner);
     made_up_aml_begin(&predecoding_body);
-    made_up_aml_raw(&predecoding_body, start, sizeof(start));
+    made_up_aml_raw(&predecoding_body, predecoding_clear_local0_aml, sizeof(predecoding_clear_local0_aml));
     made_up_aml_construct(&predecoding_body, while_lead, sizeof(while_lead), &predecoding_outer);
-    made_up_aml_raw(&predecoding_body, finish, sizeof(finish));
+    made_up_aml_raw(&predecoding_body, predecoding_return_sum_aml, sizeof(predecoding_return_sum_aml));
     made_up_aml_begin(&predecoding_method);
     made_up_aml_method(&predecoding_method, "MAIN", 0x00u, &predecoding_body);
 }
@@ -738,14 +223,15 @@ static void predecoding_write_full_loop(void)
  * @brief Writes MAIN: `Local0 = 0; Local1 = 0; While (Local0 < 3) { Local0++; If (Local0 + k + (k + 1) == 0xFF)
  *        { Local1++ } for each k below PREDECODING_POOL_IFS }; Return (Local1)`, each If three operators and three
  *        constants.
+ *
+ * Its whole terms come from fixtures; its other pieces are raw bytes: the While and the PREDECODING_POOL_IFS If it
+ * opens, whose PkgLengths and constants it writes, and the While's head, a partial term.
  */
 static void predecoding_write_pools(void)
 {
     static const uint8_t while_lead[] = {0xA2u};
     static const uint8_t if_lead[] = {0xA0u};
     static const uint8_t head[] = {0x95u, 0x60u, 0x0Au, 0x03u, 0x75u, 0x60u};
-    static const uint8_t start[] = {0x70u, 0x00u, 0x60u, 0x70u, 0x00u, 0x61u};
-    static const uint8_t finish[] = {0xA4u, 0x61u};
 
     made_up_aml_begin(&predecoding_outer);
     made_up_aml_raw(&predecoding_outer, head, sizeof(head));
@@ -760,9 +246,10 @@ static void predecoding_write_pools(void)
         made_up_aml_construct(&predecoding_outer, if_lead, sizeof(if_lead), &predecoding_inner);
     }
     made_up_aml_begin(&predecoding_body);
-    made_up_aml_raw(&predecoding_body, start, sizeof(start));
+    made_up_aml_raw(&predecoding_body, predecoding_clear_local0_local1_aml,
+                    sizeof(predecoding_clear_local0_local1_aml));
     made_up_aml_construct(&predecoding_body, while_lead, sizeof(while_lead), &predecoding_outer);
-    made_up_aml_raw(&predecoding_body, finish, sizeof(finish));
+    made_up_aml_raw(&predecoding_body, predecoding_return_local1_aml, sizeof(predecoding_return_local1_aml));
     made_up_aml_begin(&predecoding_method);
     made_up_aml_method(&predecoding_method, "MAIN", 0x00u, &predecoding_body);
 }
@@ -771,12 +258,15 @@ static void predecoding_write_pools(void)
  * @brief Writes LOOP and FSEV, then MAIN: `Return (1 + (1 + ... FSEV (1, 1, 1, 1, 1, 1, FSEV (... LOOP ()))))`,
  *        PREDECODING_SEVEN_CALLS calls in the last argument of the one around them, each holding six values while
  *        LOOP runs, under PREDECODING_SEVEN_PADS Adds: LOOP's If at its third turn needs more values than are left.
+ *
+ * Its innermost call comes from a fixture; its other pieces are raw bytes, partial terms it nests
+ * PREDECODING_SEVEN_CALLS deep: a Return opcode, Adds of One whose second operand is what they nest, calls of FSEV
+ * whose last argument is what they nest, and the NullNames that close the Adds.
  */
 static void predecoding_write_values_nearly_full(void)
 {
     static const uint8_t add_one[] = {0x72u, 0x01u};
     static const uint8_t seven[] = {'F', 'S', 'E', 'V', 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u};
-    static const uint8_t loop_call[] = {'L', 'O', 'O', 'P'};
     static const uint8_t null_name[] = {0x00u};
     static const uint8_t returns[] = {0xA4u};
 
@@ -786,11 +276,11 @@ static void predecoding_write_values_nearly_full(void)
         made_up_aml_raw(&predecoding_body, add_one, sizeof(add_one));
     for (uint32_t call = 0u; call < PREDECODING_SEVEN_CALLS; ++call)
         made_up_aml_raw(&predecoding_body, seven, sizeof(seven));
-    made_up_aml_raw(&predecoding_body, loop_call, sizeof(loop_call));
+    made_up_aml_raw(&predecoding_body, predecoding_loop_call_aml, sizeof(predecoding_loop_call_aml));
     for (uint32_t pad = 0u; pad < PREDECODING_SEVEN_PADS; ++pad)
         made_up_aml_raw(&predecoding_body, null_name, sizeof(null_name));
     made_up_aml_begin(&predecoding_method);
-    made_up_aml_raw(&predecoding_method, predecoding_values_loop, sizeof(predecoding_values_loop));
+    made_up_aml_raw(&predecoding_method, predecoding_values_loop_aml, sizeof(predecoding_values_loop_aml));
     made_up_aml_method(&predecoding_method, "MAIN", 0x00u, &predecoding_body);
 }
 
@@ -798,26 +288,30 @@ static void predecoding_write_values_nearly_full(void)
  * @brief Writes ROOM and FSEV, then MAIN: `Local0 = ROOM (); Return (1 + (1 + ... FSEV (1, 1, 1, 1, 1, 1, FSEV (...
  *        ROOM ()))))`, PREDECODING_SEVEN_CALLS calls nested in the last argument under @p pads Adds: the first call
  *        links ROOM's tight loop, the second runs it @p pads values deeper.
+ *
+ * Its first Store and its innermost call come from fixtures; its other pieces are raw bytes, partial terms it nests
+ * @p pads deep: a Return opcode, Adds of One whose second operand is what they nest, calls of FSEV whose last argument
+ * is what they nest, and the NullNames that close the Adds.
  */
 static void predecoding_write_room(uint32_t pads)
 {
-    static const uint8_t first_call[] = {0x70u, 'R', 'O', 'O', 'M', 0x60u, 0xA4u};
+    static const uint8_t returns[] = {0xA4u};
     static const uint8_t add_one[] = {0x72u, 0x01u};
     static const uint8_t seven[] = {'F', 'S', 'E', 'V', 0x01u, 0x01u, 0x01u, 0x01u, 0x01u, 0x01u};
-    static const uint8_t room_call[] = {'R', 'O', 'O', 'M'};
     static const uint8_t null_name[] = {0x00u};
 
     made_up_aml_begin(&predecoding_body);
-    made_up_aml_raw(&predecoding_body, first_call, sizeof(first_call));
+    made_up_aml_raw(&predecoding_body, predecoding_store_room_call_aml, sizeof(predecoding_store_room_call_aml));
+    made_up_aml_raw(&predecoding_body, returns, sizeof(returns));
     for (uint32_t pad = 0u; pad < pads; ++pad)
         made_up_aml_raw(&predecoding_body, add_one, sizeof(add_one));
     for (uint32_t call = 0u; call < PREDECODING_SEVEN_CALLS; ++call)
         made_up_aml_raw(&predecoding_body, seven, sizeof(seven));
-    made_up_aml_raw(&predecoding_body, room_call, sizeof(room_call));
+    made_up_aml_raw(&predecoding_body, predecoding_room_call_aml, sizeof(predecoding_room_call_aml));
     for (uint32_t pad = 0u; pad < pads; ++pad)
         made_up_aml_raw(&predecoding_body, null_name, sizeof(null_name));
     made_up_aml_begin(&predecoding_method);
-    made_up_aml_raw(&predecoding_method, predecoding_room_loop, sizeof(predecoding_room_loop));
+    made_up_aml_raw(&predecoding_method, predecoding_room_loop_aml, sizeof(predecoding_room_loop_aml));
     made_up_aml_method(&predecoding_method, "MAIN", 0x00u, &predecoding_body);
 }
 
@@ -851,14 +345,14 @@ static const PredecodingRecord_t *predecoding_build(const uint8_t *bytes, uint32
  */
 KERNEL_TEST(a_while_that_compares_a_local_to_a_constant_decodes_into_a_record)
 {
-    const PredecodingRecord_t *record = predecoding_build(predecoding_while, sizeof(predecoding_while));
+    const PredecodingRecord_t *record = predecoding_build(predecoding_while_aml, sizeof(predecoding_while_aml));
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t *node = &predecoding_cache.nodes[0];
 
     if (!kernel_test_check(test, record != NULL, "the record is built"))
         return;
     kernel_test_check(test,
                       record->shape == PREDECODING_RECORD(WHILE) && record->after == 7u && record->end == 9u &&
-                          record->limit == sizeof(predecoding_while) && record->node_count == 1u,
+                          record->limit == sizeof(predecoding_while_aml) && record->node_count == 1u,
                       "a While whose body starts at 7 and ends at 9, with one operator");
     kernel_test_check(test,
                       node->opcode == PREDECODING_OPCODE(LOGICAL_LESS) && node->negated == 0u &&
@@ -877,7 +371,7 @@ KERNEL_TEST(a_while_that_compares_a_local_to_a_constant_decodes_into_a_record)
  */
 KERNEL_TEST(lnot_and_a_comparison_decode_as_one_operator)
 {
-    const PredecodingRecord_t *record = predecoding_build(predecoding_not_equal, sizeof(predecoding_not_equal));
+    const PredecodingRecord_t *record = predecoding_build(predecoding_not_equal_aml, sizeof(predecoding_not_equal_aml));
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t *node = &predecoding_cache.nodes[0];
 
     if (!kernel_test_check(test, record != NULL, "the record is built"))
@@ -899,7 +393,7 @@ KERNEL_TEST(lnot_and_a_comparison_decode_as_one_operator)
  */
 KERNEL_TEST(statements_that_write_a_local_or_an_argument_decode_into_records)
 {
-    const PredecodingRecord_t *sum = predecoding_build(predecoding_store_sum, sizeof(predecoding_store_sum));
+    const PredecodingRecord_t *sum = predecoding_build(predecoding_store_sum_aml, sizeof(predecoding_store_sum_aml));
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t *node = &predecoding_cache.nodes[0];
 
     kernel_test_check(
@@ -910,7 +404,7 @@ KERNEL_TEST(statements_that_write_a_local_or_an_argument_decode_into_records)
             sum->target.slot == 2u && sum->values_peak == 3u && sum->operators_peak == 2u,
         "Local2 = Local0 + Arg1 stores an Add to Local2, holding 3 values and 2 operators");
 
-    const PredecodingRecord_t *leaf = predecoding_build(predecoding_store_leaf, sizeof(predecoding_store_leaf));
+    const PredecodingRecord_t *leaf = predecoding_build(predecoding_store_leaf_aml, sizeof(predecoding_store_leaf_aml));
 
     kernel_test_check(test,
                       leaf != NULL && leaf->shape == PREDECODING_RECORD(STORE) && leaf->node_count == 0u &&
@@ -919,7 +413,8 @@ KERNEL_TEST(statements_that_write_a_local_or_an_argument_decode_into_records)
                           leaf->values_peak == 2u && leaf->operators_peak == 1u,
                       "Local1 = Arg0 stores Arg0 itself, holding 2 values and 1 operator");
 
-    const PredecodingRecord_t *difference = predecoding_build(predecoding_subtract, sizeof(predecoding_subtract));
+    const PredecodingRecord_t *difference =
+        predecoding_build(predecoding_subtract_aml, sizeof(predecoding_subtract_aml));
 
     kernel_test_check(test,
                       difference != NULL && difference->shape == PREDECODING_RECORD(STORE) &&
@@ -929,7 +424,7 @@ KERNEL_TEST(statements_that_write_a_local_or_an_argument_decode_into_records)
                           difference->values_peak == 3u && difference->operators_peak == 1u,
                       "Subtract (Local0, One, Local0) writes Local0, holding 3 values and 1 operator");
 
-    const PredecodingRecord_t *up = predecoding_build(predecoding_increment, sizeof(predecoding_increment));
+    const PredecodingRecord_t *up = predecoding_build(predecoding_increment_aml, sizeof(predecoding_increment_aml));
 
     kernel_test_check(test,
                       up != NULL && up->shape == PREDECODING_RECORD(INCREMENT) && up->after == 2u &&
@@ -937,7 +432,7 @@ KERNEL_TEST(statements_that_write_a_local_or_an_argument_decode_into_records)
                           up->values_peak == 1u && up->operators_peak == 1u,
                       "Arg3++ steps Arg3 up, holding 1 value and 1 operator");
 
-    const PredecodingRecord_t *down = predecoding_build(predecoding_decrement, sizeof(predecoding_decrement));
+    const PredecodingRecord_t *down = predecoding_build(predecoding_decrement_aml, sizeof(predecoding_decrement_aml));
 
     kernel_test_check(test,
                       down != NULL && down->shape == PREDECODING_RECORD(DECREMENT) &&
@@ -958,15 +453,15 @@ KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
         const uint8_t *bytes;
         uint32_t length;
     } statements[] = {
-        {predecoding_name_modulo,    sizeof(predecoding_name_modulo)   },
-        {predecoding_five_names,     sizeof(predecoding_five_names)    },
-        {predecoding_inner_target,   sizeof(predecoding_inner_target)  },
-        {predecoding_cut_constant,   sizeof(predecoding_cut_constant)  },
-        {predecoding_crossing,       sizeof(predecoding_crossing)      },
-        {predecoding_continue,       sizeof(predecoding_continue)      },
-        {predecoding_store_debug,    sizeof(predecoding_store_debug)   },
-        {predecoding_add_debug,      sizeof(predecoding_add_debug)     },
-        {predecoding_increment_name, sizeof(predecoding_increment_name)},
+        {predecoding_name_modulo_aml,  sizeof(predecoding_name_modulo_aml) },
+        {predecoding_five_names_aml,   sizeof(predecoding_five_names_aml)  },
+        {predecoding_inner_target_aml, sizeof(predecoding_inner_target_aml)},
+        {predecoding_cut_constant,     sizeof(predecoding_cut_constant)    },
+        {predecoding_crossing,         sizeof(predecoding_crossing)        },
+        {predecoding_continue_aml,     sizeof(predecoding_continue_aml)    },
+        {predecoding_store_debug_aml,  sizeof(predecoding_store_debug_aml) },
+        {predecoding_add_debug_aml,    sizeof(predecoding_add_debug_aml)   },
+        {predecoding_increment_name,   sizeof(predecoding_increment_name)  },
     };
     uint32_t general = 0u;
 
@@ -991,11 +486,11 @@ KERNEL_TEST(a_statement_no_record_runs_stays_for_the_loop)
  */
 KERNEL_TEST(the_loop_of_window_w4_runs_from_records_as_the_loop_runs_it)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 2u, "\\LOOP",
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_w4_aml, sizeof(predecoding_w4_aml), 2u, "\\LOOP",
                                                      PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
 
-    predecoding_compare(test, predecoding_w4, sizeof(predecoding_w4), 1u, "\\LOOP", PREDECODING_NO_ARGUMENT, true,
-                        "fold_revision_1");
+    predecoding_compare(test, predecoding_w4_aml, sizeof(predecoding_w4_aml), 1u, "\\LOOP", PREDECODING_NO_ARGUMENT,
+                        true, "fold_revision_1");
     kernel_test_check(test, run.tight_turns == 998u, "998 turns run as a tight loop");
 }
 
@@ -1006,8 +501,9 @@ KERNEL_TEST(the_loop_of_window_w4_runs_from_records_as_the_loop_runs_it)
  */
 KERNEL_TEST(a_store_from_a_record_copies_a_wide_argument_whole)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_store_whole, sizeof(predecoding_store_whole), 1u,
-                                                     "\\STOR", 0x100000001ull, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_store_whole_aml, sizeof(predecoding_store_whole_aml), 1u, "\\STOR",
+                            0x100000001ull, true, "fold");
 
     kernel_test_check(test, run.result == 0x100000001ull, "STOR returns its argument whole");
 }
@@ -1019,7 +515,7 @@ KERNEL_TEST(a_store_from_a_record_copies_a_wide_argument_whole)
  */
 KERNEL_TEST(a_record_hands_back_a_target_that_holds_no_integer)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_targets, sizeof(predecoding_targets), 2u,
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_targets_aml, sizeof(predecoding_targets_aml), 2u,
                                                      "\\UNIN", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 3u && run.declined == 2u, "UNIN returns 3, two statements handed back");
@@ -1031,7 +527,7 @@ KERNEL_TEST(a_record_hands_back_a_target_that_holds_no_integer)
  */
 KERNEL_TEST(a_store_first_run_from_a_record_raises_the_values_peak)
 {
-    predecoding_compare(test, predecoding_store_peak, sizeof(predecoding_store_peak), 2u, "\\PEAK",
+    predecoding_compare(test, predecoding_store_peak_aml, sizeof(predecoding_store_peak_aml), 2u, "\\PEAK",
                         PREDECODING_NO_ARGUMENT, true, "fold");
 }
 
@@ -1043,11 +539,11 @@ KERNEL_TEST(a_store_first_run_from_a_record_raises_the_values_peak)
  */
 KERNEL_TEST(while_with_a_one_statement_body_run_as_tight_loops_as_the_loop_runs_them)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight, sizeof(predecoding_tight), 2u, "\\MAIN",
-                                                     PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight_aml, sizeof(predecoding_tight_aml), 2u,
+                                                     "\\MAIN", PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
 
-    predecoding_compare(test, predecoding_tight, sizeof(predecoding_tight), 1u, "\\MAIN", PREDECODING_NO_ARGUMENT, true,
-                        "fold_revision_1");
+    predecoding_compare(test, predecoding_tight_aml, sizeof(predecoding_tight_aml), 1u, "\\MAIN",
+                        PREDECODING_NO_ARGUMENT, true, "fold_revision_1");
     kernel_test_check(test, run.result == 18u && run.tight_turns == 13u, "MAIN returns 18, after 13 tight turns");
 }
 
@@ -1058,8 +554,9 @@ KERNEL_TEST(while_with_a_one_statement_body_run_as_tight_loops_as_the_loop_runs_
  */
 KERNEL_TEST(a_tight_loop_hands_back_a_body_that_would_fail)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight_modulo, sizeof(predecoding_tight_modulo),
-                                                     2u, "\\MODT", PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_tight_modulo_aml, sizeof(predecoding_tight_modulo_aml), 2u, "\\MODT",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.tight_turns == 2u && run.declined == 1u,
                       "two tight turns, then the modulo by zero handed back");
@@ -1072,10 +569,11 @@ KERNEL_TEST(a_tight_loop_hands_back_a_body_that_would_fail)
  */
 KERNEL_TEST(comparisons_and_operators_run_from_records_as_the_loop_runs_them)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_comparisons, sizeof(predecoding_comparisons), 2u,
-                                                     "\\MAIN", PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_comparisons_aml, sizeof(predecoding_comparisons_aml), 2u, "\\MAIN",
+                            PREDECODING_NO_ARGUMENT, true, "fold_revision_2");
 
-    predecoding_compare(test, predecoding_comparisons, sizeof(predecoding_comparisons), 1u, "\\MAIN",
+    predecoding_compare(test, predecoding_comparisons_aml, sizeof(predecoding_comparisons_aml), 1u, "\\MAIN",
                         PREDECODING_NO_ARGUMENT, true, "fold_revision_1");
     kernel_test_measure(test, "records_run", run.records_run);
 }
@@ -1086,8 +584,8 @@ KERNEL_TEST(comparisons_and_operators_run_from_records_as_the_loop_runs_them)
  */
 KERNEL_TEST(an_operand_wider_than_the_width_is_masked_as_the_loop_masks_it)
 {
-    predecoding_compare(test, predecoding_argument, sizeof(predecoding_argument), 1u, "\\MAIN", 0x100000003ull, true,
-                        "fold");
+    predecoding_compare(test, predecoding_argument_aml, sizeof(predecoding_argument_aml), 1u, "\\MAIN", 0x100000003ull,
+                        true, "fold");
 }
 
 /**
@@ -1096,8 +594,10 @@ KERNEL_TEST(an_operand_wider_than_the_width_is_masked_as_the_loop_masks_it)
  */
 KERNEL_TEST(breaks_continues_calls_and_returns_inside_loops_agree)
 {
-    predecoding_compare(test, predecoding_control, sizeof(predecoding_control), 2u, "\\MAIN", 4u, true, "fold_return");
-    predecoding_compare(test, predecoding_control, sizeof(predecoding_control), 2u, "\\MAIN", 20u, true, "fold_break");
+    predecoding_compare(test, predecoding_control_aml, sizeof(predecoding_control_aml), 2u, "\\MAIN", 4u, true,
+                        "fold_return");
+    predecoding_compare(test, predecoding_control_aml, sizeof(predecoding_control_aml), 2u, "\\MAIN", 20u, true,
+                        "fold_break");
 }
 
 /**
@@ -1107,19 +607,19 @@ KERNEL_TEST(breaks_continues_calls_and_returns_inside_loops_agree)
  */
 KERNEL_TEST(a_record_hands_back_what_holds_no_integer_or_would_fail)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_guards, sizeof(predecoding_guards), 2u, "\\MAIN",
-                                                     PREDECODING_NO_ARGUMENT, true, "fold_operands");
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_guards_aml, sizeof(predecoding_guards_aml), 2u,
+                                                     "\\MAIN", PREDECODING_NO_ARGUMENT, true, "fold_operands");
     PredecodingRun_t failed = {0};
 
     kernel_test_check(test, run.declined != 0u, "the statements whose operands hold no Integer are handed back");
-    if (!predecoding_open(test, 2u, predecoding_guards, sizeof(predecoding_guards), true))
+    if (!predecoding_open(test, 2u, predecoding_guards_aml, sizeof(predecoding_guards_aml), true))
         return;
     predecoding_evaluate("\\MODZ", PREDECODING_NO_ARGUMENT, &failed);
     kernel_test_check(test, predecoding_load.predecoding.declined[PREDECODING_DECLINED(OPERATION)] == 1u,
                       "the modulo by zero is handed back, once");
     predecoding_close();
-    predecoding_compare(test, predecoding_guards, sizeof(predecoding_guards), 2u, "\\MODZ", PREDECODING_NO_ARGUMENT,
-                        true, "fold_divide_by_zero");
+    predecoding_compare(test, predecoding_guards_aml, sizeof(predecoding_guards_aml), 2u, "\\MODZ",
+                        PREDECODING_NO_ARGUMENT, true, "fold_divide_by_zero");
 }
 
 /**
@@ -1128,8 +628,8 @@ KERNEL_TEST(a_record_hands_back_what_holds_no_integer_or_would_fail)
  */
 KERNEL_TEST(a_statement_a_record_hands_back_is_counted_once)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_once, sizeof(predecoding_once), 2u, "\\ONCE",
-                                                     PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_once_aml, sizeof(predecoding_once_aml), 2u,
+                                                     "\\ONCE", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.declined == 6u,
                       "each Store of a call is handed back once per turn, at the back-edge or where a statement runs");
@@ -1143,7 +643,6 @@ KERNEL_TEST(a_statement_a_record_hands_back_is_counted_once)
  */
 KERNEL_TEST(records_of_one_integer_width_are_emptied_when_the_width_changes)
 {
-    static const uint8_t empty[] = {0xA3u};
     uint32_t folds[2] = {0u, 0u};
     uint64_t counts[2][2] = {
         {0u, 0u},
@@ -1157,11 +656,11 @@ KERNEL_TEST(records_of_one_integer_width_are_emptied_when_the_width_changes)
 
         if (!predecoding_open_empty(test, predecodes != 0u))
             return;
-        predecoding_declare(predecoding_table, "SSDT", 2u, predecoding_width, sizeof(predecoding_width));
+        predecoding_declare(predecoding_table, "SSDT", 2u, predecoding_width_aml, sizeof(predecoding_width_aml));
         advanced_configuration_and_power_interface_machine_language_evaluate(&predecoding_load, "\\WIDE", NULL, 0u,
                                                                              &result);
         counts[predecodes][0] = result.payload;
-        predecoding_declare(predecoding_second_table, "DSDT", 1u, empty, sizeof(empty));
+        predecoding_declare(predecoding_second_table, "DSDT", 1u, predecoding_noop_aml, sizeof(predecoding_noop_aml));
         predecoding_evaluate("\\WIDE", PREDECODING_NO_ARGUMENT, &run);
         advanced_configuration_and_power_interface_machine_language_evaluate(&predecoding_load, "\\WIDE", NULL, 0u,
                                                                              &result);
@@ -1222,8 +721,9 @@ KERNEL_TEST(full_operators_or_constants_empty_the_cache)
  */
 KERNEL_TEST(a_record_hands_back_an_operand_that_holds_a_reference)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_references, sizeof(predecoding_references), 2u,
-                                                     "\\CALL", PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_references_aml, sizeof(predecoding_references_aml), 2u, "\\CALL",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.declined != 0u, "the Ifs over a reference are handed back");
 }
@@ -1235,7 +735,7 @@ KERNEL_TEST(a_record_hands_back_an_operand_that_holds_a_reference)
  */
 KERNEL_TEST(a_record_hands_back_what_the_stacks_have_no_room_for)
 {
-    predecoding_compare(test, predecoding_operators_nearly_full, sizeof(predecoding_operators_nearly_full), 2u,
+    predecoding_compare(test, predecoding_operators_nearly_full_aml, sizeof(predecoding_operators_nearly_full_aml), 2u,
                         "\\MAIN", PREDECODING_NO_ARGUMENT, true, "fold_operators");
     predecoding_write_values_nearly_full();
     if (!kernel_test_check(test, !predecoding_method.overflowed, "the made-up AML fits"))
@@ -1287,8 +787,9 @@ KERNEL_TEST(a_record_is_found_by_its_table_and_its_offset)
  */
 KERNEL_TEST(a_tight_loop_entered_deeper_holds_its_body_s_values)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_deeper_tight, sizeof(predecoding_deeper_tight),
-                                                     2u, "\\PKTL", PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_deeper_tight_aml, sizeof(predecoding_deeper_tight_aml), 2u, "\\PKTL",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 6u && run.tight_turns != 0u, "PKTL returns 6, after tight turns");
 }
@@ -1301,15 +802,15 @@ KERNEL_TEST(a_tight_loop_entered_deeper_holds_its_body_s_values)
  */
 KERNEL_TEST(only_a_comparison_of_two_leaves_over_a_writing_body_is_a_tight_loop)
 {
-    const PredecodingRun_t breaks = predecoding_compare(test, predecoding_break_body, sizeof(predecoding_break_body),
-                                                        2u, "\\BRKB", 7u, true, "fold_break");
+    const PredecodingRun_t breaks = predecoding_compare(
+        test, predecoding_break_body_aml, sizeof(predecoding_break_body_aml), 2u, "\\BRKB", 7u, true, "fold_break");
     const PredecodingRun_t ands =
-        predecoding_compare(test, predecoding_and_predicate, sizeof(predecoding_and_predicate), 2u, "\\ANDW",
+        predecoding_compare(test, predecoding_and_predicate_aml, sizeof(predecoding_and_predicate_aml), 2u, "\\ANDW",
                             PREDECODING_NO_ARGUMENT, true, "fold_and");
-    const PredecodingRun_t nots = predecoding_compare(test, predecoding_two_lnot, sizeof(predecoding_two_lnot), 2u,
-                                                      "\\NNOT", PREDECODING_NO_ARGUMENT, true, "fold_lnot");
+    const PredecodingRun_t nots = predecoding_compare(test, predecoding_two_lnot_aml, sizeof(predecoding_two_lnot_aml),
+                                                      2u, "\\NNOT", PREDECODING_NO_ARGUMENT, true, "fold_lnot");
     const PredecodingRun_t strings =
-        predecoding_compare(test, predecoding_string_bound, sizeof(predecoding_string_bound), 2u, "\\TOPR",
+        predecoding_compare(test, predecoding_string_bound_aml, sizeof(predecoding_string_bound_aml), 2u, "\\TOPR",
                             PREDECODING_NO_ARGUMENT, true, "fold_string");
 
     kernel_test_check(test, breaks.result == 7u && breaks.tight_turns == 0u, "BRKB returns 7, no tight turn");
@@ -1351,8 +852,9 @@ KERNEL_TEST(a_tight_loop_whose_body_has_no_room_is_handed_back)
  */
 KERNEL_TEST(a_statement_handed_back_at_once_is_searched_once)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_refused_loop, sizeof(predecoding_refused_loop),
-                                                     2u, "\\REFU", PREDECODING_NO_ARGUMENT, false, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_refused_loop_aml, sizeof(predecoding_refused_loop_aml), 2u, "\\REFU",
+                            PREDECODING_NO_ARGUMENT, false, "fold");
 
     kernel_test_check(test, run.result == 100u && run.declined != 0u, "REFU returns 100, its statements handed back");
     kernel_test_check(test, run.searches == 2u, "each of the two statements is searched once");
@@ -1367,8 +869,8 @@ KERNEL_TEST(a_statement_handed_back_at_once_is_searched_once)
 KERNEL_TEST(a_statement_after_one_handed_back_is_searched_once)
 {
     const PredecodingRun_t run =
-        predecoding_compare(test, predecoding_refused_statement, sizeof(predecoding_refused_statement), 2u, "\\NEXT",
-                            PREDECODING_NO_ARGUMENT, true, "fold");
+        predecoding_compare(test, predecoding_refused_statement_aml, sizeof(predecoding_refused_statement_aml), 2u,
+                            "\\NEXT", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 100u && run.declined == 99u,
                       "NEXT returns 100, its call handed back 99 times");
@@ -1419,8 +921,9 @@ KERNEL_TEST(statements_that_share_a_recent_slot_find_their_own_records)
  */
 KERNEL_TEST(a_loop_whose_statements_all_go_to_the_loop_stops_asking)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_refused_loop, sizeof(predecoding_refused_loop),
-                                                     2u, "\\REFU", PREDECODING_NO_ARGUMENT, false, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_refused_loop_aml, sizeof(predecoding_refused_loop_aml), 2u, "\\REFU",
+                            PREDECODING_NO_ARGUMENT, false, "fold");
 
     kernel_test_check(test, run.result == 100u && run.declined == 5u && run.loops == 1u,
                       "REFU returns 100, its statements handed back 5 times, then its loop whole");
@@ -1435,10 +938,11 @@ KERNEL_TEST(a_loop_whose_statements_all_go_to_the_loop_stops_asking)
 KERNEL_TEST(a_loop_whose_turn_may_run_a_record_keeps_asking)
 {
     const PredecodingRun_t branching =
-        predecoding_compare(test, predecoding_branching_loop, sizeof(predecoding_branching_loop), 2u, "\\BRAN",
+        predecoding_compare(test, predecoding_branching_loop_aml, sizeof(predecoding_branching_loop_aml), 2u, "\\BRAN",
                             PREDECODING_NO_ARGUMENT, true, "fold_branching");
-    const PredecodingRun_t mixed = predecoding_compare(test, predecoding_mixed_loop, sizeof(predecoding_mixed_loop), 2u,
-                                                       "\\MIXD", PREDECODING_NO_ARGUMENT, true, "fold_mixed");
+    const PredecodingRun_t mixed =
+        predecoding_compare(test, predecoding_mixed_loop_aml, sizeof(predecoding_mixed_loop_aml), 2u, "\\MIXD",
+                            PREDECODING_NO_ARGUMENT, true, "fold_mixed");
 
     kernel_test_check(test, branching.result == 49u && branching.records_run == 49u && branching.loops == 0u,
                       "BRAN returns 49, its Increment run from records 49 times, its loop never handed back whole");
@@ -1457,7 +961,7 @@ KERNEL_TEST(a_loop_whose_turn_may_run_a_record_keeps_asking)
 KERNEL_TEST(a_loop_is_handed_back_whole_only_while_it_is_the_frame_s_loop)
 {
     const PredecodingRun_t run =
-        predecoding_compare(test, predecoding_nested_refused_loop, sizeof(predecoding_nested_refused_loop), 2u,
+        predecoding_compare(test, predecoding_nested_refused_loop_aml, sizeof(predecoding_nested_refused_loop_aml), 2u,
                             "\\NEST", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 10u && run.declined == 49u && run.records_run == 7u && run.loops == 1u,
@@ -1499,9 +1003,10 @@ KERNEL_TEST(a_statement_finds_the_record_of_its_own_table)
     {
         if (!predecoding_open_empty(test, predecodes != 0u))
             return;
-        predecoding_declare(predecoding_table, "DSDT", 2u, predecoding_adding_table, sizeof(predecoding_adding_table));
-        predecoding_declare(predecoding_second_table, "SSDT", 2u, predecoding_subtracting_table,
-                            sizeof(predecoding_subtracting_table));
+        predecoding_declare(predecoding_table, "DSDT", 2u, predecoding_adding_table_aml,
+                            sizeof(predecoding_adding_table_aml));
+        predecoding_declare(predecoding_second_table, "SSDT", 2u, predecoding_subtracting_table_aml,
+                            sizeof(predecoding_subtracting_table_aml));
         predecoding_evaluate("\\LPA_", PREDECODING_NO_ARGUMENT, &runs[predecodes][0]);
         predecoding_evaluate("\\LPB_", PREDECODING_NO_ARGUMENT, &runs[predecodes][1]);
         predecoding_close();
@@ -1522,7 +1027,7 @@ KERNEL_TEST(a_statement_finds_the_record_of_its_own_table)
 KERNEL_TEST(a_loop_is_handed_back_whole_on_its_own_frame_s_turns)
 {
     const PredecodingRun_t run = predecoding_compare(
-        test, predecoding_recursive_loop, sizeof(predecoding_recursive_loop), 2u, "\\RECU", 1u, true, "fold");
+        test, predecoding_recursive_loop_aml, sizeof(predecoding_recursive_loop_aml), 2u, "\\RECU", 1u, true, "fold");
 
     kernel_test_check(test, run.result == 1u && run.loops == 0u, "RECU returns 1, its loop never handed back whole");
 }
@@ -1534,7 +1039,8 @@ KERNEL_TEST(a_loop_is_handed_back_whole_on_its_own_frame_s_turns)
  */
 KERNEL_TEST(names_in_an_expression_decode_into_named_operands)
 {
-    const PredecodingRecord_t *record = predecoding_build(predecoding_name_compare, sizeof(predecoding_name_compare));
+    const PredecodingRecord_t *record =
+        predecoding_build(predecoding_name_compare_aml, sizeof(predecoding_name_compare_aml));
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageRecordNode_t *nodes = predecoding_cache.nodes;
     const PredecodingName_t *names = predecoding_cache.names;
 
@@ -1558,7 +1064,7 @@ KERNEL_TEST(names_in_an_expression_decode_into_named_operands)
                           names[1].values_before == 3u && record->values_peak == 3u && record->operators_peak == 3u,
                       "STS_ is read first, FLAG once the loop holds 3 values; the If holds 3 values and 3 operators");
 
-    const PredecodingRecord_t *path = predecoding_build(predecoding_name_path, sizeof(predecoding_name_path));
+    const PredecodingRecord_t *path = predecoding_build(predecoding_name_path_aml, sizeof(predecoding_name_path_aml));
 
     kernel_test_check(test,
                       path != NULL && path->shape == PREDECODING_RECORD(STORE) && path->after == 17u &&
@@ -1577,8 +1083,8 @@ KERNEL_TEST(names_in_an_expression_decode_into_named_operands)
  */
 KERNEL_TEST(a_loop_that_reads_fields_runs_from_records_as_the_loop_runs_it)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_fields, sizeof(predecoding_fields), 2u, "\\MAIN",
-                                                     PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_fields_aml, sizeof(predecoding_fields_aml), 2u,
+                                                     "\\MAIN", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 23u, "MAIN returns 23");
     kernel_test_check(test, run.declined == 5u && run.declined_names == 0u,
@@ -1595,8 +1101,9 @@ KERNEL_TEST(a_loop_that_reads_fields_runs_from_records_as_the_loop_runs_it)
  */
 KERNEL_TEST(a_store_from_a_record_copies_a_named_integer_whole)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_named_whole, sizeof(predecoding_named_whole), 1u,
-                                                     "\\STOR", 0x100000001ull, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_named_whole_aml, sizeof(predecoding_named_whole_aml), 1u, "\\STOR",
+                            0x100000001ull, true, "fold");
 
     kernel_test_check(test, run.result == 0x100000001ull, "STOR returns its argument whole");
     kernel_test_check(test, run.declined == 0u, "no statement is handed back");
@@ -1609,8 +1116,8 @@ KERNEL_TEST(a_store_from_a_record_copies_a_named_integer_whole)
  */
 KERNEL_TEST(a_name_whose_object_becomes_a_string_is_handed_back)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_copied, sizeof(predecoding_copied), 2u, "\\COPY",
-                                                     PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run = predecoding_compare(test, predecoding_copied_aml, sizeof(predecoding_copied_aml), 2u,
+                                                     "\\COPY", PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 24u, "COPY returns 24");
     kernel_test_check(test, run.declined == 3u && run.declined_names == 2u,
@@ -1631,7 +1138,7 @@ KERNEL_TEST(a_name_the_loop_declares_masks_the_one_its_records_read)
 
     for (uint32_t predecodes = 0u; predecodes < 2u; ++predecodes)
     {
-        if (!predecoding_open(test, 2u, predecoding_masked, sizeof(predecoding_masked), predecodes != 0u))
+        if (!predecoding_open(test, 2u, predecoding_masked_aml, sizeof(predecoding_masked_aml), predecodes != 0u))
             return;
         predecoding_evaluate("\\MASK", PREDECODING_NO_ARGUMENT, &runs[predecodes][0]);
         predecoding_evaluate("\\MASK", PREDECODING_NO_ARGUMENT, &runs[predecodes][1]);
@@ -1658,9 +1165,9 @@ KERNEL_TEST(a_table_the_loop_loads_masks_the_name_its_records_read)
     for (uint32_t predecodes = 0u; predecodes < 2u; ++predecodes)
     {
         const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = made_up_definition_block(
-            predecoding_second_table, "SSDT", 2u, predecoding_loaded, sizeof(predecoding_loaded));
+            predecoding_second_table, "SSDT", 2u, predecoding_loaded_aml, sizeof(predecoding_loaded_aml));
 
-        if (!predecoding_open(test, 2u, predecoding_loads, sizeof(predecoding_loads), predecodes != 0u))
+        if (!predecoding_open(test, 2u, predecoding_loads_aml, sizeof(predecoding_loads_aml), predecodes != 0u))
             return;
         predecoding_poke(PREDECODING_LOADED_ADDRESS, predecoding_second_table, header->length);
         predecoding_evaluate("\\XDEV.MAIN", PREDECODING_NO_ARGUMENT, &runs[predecodes]);
@@ -1681,8 +1188,9 @@ KERNEL_TEST(a_table_the_loop_loads_masks_the_name_its_records_read)
  */
 KERNEL_TEST(a_field_read_that_fails_in_a_record_fails_as_in_the_loop)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_failing_field, sizeof(predecoding_failing_field),
-                                                     2u, "\\FAIL", PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_failing_field_aml, sizeof(predecoding_failing_field_aml), 2u, "\\FAIL",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.status == PREDECODING_STATUS(SPACE_UNSUPPORTED), "FAIL fails with space_unsupported");
     kernel_test_check(test, run.declined == 0u, "no statement is handed back: the record reads the field itself");
@@ -1695,8 +1203,9 @@ KERNEL_TEST(a_field_read_that_fails_in_a_record_fails_as_in_the_loop)
  */
 KERNEL_TEST(a_record_hands_back_a_name_that_names_a_method_or_a_wide_field)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_unread_names, sizeof(predecoding_unread_names),
-                                                     1u, "\\DECL", PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_unread_names_aml, sizeof(predecoding_unread_names_aml), 1u, "\\DECL",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 3u, "DECL returns 3");
     kernel_test_check(test, run.declined == 4u && run.declined_names == 4u,
@@ -1710,8 +1219,9 @@ KERNEL_TEST(a_record_hands_back_a_name_that_names_a_method_or_a_wide_field)
  */
 KERNEL_TEST(a_record_hands_back_a_field_whose_region_waits_for_its_attach)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_unattached, sizeof(predecoding_unattached), 2u,
-                                                     "\\PCIR", PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_unattached_aml, sizeof(predecoding_unattached_aml), 2u, "\\PCIR",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.declined == 1u && run.declined_names == 1u,
                       "the first read of VID0 is handed back, for its attach");
@@ -1724,8 +1234,9 @@ KERNEL_TEST(a_record_hands_back_a_field_whose_region_waits_for_its_attach)
  */
 KERNEL_TEST(a_name_an_operator_reads_is_masked_as_the_loop_masks_it)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_named_masked, sizeof(predecoding_named_masked),
-                                                     1u, "\\MASK", 0x100000001ull, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_named_masked_aml, sizeof(predecoding_named_masked_aml), 1u, "\\MASK",
+                            0x100000001ull, true, "fold");
 
     kernel_test_check(test, run.result == 2u && run.declined == 0u, "MASK returns 2, nothing handed back");
 }
@@ -1736,8 +1247,9 @@ KERNEL_TEST(a_name_an_operator_reads_is_masked_as_the_loop_masks_it)
  */
 KERNEL_TEST(a_while_whose_predicate_reads_a_name_is_no_tight_loop)
 {
-    const PredecodingRun_t run = predecoding_compare(test, predecoding_tight_name, sizeof(predecoding_tight_name), 2u,
-                                                     "\\TIGN", PREDECODING_NO_ARGUMENT, true, "fold");
+    const PredecodingRun_t run =
+        predecoding_compare(test, predecoding_tight_name_aml, sizeof(predecoding_tight_name_aml), 2u, "\\TIGN",
+                            PREDECODING_NO_ARGUMENT, true, "fold");
 
     kernel_test_check(test, run.result == 5u && run.tight_turns == 0u, "TIGN returns 5, no tight turn");
 }
@@ -1754,7 +1266,7 @@ KERNEL_TEST(an_external_an_alias_fills_moves_what_a_record_reads)
     for (uint32_t predecodes = 0u; predecodes < 2u; ++predecodes)
     {
         const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header = made_up_definition_block(
-            predecoding_second_table, "SSDT", 2u, predecoding_alias_loaded, sizeof(predecoding_alias_loaded));
+            predecoding_second_table, "SSDT", 2u, predecoding_alias_loaded_aml, sizeof(predecoding_alias_loaded_aml));
 
         if (!predecoding_open(test, 2u, predecoding_alias_fills, sizeof(predecoding_alias_fills), predecodes != 0u))
             return;

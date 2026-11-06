@@ -1130,10 +1130,13 @@ published image. The made-up ASL is ours, under MIT.
 
 - Written in ASL, compiled with the pinned `iasl` in a sandbox, committed as the `.asl` source and a generated C
   array; `tools/acpi/regenerate-fixtures.sh` recompiles them and fails on a byte difference.
-- Raw-byte cases for what `iasl` does not emit: a crossing PkgLength, orphan `Package` terms at the root, `Noop`
-  runs, a 4-byte PkgLength, both forms of `CondRefOf` and `Load`, an unterminated string.
+- Raw-byte cases for what `iasl` does not emit: a crossing PkgLength, orphan `Package` terms at the root, a 4-byte
+  PkgLength, both forms of `CondRefOf` and `Load`, an unterminated string.
 - Region tests build their AML at run time, with the physical address of a frame the test owns patched into the
   region's base.
+- A table whose length or depth a test names, as a constant it also computes with or as a parameter (a run of
+  `Noop`s, a ladder, nested `If`s), is built at run time, so that the length has one source; its whole terms come
+  from fixtures.
 - Bit-exact field tests: every bit offset from 0 to 63 and length from 1 to 64, for buffer fields and for each
   access width of a SystemMemory field, read and write, on the host. Their expected values come from an independent
   bit model, checked once against `acpiexec`. Ring 0 runs a fixed stratified sample (each width, the boundary
