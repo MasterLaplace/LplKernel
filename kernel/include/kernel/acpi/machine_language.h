@@ -332,6 +332,24 @@ extern void advanced_configuration_and_power_interface_machine_language_count_lo
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
 
 /**
+ * @brief Logs a fault as an error, the line §4.5 calls loud: its status, then the table and the offset of the term
+ *        that met it and that term's opcode, then the method whose body holds it, or the scope table-level code runs
+ *        in, such as `name_not_found table=SSDT/CpuPm offset=0x0000012F opcode=NameString method=\_PR_.CPU0._PDC`.
+ *
+ * @details The path is built here alone, from the node: a load that meets no fault builds none.
+ * @param load   The load, whose host's log the line goes to.
+ * @param status The fault, its counter's name.
+ * @param table  The table the term lies in, counted from 1, or 0 for none, such as the frame of a host's evaluation.
+ * @param offset Where the term starts in that table.
+ * @param method The node of the method whose body holds the term, or 0 for table-level code.
+ * @param scope  The node the code runs in, named when @p method is 0.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_log_fault(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t table, uint32_t offset,
+    uint32_t method, uint32_t scope);
+
+/**
  * @brief Reads a field unit (§5.3): one access per datum of its access width, in its region for a
  *        Field, through its bank or index register for a BankField or an IndexField.
  *
