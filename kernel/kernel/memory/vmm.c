@@ -1,4 +1,5 @@
 #include <kernel/config.h>
+#include <kernel/cpu/mtrr.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/memory/vmm.h>
@@ -48,6 +49,19 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
 }
 
 /**
+ * @brief Whether a window maps @p frame, which the kernel's map of physical memory does not hold, write-back: when the
+ *        boot memory map calls it memory, or reserved under memory type range registers that say write-back, as Linux
+ *        maps ACPI memory (pat_x_mtrr_type keeps write-back only there).
+ */
+static bool vmm_frame_is_write_back(uint32_t frame)
+{
+    const uint32_t type = physical_memory_manager_memory_type(frame, PAGE_SIZE);
+
+    return physical_memory_manager_type_is_memory(type) ||
+           (physical_memory_manager_type_is_reserved(type) && memory_type_range_registers_frame_is_write_back(frame));
+}
+
+/**
  * @brief The entry @p frame gets in a window: @p pte_flags, with the memory type the frame decides, whatever kind of
  *        window asks, so that no page has two memory types (Intel SDM vol. 3, §14.12.4), between two windows either.
  *
@@ -55,8 +69,9 @@ static uint32_t vmm_window_page_count(uint32_t page_offset, uint32_t size)
  *          write-back, as Linux does, and past it only RAM (physical_memory_manager_restrict_boot_mapping): a window
  *          there is write-back, and the MTRRs decide its effective type, as Linux does for 0xA0000-0xFFFFF; below it,
  *          where Linux would alias, the window takes the map's type too. Any other frame is write-back when the boot
- *          memory map calls it memory, and uncached otherwise: a reserved page or one no entry holds, whether an ACPI
- *          table or a device's registers lie there.
+ *          memory map calls it memory, or reserved where the MTRRs say write-back over it, as SeaBIOS leaves its ACPI
+ *          tables, and uncached otherwise: a reserved page under any other type, or one no entry holds, whether an
+ *          ACPI table or a device's registers lie there.
  */
 static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t pte_flags)
 {
@@ -64,8 +79,7 @@ static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t p
     const bool held = frame < KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE &&
                       paging_get_page_table_entry(frame + KERNEL_VIRTUAL_BASE, &direct) &&
                       ((uint32_t) direct.page_frame_base << 12u) == frame;
-    const bool uncached =
-        !held && !physical_memory_manager_type_is_memory(physical_memory_manager_memory_type(frame, PAGE_SIZE));
+    const bool uncached = !held && !vmm_frame_is_write_back(frame);
 
     pte_flags.write_through = held ? direct.write_through : uncached;
     pte_flags.cache_disable = held ? direct.cache_disable : uncached;
@@ -154,6 +168,7 @@ uint32_t kernel_vmm_first_free_run(const uint8_t *bitmap, uint32_t page_count, u
 
 bool kernel_vmm_initialize(void)
 {
+    memory_type_range_registers_initialize();
     memset(vmm_bitmap, 0, sizeof(vmm_bitmap));
     vmm_last_search_index = 0u;
 

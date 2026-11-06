@@ -430,6 +430,8 @@ void write_advanced_configuration_and_power_interface_power_management_timer_rec
 {
     const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
         advanced_configuration_and_power_interface_power_management_timer();
+    const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *reference =
+        advanced_configuration_and_power_interface_reference_waits();
 
     kernel_telemetry_begin_record(serial, "acpi.timer");
     kernel_telemetry_write_text(
@@ -444,6 +446,14 @@ void write_advanced_configuration_and_power_interface_power_management_timer_rec
     kernel_telemetry_write_unsigned("sleeps", timer->sleeps);
     kernel_telemetry_write_unsigned("sleep_reads", timer->sleep_reads);
     kernel_telemetry_write_unsigned("sleep_idles", timer->sleep_idles);
+    kernel_telemetry_write_text(
+        "reference", advanced_configuration_and_power_interface_reference_waits_state_name(reference->state));
+    kernel_telemetry_write_unsigned("reference_starts", reference->starts);
+    kernel_telemetry_write_unsigned("reference_stalls", reference->stalls);
+    kernel_telemetry_write_unsigned("reference_stall_reads", reference->stall_reads);
+    kernel_telemetry_write_unsigned("reference_sleeps", reference->sleeps);
+    kernel_telemetry_write_unsigned("reference_sleep_reads", reference->sleep_reads);
+    kernel_telemetry_write_unsigned("reference_sleep_idles", reference->sleep_idles);
     kernel_telemetry_end_record();
 }
 

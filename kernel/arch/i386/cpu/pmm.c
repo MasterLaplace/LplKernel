@@ -38,6 +38,9 @@
 /** @brief Multiboot memory region type: available RAM. */
 #define MMAP_TYPE_AVAILABLE 1
 
+/** @brief Multiboot memory region type: reserved memory. */
+#define MMAP_TYPE_RESERVED 2
+
 /** @brief Multiboot memory region type: ACPI reclaimable memory, RAM once the tables are read. */
 #define MMAP_TYPE_ACPI_RECLAIMABLE 3
 
@@ -866,6 +869,8 @@ bool physical_memory_manager_type_is_memory(uint32_t type)
 {
     return type == MMAP_TYPE_AVAILABLE || type == MMAP_TYPE_ACPI_RECLAIMABLE || type == MMAP_TYPE_ACPI_NVS;
 }
+
+bool physical_memory_manager_type_is_reserved(uint32_t type) { return type == MMAP_TYPE_RESERVED; }
 
 bool physical_memory_manager_reaches_ram(uint64_t physical_address, uint64_t length)
 {

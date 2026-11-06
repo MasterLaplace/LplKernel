@@ -120,6 +120,12 @@ static const AcpiFadtBlock_t acpi_fadt_blocks[ACPI_FADT_BLOCKS] = {
 #define ACPI_TIMER_IDLE_STILL_STEPS                                                                                    \
     2u /**< Steps of the host's clock a sleep's idles see the timer stand still across before it derails: a whole      \
           tick. */
+#define ACPI_REFERENCE_HOLD_MICROSECONDS                                                                               \
+    ACPI_TIMER_RATE_WINDOW_MICROSECONDS /**< What the host's reference holds at least (§3.3): what a run of it that   \
+                                           reads spent counted. */
+#define ACPI_REFERENCE_RUN_MICROSECONDS                                                                                \
+    (ACPI_REFERENCE_HOLD_MICROSECONDS / 2u) /**< What a run of the reference counts before a wait starts it again,     \
+                                               half what it holds, so that a read every tick never finds it spent. */
 
 /**
  * @brief A run of I/O ports the ACPI layer never reaches, since the kernel drives them (§5.3).
@@ -147,6 +153,19 @@ typedef struct AcpiModeRegisters {
     uint8_t general_purpose_enable_lengths[2]; /**< Their length in bytes, each written alone. */
 } AcpiModeRegisters_t;
 
+/**
+ * @brief What a wait on the host's reference has counted: the runs of the reference it finished, and the one it
+ *        reads now.
+ */
+typedef struct AcpiReferenceCount {
+    uint64_t finished;    /**< Counts of the runs the wait finished. */
+    uint32_t last;        /**< What the run it reads now read last. */
+    uint32_t still;       /**< Reads in a row that read last again. */
+    uint32_t run_counts;  /**< Counts after which a read starts another run: ACPI_REFERENCE_RUN_MICROSECONDS. */
+    uint32_t hold_counts; /**< Counts a run that reads spent counted: ACPI_REFERENCE_HOLD_MICROSECONDS. */
+    uint32_t *reads;      /**< Where the wait counts its reads of the reference. */
+} AcpiReferenceCount_t;
+
 static const char *const acpi_mode_outcome_names[] = {
     "not-run", "hardware-reduced", "unreachable", "already", "no-command-port", "no-legacy-mode", "switched", "failed",
 };
@@ -154,6 +173,8 @@ static const char *const acpi_mode_outcome_names[] = {
 static const char *const acpi_timer_state_names[] = {
     "absent", "unreachable", "stopped", "inconsistent", "no-reference", "ran-ahead", "wrong-rate", "usable", "derailed",
 };
+
+static const char *const acpi_reference_waits_state_names[] = {"untried", "absent", "usable", "derailed"};
 #define ACPI_INPUT_OUTPUT_PORTS 0x10000u /**< Ports in the I/O space. */
 
 /**
@@ -186,6 +207,7 @@ static AdvancedConfigurationAndPowerInterfaceDirectory_t acpi_directory;
 static bool acpi_directory_read = false;
 static AdvancedConfigurationAndPowerInterfaceModeSwitch_t acpi_mode;
 static AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t acpi_power_management_timer;
+static AdvancedConfigurationAndPowerInterfaceReferenceWaits_t acpi_reference_waits;
 
 static uint8_t acpi_signature_matches(const char *lhs, const char *rhs, size_t length)
 {
@@ -986,6 +1008,186 @@ static uint64_t acpi_timer_idle_toward(const AdvancedConfigurationAndPowerInterf
 }
 
 /**
+ * @brief The counts of a reference of @p hertz in @p microseconds, rounded up.
+ */
+static uint64_t acpi_reference_counts_in(uint32_t hertz, uint32_t microseconds)
+{
+    return ((uint64_t) microseconds * hertz + ACPI_MICROSECONDS_PER_SECOND - 1u) / ACPI_MICROSECONDS_PER_SECOND;
+}
+
+/**
+ * @brief The microseconds @p counts of a reference of @p hertz last, rounded down.
+ */
+static uint64_t acpi_reference_microseconds_in(uint32_t hertz, uint64_t counts)
+{
+    return (counts * ACPI_MICROSECONDS_PER_SECOND) / hertz;
+}
+
+/**
+ * @brief Marks the reference @p waits count on derailed.
+ *
+ * @return false, which the reads that found it so give back.
+ */
+static bool acpi_reference_derail(AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits)
+{
+    waits->state = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_DERAILED;
+    return false;
+}
+
+/**
+ * @brief What the wait @p count describes has counted on the reference.
+ */
+static uint64_t acpi_reference_counted(const AcpiReferenceCount_t *count) { return count->finished + count->last; }
+
+/**
+ * @brief Finishes the run @p count reads, which joins what the wait counted, then starts another and reads
+ *        it at once; the first start gives the reference's rate, and one that gives none finds it absent.
+ *
+ * @return Whether the reference can still count the wait: false when it is absent, or when the read after
+ *         the start finds it spent, which derails it.
+ */
+static bool acpi_reference_start_run(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                     AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits,
+                                     AcpiReferenceCount_t *count)
+{
+    const uint32_t hertz = host->reference_start(host->context);
+    uint32_t first;
+
+    count->finished += count->last;
+    count->last = 0u;
+    count->still = 0u;
+    ++waits->starts;
+    if (waits->hertz == 0u)
+        waits->hertz = hertz;
+    if (hertz == 0u)
+    {
+        waits->state = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_ABSENT;
+        return false;
+    }
+    first = host->reference_read(host->context);
+    ++*count->reads;
+    if (first == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT)
+        return acpi_reference_derail(waits);
+    count->last = first;
+    return true;
+}
+
+/**
+ * @brief Opens a wait on the reference @p waits count on: the first finds it absent when the host has none,
+ *        and usable otherwise; then the wait starts a run of it.
+ *
+ * @param reads Where the wait counts its reads of the reference.
+ * @return Whether the reference can count the wait.
+ */
+static bool acpi_reference_open(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits,
+                                AcpiReferenceCount_t *count, uint32_t *reads)
+{
+    memset(count, 0, sizeof(*count));
+    count->reads = reads;
+    if (waits->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_UNTRIED)
+        waits->state = (host->reference_start != NULL && host->reference_read != NULL) ?
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_USABLE :
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_ABSENT;
+    if (waits->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_USABLE ||
+        !acpi_reference_start_run(host, waits, count))
+        return false;
+    count->run_counts = (uint32_t) acpi_reference_counts_in(waits->hertz, ACPI_REFERENCE_RUN_MICROSECONDS);
+    count->hold_counts = (uint32_t) acpi_reference_counts_in(waits->hertz, ACPI_REFERENCE_HOLD_MICROSECONDS);
+    return true;
+}
+
+/**
+ * @brief Reads the reference once more, and starts another run of it once this one has counted
+ *        ACPI_REFERENCE_RUN_MICROSECONDS, or reads spent, which counts the run as
+ *        ACPI_REFERENCE_HOLD_MICROSECONDS; a read below the last one, or the same count
+ *        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS times in a row,
+ *        derails it.
+ *
+ * @return Whether the reference can still count the wait.
+ */
+static bool acpi_reference_step(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits,
+                                AcpiReferenceCount_t *count)
+{
+    const uint32_t now = host->reference_read(host->context);
+
+    ++*count->reads;
+    if (now == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_SPENT)
+    {
+        count->last = (count->last > count->hold_counts) ? count->last : count->hold_counts;
+        return acpi_reference_start_run(host, waits, count);
+    }
+    if (now < count->last)
+        return acpi_reference_derail(waits);
+    count->still = (now == count->last) ? count->still + 1u : 0u;
+    count->last = now;
+    if (count->still == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS)
+        return acpi_reference_derail(waits);
+    if (now >= count->run_counts)
+        return acpi_reference_start_run(host, waits, count);
+    return true;
+}
+
+/**
+ * @brief Reads the reference until the wait @p count describes has counted @p target, or it derails.
+ */
+static void acpi_reference_count_to(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                    AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits,
+                                    AcpiReferenceCount_t *count, uint64_t target)
+{
+    while (acpi_reference_counted(count) < target)
+        if (!acpi_reference_step(host, waits, count))
+            return;
+}
+
+/**
+ * @brief Gives up the processor through @p idle, reading the reference after each time, while more than
+ *        @p idle_counts and an eighth of them remain to count to @p target; the reference derails, as a read
+ *        derails it, or when it stands still while the host's clock steps ACPI_TIMER_IDLE_STILL_STEPS times.
+ *
+ * @return Whether the reference can still count the wait.
+ */
+static bool acpi_reference_idle_toward(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                       AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits,
+                                       AcpiReferenceCount_t *count, uint64_t target, uint64_t idle_counts,
+                                       void (*idle)(void *context))
+{
+    const uint64_t idle_above = idle_counts + (idle_counts >> ACPI_TIMER_IDLE_SLACK_SHIFT);
+    uint64_t clock = host->clock_100ns(host->context);
+    uint32_t still_steps = 0u;
+
+    while (acpi_reference_counted(count) < target && target - acpi_reference_counted(count) > idle_above)
+    {
+        const uint64_t before = acpi_reference_counted(count);
+
+        idle(host->context);
+        ++waits->sleep_idles;
+        if (!acpi_reference_step(host, waits, count))
+            return false;
+
+        const uint64_t stepped = host->clock_100ns(host->context);
+
+        still_steps = (acpi_reference_counted(count) != before) ? 0u : still_steps + ((stepped != clock) ? 1u : 0u);
+        clock = stepped;
+        if (still_steps == ACPI_TIMER_IDLE_STILL_STEPS)
+            return acpi_reference_derail(waits);
+    }
+    return true;
+}
+
+/**
+ * @brief The microseconds the wait @p count describes counted on the reference @p waits count on, saturated.
+ */
+static uint32_t acpi_reference_waited(const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits,
+                                      const AcpiReferenceCount_t *count)
+{
+    const uint64_t waited = acpi_reference_microseconds_in(waits->hertz, acpi_reference_counted(count));
+
+    return (waited > UINT32_MAX) ? UINT32_MAX : (uint32_t) waited;
+}
+
+/**
  * @brief Whether a processor entry's flags let the processor run, now or once enabled at run time.
  */
 static bool acpi_madt_processor_usable(uint32_t flags)
@@ -1443,6 +1645,88 @@ const char *advanced_configuration_and_power_interface_power_management_timer_st
     if (state >= sizeof(acpi_timer_state_names) / sizeof(acpi_timer_state_names[0]))
         return "unknown";
     return acpi_timer_state_names[state];
+}
+
+bool advanced_configuration_and_power_interface_reference_can_be_waited_on(
+    const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits)
+{
+    return waits->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_UNTRIED ||
+           waits->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_USABLE;
+}
+
+uint32_t advanced_configuration_and_power_interface_reference_stall(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits, uint32_t microseconds)
+{
+    AcpiReferenceCount_t count;
+
+    if (!advanced_configuration_and_power_interface_reference_can_be_waited_on(waits) || microseconds == 0u)
+        return 0u;
+    if (!acpi_reference_open(host, waits, &count, &waits->stall_reads))
+        return host->stall_microseconds(host->context, microseconds);
+
+    ++waits->stalls;
+    acpi_reference_count_to(host, waits, &count, acpi_reference_counts_in(waits->hertz, microseconds));
+
+    const uint32_t waited = acpi_reference_waited(waits, &count);
+
+    if (waited >= microseconds)
+        return waited;
+    return waited + host->stall_microseconds(host->context, microseconds - waited);
+}
+
+uint32_t advanced_configuration_and_power_interface_reference_sleep(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits, uint32_t microseconds, uint32_t idle_microseconds,
+    void (*idle)(void *context))
+{
+    AcpiReferenceCount_t count;
+
+    if (!advanced_configuration_and_power_interface_reference_can_be_waited_on(waits) || microseconds == 0u)
+        return 0u;
+    if (!acpi_reference_open(host, waits, &count, &waits->sleep_reads))
+        return host->sleep_microseconds(host->context, microseconds);
+
+    const uint64_t target = acpi_reference_counts_in(waits->hertz, microseconds);
+
+    ++waits->sleeps;
+    if (acpi_reference_idle_toward(host, waits, &count, target,
+                                   acpi_reference_counts_in(waits->hertz, idle_microseconds), idle))
+        acpi_reference_count_to(host, waits, &count, target);
+
+    const uint32_t waited = acpi_reference_waited(waits, &count);
+
+    if (waited >= microseconds)
+        return waited;
+    return waited + host->sleep_microseconds(host->context, microseconds - waited);
+}
+
+uint32_t advanced_configuration_and_power_interface_reference_machine_stall(uint32_t microseconds)
+{
+    return advanced_configuration_and_power_interface_reference_stall(
+        &advanced_configuration_and_power_interface_machine_host, &acpi_reference_waits, microseconds);
+}
+
+uint32_t advanced_configuration_and_power_interface_reference_machine_sleep(uint32_t microseconds,
+                                                                            uint32_t idle_microseconds,
+                                                                            void (*idle)(void *context))
+{
+    return advanced_configuration_and_power_interface_reference_sleep(
+        &advanced_configuration_and_power_interface_machine_host, &acpi_reference_waits, microseconds,
+        idle_microseconds, idle);
+}
+
+const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *
+advanced_configuration_and_power_interface_reference_waits(void)
+{
+    return &acpi_reference_waits;
+}
+
+const char *advanced_configuration_and_power_interface_reference_waits_state_name(uint8_t state)
+{
+    if (state >= sizeof(acpi_reference_waits_state_names) / sizeof(acpi_reference_waits_state_names[0]))
+        return "unknown";
+    return acpi_reference_waits_state_names[state];
 }
 
 uint64_t advanced_configuration_and_power_interface_last_reachable_address(

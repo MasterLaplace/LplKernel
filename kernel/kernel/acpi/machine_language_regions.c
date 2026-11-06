@@ -189,7 +189,8 @@ static MachineLanguageMapping_t *machine_language_free_mapping(MachineLanguageLo
 }
 
 /**
- * @brief Maps one page: cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere.
+ * @brief Maps one page: as firmware for RAM, ACPI reclaim and NVS memory, as a device elsewhere, the host giving
+ *        the page its memory type (§5.3).
  *
  * @return Where it is mapped, or NULL when the host refuses; @p out_kind receives how.
  */
@@ -308,7 +309,7 @@ static void machine_language_note_table_write(MachineLanguageLoad_t *load, Machi
 
 /**
  * @brief Where the cache maps the page that holds @p physical_address: an entry already made, or a
- *        new one, cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere. A page past what the
+ *        new one, as firmware for RAM, ACPI reclaim and NVS memory, as a device elsewhere. A page past what the
  *        target reaches is refused before it is mapped: the last address a target reaches ends a page, so
  *        an access within one page the cache holds is reached whole, and a hit pays no check.
  */

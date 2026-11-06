@@ -1000,6 +1000,33 @@ KERNEL_TEST(a_loop_is_handed_back_whole_only_while_it_is_the_frame_s_loop)
 }
 
 /**
+ * @brief The statements handed back for their shape are counted under the opcode of each, a call's under 0 (§3.6,
+ *        §8.4): of NEST's 49, its inner While, whose predicate's LAnd no record runs, goes to the loop at the
+ *        first three back-edges of its first run and where it starts and at its 10 back-edges in each of the two runs
+ *        after it, 25 times, and its calls, BUMP at the second and third turns of the first run and at the 10 of each
+ *        run after it, RSET at the two runs after the first, 24 times; the outer While, its Increment and its Store,
+ *        which records run, are counted under none.
+ */
+KERNEL_TEST(the_statements_handed_back_for_their_shape_are_counted_per_opcode)
+{
+    const uint32_t *shapes = predecoding_load.predecoding.declined_shape_opcodes;
+    uint32_t others = 0u;
+
+    predecoding_compare(test, predecoding_nested_refused_loop_aml, sizeof(predecoding_nested_refused_loop_aml), 2u,
+                        "\\NEST", PREDECODING_NO_ARGUMENT, true, "fold");
+    for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        others += (opcode == PREDECODING_OPCODE(INVALID) || opcode == PREDECODING_OPCODE(WHILE)) ? 0u : shapes[opcode];
+    kernel_test_check(test, shapes[PREDECODING_OPCODE(WHILE)] == 25u && shapes[PREDECODING_OPCODE(INVALID)] == 24u,
+                      "the inner While is counted 25 times under While, the calls 24 times under a name's");
+    kernel_test_check(test, others == 0u, "no other opcode is counted");
+    kernel_test_check(test, predecoding_load.predecoding.declined[PREDECODING_DECLINED(SHAPE)] == 49u,
+                      "the 49 statements handed back for their shape are all counted");
+    kernel_test_measure(test, "declined_whiles", shapes[PREDECODING_OPCODE(WHILE)]);
+    kernel_test_measure(test, "declined_names", shapes[PREDECODING_OPCODE(INVALID)]);
+}
+
+/**
  * @brief A statement evicted from its recent slot takes it back when searched (§3.6): EVIC's Increment of Local1, whose
  *        slot the call in its If takes at the second turn, is searched once more at the third, then found in its slot
  *        at the seven after it; the seven statements, eight searches, and EVIC returns 10 with records as without.

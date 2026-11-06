@@ -129,7 +129,7 @@ architecture supplies the host interface.
 | Path | Holds |
 |---|---|
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
-| `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode and the power management timer (§3.9), all behind the host interface |
+| `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode, the power management timer and the waits on the host's reference without one (§3.9), all behind the host interface |
 | `kernel/kernel/acpi/log.c`, `kernel/include/kernel/acpi/log.h` | the lines the layer writes to its host's log, and the level below which a build compiles their calls out (O16) |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
 | `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h`, `kernel/include/kernel/acpi/machine_language_regions.h`, `kernel/include/kernel/acpi/machine_language_services.h` | the decoder's, the namespace's, the objects', the interpreter's, the regions' and the services' interfaces, for the layers above them and the tests |
@@ -173,8 +173,8 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor, one access of the width asked; offsets from 0x100 and segments other than 0 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
-| `reference_start()` → its rate in hertz, or 0; `reference_read()` → what it counted since, or spent past its range: a count no interrupt drives, which the power management timer's rate is measured against (§3.9) | PIT channel 2 from 65,535 in mode 0, its latched count read by polling, spent once its output rises, 54.9 ms later | none; the timer's tests give their own |
-| `sleep_microseconds(u32)` → the microseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, on the ACPI power management timer the boot checked (§3.9), `Sleep` halts while more than a tick and an eighth remain, the eighth for the 5 % the timer's rate may stray and an interrupt taken late, then spins the rest on the timer, and `Stall` spins on it; without one, `Sleep` halts until a deadline on the tick and `Stall` spins on the tick, each rounded up to a whole tick; each returns what it waited; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
+| `reference_start()` → its rate in hertz, or 0; `reference_read()` → what it counted since, or spent past its range: a count no interrupt drives, which the power management timer's rate is measured against and waits count on without a usable timer (§3.9) | PIT channel 2 from 65,535 in mode 0, read once at its start, so that a later read counts from the count it was given, which the 8254 loads at the next edge of its clock; its latched count read by polling, spent once its output rises, 54.9 ms later | none; the timer's tests give their own |
+| `sleep_microseconds(u32)` → the microseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, on the ACPI power management timer the boot checked (§3.9), `Sleep` halts while more than a tick and an eighth remain, the eighth for the 5 % the timer's rate may stray and an interrupt taken late, then spins the rest on the timer, and `Stall` spins on it; without one, both wait so on the reference, and only without a usable reference does `Sleep` halt until a deadline on the tick and `Stall` spin on the tick, each rounded up to a whole tick; each returns what it waited; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
 | `reserve_pages(count)` → address or NULL: address space, none of it usable; `commit_pages(address, count)` → whether `count` pages from `address`, each reserved and not committed yet, are now usable; `release_reservation(address, reserved, committed)`: the namespace's node array, reserved at open for the node cap and committed a 64 KiB run at a time | `kernel_vmm_reserve_pages`, `kernel_vmm_commit_pages`, `kernel_vmm_free_pages`, which gives back a reservation whatever part of it is committed | the same calls; the host harness maps a reservation with no access and opens the pages committed, so that a node past them faults as in ring 0; the host counts the pages committed |
@@ -186,8 +186,8 @@ they read through. Ring 0's is `advanced_configuration_and_power_interface_machi
 host beside it.
 
 AML runs at boot only once `clock_initialize` has started the tick. The `[LPLTLM] acpi.services` record reports
-the milliseconds `Sleep` and the microseconds `Stall` request at boot, and the time each waited as the tick or the
-power management timer counts it, since `instructions.sh` does not see that time.
+the milliseconds `Sleep` and the microseconds `Stall` request at boot, and the time each waited as the power
+management timer, the reference or the tick counts it, since `instructions.sh` does not see that time.
 
 No callback re-enters the interpreter. The evaluations a region access needs (`_ADR`, `_SEG`, `_BBN`, `_REG`) are
 pushed on the same explicit stack (§3.6).
@@ -212,7 +212,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
 | **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, the data objects of a Name its declaration kept in it `u32` (O20), `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8`, and whether its load met a fault `u8` (§3.8 step 1) | 40 on i686, 48 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 53 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. Its frames make its size differ between the targets: printed, never compared. |
-| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8`, whether a While runs as a tight loop `u8`, for a record that runs nothing whether its statement always goes on to the next `u8`, first name `u16`, names `u8`, in a build that counts what the loop runs (§4.1) the opcode of its statement when no operator of it is one `u8` | 40 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant or name index). A name is 28 bytes: its NameString, where it ends `u32`, the node it named when last checked `u32` with the namespace's generation and the scope of that check `u32`, the values and the operators the loop held for the statement before reading it, `u8` each, and in a build that counts what the loop runs the operators of its record the loop runs before reading it `u8`. |
+| **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8`, whether a While runs as a tight loop `u8`, for a record that runs nothing whether its statement always goes on to the next `u8`, first name `u16`, names `u8`, in a build that counts what the loop runs (§4.1) the opcode of its statement when no operator of it is one, or, for a record that runs nothing, whatever it is, 0 for a name or for bytes that read as no opcode `u8` | 40 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant or name index). A name is 28 bytes: its NameString, where it ends `u32`, the node it named when last checked `u32` with the namespace's generation and the scope of that check `u32`, the values and the operators the loop held for the statement before reading it, `u8` each, and in a build that counts what the loop runs the operators of its record the loop runs before reading it `u8`. |
 | **Record cache** | 128 records, 256 operators, 256 constants (`u64`, masked to the width), 256 hash slots (`u16`), 64 names, the values the running record read by name, 64 recent slots (`u16`, the record last found or built at an offset of each, the offset modulo 64), the frame and loop start watched for a turn handed back whole, the integer width they were built under, what running them counted | about 13 KiB, the last member of the load | Opening the load empties the hash slots and the counters alone, word by word: a record is one only below the count and under its own key (table, `pc`), the one a recent slot names included. Its `u64` constants align to 4 bytes on i686 and to 8 on x86-64, so its size differs between the targets by a few bytes: printed, never compared. |
 
 ### 3.5 Memory strategy
@@ -342,9 +342,12 @@ declared; one whose parent exists is placed where it stands.
 
 **The loop runs table-level code, and the load declares.** The declaration pass runs a table's code in the table's
 frame: the loop runs its statements and its control flow as a method body's, and hands the load each run of statements
-that declare or hold data; the load declares them, gives back the TermList of a `Scope`, `Device`, `Processor`,
-`PowerResource` or `ThermalZone` to run in its scope, and waits for the loop to run an `OperationRegion`'s offset or
-length, or a `BankField`'s BankValue, that is no constant. An untaken branch is skipped, and declares nothing. A
+that declare or hold data; the load declares them, enters the TermList of a `Scope`, `Device`, `Processor`,
+`PowerResource` or `ThermalZone` to run in its scope, the loop's construct for it opened as the loop opens it, takes its
+statements as part of the run up to the first one the loop runs, and leaves it at its end (O21), and waits for the loop
+to run an `OperationRegion`'s offset or length, or a `BankField`'s BankValue, that is no constant. A load whose
+`general_load` is set gives each such TermList back to the loop instead, so that the differential tests compare the two
+(§8.1). An untaken branch is skipped, and declares nothing. A
 predicate that fails declares both its branches without running their code, counted (`declared_not_run`), so that a
 failure never takes an object out of the namespace; an object both branches declare is the first branch's, the second's
 a duplicate (§5.1), as any later declaration is. A table whose frame finds the stacks full (§6.1), as one a Load at the
@@ -441,8 +444,9 @@ Run once at boot by the bootstrap processor.
       (§5.3), skips it too, counted. A block too short to hold an enable register is absent.
    2. Clear every GPE enable bit and every PM1 fixed-event enable bit, and keep the SCI line (SCI_INT) masked in the
       8259 or the I/O APIC, so that no event raises an SCI that nothing handles.
-   3. Write ACPI_ENABLE to SMI_CMD from the bootstrap processor, and wait for SCI_EN ([§5.2.9]): polls 1 ms apart on
-      the kernel tick, at most 3,000 of them and 3,000 ms as the tick counts them, counted.
+   3. Write ACPI_ENABLE to SMI_CMD from the bootstrap processor, and wait for SCI_EN ([§5.2.9]): polls 1 ms apart as the
+      host's sleep waits them before the power management timer is checked, on the reference (§3.9), at most 3,000
+      of them and 3,000 ms as the host counts them, counted.
 1. **Load the DSDT, then every SSDT** of the root table in directory order, each as a table frame. A failing table
    is counted and the next one loads; a table whose checksum fails is loaded and counted (§3.9). The integer width
    is fixed from the DSDT's revision before the first byte runs.
@@ -566,11 +570,26 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   timer that counts half a second while the reference moves short of 30 ms (`ran-ahead`).
   Once used, a timer that a wait sees stand still for 10,000 reads, or step more than half its 24-bit range, which
   is going back, is `derailed`, and so is one that stands still while the halts of a `Sleep` see the tick step
-  twice: the wait finishes on the tick, and so do the later ones. A pause between two reads of
+  twice: the wait finishes as one without a usable timer does (below), and so do the later ones. A pause between two reads of
   a wait reads modulo 4.69 s, the 24-bit range, so one of 2.34 s to 4.69 s demotes a healthy timer for the rest of
-  the boot, which is accepted: nothing at boot holds a wait off the processor that long. Otherwise, and on a hardware-reduced platform, `Sleep` and `Stall` wait on the tick. The boot prints one
-  `[LPLTLM] acpi.timer` line once its AML has run: the state, the port, the rate when it was measured, the reads and
-  the time the checks took, the stalls and the sleeps, their reads, and the sleeps' halts.
+  the boot, which is accepted: nothing at boot holds a wait off the processor that long.
+- **Without a usable timer**, and on a hardware-reduced platform, `Sleep` and `Stall` wait the same way on the host's
+  reference (§3.3), which counts at a known rate with no interrupt in between: PIT channel 2's 1.193182 MHz in ring 0.
+  The first wait finds it absent when the host has none or its start gives no rate. A wait starts it and reads it at
+  once, then reads it until it has counted the request, and starts it again at the first read after a run of it has
+  counted 15 ms, half the 30 ms a reference holds at least (§3.3), so that a read every tick never finds it spent; a
+  restart loses the moment between that read and the start, which only lengthens the wait. A read that finds it
+  spent, the processor kept away past its range, counts the run as the 30 ms it holds at least. A reference that
+  reads spent at once after a start, as a port nothing answers does, goes back, reads the same count 10,000 times in
+  a row, or stands still while the halts of a `Sleep` see the tick step twice is `derailed`: the wait finishes on the
+  tick, and so do the later ones, as on a host without a reference. The local APIC timer's count is not waited on:
+  it reloads at every tick, so a read pairs it with the tick count, which an interrupt taken late leaves a tick
+  behind; it counts only where the local timer keeps the tick; and its rate comes from eight interrupts of the PIT,
+  a clock the timer's checks refuse as a reference. The HPET and the TSC wait for #60.
+- **The boot prints one `[LPLTLM] acpi.timer` line** once its AML has run: the timer's state, its port, its rate
+  when it was measured, the reads and the time its checks took, its stalls and its sleeps, their reads, and the
+  sleeps' halts; then the reference's state, its starts, its stalls and its sleeps, their reads, and the sleeps'
+  halts.
 - **The switch to ACPI mode** is a routine of the tables layer: SCI_EN read, enables cleared, ACPI_ENABLE written,
   a bounded poll (§3.8 step 0).
 - **The MADT.** Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for an entry whose Enabled flag is
@@ -928,7 +947,7 @@ Each row is a decision, and has at least one test (§8).
 | `_REG` | `_REG(PCI_Config, 1)` during initialisation (§3.8 step 3), for the scopes of a table loaded at run time once its loading evaluation ends, and at once for a PCI_Config region a method creates once step 3 has run, unless that `_REG` is already running, however it was called (ACPICA and uACPI call it again, and the second creation fails). Only the `_REG` of the region's own scope is called, never one above it, as ACPICA and uACPI find it; one that does not take two arguments is not called, and counted as failed. None for SystemMemory and SystemIO (§1.4). The EC and GPIO get theirs with their handlers. | [§6.5.4] |
 | Port protection | Reads of a protected port return 0 and writes are dropped, counted, never an error. Always protected: the PIC (`0x20-0x21`, `0xA0-0xA1`), the ELCR (`0x4D0-0x4D1`) and PCI mechanism #1 (`0xCF8-0xCFF`). Once AML has asked `_OSI` for Windows XP or newer, also the DMA, PIT, RTC and CMOS, page and arbitration ports: the ranges Windows' ACPI driver protects ([uACPI's table][uacpi-ports]). Only the first port of an access is checked; port `0xB2` (SMI command) stays allowed. The kernel drives the PIC and PCI itself, and AML must not race it; the PIT, the RTC and CMOS follow once `_OSI` asks, as on Windows, and the other ports the kernel drives, COM1 and the keyboard controller, are not protected. | |
 | PCI header protection | Writes below the subsystem vendor ID (`0x2C`), and from the expansion ROM to the interrupt line (`0x30-0x3B`), of a type-0 header, and to the whole header of other types, are dropped and counted. The header type is read once, at attach, and only the first byte of an access is checked, as Windows does. | |
-| Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is a firmware window, anything else a device window. Every window takes the memory type its page decides, never its kind's, since a page with two types is a memory-type conflict: where the kernel's map of memory holds the page, that map's type; elsewhere write-back where the first 64 entries of the boot memory map say RAM, ACPI NVS or reclaim memory, and uncached for any other page, an ACPI table in reserved memory included. That map holds only RAM, but in the first MiB, which it keeps write-back as Linux does: a window there takes that type, and the MTRRs decide. | [§5.5.2.4.1] |
+| Addresses and mappings | A region above 4 GiB fails on i686, never truncated. An access maps only the page it touches, as one entry of the mapping cache, never the declared region; a datum at an address its width does not divide is made byte by byte, counted, so that no access crosses a page or reads unaligned. The host's `memory_type` decides the kind: RAM, ACPI NVS or reclaim memory is a firmware window, anything else a device window. Every window takes the memory type its page decides, never its kind's, since a page with two types is a memory-type conflict: where the kernel's map of memory holds the page, that map's type; elsewhere write-back where the first 64 entries of the boot memory map say RAM, ACPI NVS or reclaim memory, or say reserved and the MTRRs say write-back over the page, as Linux maps ACPI memory, SeaBIOS's tables included; uncached for any other page, one no entry holds included. That map holds only RAM, but in the first MiB, which it keeps write-back as Linux does: a window there takes that type, and the MTRRs decide. | [§5.5.2.4.1] |
 | Writes to a table's bytes | A SystemMemory write that lands on the bytes of a table the load reads in place, a static table or one `LoadTable` found in the directory, empties the pre-decoded records (§3.6), built from those bytes; the loop reads them again. Each host access of such a write that lands on the table is counted (`table_writes`): a `QWordAcc` datum is two, a datum made byte by byte one per byte that lands. Before such a write lands, each data object the load keeps in that table (O20, §3.5) is built from the bytes it was declared with, so that a Name's data is the one its table declared. The load holds its directory before it runs the code of its first table, so that a write that code makes is checked too. A mapping learns at its first write whether its page holds a table the directory lists: a write through a page that holds none is one comparison of that answer, and one through a page that holds some compares its bytes with each table of the directory, and those of a table it lands on with each table the load holds, at most 64 + 64 × 128 = 8,256 comparisons. A copy `Load` made is the kernel's, out of any region's reach. | |
 | 64-bit data on i686 | A `QWordAcc` datum is two 32-bit host accesses, low then high, which the field engine makes itself; one access on x86-64. The simulated host sees the same order. `split_qword_accesses` counts them. | |
 
@@ -949,8 +968,8 @@ Each row is a decision, and has at least one test (§8).
 
 | Topic | Rule | ACPI |
 |---|---|---|
-| `Sleep` | Gives up the processor for the requested milliseconds (at boot, halts then a spin on the power management timer, or a halt until a tick deadline without one, §3.3), with no 2 s cap. The request is charged to the evaluation's time budget first (§6.1), and a request that would exceed it fails the evaluation before sleeping. Real firmware asks for 3 s. | [§19.6.127] |
-| `Stall` | Busy-waits up to 255 µs, on the power management timer (§3.3); above, it becomes a sleep of its microseconds; both counted beyond 100 µs. The microseconds waited are counted next to those asked, so the boot time lost shows. | [§19.6.129] |
+| `Sleep` | Gives up the processor for the requested milliseconds (at boot, halts then a spin on the power management timer, or on the reference without one, §3.3), with no 2 s cap. The request is charged to the evaluation's time budget first (§6.1), and a request that would exceed it fails the evaluation before sleeping. Real firmware asks for 3 s. | [§19.6.127] |
+| `Stall` | Busy-waits up to 255 µs, on the power management timer, or on the reference without one (§3.3); above, it becomes a sleep of its microseconds; both counted beyond 100 µs. The microseconds waited are counted next to those asked, so the boot time lost shows. | [§19.6.129] |
 | `Timer` | 100 ns units, monotonic: the kernel tick in ring 0; in parity runs the virtual clock, which also advances by 100 µs on each read (§2). | [§19.6.136] |
 
 ---
@@ -990,11 +1009,12 @@ that reaches it. The corpus runs report the peaks.
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
 back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the
 kernel asks for (§3.8); a `Load` that a method runs belongs to that method's evaluation, and resets nothing. The time
-requested also bounds the time waited: in ring 0, while the power management timer is usable and each halt ends
-within a tick and an eighth, each wait ends at the first read of the timer that has counted its request, so an
-evaluation waits at most its 30 s and a read of the timer per wait; a halt that lasts longer, such as one a late tick
-ends, makes its wait that much longer. Without a usable timer, each wait rounds up to whole ticks of 10 ms and the
-tick it starts in: a `Stall (256)` sleeps 10 to 20 ms, and the 117,187 an evaluation may request wait 20 to 39 min. The node and arena caps depend on the profile, and probe counts
+requested also bounds the time waited: in ring 0, while the power management timer, or without it the reference, is
+usable and each halt ends within a tick and an eighth, each wait ends at the first read that has counted its request,
+so an evaluation waits at most its 30 s and a read per wait, and on the reference the moments its restarts lose, at
+most one per 15 ms counted; a halt that lasts longer, such as one a late tick ends, makes its wait that much longer. Only
+without either does each wait round up to whole ticks of 10 ms and the tick it starts in: a `Stall (256)` then sleeps
+10 to 20 ms, and the 117,187 an evaluation may request wait 20 to 39 min. The node and arena caps depend on the profile, and probe counts
 follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
 (§8.7).
 
@@ -1088,6 +1108,7 @@ reads a table in kernel memory. The costs to cut are:
 | O18 | A Name's data object decoded once: the declaration pass steps over the object it has built, while the walk has room for every package the object could nest | `data_stepped_over`; W1 |
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list, a Name's integer constant built by the decoder itself, and an OperationRegion of one NameSeg whose offset and length need no interpreter | `declarations_decoded_directly`, `integers_built_directly`; W1 |
 | O20 | A Name's Package, VarPackage or Buffer kept in its table once its head reads, neither checked nor built until a name resolution reaches it or a write is about to land on its table's bytes; a debug kernel and the host tools check each one once they have decoded bodies (§3.5, §3.6, §5.3) | `data_kept`, `data_materialized`, `data_faults_read` in `acpi.aml`, and `data_faults`, `data_named_sizes` with its decoding counts; W1 |
+| O21 | The TermList of a table-level Scope, Device, Processor, PowerResource or ThermalZone entered by the declaration pass itself, the loop's construct for it opened, its statements taken as part of the run up to the first one the loop runs, instead of handed back to the loop, which hands each run back to the load; a load whose `general_load` is set hands it back (§3.6) | `scopes_entered`, and `scopes_left`, those the pass leaves itself; W1 |
 | C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
 | C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
 | C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them; bytes that do not read as kept data, which the load did not check or AML has rewritten since, are built by the decoder (§3.6) | `data_built_directly` in `acpi.load`; W2 and W3 on the MS-7E16 |
@@ -1126,9 +1147,13 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
 W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
 instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
 more than the 300 per named object a first target set. That check has since left the load for the pass that decodes
-bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. The debug windows of W1
-count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no count per declaration
-applies to them.
+bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. 300 per declaration is out of reach of
+the walk the declaration pass runs on: the walk alone costs 310 per declaration on q35, with the decoder of O19, the
+namespace's insertion (O5) and the check that ends a run in line in it (`tools/instructions.sh --budget
+tools/acpi-load.budget kernel/lpl.kernel` lists it). Creating a node at its first lookup saves nothing: step 3 of §3.8
+walks every node for `_REG`, so W2 would create every node W1 no longer does. The
+debug windows of W1 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no
+count per declaration applies to them.
 
 `_PRT` gets a window once #59 gives it a boot consumer.
 
@@ -1187,6 +1212,8 @@ published image. The made-up ASL is ours, under MIT.
   `./qemu.sh --server` boots QEMU's default, `pc`): the kernel switches to ACPI mode, loads what QEMU generates, runs
   the initialisation and prints its counters and statuses. A debug kernel can also print each table as hex lines on
   COM1; `tools/acpi/host` reads them back from `serial.log`, so the host harness loads exactly the bytes ring 0 saw.
+- **No power management timer.** `-machine pc,acpi=off` gives no ACPI table, so the machine host's waits run on the
+  reference (§3.9), which the ring-0 tests of the waits check there.
 - **Reference tables** (`tests/data/acpi/x86` at v10.2.1): 42 configurations, and 5 `microvm` ones (revision-2
   DSDT, hardware-reduced FADT). They test the namespace, not the table walk.
 - **What QEMU cannot test**, and the corpus and the made-up tables test instead: `_CST`, `_PSS`, `_CPC`, `_LPI`,
@@ -1253,7 +1280,8 @@ published image. The made-up ASL is ours, under MIT.
   as `region_bounds`, which ends the evaluation that runs it, as ACPICA's does: an artifact of the corpus.
 - **Pre-decoded loops on the corpus.** `tools/acpi-corpus.sh predecoding <list>` initialises each machine with records
   and without, and compares every line the harness prints, `aml run namespace` (lookups, probes and back-edges)
-  included, but `aml run predecoding`, whose sums it prints.
+  included, but `aml run predecoding`, whose sums it prints, and the statements handed back for their shape per opcode,
+  a call or a name under `MethodInvocation`, on each machine and over the list.
 - **What the records cost on the corpus.** `tools/acpi-corpus.sh records-cost <list>` counts, under callgrind, the
   instructions `test-acpi-cost --initialize` executes on each machine whose loops ask the records anything, with records
   and without, the harness `xmake build test-acpi-cost` builds without sanitizers. No machine costs more than 0.5 % more

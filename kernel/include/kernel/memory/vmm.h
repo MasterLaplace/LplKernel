@@ -55,6 +55,11 @@ uint32_t kernel_vmm_first_free_run(const uint8_t *bitmap, uint32_t page_count, u
 
 /**
  * @brief Initialize the Virtual Memory Manager.
+ *
+ * @details It reads the memory type range registers first (memory_type_range_registers_initialize), before any
+ *          window is mapped, since they decide the memory type of a window on reserved memory.
+ *
+ * @return true.
  */
 bool kernel_vmm_initialize(void);
 
@@ -116,10 +121,14 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
  *          two memory types (Intel SDM vol. 3, §14.12.4): a page the kernel's map of physical memory
  *          holds, the first MiB among them, takes that map's write-back type, and the MTRRs decide its
  *          effective type; any other page is write-back when the first 64 entries of the boot memory
- *          map call it RAM, ACPI reclaimable or ACPI NVS memory, and uncached otherwise. A device's
- *          registers lie in reserved memory or where no entry reaches, so they are cache-disabled and
- *          write-through: a cached read would return whatever the line held when it was filled, which
- *          for a status register is the answer to a question nobody asked. A window that reaches usable
+ *          map call it RAM, ACPI reclaimable or ACPI NVS memory, or call it reserved and the memory
+ *          type range registers say write-back over it, as Linux maps ACPI memory, and uncached
+ *          otherwise. A device's registers usually lie where no entry reaches, or in reserved memory
+ *          the registers leave uncached, so they are cache-disabled and write-through: a cached read
+ *          would return whatever the line held when it was filled, which for a status register is the
+ *          answer to a question nobody asked. Where the firmware leaves reserved registers write-back,
+ *          as SeaBIOS leaves q35's PCI Express configuration space at 0xB0000000, the window is
+ *          write-back too (#58). A window that reaches usable
  *          RAM past the first MiB is refused and counted, as Linux refuses ioremap on System RAM: those
  *          frames belong to the physical memory manager. Registers the map calls ACPI reclaimable or
  *          NVS memory are mapped, write-back. A window that cannot be mapped whole is given back
@@ -150,10 +159,11 @@ void kernel_vmm_unmap_device_window(uint32_t window, uint32_t size);
  *
  * @details Read-only, since the kernel has no reason to write what the firmware describes. Its memory
  *          type is the one kernel_vmm_map_device_window gives the same frames: cached for RAM, ACPI
- *          reclaimable and ACPI NVS memory and in the kernel's map of physical memory, uncached for a
- *          table in reserved memory or where none of the first 64 entries of the boot memory map
- *          reaches, so that an AML
- *          region on the same page gives it no second type. It does not rely on the frames lying where
+ *          reclaimable and ACPI NVS memory, in the kernel's map of physical memory and for a table in
+ *          reserved memory the memory type range registers call write-back, as SeaBIOS leaves its
+ *          tables; uncached for a table in reserved memory under any other type or where none of the
+ *          first 64 entries of the boot memory map reaches, so that an AML region on the same page
+ *          gives it no second type. It does not rely on the frames lying where
  *          the kernel's own mapping of physical memory reaches, and its frames are never handed to the
  *          physical memory manager.
  *
