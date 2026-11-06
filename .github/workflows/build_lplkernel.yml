@@ -220,6 +220,16 @@ jobs:
         grep -q "$witness no loop runs from records" acpi-host-decoded.log ||
             { echo "loops still ran from records with --predecoding off"; exit 1; }
 
+    - name: The same tests for long mode's 52-bit addresses and the other profiles' caps
+      run: |
+        set -e
+        build/acpi-host/test-acpi --physical-address-bits 52 --caps others > acpi-host-long-mode.log
+        witness='advanced_configuration_and_power_interface_regions.a_simulated_host_opens_for_the_target_its_boot_line_gives:'
+        grep -q "$witness physical_address_bits=52" acpi-host-long-mode.log ||
+            { echo "the simulated hosts did not open for 52 bits"; exit 1; }
+        grep -q "$witness max_nodes=32768" acpi-host-long-mode.log ||
+            { echo "the simulated hosts did not open with the other profiles' caps"; exit 1; }
+
     - name: The quick list of recorded machines
       run: |
         set -e

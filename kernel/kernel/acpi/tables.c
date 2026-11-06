@@ -1689,7 +1689,7 @@ uint8_t advanced_configuration_and_power_interface_madt_get_io_apic_id(uint8_t i
     return acpi_madt.io_apics[index].id;
 }
 
-uint32_t advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(uint8_t index)
+uint64_t advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(uint8_t index)
 {
     if (index >= acpi_madt.io_apic_count)
         return 0u;

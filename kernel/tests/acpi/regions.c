@@ -518,10 +518,12 @@ KERNEL_TEST(a_region_past_4_gib_is_reached_only_by_a_wider_target)
 
 /**
  * @brief A simulated host opens for the target its boot line gives (§3.3): 52 bits once the line holds
- *        lpl.acpi.physical_address_bits=52, as `test-acpi --physical-address-bits 52` makes it, 32 otherwise; it then
- *        reads the byte placed past 4 GiB at 52 only. The width is printed, so that two runs compare it.
+ *        lpl.acpi.physical_address_bits=52, as `test-acpi --physical-address-bits 52` makes it, 32 otherwise, and
+ *        the caps §6.1 gives the profiles other than the server once it holds lpl.acpi.caps=others, as
+ *        `test-acpi --caps others` makes it, the server's otherwise; it then reads the byte placed past 4 GiB at 52
+ *        only. The width and the caps are printed, so that two runs compare them.
  */
-KERNEL_TEST(a_simulated_host_reaches_as_far_as_its_boot_line_says)
+KERNEL_TEST(a_simulated_host_opens_for_the_target_its_boot_line_gives)
 {
     static const uint8_t above_byte[] = {0x5Au};
     static const MadeUpFieldUnit_t above[] = {
@@ -529,6 +531,8 @@ KERNEL_TEST(a_simulated_host_reaches_as_far_as_its_boot_line_says)
     };
     const bool long_mode = advanced_configuration_and_power_interface_boot_line_holds(
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION);
+    const bool other_caps = advanced_configuration_and_power_interface_boot_line_holds(
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_OTHER_CAPS_OPTION);
 
     regions_begin();
     (void) advanced_configuration_and_power_interface_simulated_host_place(&regions_host, 0x100010000ull, above_byte,
@@ -541,9 +545,15 @@ KERNEL_TEST(a_simulated_host_reaches_as_far_as_its_boot_line_says)
         return;
     kernel_test_check(test, regions_host.target.physical_address_bits == (long_mode ? 52u : 32u),
                       "the host opens at the width its boot line gives");
+    kernel_test_check(test,
+                      regions_host.target.max_nodes == (other_caps ? 32768u : 65536u) &&
+                          regions_host.target.max_arena_bytes == (other_caps ? 4u : 8u) * 1024u * 1024u,
+                      "with the caps of the profile its boot line gives");
     kernel_test_check(test, regions_integer("RHI_") == (long_mode ? 0x5Au : 0xEEu),
                       "and reads the byte past 4 GiB only at 52 bits");
     kernel_test_measure(test, "physical_address_bits", regions_host.target.physical_address_bits);
+    kernel_test_measure(test, "max_nodes", regions_host.target.max_nodes);
+    kernel_test_measure(test, "max_arena_bytes", regions_host.target.max_arena_bytes);
     regions_close(test);
 }
 

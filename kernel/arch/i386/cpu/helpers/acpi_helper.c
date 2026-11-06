@@ -538,7 +538,7 @@ void write_acpi_ioapics_info(Serial_t *serial)
         serial_write_int(serial,
                          (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
         serial_write_string(serial, ", phys=");
-        serial_write_hex32(serial,
+        serial_write_hex64(serial,
                            advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(ioapic_index));
         serial_write_string(serial, ", gsi_base=");
         serial_write_int(serial,

@@ -56,6 +56,10 @@
     "                                    address bits (specification §3.3): 32, as i686 and the default, or 52,\n"    \
     "                                    as long mode, with the boot line lpl.acpi.physical_address_bits=52;\n"        \
     "                                    every simulated host reaches that far, and every record header prints it\n"   \
+    "       test-acpi --caps server|others ...  any of the above with the namespace caps §6.1 gives the server\n"     \
+    "                                    profile, the default, or the others, with the boot line\n"                    \
+    "                                    lpl.acpi.caps=others; every simulated host opens a load with them, and\n"     \
+    "                                    every record header prints them\n"                                            \
     "       test-acpi [--general-load] [--mutate <seed>] [--read-kept] <form above>  with --general-load, every\n"     \
     "                                    load takes none of its shortcuts (specification §3.6); with --mutate, a\n"   \
     "                                    dump's DSDT and SSDTs have bytes changed at random, seeded by <seed>,\n"      \
@@ -133,28 +137,40 @@ static void harness_mutate_tables(const AdvancedConfigurationAndPowerInterfaceDi
 }
 
 /**
- * @brief Reads the width --physical-address-bits gives: 52 holds the boot word that opens every simulated host
- *        for long mode, 32 leaves the line as it is.
+ * @brief Adds @p word, which @p option gives, to the boot line the harness holds.
  *
- * @return false, with a message that names it, for any other width.
+ * @return false, with a message that names the option, when the line holds as many words as it can.
  */
-static bool harness_read_physical_address_bits(const char *bits)
+static bool harness_hold_boot_word(const char *option, const char *word)
 {
-    if (strcmp(bits, "52") == 0)
-        platform_hold_boot_word(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION);
-    else if (strcmp(bits, "32") != 0)
-    {
-        fprintf(stderr, "test-acpi: --physical-address-bits takes 32 or 52, not %s\n", bits);
-        return false;
-    }
-    return true;
+    if (platform_hold_boot_word(word))
+        return true;
+    fprintf(stderr, "test-acpi: %s gives one boot word too many: give each option once\n", option);
+    return false;
+}
+
+/**
+ * @brief Reads what @p option gives, @p value: @p default_value leaves the boot line as it is, @p other_value holds
+ *        @p word there.
+ *
+ * @return false, with a message that names the option and the value, for any other value or a line already full.
+ */
+static bool harness_read_target_option(const char *option, const char *value, const char *default_value,
+                                       const char *other_value, const char *word)
+{
+    if (strcmp(value, other_value) == 0)
+        return harness_hold_boot_word(option, word);
+    if (strcmp(value, default_value) == 0)
+        return true;
+    fprintf(stderr, "test-acpi: %s takes %s or %s, not %s\n", option, default_value, other_value, value);
+    return false;
 }
 
 /**
  * @brief Reads the options that come before the form of a run: --general-load, --mutate with its seed,
- *        --read-kept, and --physical-address-bits with its width.
+ *        --read-kept, --physical-address-bits with its width, and --caps with its profile.
  *
- * @return The arguments those options took, or -1 for a width --physical-address-bits does not take.
+ * @return The arguments those options took, or -1 for a value --physical-address-bits or --caps does not take.
  */
 static int harness_read_load_options(int argc, char **argv)
 {
@@ -164,7 +180,16 @@ static int harness_read_load_options(int argc, char **argv)
     {
         if (argc - used >= 3 && strcmp(argv[1 + used], "--physical-address-bits") == 0)
         {
-            if (!harness_read_physical_address_bits(argv[2 + used]))
+            if (!harness_read_target_option(argv[1 + used], argv[2 + used], "32", "52",
+                                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION))
+                return -1;
+            used += 2;
+        }
+        else if (argc - used >= 3 && strcmp(argv[1 + used], "--caps") == 0)
+        {
+            if (!harness_read_target_option(
+                    argv[1 + used], argv[2 + used], "server", "others",
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_OTHER_CAPS_OPTION))
                 return -1;
             used += 2;
         }
@@ -269,8 +294,8 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
         printf("processor %u uid=0x%X apic_id=0x%X\n", slot, madt.processors[slot].processor_unique_identifier,
                madt.processors[slot].apic_id);
     for (uint32_t index = 0u; index < madt.io_apic_count; ++index)
-        printf("io_apic id=%u address=0x%08X gsi_base=%u\n", madt.io_apics[index].id,
-               madt.io_apics[index].physical_base, madt.io_apics[index].gsi_base);
+        printf("io_apic id=%u address=0x%08llX gsi_base=%u\n", madt.io_apics[index].id,
+               (unsigned long long) madt.io_apics[index].physical_base, madt.io_apics[index].gsi_base);
     for (uint32_t index = 0u; index < madt.interrupt_source_override_count; ++index)
         printf("override bus=%u source=%u gsi=%u flags=0x%04X\n", madt.interrupt_source_overrides[index].bus,
                madt.interrupt_source_overrides[index].source_irq,
@@ -1562,7 +1587,8 @@ int main(int argc, char **argv)
     argv += options;
     if (argc >= 3 && strcmp(argv[1], "--predecoding") == 0 && strcmp(argv[2], "off") == 0)
     {
-        platform_hold_boot_word("lpl.acpi.predecoding=off");
+        if (!harness_hold_boot_word(argv[1], "lpl.acpi.predecoding=off"))
+            return 2;
         argv[2] = argv[0];
         argv += 2;
         argc -= 2;

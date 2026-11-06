@@ -73,7 +73,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceTarget {
  * @brief What the ACPI layer asks of the machine it runs on.
  *
  * @details Each call is given back the context first. target gives what the layer runs for: in ring 0 the build's
- *          values, in a simulated host those its command line gives. map_firmware maps the length bytes the
+ *          values, in a simulated host those its boot line gives, which the host harness takes from its command
+ *          line. map_firmware maps the length bytes the
  *          firmware wrote at a physical address, cached and read-only, and returns their address,
  *          or NULL when the range cannot be mapped; unmap_firmware takes back what it returned,
  *          given the same length. map_firmware_writable maps memory cached and writable, map_device

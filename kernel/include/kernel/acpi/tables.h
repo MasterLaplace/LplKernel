@@ -345,7 +345,7 @@ typedef struct __attribute__((packed)) {
 
 typedef struct {
     uint8_t id;
-    uint32_t physical_base;
+    uint64_t physical_base;
     uint32_t gsi_base;
 } AdvancedConfigurationAndPowerInterfaceIoApicInfo_t;
 
@@ -832,7 +832,7 @@ extern uint8_t advanced_configuration_and_power_interface_madt_get_io_apic_id(ui
 /**
  * @brief Return discovered IOAPIC MMIO physical base for an index.
  */
-extern uint32_t advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(uint8_t index);
+extern uint64_t advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(uint8_t index);
 
 /**
  * @brief Return discovered IOAPIC GSI base for an index.

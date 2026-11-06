@@ -308,7 +308,9 @@ static void machine_language_note_table_write(MachineLanguageLoad_t *load, Machi
 
 /**
  * @brief Where the cache maps the page that holds @p physical_address: an entry already made, or a
- *        new one, cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere.
+ *        new one, cached for RAM, ACPI reclaim and NVS memory, uncached elsewhere. A page past what the
+ *        target reaches is refused before it is mapped: the last address a target reaches ends a page, so
+ *        an access within one page the cache holds is reached whole, and a hit pays no check.
  */
 static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load, uint64_t physical_address,
                                                     MachineLanguageMapping_t **out_mapping, uint8_t **out_address)
@@ -330,6 +332,9 @@ static MachineLanguageStatus_t machine_language_map(MachineLanguageLoad_t *load,
             return MACHINE_LANGUAGE_OK;
         }
     }
+
+    if (first_page > regions->last_reachable_address)
+        return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
 
     uint8_t kind = 0u;
     void *address = machine_language_map_page(load, first_page, &kind);
@@ -377,9 +382,9 @@ static MachineLanguageStatus_t machine_language_aligned_memory(MachineLanguageLo
 /**
  * @brief One access of 1, 2 or 4 bytes to memory: one aligned access, or, at an address its width
  *        does not divide, one access per byte, counted, so that no access crosses a page or reads
- *        unaligned. One whose last byte lies past what the target reaches fails, never truncated: one
- *        comparison with that last address less the width, which a target of 32 bits or more keeps from
- *        wrapping.
+ *        unaligned. One past what the target reaches fails, never truncated: an aligned one by the page
+ *        the cache refuses, an unaligned one before any of its bytes is made, by one comparison with the
+ *        last address reached less the width, which a target of 32 bits or more keeps from wrapping.
  */
 static MachineLanguageStatus_t machine_language_memory(MachineLanguageLoad_t *load, uint64_t physical_address,
                                                        uint8_t width, bool write, uint32_t *value)
@@ -387,10 +392,10 @@ static MachineLanguageStatus_t machine_language_memory(MachineLanguageLoad_t *lo
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
     uint32_t assembled = 0u;
 
-    if (physical_address > load->regions.last_reachable_address - (width - 1u))
-        return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
     if (physical_address % width == 0u)
         return machine_language_aligned_memory(load, physical_address, width, write, value);
+    if (physical_address > load->regions.last_reachable_address - (width - 1u))
+        return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
     ++load->regions.unaligned_accesses;
     for (uint8_t index = 0u; index < width && status == MACHINE_LANGUAGE_OK; ++index)
     {
@@ -1055,7 +1060,7 @@ void advanced_configuration_and_power_interface_machine_language_use_global_lock
     regions->power_management_control_ports[0] = control_ports[0];
     regions->power_management_control_ports[1] = control_ports[1];
     regions->facs_refused = firmware_control != 0u;
-    if (firmware_control == 0u || firmware_control % MACHINE_LANGUAGE_FACS_ALIGNMENT != 0u ||
+    if (firmware_control == 0u || (uint32_t) firmware_control % MACHINE_LANGUAGE_FACS_ALIGNMENT != 0u ||
         host->memory_type(host->context, firmware_control, MACHINE_LANGUAGE_FACS_MINIMUM) ==
             MACHINE_LANGUAGE_MEMORY(RAM))
         return;

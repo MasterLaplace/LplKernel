@@ -560,6 +560,9 @@ static AdvancedConfigurationAndPowerInterfaceTarget_t simulated_host_target(void
 void advanced_configuration_and_power_interface_simulated_host_open(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated)
 {
+    const bool other_caps = advanced_configuration_and_power_interface_boot_line_holds(
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_OTHER_CAPS_OPTION);
+
     simulated->host.context = simulated;
     simulated->host.root_system_description_pointer = simulated_host_root_system_description_pointer;
     simulated->host.map_firmware = simulated_host_map_firmware;
@@ -591,8 +594,11 @@ void advanced_configuration_and_power_interface_simulated_host_open(
                                      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION) ?
                                      52u :
                                      32u,
-        .max_nodes = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-        .max_arena_bytes = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES,
+        .max_nodes = other_caps ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_NODES :
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
+        .max_arena_bytes = other_caps ?
+                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_ARENA_BYTES :
+                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES,
     };
     simulated->root_system_description_pointer = 0u;
     simulated->outstanding_maps = 0u;

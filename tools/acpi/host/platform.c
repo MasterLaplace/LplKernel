@@ -14,7 +14,7 @@
 #include <sys/mman.h>
 
 #define PLATFORM_MAX_RESERVATIONS 64u /**< Reservations the build machine's stand-in for the VMM holds at once. */
-#define PLATFORM_MAX_BOOT_WORDS   2u  /**< Words of the boot line the harness holds: its options give two at most. */
+#define PLATFORM_MAX_BOOT_WORDS   3u  /**< Words of the boot line the harness holds: one per option that gives one. */
 
 /**
  * @brief A run of address space kernel_vmm_reserve_pages gave on the build machine: mapped with no access, until
@@ -374,12 +374,15 @@ bool advanced_configuration_and_power_interface_boot_line_holds(const char *word
     return boot_command_line_holds(word);
 }
 
-void platform_hold_boot_word(const char *word)
+bool platform_hold_boot_word(const char *word)
 {
     if (word == NULL)
         platform_boot_word_count = 0u;
-    else if (platform_boot_word_count < PLATFORM_MAX_BOOT_WORDS)
+    else if (platform_boot_word_count == PLATFORM_MAX_BOOT_WORDS)
+        return false;
+    else
         platform_boot_words[platform_boot_word_count++] = word;
+    return true;
 }
 bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *out_size)
 {
