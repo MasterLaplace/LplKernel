@@ -238,7 +238,7 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageOpcode {
 #else
 #    define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED                                \
         false /**< A release kernel counts none of it: only the records of a debug kernel and of the host read those   \
-                 counts (§4.1, §8.7). */
+                 counts (§4.1, §7.4). */
 #endif
 
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_PACKAGE_LENGTH                                \

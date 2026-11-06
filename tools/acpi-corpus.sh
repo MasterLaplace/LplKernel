@@ -316,7 +316,7 @@ namespace_check() {
 # code or initialisation executes an opcode the interpreter does not (specification §4.1).
 initialize_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 failed=0 subject output counts="" key
+    local number=0 failed=0 subject output counts="" executed="" key
     local -a tables
     output="$(mktemp)"
     while IFS= read -r subject; do
@@ -334,13 +334,14 @@ initialize_check() {
             failed=$((failed + 1))
             continue
         fi
-        counts+="$(grep -E '^aml (init|idle|load) |^aml run (tables|executed|unimplemented) ' "$output")"$'\n'
+        executed+="$(grep -E '^aml run (executed|unimplemented) ' "$output")"$'\n'
         if grep -q '^aml run unimplemented ' "$output"; then
             echo "not ok $number $subject: the needs path executes what the interpreter does not:" \
                 $(grep '^aml run unimplemented ' "$output" | cut -d' ' -f4)
             failed=$((failed + 1))
             continue
         fi
+        counts+="$(grep -E '^aml (init|idle|load) |^aml run tables ' "$output")"$'\n'
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
@@ -360,11 +361,11 @@ initialize_check() {
     echo "# platform _OSC, machines per answer:" \
         $(grep -o ' platform_capabilities=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# unimplemented opcodes the needs path executed:" \
-        $(grep '^aml run unimplemented ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
+        $(grep '^aml run unimplemented ' <<<"$executed" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }
             END { for (key in total) printf " %s=%u", key, total[key] }')
     for key in opcode space access; do
-        echo "# executed, per $key, over every machine:" \
-            $(grep "^aml run executed $key " <<<"$counts" | awk '{ split($5, pair, "="); total[pair[1]] += pair[2]
+        echo "# executed, per $key, over every machine the harness read:" \
+            $(grep "^aml run executed $key " <<<"$executed" | awk '{ split($5, pair, "="); total[pair[1]] += pair[2]
                     machines[pair[1]] += 1 }
                 END { for (key in total) printf "%u %s=%u(%u)\n", total[key], key, total[key], machines[key] }' |
                 sort -k1,1nr | cut -d' ' -f2)

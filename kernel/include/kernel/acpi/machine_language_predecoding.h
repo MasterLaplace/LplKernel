@@ -189,9 +189,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord {
                                  or Return. */
     uint16_t first_name;    /**< Its first name among the cache's. */
     uint8_t name_count;     /**< The names it reads, in the order the loop reads them. */
-    uint8_t statement;      /**< In a build that counts what the loop runs, the opcode of the statement the loop runs
-                                 after its operators: While, If, Break, Store, Increment or Decrement; 0 for an
-                                 operator that stands as a statement, and for a record that runs nothing. */
+    uint8_t statement;      /**< In a build that counts what the loop runs, the opcode of its statement when no
+                                 operator of the record is one: While, If, Break, Store, Increment or Decrement; 0 for
+                                 an operator that stands as a statement. A record that runs nothing counts nothing. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageRecord_t;
 
 /**

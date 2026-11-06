@@ -631,8 +631,8 @@ step 7 only when step 7's walk still reaches that processor.
    closure reaches on any machine is executed; every other fails with `unimplemented_operator`, counted, until a
    count asks for it. A later need adds the closure of its own entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and
    `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure reaches with the run list where it reaches it:
-   in a method body, what the interpreter runs; in table-level code, that and the declarations and data the load
-   takes. An opcode the run list leaves out there fails it.
+   in a method body, what the interpreter runs; in table-level code, that and the declarations the load takes. An
+   opcode the run list leaves out there fails it.
 3. **Three region spaces have a handler:** SystemMemory, SystemIO and PCI_Config. Every other space decodes and
    fails loudly at access (§4.5).
 4. **The needs path is run too.** The host harness and the ring-0 corpus test run §3.8 and `_CST` on every corpus
@@ -641,9 +641,10 @@ step 7 only when step 7's walk still reaches that processor.
    executed each time the loop runs its operation: an operator once its operands are there, If and While each time
    they read their predicate, an Else when its body is entered, Break, Continue and Noop when they run; a constant,
    a String, a local, an argument and Debug are operands, and the declarations the load makes are not the loop's.
-   A loop's records count what the loop would (§3.6). A space counts each field access it receives, a refused one
-   included, and an access type each read or write of a unit AML names. A debug kernel and the host tools count
-   them; a release kernel, whose records never print them (§8.7), counts none.
+   A loop's records count what the loop would (§3.6). A space counts each field access made in it, one it refuses
+   included, but not one past the evaluation's budget of field accesses (§6.1), which is never made; an access type
+   counts each read or write of a unit AML names. A debug kernel and the host tools count them; a release kernel,
+   which runs no `KERNEL_TEST` and so prints no record of them (§7.4), counts none.
 
 ### 4.2 The decoder's alphabet
 
