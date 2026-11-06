@@ -1,3 +1,4 @@
+#include "fixtures/log.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -127,12 +128,8 @@ static bool log_declare(KernelTest_t *test, const AdvancedConfigurationAndPowerI
  */
 KERNEL_TEST(a_store_to_debug_is_logged_at_debug_level)
 {
-    static const uint8_t aml[] = {
-        0x70u, 0x0Au, 0x2Au, 0x5Bu, 0x31u, 0x70u, 0x0Du, 'H',   'i',   ' ',   't',   'h',   'e',   'r',
-        'e',   0x00u, 0x5Bu, 0x31u, 0x70u, 0x11u, 0x05u, 0x0Au, 0x02u, 0x01u, 0xFEu, 0x5Bu, 0x31u,
-    };
-
-    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, log_stores_to_debug_aml,
+                            sizeof(log_stores_to_debug_aml)))
         return;
     log_print_lines(test, &log_host);
     kernel_test_check(test, log_load.evaluation.debug_stores == 3u && log_host.log_count == 3u,
@@ -156,13 +153,8 @@ KERNEL_TEST(a_store_to_debug_is_logged_at_debug_level)
  */
 KERNEL_TEST(a_store_to_debug_logs_each_kind_of_value)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'P',   'K',   'G',   '0',   0x12u, 0x03u, 0x01u, 0x01u, 0x70u, 0x11u, 0x03u, 0x0Au,
-        0x14u, 0x5Bu, 0x31u, 0x70u, 0x12u, 0x05u, 0x02u, 0x01u, 0x0Au, 0x02u, 0x5Bu, 0x31u, 0x70u,
-        0x71u, 'P',   'K',   'G',   '0',   0x5Bu, 0x31u, 0x70u, 0x0Du, 0x00u, 0x5Bu, 0x31u,
-    };
-
-    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, log_stores_to_debug_of_each_kind_aml,
+                            sizeof(log_stores_to_debug_of_each_kind_aml)))
         return;
     log_print_lines(test, &log_host);
     kernel_test_check(test, log_load.evaluation.debug_stores == 4u && log_host.log_count == 4u,
@@ -213,10 +205,8 @@ KERNEL_TEST(each_level_reaches_the_host_as_itself)
  */
 KERNEL_TEST(a_definition_block_whose_checksum_fails_is_logged_as_a_warning)
 {
-    static const uint8_t aml[] = {0x08u, 'D', 'N', 'A', 'M', 0x01u};
-
     advanced_configuration_and_power_interface_simulated_host_open(&log_host);
-    if (!log_declare(test, &log_host.host, aml, sizeof(aml), true))
+    if (!log_declare(test, &log_host.host, log_name_dnam_aml, sizeof(log_name_dnam_aml), true))
         return;
     log_print_lines(test, &log_host);
     kernel_test_check(test, log_load.checksum_bad_loaded == 1u && made_up_root_node(&log_load, "DNAM") != NULL,
@@ -228,7 +218,7 @@ KERNEL_TEST(a_definition_block_whose_checksum_fails_is_logged_as_a_warning)
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
 
     advanced_configuration_and_power_interface_simulated_host_open(&log_host);
-    if (!log_declare(test, &log_host.host, aml, sizeof(aml), false))
+    if (!log_declare(test, &log_host.host, log_name_dnam_aml, sizeof(log_name_dnam_aml), false))
         return;
     kernel_test_check(test, log_load.checksum_bad_loaded == 0u && log_host.log_count == 0u,
                       "a DSDT whose checksum holds is neither counted nor logged");
@@ -238,14 +228,15 @@ KERNEL_TEST(a_definition_block_whose_checksum_fails_is_logged_as_a_warning)
 /**
  * @brief A table Load copies whose checksum fails is loaded all the same, counted once and logged once as a
  *        warning (§5.1): LDIT loads the SSDT at LOG_TABLE_ADDRESS, its checksum broken by one.
+ *
+ * Its Load is raw bytes, as §8.2 keeps both forms of Load; the table it loads is a fixture.
  */
 KERNEL_TEST(a_table_load_copies_whose_checksum_fails_is_logged_as_a_warning)
 {
     static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t ssdt_aml[] = {0x08u, 'L', 'D', 'E', 'D', 0x0Au, 0x2Au};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt =
-        made_up_definition_block(log_table, "SSDT", 2u, ssdt_aml, sizeof(ssdt_aml));
+        made_up_definition_block(log_table, "SSDT", 2u, log_name_lded_aml, sizeof(log_name_lded_aml));
 
     log_table[LOG_CHECKSUM_INDEX] = (uint8_t) (log_table[LOG_CHECKSUM_INDEX] + 1u);
     advanced_configuration_and_power_interface_simulated_host_open(&log_host);
@@ -286,12 +277,10 @@ KERNEL_TEST(a_table_load_copies_whose_checksum_fails_is_logged_as_a_warning)
  */
 KERNEL_TEST(a_host_without_a_log_loses_the_lines_and_nothing_else)
 {
-    static const uint8_t aml[] = {0x70u, 0x0Au, 0x2Au, 0x5Bu, 0x31u};
-
     advanced_configuration_and_power_interface_simulated_host_open(&log_host);
     log_silent_host = log_host.host;
     log_silent_host.log = NULL;
-    if (!log_declare(test, &log_silent_host, aml, sizeof(aml), true))
+    if (!log_declare(test, &log_silent_host, log_store_to_debug_once_aml, sizeof(log_store_to_debug_once_aml), true))
         return;
     kernel_test_check(test, log_load.checksum_bad_loaded == 1u && log_load.evaluation.debug_stores == 1u,
                       "the checksum and the store to Debug are counted");
@@ -355,15 +344,12 @@ KERNEL_TEST(a_line_names_a_table_by_its_signature_and_identifier)
  */
 KERNEL_TEST(a_fault_in_a_method_names_its_table_offset_opcode_and_method)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x82u, 0x1Eu, 'D',   'E', 'V', '0', 0x14u, 0x0Au, 'M',   'T',   'H',   '0',   0x00u, 0x70u, 0x5Bu,
-        0x30u, 0x60u, 0x14u, 0x0Du, 'M', 'T', 'H', '1',   0x00u, 0x70u, 0x78u, 0x01u, 0x00u, 0x61u, 0x62u, 0x60u,
-    };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t unimplemented;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t divided;
 
-    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, log_faults_in_methods_aml,
+                            sizeof(log_faults_in_methods_aml)))
         return;
     kernel_test_check(test, log_host.log_count == 0u, "the load meets no fault");
     unimplemented = advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, "\\DEV0.MTH0", NULL,
@@ -405,6 +391,8 @@ KERNEL_TEST(a_fault_in_a_method_names_its_table_offset_opcode_and_method)
  *        which the interpreter runs in \DEV1 and counts in table_level_failures, and the byte 0x02 at 0x36 in
  *        \DEV2, which the load meets and counts in load_errors; the decoding pass, which meets 0x02 again, counts it
  *        in decode_errors but does not log it twice. AFTR, declared after both, shows the load went on.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which is no opcode (§8.2).
  */
 KERNEL_TEST(a_fault_of_table_level_code_names_its_scope)
 {
@@ -438,6 +426,8 @@ KERNEL_TEST(a_fault_of_table_level_code_names_its_scope)
  *        end of its body at 0x37, which the line names End though AFTR's Name follows; the same body in DEAD, which a
  *        branch table-level code did not take hides, is counted in undeclared_faults and not logged, since its names
  *        would resolve against objects that do not exist.
+ *
+ * Its table is raw bytes: iasl does not emit a Store cut before its operands (§8.2).
  */
 KERNEL_TEST(a_fault_the_decoding_pass_meets_names_its_method)
 {
@@ -463,6 +453,8 @@ KERNEL_TEST(a_fault_the_decoding_pass_meets_names_its_method)
  * @brief A failure of table-level code the load meets again, as it steps over the statement that failed, is logged
  *        once (§4.5): Store (<0x02>, Local0) at the root fails in the interpreter, counted in table_level_failures, and
  *        the load, which steps over the Store, meets the byte 0x02 at 0x25 again, counted in load_errors.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which is no opcode (§8.2).
  */
 KERNEL_TEST(a_failure_the_load_steps_over_is_logged_once)
 {
@@ -488,12 +480,8 @@ KERNEL_TEST(a_failure_the_load_steps_over_is_logged_once)
  */
 KERNEL_TEST(a_loop_the_budget_stops_is_logged_at_its_while)
 {
-    static const uint8_t aml[] = {
-        0x14u, 0x0Au, 'M',   '0',   '0',   '9',   0x00u, 0xA2u, 0x03u, 0x01u, 0xA3u, 'M', '0', '0',   '9',
-        0xA2u, 0x03u, 0x01u, 0x9Fu, 0xA2u, 0x03u, 0x01u, 0xA3u, 0x08u, 'A',   'F',   'T', 'R', 0x01u,
-    };
-
-    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, log_loops_the_budget_stops_aml,
+                            sizeof(log_loops_the_budget_stops_aml)))
         return;
     log_print_lines(test, &log_host);
     kernel_test_check(test, log_host.log_count == 3u, "three loops stopped, three lines");
@@ -518,6 +506,8 @@ KERNEL_TEST(a_loop_the_budget_stops_is_logged_at_its_while)
  * @brief The load leaves a failure out of its log only while it steps over the statement that failed: MBAD, which
  *        table-level code calls, fails on the byte 0x02 at 0x2C in its body, and the decoding pass, which decodes
  *        that body once every table is declared, meets the byte again as a decode error, logged as one.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which is no opcode (§8.2).
  */
 KERNEL_TEST(a_failure_is_left_out_of_the_log_only_while_its_statement_is_stepped_over)
 {
@@ -542,6 +532,8 @@ KERNEL_TEST(a_failure_is_left_out_of_the_log_only_while_its_statement_is_stepped
 /**
  * @brief Two more faults §4.5 lists are logged where they are met: the read of FLD0, a field of EmbeddedControl, which
  *        has no handler, at its name 0x43 in \RDEC, and Load from the Buffer BUFF, at 0x5F in \LDBF.
+ *
+ * Its table is raw bytes, as §8.2 keeps both forms of Load.
  */
 KERNEL_TEST(a_space_without_a_handler_and_a_load_from_a_buffer_are_logged)
 {
@@ -606,8 +598,6 @@ static void log_firmware_table(uint32_t offset, const char *signature, uint32_t 
  */
 static void log_firmware_open(void)
 {
-    static const uint8_t ssdt_aml[] = {0x08u, 'S', 'N', 'A', 'M', 0x01u};
-    static const uint8_t dsdt_aml[] = {0x08u, 'D', 'N', 'A', 'M', 0x01u};
     const uint32_t entries[] = {LOG_FIRMWARE_ADDRESS + LOG_FADT_OFFSET, LOG_FIRMWARE_ADDRESS + LOG_SSDT_OFFSET,
                                 LOG_FIRMWARE_ADDRESS + LOG_TSTA_OFFSET};
     const uint32_t rsdt = LOG_FIRMWARE_ADDRESS + LOG_RSDT_OFFSET;
@@ -624,11 +614,11 @@ static void log_firmware_open(void)
     log_firmware_table(LOG_RSDT_OFFSET, "RSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(entries), false);
     memcpy(log_firmware + LOG_FADT_OFFSET + LOG_FADT_DSDT, &dsdt, 4u);
     log_firmware_table(LOG_FADT_OFFSET, "FACP", LOG_FADT_LENGTH, true);
-    memcpy(log_firmware + LOG_SSDT_OFFSET + MADE_UP_TABLE_HEADER, ssdt_aml, sizeof(ssdt_aml));
-    log_firmware_table(LOG_SSDT_OFFSET, "SSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(ssdt_aml), true);
+    memcpy(log_firmware + LOG_SSDT_OFFSET + MADE_UP_TABLE_HEADER, log_name_snam_aml, sizeof(log_name_snam_aml));
+    log_firmware_table(LOG_SSDT_OFFSET, "SSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(log_name_snam_aml), true);
     log_firmware_table(LOG_TSTA_OFFSET, "TSTA", MADE_UP_TABLE_HEADER, true);
-    memcpy(log_firmware + LOG_DSDT_OFFSET + MADE_UP_TABLE_HEADER, dsdt_aml, sizeof(dsdt_aml));
-    log_firmware_table(LOG_DSDT_OFFSET, "DSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(dsdt_aml), true);
+    memcpy(log_firmware + LOG_DSDT_OFFSET + MADE_UP_TABLE_HEADER, log_name_dnam_aml, sizeof(log_name_dnam_aml));
+    log_firmware_table(LOG_DSDT_OFFSET, "DSDT", MADE_UP_TABLE_HEADER + (uint32_t) sizeof(log_name_dnam_aml), true);
     advanced_configuration_and_power_interface_simulated_host_open(&log_host);
     (void) advanced_configuration_and_power_interface_simulated_host_place(&log_host, LOG_FIRMWARE_ADDRESS,
                                                                            log_firmware, sizeof(log_firmware));
@@ -675,22 +665,23 @@ KERNEL_TEST(the_directory_counts_and_logs_the_static_tables_whose_checksum_fails
  *        the DSDT meets two, Revision, which its table-level code fails on, and the byte 0x02, which the load meets;
  *        the first SSDT none; the second the byte 0x02 alone, the third Revision alone. Each fault is
  *        counted once in faults, under its status.
+ *
+ * The DSDT and the second SSDT are raw bytes: iasl does not emit the byte 0x02, which is no opcode (§8.2).
  */
 KERNEL_TEST(a_table_whose_load_meets_faults_is_counted_once_in_table_load_failed)
 {
     static const uint8_t faulty[] = {0x70u, 0x5Bu, 0x30u, 0x60u, 0x5Bu, 0x82u, 0x06u, 'D', 'E', 'V', '2', 0x02u};
-    static const uint8_t clean[] = {0x08u, 'C', 'L', 'E', 'N', 0x01u};
     static const uint8_t invalid[] = {0x02u};
-    static const uint8_t unimplemented[] = {0x70u, 0x5Bu, 0x30u, 0x60u};
 
     if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, faulty, sizeof(faulty)))
         return;
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &log_load, made_up_definition_block(log_second, "SSDT", 2u, clean, sizeof(clean)));
+        &log_load, made_up_definition_block(log_second, "SSDT", 2u, log_name_clen_aml, sizeof(log_name_clen_aml)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &log_load, made_up_definition_block(log_third, "SSDT", 2u, invalid, sizeof(invalid)));
     advanced_configuration_and_power_interface_machine_language_declare_table(
-        &log_load, made_up_definition_block(log_table, "SSDT", 2u, unimplemented, sizeof(unimplemented)));
+        &log_load, made_up_definition_block(log_table, "SSDT", 2u, log_revision_at_table_level_aml,
+                                            sizeof(log_revision_at_table_level_aml)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&log_load);
     log_print_lines(test, &log_host);
     kernel_test_measure(test, "table_load_failed", log_load.table_load_failed);
@@ -709,14 +700,15 @@ KERNEL_TEST(a_table_whose_load_meets_faults_is_counted_once_in_table_load_failed
 /**
  * @brief A table Load adds whose code fails is marked, and not counted in table_load_failed, which counts the tables
  *        the root table lists (§3.8 step 1): LDIT loads an SSDT whose table-level code fails on Revision.
+ *
+ * Its Load is raw bytes, as §8.2 keeps both forms of Load; the table it loads is a fixture.
  */
 KERNEL_TEST(a_table_load_adds_whose_code_fails_is_marked_and_not_counted)
 {
     static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t ssdt_aml[] = {0x70u, 0x5Bu, 0x30u, 0x60u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt =
-        made_up_definition_block(log_table, "SSDT", 2u, ssdt_aml, sizeof(ssdt_aml));
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt = made_up_definition_block(
+        log_table, "SSDT", 2u, log_revision_at_table_level_aml, sizeof(log_revision_at_table_level_aml));
 
     advanced_configuration_and_power_interface_simulated_host_open(&log_host);
     (void) advanced_configuration_and_power_interface_simulated_host_poke(&log_host, LOG_TABLE_ADDRESS, log_table,
@@ -796,9 +788,8 @@ KERNEL_TEST(a_switch_to_acpi_mode_that_failed_is_counted_in_acpi_mode_failed)
  */
 KERNEL_TEST(a_table_level_loop_the_budget_stops_counts_its_load_as_failed)
 {
-    static const uint8_t aml[] = {0xA2u, 0x03u, 0x01u, 0xA3u, 0x08u, 'A', 'F', 'T', 'R', 0x01u};
-
-    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, log_endless_table_level_loop_aml,
+                            sizeof(log_endless_table_level_loop_aml)))
         return;
     kernel_test_check(test,
                       log_load.evaluation.failures == 1u && log_load.load_errors == 0u &&
@@ -815,11 +806,10 @@ KERNEL_TEST(a_table_level_loop_the_budget_stops_counts_its_load_as_failed)
  */
 KERNEL_TEST(a_table_whose_code_runs_out_of_blocks_counts_its_load_as_failed)
 {
-    static const uint8_t name[] = {0x08u, 'D', 'E', 'E', 'P', 0x01u};
     static uint8_t aml[4u * 1024u];
-    uint32_t start = (uint32_t) sizeof(aml) - (uint32_t) sizeof(name);
+    uint32_t start = (uint32_t) sizeof(aml) - (uint32_t) sizeof(log_name_deep_aml);
 
-    memcpy(aml + start, name, sizeof(name));
+    memcpy(aml + start, log_name_deep_aml, sizeof(log_name_deep_aml));
     for (uint32_t level = 0u; level < 512u; ++level)
     {
         uint8_t length[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
@@ -844,19 +834,20 @@ KERNEL_TEST(a_table_whose_code_runs_out_of_blocks_counts_its_load_as_failed)
  * @brief A table Load adds where the evaluation has no frame left for its code is marked as a table whose load failed,
  *        and not counted in table_load_failed (§3.8 step 1): REC_ calls itself until the 64 frames of §6.1 are taken,
  *        then loads the SSDT at LOG_TABLE_ADDRESS, whose code is declared without running.
+ *
+ * Its method that recurses into a Load is raw bytes, as §8.2 keeps both forms of Load; the table it loads is a fixture.
  */
 KERNEL_TEST(a_table_load_adds_without_a_frame_is_marked_and_not_counted)
 {
     static const uint8_t recurses[] = {0xA0u, 0x0Au, 0x68u, 'R',   'E',   'C',   '_',  0x74u, 0x68u,
                                        0x01u, 0x00u, 0xA1u, 0x0Du, 0x5Bu, 0x20u, '\\', 'T',   'B',
                                        'L',   'R',   '\\',  'H',   'N',   'D',   '1'};
-    static const uint8_t ssdt_aml[] = {0x08u, 'L', 'D', 'E', 'D', 0x01u};
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t depth = {
         .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
         .payload = 62u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt =
-        made_up_definition_block(log_table, "SSDT", 2u, ssdt_aml, sizeof(ssdt_aml));
+        made_up_definition_block(log_table, "SSDT", 2u, log_name_lded_one_aml, sizeof(log_name_lded_one_aml));
 
     advanced_configuration_and_power_interface_simulated_host_open(&log_host);
     (void) advanced_configuration_and_power_interface_simulated_host_poke(&log_host, LOG_TABLE_ADDRESS, log_table,
@@ -888,6 +879,8 @@ KERNEL_TEST(a_table_load_adds_without_a_frame_is_marked_and_not_counted)
  *        a debug kernel runs once the bodies are decoded, beside data_faults, at the Package at 0x29; then by the read
  *        that RDPK makes first, which leaves PKG0 Uninitialized, beside data_faults_read; then by RDPK's Return, which
  *        meets that Uninitialized name at 0x35.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which is no opcode, as a package element (§8.2).
  */
 KERNEL_TEST(a_fault_in_kept_data_is_logged_by_its_check_and_at_its_first_read)
 {
@@ -923,6 +916,8 @@ KERNEL_TEST(a_fault_in_kept_data_is_logged_by_its_check_and_at_its_first_read)
  * @brief A host's evaluation that fails where no term runs logs its object (§4.5): the host's read of FLD0, a field of
  *        EmbeddedControl, and its call of NOBD, a method declared without a body; the load logs NOBD's cut declaration
  *        first.
+ *
+ * Its table is raw bytes: iasl does not emit a method cut before its flags (§8.2).
  */
 KERNEL_TEST(a_host_evaluation_that_fails_outside_any_term_logs_its_object)
 {
@@ -960,6 +955,8 @@ KERNEL_TEST(a_host_evaluation_that_fails_outside_any_term_logs_its_object)
  * @brief A host's read whose attach calls a method without a body logs that method, not the host's frame, which runs
  *        no term (§4.5): \PCI0.FLD0 attaches its PCI_Config region through _ADR, declared without a body, which the
  *        attach takes as absent, and the read goes on.
+ *
+ * Its table is raw bytes: iasl does not emit a method cut before its flags (§8.2).
  */
 KERNEL_TEST(a_host_read_whose_attach_fails_logs_the_method_it_could_not_call)
 {
@@ -992,6 +989,8 @@ KERNEL_TEST(a_host_read_whose_attach_fails_logs_the_method_it_could_not_call)
  *        body, logs its object; its read of \PCI0.FLD0 attaches its PCI_Config region through _ADR, which fails there
  *        again and is taken as absent, so the read goes on, then NOBD logs its object again, the fourth line counted
  *        past the four the host keeps.
+ *
+ * Its table is raw bytes: iasl does not emit a method cut before its flags (§8.2).
  */
 KERNEL_TEST(a_failure_an_evaluation_goes_past_leaves_the_next_one_logged)
 {

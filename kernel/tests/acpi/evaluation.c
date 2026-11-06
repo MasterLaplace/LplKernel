@@ -835,6 +835,36 @@ KERNEL_TEST(an_else_whose_package_length_crosses_the_table_is_a_fault_of_the_loa
 }
 
 /**
+ * @brief An If (Zero) whose PkgLength passes the end of its method fails the evaluation with pkglength_out_of_parent,
+ *        and the next evaluation runs (§6.3): BAD_'s If ends two bytes into GOOD, inside the table, so that only its
+ *        method's end refuses it; BAD_ fails, GOOD returns 0x2A, then BAD_ fails again.
+ *
+ * Its table is raw bytes: iasl does not emit a crossing PkgLength (§8.2).
+ */
+KERNEL_TEST(an_if_whose_package_length_passes_its_method_fails_and_the_next_evaluation_runs)
+{
+    static const uint8_t aml[] = {
+        0x14u, 0x0Au, 'B', 'A', 'D', '_', 0x00u, 0xA0u, 0x05u, 0x00u, 0xA3u,
+        0x14u, 0x09u, 'G', 'O', 'O', 'D', 0x00u, 0xA4u, 0x0Au, 0x2Au,
+    };
+
+    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(
+        test,
+        evaluation_status("\\BAD_") ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_PACKAGE_LENGTH_OUT_OF_PARENT,
+        "BAD_ fails with pkglength_out_of_parent");
+    kernel_test_check(test, evaluation_call("\\GOOD") == 0x2Au, "the next evaluation runs: GOOD returns 0x2A");
+    kernel_test_check(
+        test,
+        evaluation_status("\\BAD_") ==
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_PACKAGE_LENGTH_OUT_OF_PARENT,
+        "BAD_ fails the same way again");
+    evaluation_close(test);
+}
+
+/**
  * @brief Only the Else right after an If whose predicate was false runs: one a statement separates from that
  *        If is stepped over, declaring nothing.
  *

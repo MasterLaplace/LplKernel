@@ -29,6 +29,7 @@
 
 #include <kernel/acpi/host.h>
 #include <kernel/acpi/log.h>
+#include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 
 #include <stdbool.h>
@@ -354,6 +355,22 @@ extern bool advanced_configuration_and_power_interface_simulated_host_set_port(
 extern void advanced_configuration_and_power_interface_simulated_host_boot_platform(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt);
+
+/**
+ * @brief Boots what @p simulated serves as the kernel boots (§3.8): step 0 puts the platform in ACPI mode, its
+ *        firmware answering as the platform @p directory's FADT describes boots, before any AML runs; step 1 then
+ *        loads every definition block of @p directory, its table-level code included.
+ *
+ * @param simulated The host @p directory was read through, opened.
+ * @param directory The directory of the tables it serves.
+ * @param load      A load opened on @p simulated's host.
+ * @param out_mode  Receives how step 0 ended and what it counted.
+ */
+extern void advanced_configuration_and_power_interface_simulated_host_boot(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+    const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceModeSwitch_t *out_mode);
 
 /**
  * @brief Reads simulated memory as read_memory would, without logging it.
