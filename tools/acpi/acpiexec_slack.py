@@ -6,26 +6,30 @@ Usage: python3 -I tools/acpi/acpiexec_slack.py <acpica bin directory> <MADT line
 
 The MADT lines, the presets and the tables are those of tools/acpi/acpiexec_idle.py, which stages the machine the same
 way: the tables `test-acpi --loaded` writes, the DSDT first, loaded statically, the NVS values of the presets, and the
-fill of the simulated regions. acpiexec runs no _REG, _STA or _INI of its own (`-di`): the evaluations are those of the
-needs path, §1.3, in the order of §3.8, given on its standard input. They are \\_INI and \\_SB._INI (step 2); the _REG
-of each scope that declares a PCI_Config region, for that space (step 3); the _ADR, _SEG, _BBN, _HID and _CID of every
-Device that holds such a region or lies above one, which its attach reads (§3.6); the walk of step 4, its _STA and
-_INI, which a first run decides by reading every _STA it may meet, before any _INI runs; the _HID and _UID of the
-processor Devices; the handshake of steps 6 and 7; the _STA of each processor object with a _CST and of what lies
-above it; then each _CST. The same evaluations run twice, without and with `-es`, which returns a method's last value
-where it ends without Return, reads an uninitialised local or argument as Integer 0, and accepts what ACPI forbids: a
-store of any object, a field past its region's length rounded up to its access width.
+fill of the simulated regions. acpiexec's own initialisation of devices, their _STA and _INI and its _REG walk, does
+not run (`-di`); what acpiexec still runs of its own, once it initialises its events, comes before the first
+evaluation in both runs: the _REG of the spaces whose handlers it installs then (aeinstall.c, through
+AcpiInstallAddressSpaceHandler) and the _STA of every device its tests read (aetests.c, through AcpiGetDevices). The
+evaluations given on its standard input are those of the needs path, §1.3, in the order of §3.8: \\_INI and \\_SB._INI
+(step 2); the _REG of each scope that declares a PCI_Config region, for that space (step 3); the _ADR, _SEG, _BBN,
+_HID and _CID of the scope that holds such a region and of each one above it, which its attach reads (§3.6); the walk
+of step 4, its _STA and _INI; the _HID and _UID of the processor Devices; the handshake of steps 6 and 7; the _STA of
+each processor object with a _CST and of what lies above it; then each _CST. The walk is approximate: a first run
+decides it by reading every _STA it may meet before any _INI runs, so a _STA whose value an _INI sets may be read
+otherwise than the kernel reads it. The same evaluations run twice, without and with `-es`, which returns a method's
+last value where it ends without Return, reads an uninitialised local or argument as Integer 0, and accepts what ACPI
+forbids: a store of any object, a field past its region's length rounded up to its access width.
 
 The two runs agree when their loads end with the same failures, every `ACPI Error`, `ACPI Exception` and `ACPI Warning`
-line printed while the tables load, the addresses of acpiexec's memory left out, but not what acpiexec's own probing
-prints once it initialises its events (it reads devices for its handlers and its tests); and when each evaluation ends
-with the same status and the same result. An _INI, a _REG and a _PDC, whose results no caller reads, compare on status
-only, and so does a method that reads Timer, in its body or through a method it calls, as tools/acpi/aml_census.py
-finds it in the same tables: two runs read two clocks.
+line printed while the tables load, each pointer into acpiexec's memory masked, but not what acpiexec prints once it
+initialises its events; and when each evaluation ends with the same status and the same result. An _INI, a _REG and a
+_PDC, whose results no caller reads, compare on status only, and so does a method that reads Timer, in its body or
+through a method it calls, as tools/acpi/aml_census.py finds it in the same tables: two runs read two clocks.
 
 Prints `aml slack agree evaluations=<n> status_only=<n> load_lines=<n>` when the two runs agree, else one
-`aml slack differ <what> plain=<result> slack=<result>` line per difference. When acpiexec stops before an evaluation
-in either run, it prints only `aml slack unevaluated <path>`, the first path that run did not reach.
+`aml slack differ <what> plain=<result> slack=<result>` line per difference, a run that stops where the other goes on
+included, its result `stopped`. When both runs stop before the same evaluation, it prints only
+`aml slack unevaluated <path>`, the first path neither reached.
 
 --self-test checks the comparison on made-up acpiexec output, and the evaluations on a made-up namespace, each verdict
 and each list written by hand, and exits 1 when one differs.
@@ -54,7 +58,7 @@ PROMPT = re.compile(r"^- evaluate (\S+)")
 EVALUATE = re.compile(r"^evaluate (\S+)")
 NO_OBJECT = re.compile(r"^No object was returned from evaluation of (\S+)")
 REPORTED = re.compile(r"ACPI (?:Error|Exception|Warning): .*")
-ADDRESS = re.compile(r"0x[0-9a-fA-F]{8,}")
+POINTER = re.compile(r"\b0x[0-9a-f]{12}\b")
 EVENTS = "Initializing General Purpose Events"
 RENDERED_WIDTH = 160
 
@@ -67,8 +71,10 @@ class Run:
 
 
 def load_lines(lines):
-    """The failures a load reports, which the runs compare, each address of acpiexec's memory as `0x?`."""
-    return collections.Counter(ADDRESS.sub("0x?", reported.group(0)) for reported in map(REPORTED.search, lines)
+    """The failures a load reports, which the runs compare, each pointer into acpiexec's memory as `0x?`: twelve
+    lowercase hexadecimal digits, as a 64-bit user-space pointer prints, where ACPICA prints an address of the
+    machine's in uppercase."""
+    return collections.Counter(POINTER.sub("0x?", reported.group(0)) for reported in map(REPORTED.search, lines)
                                if reported)
 
 
@@ -142,25 +148,38 @@ def compares_status_only(path, timer_readers):
     return padded(path) in timer_readers or path.rsplit(".", 1)[-1] in STATUS_ONLY_NAMES
 
 
+def reached(run, paths):
+    """How many of @p paths a Run evaluated, in order, each result of its own path."""
+    count = 0
+    for (path, result), wanted in zip(run.results, paths):
+        if path != wanted or result is None:
+            break
+        count += 1
+    return count
+
+
 def compare(commands, plain, slack, timer_readers):
     """The lines that say how two Runs of @p commands compare: a result compared on status only when its command's path
-    is an _INI, a _REG, a _PDC or one of @p timer_readers; a single `unevaluated` line when a run did not reach every
-    command."""
+    is an _INI, a _REG, a _PDC or one of @p timer_readers; a run that stops where the other goes on differs there; a
+    single `unevaluated` line when both stop before the same command."""
     paths = [EVALUATE.match(command).group(1) for command in commands]
-    for run in (plain, slack):
-        for index, path in enumerate(paths):
-            if index >= len(run.results) or run.results[index][1] is None:
-                return ["aml slack unevaluated %s" % path]
+    plain_reached, slack_reached = reached(plain, paths), reached(slack, paths)
+    if plain_reached == slack_reached < len(paths):
+        return ["aml slack unevaluated %s" % paths[plain_reached]]
     lines = ["aml slack differ load plain=%s slack=none" % line
              for line in sorted((plain.load - slack.load).elements())]
     lines += ["aml slack differ load plain=none slack=%s" % line
               for line in sorted((slack.load - plain.load).elements())]
-    status_only = 0
-    for path, (_, mine), (_, theirs) in zip(paths, plain.results, slack.results):
+    status_only, both = 0, min(plain_reached, slack_reached)
+    for path, (_, mine), (_, theirs) in zip(paths[:both], plain.results, slack.results):
         on_status = compares_status_only(path, timer_readers)
         status_only += 1 if on_status else 0
         if (mine[0] != theirs[0]) if on_status else (mine != theirs):
             lines.append("aml slack differ %s plain=%s slack=%s" % (path, render(mine), render(theirs)))
+    if plain_reached != slack_reached:
+        mine = render(plain.results[both][1]) if plain_reached > both else "stopped"
+        theirs = render(slack.results[both][1]) if slack_reached > both else "stopped"
+        lines.append("aml slack differ %s plain=%s slack=%s" % (paths[both], mine, theirs))
     return lines or ["aml slack agree evaluations=%u status_only=%u load_lines=%u"
                      % (len(paths), status_only, sum(plain.load.values()))]
 
@@ -187,6 +206,12 @@ def buffer(path, data):
             "  [Buffer] Length %02X = " % len(data), "    0000: %s" % " ".join("%02X" % byte for byte in data), ""]
 
 
+def replaced_path(evaluations, path, other):
+    """Made-up evaluations, the evaluation of @p path made of @p other instead."""
+    return [((other, [line.replace(path, other) for line in lines]) if evaluated == path else (evaluated, lines))
+            for evaluated, lines in evaluations]
+
+
 def replaced(evaluations, path, result):
     """Made-up evaluations, the result of @p path replaced by @p result."""
     return [(evaluated, result if evaluated == path else lines) for evaluated, lines in evaluations]
@@ -203,6 +228,7 @@ def self_test():
                   "(20260930/exresnte-105)")
     probed = ("ACPI Error: No object was returned from \\DEV0._STA due to previous error (AE_NOT_EXIST) "
               "(20260930/uteval-93)")
+    table = "ACPI Error: Region SystemMemory (ID=0) at 0x00000000%s is out of range (20260930/exfldio-147)"
     commands = ["evaluate %s" % status, "evaluate %s" % cst, "evaluate %s (01 00 00 00 01 00 00 00 18 03 00 00)" % pdc,
                 "evaluate %s (6E B0 11 08) 1 2 (00 00 00 00 00 00 00 00)" % osc, "evaluate %s" % ini,
                 "evaluate %s 2 1" % reg]
@@ -245,8 +271,20 @@ def self_test():
          ["aml slack agree evaluations=6 status_only=4 load_lines=0"]),
         ("table-level code that fails in one run only", [loaded, aborted], agree, [loaded], agree, set(),
          ["aml slack differ load plain=%s slack=none" % aborted]),
-        ("a run that stops before an evaluation", [], agree, [], agree[:1], set(),
+        ("table-level code that fails in the slack run only", [loaded], agree, [loaded, aborted], agree, set(),
+         ["aml slack differ load plain=none slack=%s" % aborted]),
+        ("a region address that differs, printed as a table address is", [table % "FED40000"], agree,
+         [table % "FED41000"], agree, set(),
+         ["aml slack differ load plain=%s slack=none" % (table % "FED40000"),
+          "aml slack differ load plain=none slack=%s" % (table % "FED41000")]),
+        ("the slack run only stops before an evaluation", [], agree, [], agree[:1], set(),
+         ["aml slack differ \\_PR_.CPU0._CST plain=AE_OK Integer 0x3 slack=stopped"]),
+        ("the plain run only stops before an evaluation", [], agree[:2], [], agree, set(),
+         ["aml slack differ \\_PR_.CPU0._PDC plain=stopped slack=AE_OK none"]),
+        ("both runs stop before the same evaluation", [], agree[:1], [], agree[:1], set(),
          ["aml slack unevaluated \\_PR_.CPU0._CST"]),
+        ("a run whose evaluation is of another path", [], agree, [], replaced_path(agree, cst, "\\_PR_.CPU1._CST"),
+         set(), ["aml slack differ \\_PR_.CPU0._CST plain=AE_OK Integer 0x3 slack=stopped"]),
     ]
     failures = 0
     for what, plain_load, plain_evaluations, slack_load, slack_evaluations, timer, expected in cases:
@@ -360,7 +398,8 @@ def walk_self_test():
     nodes = collections.OrderedDict((path, (kind, value)) for path, kind, value in [
         ("\\_INI", "Method", ""), ("\\_SB_", "Device", ""), ("\\_SB_._INI", "Method", ""),
         ("\\_SB_.PCI0", "Device", ""), ("\\_SB_.PCI0._STA", "Method", ""), ("\\_SB_.PCI0._INI", "Method", ""),
-        ("\\_SB_.PCI0._REG", "Method", ""), ("\\_SB_.PCI0.HBUS", "Region", "[PCI_Config] Addr 0 Len 0100"),
+        ("\\_SB_._REG", "Method", ""), ("\\_SB_.PCI0._REG", "Method", ""),
+        ("\\_SB_.PCI0.HBUS", "Region", "[PCI_Config] Addr 0 Len 0100"),
         ("\\_SB_.PCI0._ADR", "Integer", "= 0"), ("\\_SB_.PCI0._HID", "String", 'Length 07 "PNP0A08"'),
         ("\\_SB_.PCI0.DEV1", "Device", ""), ("\\_SB_.PCI0.DEV1._STA", "Method", ""),
         ("\\_SB_.PCI0.DEV1._REG", "Method", ""), ("\\_SB_.PCI0.DEV1.MMIO", "Region", "[SystemMemory] Addr 0 Len 10"),

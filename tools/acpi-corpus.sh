@@ -78,8 +78,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          order of §3.8, on the tables the initialisation ended with, once as acpiexec runs and once in its
          slack mode (`acpiexec -es`); the mode lists the machines whose load or results differ, those that
          rely on slack behaviour, which reopen the implicit-return and uninitialised-operand rules
-         (specification §8.6), and fail it; an _INI, a _REG, a _PDC and a method that reads Timer compare
-         on status only, and a machine where acpiexec stops before an evaluation it was given is counted apart
+         (specification §8.6): one that tools/acpi/slack-decided.list names is decided by the section it
+         gives, and one it does not name fails the run, as does one it names that does not differ; an _INI,
+         a _REG, a _PDC and a method that reads Timer compare on status only, and a machine where acpiexec
+         stops before the same evaluation in both runs is counted apart
   differential  loads each machine of a list twice, with the load's shortcuts and with --general-load,
          which takes none (specification §3.6), and compares what `test-acpi --namespace` and
          `test-acpi --initialize` print each way, line for line, what they write to stderr and how they exit: the
@@ -764,14 +766,27 @@ idle_check() {
     [[ "$agree" -eq $((number - stopped)) ]]
 }
 
+# Prints, one per line, the section, a space and the machine of each line of tools/acpi/slack-decided.list but its
+# comments.
+slack_decided() {
+    grep -v '^#' "$ROOT/tools/acpi/slack-decided.list" | grep -v '^$' || true
+}
+
 # Evaluates the needs path of each machine of the list $1 with acpiexec, then with `acpiexec -es`, through
 # tools/acpi/acpiexec_slack.py, on the tables `test-acpi --loaded` ends with, and lists the machines whose results
-# differ: those that rely on slack behaviour (specification §8.6). A machine the oracle gives no verdict on fails too.
+# differ: those that rely on slack behaviour (specification §8.6). One that tools/acpi/slack-decided.list names is
+# decided; one it does not name fails the run, and so does one it names that does not differ, and a machine the oracle
+# gives no verdict on.
 slack_check() {
     [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "slack: no acpiexec, run fetch acpica first" >&2; exit 1; }
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 stopped=0 failed=0 evaluations=0 status_only=0 subject verdict madt tables relying=""
+    local number=0 agree=0 stopped=0 failed=0 decided=0 undecided=0 stale=0 evaluations=0 status_only=0 subject verdict
+    local madt tables section machine relying=""
     local -a written
+    local -A sections=()
+    while read -r section machine; do
+        sections["$machine"]="$section"
+    done < <(slack_decided)
     while IFS= read -r subject; do
         number=$((number + 1))
         if ! has_decoded "$subject"; then
@@ -790,29 +805,41 @@ slack_check() {
         decoded "$subject" | python3 -I "$ROOT/tools/acpi/expected_madt.py" "$LINUXHW/$subject.bin" - >"$madt" || true
         verdict="$(python3 -I "$ROOT/tools/acpi/acpiexec_slack.py" "$ACPICA_BIN" "$madt" "$PRESETS" "${written[@]}" \
             2>&1)" || true
-        if grep -q '^aml slack agree ' <<<"$verdict"; then
+        section="${sections["$subject"]:-}"
+        if grep -q '^aml slack differ ' <<<"$verdict"; then
+            if [[ -n "$section" ]]; then
+                echo "ok $number $subject: relies on slack behaviour, as $section decides"
+                decided=$((decided + 1))
+            else
+                echo "not ok $number $subject: relies on slack behaviour, undecided by tools/acpi/slack-decided.list"
+                relying+="$subject"$'\n'
+                undecided=$((undecided + 1))
+            fi
+            grep '^aml slack differ ' <<<"$verdict" | head -8 | cut -c1-200 | sed 's/^/    # /'
+        elif [[ -n "$section" ]] && grep -q '^aml slack \(agree\|unevaluated\) ' <<<"$verdict"; then
+            echo "not ok $number $subject: tools/acpi/slack-decided.list names it, and it does not differ:" \
+                "$(cut -d' ' -f3- <<<"$verdict")"
+            stale=$((stale + 1))
+        elif grep -q '^aml slack agree ' <<<"$verdict"; then
             echo "ok $number $subject: $(cut -d' ' -f4- <<<"$verdict")"
             agree=$((agree + 1))
             evaluations=$((evaluations + $(grep -o ' evaluations=[0-9]*' <<<"$verdict" | cut -d= -f2)))
             status_only=$((status_only + $(grep -o ' status_only=[0-9]*' <<<"$verdict" | cut -d= -f2)))
         elif grep -q '^aml slack unevaluated ' <<<"$verdict"; then
-            echo "ok $number $subject # SKIP acpiexec stops before $(cut -d' ' -f4 <<<"$verdict")"
+            echo "ok $number $subject # SKIP acpiexec stops before $(cut -d' ' -f4 <<<"$verdict") in both runs"
             stopped=$((stopped + 1))
-        elif grep -q '^aml slack differ ' <<<"$verdict"; then
-            echo "not ok $number $subject: relies on slack behaviour"
-            grep '^aml slack differ ' <<<"$verdict" | head -8 | cut -c1-200 | sed 's/^/    # /'
-            relying+="$subject"$'\n'
         else
             echo "not ok $number $subject: the oracle gave no verdict"
             tail -5 <<<"$verdict" | sed 's/^/    # /'
             failed=$((failed + 1))
         fi
     done < <(reports "$1")
-    echo "# slack: $((number - agree - stopped - failed)) of $((number - stopped - failed)) machines rely on slack" \
-        "behaviour; $agree agree over $evaluations evaluations, $status_only of them on status only; acpiexec stops" \
-        "before an evaluation it was given on $stopped; no verdict on $failed"
-    [[ -z "$relying" ]] || sed 's/^/# relies on slack behaviour: /' <<<"${relying%$'\n'}"
-    [[ "$number" -gt 0 && -z "$relying" && "$failed" -eq 0 ]]
+    echo "# slack: $((decided + undecided)) of $((number - stopped - failed - stale)) machines rely on" \
+        "slack behaviour, $decided as the specification decides; $agree agree over $evaluations evaluations," \
+        "$status_only of them on status only; acpiexec stops before the same evaluation in both runs on $stopped;" \
+        "listed but not differing: $stale; no verdict on $failed"
+    [[ -z "$relying" ]] || sed 's/^/# relies on slack behaviour, undecided: /' <<<"${relying%$'\n'}"
+    [[ "$number" -gt 0 && -z "$relying" && "$stale" -eq 0 && "$failed" -eq 0 ]]
 }
 
 # Prints the sum of the PCI_Config counter $1 over the `aml run pci` lines of the runs $2.
