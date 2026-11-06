@@ -746,6 +746,27 @@ extern void advanced_configuration_and_power_interface_machine_language_drop_not
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
+ * @brief Makes the node a Mutex in a method declared, a temporary (§5.1), a mutex of the SyncLevel @p sync_flags give.
+ *
+ * @param load       The load.
+ * @param node       The temporary node.
+ * @param sync_flags The Mutex's SyncFlags: its SyncLevel in bits 0 to 3.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_declare_mutex(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, uint8_t sync_flags);
+
+/**
+ * @brief Gives back every acquisition the evaluation still holds of @p node, a temporary whose frame exits, before the
+ *        node goes (§5.1): counted with the mutexes the end of an evaluation releases (§5.2); nothing when the
+ *        evaluation holds none of it.
+ *
+ * @param load The load.
+ * @param node The temporary node.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_drop_temporary_mutex(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
  * @brief Runs Acquire (§5.2): the mutex is taken, or nested when the evaluation holds it; one whose
  *        SyncLevel is below the current level is ignored, counted, and not held, as uACPI ignores it.
  *        `\_GL` takes the global lock too.

@@ -1518,8 +1518,8 @@ static MachineLanguageStatus_t machine_language_enter_method(MachineLanguageLoad
 }
 
 /**
- * @brief Pops the running frame: removes the nodes it created, the last first, and releases what
- *        they, its stacks, its locals and its arguments hold.
+ * @brief Pops the running frame: removes the nodes it created, the last first, a mutex among them the evaluation still
+ *        holds given back first, and releases what they, its stacks, its locals and its arguments hold.
  */
 static void machine_language_drop_frame(MachineLanguageLoad_t *load)
 {
@@ -1530,6 +1530,8 @@ static void machine_language_drop_frame(MachineLanguageLoad_t *load)
     {
         const uint32_t temporary = load->temporaries[--load->temporary_count];
 
+        if (load->services.held_count != 0u)
+            advanced_configuration_and_power_interface_machine_language_drop_temporary_mutex(load, temporary);
         machine_language_release(
             load, &advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, temporary)
                        ->value);
@@ -1857,7 +1859,7 @@ static inline MachineLanguageStatus_t machine_language_leave_loop(MachineLanguag
 
 /**
  * @brief Whether the interpreter runs an opcode that pushes an operator: control flow, Store and
- *        CopyObject, Name and the buffer fields in a method, the operators on integers, strings,
+ *        CopyObject, Name, Mutex, Event and the buffer fields in a method, the operators on integers, strings,
  *        buffers, packages and references, the operating system services the needs-path closure
  *        reaches (§4.1): Notify, Sleep, Stall, Timer, Acquire, Release and Signal, and those the
  *        specification gives a behaviour of their own: Wait, Reset and Fatal (§5.2), and Unload, refused
@@ -1871,6 +1873,8 @@ static bool machine_language_runs(uint32_t opcode)
     case MACHINE_LANGUAGE_OPCODE(WHILE):
     case MACHINE_LANGUAGE_OPCODE(RETURN):
     case MACHINE_LANGUAGE_OPCODE(NAME):
+    case MACHINE_LANGUAGE_OPCODE(MUTEX):
+    case MACHINE_LANGUAGE_OPCODE(EVENT):
     case MACHINE_LANGUAGE_OPCODE(STORE):
     case MACHINE_LANGUAGE_OPCODE(COPY_OBJECT):
     case MACHINE_LANGUAGE_OPCODE(BUFFER):
@@ -3096,6 +3100,33 @@ static MachineLanguageStatus_t machine_language_name(MachineLanguageLoad_t *load
     MachineLanguageValue_t value = machine_language_pop(&load->evaluation);
 
     return machine_language_place(load, &location, &value);
+}
+
+/**
+ * @brief Runs a Mutex a method declares: its node, temporary, becomes a mutex of the SyncLevel its SyncFlags on the
+ *        stack give (§5.1).
+ */
+static MachineLanguageStatus_t machine_language_declare_mutex(MachineLanguageLoad_t *load,
+                                                              const MachineLanguagePendingOperator_t *active)
+{
+    uint64_t sync_flags = 0u;
+    const MachineLanguageStatus_t status = machine_language_pop_integers(load, 1u, &sync_flags);
+
+    if (status == MACHINE_LANGUAGE_OK)
+        advanced_configuration_and_power_interface_machine_language_declare_mutex(load, active->node,
+                                                                                  (uint8_t) sync_flags);
+    return status;
+}
+
+/**
+ * @brief Runs an Event a method declares: its node, temporary, becomes an Event with no signal pending (§5.1).
+ */
+static MachineLanguageStatus_t machine_language_declare_event(MachineLanguageLoad_t *load,
+                                                              const MachineLanguagePendingOperator_t *active)
+{
+    advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, active->node)->type =
+        MACHINE_LANGUAGE_NODE(EVENT);
+    return MACHINE_LANGUAGE_OK;
 }
 
 /**
@@ -4521,6 +4552,8 @@ static MachineLanguageStatus_t machine_language_run_operator(MachineLanguageLoad
         return MACHINE_LANGUAGE_OK;
     }
     case MACHINE_LANGUAGE_OPCODE(NAME): return machine_language_name(load, &operator_);
+    case MACHINE_LANGUAGE_OPCODE(MUTEX): return machine_language_declare_mutex(load, &operator_);
+    case MACHINE_LANGUAGE_OPCODE(EVENT): return machine_language_declare_event(load, &operator_);
     case MACHINE_LANGUAGE_OPCODE(RETURN): {
         MachineLanguageValue_t value = machine_language_pop(evaluation);
 

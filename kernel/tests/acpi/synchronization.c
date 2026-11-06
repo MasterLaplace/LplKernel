@@ -45,6 +45,23 @@ static uint64_t synchronization_integer(const char *name)
 }
 
 /**
+ * @brief The child called @p name of the method at the root called @p method, 0 when it has none, or 0xDEAD when the
+ *        root has no such method.
+ */
+static uint32_t synchronization_method_child(const char *method, const char *name)
+{
+    const uint32_t parent = advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &synchronization_load.space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) method, 0u));
+
+    if (parent == 0u)
+        return 0xDEADu;
+    return advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+        &synchronization_load.space, parent,
+        advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u));
+}
+
+/**
  * @brief Evaluates the method at @p path, which takes no argument, and gives its Integer, or 0xDEAD;
  *        its status goes to @p out_status.
  */
@@ -293,5 +310,70 @@ KERNEL_TEST(a_serialized_method_raises_the_sync_level_while_it_runs)
                       "SER3 calls itself twice, then its Acquire of MTX2, of level 2, is ignored and gives Ones");
     kernel_test_check(test, synchronization_evaluate("\\AFTR", &status) == 0u && status == SYNCHRONIZATION_STATUS(OK),
                       "once SER3 has returned, the level is back to 0 and MTX2 is acquired");
+    synchronization_close(test);
+}
+
+/**
+ * @brief A Mutex and an Event a method declares are temporaries of its frame: the Mutex takes the SyncLevel its
+ *        declaration gives, both serve as the namespace's do, both are gone once the method returns, and one declared
+ *        again in a later turn of a While fails with name_exists (§5.1, §5.2).
+ */
+KERNEL_TEST(a_mutex_and_an_event_a_method_declares_are_temporaries)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status = SYNCHRONIZATION_STATUS(OK);
+
+    if (!synchronization_run(test))
+        return;
+
+    const uint32_t nodes = synchronization_load.space.live_nodes;
+
+    (void) synchronization_evaluate("\\TMPU", &status);
+    kernel_test_check(test,
+                      status == SYNCHRONIZATION_STATUS(OK) && synchronization_integer("TMR0") == 0u &&
+                          synchronization_integer("TMR1") == SYNCHRONIZATION_ONES,
+                      "TMPU acquires TMX5, whose SyncLevel 5 then has the Acquire of MTX2, of level 2, ignored");
+    kernel_test_check(test,
+                      synchronization_integer("TMR2") == 0u && synchronization_integer("TMR3") == SYNCHRONIZATION_ONES,
+                      "the first Wait on TEV0 takes its one signal, the second times out");
+    kernel_test_check(test,
+                      synchronization_method_child("TMPU", "TMX5") == 0u &&
+                          synchronization_method_child("TMPU", "TEV0") == 0u &&
+                          synchronization_load.space.live_nodes == nodes,
+                      "TMX5 and TEV0 are gone once TMPU returns");
+    (void) synchronization_evaluate("\\TTWI", &status);
+    kernel_test_check(test,
+                      status == SYNCHRONIZATION_STATUS(NAME_EXISTS) &&
+                          synchronization_method_child("TTWI", "TEV1") == 0u &&
+                          synchronization_load.space.live_nodes == nodes,
+                      "TEV1 declared again in the second turn of the While fails with name_exists, and is gone");
+    synchronization_close(test);
+}
+
+/**
+ * @brief A temporary mutex its method still holds when it returns, however many times acquired, is released then,
+ *        counted, before its node goes, so that its caller runs at the sync level it had; one held when its method
+ *        fails goes with the unwind (§5.1, §5.2, §6.2).
+ */
+KERNEL_TEST(a_temporary_mutex_still_held_is_released_when_its_method_returns)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status = SYNCHRONIZATION_STATUS(OK);
+
+    if (!synchronization_run(test))
+        return;
+    kernel_test_check(test, synchronization_evaluate("\\TOUT", &status) == 0u && status == SYNCHRONIZATION_STATUS(OK),
+                      "once TINR returns holding TMX3, of level 3, twice, TOUT acquires MTX2, of level 2");
+    kernel_test_check(test,
+                      synchronization_load.services.released_at_end == 1u &&
+                          synchronization_load.services.acquisitions_ignored == 0u &&
+                          synchronization_method_child("TINR", "TMX3") == 0u,
+                      "TMX3 is released when TINR returns, counted, and its node is gone");
+    (void) synchronization_evaluate("\\TERR", &status);
+    kernel_test_check(test,
+                      status == SYNCHRONIZATION_STATUS(DIVIDE_BY_ZERO) &&
+                          synchronization_load.services.released_at_end == 2u &&
+                          synchronization_method_child("TERR", "TMX1") == 0u,
+                      "TERR fails holding TMX1: the unwind releases it, counted, and its node is gone");
+    kernel_test_check(test, synchronization_evaluate("\\TOUT", &status) == 0u && status == SYNCHRONIZATION_STATUS(OK),
+                      "TOUT runs again as it ran the first time");
     synchronization_close(test);
 }
