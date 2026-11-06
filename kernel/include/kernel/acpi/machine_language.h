@@ -1136,6 +1136,8 @@ extern uint32_t advanced_configuration_and_power_interface_machine_language_eval
  *        the objects allocated, the AML bytes of the load's tables and the maps its cache asked the host for.
  *
  * @details The operations executed are counted only in a build that counts them (§4.1): elsewhere they fold as zeros.
+ *          The bytes decoded the specification names are those of the tables the load decoded, which bytes counts;
+ *          what the decoding pass made of method bodies is folded per opcode apart (opcodes).
  * @param load A load.
  * @return The fold.
  */

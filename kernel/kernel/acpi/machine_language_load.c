@@ -2627,6 +2627,16 @@ static void machine_language_walk_table(AdvancedConfigurationAndPowerInterfaceMa
 #define MACHINE_LANGUAGE_FOLD_UNREADABLE                                                                               \
     0xFFFFFFFFu /**< What kept data whose bytes no longer read as data folds as: a count or a length no object has. */
 
+_Static_assert((int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_INTEGER &&
+                   (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_STRING &&
+                   (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_BUFFER &&
+                   (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE ==
+                       (int) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_PACKAGE,
+               "an evaluation's result folds its kind as the type of a node holding the same data (§8.7)");
+
 /**
  * @brief Folds @p width little-endian bytes of @p value into @p fold.
  */
