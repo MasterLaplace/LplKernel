@@ -5,8 +5,9 @@
  * @brief Table-level code inside the TermLists of the scopes a table declares, nested: in `\_SB`, the Devices `D0__`
  *        and `D1__`, whose TermList holds a taken If around `D2__`, an OperationRegion whose offset is a name, `Store`,
  *        `D3__` around an If whose Else runs, then an If whose predicate fails around `D8__`; `D4__`, empty; `D5__`
- *        around `D6__` around `D7__`, which end together; `TZ0_`; then `Scope (\_SB.D0__)` and a Name at the root:
- *        11 TermLists the declaration pass enters while it runs the table's code, `D8__`'s declared without running.
+ *        around `D6__` around `D7__`, which end together; `TZ0_`; `D9__` around `DA__`, then a Name; then
+ *        `Scope (\_SB.D0__)` and a Name at the root: 13 TermLists the declaration pass enters while it runs the
+ *        table's code, 9 of which it leaves itself, `D8__`'s declared without running.
  */
 DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
 {
@@ -82,6 +83,16 @@ DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
         ThermalZone (TZ0)
         {
             Name (NB, 0x0B)
+        }
+
+        Device (D9) __EXPECT__(3141)
+        {
+            Device (DA) __EXPECT__(3141)
+            {
+                Name (NC, 0x0C)
+            }
+
+            Name (NG, 0x10)
         }
     }
 

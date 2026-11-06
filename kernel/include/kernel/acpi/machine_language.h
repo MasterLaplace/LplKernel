@@ -210,6 +210,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t scopes_entered;                /**< TermLists of a Scope, Device, Processor, PowerResource or
                                                  ThermalZone the declaration pass entered itself while the interpreter
                                                  runs a table's code, instead of handing each back to it (O21). */
+    uint32_t scopes_left;                   /**< Of those, the ones it left itself at their end, the walk going on in
+                                                 the construct around each (O21). */
     uint32_t data_kept;           /**< Data objects of a Name the declaration pass kept in their table once their head
                                        read, neither checked nor built, and stepped over, until a name resolution
                                        reaches them (O20). */

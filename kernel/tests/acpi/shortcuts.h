@@ -49,6 +49,7 @@ typedef struct ShortcutsTaken {
     uint32_t declarations_decoded_directly; /**< Statements the declaration pass's decoder took (O19). */
     uint32_t integers_built_directly;       /**< Integer constants of a Name the decoder built itself (O19). */
     uint32_t scopes_entered;                /**< TermLists of table-level code the declaration pass entered (O21). */
+    uint32_t scopes_left;                   /**< Of those, the ones it left itself at their end (O21). */
 } ShortcutsTaken_t;
 
 /**

@@ -1620,6 +1620,7 @@ static void machine_language_leave_list(MachineLanguageWalk_t *walk)
     advanced_configuration_and_power_interface_machine_language_leave_table_scope(walk->load, &block->scope,
                                                                                   &block->end);
     --walk->entered;
+    ++walk->load->scopes_left;
 }
 
 /**
