@@ -1,3 +1,4 @@
+#include "fixtures/evaluation.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -85,12 +86,7 @@ static uint64_t evaluation_clock_taking_back_a_value(void *context)
  */
 KERNEL_TEST(a_method_without_return_gives_integer_zero)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R', 'E', 'S', '_', 0x0Au, 0x05u, 0x14u, 0x07u, 'M', '0', '0', '0', 0x00u,
-        0xA3u, 'M', '0', '0', '0', 0x70u, 'M',   '0',   '0',   '0', 'R', 'E', 'S', '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_implicit_return_aml, sizeof(evaluation_implicit_return_aml)))
         return;
     kernel_test_measure(test, "implicit_returns", evaluation_load.evaluation.implicit_returns);
     kernel_test_check(test, evaluation_integer("RES_") == 0u, "Store (M000 (), RES_) stores 0");
@@ -104,6 +100,8 @@ KERNEL_TEST(a_method_without_return_gives_integer_zero)
 /**
  * @brief A LocalX or an ArgX is no data object: a package element that is one fails the evaluation with
  *        INVALID_OPCODE.
+ *
+ * Its table is raw bytes: iasl's grammar refuses a Local or an Arg as a package element.
  */
 KERNEL_TEST(a_local_or_an_argument_as_a_package_element_is_refused)
 {
@@ -142,12 +140,7 @@ KERNEL_TEST(a_local_or_an_argument_as_a_package_element_is_refused)
  */
 KERNEL_TEST(an_uninitialized_local_reads_as_integer_zero)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '_', 0x0Au, 0x05u, 0x14u, 0x08u, 'M', '0', '0', '1',
-        0x00u, 0xA4u, 0x60u, 0x70u, 'M', '0',   '0',   '1',   'R',   'E', 'S', '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_uninitialized_local_aml, sizeof(evaluation_uninitialized_local_aml)))
         return;
     kernel_test_check(test, evaluation_integer("RES_") == 0u, "Return (Local0) gives 0");
     kernel_test_check(test, evaluation_load.evaluation.uninitialized_operands == 1u, "the read is counted");
@@ -161,19 +154,13 @@ KERNEL_TEST(an_uninitialized_local_reads_as_integer_zero)
  */
 KERNEL_TEST(integers_are_32_bits_under_a_revision_1_definition_block)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R', 'E',   'S',   '0',   0x00u, 0x08u, 'R',   'E',   'S',   '1',   0x00u, 0x08u, 'R',   'E',
-        'S',   '2', 0x00u, 0x70u, 0x72u, 0xFFu, 0x01u, 0x00u, 'R',   'E',   'S',   '0',   0x70u, 0xFFu, 'R',
-        'E',   'S', '1',   0x70u, 0x93u, 0xFFu, 0x0Cu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 'R',   'E',   'S',   '2',
-    };
-
-    if (!evaluation_run(test, 1u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 1u, evaluation_integer_width_aml, sizeof(evaluation_integer_width_aml)))
         return;
     kernel_test_check(test, evaluation_integer("RES0") == 0u, "Add (Ones, One) is 0");
     kernel_test_check(test, evaluation_integer("RES1") == 0xFFFFFFFFu, "Ones is 0xFFFFFFFF");
     kernel_test_check(test, evaluation_integer("RES2") == 0xFFFFFFFFu, "LEqual (Ones, 0xFFFFFFFF) is True");
     evaluation_close(test);
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_integer_width_aml, sizeof(evaluation_integer_width_aml)))
         return;
     kernel_test_check(test, evaluation_integer("RES1") == ~0ull && evaluation_integer("RES2") == 0u,
                       "under revision 2, Ones is 64 bits wide and differs from 0xFFFFFFFF");
@@ -186,13 +173,7 @@ KERNEL_TEST(integers_are_32_bits_under_a_revision_1_definition_block)
  */
 KERNEL_TEST(an_integer_only_method_allocates_nothing)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '_',   0x00u, 0x14u, 0x1Au, 'M',   '0',   '0',   '2',   0x01u, 0x70u, 0x72u,
-        0x68u, 0x0Au, 0x10u, 0x00u, 0x60u, 0xA2u, 0x07u, 0x95u, 0x61u, 0x0Au, 0x0Au, 0x75u, 0x61u, 0xA4u, 0x77u,
-        0x60u, 0x61u, 0x00u, 0x70u, 'M',   '0',   '0',   '2',   0x0Au, 0x05u, 'R',   'E',   'S',   '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_integer_method_aml, sizeof(evaluation_integer_method_aml)))
         return;
     kernel_test_measure(test, "allocations", evaluation_load.heap.objects);
     kernel_test_check(test, evaluation_integer("RES_") == 210u, "(5 + 16) * 10 is 210");
@@ -206,17 +187,7 @@ KERNEL_TEST(an_integer_only_method_allocates_nothing)
  */
 KERNEL_TEST(control_flow_runs_loops_branches_and_their_exits)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '0',   0x00u, 0x08u, 'R',   'E',   'S',   '1',   0x00u, 0x08u, 'R',   'E',
-        'S',   '2',   0x00u, 0x14u, 0x1Eu, 'M',   '0',   '0',   '3',   0x01u, 0xA2u, 0x15u, 0x01u, 0x75u, 0x60u,
-        0xA0u, 0x06u, 0x93u, 0x60u, 0x0Au, 0x03u, 0x9Fu, 0xA0u, 0x05u, 0x94u, 0x60u, 0x68u, 0xA5u, 0x72u, 0x61u,
-        0x60u, 0x61u, 0xA4u, 0x61u, 0x14u, 0x13u, 'M',   '0',   '0',   '4',   0x01u, 0xA0u, 0x07u, 0x93u, 0x68u,
-        0x0Au, 0x05u, 0xA4u, 0x01u, 0xA1u, 0x04u, 0xA4u, 0x0Au, 0x02u, 0x70u, 'M',   '0',   '0',   '3',   0x0Au,
-        0x05u, 'R',   'E',   'S',   '0',   0x70u, 'M',   '0',   '0',   '4',   0x0Au, 0x05u, 'R',   'E',   'S',
-        '1',   0x70u, 'M',   '0',   '0',   '4',   0x0Au, 0x06u, 'R',   'E',   'S',   '2',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_control_flow_aml, sizeof(evaluation_control_flow_aml)))
         return;
     kernel_test_check(test, evaluation_integer("RES0") == 12u, "the loop skips 3 and stops past 5: 12");
     kernel_test_check(test, evaluation_integer("RES1") == 1u && evaluation_integer("RES2") == 2u,
@@ -228,18 +199,21 @@ KERNEL_TEST(control_flow_runs_loops_branches_and_their_exits)
 /**
  * @brief A While whose PkgLength takes two bytes restarts at its predicate on each turn:
  *        `While (LLess (Local0, 2)) { Increment (Local0); Noop... }` returns 2.
+ *
+ * Its table is built around a run of EVALUATION_LONG_LOOP_NOOPS Noops (§8.2), the length the test is about: its head,
+ * a Method and a While opened over that run, stays raw bytes.
  */
 KERNEL_TEST(a_while_whose_package_length_takes_two_bytes_restarts_at_its_predicate)
 {
     static const uint8_t head[] = {0x14u, 0x40u, 0x05u, 'L',   'O',   'N',   'G',   0x00u, 0xA2u,
                                    0x46u, 0x04u, 0x95u, 0x60u, 0x0Au, 0x02u, 0x75u, 0x60u};
-    static const uint8_t tail[] = {0xA4u, 0x60u};
-    uint8_t aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS + sizeof(tail)];
+    uint8_t aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS + sizeof(evaluation_return_local0_aml)];
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
     memcpy(aml, head, sizeof(head));
     memset(&aml[sizeof(head)], 0xA3, EVALUATION_LONG_LOOP_NOOPS);
-    memcpy(&aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS], tail, sizeof(tail));
+    memcpy(&aml[sizeof(head) + EVALUATION_LONG_LOOP_NOOPS], evaluation_return_local0_aml,
+           sizeof(evaluation_return_local0_aml));
     if (!evaluation_run(test, 2u, aml, sizeof(aml)))
         return;
 
@@ -263,15 +237,7 @@ KERNEL_TEST(a_while_whose_package_length_takes_two_bytes_restarts_at_its_predica
  */
 KERNEL_TEST(a_name_a_method_declares_lives_as_long_as_the_method)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '0',   0x00u, 0x08u, 'R',   'E',   'S', '1',   0x00u, 0x14u, 0x12u,
-        'M',   '0',   '0',   '5',   0x00u, 0x08u, 'T',   'M',   'P',   '_', 0x0Au, 0x07u, 0xA4u, 'T',
-        'M',   'P',   '_',   0x70u, 'M',   '0',   '0',   '5',   'R',   'E', 'S',   '0',   0x70u, 'M',
-        '0',   '0',   '5',   'R',   'E',   'S',   '1',   0x14u, 0x0Fu, 'M', '0',   '0',   '6',   0x00u,
-        0xA2u, 0x08u, 0x01u, 0x08u, 'L',   'O',   'O',   'P',   0x01u, 'M', '0',   '0',   '6',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_method_names_aml, sizeof(evaluation_method_names_aml)))
         return;
 
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *method =
@@ -292,14 +258,7 @@ KERNEL_TEST(a_name_a_method_declares_lives_as_long_as_the_method)
  */
 KERNEL_TEST(table_level_code_declares_only_the_branch_it_takes)
 {
-    static const uint8_t aml[] = {
-        0xA0u, 0x08u, 0x00u, 0x08u, 'A',   'A',   'A',   'A',   0x01u, 0xA1u, 0x08u, 0x08u, 'B',   'B',
-        'B',   'B',   0x0Au, 0x02u, 0xA0u, 0x09u, 0x01u, 0x08u, 'C',   'C',   'C',   'C',   0x0Au, 0x03u,
-        0xA1u, 0x08u, 0x08u, 'D',   'D',   'D',   'D',   0x0Au, 0x04u, 0x08u, 'R',   'E',   'S',   '_',
-        0x00u, 0x70u, 0x0Au, 0x2Au, 0x60u, 0x70u, 0x60u, 'R',   'E',   'S',   '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_table_level_branches_aml, sizeof(evaluation_table_level_branches_aml)))
         return;
     kernel_test_check(test, made_up_root_node(&evaluation_load, "AAAA") == NULL && evaluation_integer("BBBB") == 2u,
                       "If (Zero) declares its Else, not its body");
@@ -317,14 +276,7 @@ KERNEL_TEST(table_level_code_declares_only_the_branch_it_takes)
  */
 KERNEL_TEST(a_field_read_that_fails_keeps_both_branches)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x03u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'R',   'E',
-        'G',   '0',   0x01u, 'F',   'L',   'D',   '0',   0x08u, 0xA0u, 0x0Bu, 'F',   'L',   'D',   '0',   0x08u,
-        'E',   'E',   'E',   'E',   0x01u, 0xA1u, 0x07u, 0x08u, 'F',   'F',   'F',   'F',   0x01u, 0x08u, 'R',
-        'E',   'S',   '_',   0x0Au, 0x05u, 0x70u, 'F',   'L',   'D',   '0',   'R',   'E',   'S',   '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_failing_field_read_aml, sizeof(evaluation_failing_field_read_aml)))
         return;
     kernel_test_check(test, evaluation_integer("EEEE") == 1u && evaluation_integer("FFFF") == 1u,
                       "both branches of If (FLD0) are declared");
@@ -345,11 +297,7 @@ KERNEL_TEST(a_field_read_that_fails_keeps_both_branches)
  */
 KERNEL_TEST(an_opcode_outside_the_closure_is_unimplemented)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R', 'E', 'S', '_', 0x0Au, 0x05u, 0x70u, 0x81u, 0x01u, 0x00u, 'R', 'E', 'S', '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_unimplemented_opcode_aml, sizeof(evaluation_unimplemented_opcode_aml)))
         return;
     kernel_test_check(
         test,
@@ -368,14 +316,7 @@ KERNEL_TEST(an_opcode_outside_the_closure_is_unimplemented)
  */
 KERNEL_TEST(shifts_past_the_width_and_divisions_by_zero)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   'E',   'S',   '0',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '1',   0x0Au,
-        0x05u, 0x08u, 'R',   'E',   'S',   '2',   0x0Au, 0x05u, 0x70u, 0x79u, 0x01u, 0x0Au, 0x40u,
-        0x00u, 'R',   'E',   'S',   '0',   0x70u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u, 'R',   'E',
-        'S',   '1',   0x70u, 0x85u, 0x01u, 0x00u, 0x00u, 'R',   'E',   'S',   '2',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_shifts_and_divisions_aml, sizeof(evaluation_shifts_and_divisions_aml)))
         return;
     kernel_test_check(test, evaluation_integer("RES0") == 0u, "ShiftLeft (One, 64) is 0");
     kernel_test_check(test, evaluation_integer("RES1") == 5u && evaluation_integer("RES2") == 5u,
@@ -391,6 +332,8 @@ KERNEL_TEST(shifts_past_the_width_and_divisions_by_zero)
  * @brief The decoding pass still decodes a method the load did not declare, in a branch table-level
  *        code did not take, but its faults are counted apart: its names would resolve against objects
  *        that do not exist. The same body in a declared method is a decode error.
+ *
+ * Its table is raw bytes: iasl does not emit a Store cut short.
  */
 KERNEL_TEST(a_method_the_load_did_not_declare_counts_its_faults_apart)
 {
@@ -414,24 +357,7 @@ KERNEL_TEST(a_method_the_load_did_not_declare_counts_its_faults_apart)
  */
 KERNEL_TEST(the_integer_operators_compute_what_acpi_says)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'R',   '0',   '0',   '_',   0x00u, 0x08u, 'R',   '0',   '1',   '_',   0x00u, 0x08u, 'R',   '0',   '2',
-        '_',   0x00u, 0x08u, 'R',   '0',   '3',   '_',   0x00u, 0x08u, 'R',   '0',   '4',   '_',   0x00u, 0x08u, 'R',
-        '0',   '5',   '_',   0x00u, 0x08u, 'R',   '0',   '6',   '_',   0x00u, 0x08u, 'R',   '0',   '7',   '_',   0x00u,
-        0x08u, 'R',   '0',   '8',   '_',   0x0Au, 0x05u, 0x08u, 'R',   '0',   '9',   '_',   0x00u, 0x08u, 'R',   '1',
-        '0',   '_',   0x00u, 0x08u, 'R',   '1',   '1',   '_',   0x00u, 0x08u, 'R',   '1',   '2',   '_',   0x00u, 0x08u,
-        'R',   '1',   '3',   '_',   0x00u, 0x70u, 0x7Bu, 0x0Bu, 0x0Fu, 0x0Fu, 0x0Bu, 0xFFu, 0x00u, 0x00u, 'R',   '0',
-        '0',   '_',   0x70u, 0x7Du, 0x0Bu, 0x00u, 0x0Fu, 0x0Au, 0xF0u, 0x00u, 'R',   '0',   '1',   '_',   0x70u, 0x7Fu,
-        0x0Bu, 0xF0u, 0x0Fu, 0x0Au, 0xFFu, 0x00u, 'R',   '0',   '2',   '_',   0x80u, 0x00u, 'R',   '0',   '3',   '_',
-        0x70u, 0x80u, 0x0Bu, 0xF0u, 0xF0u, 0x00u, 'R',   '0',   '4',   '_',   0x70u, 0x90u, 0x01u, 0x00u, 'R',   '0',
-        '5',   '_',   0x70u, 0x91u, 0x00u, 0x01u, 'R',   '0',   '6',   '_',   0x70u, 0x92u, 0x0Au, 0x05u, 'R',   '0',
-        '7',   '_',   0x76u, 'R',   '0',   '8',   '_',   0x70u, 0x7Au, 0x0Au, 0x80u, 0x0Au, 0x03u, 0x00u, 'R',   '0',
-        '9',   '_',   0x78u, 0x0Au, 0x11u, 0x0Au, 0x05u, 'R',   '1',   '0',   '_',   'R',   '1',   '1',   '_',   0x70u,
-        0x85u, 0x0Au, 0x11u, 0x0Au, 0x05u, 0x00u, 'R',   '1',   '2',   '_',   0x70u, 0x74u, 0x0Au, 0x05u, 0x0Au, 0x07u,
-        0x00u, 'R',   '1',   '3',   '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_integer_operators_aml, sizeof(evaluation_integer_operators_aml)))
         return;
     kernel_test_check(test, evaluation_integer("R00_") == 0x000Fu, "And (0x0F0F, 0xFF) is 0x0F");
     kernel_test_check(test, evaluation_integer("R01_") == 0x0FF0u, "Or (0x0F00, 0xF0) is 0x0FF0");
@@ -457,15 +383,7 @@ KERNEL_TEST(the_integer_operators_compute_what_acpi_says)
  */
 KERNEL_TEST(table_level_loops_run_until_their_exits)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'C',   'N', 'T', '_',   0x00u, 0xA2u, 0x0Du, 0x95u, 'C',   'N',   'T',   '_',   0x0Au, 0x03u,
-        0x75u, 'C',   'N', 'T', '_',   0x08u, 'B',   'R',   'K',   '_',   0x00u, 0xA2u, 0x0Du, 0x01u, 0x75u,
-        'B',   'R',   'K', '_', 0xA5u, 0x75u, 'B',   'R',   'K',   '_',   0x08u, 'C',   'N',   'U',   '_',
-        0x00u, 0x08u, 'S', 'K', 'P',   '_',   0x00u, 0xA2u, 0x13u, 0x95u, 'C',   'N',   'U',   '_',   0x0Au,
-        0x02u, 0x75u, 'C', 'N', 'U',   '_',   0x9Fu, 0x75u, 'S',   'K',   'P',   '_',
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_table_level_loops_aml, sizeof(evaluation_table_level_loops_aml)))
         return;
     kernel_test_check(test, evaluation_integer("CNT_") == 3u, "While (CNT_ < 3) runs three times");
     kernel_test_check(test, evaluation_integer("BRK_") == 1u,
@@ -482,9 +400,7 @@ KERNEL_TEST(table_level_loops_run_until_their_exits)
  */
 KERNEL_TEST(a_return_at_table_level_fails_and_the_load_goes_on)
 {
-    static const uint8_t aml[] = {0x08u, 'B', 'E', 'F', 'R', 0x01u, 0xA4u, 0x01u, 0x08u, 'A', 'F', 'T', 'R', 0x01u};
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_table_level_return_aml, sizeof(evaluation_table_level_return_aml)))
         return;
     kernel_test_check(test, evaluation_integer("BEFR") == 1u && evaluation_integer("AFTR") == 1u,
                       "BEFR and AFTR are both declared");
@@ -501,14 +417,8 @@ KERNEL_TEST(a_return_at_table_level_fails_and_the_load_goes_on)
  */
 KERNEL_TEST(a_branch_declared_without_running_runs_none_of_its_code)
 {
-    static const uint8_t aml[] = {
-        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x03u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu,
-        'R',   'E',   'G',   '0',   0x01u, 'F',   'L',   'D',   '0',   0x08u, 0x08u, 'R',   'E',
-        'S',   '_',   0x0Au, 0x05u, 0xA0u, 0x12u, 'F',   'L',   'D',   '0',   0x70u, 0x0Au, 0x2Au,
-        'R',   'E',   'S',   '_',   0x08u, 'N',   'E',   'W',   '_',   0x01u,
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_branch_declared_without_running_aml,
+                        sizeof(evaluation_branch_declared_without_running_aml)))
         return;
     kernel_test_check(test, evaluation_integer("RES_") == 5u, "the Store in If (FLD0) does not run");
     kernel_test_check(test, evaluation_integer("NEW_") == 1u && evaluation_load.declared_not_run == 1u,
@@ -519,6 +429,8 @@ KERNEL_TEST(a_branch_declared_without_running_runs_none_of_its_code)
 /**
  * @brief A predicate that fails to decode leaves nothing behind: the next If, whose predicate is One,
  *        runs its body.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which opens no term, as a predicate.
  */
 KERNEL_TEST(a_predicate_that_fails_to_decode_leaves_the_next_body_running)
 {
@@ -536,6 +448,8 @@ KERNEL_TEST(a_predicate_that_fails_to_decode_leaves_the_next_body_running)
 /**
  * @brief A statement cut short by the end of the If body that holds it fails as truncated when it
  *        runs, and the load goes on after that If.
+ *
+ * Its table is raw bytes: iasl does not emit a Store cut short.
  */
 KERNEL_TEST(a_statement_cut_short_at_table_level_fails_and_the_load_goes_on)
 {
@@ -557,6 +471,8 @@ KERNEL_TEST(a_statement_cut_short_at_table_level_fails_and_the_load_goes_on)
  * @brief A predicate whose Buffer faults while it is decoded keeps its branches from running: the
  *        recovery steps over the Buffer alone, and the If's body opens declared without running, the
  *        Else after it declared too, and a While does not loop.
+ *
+ * Its tables are raw bytes: iasl does not emit a Buffer whose size is the byte 0x02, which opens no term.
  */
 KERNEL_TEST(a_fault_inside_a_failed_predicate_keeps_its_branches_from_running)
 {
@@ -593,6 +509,8 @@ KERNEL_TEST(a_fault_inside_a_failed_predicate_keeps_its_branches_from_running)
  * @brief A Name that replaces an External, in a branch whose predicate failed, counts as a
  *        declaration made without running, as a new Name beside it does: the predicate, Mod (One,
  *        Zero), always fails.
+ *
+ * Its table is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(a_declaration_replacing_an_external_without_running_is_counted)
 {
@@ -614,9 +532,7 @@ KERNEL_TEST(a_declaration_replacing_an_external_without_running_is_counted)
  */
 KERNEL_TEST(a_break_or_a_continue_outside_a_while_does_nothing_at_table_level)
 {
-    static const uint8_t aml[] = {0x08u, 'B', 'E', 'F', 'R', 0x01u, 0xA5u, 0x9Fu, 0x08u, 'A', 'F', 'T', 'R', 0x01u};
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_table_level_break_aml, sizeof(evaluation_table_level_break_aml)))
         return;
     kernel_test_check(test, evaluation_integer("BEFR") == 1u && evaluation_integer("AFTR") == 1u,
                       "BEFR and AFTR are both declared");
@@ -628,6 +544,8 @@ KERNEL_TEST(a_break_or_a_continue_outside_a_while_does_nothing_at_table_level)
 /**
  * @brief An Else of table-level code runs only after an If whose predicate was false: one after a While is
  *        stepped over, declaring nothing.
+ *
+ * Its table is raw bytes: iasl's grammar refuses an Else after a While.
  */
 KERNEL_TEST(an_else_after_a_while_is_stepped_over_at_table_level)
 {
@@ -646,6 +564,8 @@ KERNEL_TEST(an_else_after_a_while_is_stepped_over_at_table_level)
 /**
  * @brief A fault the load meets in the body of a While of table-level code skips the rest of that body and
  *        leaves the loop, as it skips the rest of any construct (§6.2): the While (One) does not go back.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which opens no term, in a body.
  */
 KERNEL_TEST(a_fault_in_the_body_of_a_while_at_table_level_leaves_the_loop)
 {
@@ -668,6 +588,8 @@ KERNEL_TEST(a_fault_in_the_body_of_a_while_at_table_level_leaves_the_loop)
 /**
  * @brief A PkgLength of table-level code that crosses the construct around it abandons the rest of the
  *        table, even inside a Device (§6.2): the Name before it in the Device is declared, none after.
+ *
+ * Its table is raw bytes: iasl does not emit a crossing PkgLength (§8.2).
  */
 KERNEL_TEST(a_package_length_crossing_its_device_abandons_the_table)
 {
@@ -695,6 +617,8 @@ KERNEL_TEST(a_package_length_crossing_its_device_abandons_the_table)
 /**
  * @brief An Else of table-level code whose PkgLength crosses the table is a fault of the load, even after a
  *        false If, which would run it: its body is neither run nor declared.
+ *
+ * Its table is raw bytes: iasl does not emit a crossing PkgLength (§8.2).
  */
 KERNEL_TEST(an_else_whose_package_length_crosses_the_table_is_a_fault_of_the_load)
 {
@@ -715,6 +639,8 @@ KERNEL_TEST(an_else_whose_package_length_crosses_the_table_is_a_fault_of_the_loa
 /**
  * @brief Only the Else right after an If whose predicate was false runs: one a statement separates from that
  *        If is stepped over, declaring nothing.
+ *
+ * Its table is raw bytes: iasl's grammar refuses an Else a statement separates from its If.
  */
 KERNEL_TEST(an_else_a_statement_separates_from_its_if_is_stepped_over)
 {
@@ -733,6 +659,8 @@ KERNEL_TEST(an_else_a_statement_separates_from_its_if_is_stepped_over)
  * @brief An If whose predicate fails declares its body without running it, but a fault in that body skips
  *        the rest of it: the Else after it is then stepped over, as after any construct a fault left, and
  *        declares nothing.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which opens no term, in a body.
  */
 KERNEL_TEST(a_fault_in_a_body_declared_without_running_leaves_the_else_undeclared)
 {
@@ -754,6 +682,8 @@ KERNEL_TEST(a_fault_in_a_body_declared_without_running_leaves_the_else_undeclare
  * @brief An If whose predicate fails declares its body without running it, and a fault in that body steps over
  *        the Else after it, even when an earlier turn of the While around it found that If false and ran that
  *        Else: the predicate, Mod (One, Subtract (2, CNT2)), is false on the first turn and fails on the second.
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which opens no term, in a body.
  */
 KERNEL_TEST(a_fault_in_an_if_whose_predicate_fails_steps_over_its_else_after_a_turn_that_ran_it)
 {
@@ -779,6 +709,8 @@ KERNEL_TEST(a_fault_in_an_if_whose_predicate_fails_steps_over_its_else_after_a_t
  * @brief A fault the load meets in the body of an If whose predicate was true skips the rest of that body, and
  *        the Else after it is stepped over, even when an earlier turn of the While around it found that If false
  *        and ran its Else (§3.6, §6.2).
+ *
+ * Its table is raw bytes: iasl does not emit the byte 0x02, which opens no term, in a body.
  */
 KERNEL_TEST(a_fault_in_a_taken_if_steps_over_its_else_after_a_turn_that_ran_it)
 {
@@ -805,13 +737,8 @@ KERNEL_TEST(a_fault_in_a_taken_if_steps_over_its_else_after_a_turn_that_ran_it)
  */
 KERNEL_TEST(an_if_a_later_turn_takes_steps_over_its_else_after_a_turn_that_ran_it)
 {
-    static const uint8_t aml[] = {
-        0x08u, 'C',   'N',   'T',   '2',   0x00u, 0x08u, 'E', 'L', 'S',   'C',   0x00u, 0xA2u, 0x1Eu, 0x95u, 'C', 'N',
-        'T',   '2',   0x0Au, 0x02u, 0x75u, 'C',   'N',   'T', '2', 0xA0u, 0x09u, 0x93u, 'C',   'N',   'T',   '2', 0x0Au,
-        0x02u, 0xA3u, 0xA1u, 0x06u, 0x75u, 'E',   'L',   'S', 'C', 0x08u, 'A',   'F',   'T',   'R',   0x01u,
-    };
-
-    if (!evaluation_run(test, 2u, aml, sizeof(aml)))
+    if (!evaluation_run(test, 2u, evaluation_else_after_a_later_turn_aml,
+                        sizeof(evaluation_else_after_a_later_turn_aml)))
         return;
     kernel_test_check(test, evaluation_integer("CNT2") == 2u && evaluation_integer("AFTR") == 1u,
                       "the While takes two turns, then AFTR is declared");
@@ -828,6 +755,8 @@ KERNEL_TEST(an_if_a_later_turn_takes_steps_over_its_else_after_a_turn_that_ran_i
  *        method_without_body, counted at table level and as an operand, returned uncounted to the host whatever
  *        arguments it gives, as its other refusals before the call are, and never runs `\_OSI`, which still answers,
  *        from AML and from the host, when it is the node called.
+ *
+ * Its table is raw bytes: iasl does not emit a Method whose PkgLength ends before its flags.
  */
 KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
 {
@@ -891,29 +820,12 @@ KERNEL_TEST(a_method_cut_before_its_flags_is_refused_and_osi_still_answers)
  */
 KERNEL_TEST(an_operator_whose_frame_holds_fewer_values_than_it_takes_is_refused)
 {
-    static const uint8_t aml[] = {
-        0x14u, 0x14u, 'M',   '0',   '0',   '1',   0x00u, 0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 0x60u, 0x75u, 'S',
-        'E',   'E',   'N',   0xA4u, 0x60u, 0x14u, 0x12u, 'M',   '0',   '0',   '2',   0x00u, 0xA0u, 0x05u, 0x5Bu, 0x33u,
-        0x5Bu, 0x33u, 0xA1u, 0x03u, 0x5Bu, 0x33u, 0xA4u, 0x00u, 0x14u, 0x14u, 'M',   '0',   '0',   '3',   0x00u, 0x70u,
-        0x13u, 0x04u, 0x5Bu, 0x33u, 0x01u, 0x60u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u, 0x14u, 0x22u, 'M',
-        '0',   '0',   '4',   0x00u, 0x5Bu, 0x87u, 0x11u, 'R',   'E',   'G',   '0',   'B',   'N',   'K',   '0',   0x5Bu,
-        0x33u, 0x01u, 'F',   'L',   'D',   '4',   0x08u, 0x5Bu, 0x33u, 0x75u, 'S',   'E',   'E',   'N',   0xA4u, 0x00u,
-        0x5Bu, 0x80u, 'R',   'E',   'G',   '0',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x04u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u,
-        0x0Bu, 'R',   'E',   'G',   '0',   0x01u, 'B',   'N',   'K',   '0',   0x08u, 0x08u, 'R',   'E',   'S',   '1',
-        0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '2',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '3',   0x0Au, 0x05u,
-        0x08u, 'R',   'E',   'S',   '4',   0x0Au, 0x05u, 0x08u, 'R',   'E',   'S',   '5',   0x0Au, 0x05u, 0x08u, 'S',
-        'E',   'E',   'N',   0x00u, 0x70u, 0x72u, 0x01u, 0x5Bu, 0x33u, 0x00u, 'R',   'E',   'S',   '1',   0x70u, 0x72u,
-        0x0Au, 0x07u, 'M',   '0',   '0',   '1',   0x00u, 'R',   'E',   'S',   '2',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',
-        '0',   '0',   '2',   0x00u, 'R',   'E',   'S',   '3',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '3',
-        0x00u, 'R',   'E',   'S',   '4',   0x70u, 0x72u, 0x0Au, 0x07u, 'M',   '0',   '0',   '4',   0x00u, 'R',   'E',
-        'S',   '5',   0x08u, 'A',   'F',   'T',   'R',   0x01u,
-    };
-
     advanced_configuration_and_power_interface_simulated_host_open(&evaluation_host);
     evaluation_faulty_host = evaluation_host.host;
     evaluation_faulty_host.clock_100ns = evaluation_clock_taking_back_a_value;
     evaluation_values_taken_back = 0u;
-    if (!made_up_load_on(test, &evaluation_load, &evaluation_faulty_host, evaluation_table, 2u, aml, sizeof(aml)))
+    if (!made_up_load_on(test, &evaluation_load, &evaluation_faulty_host, evaluation_table, 2u,
+                         evaluation_short_frames_aml, sizeof(evaluation_short_frames_aml)))
         return;
     kernel_test_measure(test, "values_taken_back", evaluation_values_taken_back);
     kernel_test_check(
