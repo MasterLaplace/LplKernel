@@ -88,7 +88,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageServices {
     uint32_t acquisitions_ignored;            /**< Acquires below the current sync level, ignored. */
     uint32_t releases_ignored;                /**< Releases of a mutex not held, or of another SyncLevel than
                                                    the one acquired last, ignored. */
-    uint32_t released_at_end;                 /**< Mutexes still held when their evaluation ended. */
+    uint32_t released_at_end;                 /**< Mutexes still held when their evaluation ended, or when the
+                                                   method that declared them, temporary, returned. */
     uint32_t signals;                         /**< Signals of an Event. */
     uint32_t fatals;                          /**< Fatals run, execution going on past each (§5.2). */
     uint32_t break_points;                    /**< BreakPoints run, each a no-op (§5.2). */

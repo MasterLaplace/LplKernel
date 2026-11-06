@@ -11,7 +11,11 @@
  * MTX2 once SER3 has returned, EWAI waits on EVT0, and MANY acquires the 33 M0xx. CONS signals EVT0 twice, then
  * WAI0, WAI1 and WAI2 take three Waits on it, the second's timeout given by TMO_, which counts its call in CNT0; RSTE
  * signals EVT0 twice, resets it, and returns a Wait on it; RSTI resets INT0, WAII waits on INT0, and WAIP signals
- * EVT0 then waits on it with the Package PKG0 as its timeout.
+ * EVT0 then waits on it with the Package PKG0 as its timeout. TMPU declares the Mutex TMX5 (5) and the Event TEV0,
+ * keeps in TMR0 its Acquire of TMX5 and in TMR1 the one of MTX2 under it, then releases TMX5, signals TEV0 once and
+ * keeps two Waits on it in TMR2 and TMR3; TOUT calls TINR, which declares the Mutex TMX3 (3) and acquires it twice,
+ * then returns its own Acquire of MTX2; TERR declares the Mutex TMX1 (1), acquires it and divides by zero; TTWI
+ * declares the Event TEV1 in each of the two turns of a While.
  */
 DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
 {
@@ -176,6 +180,55 @@ DefinitionBlock ("", "DSDT", 1, "LPLTST", "MADEUPML", 0)
     {
         Signal (EVT0)
         Return (Wait (EVT0, PKG0)) __EXPECT__(6058)
+    }
+
+    Name (TMR0, 0x05)
+    Name (TMR1, 0x05)
+    Name (TMR2, 0x05)
+    Name (TMR3, 0x05)
+    Method (TMPU, 0, NotSerialized)
+    {
+        Mutex (TMX5, 0x05)
+        Event (TEV0)
+        TMR0 = Acquire (TMX5, 0xFFFF)
+        TMR1 = Acquire (MTX2, 0xFFFF)
+        Release (TMX5)
+        Signal (TEV0)
+        TMR2 = Wait (TEV0, Zero)
+        TMR3 = Wait (TEV0, Zero)
+    }
+
+    Method (TINR, 0, NotSerialized)
+    {
+        Mutex (TMX3, 0x03)
+        Acquire (TMX3, 0xFFFF)
+        Acquire (TMX3, 0xFFFF)
+    }
+
+    Method (TOUT, 0, NotSerialized)
+    {
+        TINR ()
+        Local0 = Acquire (MTX2, 0xFFFF)
+        Release (MTX2)
+        Return (Local0)
+    }
+
+    Method (TERR, 0, NotSerialized)
+    {
+        Mutex (TMX1, 0x01)
+        Acquire (TMX1, 0xFFFF)
+        Local0 = Zero
+        Return ((One / Local0))
+    }
+
+    Method (TTWI, 0, NotSerialized)
+    {
+        Local0 = Zero
+        While ((Local0 < 0x02))
+        {
+            Event (TEV1)
+            Local0++
+        }
     }
 
     Mutex (M000, 0x00)

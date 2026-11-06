@@ -314,6 +314,28 @@ void advanced_configuration_and_power_interface_machine_language_drop_notificati
         continue;
 }
 
+void advanced_configuration_and_power_interface_machine_language_declare_mutex(MachineLanguageLoad_t *load,
+                                                                               uint32_t node, uint8_t sync_flags)
+{
+    MachineLanguageNode_t *mutex =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);
+
+    mutex->type = MACHINE_LANGUAGE_NODE(MUTEX);
+    mutex->value.auxiliary = sync_flags & MACHINE_LANGUAGE_SYNC_LEVEL;
+}
+
+void advanced_configuration_and_power_interface_machine_language_release_temporary_mutex(MachineLanguageLoad_t *load,
+                                                                                         uint32_t node)
+{
+    MachineLanguageServices_t *services = &load->services;
+    const uint32_t position = machine_language_held_position(services, node);
+
+    if (position == 0u)
+        return;
+    ++services->released_at_end;
+    machine_language_drop_held(load, position);
+}
+
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_acquire(MachineLanguageLoad_t *load,
                                                                                             uint32_t node,
                                                                                             bool *out_acquired)
