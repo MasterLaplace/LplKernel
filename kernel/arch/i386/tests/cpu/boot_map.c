@@ -1,6 +1,7 @@
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
@@ -24,6 +25,17 @@ KERNEL_TEST_SUITE(boot_map, KERNEL_TEST_STAGE_INITIALIZATION);
 #define BOOT_MAP_TEST_NO_ENTRY_SEARCH   0xF0000000u /**< Where the test looks for a page no map entry holds. */
 #define BOOT_MAP_TEST_NO_ENTRY_STEP     0x00100000u /**< The step of that search, 1 MiB. */
 
+#define BOOT_MAP_TEST_RANGE_REGISTERS_FLAG (1u << 12)   /**< CPUID.01H:EDX's MTRR flag, Intel SDM vol. 3, §14.11.1. */
+#define BOOT_MAP_TEST_RANGE_CAPABILITY     0x0FEu       /**< IA32_MTRRCAP, whose bits 7:0 count the variable ranges. */
+#define BOOT_MAP_TEST_RANGE_DEFAULT_TYPE   0x2FFu       /**< IA32_MTRR_DEF_TYPE: the type in bits 7:0, E in bit 11. */
+#define BOOT_MAP_TEST_RANGE_FIRST_BASE     0x200u       /**< IA32_MTRR_PHYSBASE0, IA32_MTRR_PHYSMASK0 after it. */
+#define BOOT_MAP_TEST_RANGE_ENABLED        (1ull << 11) /**< E in the default type, V in a mask. */
+#define BOOT_MAP_TEST_RANGE_UNCACHEABLE    0x00u        /**< UC, Table 14-8. */
+#define BOOT_MAP_TEST_RANGE_WRITE_THROUGH  0x04u        /**< WT. */
+#define BOOT_MAP_TEST_RANGE_WRITE_BACK     0x06u        /**< WB. */
+#define BOOT_MAP_TEST_RANGE_NO_TYPE        0x100u       /**< No range holds the page yet. */
+#define BOOT_MAP_TEST_RANGE_UNDEFINED      0x101u       /**< An overlap §14.11.4.1 leaves undefined. */
+
 /**
  * @brief One entry of a made-up memory map.
  */
@@ -33,6 +45,17 @@ typedef struct BootMapTestEntry {
     uint32_t type;   /**< 1 usable RAM, 2 reserved, 3 ACPI reclaimable, 4 ACPI NVS. */
     uint32_t size;   /**< Its size field: 20, 24 with extended attributes, or below 20 when corrupt. */
 } BootMapTestEntry_t;
+
+/**
+ * @brief What the windows on the reserved pages of the bootloader's memory map gave.
+ */
+typedef struct BootMapTestReservedPages {
+    uint32_t write_back;        /**< Pages checked that the memory type range registers call write-back. */
+    uint32_t uncached;          /**< Pages checked that they call anything else. */
+    uint32_t agreeing;          /**< Pages whose windows all carry the type the page decides. */
+    uint32_t refused;           /**< Pages a window could not be mapped on, never checked. */
+    uint32_t first_disagreeing; /**< The first page that does not agree, or 0. */
+} BootMapTestReservedPages_t;
 
 /**
  * @brief A made-up memory map: its entries in order, or none at all.
@@ -306,18 +329,86 @@ static uint32_t boot_map_test_page_type(uint32_t page)
 }
 
 /**
- * @brief The memory type bits a window on a page of memory map type @p type must carry past the first MiB: none,
- *        write-back, for usable RAM (1), ACPI reclaimable (3) and ACPI NVS (4) memory; uncached for any other page.
+ * @brief Whether the processor says it has memory type range registers, without which reading one faults.
  */
-static uint32_t boot_map_test_expected_bits(uint32_t type)
+static bool boot_map_test_has_range_registers(void)
 {
-    return (type == 1u || type == 3u || type == 4u) ? 0u : BOOT_MAP_TEST_UNCACHED_BITS;
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
+    return (edx & BOOT_MAP_TEST_RANGE_REGISTERS_FLAG) != 0u;
+}
+
+/**
+ * @brief The type two variable ranges over one page give it, by §14.11.4.1: the same type, UC when either is UC, WT
+ *        for WT and WB, undefined otherwise; @p held is BOOT_MAP_TEST_RANGE_NO_TYPE before the first range.
+ */
+static uint32_t boot_map_test_overlap(uint32_t held, uint32_t type)
+{
+    if (held == BOOT_MAP_TEST_RANGE_NO_TYPE || held == type)
+        return type;
+    if (held == BOOT_MAP_TEST_RANGE_UNCACHEABLE || type == BOOT_MAP_TEST_RANGE_UNCACHEABLE)
+        return BOOT_MAP_TEST_RANGE_UNCACHEABLE;
+    if ((held == BOOT_MAP_TEST_RANGE_WRITE_THROUGH && type == BOOT_MAP_TEST_RANGE_WRITE_BACK) ||
+        (held == BOOT_MAP_TEST_RANGE_WRITE_BACK && type == BOOT_MAP_TEST_RANGE_WRITE_THROUGH))
+        return BOOT_MAP_TEST_RANGE_WRITE_THROUGH;
+    return BOOT_MAP_TEST_RANGE_UNDEFINED;
+}
+
+/**
+ * @brief The memory type the processor's memory type range registers give @p page past the first MiB, read from the
+ *        registers themselves by the precedences of Intel SDM vol. 3, §14.11.4.1: UC when they are disabled or
+ *        absent, the type the variable ranges that hold the page give it, and the default type where none does.
+ */
+static uint32_t boot_map_test_range_type(uint32_t page)
+{
+    if (!boot_map_test_has_range_registers())
+        return BOOT_MAP_TEST_RANGE_UNCACHEABLE;
+
+    const uint64_t default_type = asmutils_read_model_specific_register(BOOT_MAP_TEST_RANGE_DEFAULT_TYPE);
+    const uint32_t count = (uint32_t) asmutils_read_model_specific_register(BOOT_MAP_TEST_RANGE_CAPABILITY) & 0xFFu;
+    uint32_t type = BOOT_MAP_TEST_RANGE_NO_TYPE;
+
+    if ((default_type & BOOT_MAP_TEST_RANGE_ENABLED) == 0u)
+        return BOOT_MAP_TEST_RANGE_UNCACHEABLE;
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        const uint64_t base = asmutils_read_model_specific_register(BOOT_MAP_TEST_RANGE_FIRST_BASE + 2u * index);
+        const uint64_t mask = asmutils_read_model_specific_register(BOOT_MAP_TEST_RANGE_FIRST_BASE + 2u * index + 1u);
+
+        if ((mask & BOOT_MAP_TEST_RANGE_ENABLED) != 0u && ((base ^ page) & mask & ~0xFFFull) == 0u)
+            type = boot_map_test_overlap(type, (uint32_t) (base & 0xFFu));
+    }
+    return type == BOOT_MAP_TEST_RANGE_NO_TYPE ? (uint32_t) (default_type & 0xFFu) : type;
+}
+
+/**
+ * @brief Whether a boot memory map type names memory: usable RAM (1), ACPI reclaimable (3) or ACPI NVS (4) memory.
+ */
+static bool boot_map_test_type_is_memory(uint32_t type) { return type == 1u || type == 3u || type == 4u; }
+
+/**
+ * @brief The memory type bits a window on @p page must carry past the first MiB: none, write-back, for usable RAM,
+ *        ACPI reclaimable and ACPI NVS memory, and for a reserved page (2) the memory type range registers call
+ *        write-back; uncached for any other page.
+ */
+static uint32_t boot_map_test_expected_bits(uint32_t page)
+{
+    const uint32_t type = boot_map_test_page_type(page);
+
+    if (boot_map_test_type_is_memory(type) ||
+        (type == 2u && boot_map_test_range_type(page) == BOOT_MAP_TEST_RANGE_WRITE_BACK))
+        return 0u;
+    return BOOT_MAP_TEST_UNCACHED_BITS;
 }
 
 /**
  * @brief Maps a one-page device window on @p page and says whether it gives the page no second memory type: in the
  *        first MiB, which the kernel's map keeps, the window has that map's memory type bits; past it, the map
- *        holds no such page and the window carries the type its memory map type gives (boot_map_test_expected_bits).
+ *        holds no such page and the window carries the type the page decides (boot_map_test_expected_bits).
  *
  * @return 1 when it agrees, 0 when it does not, -1 when no window could be mapped.
  */
@@ -339,8 +430,7 @@ static int boot_map_test_window_agrees(uint32_t page)
     const bool agrees =
         page < BOOT_MAP_TEST_FIRST_MEBIBYTE_END ?
             direct && boot_map_test_memory_type_bits(&direct_entry) == boot_map_test_memory_type_bits(&window_entry) :
-            !direct && boot_map_test_memory_type_bits(&window_entry) ==
-                           boot_map_test_expected_bits(boot_map_test_page_type(page));
+            !direct && boot_map_test_memory_type_bits(&window_entry) == boot_map_test_expected_bits(page);
 
     kernel_vmm_unmap_device_window(window, PAGE_SIZE);
     return agrees ? 1 : 0;
@@ -391,8 +481,8 @@ static bool boot_map_test_device_window_maps(uint32_t physical_base, uint32_t si
 }
 
 /**
- * @brief Checks the windows on @p page against the memory type of its memory map type: the two firmware windows always,
- *        the device window too unless the page is usable RAM past the first MiB, where it must be refused.
+ * @brief Checks the windows on @p page against the memory type the page decides: the two firmware windows always, the
+ *        device window too unless the page is usable RAM past the first MiB, where it must be refused.
  *
  * @return 1 when every window carries the bits boot_map_test_expected_bits gives and a refused one is refused, 0 when
  *         one does not, -1 when a window that should map could not.
@@ -400,9 +490,8 @@ static bool boot_map_test_device_window_maps(uint32_t physical_base, uint32_t si
 static int boot_map_test_windows_agree(uint32_t page)
 {
     uint32_t bits[BOOT_MAP_TEST_WINDOW_KINDS] = {0u};
-    const uint32_t type = boot_map_test_page_type(page);
-    const uint32_t expected = boot_map_test_expected_bits(type);
-    const bool refused = type == 1u && page >= BOOT_MAP_TEST_FIRST_MEBIBYTE_END;
+    const uint32_t expected = boot_map_test_expected_bits(page);
+    const bool refused = boot_map_test_page_type(page) == 1u && page >= BOOT_MAP_TEST_FIRST_MEBIBYTE_END;
 
     if (!boot_map_test_window_kinds_bits(page, refused ? 2u : BOOT_MAP_TEST_WINDOW_KINDS, bits))
         return -1;
@@ -458,6 +547,70 @@ static uint32_t boot_map_test_page_no_entry_holds(void)
             return page;
     }
     return 0u;
+}
+
+/**
+ * @brief The first page past the first MiB, 1 MiB apart, that no entry of the bootloader's memory map holds whole
+ *        and the memory type range registers call write-back, or 0 when there is none below 4 GiB.
+ */
+static uint32_t boot_map_test_hole_under_write_back(void)
+{
+    for (uint32_t page = BOOT_MAP_TEST_FIRST_MEBIBYTE_END; page >= BOOT_MAP_TEST_FIRST_MEBIBYTE_END;
+         page += BOOT_MAP_TEST_NO_ENTRY_STEP)
+    {
+        if (boot_map_test_page_type(page) == 0u && boot_map_test_range_type(page) == BOOT_MAP_TEST_RANGE_WRITE_BACK)
+            return page;
+    }
+    return 0u;
+}
+
+/**
+ * @brief Checks the windows on the first and the last page past the first MiB of every reserved entry of the
+ *        bootloader's memory map below 4 GiB, and counts them in @p out.
+ */
+static void boot_map_test_check_reserved_pages(BootMapTestReservedPages_t *out)
+{
+    uint32_t length = 0u;
+    const uint8_t *const map = boot_map_test_memory_map(&length);
+
+    for (uint32_t offset = 0u; map && offset + sizeof(uint32_t) <= length;)
+    {
+        const MemoryMapEntry_t *const entry = (const MemoryMapEntry_t *) (map + offset);
+
+        if (entry->size < BOOT_MAP_TEST_ENTRY_SIZE_LEAST || entry->size > length - offset - sizeof(uint32_t))
+            return;
+        offset += sizeof(uint32_t) + entry->size;
+
+        const uint64_t lowest = entry->base_addr > BOOT_MAP_TEST_FIRST_MEBIBYTE_END ?
+                                    (entry->base_addr + PAGE_SIZE - 1u) & ~(uint64_t) (PAGE_SIZE - 1u) :
+                                    BOOT_MAP_TEST_FIRST_MEBIBYTE_END;
+        const uint64_t end = entry->base_addr + entry->length;
+        const uint64_t top = (end < 0x100000000ull ? end : 0x100000000ull) & ~(uint64_t) (PAGE_SIZE - 1u);
+
+        if (entry->type != 2u || end <= entry->base_addr || top < lowest + PAGE_SIZE)
+            continue;
+
+        const uint32_t pages[2] = {(uint32_t) lowest, (uint32_t) (top - PAGE_SIZE)};
+
+        for (uint32_t index = 0u; index < 2u; ++index)
+        {
+            if (boot_map_test_page_type(pages[index]) != 2u)
+                continue;
+
+            const int agrees = boot_map_test_windows_agree(pages[index]);
+
+            out->refused += agrees < 0;
+            if (agrees < 0)
+                continue;
+            if (boot_map_test_range_type(pages[index]) == BOOT_MAP_TEST_RANGE_WRITE_BACK)
+                ++out->write_back;
+            else
+                ++out->uncached;
+            out->agreeing += agrees > 0;
+            if (agrees == 0 && out->first_disagreeing == 0u)
+                out->first_disagreeing = pages[index];
+        }
+    }
 }
 
 /**
@@ -627,11 +780,18 @@ KERNEL_TEST(the_boot_map_keeps_the_first_mebibyte_and_only_memory_past_it)
 }
 
 /**
- * @brief A device window on the top page below 4 GiB, which the memory map calls reserved and the kernel's map of
- *        physical memory does not map, is uncached: PCD and PWT select PAT entry 3, UC.
+ * @brief A device window on the top page below 4 GiB, which the memory map calls reserved, the memory type range
+ *        registers do not call write-back and the kernel's map of physical memory does not map, is uncached: PCD and
+ *        PWT select PAT entry 3, UC.
  */
 KERNEL_TEST(a_device_window_past_the_kernels_map_is_uncached)
 {
+    if (boot_map_test_range_type(BOOT_MAP_TEST_TOP_PAGE) == BOOT_MAP_TEST_RANGE_WRITE_BACK)
+    {
+        kernel_test_skip(test, "the memory type range registers call the top page write-back");
+        return;
+    }
+
     const uint32_t window = kernel_vmm_map_device_window(BOOT_MAP_TEST_TOP_PAGE, PAGE_SIZE);
     PageTableEntry_t entry;
     const bool mapped = window != 0u && paging_get_page_table_entry(window, &entry);
@@ -648,8 +808,9 @@ KERNEL_TEST(a_device_window_past_the_kernels_map_is_uncached)
 /**
  * @brief A firmware window, a writable firmware window and a device window on one page past the first MiB give it one
  *        memory type, which the page decides and no window's kind: write-back for usable RAM, ACPI reclaimable and
- *        ACPI NVS memory, uncached for a reserved page and for a page no entry of the memory map holds; a device
- *        window on usable RAM is refused.
+ *        ACPI NVS memory and for a reserved page the memory type range registers call write-back, uncached for any
+ *        other reserved page and for a page no entry of the memory map holds; a device window on usable RAM is
+ *        refused.
  *
  * @details Intel SDM vol. 3, §14.12.4: a page mapped with two memory types is undefined behaviour. A firmware window
  *          used to be write-back whatever lay under it, and a device window uncached, so an ACPI table and an AML
@@ -710,8 +871,8 @@ KERNEL_TEST(the_windows_on_one_page_give_it_one_memory_type)
                 continue;
             }
             ++checked;
-            reserved += boot_map_test_expected_bits(boot_map_test_page_type(pages[index])) != 0u;
-            past_the_map += boot_map_test_expected_bits(boot_map_test_page_type(pages[index])) == 0u &&
+            reserved += boot_map_test_expected_bits(pages[index]) != 0u;
+            past_the_map += boot_map_test_type_is_memory(boot_map_test_page_type(pages[index])) &&
                             !boot_map_test_direct_entry(pages[index], &direct_entry);
             if (agrees)
                 ++agreeing;
@@ -737,11 +898,71 @@ KERNEL_TEST(the_windows_on_one_page_give_it_one_memory_type)
     kernel_test_measure_hexadecimal(test, "page_no_entry_holds", no_entry);
     kernel_test_measure_hexadecimal(test, "first_disagreeing_page", first_disagreeing);
     kernel_test_check(test, reserved != 0u && no_entry != 0u,
-                      "the memory map holds a page past the first MiB that is not memory, and leaves one out");
+                      "the memory map holds a page past the first MiB that windows map uncached, and leaves one out");
     kernel_test_check(test, refused == 0u, "every window is mapped");
     kernel_test_check(test, checked != 0u && agreeing == checked,
                       "the windows on each page carry the memory type its memory map type gives, and a device "
                       "window on usable RAM is refused");
+}
+
+/**
+ * @brief The windows on a reserved page are write-back where the memory type range registers say write-back over it,
+ *        as Linux maps ACPI memory, and uncached where they say anything else.
+ *
+ * @details Linux v7.3 maps every ACPI table and AML region with ioremap_cache, and pat_x_mtrr_type keeps write-back
+ *          only where the MTRR type over the range is write-back. SeaBIOS (src/fw/mtrr.c) makes memory write-back by
+ *          default and uncached from the start of PCI memory to 4 GiB, and puts its ACPI tables in reserved memory at
+ *          the top of RAM: those pages are write-back, its pages below 4 GiB uncached. The expected type comes from
+ *          the test's own reading of the registers (boot_map_test_range_type), not from the kernel's snapshot. A
+ *          processor without the registers, such as QEMU's qemu32, gives nothing to check, nor does a memory map
+ *          without a reserved page of each kind. SeaBIOS enables one variable range, an uncached one, so no QEMU boot
+ *          makes a page write-back by a variable range: the memory_type_range_registers suite checks that on made-up
+ *          registers.
+ */
+KERNEL_TEST(a_reserved_page_is_write_back_where_the_memory_type_range_registers_say_write_back)
+{
+    if (!boot_map_test_has_range_registers())
+    {
+        kernel_test_skip(test, "the processor has no memory type range registers");
+        return;
+    }
+
+    BootMapTestReservedPages_t pages = {0u};
+
+    boot_map_test_check_reserved_pages(&pages);
+    kernel_test_measure(test, "reserved_write_back_pages", pages.write_back);
+    kernel_test_measure(test, "reserved_uncached_pages", pages.uncached);
+    kernel_test_measure(test, "pages_agreeing", pages.agreeing);
+    kernel_test_measure_hexadecimal(test, "first_disagreeing_page", pages.first_disagreeing);
+    kernel_test_check(test, pages.refused == 0u, "every window is mapped");
+    kernel_test_check(test, pages.agreeing == pages.write_back + pages.uncached,
+                      "the windows on each reserved page are write-back exactly where the registers say write-back");
+    if (pages.write_back == 0u || pages.uncached == 0u)
+        kernel_test_skip(test, "the memory map holds no reserved page under a write-back range, or none under another");
+}
+
+/**
+ * @brief The windows on a page no entry of the memory map holds stay uncached under a write-back range: the rule that
+ *        follows the memory type range registers is for reserved memory alone, since a device's registers lie in
+ *        such holes, where SeaBIOS's registers say write-back below the start of PCI memory.
+ */
+KERNEL_TEST(a_page_no_entry_holds_stays_uncached_under_a_write_back_range)
+{
+    if (!boot_map_test_has_range_registers())
+    {
+        kernel_test_skip(test, "the processor has no memory type range registers");
+        return;
+    }
+
+    const uint32_t hole = boot_map_test_hole_under_write_back();
+
+    kernel_test_measure_hexadecimal(test, "hole_under_write_back", hole);
+    if (hole == 0u)
+    {
+        kernel_test_skip(test, "no page no entry holds lies under a write-back range below 4 GiB");
+        return;
+    }
+    kernel_test_check(test, boot_map_test_windows_agree(hole) == 1, "every window on it is uncached");
 }
 
 /**

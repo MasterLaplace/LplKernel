@@ -114,9 +114,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     uint8_t (*memory_type)(void *context, uint64_t physical_address,
                            uint64_t length); /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_* type. */
     void *(*map_firmware_writable)(void *context, uint64_t physical_address,
-                                   uint64_t length);                                /**< Maps memory cached. */
+                                   uint64_t length); /**< Maps RAM, ACPI reclaim or NVS memory writable. */
     void (*unmap_firmware_writable)(void *context, void *address, uint64_t length); /**< Unmaps it. */
-    void *(*map_device)(void *context, uint64_t physical_address, uint64_t length); /**< Maps memory uncached. */
+    void *(*map_device)(void *context, uint64_t physical_address, uint64_t length); /**< Maps other memory. */
     void (*unmap_device)(void *context, void *address, uint64_t length);            /**< Unmaps it. */
     uint32_t (*read_memory)(void *context, const void *address, uint64_t physical_address,
                             uint8_t width); /**< Reads mapped memory. */
