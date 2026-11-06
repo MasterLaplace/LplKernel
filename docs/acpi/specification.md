@@ -507,15 +507,19 @@ step 4; the others get the `_STA` and `_INI` walk of step 4 over their subtrees 
 whose `_STA` step 4 did not read, in subtrees it skipped, have it read first, from the top down, under step 4's rule,
 so that the result does not depend on where the loader is declared; nothing below a device found neither present nor
 functioning is walked. No `_INI` runs twice. `late_initializations` counts how often this does anything. A
-processor object that a table loaded during step 7 declares is left to step 7 when its walk still reaches it, as
-step 4 leaves a device; one behind the walk gets the capabilities of step 7 once the evaluation that loaded the
-table returns, in declaration order, until these evaluations load no other table. A processor object that a table
-loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux scans the namespace again once a
-table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the capabilities of step 7, then the
-`_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`; a round that loads a table is
-followed by another. The tables step 9 loads get that pass, then step 9 again for the Notifies queued since. A
-table that adds an `_OSC` or a `_PDC` to a processor object declared already, without declaring one, gives it to
-step 7 only when step 7's walk still reaches that processor.
+processor object that a table loaded during step 7 declares, or gives the first `_OSC` or `_PDC` it holds, is left to
+step 7 when its walk still reaches it, as step 4 leaves a device; one behind the walk, those above the processor step
+7 is at included, gets the capabilities of step 7 once the evaluation that loaded the table returns, in declaration
+order, until these evaluations load no other table, so that the result does not depend on where the loader is
+declared. One that held an `_OSC` or a `_PDC` already is left as step 7 left it: OSPM evaluates `_PDC` once, before
+any other object of the processor ([Intel ACPI] §2.1). Linux evaluates them only in its walks at early boot (v7.3
+`acpi_early_processor_control_setup`): a method that a table adds behind the last of them is never evaluated. A
+processor object that a table loaded during step 8 declares is left by step 8's walk to a pass after it, as Linux
+scans the namespace again once a table loads (v7.3 `acpi_table_events_fn`): in declaration order, each gets the
+capabilities of step 7, then the `_CST` of step 8, so that no `_CST` is read before its processor's `_OSC` or `_PDC`;
+a round that loads a table is followed by another. The tables step 9 loads get that pass, then step 9 again for the
+Notifies queued since. A table loaded during step 8 or step 9 that gives a processor object declared already its first
+`_OSC` or `_PDC` gives that processor nothing (#755).
 
 ### 3.9 The static tables
 
