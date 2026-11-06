@@ -95,6 +95,18 @@ uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text,
 const char *boot_command_line_source(const MultibootInfo_t *info);
 
 /**
+ * @brief Where the bootloader left its own name in @p info, in the kernel's map.
+ *
+ * @details The boot report reads it there. GRUB leaves it below the first MiB; QEMU's `-kernel` leaves
+ *          it past the kernel, above it.
+ *
+ * @param info The multiboot information block, or NULL.
+ * @return The bootloader's name, or NULL when @p info is NULL, holds no name, or holds one at or past
+ *         KERNEL_BOOT_MAPPED_END, which the boot map does not reach.
+ */
+const char *boot_loader_name_source(const MultibootInfo_t *info);
+
+/**
  * @brief Copies the kernel's command line out of the memory the bootloader left it in.
  *
  * @details The physical memory manager reserves the modules' pages but not the command line's, so

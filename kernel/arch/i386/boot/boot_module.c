@@ -6,6 +6,8 @@
 #define MULTIBOOT_FLAG_COMMAND_LINE (1u << 2)
 /** @brief Multiboot flag bit indicating the module list is present. */
 #define MULTIBOOT_FLAG_MODULES (1u << 3)
+/** @brief Multiboot flag bit indicating the boot loader's name is present. */
+#define MULTIBOOT_FLAG_BOOT_LOADER_NAME (1u << 9)
 
 extern MultibootInfo_t *multiboot_info;
 
@@ -123,6 +125,14 @@ const char *boot_command_line_source(const MultibootInfo_t *info)
         info->cmdline >= KERNEL_BOOT_MAPPED_END)
         return NULL;
     return (const char *) boot_module_phys_to_virt(info->cmdline);
+}
+
+const char *boot_loader_name_source(const MultibootInfo_t *info)
+{
+    if (!info || !(info->flags & MULTIBOOT_FLAG_BOOT_LOADER_NAME) || !info->boot_loader_name ||
+        info->boot_loader_name >= KERNEL_BOOT_MAPPED_END)
+        return NULL;
+    return (const char *) boot_module_phys_to_virt(info->boot_loader_name);
 }
 
 void boot_command_line_capture(void)

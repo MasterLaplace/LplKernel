@@ -13,7 +13,7 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file multiboot_info_helper.h
- * @brief Reports of the multiboot information block, on the terminal and on serial.
+ * @brief Reports of the multiboot information block, on serial.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -25,66 +25,6 @@
 
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/drivers/serial.h>
-#include <kernel/drivers/tty.h>
-
-/**
- * @brief Print boot device information to terminal output.
- */
-extern void print_multiboot_info_boot_device(BootDevice_t *boot_device);
-
-/**
- * @brief Print multiboot module information to terminal output.
- */
-extern void print_multiboot_info_module(uint32_t kernel_start, Module_t *module);
-
-/**
- * @brief Print a.out symbol table information to terminal output.
- */
-extern void print_multiboot_info_aout_symbol_table(AOutSymbolTable_t *aout_sym);
-
-/**
- * @brief Print ELF section header table information to terminal output.
- */
-extern void print_multiboot_info_elf_section_header_table(ELFSectionHeaderTable_t *elf_sec);
-
-/**
- * @brief Print memory map entries to terminal output.
- *
- * @details
- * The memory map address is interpreted as a physical address in the low-memory
- * identity window and translated with @p kernel_start.
- */
-extern void print_multiboot_info_memory_map(uint32_t kernel_start, MultibootInfo_t *mbi);
-
-/**
- * @brief Print BIOS drive information to terminal output.
- */
-extern void print_multiboot_info_drive_info(DriveInfo_t *drive_info);
-
-/**
- * @brief Print APM table information to terminal output.
- */
-extern void print_multiboot_info_apm_table(APMTable_t *apm_table);
-
-/**
- * @brief Print framebuffer palette color information to terminal output.
- */
-extern void print_multiboot_info_framebuffer_palette_color(FramebufferPaletteColor_t *color);
-
-/**
- * @brief Print VBE information to terminal output when present.
- */
-extern void print_multiboot_info_vbe_info(MultibootInfo_t *mbi);
-
-/**
- * @brief Print framebuffer information to terminal output when present.
- */
-extern void print_multiboot_info_framebuffer(MultibootInfo_t *mbi);
-
-/**
- * @brief Print the complete multiboot information structure to terminal output.
- */
-extern void print_multiboot_info(uint32_t kernel_start, MultibootInfo_t *mbi);
 
 /**
  * @brief Write boot device information to serial output.
