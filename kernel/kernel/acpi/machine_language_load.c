@@ -1796,16 +1796,34 @@ static const uint8_t machine_language_data_classes[256] = {
 };
 
 /**
+ * @brief The 32 bits of the four little-endian bytes at @p bytes.
+ */
+static uint32_t machine_language_little_endian_32(const uint8_t *bytes)
+{
+    return (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8u) | ((uint32_t) bytes[2] << 16u) |
+           ((uint32_t) bytes[3] << 24u);
+}
+
+/**
  * @brief The Integer the constant of class @p class at @p pc holds, masked by @p mask: Zero, One, Ones, or the
- *        little-endian bytes after its prefix.
+ *        little-endian bytes after its prefix, read in 32-bit halves, which i686 assembles without 64-bit shifts; a
+ *        mask keeps at least 32 bits, so only Ones and a quad word need it.
  */
 static uint64_t machine_language_data_integer(const uint8_t *bytes, uint32_t pc, uint8_t class, uint64_t mask)
 {
-    uint64_t integer = (bytes[pc] == 0xFFu) ? UINT64_MAX : (bytes[pc] == 0x01u) ? 1u : 0u;
+    const uint8_t *data = bytes + pc + 1u;
 
-    for (uint32_t byte = 1u; byte < class; ++byte)
-        integer |= (uint64_t) bytes[pc + byte] << (8u * (byte - 1u));
-    return integer & mask;
+    switch (class)
+    {
+    case 1u: return ((bytes[pc] == 0xFFu) ? UINT64_MAX : (uint64_t) (bytes[pc] == 0x01u)) & mask;
+    case 2u: return data[0];
+    case 3u: return (uint32_t) data[0] | ((uint32_t) data[1] << 8u);
+    case 5u: return machine_language_little_endian_32(data);
+    default:
+        return (((uint64_t) machine_language_little_endian_32(data + 4u) << 32u) |
+                machine_language_little_endian_32(data)) &
+               mask;
+    }
 }
 
 /**
