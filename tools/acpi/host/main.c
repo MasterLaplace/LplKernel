@@ -368,19 +368,20 @@ static void harness_print_limits(const AdvancedConfigurationAndPowerInterfaceMac
 
 /**
  * @brief Prints, on one line, the statements the records handed back for their shape (§3.6), per opcode of the
- *        statement, by name, a name's under `name`; only those counted at least once.
+ *        statement, by name, those of a name, a MethodInvocation in the grammar, or of bytes that read as no opcode
+ *        under `MethodInvocation`; only those counted at least once.
  */
 static void harness_print_declined_shapes(const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
-    const uint32_t *declined = load->predecoding.declined_shapes;
+    const uint32_t *declined = load->predecoding.declined_shape_opcodes;
 
-    printf("aml run predecoding shapes");
+    printf("aml run predecoding declined_shape");
     for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
          ++opcode)
         if (declined[opcode] != 0u)
             printf(" %s=%u",
                    (opcode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_INVALID) ?
-                       "name" :
+                       "MethodInvocation" :
                        advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
                    declined[opcode]);
     printf("\n");

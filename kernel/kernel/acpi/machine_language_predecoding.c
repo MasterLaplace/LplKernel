@@ -563,7 +563,7 @@ void advanced_configuration_and_power_interface_machine_language_predecoding_ope
     if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
         for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
              ++opcode)
-            cache->declined_shapes[opcode] = 0u;
+            cache->declined_shape_opcodes[opcode] = 0u;
     cache->built = 0u;
     cache->flushes = 0u;
     cache->records_peak = 0u;

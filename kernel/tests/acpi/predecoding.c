@@ -1000,8 +1000,8 @@ KERNEL_TEST(a_loop_is_handed_back_whole_only_while_it_is_the_frame_s_loop)
 }
 
 /**
- * @brief The statements handed back for their shape are counted under the opcode of each, a call's under a name's
- *        (§3.6, §8.4): of NEST's 49, its inner While, whose predicate's LAnd no record runs, goes to the loop at the
+ * @brief The statements handed back for their shape are counted under the opcode of each, a call's under 0 (§3.6,
+ *        §8.4): of NEST's 49, its inner While, whose predicate's LAnd no record runs, goes to the loop at the
  *        first three back-edges of its first run and where it starts and at its 10 back-edges in each of the two runs
  *        after it, 25 times, and its calls, BUMP at the second and third turns of the first run and at the 10 of each
  *        run after it, RSET at the two runs after the first, 24 times; the outer While, its Increment and its Store,
@@ -1009,7 +1009,7 @@ KERNEL_TEST(a_loop_is_handed_back_whole_only_while_it_is_the_frame_s_loop)
  */
 KERNEL_TEST(the_statements_handed_back_for_their_shape_are_counted_per_opcode)
 {
-    const uint32_t *shapes = predecoding_load.predecoding.declined_shapes;
+    const uint32_t *shapes = predecoding_load.predecoding.declined_shape_opcodes;
     uint32_t others = 0u;
 
     predecoding_compare(test, predecoding_nested_refused_loop_aml, sizeof(predecoding_nested_refused_loop_aml), 2u,

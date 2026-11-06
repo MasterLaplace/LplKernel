@@ -5002,7 +5002,7 @@ static inline void machine_language_decline_shape(MachineLanguagePredecoding_t *
 {
     ++cache->declined[MACHINE_LANGUAGE_DECLINED(SHAPE)];
     if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
-        ++cache->declined_shapes[record->statement];
+        ++cache->declined_shape_opcodes[record->statement];
 }
 
 /**

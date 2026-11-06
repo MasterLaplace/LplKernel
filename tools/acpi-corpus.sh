@@ -103,8 +103,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          loops that loop run from records, then with `--predecoding off`, and compares every line the two
          print, the namespace and `aml run namespace` (lookups, probes and back-edges) included, but `aml
          run predecoding`, whose counts it sums: the statements records ran and handed back, per reason, and
-         those handed back for their shape per opcode, a call or a name under `name`, on each machine and over
-         the list, most first (specification §3.6, §8.4); a machine whose two runs differ fails it, and so does
+         those handed back for their shape per opcode, a call or a name under `MethodInvocation`, on each machine
+         and over the list, most first (specification §3.6, §8.4); a machine whose two runs differ fails it, and so does
          a name a record read that found another node than the one the record checked (`stale_names`)
   records-cost  initialises each machine of a list with `test-acpi-cost --initialize`, the harness `xmake build
          test-acpi-cost` builds without sanitizers, keeps those whose loops ask the records anything (`aml run
@@ -587,14 +587,14 @@ total_of() {
     { grep -o " $1=[0-9]*" <<<"$2" || true; echo " $1=0"; } | cut -d= -f2 | paste -sd+ | bc
 }
 
-# Prints the statements handed back for their shape, per opcode, summed over the `aml run predecoding shapes` lines
-# $1, most first, as opcode=count pairs.
+# Prints the statements handed back for their shape, per opcode, summed over the `aml run predecoding declined_shape`
+# lines $1, most first, as opcode=count pairs, or none.
 declined_shapes() {
-    awk '$1 == "aml" && $2 == "run" && $3 == "predecoding" && $4 == "shapes" {
+    awk '$1 == "aml" && $2 == "run" && $3 == "predecoding" && $4 == "declined_shape" {
             for (field = 5; field <= NF; ++field) { split($field, pair, "="); total[pair[1]] += pair[2] }
         }
         END { for (opcode in total) print total[opcode], opcode }' <<<"$1" |
-        sort -k1,1nr -k2,2 | awk '{ printf " %s=%s", $2, $1 }'
+        sort -k1,1nr -k2,2 | awk '{ printf " %s=%s", $2, $1 } END { if (NR == 0) printf " none" }'
 }
 
 # Initialises each machine of the list $1 with records and without, and compares every line the two runs print but
@@ -619,8 +619,8 @@ predecoding_check() {
             diff <(grep -v '^aml run predecoding ' "$off") <(grep -v '^aml run predecoding ' "$on") >"$tables/diff" || true
             head -6 "$tables/diff" | sed 's/^/    # /'
         fi
-        shapes="$(declined_shapes "$(grep '^aml run predecoding shapes' "$on")")"
-        [[ -z "$shapes" ]] || echo "    # handed back for their shape:$shapes"
+        shapes="$(declined_shapes "$(grep '^aml run predecoding declined_shape' "$on")")"
+        [[ "$shapes" == " none" ]] || echo "    # handed back for their shape:$shapes"
         counts+="$(grep '^aml run predecoding \|^aml run namespace ' "$on")"$'\n'
     done < <(reports "$1")
     rm -rf "$on" "$off" "$tables"
@@ -637,7 +637,7 @@ predecoding_check() {
 
 # Prints the statements the records of a run ran or handed back, from its `aml run predecoding` line in file $1.
 records_asked() {
-    grep -m1 '^aml run predecoding ' "$1" | grep -oE ' (records_run|declined_[a-z]+)=[0-9]+' | cut -d= -f2 |
+    grep -m1 '^aml run predecoding records_run=' "$1" | grep -oE ' (records_run|declined_[a-z]+)=[0-9]+' | cut -d= -f2 |
         awk '{ sum += $1 } END { print sum + 0 }'
 }
 
