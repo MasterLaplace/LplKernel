@@ -58,6 +58,12 @@
     "LPLACPIM" /**< The first eight bytes of an image. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_IMAGE_ALIGNMENT                                      \
     8u /**< What each range of an image, and the bytes after it, are padded to. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION                                     \
+    "lpl.acpi.physical_address_bits=52" /**< The boot word that opens every simulated host for long mode's 52 bits;    \
+                                             `test-acpi --physical-address-bits 52` holds it. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_OTHER_CAPS_OPTION                                    \
+    "lpl.acpi.caps=others" /**< The boot word that opens every simulated host with the caps §6.1 gives the profiles   \
+                                other than the server; `test-acpi --caps others` holds it. */
 
 /**
  * @brief The head of an image: the firmware a simulated host serves, saved as bytes, so that a debug
@@ -202,7 +208,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedFunction {
  *          clock_100ns gives the clock, then advances it by timer_quantum, so that a loop that polls it
  *          ends the same way wherever it runs (docs/acpi/specification.md, §2). It keeps the first lines
  *          of the layer's log and counts the others, and prints none: a test prints those it checks, so that
- *          the host and ring 0 compare them.
+ *          the host and ring 0 compare them. Its target is the one the boot line gives (§3.3): 52 bits with
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION, 32 otherwise, and the caps
+ *          of the other profiles with ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_OTHER_CAPS_OPTION,
+ *          the server's otherwise; a test that sets it decides what the host reaches whatever the line holds.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */
@@ -267,6 +276,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceSimulatedLogLine_t
         log_lines[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_LOG_LINES]; /**< The first lines of
                                                                                                 the layer's log. */
+    AdvancedConfigurationAndPowerInterfaceTarget_t target; /**< What its target call gives. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedHost_t;
 
 /**

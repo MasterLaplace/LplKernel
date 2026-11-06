@@ -269,9 +269,15 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
     for (uint8_t index = 0u; index < io_apic_count; ++index)
     {
         InputOutputApicUnit_t *unit = &io_apic_units[index];
+        const uint64_t physical_base = advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(index);
 
+        if (physical_base > UINT32_MAX)
+        {
+            io_apic_state_name = "ioapic-init-base-above-4gib";
+            return;
+        }
         unit->id = advanced_configuration_and_power_interface_madt_get_io_apic_id(index);
-        unit->physical_base = advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(index);
+        unit->physical_base = (uint32_t) physical_base;
         unit->gsi_base = advanced_configuration_and_power_interface_madt_get_io_apic_gsi_base(index);
 
         if (unit->physical_base == 0u)

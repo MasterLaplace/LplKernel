@@ -81,6 +81,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageRegions {
         mappings[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_MAPPINGS]; /**< The cache. */
     uint32_t mapping_count;                                                                 /**< Entries in use. */
     uint32_t clock;                   /**< Ticks once per access, for the least recently used entry. */
+    uint64_t last_reachable_address;  /**< The last physical byte the host's target reaches (§3.3), asked at open. */
     uint32_t field_reads;             /**< Field unit reads begun, a failed one included. */
     uint32_t field_fast_path;         /**< Of those, the reads of a unit one datum of its access width holds whole,
                                            read without assembling its bits (§7.2, O12). */

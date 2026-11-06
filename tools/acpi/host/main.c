@@ -52,6 +52,14 @@
     "       test-acpi --predecoding off ...  any of the above with the boot line lpl.acpi.predecoding=off: the\n"      \
     "                                    statements of loops that loop are decoded at each turn, never run from\n"     \
     "                                    records, so that the two runs compare\n"                                      \
+    "       test-acpi --physical-address-bits 32|52 ...  any of the above for a target of that many physical\n"        \
+    "                                    address bits (specification §3.3): 32, as i686 and the default, or 52,\n"    \
+    "                                    as long mode, with the boot line lpl.acpi.physical_address_bits=52;\n"        \
+    "                                    every simulated host reaches that far, and every record header prints it\n"   \
+    "       test-acpi --caps server|others ...  any of the above with the namespace caps §6.1 gives the server\n"     \
+    "                                    profile, the default, or the others, with the boot line\n"                    \
+    "                                    lpl.acpi.caps=others; every simulated host opens a load with them, and\n"     \
+    "                                    every record header prints them\n"                                            \
     "       test-acpi [--general-load] [--mutate <seed>] [--read-kept] <form above>  with --general-load, every\n"     \
     "                                    load takes none of its shortcuts (specification §3.6); with --mutate, a\n"   \
     "                                    dump's DSDT and SSDTs have bytes changed at random, seeded by <seed>,\n"      \
@@ -66,7 +74,7 @@ static uint32_t harness_mutation_seed; /**< The seed --mutate gives. */
 static bool harness_reads_kept;        /**< Whether --read-kept asks a view to end by building every kept object. */
 
 /**
- * @brief Opens @p load on @p host with the server profile's caps, without its shortcuts when --general-load
+ * @brief Opens @p load on @p host with the caps of the host's target, without its shortcuts when --general-load
  *        asks.
  *
  * @return Whether the namespace opened.
@@ -74,9 +82,10 @@ static bool harness_reads_kept;        /**< Whether --read-kept asks a view to e
 static bool harness_open_load(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                               const AdvancedConfigurationAndPowerInterfaceHost_t *host)
 {
-    if (!advanced_configuration_and_power_interface_machine_language_open(
-            load, host, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES))
+    const AdvancedConfigurationAndPowerInterfaceTarget_t target = host->target(host->context);
+
+    if (!advanced_configuration_and_power_interface_machine_language_open(load, host, target.max_nodes,
+                                                                          target.max_arena_bytes))
         return false;
     load->general_load = harness_general_load;
     return true;
@@ -128,10 +137,40 @@ static void harness_mutate_tables(const AdvancedConfigurationAndPowerInterfaceDi
 }
 
 /**
- * @brief Reads the options that come before the form of a run: --general-load, --mutate with its seed, and
- *        --read-kept.
+ * @brief Adds @p word, which @p option gives, to the boot line the harness holds.
  *
- * @return The arguments those options took.
+ * @return false, with a message that names the option, when the line holds as many words as it can.
+ */
+static bool harness_hold_boot_word(const char *option, const char *word)
+{
+    if (platform_hold_boot_word(word))
+        return true;
+    fprintf(stderr, "test-acpi: %s gives one boot word too many: give each option once\n", option);
+    return false;
+}
+
+/**
+ * @brief Reads what @p option gives, @p value: @p default_value leaves the boot line as it is, @p other_value holds
+ *        @p word there.
+ *
+ * @return false, with a message that names the option and the value, for any other value or a line already full.
+ */
+static bool harness_read_target_option(const char *option, const char *value, const char *default_value,
+                                       const char *other_value, const char *word)
+{
+    if (strcmp(value, other_value) == 0)
+        return harness_hold_boot_word(option, word);
+    if (strcmp(value, default_value) == 0)
+        return true;
+    fprintf(stderr, "test-acpi: %s takes %s or %s, not %s\n", option, default_value, other_value, value);
+    return false;
+}
+
+/**
+ * @brief Reads the options that come before the form of a run: --general-load, --mutate with its seed,
+ *        --read-kept, --physical-address-bits with its width, and --caps with its profile.
+ *
+ * @return The arguments those options took, or -1 for a value --physical-address-bits or --caps does not take.
  */
 static int harness_read_load_options(int argc, char **argv)
 {
@@ -139,7 +178,22 @@ static int harness_read_load_options(int argc, char **argv)
 
     for (;;)
     {
-        if (argc - used >= 2 && strcmp(argv[1 + used], "--general-load") == 0)
+        if (argc - used >= 3 && strcmp(argv[1 + used], "--physical-address-bits") == 0)
+        {
+            if (!harness_read_target_option(argv[1 + used], argv[2 + used], "32", "52",
+                                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION))
+                return -1;
+            used += 2;
+        }
+        else if (argc - used >= 3 && strcmp(argv[1 + used], "--caps") == 0)
+        {
+            if (!harness_read_target_option(
+                    argv[1 + used], argv[2 + used], "server", "others",
+                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_OTHER_CAPS_OPTION))
+                return -1;
+            used += 2;
+        }
+        else if (argc - used >= 2 && strcmp(argv[1 + used], "--general-load") == 0)
         {
             harness_general_load = true;
             used += 1;
@@ -165,8 +219,8 @@ static int harness_read_load_options(int argc, char **argv)
  */
 static void harness_print_directory(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
-    printf("tables=%u unreachable=%u facs=0x%08X\n", directory->table_count, directory->unreachable_count,
-           directory->firmware_control_physical_address);
+    printf("tables=%u unreachable=%u facs=0x%08llX\n", directory->table_count, directory->unreachable_count,
+           (unsigned long long) directory->firmware_control_physical_address);
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceTable_t *table = &directory->tables[index];
@@ -228,10 +282,10 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
         printf("madt read=0 state=%s\n", madt.state_name);
         return;
     }
-    printf("madt read=1 checksum=%s local_apic=0x%08X processors=%u processors_dropped=%u online_capable=%u "
+    printf("madt read=1 checksum=%s local_apic=0x%08llX processors=%u processors_dropped=%u online_capable=%u "
            "disabled=%u invalid=%u nmis=%u nmis_dropped=%u skipped=%u too_short=%u io_apics=%u io_apics_dropped=%u "
            "overrides=%u overrides_dropped=%u\n",
-           madt.checksum_valid ? "ok" : "bad", madt.local_apic_physical_base, madt.processor_count,
+           madt.checksum_valid ? "ok" : "bad", (unsigned long long) madt.local_apic_physical_base, madt.processor_count,
            madt.processors_dropped, madt.online_capable_count, madt.disabled_count, madt.invalid_count,
            madt.non_maskable_interrupt_count, madt.non_maskable_interrupts_dropped, madt.skipped_count,
            madt.too_short_count, madt.io_apic_count, madt.io_apics_dropped, madt.interrupt_source_override_count,
@@ -240,8 +294,8 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
         printf("processor %u uid=0x%X apic_id=0x%X\n", slot, madt.processors[slot].processor_unique_identifier,
                madt.processors[slot].apic_id);
     for (uint32_t index = 0u; index < madt.io_apic_count; ++index)
-        printf("io_apic id=%u address=0x%08X gsi_base=%u\n", madt.io_apics[index].id,
-               madt.io_apics[index].physical_base, madt.io_apics[index].gsi_base);
+        printf("io_apic id=%u address=0x%08llX gsi_base=%u\n", madt.io_apics[index].id,
+               (unsigned long long) madt.io_apics[index].physical_base, madt.io_apics[index].gsi_base);
     for (uint32_t index = 0u; index < madt.interrupt_source_override_count; ++index)
         printf("override bus=%u source=%u gsi=%u flags=0x%04X\n", madt.interrupt_source_overrides[index].bus,
                madt.interrupt_source_overrides[index].source_irq,
@@ -1527,11 +1581,14 @@ int main(int argc, char **argv)
     HarnessView_t view = HARNESS_VIEW_NAMESPACE;
     const int options = harness_read_load_options(argc, argv);
 
+    if (options < 0)
+        return 2;
     argc -= options;
     argv += options;
     if (argc >= 3 && strcmp(argv[1], "--predecoding") == 0 && strcmp(argv[2], "off") == 0)
     {
-        platform_hold_boot_word("lpl.acpi.predecoding=off");
+        if (!harness_hold_boot_word(argv[1], "lpl.acpi.predecoding=off"))
+            return 2;
         argv[2] = argv[0];
         argv += 2;
         argc -= 2;

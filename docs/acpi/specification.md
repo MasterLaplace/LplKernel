@@ -524,7 +524,8 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
 ### 3.9 The static tables
 
 - **The root table.** The XSDT is walked when the RSDP's revision is 2 or more and the XSDT's checksum holds;
-  otherwise the RSDT is walked. An XSDT entry above 4 GiB is counted unreachable, never truncated.
+  otherwise the RSDT is walked. An XSDT entry past what the target reaches (§3.3), 4 GiB on i686, is counted
+  unreachable, never truncated.
 - **The directory.** Each table is read once, mapped through a read-only firmware window, and recorded with
   its checksum's validity. A lookup by signature returns the first table whose checksum holds, otherwise the first
   whose checksum fails. Tables loaded at run time go to the loaded-table registry (§3.4).
@@ -532,9 +533,10 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   counted (`checksum_bad_loaded` for the DSDT and SSDTs, `checksum_bad_parsed` for the static tables), and every
   field is bounds-checked against the table's length. A refused FADT or MADT would leave the machine without ACPI,
   or without its other CPUs.
-- **The DSDT** is the FADT's 64-bit `X_DSDT` when it is not 0 and lies below 4 GiB, otherwise its 32-bit `DSDT`.
-- **The FACS** is the 32-bit `FIRMWARE_CTRL` when it is not 0, otherwise `X_FIRMWARE_CTRL` when it lies below
-  4 GiB, otherwise none. Some machines fail to resume on the 64-bit address (Linux bug 74021).
+- **The DSDT** is the FADT's 64-bit `X_DSDT` when it is not 0 and lies within the target's reach, below 4 GiB on
+  i686, otherwise its 32-bit `DSDT`.
+- **The FACS** is the 32-bit `FIRMWARE_CTRL` when it is not 0, otherwise `X_FIRMWARE_CTRL` when it lies within the
+  target's reach, otherwise none. Some machines fail to resume on the 64-bit address (Linux bug 74021).
 - **The FADT is normalised once:** its revision recomputed from its length; a zeroed local copy of at most the known
   length, so that the fields a short FADT lacks read 0; the legacy register blocks converted to Generic Address
   Structures, unless the 64-bit block gives an address. PSTATE_CNT and CST_CNT, which ACPI 1.0 reserved, read 0 up to

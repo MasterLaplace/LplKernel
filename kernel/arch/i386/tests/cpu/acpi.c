@@ -1,5 +1,6 @@
 #include "../../../../tests/acpi/made_up_table.h"
 
+#include <kernel/acpi/initialization.h>
 #include <kernel/acpi/machine_language.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/clock.h>
@@ -28,6 +29,13 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_
 #define ACPI_TEST_PORT_B          0x61u /**< System control port B: gates PIT channel 2 and sends it to the speaker. */
 #define ACPI_TEST_CHANNEL_2_GATE  0x01u /**< Port B bit 0: channel 2 counts. */
 #define ACPI_TEST_SPEAKER_DATA    0x02u /**< Port B bit 1: channel 2 drives the speaker. */
+#if defined(LPL_KERNEL_REAL_TIME_MODE)
+#    define ACPI_TEST_PROFILE_MAX_NODES       32768u               /**< §6.1's node cap off the server profile. */
+#    define ACPI_TEST_PROFILE_MAX_ARENA_BYTES (4u * 1024u * 1024u) /**< §6.1's arena off the server profile. */
+#else
+#    define ACPI_TEST_PROFILE_MAX_NODES       65536u               /**< §6.1's node cap on the server profile. */
+#    define ACPI_TEST_PROFILE_MAX_ARENA_BYTES (8u * 1024u * 1024u) /**< §6.1's arena on the server profile. */
+#endif
 
 /**
  * @brief Method SLP1 (1) { Store (Arg0, Local0) While (Local0) { Sleep (1) Decrement (Local0) } }.
@@ -169,6 +177,29 @@ KERNEL_TEST(a_firmware_range_past_4_gib_is_refused)
     kernel_test_check(test, starts_past == NULL, "a range that starts past 4 GiB is refused");
     kernel_test_check(test, crosses_on_a_page == NULL, "two pages from 0xFFFFF000 are refused");
     kernel_test_check(test, crosses_inside_a_page == NULL, "36 bytes from 0xFFFFFFF0 are refused");
+}
+
+/**
+ * @brief The machine host's target is the build's (§3.3): 32-bit physical addresses, so that the last byte the
+ *        layer reaches is 0xFFFFFFFF, and the caps §6.1 gives the build's profile, which the boot's load opened with.
+ */
+KERNEL_TEST(the_machine_host_targets_32_bits_and_the_profile_s_caps)
+{
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const AdvancedConfigurationAndPowerInterfaceTarget_t target = host->target(host->context);
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space =
+        &advanced_configuration_and_power_interface_machine_language()->space;
+
+    kernel_test_check(test,
+                      target.physical_address_bits == 32u &&
+                          advanced_configuration_and_power_interface_last_reachable_address(host) == 0xFFFFFFFFull,
+                      "the machine host reaches 32-bit physical addresses, up to 0xFFFFFFFF");
+    kernel_test_check(test,
+                      target.max_nodes == ACPI_TEST_PROFILE_MAX_NODES &&
+                          target.max_arena_bytes == ACPI_TEST_PROFILE_MAX_ARENA_BYTES,
+                      "its caps are those of the build's profile");
+    kernel_test_check(test, space->max_nodes == target.max_nodes && space->max_arena_bytes == target.max_arena_bytes,
+                      "the boot's load opened with them");
 }
 
 /**

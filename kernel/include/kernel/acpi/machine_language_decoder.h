@@ -329,8 +329,9 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus {
                                                                                              region (§5.3). */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_ADDRESS_UNREACHABLE,     /**< An address the
                                                                                                    host cannot reach:
-                                                                                                   past 4 GiB on i686, or
-                                                                                                   a map it refused. */
+                                                                                                   past its target's
+                                                                                                   width, 4 GiB on i686,
+                                                                                                   or a map it refused. */
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_GLOBAL_LOCK_UNAVAILABLE, /**< A Lock field
                                                                                                    before the global
                                                                                                    lock lands. */

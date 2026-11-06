@@ -1,5 +1,6 @@
 #include <kernel/acpi/host.h>
 #include <kernel/acpi/log.h>
+#include <kernel/acpi/machine_language_namespace.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/boot_module.h>
 #include <kernel/config.h>
@@ -17,6 +18,14 @@
 #include <stddef.h>
 
 #define ACPI_HOST_MICROSECONDS_PER_SECOND 1000000u /**< Microseconds in a second. */
+#define ACPI_HOST_PHYSICAL_ADDRESS_BITS   32u      /**< What i686 reaches without PAE (§3.3). */
+#if defined(LPL_KERNEL_REAL_TIME_MODE)
+#    define ACPI_HOST_MAX_NODES       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_NODES
+#    define ACPI_HOST_MAX_ARENA_BYTES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_ARENA_BYTES
+#else
+#    define ACPI_HOST_MAX_NODES       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES
+#    define ACPI_HOST_MAX_ARENA_BYTES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES
+#endif
 
 static uint64_t acpi_host_root_system_description_pointer(void *context)
 {
@@ -303,6 +312,18 @@ static void acpi_host_log(void *context, uint8_t level, const char *text)
     serial_write_char(&com1, '\n');
 }
 
+static AdvancedConfigurationAndPowerInterfaceTarget_t acpi_host_target(void *context)
+{
+    static const AdvancedConfigurationAndPowerInterfaceTarget_t build = {
+        .physical_address_bits = ACPI_HOST_PHYSICAL_ADDRESS_BITS,
+        .max_nodes = ACPI_HOST_MAX_NODES,
+        .max_arena_bytes = ACPI_HOST_MAX_ARENA_BYTES,
+    };
+
+    (void) context;
+    return build;
+}
+
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
     .root_system_description_pointer = acpi_host_root_system_description_pointer,
@@ -331,6 +352,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .commit_pages = acpi_host_commit_pages,
     .release_reservation = acpi_host_release_reservation,
     .log = acpi_host_log,
+    .target = acpi_host_target,
 };
 
 bool advanced_configuration_and_power_interface_boot_line_holds(const char *word)

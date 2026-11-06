@@ -32,16 +32,6 @@
 #    define INITIALIZATION_SKIPS_BODIES true /**< A release kernel decodes none (O2, §3.6). */
 #endif
 
-#if defined(LPL_KERNEL_REAL_TIME_MODE)
-#    define INITIALIZATION_BOOT_MAX_NODES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_NODES
-#    define INITIALIZATION_BOOT_MAX_ARENA_BYTES                                                                        \
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OTHER_MAX_ARENA_BYTES
-#else
-#    define INITIALIZATION_BOOT_MAX_NODES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES
-#    define INITIALIZATION_BOOT_MAX_ARENA_BYTES                                                                        \
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES
-#endif
-
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t InitializationStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t InitializationLoad_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t InitializationNode_t;
@@ -1016,9 +1006,10 @@ void advanced_configuration_and_power_interface_machine_language_initialize(bool
         .mode = advanced_configuration_and_power_interface_mode()->outcome,
     };
 
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const AdvancedConfigurationAndPowerInterfaceTarget_t target = host->target(host->context);
     const bool opened = advanced_configuration_and_power_interface_machine_language_open(
-        &initialization_boot_load, &advanced_configuration_and_power_interface_machine_host,
-        INITIALIZATION_BOOT_MAX_NODES, INITIALIZATION_BOOT_MAX_ARENA_BYTES);
+        &initialization_boot_load, host, target.max_nodes, target.max_arena_bytes);
 
     initialization_boot_load.skips_bodies = INITIALIZATION_SKIPS_BODIES;
     if (opened)

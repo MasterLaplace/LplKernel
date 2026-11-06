@@ -179,6 +179,19 @@ static void made_up_firmware_name_facs(const MadeUpFirmware_t *firmware, uint32_
 }
 
 /**
+ * @brief Makes the root pointer name the XSDT at @p extended_root, sealed again.
+ */
+static void made_up_firmware_name_extended_root(const MadeUpFirmware_t *firmware, uint64_t extended_root)
+{
+    AdvancedConfigurationAndPowerInterfaceRsdp_t *rsdp =
+        (AdvancedConfigurationAndPowerInterfaceRsdp_t *) (firmware->page + MADE_UP_FIRMWARE_RSDP_OFFSET);
+
+    rsdp->xsdt_address = extended_root;
+    made_up_firmware_seal((uint8_t *) rsdp, sizeof(*rsdp),
+                          offsetof(AdvancedConfigurationAndPowerInterfaceRsdp_t, extended_checksum));
+}
+
+/**
  * @brief Writes the made-up firmware into its page.
  *
  * @details The XSDT lists TSTA, TSTB, TSTC, TSTA again above 4 GiB, and the long FADT; the RSDT
@@ -247,7 +260,7 @@ static void made_up_firmware_write(const MadeUpFirmware_t *firmware, uint8_t rsd
 
 /**
  * @brief Serves the made-up firmware's page through a simulated host whose root pointer is the
- *        one at MADE_UP_FIRMWARE_RSDP_OFFSET.
+ *        one at MADE_UP_FIRMWARE_RSDP_OFFSET, for a target of 32-bit physical addresses, as on i686.
  *
  * @details The page is served again MADE_UP_FIRMWARE_ABOVE_4_GIB higher, so that an address a test
  *          puts above 4 GiB names real bytes, and only the directory's refusal keeps them out.
@@ -263,6 +276,7 @@ static void made_up_firmware_open(MadeUpFirmware_t *firmware)
         &made_up_firmware_host, MADE_UP_FIRMWARE_ABOVE_4_GIB + firmware->physical, firmware->page,
         MADE_UP_FIRMWARE_PAGE_BYTES);
     made_up_firmware_host.root_system_description_pointer = firmware->physical + MADE_UP_FIRMWARE_RSDP_OFFSET;
+    made_up_firmware_host.target.physical_address_bits = 32u;
 }
 
 /**
@@ -702,6 +716,66 @@ KERNEL_TEST(a_host_without_a_root_pointer_below_4_gib_gives_no_directory)
                       "a root pointer above 4 GiB is not truncated to one below");
     kernel_test_check(test, made_up_firmware_directory.unreachable_count == 1u,
                       "a root pointer above 4 GiB is counted unreachable, not taken for none");
+    made_up_firmware_release(test);
+}
+
+/**
+ * @brief A target of 52 physical address bits, as in long mode, reaches what lies above 4 GiB (§3.3): the XSDT entry
+ *        there is recorded, X_DSDT and X_FIRMWARE_CTRL there are taken, and a root pointer and an XSDT there are
+ *        read; a root pointer past 52 bits is counted unreachable, as one above 4 GiB is at 32, where an XSDT above
+ *        4 GiB gives way to the RSDT.
+ */
+KERNEL_TEST(a_52_bit_target_reaches_the_tables_above_4_gib)
+{
+    MadeUpFirmware_t firmware;
+    const uint64_t dsdt_64 =
+        MADE_UP_FIRMWARE_ABOVE_4_GIB + MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_DSDT_64_OFFSET;
+    const uint64_t facs_64 =
+        MADE_UP_FIRMWARE_ABOVE_4_GIB + MADE_UP_FIRMWARE_PHYSICAL_ADDRESS + MADE_UP_FIRMWARE_FACS_64_OFFSET;
+
+    made_up_firmware_open(&firmware);
+    made_up_firmware_host.target.physical_address_bits = 52u;
+    made_up_firmware_write(&firmware, 2u, dsdt_64);
+    made_up_firmware_name_facs(&firmware, 0u, facs_64);
+    kernel_test_check(test, made_up_firmware_read() && made_up_firmware_directory.extended_root, "the XSDT is walked");
+    kernel_test_check(test,
+                      made_up_firmware_directory.unreachable_count == 0u &&
+                          made_up_firmware_directory.table_count == 6u &&
+                          made_up_firmware_directory.tables[3].physical_address ==
+                              MADE_UP_FIRMWARE_ABOVE_4_GIB + firmware.physical + MADE_UP_FIRMWARE_BOTH_OFFSET,
+                      "the entry above 4 GiB is recorded at its address, whole");
+    kernel_test_check(test, made_up_firmware_dsdt_is("SIXTY4  "), "the DSDT is the one X_DSDT names above 4 GiB");
+    kernel_test_check(test, made_up_firmware_directory.firmware_control_physical_address == facs_64,
+                      "the FACS is the one X_FIRMWARE_CTRL names above 4 GiB");
+    made_up_firmware_release(test);
+
+    made_up_firmware_host.root_system_description_pointer =
+        MADE_UP_FIRMWARE_ABOVE_4_GIB + firmware.physical + MADE_UP_FIRMWARE_RSDP_OFFSET;
+    kernel_test_check(test,
+                      made_up_firmware_read() && made_up_firmware_directory.unreachable_count == 0u &&
+                          made_up_firmware_directory.table_count == 6u,
+                      "a root pointer above 4 GiB is read");
+    made_up_firmware_release(test);
+
+    made_up_firmware_host.root_system_description_pointer = 0x10000000000000ull + firmware.physical;
+    kernel_test_check(test,
+                      !made_up_firmware_read() && made_up_firmware_directory.unreachable_count == 1u &&
+                          made_up_firmware_directory.table_count == 0u,
+                      "a root pointer past 52 bits is counted unreachable, not truncated");
+    made_up_firmware_release(test);
+
+    made_up_firmware_host.root_system_description_pointer = firmware.physical + MADE_UP_FIRMWARE_RSDP_OFFSET;
+    made_up_firmware_name_extended_root(&firmware, MADE_UP_FIRMWARE_ABOVE_4_GIB + firmware.physical +
+                                                       MADE_UP_FIRMWARE_XSDT_OFFSET);
+    kernel_test_check(test,
+                      made_up_firmware_read() && made_up_firmware_directory.extended_root &&
+                          made_up_firmware_directory.root_physical_address ==
+                              MADE_UP_FIRMWARE_ABOVE_4_GIB + firmware.physical + MADE_UP_FIRMWARE_XSDT_OFFSET,
+                      "an XSDT above 4 GiB is walked");
+    made_up_firmware_release(test);
+    made_up_firmware_host.target.physical_address_bits = 32u;
+    kernel_test_check(test, made_up_firmware_read() && !made_up_firmware_directory.extended_root,
+                      "at 32 bits, an XSDT above 4 GiB gives way to the RSDT");
     made_up_firmware_release(test);
 }
 

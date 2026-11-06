@@ -373,7 +373,7 @@ void write_acpi_madt_info(Serial_t *serial)
     serial_write_string(serial, ", madt=");
     serial_write_int(serial, (int32_t) advanced_configuration_and_power_interface_madt_is_available());
     serial_write_string(serial, ", lapic_phys=");
-    serial_write_hex32(serial, advanced_configuration_and_power_interface_madt_get_local_apic_physical_base());
+    serial_write_hex64(serial, advanced_configuration_and_power_interface_madt_get_local_apic_physical_base());
     serial_write_string(serial, ", ioapic_count=");
     serial_write_int(serial, (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_count());
     serial_write_string(serial, ", processors=");
@@ -538,7 +538,7 @@ void write_acpi_ioapics_info(Serial_t *serial)
         serial_write_int(serial,
                          (int32_t) advanced_configuration_and_power_interface_madt_get_io_apic_id(ioapic_index));
         serial_write_string(serial, ", phys=");
-        serial_write_hex32(serial,
+        serial_write_hex64(serial,
                            advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(ioapic_index));
         serial_write_string(serial, ", gsi_base=");
         serial_write_int(serial,

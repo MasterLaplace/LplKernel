@@ -4961,22 +4961,6 @@ static MachineLanguageStatus_t machine_language_record_read_names(MachineLanguag
 }
 
 /**
- * @brief Counts as decoded, in a build that counts what runs (§4.1), the bytes the record @p index, just built, was
- *        decoded from: its statement, or for an If or a While its head and predicate; none for a record that stays a
- *        statement the interpreter's loop runs, nor when none was built.
- */
-static void machine_language_count_predecoded(MachineLanguageLoad_t *load, uint16_t index)
-{
-    if (!ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED || index == 0u)
-        return;
-
-    const MachineLanguageRecord_t *record = &load->predecoding.records[index - 1u];
-
-    if (record->shape != MACHINE_LANGUAGE_RECORD(GENERAL))
-        load->bytes_decoded += record->after - record->pc;
-}
-
-/**
  * @brief The record of the statement at the running frame's pc, found by @p index when it holds that
  *        statement's key, as the recent record of its offset otherwise, searched in the cache's hash when it is
  *        not, built when the cache holds none: NULL, the reason counted, when a record built under another end of
@@ -5003,7 +4987,6 @@ static MachineLanguageRecord_t *machine_language_record_at(MachineLanguageLoad_t
         {
             *index = advanced_configuration_and_power_interface_machine_language_record_build(
                 cache, frame->code, frame->table, frame->pc, block->end, load->integer_bits);
-            machine_language_count_predecoded(load, *index);
         }
         if (*index == 0u)
         {

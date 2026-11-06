@@ -98,7 +98,7 @@ typedef struct __attribute__((packed)) {
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceTable {
     char signature[4];                                               /**< Its four letters, such as "APIC". */
-    uint32_t physical_address;                                       /**< Where the firmware put it. */
+    uint64_t physical_address;                                       /**< Where the firmware put it. */
     uint32_t length;                                                 /**< Its length in bytes, header included. */
     uint8_t revision;                                                /**< Its revision. */
     bool checksum_valid;                                             /**< Whether its bytes sum to zero. */
@@ -259,13 +259,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
     bool walked;                                              /**< Whether a valid root table was found and walked. */
     uint8_t rsdp_revision;          /**< 0 for ACPI 1.0; 2 or more when the pointer may name an XSDT. */
     bool extended_root;             /**< Whether the entries came from the XSDT, not the RSDT. */
-    uint32_t root_physical_address; /**< The root table walked. */
+    uint64_t root_physical_address; /**< The root table walked. */
     uint32_t table_count;           /**< Tables recorded. */
-    uint32_t
-        unreachable_count; /**< Tables above 4 GiB, the root pointer included, past the capacity, or not mappable. */
+    uint32_t unreachable_count; /**< Tables past the target's physical addresses (§3.3), the root pointer included, past
+                                   the capacity, or not mappable. */
     uint32_t checksum_bad_parsed; /**< Tables recorded whose checksum fails, read all the same and logged, the
                                        definition blocks apart, which the load counts as it declares them (§3.9). */
-    uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
+    uint64_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
                                                      FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL. */
     AdvancedConfigurationAndPowerInterfaceFixedDescription_t
         fixed_description; /**< The FADT the directory gives, normalised; not present without one. */
@@ -345,7 +345,7 @@ typedef struct __attribute__((packed)) {
 
 typedef struct {
     uint8_t id;
-    uint32_t physical_base;
+    uint64_t physical_base;
     uint32_t gsi_base;
 } AdvancedConfigurationAndPowerInterfaceIoApicInfo_t;
 
@@ -383,7 +383,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMadtState {
     const char *state_name;                /**< How the reading went, as the boot reports it. */
     bool available;                        /**< Whether every entry was read, to the table's end. */
     bool checksum_valid;                   /**< Whether its bytes sum to zero; one that fails is read all the same. */
-    uint32_t local_apic_physical_base;     /**< The local APICs' base, the 64-bit override's when it gives one. */
+    uint64_t local_apic_physical_base;     /**< The local APICs' base, the 64-bit override's when it gives one. */
     uint32_t processor_count;              /**< CPU slots, in the order the table lists them. */
     uint32_t processors_dropped;           /**< Enabled processors past the last slot, counted. */
     uint32_t online_capable_count;         /**< Processors that can be enabled at run time: counted, unused. */
@@ -498,9 +498,9 @@ extern void advanced_configuration_and_power_interface_madt_initialize(void);
  *
  * @param table     The table, every byte of its length readable.
  * @param out_state Emptied, then filled with what the table holds.
- * @return false when @p table is NULL or shorter than a MADT header, when an entry's length runs past
- *         the table's end or is shorter than two bytes, or when the local APIC override lies above
- *         4 GiB; @p out_state then says why, and keeps what was read before.
+ * @return false when @p table is NULL or shorter than a MADT header, or when an entry's length runs past
+ *         the table's end or is shorter than two bytes; @p out_state then says why, and keeps what was read
+ *         before. A local APIC address override is kept whole, above 4 GiB too: the reader maps nothing.
  */
 extern bool
 advanced_configuration_and_power_interface_read_madt(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *table,
@@ -717,19 +717,30 @@ advanced_configuration_and_power_interface_power_management_timer(void);
 extern const char *advanced_configuration_and_power_interface_power_management_timer_state_name(uint8_t state);
 
 /**
+ * @brief The last physical address the target of a host reaches (§3.3): 2^physical_address_bits - 1, every address
+ *        from 64 bits up.
+ *
+ * @param host The host, whose target is asked.
+ * @return The last byte reachable: 0xFFFFFFFF on i686.
+ */
+extern uint64_t advanced_configuration_and_power_interface_last_reachable_address(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host);
+
+/**
  * @brief Walks the tables the root system description pointer of a host leads to, each mapped
  *        through a firmware window of that host.
  *
- * @details The XSDT is walked when the pointer's revision is 2 or more and it names one below 4 GiB
+ * @details An address is reachable when the physical addresses of the host's target hold it (§3.3): below 4 GiB
+ *          on i686. The XSDT is walked when the pointer's revision is 2 or more and it names a reachable one
  *          whose signature and checksum hold; the RSDT otherwise, which is also what an XSDT that
- *          fails its checksum falls back to. An XSDT entry above 4 GiB is counted unreachable: this
- *          kernel maps 32-bit physical addresses. The DSDT is then taken from the FADT, whose 64-bit
+ *          fails its checksum falls back to. An XSDT entry out of reach is counted unreachable, never
+ *          truncated. The DSDT is then taken from the FADT, whose 64-bit
  *          X_DSDT wins when the FADT is long enough to hold it and it is not 0, as in ACPICA's
- *          AcpiTbSelectAddress, unless it lies above 4 GiB: the 32-bit DSDT is taken then.
+ *          AcpiTbSelectAddress, unless it lies out of reach: the 32-bit DSDT is taken then.
  *
  * @param host          The host whose firmware is read.
  * @param out_directory Emptied, then filled with every table found.
- * @return false when the host gives no pointer, one above 4 GiB, which is counted unreachable, or
+ * @return false when the host gives no pointer, one out of reach, which is counted unreachable, or
  *         one that is invalid or names no valid root table.
  */
 extern bool advanced_configuration_and_power_interface_read_directory(
@@ -806,7 +817,7 @@ extern uint8_t advanced_configuration_and_power_interface_madt_is_available(void
 /**
  * @brief Return MADT-reported local APIC physical base address.
  */
-extern uint32_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void);
+extern uint64_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void);
 
 /**
  * @brief Return discovered IOAPIC count from MADT entries.
@@ -821,7 +832,7 @@ extern uint8_t advanced_configuration_and_power_interface_madt_get_io_apic_id(ui
 /**
  * @brief Return discovered IOAPIC MMIO physical base for an index.
  */
-extern uint32_t advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(uint8_t index);
+extern uint64_t advanced_configuration_and_power_interface_madt_get_io_apic_physical_base(uint8_t index);
 
 /**
  * @brief Return discovered IOAPIC GSI base for an index.
