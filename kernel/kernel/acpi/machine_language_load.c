@@ -3960,6 +3960,46 @@ uint32_t advanced_configuration_and_power_interface_machine_language_namespace_f
     return fold;
 }
 
+uint32_t advanced_configuration_and_power_interface_machine_language_evaluations_fold(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *const *paths, uint32_t count,
+    uint32_t *out_succeeded)
+{
+    uint32_t fold = MACHINE_LANGUAGE_FOLD_OFFSET;
+
+    *out_succeeded = 0u;
+    for (uint32_t path = 0u; path < count; ++path)
+    {
+        AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+        const MachineLanguageStatus_t status =
+            advanced_configuration_and_power_interface_machine_language_evaluate(load, paths[path], NULL, 0u, &result);
+
+        fold = machine_language_fold_unsigned(fold, status, 2u);
+        if (status == MACHINE_LANGUAGE_OK)
+        {
+            fold = machine_language_fold_unsigned(fold, result.kind, 1u);
+            fold = machine_language_fold_value(load, fold, &result);
+            ++*out_succeeded;
+        }
+        advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, &result);
+    }
+    return fold;
+}
+
+uint32_t advanced_configuration_and_power_interface_machine_language_work_fold(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    uint32_t fold = MACHINE_LANGUAGE_FOLD_OFFSET;
+
+    for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        fold = machine_language_fold_unsigned(fold, load->evaluation.executed[opcode], 4u);
+    fold = machine_language_fold_unsigned(fold, load->space.lookups, 4u);
+    fold = machine_language_fold_unsigned(fold, load->space.probes, 4u);
+    fold = machine_language_fold_unsigned(fold, load->heap.objects, 4u);
+    fold = machine_language_fold_unsigned(fold, load->bytes, 4u);
+    return machine_language_fold_unsigned(fold, load->regions.map_calls, 4u);
+}
+
 void advanced_configuration_and_power_interface_machine_language_limits(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t

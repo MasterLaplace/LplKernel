@@ -153,8 +153,31 @@ KERNEL_TEST(a_firmware_ladder_reads_the_newest_windows)
 }
 
 /**
+ * @brief Loads the ladder @p aml as a revision-2 DSDT, runs `\_SB._INI`, and folds the evaluations record (§8.7) of
+ *        OSYS, which must evaluate; 0 when the table does not load.
+ */
+static uint32_t identity_ladder_fold(KernelTest_t *test, const uint8_t *aml, uint32_t length)
+{
+    static const char *const paths[] = {"\\OSYS"};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status = IDENTITY_STATUS(OK);
+    uint32_t succeeded = 0u;
+
+    if (!identity_run(test, 2u, aml, length))
+        return 0u;
+    (void) identity_evaluate("\\_SB_._INI", &status);
+
+    const uint32_t fold = advanced_configuration_and_power_interface_machine_language_evaluations_fold(
+        &identity_load, paths, 1u, &succeeded);
+
+    kernel_test_check(test, status == IDENTITY_STATUS(OK) && succeeded == 1u, "\\_SB._INI runs and OSYS evaluates");
+    identity_close();
+    return fold;
+}
+
+/**
  * @brief The control of §8.7: the ladder whose "Linux" line is taken reads 1000, not 2022, so OSYS, the
- *        record the ladder test measures, tells a Linux answer from a Windows one.
+ *        record the ladder test measures, tells a Linux answer from a Windows one, and so does the evaluations
+ *        record of OSYS.
  */
 KERNEL_TEST(a_ladder_that_takes_its_linux_line_reads_another_year)
 {
@@ -167,6 +190,15 @@ KERNEL_TEST(a_ladder_that_takes_its_linux_line_reads_another_year)
                       "OSYS reads 1000, the Linux year, where the ladder reads 2022");
     kernel_test_measure(test, "osys", (uint32_t) identity_integer("OSYS"));
     identity_close();
+
+    const uint32_t windows_fold = identity_ladder_fold(test, identity_ladder_aml, sizeof(identity_ladder_aml));
+    const uint32_t linux_line_fold =
+        identity_ladder_fold(test, identity_ladder_linux_aml, sizeof(identity_ladder_linux_aml));
+
+    kernel_test_check(test, windows_fold != linux_line_fold,
+                      "the evaluations record of OSYS tells the Linux line from Windows");
+    kernel_test_measure_hexadecimal(test, "evaluations_fold_windows", windows_fold);
+    kernel_test_measure_hexadecimal(test, "evaluations_fold_linux", linux_line_fold);
 }
 
 /**

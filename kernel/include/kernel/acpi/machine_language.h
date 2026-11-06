@@ -1112,6 +1112,37 @@ extern uint32_t advanced_configuration_and_power_interface_machine_language_name
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
 
 /**
+ * @brief Folds the evaluations record of the specification (§8.7): FNV-1a, 32 bits, over each path of @p paths in
+ *        order, evaluated with no argument: its status, two bytes, then, once it succeeded, its result as the
+ *        namespace fold folds a node's type and object: the type, one byte, then an Integer's eight bytes; a String's
+ *        or a Buffer's length and bytes; a Package's count and each element the same way, a name element as its path
+ *        bytes. Nothing that holds an address or an index is folded.
+ *
+ * @details Each result is given back once folded. The evaluations run as any other, so they change the namespace and
+ *          the counters as the methods they call do.
+ * @param load          A load whose tables are decoded, its stacks free.
+ * @param paths         Absolute paths, such as `\_SB_.PCI0._HID`.
+ * @param count         How many.
+ * @param out_succeeded Receives how many of them evaluated with OK.
+ * @return The fold.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_evaluations_fold(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, const char *const *paths, uint32_t count,
+    uint32_t *out_succeeded);
+
+/**
+ * @brief Folds the work record of the specification (§8.7): FNV-1a, 32 bits, over the operations executed per
+ *        opcode, four little-endian bytes each in descriptor order, then four bytes each of the lookups, the probes,
+ *        the objects allocated, the AML bytes of the load's tables and the maps its cache asked the host for.
+ *
+ * @details The operations executed are counted only in a build that counts them (§4.1): elsewhere they fold as zeros.
+ * @param load A load.
+ * @return The fold.
+ */
+extern uint32_t advanced_configuration_and_power_interface_machine_language_work_fold(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
  * @brief Logs a Fatal that code ran (§5.2) as an error under its counter, fatals, with the fields §4.5 gives a fault:
  *        its table, its offset, its opcode, and its method or, in table-level code, its scope.
  *
