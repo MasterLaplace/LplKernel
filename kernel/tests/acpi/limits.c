@@ -11,7 +11,8 @@
 
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_limits, KERNEL_TEST_STAGE_INITIALIZATION);
 
-#define LIMITS_AML_CAPACITY 16384u /**< Bytes of AML the deepest made-up table holds. */
+#define LIMITS_AML_CAPACITY     16384u /**< Bytes of AML the deepest made-up table holds. */
+#define LIMITS_MOST_INNER_NAMES 513u   /**< Names the inner method of limits_run_names holds at most. */
 
 static uint8_t limits_aml[LIMITS_AML_CAPACITY];
 static uint8_t limits_table[MADE_UP_TABLE_HEADER + LIMITS_AML_CAPACITY];
@@ -133,13 +134,11 @@ static bool limits_run_ladder(KernelTest_t *test, uint32_t depth)
 /**
  * @brief Loads, in a namespace of @p max_nodes nodes, a table that declares RES_ as 5, the @p before_length bytes of
  *        table-level terms at @p before, a method M009 whose body is the @p length bytes at the end of the AML
- *        buffer, and stores M009 to RES_.
+ *        buffer, and, when @p calls holds, stores M009 to RES_.
  */
 static bool limits_run_method(KernelTest_t *test, uint32_t length, uint32_t max_nodes, const uint8_t *before,
-                              uint32_t before_length)
+                              uint32_t before_length, bool calls)
 {
-    static const uint8_t name[] = {0x08u, 'R', 'E', 'S', '_', 0x0Au, 0x05u};
-    static const uint8_t store[] = {0x70u, 'M', '0', '0', '9', 'R', 'E', 'S', '_'};
     uint32_t start = LIMITS_AML_CAPACITY - length;
 
     limits_aml[--start] = 0x00u;
@@ -149,10 +148,11 @@ static bool limits_run_method(KernelTest_t *test, uint32_t length, uint32_t max_
     limits_aml[--start] = 0x14u;
     start -= before_length;
     memcpy(limits_aml + start, before, before_length);
-    start -= (uint32_t) sizeof(name);
-    memcpy(limits_aml + start, name, sizeof(name));
+    start -= (uint32_t) sizeof(limits_result_five_aml);
+    memcpy(limits_aml + start, limits_result_five_aml, sizeof(limits_result_five_aml));
     memmove(limits_aml, limits_aml + start, LIMITS_AML_CAPACITY - start);
-    memcpy(limits_aml + (LIMITS_AML_CAPACITY - start), store, sizeof(store));
+    memcpy(limits_aml + (LIMITS_AML_CAPACITY - start), limits_store_m009_aml,
+           calls ? sizeof(limits_store_m009_aml) : 0u);
     advanced_configuration_and_power_interface_simulated_host_open(&limits_host);
     if (!kernel_test_check(test,
                            advanced_configuration_and_power_interface_machine_language_open(
@@ -164,7 +164,8 @@ static bool limits_run_method(KernelTest_t *test, uint32_t length, uint32_t max_
     }
     advanced_configuration_and_power_interface_machine_language_declare_table(
         &limits_load, made_up_definition_block(limits_table, "DSDT", 2u, limits_aml,
-                                               LIMITS_AML_CAPACITY - start + (uint32_t) sizeof(store)));
+                                               LIMITS_AML_CAPACITY - start +
+                                                   (calls ? (uint32_t) sizeof(limits_store_m009_aml) : 0u)));
     advanced_configuration_and_power_interface_machine_language_decode_tables(&limits_load);
     return true;
 }
@@ -172,8 +173,9 @@ static bool limits_run_method(KernelTest_t *test, uint32_t length, uint32_t max_
 /**
  * @brief Runs M009 { Return (Add (Add (... Add (One, One) ..., One), One)) }, @p adds Add deep, which gives
  *        @p adds + 1 and holds @p adds + 2 operators pending at once with the table's Store; no term comes before.
+ *        M009 is only declared when @p calls is false.
  */
-static bool limits_run_adds(KernelTest_t *test, uint32_t adds)
+static bool limits_run_adds(KernelTest_t *test, uint32_t adds, bool calls)
 {
     const uint32_t length = 3u * adds + 2u;
     uint8_t *body = limits_aml + LIMITS_AML_CAPACITY - length;
@@ -186,7 +188,7 @@ static bool limits_run_adds(KernelTest_t *test, uint32_t adds)
         body[2u + adds + 2u * add] = 0x01u;
         body[3u + adds + 2u * add] = 0x00u;
     }
-    return limits_run_method(test, length, MADE_UP_MAX_NODES, body, 0u);
+    return limits_run_method(test, length, MADE_UP_MAX_NODES, body, 0u, calls);
 }
 
 /**
@@ -221,25 +223,27 @@ static uint8_t *limits_write_names(uint8_t *at, uint32_t first, uint32_t count)
  */
 static bool limits_run_names(KernelTest_t *test, uint32_t inner)
 {
-    static uint8_t other[1u + MADE_UP_AML_PACKAGE_LENGTH_BYTES + 5u + 6u * 513u + 2u];
+    static uint8_t other[1u + MADE_UP_AML_PACKAGE_LENGTH_BYTES + 5u + 6u * LIMITS_MOST_INNER_NAMES + 2u];
     static const uint8_t inner_head[] = {'M', '0', '0', 'A', 0x00u};
-    static const uint8_t return_one[] = {0xA4u, 0x01u};
-    static const uint8_t return_inner[] = {0xA4u, 'M', '0', '0', 'A'};
     uint8_t encoded[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
-    const uint32_t inner_content = (uint32_t) sizeof(inner_head) + 6u * inner + (uint32_t) sizeof(return_one);
+    const uint32_t inner_content =
+        (uint32_t) sizeof(inner_head) + 6u * inner + (uint32_t) sizeof(limits_return_one_aml);
     const uint32_t encoded_bytes = made_up_aml_encode_package_length(inner_content, true, encoded);
-    const uint32_t length = 6u * 512u + (uint32_t) sizeof(return_inner);
+    const uint32_t length = 6u * 512u + (uint32_t) sizeof(limits_return_m00a_aml);
     uint8_t *at = other;
 
+    if (!kernel_test_check(test, inner <= LIMITS_MOST_INNER_NAMES, "the inner method fits its buffer"))
+        return false;
     *at++ = 0x14u;
     memcpy(at, encoded, encoded_bytes);
     at += encoded_bytes;
     memcpy(at, inner_head, sizeof(inner_head));
     at = limits_write_names(at + sizeof(inner_head), 512u, inner);
-    memcpy(at, return_one, sizeof(return_one));
-    at += sizeof(return_one);
-    memcpy(limits_write_names(limits_aml + LIMITS_AML_CAPACITY - length, 0u, 512u), return_inner, sizeof(return_inner));
-    return limits_run_method(test, length, 2u * MADE_UP_MAX_NODES, other, (uint32_t) (at - other));
+    memcpy(at, limits_return_one_aml, sizeof(limits_return_one_aml));
+    at += sizeof(limits_return_one_aml);
+    memcpy(limits_write_names(limits_aml + LIMITS_AML_CAPACITY - length, 0u, 512u), limits_return_m00a_aml,
+           sizeof(limits_return_m00a_aml));
+    return limits_run_method(test, length, 2u * MADE_UP_MAX_NODES, other, (uint32_t) (at - other), true);
 }
 
 /**
@@ -520,7 +524,7 @@ KERNEL_TEST(a_table_with_no_room_for_its_frame_is_declared_without_running)
  */
 KERNEL_TEST(nested_operators_fill_the_operator_stack_and_one_more_fails)
 {
-    if (!limits_run_adds(test, 254u))
+    if (!limits_run_adds(test, 254u, true))
         return;
     kernel_test_measure(test, "pending_operators_peak", made_up_limit_peak(&limits_load, "pending_operators_peak"));
     kernel_test_check(test,
@@ -529,7 +533,7 @@ KERNEL_TEST(nested_operators_fill_the_operator_stack_and_one_more_fails)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS,
                       "254 Add deep give 255, the 256 operators held at once");
     limits_close(test);
-    if (!limits_run_adds(test, 255u))
+    if (!limits_run_adds(test, 255u, true))
         return;
     kernel_test_check(
         test,
@@ -640,4 +644,91 @@ KERNEL_TEST(a_data_object_nests_32_packages)
                           "DP33 waits for the interpreter");
         limits_close(test);
     }
+}
+
+/**
+ * @brief The decoding pass holds the temporary nodes of the body it decodes against the same cap (§6.1): a method that
+ *        names 1,025, never called, is a decode error, limit_temporary_nodes counted with the faults once, at the peak
+ *        of 1,024 it held.
+ */
+KERNEL_TEST(the_decoding_pass_holds_1024_temporary_nodes)
+{
+    uint8_t *body = limits_aml + LIMITS_AML_CAPACITY - 6u * 1025u - (uint32_t) sizeof(limits_return_one_aml);
+
+    memcpy(limits_write_names(body, 0u, 1025u), limits_return_one_aml, sizeof(limits_return_one_aml));
+    if (!limits_run_method(test, 6u * 1025u + (uint32_t) sizeof(limits_return_one_aml), 2u * MADE_UP_MAX_NODES, body,
+                           0u, false))
+        return;
+    kernel_test_check(
+        test,
+        limits_integer("RES_") == 5u && limits_load.decode_errors == 1u &&
+            limits_load
+                    .faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_TEMPORARY_NODES] ==
+                1u &&
+            made_up_limit_peak(&limits_load, "temporary_nodes_peak") ==
+                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_TEMPORARY_NODES,
+        "the body's 1,025th name is refused, counted, after 1,024 held");
+    limits_close(test);
+}
+
+/**
+ * @brief The arena's peak is the most it held, not what it holds (§6.1): MBIG's Buffer of 32 KiB takes pages of its
+ *        own, given back when MBIG returns.
+ */
+KERNEL_TEST(the_arena_s_peak_keeps_the_pages_given_back)
+{
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_arena_buffer_aml,
+                            sizeof(limits_arena_buffer_aml)))
+        return;
+    kernel_test_check(test,
+                      limits_integer("RES_") == 0x8000u && made_up_limit_peak(&limits_load, "arena_bytes_peak") >=
+                                                               limits_load.space.arena_bytes + 0x8000u,
+                      "the arena held the Buffer's 32 KiB more than it holds once MBIG returned");
+    limits_close(test);
+}
+
+/**
+ * @brief The list of the limits fills each of its entries, each with the key its peak is printed under.
+ */
+KERNEL_TEST(every_limit_of_the_list_has_a_peak)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
+        limits[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS];
+    bool named = true;
+
+    memset(limits, 0, sizeof(limits));
+    if (!made_up_load_table(test, &limits_load, &limits_host, limits_table, 2u, limits_result_five_aml,
+                            sizeof(limits_result_five_aml)))
+        return;
+    advanced_configuration_and_power_interface_machine_language_limits(&limits_load, limits);
+    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LIMITS; ++index)
+        named = named && limits[index].peak_name != NULL;
+    kernel_test_check(test, named, "each of the 21 entries names its peak");
+    limits_close(test);
+}
+
+/**
+ * @brief The decoding pass holds the operators and the blocks of the body it decodes against the same caps (§6.1):
+ *        a body 254 Add deep, then a ladder 200 If deep, decoded and never run, leave peaks the evaluations never
+ *        reached.
+ */
+KERNEL_TEST(the_decoding_pass_s_stacks_count_in_the_peaks)
+{
+    if (!limits_run_adds(test, 254u, false))
+        return;
+    kernel_test_check(test,
+                      limits_integer("RES_") == 5u && limits_load.evaluation.operators_peak < 8u &&
+                          made_up_limit_peak(&limits_load, "pending_operators_peak") > 254u,
+                      "the 254 Add the decoding pass holds are the operators' peak");
+    limits_close(test);
+
+    const uint32_t start = limits_ladder(200u);
+
+    if (!limits_run_method(test, LIMITS_AML_CAPACITY - start, MADE_UP_MAX_NODES, limits_aml, 0u, false))
+        return;
+    kernel_test_check(test,
+                      limits_integer("RES_") == 5u && limits_load.evaluation.blocks_peak < 8u &&
+                          made_up_limit_peak(&limits_load, "blocks_peak") > 200u,
+                      "the 200 If the decoding pass holds are the blocks' peak");
+    limits_close(test);
 }

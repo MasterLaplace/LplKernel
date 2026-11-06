@@ -29,6 +29,11 @@ _Static_assert(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE
                        MACHINE_LANGUAGE_FINE_CLASS_BYTES / MACHINE_LANGUAGE_OBJECT_ALIGNMENT +
                            4u * MACHINE_LANGUAGE_CLASSES_PER_DOUBLING,
                "the size classes are the fine ones, then four doublings from 256 bytes to the large objects");
+_Static_assert(ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER ==
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING + 1 &&
+                   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_PACKAGE ==
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING + 2,
+               "the heap's length_peaks hold a String's, a Buffer's and a Package's in their kinds' order");
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t MachineLanguageValue_t;

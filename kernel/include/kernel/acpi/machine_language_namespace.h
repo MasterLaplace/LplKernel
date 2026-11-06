@@ -156,19 +156,21 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *nodes; /**< Its node array: the host's
                                                                              reservation, or NULL. */
     uint32_t reserved_runs;                                             /**< Runs of nodes the reservation spans. */
-    uint32_t *slots;          /**< The hash table: a node index per slot, 0 when empty. */
-    uint32_t slot_capacity;   /**< Slots, a power of two at least twice the nodes. */
-    uint32_t run_count;       /**< Runs of nodes committed, from the reservation's start. */
-    uint32_t node_count;      /**< Node indices used, the unused node 0 included. */
-    uint32_t free_nodes;      /**< The last node removed, whose next_sibling links the others, or 0. */
-    uint32_t live_nodes;      /**< Nodes in the namespace, the root included, the removed ones apart. */
-    uint32_t max_nodes;       /**< The node cap. */
-    uint32_t arena_bytes;     /**< Bytes taken from the host: runs and hash table. */
-    uint32_t max_arena_bytes; /**< The arena cap. */
-    uint32_t lookups;         /**< Lookups of a child by name. */
-    uint32_t probes;          /**< Slots those lookups read. */
-    uint32_t generation;      /**< Moves each time a node enters or leaves the hash table, and when a declaration fills
-                                   an External: a name resolved from a scope finds the same node while it holds. */
+    uint32_t *slots;           /**< The hash table: a node index per slot, 0 when empty. */
+    uint32_t slot_capacity;    /**< Slots, a power of two at least twice the nodes. */
+    uint32_t run_count;        /**< Runs of nodes committed, from the reservation's start. */
+    uint32_t node_count;       /**< Node indices used, the unused node 0 included. */
+    uint32_t free_nodes;       /**< The last node removed, whose next_sibling links the others, or 0. */
+    uint32_t live_nodes;       /**< Nodes in the namespace, the root included, the removed ones apart. */
+    uint32_t max_nodes;        /**< The node cap. */
+    uint32_t arena_bytes;      /**< Bytes taken from the host: runs and hash table. */
+    uint32_t arena_bytes_peak; /**< The most arena_bytes reached: pages go back as large objects, outgrown hash tables
+                                    and copies Load made are freed. */
+    uint32_t max_arena_bytes;  /**< The arena cap. */
+    uint32_t lookups;          /**< Lookups of a child by name. */
+    uint32_t probes;           /**< Slots those lookups read. */
+    uint32_t generation;       /**< Moves each time a node enters or leaves the hash table, and when a declaration fills
+                                    an External: a name resolved from a scope finds the same node while it holds. */
 
     uint32_t operating_system_interface; /**< The node of `\_OSI`, the method the interpreter runs in C: the one
                                               the namespace predefines, whatever a table declares. */

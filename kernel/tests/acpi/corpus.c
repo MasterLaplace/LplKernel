@@ -337,6 +337,11 @@ static void corpus_initialize(KernelTest_t *test)
                                     advanced_configuration_and_power_interface_processor_idle_fold(&idle));
     kernel_test_measure(test, "first_failure", initialization.first_failure);
     corpus_measure_limits(test);
+    kernel_test_measure(test, "flushes", corpus_load.predecoding.flushes);
+    kernel_test_measure(test, "records_peak", corpus_load.predecoding.records_peak);
+    kernel_test_measure(test, "record_operators_peak", corpus_load.predecoding.nodes_peak);
+    kernel_test_measure(test, "record_constants_peak", corpus_load.predecoding.constants_peak);
+    kernel_test_measure(test, "record_names_peak", corpus_load.predecoding.names_peak);
     corpus_measure_executed(test);
     kernel_test_check(test, corpus_load.evaluation.frame_count == 0u && corpus_load.temporary_count == 0u,
                       "the initialisation leaves no frame and no temporary node behind");

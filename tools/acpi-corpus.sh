@@ -749,13 +749,13 @@ idle_check() {
 }
 
 # Prints, over the `aml run limits` lines of the runs $1, the times each limit of §6.1 was reached, summed, and the
-# most each held at once, its peak.
+# most each held at once, its peak, a key that ends in _peak, or in _peak_us for the time requested.
 limits_summary() {
     echo "# limits of §6.1, hits summed and peaks at most: $(grep '^aml run limits ' <<<"$1" | awk '
         { for (field = 4; field <= NF; ++field) {
               split($field, pair, "=")
               if (!(pair[1] in total)) total[pair[1]] = 0
-              if (pair[1] !~ /_peak$/) total[pair[1]] += pair[2]
+              if (pair[1] !~ /_peak(_us)?$/) total[pair[1]] += pair[2]
               else if (pair[2] + 0 > total[pair[1]]) total[pair[1]] = pair[2] + 0 } }
         END { for (name in total) print name "=" total[name] }' | sort | paste -sd' ')"
 }

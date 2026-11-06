@@ -268,8 +268,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     AdvancedConfigurationAndPowerInterfaceMachineLanguageDeclaration_t
         declaration;               /**< The last statement of table-level code the interpreter handed the load. */
     uint32_t temporary_count;      /**< Temporary nodes alive. */
-    uint32_t temporary_nodes_peak; /**< Most of them an evaluation held at once: the decoding pass, which runs no
-                                        method, is left out. */
+    uint32_t temporary_nodes_peak; /**< Most of them alive at once, in an evaluation or in the decoding pass. */
     uint32_t frame_count;          /**< Method bodies being decoded. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageObserver_t
         observer;           /**< Told of each opcode and call the decoding pass decodes, or NULL. */
@@ -365,7 +364,9 @@ extern bool advanced_configuration_and_power_interface_machine_language_executes
 
 /**
  * @brief Lists the limits of §6.1 a load counted, in the specification's order, each with its hits and its peak: the
- *        record cache's are printed with the records (§3.6), since a load without records holds none.
+ *        record cache's are printed with the records (§3.6), since a load without records holds none. The pending
+ *        operators, the blocks and the temporary nodes the decoding pass holds, bounded by the same caps, count in the
+ *        hits and the peaks as the evaluations' do.
  *
  * @param load       The load.
  * @param out_limits Receives the limits.

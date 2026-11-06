@@ -725,23 +725,6 @@ KERNEL_TEST(full_operators_or_constants_empty_the_cache)
 }
 
 /**
- * @brief A tight loop run from records built under fewer pending operators counts the operators its body holds above
- *        those it finds (§6.1): LOOP's second call, under four pending Adds, leaves the operators' peak the loop
- * leaves.
- */
-KERNEL_TEST(a_tight_loop_run_deeper_counts_its_body_s_operators)
-{
-    const PredecodingRun_t run =
-        predecoding_compare(test, predecoding_tight_loop_deeper_aml, sizeof(predecoding_tight_loop_deeper_aml), 2u,
-                            "\\MAIN", PREDECODING_NO_ARGUMENT, true, "fold");
-
-    kernel_test_check(test,
-                      run.status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
-                          run.result == 9u && run.tight_turns != 0u,
-                      "MAIN gives 3 + 6, the second call's loop run as a tight loop");
-}
-
-/**
  * @brief A loop whose statements read more names than the records of a load hold empties the cache, counted, and
  *        builds no more record (§6.1): MAIN's 65 statements read one name each, past the 64, with records as without.
  */

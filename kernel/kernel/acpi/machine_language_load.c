@@ -525,6 +525,8 @@ static MachineLanguageStatus_t machine_language_declare_temporary(MachineLanguag
     if (status == MACHINE_LANGUAGE_OK)
     {
         load->temporaries[load->temporary_count++] = *out_index;
+        if (load->temporary_count > load->temporary_nodes_peak)
+            load->temporary_nodes_peak = load->temporary_count;
         walk->last_created = *out_index;
     }
     return status;
@@ -3517,6 +3519,11 @@ static void machine_language_declare_accepted_table(AdvancedConfigurationAndPowe
 }
 
 /**
+ * @brief The larger of @p first and @p second.
+ */
+static uint32_t machine_language_larger(uint32_t first, uint32_t second) { return (first > second) ? first : second; }
+
+/**
  * @brief A limit whose hits @p hits_name counts, @p hits of them, and whose peak is @p peak.
  */
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLimit_t
@@ -3901,10 +3908,12 @@ void advanced_configuration_and_power_interface_machine_language_limits(
 
     out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_FRAMES), "frames_peak",
                                                         evaluation->frames_peak, true);
-    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_BLOCKS), "blocks_peak",
-                                                        evaluation->blocks_peak, true);
-    out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS),
-                                                        "pending_operators_peak", evaluation->operators_peak, true);
+    out_limits[index++] =
+        machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_BLOCKS), "blocks_peak",
+                                      machine_language_larger(evaluation->blocks_peak, load->blocks_peak), true);
+    out_limits[index++] =
+        machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS), "pending_operators_peak",
+                                      machine_language_larger(evaluation->operators_peak, load->pending_peak), true);
     out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_VALUES), "values_peak",
                                                         evaluation->values_peak, true);
     out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_TEMPORARY_NODES),
@@ -3937,7 +3946,7 @@ void advanced_configuration_and_power_interface_machine_language_limits(
         load, MACHINE_LANGUAGE_STATUS(LIMIT_NAMESPACE_NODES), "namespace_nodes_peak",
         load->space.node_count - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT, true);
     out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY),
-                                                        "arena_bytes_peak", load->space.arena_bytes, false);
+                                                        "arena_bytes_peak", load->space.arena_bytes_peak, false);
     out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_TABLES), "tables_peak",
                                                         load->table_count, true);
     out_limits[index++] = machine_language_status_limit(load, MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES),

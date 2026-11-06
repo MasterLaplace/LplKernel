@@ -30,6 +30,15 @@
 #include <stdint.h>
 
 /**
+ * @brief RES_ holds the size of the Buffer of 32 KiB MBIG builds in a local, whose pages go back when MBIG returns.
+ */
+static const uint8_t limits_arena_buffer_aml[] = {
+    0x08u, 0x52u, 0x45u, 0x53u, 0x5Fu, 0x0Au, 0x05u, 0x14u, 0x10u, 0x4Du, 0x42u,
+    0x49u, 0x47u, 0x00u, 0x70u, 0x11u, 0x04u, 0x0Bu, 0x00u, 0x80u, 0x60u, 0xA4u,
+    0x87u, 0x60u, 0x70u, 0x4Du, 0x42u, 0x49u, 0x47u, 0x52u, 0x45u, 0x53u, 0x5Fu,
+};
+
+/**
  * @brief A Device DEVX that holds the Name INNR, then the Name AFTD after it, which the test puts at the bottom of
  *        nested If (One).
  */
@@ -132,6 +141,28 @@ static const uint8_t limits_result_five_aml[] = {
  */
 static const uint8_t limits_result_zero_aml[] = {
     0x08u, 0x52u, 0x45u, 0x53u, 0x5Fu, 0x00u,
+};
+
+/**
+ * @brief Return (M00A): the end of the body of M009, which calls the method a test sizes at run time.
+ */
+static const uint8_t limits_return_m00a_aml[] = {
+    0xA4u, 0x4Du, 0x30u, 0x30u, 0x41u,
+};
+
+/**
+ * @brief Return (One): the end of a method body a test sizes at run time.
+ */
+static const uint8_t limits_return_one_aml[] = {
+    0xA4u,
+    0x01u,
+};
+
+/**
+ * @brief Store (M009, RES_): what the table-level code of a run-time table runs.
+ */
+static const uint8_t limits_store_m009_aml[] = {
+    0x70u, 0x4Du, 0x30u, 0x30u, 0x39u, 0x52u, 0x45u, 0x53u, 0x5Fu,
 };
 
 /**

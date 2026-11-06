@@ -163,6 +163,8 @@ machine_language_namespace_commit_run(AdvancedConfigurationAndPowerInterfaceMach
                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_RUN_PAGES))
         return false;
     space->arena_bytes += bytes;
+    if (space->arena_bytes > space->arena_bytes_peak)
+        space->arena_bytes_peak = space->arena_bytes;
     ++space->run_count;
     return true;
 }
@@ -289,8 +291,11 @@ void *advanced_configuration_and_power_interface_machine_language_namespace_take
 
     void *pages = space->host->allocate_pages(space->host->context, count);
 
-    if (pages != NULL)
-        space->arena_bytes += bytes;
+    if (pages == NULL)
+        return NULL;
+    space->arena_bytes += bytes;
+    if (space->arena_bytes > space->arena_bytes_peak)
+        space->arena_bytes_peak = space->arena_bytes;
     return pages;
 }
 
