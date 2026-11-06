@@ -186,6 +186,46 @@ static void mode_measure(KernelTest_t *test)
 }
 
 /**
+ * @brief Gives the made-up platform a directory of its FADT and one DSDT, the table whose table-level code reads
+ *        SCI_EN, then opens a load on its host.
+ *
+ * @return false when the namespace could not be opened, which the test is told.
+ */
+static bool mode_open_directory(KernelTest_t *test)
+{
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *dsdt =
+        made_up_definition_block(mode_dsdt, "DSDT", 2u, mode_table_code_reads_sci_enable_aml,
+                                 (uint32_t) sizeof(mode_table_code_reads_sci_enable_aml));
+    AdvancedConfigurationAndPowerInterfaceTable_t *entry = &mode_directory.tables[0];
+
+    memset(&mode_directory, 0, sizeof(mode_directory));
+    mode_directory.host = &mode_host.host;
+    mode_directory.fixed_description = mode_fadt;
+    mode_directory.table_count = 1u;
+    memcpy(entry->signature, "DSDT", sizeof(entry->signature));
+    entry->length = dsdt->length;
+    entry->revision = dsdt->revision;
+    entry->checksum_valid = true;
+    entry->header = dsdt;
+    return kernel_test_check(test,
+                             advanced_configuration_and_power_interface_machine_language_open(
+                                 &mode_load, &mode_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+                             "the namespace opens");
+}
+
+/**
+ * @brief The Integer SCIS holds once the table's code ran, or 0xDEAD when it holds none.
+ */
+static uint64_t mode_sci_enable_read(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node = made_up_root_node(&mode_load, "SCIS");
+
+    if (node == NULL || node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
+        return 0xDEADu;
+    return node->value.payload;
+}
+
+/**
  * @brief A platform whose SCI_EN starts clear has its event enables cleared, then ACPI_ENABLE written
  *        to SMI_CMD, and is polled 1 ms apart until its firmware sets SCI_EN.
  */
@@ -434,46 +474,6 @@ KERNEL_TEST(a_booted_platform_with_a_legacy_mode_is_switched_at_the_first_read)
     mode_boot();
     kernel_test_check(test, mode_host.firmware_command_port == 0u,
                       "an SMI_CMD past port 0xFFFF is answered at no port, not at its low 16 bits");
-}
-
-/**
- * @brief Gives the made-up platform a directory of its FADT and one DSDT, the table whose table-level code reads
- *        SCI_EN, then opens a load on its host.
- *
- * @return false when the namespace could not be opened, which the test is told.
- */
-static bool mode_open_directory(KernelTest_t *test)
-{
-    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *dsdt =
-        made_up_definition_block(mode_dsdt, "DSDT", 2u, mode_table_code_reads_sci_enable_aml,
-                                 (uint32_t) sizeof(mode_table_code_reads_sci_enable_aml));
-    AdvancedConfigurationAndPowerInterfaceTable_t *entry = &mode_directory.tables[0];
-
-    memset(&mode_directory, 0, sizeof(mode_directory));
-    mode_directory.host = &mode_host.host;
-    mode_directory.fixed_description = mode_fadt;
-    mode_directory.table_count = 1u;
-    memcpy(entry->signature, "DSDT", sizeof(entry->signature));
-    entry->length = dsdt->length;
-    entry->revision = dsdt->revision;
-    entry->checksum_valid = true;
-    entry->header = dsdt;
-    return kernel_test_check(test,
-                             advanced_configuration_and_power_interface_machine_language_open(
-                                 &mode_load, &mode_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
-                             "the namespace opens");
-}
-
-/**
- * @brief The Integer SCIS holds once the table's code ran, or 0xDEAD when it holds none.
- */
-static uint64_t mode_sci_enable_read(void)
-{
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node = made_up_root_node(&mode_load, "SCIS");
-
-    if (node == NULL || node->value.kind != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
-        return 0xDEADu;
-    return node->value.payload;
 }
 
 /**

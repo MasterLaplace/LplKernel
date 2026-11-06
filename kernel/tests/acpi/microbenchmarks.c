@@ -71,6 +71,7 @@ static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t microbenchmark_host
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t microbenchmark_load;
 static MicrobenchmarkAml_t microbenchmark_aml;
 static uint8_t microbenchmark_declarations_table[MADE_UP_TABLE_HEADER + MICROBENCHMARK_AML_CAPACITY];
+static uint32_t microbenchmark_lookup_names[MICROBENCHMARK_TURNS];
 
 /**
  * @brief The objects a load of each kind of declaration declares.
@@ -431,21 +432,21 @@ static void microbenchmark_polling(KernelTest_t *test)
 }
 
 /**
- * @brief Looks 1,000 children of @p scope up by name, every seventh of its 3,346 in turn: the window of W4's lookups
- *        (§7.4), kept out of line and unspecialised so that `tools/instructions.sh --inside` finds it by its name and
- *        counts it without the scope built before.
+ * @brief Looks the 1,000 children of @p scope that @p names names up, in turn: the window of W4's lookups (§7.4),
+ *        kept out of line and unspecialised so that `tools/instructions.sh --inside` finds it by its name and counts
+ *        it without the scope built before nor the names written before.
  *
  * @return The lookups that found the child they named.
  */
 __attribute__((noipa)) static uint32_t
 microbenchmark_look_up_a_thousand_children(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space,
-                                           uint32_t scope)
+                                           uint32_t scope, const uint32_t names[MICROBENCHMARK_TURNS])
 {
     uint32_t found = 0u;
 
     for (uint32_t turn = 0u; turn < MICROBENCHMARK_TURNS; ++turn)
     {
-        const uint32_t name = microbenchmark_child_name((turn * 7u) % MICROBENCHMARK_SCOPE_CHILDREN);
+        const uint32_t name = names[turn];
         const uint32_t index =
             advanced_configuration_and_power_interface_machine_language_namespace_find_child(space, scope, name);
 
@@ -459,8 +460,8 @@ microbenchmark_look_up_a_thousand_children(AdvancedConfigurationAndPowerInterfac
 }
 
 /**
- * @brief Builds a scope of 3,346 children at the root, then looks 1,000 of them up by name, and checks
- *        that each lookup finds its child.
+ * @brief Builds a scope of 3,346 children at the root, then looks 1,000 of them up by name, every seventh in turn,
+ *        and checks that each lookup finds its child.
  */
 static void microbenchmark_lookups(KernelTest_t *test)
 {
@@ -490,10 +491,12 @@ static void microbenchmark_lookups(KernelTest_t *test)
                     space, scope, microbenchmark_child_name(index), MICROBENCHMARK_NODE(INTEGER), 1u, &child) ==
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
     kernel_test_check(test, built, "the scope holds its 3,346 children");
+    for (uint32_t turn = 0u; turn < MICROBENCHMARK_TURNS; ++turn)
+        microbenchmark_lookup_names[turn] = microbenchmark_child_name((turn * 7u) % MICROBENCHMARK_SCOPE_CHILDREN);
 
     const uint32_t lookups = space->lookups;
     const uint32_t probes = space->probes;
-    const uint32_t found = microbenchmark_look_up_a_thousand_children(space, scope);
+    const uint32_t found = microbenchmark_look_up_a_thousand_children(space, scope, microbenchmark_lookup_names);
 
     kernel_test_check(test, found == MICROBENCHMARK_TURNS && space->lookups - lookups == MICROBENCHMARK_TURNS,
                       "each of the 1,000 lookups finds its child");

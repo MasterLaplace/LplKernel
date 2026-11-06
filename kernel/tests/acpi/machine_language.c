@@ -179,6 +179,39 @@ static bool made_up_runs_at_table_level(uint32_t opcode)
 }
 
 /**
+ * @brief Prints, as a note rather than a record, that @p structure takes @p bytes on the target the test runs on:
+ *        such a size differs between i686 and the host, so it is printed and never compared (§3.4).
+ */
+static void made_up_note_size(KernelTest_t *test, const char *structure, uint32_t bytes)
+{
+    static const char takes[] = " takes ";
+    static const char unit[] = " bytes on this target";
+    char note[96];
+    char digits[10];
+    uint32_t digit_count = 0u;
+    uint32_t length = (uint32_t) strlen(structure);
+
+    do
+    {
+        digits[digit_count++] = (char) ('0' + bytes % 10u);
+        bytes /= 10u;
+    } while (bytes != 0u);
+    memcpy(note, structure, length);
+    memcpy(note + length, takes, sizeof(takes) - 1u);
+    length += (uint32_t) sizeof(takes) - 1u;
+    while (digit_count != 0u)
+        note[length++] = digits[--digit_count];
+    memcpy(note + length, unit, sizeof(unit));
+    kernel_test_note(test, note);
+}
+
+/**
+ * @brief The size of @p bytes rounded to the nearest KiB, the unit in which §3.4 gives the sizes of the evaluation
+ *        context and the record cache.
+ */
+static uint32_t made_up_nearest_kibibyte(uint32_t bytes) { return (bytes + 512u) / 1024u; }
+
+/**
  * @brief A PkgLength of 1 to 4 bytes gives the value its bytes encode, and the construct it opens
  *        ends at its own first byte plus that value: the length counts its own bytes.
  *
@@ -468,44 +501,10 @@ KERNEL_TEST(the_interpreter_structures_have_their_sizes)
 }
 
 /**
- * @brief Prints, as a note rather than a record, that @p structure takes @p bytes on the target the test runs on:
- *        such a size differs between i686 and the host, so it is printed and never compared (§3.4).
- */
-static void made_up_note_size(KernelTest_t *test, const char *structure, uint32_t bytes)
-{
-    static const char takes[] = " takes ";
-    static const char unit[] = " bytes on this target";
-    char note[96];
-    char digits[10];
-    uint32_t digit_count = 0u;
-    uint32_t length = (uint32_t) strlen(structure);
-
-    do
-    {
-        digits[digit_count++] = (char) ('0' + bytes % 10u);
-        bytes /= 10u;
-    } while (bytes != 0u);
-    memcpy(note, structure, length);
-    memcpy(note + length, takes, sizeof(takes) - 1u);
-    length += (uint32_t) sizeof(takes) - 1u;
-    while (digit_count != 0u)
-        note[length++] = digits[--digit_count];
-    memcpy(note + length, unit, sizeof(unit));
-    kernel_test_note(test, note);
-}
-
-/**
- * @brief The size of @p bytes rounded to the nearest KiB, the unit in which §3.4 gives the sizes of the evaluation
- *        context and the record cache.
- */
-static uint32_t made_up_nearest_kibibyte(uint32_t bytes) { return (bytes + 512u) / 1024u; }
-
-/**
  * @brief The structures whose size depends on the target take the sizes §3.4 gives: the frame and the loaded table
  *        hold a pointer, the evaluation context holds frames, and the record cache's 64-bit constants align to 4
- *        bytes on i686 and to 8 on x86-64. Each size is printed as a note, never compared; the evaluation context,
- *        its stacks, the services that hold its mutexes and its Notify ring, and the load's temporary nodes, and the
- *        record cache come to the same KiB on both targets, which is compared.
+ *        bytes on i686 and to 8 on x86-64. Each size is printed as a note, never compared. The evaluation context is
+ *        its stacks, the services that hold its mutexes and its Notify ring, and the load's temporary nodes.
  */
 KERNEL_TEST(the_structures_that_differ_between_targets_have_their_sizes)
 {
@@ -520,8 +519,6 @@ KERNEL_TEST(the_structures_that_differ_between_targets_have_their_sizes)
     made_up_note_size(test, "a loaded table", table);
     made_up_note_size(test, "an evaluation context", context);
     made_up_note_size(test, "the record cache", cache);
-    kernel_test_measure(test, "evaluation_context_kibibytes", made_up_nearest_kibibyte(context));
-    kernel_test_measure(test, "record_cache_kibibytes", made_up_nearest_kibibyte(cache));
     kernel_test_check(test, frame == (narrow ? 296u : 304u), "a frame is 296 bytes on i686, 304 on x86-64");
     kernel_test_check(test, table == (narrow ? 40u : 48u), "a loaded table is 40 bytes on i686, 48 on x86-64");
     kernel_test_check(test, made_up_nearest_kibibyte(context) == 53u, "an evaluation context is about 53 KiB");
