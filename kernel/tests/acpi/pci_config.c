@@ -699,6 +699,36 @@ KERNEL_TEST(internal_frames_nest_two_deep_and_a_third_fails_with_limit_internal_
 }
 
 /**
+ * @brief An internal frame counts in the nesting peak once it has entered its method (§6.1): RECU, 63 frames deep
+ *        above the host's, reads DEVC's unit, whose _ADR finds no frame left and fails with limit_frames, counted in
+ *        no peak; read one frame deep, the same unit runs it.
+ */
+KERNEL_TEST(an_internal_frame_with_no_room_is_not_counted_in_the_nesting_peak)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {0};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value;
+
+    argument.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER;
+    argument.payload = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_FRAMES - 2u;
+    pci_begin();
+    made_up_aml_raw(&pci_aml, pci_attach_without_room_aml, sizeof(pci_attach_without_room_aml));
+    if (!pci_run(test))
+        return;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &pci_load, "\\RECU", &argument, 1u, &value) == PCI_STATUS(LIMIT_FRAMES) &&
+                          pci_load.regions.internal_nesting_peak == 0u,
+                      "the _ADR with no frame left fails with limit_frames, and no internal frame ran");
+    argument.payload = 0u;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(
+                          &pci_load, "\\RECU", &argument, 1u, &value) == PCI_STATUS(OK) &&
+                          pci_load.regions.internal_nesting_peak == 1u,
+                      "one frame deep, the _ADR runs, one internal frame");
+    pci_close(test);
+}
+
+/**
  * @brief A _REG a region's creation runs is an internal frame too (§3.6): once registers_at_creation holds, as step 3
  *        of the initialisation leaves it, MKRG's region runs RDEV's _REG, whose read of DEVB's unit runs DEVB's _ADR,
  *        and DEVC's, a third, is refused: MKRG fails with limit_internal_nesting, which no _REG drops (§6.1).

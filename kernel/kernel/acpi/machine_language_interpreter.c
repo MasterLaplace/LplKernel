@@ -2104,25 +2104,44 @@ static MachineLanguageStatus_t machine_language_attach_step(MachineLanguageLoad_
 }
 
 /**
- * @brief Takes room for one more internal frame, of an attach or of a _REG: limit_internal_nesting when as many as
- *        §6.1 allows run already, nested in one another, each waited for by its operator; the most that ran at once is
- *        kept.
+ * @brief The internal frames, of an attach or of a _REG, the evaluation runs nested in one another: the operators
+ *        that wait for them.
  */
-static MachineLanguageStatus_t machine_language_nest_internal(MachineLanguageLoad_t *load)
+static uint32_t machine_language_internal_nesting(const MachineLanguageEvaluation_t *evaluation)
 {
-    const MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    uint32_t nesting = 1u;
+    uint32_t nesting = 0u;
 
     for (uint32_t index = 0u; index < evaluation->operator_count; ++index)
         nesting += (evaluation->operators[index].opcode == MACHINE_LANGUAGE_ATTACH ||
                     evaluation->operators[index].opcode == MACHINE_LANGUAGE_REGISTER) ?
                        1u :
                        0u;
-    if (nesting > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_INTERNAL_NESTING)
-        return MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING);
-    if (nesting > load->regions.internal_nesting_peak)
+    return nesting;
+}
+
+/**
+ * @brief Whether one more internal frame fits: limit_internal_nesting when as many as §6.1 allows run already.
+ */
+static MachineLanguageStatus_t machine_language_nest_internal(const MachineLanguageEvaluation_t *evaluation)
+{
+    return (machine_language_internal_nesting(evaluation) <
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_INTERNAL_NESTING) ?
+               MACHINE_LANGUAGE_OK :
+               MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING);
+}
+
+/**
+ * @brief Keeps the most internal frames that ran at once, once the one just pushed has entered its method:
+ *        @p status, what entering it gave, is handed back.
+ */
+static MachineLanguageStatus_t machine_language_entered_internal(MachineLanguageLoad_t *load,
+                                                                 MachineLanguageStatus_t status)
+{
+    const uint32_t nesting = machine_language_internal_nesting(&load->evaluation);
+
+    if (status == MACHINE_LANGUAGE_OK && nesting > load->regions.internal_nesting_peak)
         load->regions.internal_nesting_peak = nesting;
-    return MACHINE_LANGUAGE_OK;
+    return status;
 }
 
 /**
@@ -2138,7 +2157,7 @@ static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    const MachineLanguageStatus_t nested = machine_language_nest_internal(load);
+    const MachineLanguageStatus_t nested = machine_language_nest_internal(evaluation);
 
     if (nested != MACHINE_LANGUAGE_OK)
         return nested;
@@ -2152,7 +2171,7 @@ static MachineLanguageStatus_t machine_language_push_attach(MachineLanguageLoad_
     attach->end = end;
     attach->node = region;
     ++load->regions.internal_evaluations;
-    return machine_language_enter_method(load, method, 0u);
+    return machine_language_entered_internal(load, machine_language_enter_method(load, method, 0u));
 }
 
 /**
@@ -2195,7 +2214,7 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_OPERATORS)
         return MACHINE_LANGUAGE_STATUS(LIMIT_PENDING_OPERATORS);
 
-    const MachineLanguageStatus_t nested = machine_language_nest_internal(load);
+    const MachineLanguageStatus_t nested = machine_language_nest_internal(evaluation);
 
     if (nested != MACHINE_LANGUAGE_OK)
         return nested;
@@ -2219,7 +2238,7 @@ static MachineLanguageStatus_t machine_language_register_at_creation(MachineLang
     if (status == MACHINE_LANGUAGE_OK)
         status = machine_language_push(load, &connected);
     if (status == MACHINE_LANGUAGE_OK)
-        status = machine_language_enter_method(load, method, 2u);
+        status = machine_language_entered_internal(load, machine_language_enter_method(load, method, 2u));
     while (evaluation->value_count > values)
         machine_language_release(load, &evaluation->values[--evaluation->value_count]);
     return status;
