@@ -2,10 +2,8 @@
 #include "made_up_table.h"
 #include "simulated_host.h"
 
-#include <kernel/acpi/initialization.h>
 #include <kernel/acpi/log.h>
 #include <kernel/acpi/machine_language.h>
-#include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
 
@@ -40,8 +38,6 @@ static uint8_t log_firmware[0x200u];
 static uint8_t log_second[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
 static uint8_t log_third[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
 static AdvancedConfigurationAndPowerInterfaceDirectory_t log_directory;
-static AdvancedConfigurationAndPowerInterfaceInitialization_t log_initialization;
-static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t log_idle;
 
 /**
  * @brief Prints @p text as one record of the running test.
@@ -352,16 +348,16 @@ KERNEL_TEST(a_line_names_a_table_by_its_signature_and_identifier)
 
 /**
  * @brief A fault in a method is logged once as an error that names its table, the offset and the opcode of the term
- *        that met it, and the method (§3.6, §4.5): FindSetLeftBit, which no handler runs, at 0x33 of the table in
- *        \DEV0.MTH0, met as its term is decoded, and Divide by Zero at 0x3F in \DEV0.MTH1, met as it runs, which the
- *        line names rather than the term after its operands; MTH0 run again after it names FindSetLeftBit again. The
+ *        that met it, and the method (§3.6, §4.5): Revision, which §5.2 leaves unimplemented, at 0x33 of the table in
+ *        \DEV0.MTH0, met as its term is decoded, and Divide by Zero at 0x3E in \DEV0.MTH1, met as it runs, which the
+ *        line names rather than the term after its operands; MTH0 run again after it names Revision again. The
  *        offsets are the header's 36 bytes and the AML's, counted by hand.
  */
 KERNEL_TEST(a_fault_in_a_method_names_its_table_offset_opcode_and_method)
 {
     static const uint8_t aml[] = {
-        0x5Bu, 0x82u, 0x1Fu, 'D',   'E', 'V', '0', 0x14u, 0x0Bu, 'M',   'T',   'H',   '0',   0x00u, 0x70u, 0x81u, 0x01u,
-        0x00u, 0x60u, 0x14u, 0x0Du, 'M', 'T', 'H', '1',   0x00u, 0x70u, 0x78u, 0x01u, 0x00u, 0x61u, 0x62u, 0x60u,
+        0x5Bu, 0x82u, 0x1Eu, 'D',   'E', 'V', '0', 0x14u, 0x0Au, 'M',   'T',   'H',   '0',   0x00u, 0x70u, 0x5Bu,
+        0x30u, 0x60u, 0x14u, 0x0Du, 'M', 'T', 'H', '1',   0x00u, 0x70u, 0x78u, 0x01u, 0x00u, 0x61u, 0x62u, 0x60u,
     };
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t unimplemented;
@@ -388,33 +384,33 @@ KERNEL_TEST(a_fault_in_a_method_names_its_table_offset_opcode_and_method)
     kernel_test_check(test, log_host.log_count == 3u, "three faults, three lines");
     kernel_test_check(test,
                       log_line_is(&log_host, 0u, LOG_LEVEL(ERROR),
-                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=FindSetLeftBit "
+                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=Revision "
                                   "method=\\DEV0.MTH0"),
-                      "the first names FindSetLeftBit at 0x33 in \\DEV0.MTH0");
+                      "the first names Revision at 0x33 in \\DEV0.MTH0");
     kernel_test_check(
         test,
         log_line_is(&log_host, 1u, LOG_LEVEL(ERROR),
-                    "divide_by_zero table=DSDT/MADEUPML offset=0x0000003F opcode=Divide method=\\DEV0.MTH1"),
-        "the second names the Divide that ran, at 0x3F in \\DEV0.MTH1");
+                    "divide_by_zero table=DSDT/MADEUPML offset=0x0000003E opcode=Divide method=\\DEV0.MTH1"),
+        "the second names the Divide that ran, at 0x3E in \\DEV0.MTH1");
     kernel_test_check(test,
                       log_line_is(&log_host, 2u, LOG_LEVEL(ERROR),
-                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=FindSetLeftBit "
+                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=Revision "
                                   "method=\\DEV0.MTH0"),
-                      "the third names FindSetLeftBit at 0x33 again, not the Divide before it");
+                      "the third names Revision at 0x33 again, not the Divide before it");
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
 }
 
 /**
- * @brief A fault of table-level code is logged once, in the scope the code runs in (§4.5, §6.2): FindSetLeftBit at
- *        0x2C, which the interpreter runs in \DEV1 and counts in table_level_failures, and the byte 0x02 at 0x37 in
+ * @brief A fault of table-level code is logged once, in the scope the code runs in (§4.5, §6.2): Revision at 0x2C,
+ *        which the interpreter runs in \DEV1 and counts in table_level_failures, and the byte 0x02 at 0x36 in
  *        \DEV2, which the load meets and counts in load_errors; the decoding pass, which meets 0x02 again, counts it
  *        in decode_errors but does not log it twice. AFTR, declared after both, shows the load went on.
  */
 KERNEL_TEST(a_fault_of_table_level_code_names_its_scope)
 {
     static const uint8_t aml[] = {
-        0x5Bu, 0x82u, 0x0Au, 'D', 'E', 'V', '1',   0x70u, 0x81u, 0x01u, 0x00u, 0x60u, 0x5Bu,
-        0x82u, 0x06u, 'D',   'E', 'V', '2', 0x02u, 0x08u, 'A',   'F',   'T',   'R',   0x01u,
+        0x5Bu, 0x82u, 0x09u, 'D', 'E', 'V',   '1',   0x70u, 0x5Bu, 0x30u, 0x60u, 0x5Bu, 0x82u,
+        0x06u, 'D',   'E',   'V', '2', 0x02u, 0x08u, 'A',   'F',   'T',   'R',   0x01u,
     };
 
     if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
@@ -427,26 +423,27 @@ KERNEL_TEST(a_fault_of_table_level_code_names_its_scope)
                       "one failure of table-level code and one load error, one line each");
     kernel_test_check(test,
                       log_line_is(&log_host, 0u, LOG_LEVEL(ERROR),
-                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x0000002C opcode=FindSetLeftBit "
+                                  "unimplemented_operator table=DSDT/MADEUPML offset=0x0000002C opcode=Revision "
                                   "scope=\\DEV1"),
-                      "the first names FindSetLeftBit at 0x2C, in the scope \\DEV1");
+                      "the first names Revision at 0x2C, in the scope \\DEV1");
     kernel_test_check(test,
                       log_line_is(&log_host, 1u, LOG_LEVEL(ERROR),
-                                  "invalid_opcode table=DSDT/MADEUPML offset=0x00000037 opcode=Invalid scope=\\DEV2"),
-                      "the second names the byte at 0x37, in the scope \\DEV2");
+                                  "invalid_opcode table=DSDT/MADEUPML offset=0x00000036 opcode=Invalid scope=\\DEV2"),
+                      "the second names the byte at 0x36, in the scope \\DEV2");
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
 }
 
 /**
  * @brief A fault the decoding pass meets in a method body is logged, in that method (§3.6): LIVE's Store, cut by the
- *        end of its body at 0x37; the same body in DEAD, which a branch table-level code did not take hides, is counted
- *        in undeclared_faults and not logged, since its names would resolve against objects that do not exist.
+ *        end of its body at 0x37, which the line names End though AFTR's Name follows; the same body in DEAD, which a
+ *        branch table-level code did not take hides, is counted in undeclared_faults and not logged, since its names
+ *        would resolve against objects that do not exist.
  */
 KERNEL_TEST(a_fault_the_decoding_pass_meets_names_its_method)
 {
     static const uint8_t aml[] = {
-        0xA0u, 0x0Au, 0x00u, 0x14u, 0x07u, 'D', 'E', 'A',   'D',   0x00u,
-        0x70u, 0x14u, 0x07u, 'L',   'I',   'V', 'E', 0x00u, 0x70u,
+        0xA0u, 0x0Au, 0x00u, 0x14u, 0x07u, 'D',   'E',   'A', 'D', 0x00u, 0x70u, 0x14u, 0x07u,
+        'L',   'I',   'V',   'E',   0x00u, 0x70u, 0x08u, 'A', 'F', 'T',   'R',   0x01u,
     };
 
     if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
@@ -512,13 +509,15 @@ KERNEL_TEST(a_loop_the_budget_stops_is_logged_at_its_while)
             log_line_is(&log_host, 2u, LOG_LEVEL(ERROR),
                         "limit_loop_iterations table=DSDT/MADEUPML offset=0x00000037 opcode=While scope=\\"),
         "the others name the table-level Whiles at 0x33 and 0x37, in the root");
+    kernel_test_check(test, log_load.tables[0].load_failed && log_load.table_load_failed == 1u,
+                      "the loops stopped count the DSDT's load as failed, once");
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
 }
 
 /**
  * @brief The load leaves a failure out of its log only while it steps over the statement that failed: MBAD, which
  *        table-level code calls, fails on the byte 0x02 at 0x2C in its body, and the decoding pass, which decodes
- * MBAD's body once every table is declared, meets that byte again as a decode error, logged as one.
+ *        that body once every table is declared, meets the byte again as a decode error, logged as one.
  */
 KERNEL_TEST(a_failure_is_left_out_of_the_log_only_while_its_statement_is_stepped_over)
 {
@@ -673,16 +672,16 @@ KERNEL_TEST(the_directory_counts_and_logs_the_static_tables_whose_checksum_fails
 
 /**
  * @brief A table whose load meets faults is counted once in table_load_failed, and the next one loads (§3.8 step 1):
- *        the DSDT meets two, FindSetLeftBit, which its table-level code fails on, and the byte 0x02, which the load
- *        meets; the first SSDT none; the second the byte 0x02 alone, the third FindSetLeftBit alone. Each fault is
+ *        the DSDT meets two, Revision, which its table-level code fails on, and the byte 0x02, which the load meets;
+ *        the first SSDT none; the second the byte 0x02 alone, the third Revision alone. Each fault is
  *        counted once in faults, under its status.
  */
 KERNEL_TEST(a_table_whose_load_meets_faults_is_counted_once_in_table_load_failed)
 {
-    static const uint8_t faulty[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u, 0x5Bu, 0x82u, 0x06u, 'D', 'E', 'V', '2', 0x02u};
+    static const uint8_t faulty[] = {0x70u, 0x5Bu, 0x30u, 0x60u, 0x5Bu, 0x82u, 0x06u, 'D', 'E', 'V', '2', 0x02u};
     static const uint8_t clean[] = {0x08u, 'C', 'L', 'E', 'N', 0x01u};
     static const uint8_t invalid[] = {0x02u};
-    static const uint8_t unimplemented[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u};
+    static const uint8_t unimplemented[] = {0x70u, 0x5Bu, 0x30u, 0x60u};
 
     if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, faulty, sizeof(faulty)))
         return;
@@ -709,12 +708,12 @@ KERNEL_TEST(a_table_whose_load_meets_faults_is_counted_once_in_table_load_failed
 
 /**
  * @brief A table Load adds whose code fails is marked, and not counted in table_load_failed, which counts the tables
- *        the root table lists (§3.8 step 1): LDIT loads an SSDT whose table-level code fails on FindSetLeftBit.
+ *        the root table lists (§3.8 step 1): LDIT loads an SSDT whose table-level code fails on Revision.
  */
 KERNEL_TEST(a_table_load_adds_whose_code_fails_is_marked_and_not_counted)
 {
     static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', '\\', 'H', 'N', 'D', '1'};
-    static const uint8_t ssdt_aml[] = {0x70u, 0x81u, 0x01u, 0x00u, 0x60u};
+    static const uint8_t ssdt_aml[] = {0x70u, 0x5Bu, 0x30u, 0x60u};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt =
         made_up_definition_block(log_table, "SSDT", 2u, ssdt_aml, sizeof(ssdt_aml));
@@ -743,25 +742,284 @@ KERNEL_TEST(a_table_load_adds_whose_code_fails_is_marked_and_not_counted)
 }
 
 /**
- * @brief The initialisation counts acpi_mode_failed when step 0 ended with SCI_EN still clear, and only then (§3.8):
- *        the same namespace initialised after a switch that succeeded counts 0.
+ * @brief A register of @p bits bits at port @p port, for the made-up FADT of the switch to ACPI mode.
+ */
+static AdvancedConfigurationAndPowerInterfaceGenericAddress_t log_port_register(uint16_t port, uint8_t bits)
+{
+    const AdvancedConfigurationAndPowerInterfaceGenericAddress_t reg = {
+        .address = port,
+        .space = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SPACE_SYSTEM_INPUT_OUTPUT,
+        .bit_width = bits,
+    };
+
+    return reg;
+}
+
+/**
+ * @brief Step 0 counts acpi_mode_failed when SCI_EN stays clear past the bound, and only then (§3.8): a firmware that
+ *        never sets it, then one that sets it 5 ms after ACPI_ENABLE, on a platform in legacy mode whose SMI_CMD is
+ *        0xB2, ACPI_ENABLE 0xF1, PM1a's event block 0x400 and its control block 0x404.
  */
 KERNEL_TEST(a_switch_to_acpi_mode_that_failed_is_counted_in_acpi_mode_failed)
 {
-    static const uint8_t aml[] = {0x08u, 'D', 'N', 'A', 'M', 0x01u};
-    const uint8_t outcomes[] = {ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED,
-                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED};
-    AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {0};
+    const uint32_t enable_milliseconds[] = {UINT32_MAX, 5u};
+    static AdvancedConfigurationAndPowerInterfaceFixedDescription_t fadt;
+    static AdvancedConfigurationAndPowerInterfaceModeSwitch_t mode;
 
+    memset(&fadt, 0, sizeof(fadt));
+    fadt.present = true;
+    fadt.revision = 3u;
+    fadt.system_management_interrupt_command = 0xB2u;
+    fadt.enable_command = 0xF1u;
+    fadt.power_management_event_blocks[0] = log_port_register(0x400u, 32u);
+    fadt.power_management_control_blocks[0] = log_port_register(0x404u, 16u);
     for (uint32_t pass = 0u; pass < 2u; ++pass)
     {
-        if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
-            return;
-        machine.mode = outcomes[pass];
-        advanced_configuration_and_power_interface_initialize_namespace(&log_load, &machine, &log_initialization,
-                                                                        &log_idle);
-        kernel_test_check(test, log_initialization.acpi_mode_failed == ((pass == 0u) ? 1u : 0u),
+        advanced_configuration_and_power_interface_simulated_host_open(&log_host);
+        log_host.firmware_command_port = 0xB2u;
+        log_host.firmware_enable_command = 0xF1u;
+        log_host.firmware_control_port = 0x404u;
+        log_host.firmware_enable_milliseconds = enable_milliseconds[pass];
+        advanced_configuration_and_power_interface_enter_mode(&log_host.host, &fadt, &mode);
+        kernel_test_check(test,
+                          (pass == 0u) ? (mode.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED &&
+                                          mode.acpi_mode_failed == 1u) :
+                                         (mode.outcome == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED &&
+                                          mode.acpi_mode_failed == 0u),
                           (pass == 0u) ? "a switch that failed counts 1" : "a switch that succeeded counts 0");
-        advanced_configuration_and_power_interface_machine_language_close(&log_load);
     }
+}
+
+/**
+ * @brief A table-level loop the budget of §6.1 stops counts the table's load as failed, when nothing else fails in it
+ *        (§3.8 step 1): While (One) { Noop } runs its 2^20 back-edges, then fails at the next, and AFTR is declared.
+ */
+KERNEL_TEST(a_table_level_loop_the_budget_stops_counts_its_load_as_failed)
+{
+    static const uint8_t aml[] = {0xA2u, 0x03u, 0x01u, 0xA3u, 0x08u, 'A', 'F', 'T', 'R', 0x01u};
+
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      log_load.evaluation.failures == 1u && log_load.load_errors == 0u &&
+                          made_up_root_node(&log_load, "AFTR") != NULL,
+                      "the loop is the one failure, and AFTR is declared");
+    kernel_test_check(test, log_load.tables[0].load_failed && log_load.table_load_failed == 1u,
+                      "the DSDT's load counts as failed, once");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief Table-level code nested past the 512 blocks of §6.1 counts the table's load as failed (§3.8 step 1): the 512th
+ *        If (One) around Name (DEEP, One) is refused with limit_blocks, logged at its If.
+ */
+KERNEL_TEST(a_table_whose_code_runs_out_of_blocks_counts_its_load_as_failed)
+{
+    static const uint8_t name[] = {0x08u, 'D', 'E', 'E', 'P', 0x01u};
+    static uint8_t aml[4u * 1024u];
+    uint32_t start = (uint32_t) sizeof(aml) - (uint32_t) sizeof(name);
+
+    memcpy(aml + start, name, sizeof(name));
+    for (uint32_t level = 0u; level < 512u; ++level)
+    {
+        uint8_t length[MADE_UP_AML_PACKAGE_LENGTH_BYTES];
+        const uint32_t bytes = made_up_aml_encode_package_length((uint32_t) sizeof(aml) - start + 1u, true, length);
+
+        aml[--start] = 0x01u;
+        start -= bytes;
+        memcpy(aml + start, length, bytes);
+        aml[--start] = 0xA0u;
+    }
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml + start, (uint32_t) sizeof(aml) - start))
+        return;
+    kernel_test_check(test, log_load.load_errors == 1u && made_up_root_node(&log_load, "DEEP") == NULL,
+                      "the 512th If is refused, and DEEP is not declared");
+    kernel_test_check(test, log_load.tables[0].load_failed && log_load.table_load_failed == 1u,
+                      "the DSDT's load counts as failed, once");
+    kernel_test_check(test, log_load.faults[LOG_STATUS(LIMIT_BLOCKS)] == 1u, "limit_blocks is counted with its line");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief A table Load adds where the evaluation has no frame left for its code is marked as a table whose load failed,
+ *        and not counted in table_load_failed (§3.8 step 1): REC_ calls itself until the 64 frames of §6.1 are taken,
+ *        then loads the SSDT at LOG_TABLE_ADDRESS, whose code is declared without running.
+ */
+KERNEL_TEST(a_table_load_adds_without_a_frame_is_marked_and_not_counted)
+{
+    static const uint8_t recurses[] = {0xA0u, 0x0Au, 0x68u, 'R',   'E',   'C',   '_',  0x74u, 0x68u,
+                                       0x01u, 0x00u, 0xA1u, 0x0Du, 0x5Bu, 0x20u, '\\', 'T',   'B',
+                                       'L',   'R',   '\\',  'H',   'N',   'D',   '1'};
+    static const uint8_t ssdt_aml[] = {0x08u, 'L', 'D', 'E', 'D', 0x01u};
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t depth = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = 62u};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *ssdt =
+        made_up_definition_block(log_table, "SSDT", 2u, ssdt_aml, sizeof(ssdt_aml));
+
+    advanced_configuration_and_power_interface_simulated_host_open(&log_host);
+    (void) advanced_configuration_and_power_interface_simulated_host_poke(&log_host, LOG_TABLE_ADDRESS, log_table,
+                                                                          ssdt->length);
+    made_up_aml_begin(&log_aml);
+    made_up_aml_region(&log_aml, "TBLR", LOG_SYSTEM_MEMORY, LOG_TABLE_ADDRESS, ssdt->length);
+    made_up_aml_name_integer(&log_aml, "HND1", 0u);
+    made_up_aml_begin(&log_body);
+    made_up_aml_raw(&log_body, recurses, sizeof(recurses));
+    made_up_aml_method(&log_aml, "REC_", 0x01u, &log_body);
+    if (!kernel_test_check(test, !log_aml.overflowed, "the made-up AML fits") ||
+        !made_up_load_on(test, &log_load, &log_host.host, log_dsdt, 2u, log_aml.bytes, log_aml.length))
+        return;
+    (void) advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, "\\REC_", &depth, 1u,
+                                                                                &result);
+    advanced_configuration_and_power_interface_machine_language_value_release(&log_load.heap, &log_load.space, &result);
+    kernel_test_check(test,
+                      log_load.tables_loaded == 1u && log_load.evaluation.statuses[LOG_STATUS(LIMIT_FRAMES)] == 1u &&
+                          made_up_root_node(&log_load, "LDED") != NULL,
+                      "the SSDT finds no frame, counted, and is declared");
+    kernel_test_check(test, log_load.tables[1].load_failed && log_load.table_load_failed == 0u,
+                      "it is marked, not counted");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+    advanced_configuration_and_power_interface_simulated_host_close(&log_host);
+}
+
+/**
+ * @brief A fault in a data object a Name keeps in its table (O20) is logged where it is met (§3.5, §6.2): by the check
+ *        a debug kernel runs once the bodies are decoded, beside data_faults, at the Package at 0x29; then by the read
+ *        that RDPK makes first, which leaves PKG0 Uninitialized, beside data_faults_read; then by RDPK's Return, which
+ *        meets that Uninitialized name at 0x35.
+ */
+KERNEL_TEST(a_fault_in_kept_data_is_logged_by_its_check_and_at_its_first_read)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'P',   'K',   'G', '0', 0x12u, 0x03u, 0x01u, 0x02u, 0x14u, 0x0Bu, 'R', 'D',   'P',
+        'K',   0x00u, 0xA4u, 'P', 'K', 'G',   '0',   0x08u, 'A',   'F',   'T',   'R', 0x01u,
+    };
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+        return;
+    kernel_test_check(test,
+                      log_load.data_faults == 1u && log_host.log_count == 1u &&
+                          log_line_is(&log_host, 0u, LOG_LEVEL(ERROR),
+                                      "data_faults table=DSDT/MADEUPML offset=0x00000029 opcode=Package scope=\\"),
+                      "the check logs PKG0's Package at 0x29 once");
+    (void) advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, "\\RDPK", NULL, 0u, &result);
+    advanced_configuration_and_power_interface_machine_language_value_release(&log_load.heap, &log_load.space, &result);
+    log_print_lines(test, &log_host);
+    kernel_test_check(test, log_load.data_faults_read == 1u && log_host.log_count == 3u,
+                      "the first read counts it, and RDPK logs two lines");
+    kernel_test_check(test,
+                      log_line_is(&log_host, 1u, LOG_LEVEL(ERROR),
+                                  "invalid_opcode table=DSDT/MADEUPML offset=0x00000029 opcode=Package scope=\\") &&
+                          log_line_is(&log_host, 2u, LOG_LEVEL(ERROR),
+                                      "type_mismatch table=DSDT/MADEUPML offset=0x00000035 opcode=NameString "
+                                      "method=\\RDPK"),
+                      "the read names the Package and its byte 0x02's status, the Return the name PKG0 at 0x35");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief A host's evaluation that fails where no term runs logs its object (§4.5): the host's read of FLD0, a field of
+ *        EmbeddedControl, and its call of NOBD, a method declared without a body; the load logs NOBD's cut declaration
+ *        first.
+ */
+KERNEL_TEST(a_host_evaluation_that_fails_outside_any_term_logs_its_object)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x80u, 'R', 'E', 'G', '0',   0x03u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u,
+        0x0Bu, 'R',   'E', 'G', '0', 0x01u, 'F',   'L',   'D',   '0',   0x08u, 0x14u,
+        0x05u, 'N',   'O', 'B', 'D', 0x08u, 'A',   'F',   'T',   'R',   0x01u,
+    };
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+        return;
+
+    const uint32_t loaded = log_host.log_count;
+
+    (void) advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, "\\FLD0", NULL, 0u, &result);
+    advanced_configuration_and_power_interface_machine_language_value_release(&log_load.heap, &log_load.space, &result);
+    (void) advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, "\\NOBD", NULL, 0u, &result);
+    advanced_configuration_and_power_interface_machine_language_value_release(&log_load.heap, &log_load.space, &result);
+    log_print_lines(test, &log_host);
+    kernel_test_measure(test, "loaded", loaded);
+    kernel_test_check(test,
+                      loaded == 1u &&
+                          log_line_is(&log_host, 0u, LOG_LEVEL(ERROR),
+                                      "truncated table=DSDT/MADEUPML offset=0x00000041 opcode=End scope=\\") &&
+                          log_host.log_count == loaded + 2u &&
+                          log_line_is(&log_host, loaded, LOG_LEVEL(ERROR), "space_unsupported object=\\FLD0") &&
+                          log_line_is(&log_host, loaded + 1u, LOG_LEVEL(ERROR), "method_without_body object=\\NOBD"),
+                      "the load logs NOBD's declaration cut at its end, 0x41, then the read of FLD0 and the call of "
+                      "NOBD each log their object");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief A host's read whose attach calls a method without a body logs that method, not the host's frame, which runs
+ *        no term (§4.5): \PCI0.FLD0 attaches its PCI_Config region through _ADR, declared without a body, which the
+ *        attach takes as absent, and the read goes on.
+ */
+KERNEL_TEST(a_host_read_whose_attach_fails_logs_the_method_it_could_not_call)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x22u, 'P', 'C', 'I', '0',   0x14u, 0x05u, '_',   'A',   'D',
+        'R',   0x5Bu, 0x80u, 'P', 'C', 'F', 'G',   0x02u, 0x00u, 0x0Au, 0x10u, 0x5Bu,
+        0x81u, 0x0Bu, 'P',   'C', 'F', 'G', 0x01u, 'F',   'L',   'D',   '0',   0x08u,
+    };
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+        return;
+
+    const uint32_t loaded = log_host.log_count;
+
+    (void) advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, "\\PCI0.FLD0", NULL, 0u,
+                                                                                &result);
+    advanced_configuration_and_power_interface_machine_language_value_release(&log_load.heap, &log_load.space, &result);
+    log_print_lines(test, &log_host);
+    kernel_test_check(test,
+                      log_host.log_count == loaded + 1u &&
+                          log_line_is(&log_host, loaded, LOG_LEVEL(ERROR), "method_without_body object=\\PCI0._ADR"),
+                      "the read logs \\PCI0._ADR once");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief A failure an evaluation returns or goes past leaves the next one to be logged as it is (§4.5): the host's
+ *        call of _ADR fails on Revision at 0x33 and returns it, then its call of NOBD, a method declared without a
+ *        body, logs its object; its read of \PCI0.FLD0 attaches its PCI_Config region through _ADR, which fails there
+ *        again and is taken as absent, so the read goes on, then NOBD logs its object again, the fourth line counted
+ *        past the four the host keeps.
+ */
+KERNEL_TEST(a_failure_an_evaluation_goes_past_leaves_the_next_one_logged)
+{
+    static const uint8_t aml[] = {
+        0x5Bu, 0x82u, 0x26u, 'P', 'C', 'I', '0', 0x14u, 0x09u, '_',   'A',   'D',   'R',   0x00u, 0xA4u, 0x5Bu,
+        0x30u, 0x5Bu, 0x80u, 'P', 'C', 'F', 'G', 0x02u, 0x00u, 0x0Au, 0x10u, 0x5Bu, 0x81u, 0x0Bu, 'P',   'C',
+        'F',   'G',   0x01u, 'F', 'L', 'D', '0', 0x08u, 0x14u, 0x05u, 'N',   'O',   'B',   'D',
+    };
+    static const char *const paths[] = {"\\PCI0._ADR", "\\NOBD", "\\PCI0.FLD0", "\\NOBD"};
+    static const char revision[] =
+        "unimplemented_operator table=DSDT/MADEUPML offset=0x00000033 opcode=Revision method=\\PCI0._ADR";
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+        return;
+    for (uint32_t index = 0u; index < sizeof(paths) / sizeof(paths[0]); ++index)
+    {
+        (void) advanced_configuration_and_power_interface_machine_language_evaluate(&log_load, paths[index], NULL, 0u,
+                                                                                    &result);
+        advanced_configuration_and_power_interface_machine_language_value_release(&log_load.heap, &log_load.space,
+                                                                                  &result);
+    }
+    log_print_lines(test, &log_host);
+    kernel_test_check(test, log_host.log_count == 5u, "the load's line, then four");
+    kernel_test_check(test,
+                      log_line_is(&log_host, 1u, LOG_LEVEL(ERROR), revision) &&
+                          log_line_is(&log_host, 2u, LOG_LEVEL(ERROR), "method_without_body object=\\NOBD") &&
+                          log_line_is(&log_host, 3u, LOG_LEVEL(ERROR), revision),
+                      "_ADR's Revision, NOBD's object, _ADR's Revision again");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
 }

@@ -842,8 +842,13 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 `<counter> table=<signature>/<OEM table ID> offset=0x<8 digits> opcode=<name> method=<path>`, `scope=<path>` for
 table-level code, at the level `error`, for every fault an evaluation or a load meets, those of §6.2 included. Its term
 is the one that failed: the operator whose run failed, at its opcode, not past its operands; a name, at its first
-character. A fault met again is logged once: the declaration pass that steps over a statement that failed meets its
-fault again, and the decoding pass meets those of table-level code the declaration pass met.
+character; `End` at the end of the construct it stands in. A host's evaluation that fails where no term runs, such as
+the read of a field or the call of a method without a body, logs `<counter> object=<path>`. A data object a Name keeps
+in its table (O20) is logged by the check of a debug kernel, beside `data_faults`, and by its first read, which a
+release kernel alone makes. Each pass that meets a fault logs it under its own counter, so the decoding pass of a debug
+kernel logs a fault of a method body an evaluation logged too; the same pass logs it once: the declaration pass that
+steps over a statement whose run failed meets its fault again, and the decoding pass meets those of table-level code
+the declaration pass met.
 
 ---
 

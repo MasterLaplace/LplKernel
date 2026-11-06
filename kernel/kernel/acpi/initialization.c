@@ -899,8 +899,6 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     bool devices = false;
 
     memset(out_initialization, 0, sizeof(*out_initialization));
-    out_initialization->acpi_mode_failed =
-        (machine->mode == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_FAILED) ? 1u : 0u;
     initialization_find_initializations(load, out_initialization);
     initialization_run_ini(load, out_initialization, INITIALIZATION_ROOT);
     initialization_run_ini(load, out_initialization, initialization_object(load, INITIALIZATION_ROOT, "_SB_"));

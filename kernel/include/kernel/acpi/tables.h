@@ -190,6 +190,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceModeSwitch {
     uint32_t enable_registers_cleared; /**< GPE and PM1 enable registers written before ACPI_ENABLE. */
     uint32_t polls;                    /**< Reads of SCI_EN once ACPI_ENABLE was written. */
     uint32_t waited_milliseconds;      /**< Milliseconds the host waited between them, as it counts them. */
+    uint32_t acpi_mode_failed;         /**< 1 when SCI_EN stayed clear past the bound: the platform goes on in legacy
+                                            mode, and step 8 writes no CST_CNT (§3.8 step 0). */
 } AdvancedConfigurationAndPowerInterfaceModeSwitch_t;
 
 /**

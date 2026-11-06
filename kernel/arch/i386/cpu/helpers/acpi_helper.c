@@ -69,7 +69,6 @@ acpi_helper_write_initialization_record(Serial_t *serial,
             &load->space, initialization->first_failure_node, path, sizeof(path)) == 0u)
         memcpy(path, "too_deep", sizeof("too_deep"));
     kernel_telemetry_begin_record(serial, "acpi.init");
-    kernel_telemetry_write_unsigned("acpi_mode_failed", initialization->acpi_mode_failed);
     kernel_telemetry_write_unsigned("initializations", initialization->initializations);
     kernel_telemetry_write_unsigned("initialization_failed", initialization->initialization_failed);
     kernel_telemetry_write_unsigned("registrations", initialization->registrations);
@@ -393,6 +392,7 @@ void write_acpi_mode_record(Serial_t *serial)
 
     kernel_telemetry_begin_record(serial, "acpi.mode");
     kernel_telemetry_write_text("outcome", advanced_configuration_and_power_interface_mode_outcome_name(mode->outcome));
+    kernel_telemetry_write_unsigned("acpi_mode_failed", mode->acpi_mode_failed);
     kernel_telemetry_write_unsigned("enables_cleared", mode->enable_registers_cleared);
     kernel_telemetry_write_unsigned("polls", mode->polls);
     kernel_telemetry_write_unsigned("waited_ms", mode->waited_milliseconds);
