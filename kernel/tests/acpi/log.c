@@ -123,14 +123,74 @@ KERNEL_TEST(a_store_to_debug_is_logged_at_debug_level)
     log_print_lines(test, &log_host);
     kernel_test_check(test, log_load.evaluation.debug_stores == 3u && log_host.log_count == 3u,
                       "three stores to Debug, three lines");
+    kernel_test_check(
+        test, log_line_is(&log_host, 0u, LOG_LEVEL(DEBUG), "debug_stores kind=Integer value=0x000000000000002A"),
+        "Store (0x2A, Debug) logs the Integer in sixteen digits");
     kernel_test_check(test,
-                      log_line_is(&log_host, 0u, LOG_LEVEL(DEBUG), "debug_store kind=Integer value=0x000000000000002A"),
-                      "Store (0x2A, Debug) logs the Integer in sixteen digits");
-    kernel_test_check(test, log_line_is(&log_host, 1u, LOG_LEVEL(DEBUG), "debug_store kind=String value=Hi_there"),
+                      log_line_is(&log_host, 1u, LOG_LEVEL(DEBUG), "debug_stores kind=String length=8 value=Hi_there"),
                       "Store (\"Hi there\", Debug) logs its characters, the space as _");
-    kernel_test_check(test, log_line_is(&log_host, 2u, LOG_LEVEL(DEBUG), "debug_store kind=Buffer length=2 bytes=01FE"),
+    kernel_test_check(test,
+                      log_line_is(&log_host, 2u, LOG_LEVEL(DEBUG), "debug_stores kind=Buffer length=2 bytes=01FE"),
                       "Store (Buffer () { 0x01, 0xFE }, Debug) logs its length and its bytes");
     advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief A store to Debug of a Buffer longer than the line shows, of a Package, of a reference and of an empty String
+ *        is logged by what each is (§5.2): Buffer (20) {} by its length and its first 16 bytes, Package () { One, 2 }
+ *        by its count, RefOf (PKG0) as a reference, and "" by its length alone, so that no field is left empty.
+ */
+KERNEL_TEST(a_store_to_debug_logs_each_kind_of_value)
+{
+    static const uint8_t aml[] = {
+        0x08u, 'P',   'K',   'G',   '0',   0x12u, 0x03u, 0x01u, 0x01u, 0x70u, 0x11u, 0x03u, 0x0Au,
+        0x14u, 0x5Bu, 0x31u, 0x70u, 0x12u, 0x05u, 0x02u, 0x01u, 0x0Au, 0x02u, 0x5Bu, 0x31u, 0x70u,
+        0x71u, 'P',   'K',   'G',   '0',   0x5Bu, 0x31u, 0x70u, 0x0Du, 0x00u, 0x5Bu, 0x31u,
+    };
+
+    if (!made_up_load_table(test, &log_load, &log_host, log_dsdt, 2u, aml, sizeof(aml)))
+        return;
+    log_print_lines(test, &log_host);
+    kernel_test_check(test, log_load.evaluation.debug_stores == 4u && log_host.log_count == 4u,
+                      "four stores to Debug, four lines");
+    kernel_test_check(test,
+                      log_line_is(&log_host, 0u, LOG_LEVEL(DEBUG),
+                                  "debug_stores kind=Buffer length=20 bytes=00000000000000000000000000000000"),
+                      "Buffer (20) {} logs its length and its first 16 bytes");
+    kernel_test_check(test, log_line_is(&log_host, 1u, LOG_LEVEL(DEBUG), "debug_stores kind=Package count=2"),
+                      "Package () { One, 2 } logs its count");
+    kernel_test_check(test, log_line_is(&log_host, 2u, LOG_LEVEL(DEBUG), "debug_stores kind=Reference"),
+                      "RefOf (PKG0) logs a reference");
+    kernel_test_check(test, log_line_is(&log_host, 3u, LOG_LEVEL(DEBUG), "debug_stores kind=String length=0"),
+                      "\"\" logs its length and no empty value");
+    advanced_configuration_and_power_interface_machine_language_close(&log_load);
+}
+
+/**
+ * @brief Each level's call gives the host its level, and a level's name is "unknown" past the three a host is given:
+ *        a line written at error, then at warning, reaches the simulated host at each.
+ */
+KERNEL_TEST(each_level_reaches_the_host_as_itself)
+{
+    static AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    advanced_configuration_and_power_interface_simulated_host_open(&log_host);
+    advanced_configuration_and_power_interface_log_open(&line, "probe");
+    advanced_configuration_and_power_interface_log_error(&log_host.host, &line);
+    advanced_configuration_and_power_interface_log_warning(&log_host.host, &line);
+    advanced_configuration_and_power_interface_log_debug(&log_host.host, &line);
+    kernel_test_check(test,
+                      log_host.log_count == 3u && log_line_is(&log_host, 0u, LOG_LEVEL(ERROR), "probe") &&
+                          log_line_is(&log_host, 1u, LOG_LEVEL(WARNING), "probe") &&
+                          log_line_is(&log_host, 2u, LOG_LEVEL(DEBUG), "probe"),
+                      "error, warning and debug reach the host as themselves");
+    kernel_test_check(
+        test,
+        memcmp(advanced_configuration_and_power_interface_log_level_name(LOG_LEVEL(WARNING)), "warning", 8u) == 0 &&
+            memcmp(advanced_configuration_and_power_interface_log_level_name(0u), "unknown", 8u) == 0 &&
+            memcmp(advanced_configuration_and_power_interface_log_level_name(4u), "unknown", 8u) == 0 &&
+            memcmp(advanced_configuration_and_power_interface_log_level_name(255u), "unknown", 8u) == 0,
+        "warning is named, 0, 4 and 255 are unknown");
 }
 
 /**

@@ -16,13 +16,13 @@
  * @brief The lines the ACPI layer writes to its host's log, and the levels a build compiles out.
  *
  * A line is an event word, the name of the counter it stands beside, then fields `key=value` whose values
- * hold no space and no `=`, such as `checksum_bad_loaded table=DSDT/MADEUPML`. It goes to the host's log
- * call at a level (§3.3). A build keeps the levels from ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_ERROR
- * to ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_BUILD_LEVEL, debug for a debug build, warning for a
- * release one, and compiles out the others (O16): below its level a build compiles neither the level's log
- * function, advanced_configuration_and_power_interface_log_debug for a release build, nor the code that
- * builds its lines, which each call site wraps in ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_AT_DEBUG.
- * nm then finds no symbol of that function in a release object.
+ * hold no space and no `=`, such as `checksum_bad_loaded table=DSDT/MADEUPML` or `debug_stores kind=Integer ...`. It
+ *goes to the host's log call at a level (§3.3). A build keeps the levels from
+ *ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_ERROR to ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_BUILD_LEVEL,
+ *debug for a debug build, warning for a release one, and compiles out the others (O16): below its level a build
+ *compiles neither the level's log function, advanced_configuration_and_power_interface_log_debug for a release build,
+ *nor the code that builds its lines, which each call site wraps in
+ *ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_AT_DEBUG. nm then finds no symbol of that function in a release object.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -116,7 +116,7 @@ advanced_configuration_and_power_interface_log_unsigned(AdvancedConfigurationAnd
 
 /**
  * @brief Appends the field `table=<signature>/<OEM table ID>` to a line, the identifier's trailing spaces and
- *        NULs left out, as the host harness names a table.
+ *        NULs left out, and each other character that is a space, an `=` or not printable written as `_`.
  *
  * @param line   The line.
  * @param header The table's header.

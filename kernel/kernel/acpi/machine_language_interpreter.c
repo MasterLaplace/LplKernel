@@ -1132,20 +1132,50 @@ static MachineLanguageStatus_t machine_language_store_to_reference(MachineLangua
 
 #if ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_BUILD_LEVEL >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_DEBUG
 /**
- * @brief Logs at debug level the value a store to Debug was given (§5.2): an Integer by its value, a String by its
- *        characters, a Buffer by its length and its first MACHINE_LANGUAGE_DEBUG_BYTES bytes, a Package by its
- *        count, any other value by its kind.
+ * @brief Appends a String's or a Buffer's fields to a line: its kind and its length, then, when it holds any, a
+ *        String's characters, or a Buffer's first MACHINE_LANGUAGE_DEBUG_BYTES bytes in hexadecimal.
  */
-static void machine_language_log_debug_store(const MachineLanguageLoad_t *load, const MachineLanguageValue_t *value)
+static void machine_language_log_bytes(AdvancedConfigurationAndPowerInterfaceLogLine_t *line,
+                                       const MachineLanguageLoad_t *load, const MachineLanguageValue_t *value)
 {
     static const char alphabet[] = "0123456789ABCDEF";
-    AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+    const bool string = value->kind == MACHINE_LANGUAGE_VALUE(STRING);
     char digits[2u * MACHINE_LANGUAGE_DEBUG_BYTES];
     uint8_t scratch[8];
     const uint8_t *bytes = NULL;
     uint32_t length = 0u;
 
-    advanced_configuration_and_power_interface_log_open(&line, "debug_store");
+    (void) advanced_configuration_and_power_interface_machine_language_value_bytes(
+        &load->heap, value, load->integer_bits, scratch, &bytes, &length);
+    advanced_configuration_and_power_interface_log_text(line, "kind", string ? "String" : "Buffer");
+    advanced_configuration_and_power_interface_log_unsigned(line, "length", length);
+    if (length == 0u)
+        return;
+    if (string)
+    {
+        advanced_configuration_and_power_interface_log_characters(line, "value", (const char *) bytes, length);
+        return;
+    }
+    length = (length < MACHINE_LANGUAGE_DEBUG_BYTES) ? length : MACHINE_LANGUAGE_DEBUG_BYTES;
+    for (uint32_t byte = 0u; byte < length; ++byte)
+    {
+        digits[2u * byte] = alphabet[bytes[byte] >> 4u];
+        digits[2u * byte + 1u] = alphabet[bytes[byte] & 0xFu];
+    }
+    advanced_configuration_and_power_interface_log_characters(line, "bytes", digits, 2u * length);
+}
+
+/**
+ * @brief Logs at debug level the value a store to Debug was given (§5.2): an Integer by its value, a String or a
+ *        Buffer as machine_language_log_bytes writes it, a Package by its count, a reference as one, any other value
+ *        by its kind; kept out of line, so that the store does not hold its line on the stack.
+ */
+__attribute__((noinline)) static void machine_language_log_debug_store(const MachineLanguageLoad_t *load,
+                                                                       const MachineLanguageValue_t *value)
+{
+    AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    advanced_configuration_and_power_interface_log_open(&line, "debug_stores");
     switch (value->kind)
     {
     case MACHINE_LANGUAGE_VALUE(INTEGER):
@@ -1153,30 +1183,18 @@ static void machine_language_log_debug_store(const MachineLanguageLoad_t *load, 
         advanced_configuration_and_power_interface_log_hexadecimal(&line, "value", value->payload, 16u);
         break;
     case MACHINE_LANGUAGE_VALUE(STRING):
-        (void) advanced_configuration_and_power_interface_machine_language_value_bytes(&load->heap, value, 64u, scratch,
-                                                                                       &bytes, &length);
-        advanced_configuration_and_power_interface_log_text(&line, "kind", "String");
-        advanced_configuration_and_power_interface_log_characters(&line, "value", (const char *) bytes, length);
-        break;
-    case MACHINE_LANGUAGE_VALUE(BUFFER):
-        (void) advanced_configuration_and_power_interface_machine_language_value_bytes(&load->heap, value, 64u, scratch,
-                                                                                       &bytes, &length);
-        advanced_configuration_and_power_interface_log_text(&line, "kind", "Buffer");
-        advanced_configuration_and_power_interface_log_unsigned(&line, "length", length);
-        length = (length < MACHINE_LANGUAGE_DEBUG_BYTES) ? length : MACHINE_LANGUAGE_DEBUG_BYTES;
-        for (uint32_t byte = 0u; byte < length; ++byte)
-        {
-            digits[2u * byte] = alphabet[bytes[byte] >> 4u];
-            digits[2u * byte + 1u] = alphabet[bytes[byte] & 0xFu];
-        }
-        advanced_configuration_and_power_interface_log_characters(&line, "bytes", digits, 2u * length);
-        break;
+    case MACHINE_LANGUAGE_VALUE(BUFFER): machine_language_log_bytes(&line, load, value); break;
     case MACHINE_LANGUAGE_VALUE(PACKAGE):
         advanced_configuration_and_power_interface_log_text(&line, "kind", "Package");
         advanced_configuration_and_power_interface_log_unsigned(&line, "count",
                                                                 machine_language_object(load, value)->length);
         break;
-    default: advanced_configuration_and_power_interface_log_hexadecimal(&line, "kind", value->kind, 2u); break;
+    default:
+        if (machine_language_is_reference(value->kind))
+            advanced_configuration_and_power_interface_log_text(&line, "kind", "Reference");
+        else
+            advanced_configuration_and_power_interface_log_hexadecimal(&line, "kind", value->kind, 2u);
+        break;
     }
     advanced_configuration_and_power_interface_log_debug(load->space.host, &line);
 }

@@ -4,7 +4,6 @@
 
 #define LOG_CUT_MARK        "..." /**< What ends a line a field did not fit in. */
 #define LOG_CUT_MARK_LENGTH 3u    /**< Its characters. */
-#define LOG_TABLE_ID_BYTES  8u    /**< Bytes of a table's OEM table ID. */
 
 typedef AdvancedConfigurationAndPowerInterfaceLogLine_t LogLine_t;
 
@@ -126,7 +125,7 @@ void advanced_configuration_and_power_interface_log_unsigned(LogLine_t *line, co
 void advanced_configuration_and_power_interface_log_table(
     LogLine_t *line, const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
 {
-    uint32_t identifier = LOG_TABLE_ID_BYTES;
+    uint32_t identifier = (uint32_t) sizeof(header->oem_table_id);
 
     while (identifier != 0u &&
            (header->oem_table_id[identifier - 1u] == ' ' || header->oem_table_id[identifier - 1u] == '\0'))
