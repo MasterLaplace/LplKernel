@@ -224,7 +224,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap {
  *
  * @details The bytes after the header follow from @p kind and @p length: a String's characters and
  *          its NUL, a Buffer's bytes, a Package's element values, Uninitialized, and @p length bytes
- *          for any other kind.
+ *          for any other kind. Only those are zeroed: the rest of the block its size class rounds it up to holds
+ *          what the block held before, which nothing reads.
  * @param heap       The heap.
  * @param space      The namespace whose arena gives the pages.
  * @param kind       An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_* kind.

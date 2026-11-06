@@ -784,10 +784,8 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
 
     MachineLanguageHeader_t *header = advanced_configuration_and_power_interface_machine_language_object(heap, handle);
 
-    memset(header, 0, block_bytes);
-    header->references = 1u;
-    header->kind = kind;
-    header->length = length;
+    *header = (MachineLanguageHeader_t){.references = 1u, .kind = kind, .length = length};
+    memset(header + 1, 0, (size_t) payload);
     if ((uint32_t) (kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING) <
             sizeof(heap->length_peaks) / sizeof(heap->length_peaks[0]) &&
         length > heap->length_peaks[kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING])
