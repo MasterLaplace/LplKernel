@@ -67,8 +67,9 @@
     0x08u /**< Node flag: step 4 or a late initialisation found the device neither present nor functioning: a late     \
                initialisation leaves alone what lies below it (§3.8). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_WALKED                                        \
-    0x10u /**< Node flag: step 4 or a late initialisation decided whether the device is present, by its _STA or        \
-               without one (§3.8). */
+    0x10u /**< Node flag: step 4 or a late initialisation applied step 4's rule to the device: decided whether it is   \
+               present, by its _STA or without one, and ran its _INI if so; a walk that reaches it again keeps that    \
+               decision (§3.8). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DUPLICATED                                    \
     0x20u /**< Node flag: the declaration pass refused a Device, ThermalZone, Processor, PowerResource or Method of    \
                this name as a duplicate: past it, the body of a construct naming the node is read only when that       \
