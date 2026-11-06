@@ -310,23 +310,16 @@ static bool initialization_is_system_bus(const InitializationLoad_t *load, uint3
 }
 
 /**
- * @brief Initialises one device, processor or thermal zone (§3.8 step 4): present, its _INI runs,
- *        but for \_SB_'s; a subtree without _INI, or a device neither present nor functioning, marked
- *        absent, is not walked. A device a walk has decided already, which a late walk reaches again
- *        below a device a later table declares, keeps that decision: its _STA is not read again, and no
- *        _INI runs twice (§3.8).
+ * @brief Applies step 4's rule to one device, processor or thermal zone, marked walked (§3.8 step 4): its
+ *        _STA read, present, its _INI runs, but for \_SB_'s; neither present nor functioning, it is marked
+ *        absent; its _STA failing, no _INI runs.
  *
- * @return Whether the walk descends into its children.
+ * @return Whether the walk descends into its children: all but an absent device.
  */
-static bool initialization_initialize_device(InitializationLoad_t *load, Initialization_t *initialization,
-                                             uint32_t device)
+static bool initialization_decide_device(InitializationLoad_t *load, Initialization_t *initialization, uint32_t device)
 {
     uint64_t status = 0u;
 
-    if ((initialization_node(load, device)->flags & INITIALIZATION_HOLDS) == 0u)
-        return false;
-    if ((initialization_node(load, device)->flags & INITIALIZATION_WALKED) != 0u)
-        return (initialization_node(load, device)->flags & INITIALIZATION_ABSENT) == 0u;
     initialization_node(load, device)->flags |= INITIALIZATION_WALKED;
     if (!initialization_read_status(load, initialization, device, &status))
         return true;
@@ -340,6 +333,23 @@ static bool initialization_initialize_device(InitializationLoad_t *load, Initial
     if (!initialization_is_system_bus(load, device))
         initialization_run_ini(load, initialization, device);
     return true;
+}
+
+/**
+ * @brief Initialises one device, processor or thermal zone (§3.8 step 4), as initialization_decide_device
+ *        does; a subtree without _INI is not walked. A device a walk has decided already, which a late walk
+ *        reaches again, keeps that decision: its _STA is not read again, and no _INI runs twice (§3.8).
+ *
+ * @return Whether the walk descends into its children.
+ */
+static bool initialization_initialize_device(InitializationLoad_t *load, Initialization_t *initialization,
+                                             uint32_t device)
+{
+    if ((initialization_node(load, device)->flags & INITIALIZATION_HOLDS) == 0u)
+        return false;
+    if ((initialization_node(load, device)->flags & INITIALIZATION_WALKED) != 0u)
+        return (initialization_node(load, device)->flags & INITIALIZATION_ABSENT) == 0u;
+    return initialization_decide_device(load, initialization, device);
 }
 
 /**
@@ -512,9 +522,10 @@ static uint32_t initialization_highest_unwalked(const InitializationLoad_t *load
 }
 
 /**
- * @brief Decides, from the top down, the presence of the devices above @p index whose _STA step 4 did not
- *        read, the subtrees it skipped, as step 4 would: one neither present nor functioning is marked
- *        absent; one whose _STA fails is walked into, counted.
+ * @brief Decides, from the top down, the devices above @p index whose _STA step 4 did not read, the
+ *        subtrees it skipped, under step 4's rule (initialization_decide_device): one present runs the
+ *        _INI a table loaded since gave it; one neither present nor functioning is marked absent; one whose
+ *        _STA fails is walked into, counted.
  *
  * @return Whether none of them is absent.
  */
@@ -522,17 +533,8 @@ static bool initialization_decide_above(InitializationLoad_t *load, Initializati
 {
     for (uint32_t device = initialization_highest_unwalked(load, index); device != 0u;
          device = initialization_highest_unwalked(load, index))
-    {
-        uint64_t status = 0u;
-
-        initialization_node(load, device)->flags |= INITIALIZATION_WALKED;
-        if (initialization_read_status(load, initialization, device, &status) &&
-            (status & (INITIALIZATION_PRESENT | INITIALIZATION_FUNCTIONING)) == 0u)
-        {
-            initialization_node(load, device)->flags |= INITIALIZATION_ABSENT;
+        if (!initialization_decide_device(load, initialization, device))
             return false;
-        }
-    }
     return true;
 }
 

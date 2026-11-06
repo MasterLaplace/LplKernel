@@ -2129,9 +2129,9 @@ KERNEL_TEST(no_initialization_runs_twice)
 
 /**
  * @brief Builds the made-up machine of the tests below and initialises it: the DSDT names \PCIX by an External
- *        before DEV1, whose _INI loads load_loaded, which the caller wrote; load_inner, which the caller wrote too,
- *        declares Device (\PCIX), whose _INI appends 5 to \TRAC, then what the @p length bytes at @p body declare
- *        in it, and an _INI of load_loaded loads it into \HC1.
+ *        before DEV1, whose _INI loads load_loaded, which the caller wrote; load_inner, which this writes, declares
+ *        Device (\PCIX), whose _INI appends 5 to \TRAC, then what the @p length bytes at @p body declare in it, and
+ *        an _INI of load_loaded loads it into \HC1.
  *
  * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
  *
@@ -2189,18 +2189,18 @@ KERNEL_TEST(a_device_declared_over_an_external_above_an_initialised_one_runs_no_
                       "DEVA's _INI runs once, late, then PCIX's, late, without DEVA's again");
     kernel_test_check(
         test, load_counts.initializations == 3u && load_counts.late_initializations == 2u && load_counts.tables == 3u,
-        "three _INI run, DEV1's, DEVA's and PCIX's, two of them in late initialisations");
+        "three _INI run, DEV1's, DEVA's and PCIX's, two of them in late initialisations, which three tables declare");
     load_close(test);
 }
 
 /**
- * @brief The late walk of a device declared over an External goes into the devices below it a walk found present,
- *        and not into those it found neither present nor functioning (§3.8): the first table declares, in \PCIX,
- *        Device (DEVA), absent, holding Device (DEVB), whose _INI appends 9 to \TRAC, then Device (DEVC), whose _INI
+ * @brief The late walk of a device declared over an External goes into the devices below it a walk did not find
+ *        absent, and not into those it found neither present nor functioning (§3.8): the first table declares, in
+ * \PCIX, Device (DEVA), absent, holding Device (DEVB), whose _INI appends 9 to \TRAC, then Device (DEVC), whose _INI
  *        appends 3 and loads the table declaring Device (\PCIX), which gives DEVC.DEVD, a device without _INI, an
  *        _INI appending 7.
  */
-KERNEL_TEST(the_late_walk_over_an_external_goes_into_the_devices_found_present_only)
+KERNEL_TEST(the_late_walk_over_an_external_goes_into_the_devices_a_walk_did_not_find_absent)
 {
     static MadeUpAml_t device;
     static MadeUpAml_t inner;
@@ -2285,6 +2285,95 @@ KERNEL_TEST(a_device_in_a_power_resource_of_a_late_device_runs_its_initializatio
                       load_integer("TRAC") == 0x7u && load_counts.status_evaluations == 1u &&
                           load_counts.initializations == 2u && load_counts.late_initializations == 1u,
                       "INNR's _STA and _INI run once, late, after BDEV's _INI");
+    load_close(test);
+}
+
+/**
+ * @brief Builds Device (GIVN), without _INI, whose _STA returns @p status, and Device (BDEV), whose _INI loads a
+ *        table, in the order @p loader_first says, BDEV first or GIVN first; the table gives GIVN an _INI appending 7
+ *        to \TRAC, and declares Device (\GIVN.LATE), present, whose _INI appends 3. Then initialises the namespace.
+ *
+ * Its Return opcode is raw bytes: a partial term around @p status.
+ *
+ * @return false, the load closed, when the table was not loaded.
+ */
+static bool load_given_initialization_machine(KernelTest_t *test, uint8_t status, bool loader_first)
+{
+    static MadeUpAml_t device;
+    static MadeUpAml_t given;
+    static MadeUpAml_t loader;
+    const uint8_t returns[] = {0xA4u, 0x0Au, status};
+
+    load_begin();
+    made_up_aml_begin(&device);
+    load_present_initialization(&device, 3u);
+    made_up_aml_begin(&load_inner);
+    load_traced_method(&load_inner, "_INI", 0x00u, NULL, 0u, 7u, false);
+    made_up_aml_device(&load_inner, "LATE", &device);
+    made_up_aml_scope(&load_loaded, "GIVN", &load_inner);
+    load_region("TBLR", LOAD_TABLE_ADDRESS, load_place(&load_loaded, load_table, LOAD_TABLE_ADDRESS));
+    made_up_aml_begin(&given);
+    load_method(&given, "_STA", returns, sizeof(returns));
+    made_up_aml_begin(&loader);
+    load_method(&loader, "_INI", load_loads_table_into_first_handle_aml,
+                sizeof(load_loads_table_into_first_handle_aml));
+    if (loader_first)
+        made_up_aml_device(&load_aml, "BDEV", &loader);
+    made_up_aml_device(&load_aml, "GIVN", &given);
+    if (!loader_first)
+        made_up_aml_device(&load_aml, "BDEV", &loader);
+    if (!load_run(test))
+        return false;
+    load_initialize(0u);
+    if (kernel_test_check(test, load_integer("HND1") == LOAD_ONES, "BDEV's _INI loads the table at step 4"))
+        return true;
+    load_close(test);
+    return false;
+}
+
+/**
+ * @brief An _INI a table loaded at step 4 gives a present device step 4 skipped, above a device of that table, runs
+ *        once, before that device's, as step 4 runs it when it reaches the device after the load (§3.8): the late
+ *        initialisation reads the device's _STA under step 4's rule.
+ */
+KERNEL_TEST(an_initialization_a_late_table_gives_a_device_above_one_of_its_own_runs_first)
+{
+    if (!load_given_initialization_machine(test, 0x0Fu, false))
+        return;
+    kernel_test_check(test,
+                      load_integer("TRAC") == 0x73u && load_counts.status_evaluations == 2u &&
+                          load_counts.late_initializations == 1u,
+                      "GIVN's _STA and _INI run once, late, then LATE's");
+    load_close(test);
+}
+
+/**
+ * @brief The same machine, BDEV declared before GIVN: step 4 reaches GIVN after the load and runs its _INI, then
+ *        LATE's, the order the late initialisation follows when GIVN comes first (§3.8).
+ */
+KERNEL_TEST(an_initialization_a_table_gives_a_device_step_four_reaches_later_runs_first)
+{
+    if (!load_given_initialization_machine(test, 0x0Fu, true))
+        return;
+    kernel_test_check(test,
+                      load_integer("TRAC") == 0x73u && load_counts.status_evaluations == 2u &&
+                          load_counts.late_initializations == 0u,
+                      "GIVN's _STA and _INI run once, at step 4, then LATE's");
+    load_close(test);
+}
+
+/**
+ * @brief An _INI a table loaded at step 4 gives a device step 4 skipped, functioning but not present, does not run,
+ *        and the late initialisation goes into the device all the same (§3.8 step 4).
+ */
+KERNEL_TEST(an_initialization_a_late_table_gives_a_device_not_present_does_not_run)
+{
+    if (!load_given_initialization_machine(test, 0x08u, false))
+        return;
+    kernel_test_check(test,
+                      load_integer("TRAC") == 0x3u && load_counts.status_evaluations == 2u &&
+                          load_counts.late_initializations == 1u,
+                      "GIVN's _STA is read once, its _INI does not run, and LATE's does");
     load_close(test);
 }
 
