@@ -98,13 +98,6 @@ static const uint8_t initialization_creates_region_under_mutex_aml[] = {
 };
 
 /**
- * @brief Divide (One, Zero): the body of a method that fails with divide_by_zero.
- */
-static const uint8_t initialization_divide_by_zero_aml[] = {
-    0x78u, 0x01u, 0x00u, 0x00u, 0x00u,
-};
-
-/**
  * @brief Name (_STA, Buffer (0) {}): a status that reads as 0.
  */
 static const uint8_t initialization_empty_status_aml[] = {
@@ -178,13 +171,6 @@ static const uint8_t initialization_registration_traces_aml[] = {
 static const uint8_t initialization_return_arg3_aml[] = {
     0xA4u,
     0x6Bu,
-};
-
-/**
- * @brief Return (Divide (One, Zero)): the body of a method that fails with divide_by_zero, returning its quotient.
- */
-static const uint8_t initialization_return_divide_by_zero_aml[] = {
-    0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u,
 };
 
 /**

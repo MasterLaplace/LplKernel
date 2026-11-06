@@ -1,4 +1,5 @@
 #include "fixtures/initialization.h"
+#include "fixtures/common.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -179,11 +180,10 @@ static void initialization_status(MadeUpAml_t *aml, uint64_t status)
 static void initialization_failing(MadeUpAml_t *aml, const char *name, uint8_t arguments, bool returns)
 {
     if (returns)
-        initialization_method(aml, name, arguments, initialization_return_divide_by_zero_aml,
-                              sizeof(initialization_return_divide_by_zero_aml));
+        initialization_method(aml, name, arguments, common_return_divide_by_zero_aml,
+                              sizeof(common_return_divide_by_zero_aml));
     else
-        initialization_method(aml, name, arguments, initialization_divide_by_zero_aml,
-                              sizeof(initialization_divide_by_zero_aml));
+        initialization_method(aml, name, arguments, common_divide_by_zero_aml, sizeof(common_divide_by_zero_aml));
 }
 
 /**

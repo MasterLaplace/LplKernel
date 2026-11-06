@@ -1,4 +1,5 @@
 #include "fixtures/pci_config.h"
+#include "fixtures/common.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -458,7 +459,7 @@ KERNEL_TEST(a_failing_attach_method_is_an_absent_object_and_runs_once)
     made_up_aml_begin(&pci_root_body);
     made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, pci_return_divide_by_zero_aml, sizeof(pci_return_divide_by_zero_aml));
+    made_up_aml_raw(&pci_method_body, common_return_divide_by_zero_aml, sizeof(common_return_divide_by_zero_aml));
     made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
     made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
     made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);

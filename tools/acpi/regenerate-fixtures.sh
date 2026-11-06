@@ -9,7 +9,8 @@ The made-up tables of the ACPI tests, written in ASL (specification §8.2). Each
 kernel/tests/acpi/fixtures/<suite>/<name>.asl is compiled with the pinned iasl, as `iasl -oa -r 1`
 (§8.6), in the sandbox of tools/acpi/sandbox.sh, and its AML, the 36 bytes of the table header left
 out, becomes the array <name>_aml of the header kernel/tests/acpi/fixtures/<suite>.h, which <suite>.c
-includes. The first /** */ block of a source documents its array there.
+includes. The tables more than one suite uses are in fixtures/common/, compiled into fixtures/common.h,
+which each of those suites includes. The first /** */ block of a source documents its array there.
 
 A source compiles without a warning and without an error, but for those it names on their own line with
 iasl's __EXPECT__(<id>): the ones its table makes on purpose. Remarks are not reported.
@@ -41,6 +42,7 @@ readonly TABLE_HEADER_BYTES=36
 readonly BYTES_PER_LINE=16
 readonly COLUMN_LIMIT=120
 readonly IDENTIFIER='^[a-z][a-z0-9_]*$'
+readonly SHARED=common
 WORK="$(mktemp -d)"
 readonly WORK
 trap 'rm -rf "$WORK"' EXIT
@@ -143,6 +145,17 @@ creation_date() {
     [[ -n "$date" ]] && echo "$date" || date +%F
 }
 
+# Prints the @brief of the header of the suite $1: whose tables it holds, and where their sources are.
+header_brief() {
+    if [[ "$1" == "$SHARED" ]]; then
+        echo " * @brief The made-up tables more than one suite of kernel/tests/acpi/ uses, compiled from the ASL"
+        echo " *        sources of kernel/tests/acpi/fixtures/$1/ (docs/acpi/specification.md, §8.2)."
+    else
+        echo " * @brief The made-up tables of kernel/tests/acpi/$1.c, compiled from the ASL sources of"
+        echo " *        kernel/tests/acpi/fixtures/$1/ (docs/acpi/specification.md, §8.2)."
+    fi
+}
+
 # Prints the licence block and the guard's opening of the header of the suite $1, created on $2.
 header_opening() {
     local suite="$1" created="$2" guard="KERNEL_TESTS_ACPI_FIXTURES_${1^^}_H"
@@ -162,8 +175,7 @@ header_opening() {
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file ${suite}.h
- * @brief The made-up tables of kernel/tests/acpi/${suite}.c, compiled from the ASL sources of
- *        kernel/tests/acpi/fixtures/${suite}/ (docs/acpi/specification.md, §8.2).
+$(header_brief "$suite")
  *
  * Written by tools/acpi/regenerate-fixtures.sh --write, which checks it against its sources when run
  * without an option: a table changes in its source, never here.
