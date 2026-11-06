@@ -363,8 +363,8 @@ static bool initialization_is_late(const InitializationLoad_t *load, uint32_t in
  * @brief Marks what the tables past the first @p first, up to the first @p last, declare, as the pre-pass
  *        marks the static tables: each device, processor and thermal zone they declare, counted, and the
  *        device or processor their _INI, _OSC or _PDC is declared in; tells whether they declare a
- *        PCI_Config region with a _REG in its scope, a device that roots one of their subtrees, and an _OSC or a
- *        _PDC in a device or processor, theirs or one declared before them.
+ *        PCI_Config region with a _REG in its scope, a device that roots one of their subtrees, and a device or
+ *        processor of theirs that holds an _OSC or a _PDC, or one they give an _OSC or a _PDC.
  */
 static void initialization_mark_late(InitializationLoad_t *load, Initialization_t *initialization, uint32_t first,
                                      uint32_t last, bool *out_regions, bool *out_devices, bool *out_capabilities)
@@ -383,7 +383,10 @@ static void initialization_mark_late(InitializationLoad_t *load, Initialization_
             if (initialization_object(load, index, "_INI") != 0u)
                 initialization_mark(load, index, INITIALIZATION_HOLDS);
             if (node->type != INITIALIZATION_NODE(THERMAL_ZONE) && initialization_holds_capabilities(load, index))
+            {
                 initialization_mark(load, index, INITIALIZATION_CAPABLE);
+                *out_capabilities = true;
+            }
             *out_devices |= !advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
                                 initialization_node(load, parent)->type) ||
                             !initialization_is_late(load, parent, first, last);
@@ -470,11 +473,10 @@ static bool initialization_is_below(const InitializationLoad_t *load, uint32_t i
 
 /**
  * @brief Whether the walk of step 4 or step 7, at @p walking, still reaches @p index, which a table loaded
- *        meanwhile declares, or gives an _OSC or a _PDC: below @p walking, or below a node the walk has not reached
- *        yet under the lowest node above both; never @p walking itself nor a node above it, which the walk has
- *        passed, and never when @p walking is 0, which the late initialisation passes once no walk runs. A
- *        @p walking step 4 does not descend into is absent, which initialization_under_absent tells first; step 7's
- *        @p walking is a node the pre-pass marked, which it descends into.
+ *        meanwhile declares: below @p walking, or below a node the walk has not reached yet under the lowest
+ *        node above both; never when @p walking is 0, which the late initialisation passes once no walk
+ *        runs. A @p walking step 4 does not descend into is absent, which initialization_under_absent tells
+ *        first; step 7's @p walking is a node the pre-pass marked, which it descends into.
  */
 static bool initialization_reached_later(const InitializationLoad_t *load, uint32_t index, uint32_t walking)
 {
@@ -486,8 +488,6 @@ static bool initialization_reached_later(const InitializationLoad_t *load, uint3
         return true;
     while (!initialization_is_below(load, index, initialization_node(load, branch)->parent))
         branch = initialization_node(load, branch)->parent;
-    if (branch == index)
-        return false;
 
     const uint32_t common = initialization_node(load, branch)->parent;
     uint32_t other = index;
@@ -583,8 +583,8 @@ static void initialization_walk_late(InitializationLoad_t *load, Initialization_
  *        when it evaluates anything. Before step 3, while initialization->tables is 0, nothing runs: steps
  *        3 and 4 initialise them.
  *
- * @return Whether those tables declared an _OSC or a _PDC in a device or processor, theirs or one declared before
- *         them, which only step 7's walk or the pass behind it gives capabilities to.
+ * @return Whether those tables declared a device or processor that holds an _OSC or a _PDC, or gave one an _OSC or
+ *         a _PDC, which only step 7's walk or the pass behind it gives capabilities to.
  */
 static bool initialization_settle(InitializationLoad_t *load, Initialization_t *initialization, uint32_t walking)
 {
@@ -830,7 +830,8 @@ static void initialization_negotiate_slot(InitializationLoad_t *load, Initializa
  * @brief Step 7 for @p index, as initialization_negotiate_slot gives it, then the late initialisation of the
  *        tables its evaluations loaded, its _HID's and _UID's included (§3.8).
  *
- * @return Whether those tables declared an _OSC or a _PDC in a device or processor.
+ * @return Whether those tables declared a device or processor that holds an _OSC or a _PDC, or gave one an _OSC or
+ *         a _PDC.
  */
 static bool initialization_negotiate_bound(InitializationLoad_t *load, Initialization_t *initialization,
                                            const InitializationMachine_t *machine, uint32_t index)
@@ -840,37 +841,44 @@ static bool initialization_negotiate_bound(InitializationLoad_t *load, Initializ
 }
 
 /**
- * @brief The table that declared the object @p scope holds as @p name, counted from 1, or 0 when it holds none.
+ * @brief The table that gave @p scope its child @p name, counted from 1, an Alias's own table for an Alias; 0 when
+ *        that child holds no object.
  */
 static uint16_t initialization_object_owner(InitializationLoad_t *load, uint32_t scope, const char *name)
 {
-    const uint32_t object = initialization_object(load, scope, name);
-
-    return (object == 0u) ? 0u : initialization_node(load, object)->owner;
+    if (initialization_object(load, scope, name) == 0u)
+        return 0u;
+    return initialization_node(load, advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                                         &load->space, scope, initialization_name(name)))
+        ->owner;
 }
 
 /**
- * @brief Whether the first _OSC or _PDC @p index held came from a table past the first @p first, up to the first
- *        @p last: those tables declared it, or gave it the first, and step 7 had no method to give it its
- *        capabilities through before them.
+ * @brief Whether the tables past the first @p first, up to the first @p last, declared the processor object
+ *        @p index, or gave it the first of the _OSC and _PDC it holds: step 7 had nothing to give its capabilities to,
+ *        or no method to give them through, before those tables.
  */
 static bool initialization_capable_late(InitializationLoad_t *load, uint32_t index, uint32_t first, uint32_t last)
 {
-    const uint16_t operating_system = initialization_object_owner(load, index, "_OSC");
-    const uint16_t driver = initialization_object_owner(load, index, "_PDC");
-    const uint16_t earliest =
-        (operating_system == 0u || (driver != 0u && driver < operating_system)) ? driver : operating_system;
+    const uint16_t operating_system_capabilities_owner = initialization_object_owner(load, index, "_OSC");
+    const uint16_t processor_driver_capabilities_owner = initialization_object_owner(load, index, "_PDC");
+    const uint16_t earliest = (operating_system_capabilities_owner == 0u ||
+                               (processor_driver_capabilities_owner != 0u &&
+                                processor_driver_capabilities_owner < operating_system_capabilities_owner)) ?
+                                  processor_driver_capabilities_owner :
+                                  operating_system_capabilities_owner;
 
-    return earliest > first && earliest <= last;
+    return initialization_is_late(load, index, first, last) || (earliest > first && earliest <= last);
 }
 
 /**
  * @brief Gives step 7's capabilities, in declaration order, to the processor objects that step 7's walk, at
- *        @p walking, no longer reaches and that the tables past the first @p first, up to the first @p last,
- *        declare or give their first _OSC or _PDC; their late initialisation marked them, so this walks only the
- *        subtrees the marks lead to, as step 7 does.
+ *        @p walking, no longer reaches, those above @p walking included, and that the tables past the first @p first,
+ *        up to the first @p last, declare or give their first _OSC or _PDC; their late initialisation marked them, so
+ *        this walks only the subtrees the marks lead to, as step 7 does.
  *
- * @return Whether the tables these evaluations loaded declared an _OSC or a _PDC in a device or processor.
+ * @return Whether the tables these evaluations loaded declared a device or processor that holds an _OSC or a _PDC,
+ *         or gave one an _OSC or a _PDC.
  */
 static bool initialization_negotiate_late(InitializationLoad_t *load, Initialization_t *initialization,
                                           const InitializationMachine_t *machine, uint32_t first, uint32_t last,
@@ -881,7 +889,7 @@ static bool initialization_negotiate_late(InitializationLoad_t *load, Initializa
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
          index = initialization_next(load, index, initialization_capable(load, index)))
         if (initialization_capable(load, index) && initialization_capable_late(load, index, first, last) &&
-            !initialization_reached_later(load, index, walking))
+            (initialization_is_below(load, walking, index) || !initialization_reached_later(load, index, walking)))
             capabilities |= initialization_negotiate_bound(load, initialization, machine, index);
     return capabilities;
 }
@@ -889,9 +897,9 @@ static bool initialization_negotiate_late(InitializationLoad_t *load, Initializa
 /**
  * @brief Gives step 7's capabilities to the processor objects that the tables past the first @p first declare, or
  *        give their first _OSC or _PDC, behind step 7's walk, at @p walking, until those tables load no other table
- *        (§3.8); the walk gives the others theirs. A round looks for them only when the tables before it declared an
- *        _OSC or a _PDC in a device or processor, as @p capabilities tells of the first: Intel's tables, which a
- *        _PDC loads, add other methods to processors declared already.
+ *        (§3.8); the walk gives the others theirs. A round looks for them only when the tables before it declared a
+ *        device or processor that holds an _OSC or a _PDC, or gave one an _OSC or a _PDC, as @p capabilities tells of
+ *        the first: Intel's tables, which a _PDC loads, add other methods to processors declared already.
  */
 static void initialization_negotiate_behind(InitializationLoad_t *load, Initialization_t *initialization,
                                             const InitializationMachine_t *machine, uint32_t first, bool capabilities,

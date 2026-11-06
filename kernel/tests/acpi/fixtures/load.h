@@ -30,6 +30,13 @@
 #include <stdint.h>
 
 /**
+ * @brief Alias (\PDCM, _PDC): a _PDC that names a method another table declared before it.
+ */
+static const uint8_t load_aliases_pdcm_as_pdc_aml[] = {
+    0x06u, 0x5Cu, 0x50u, 0x44u, 0x43u, 0x4Du, 0x5Fu, 0x50u, 0x44u, 0x43u,
+};
+
+/**
  * @brief Load (\TBL2, \HND2).
  */
 static const uint8_t load_code_loaded_loads_inner_aml[] = {
