@@ -33,6 +33,12 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_power_management_ti
 #define TIMER_SHORT_PAUSE     60000u   /**< Nanoseconds of a pause that a sample's spread of 75 µs still holds. */
 #define TIMER_WIDE_PAUSE      100000u  /**< Nanoseconds of a pause just past what a sample's spread of 75 µs holds. */
 #define TIMER_STATE(name)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_##name
+#define TIMER_REFERENCE_BACK_READ                                                                                      \
+    3000u /**< The read from which a reference that goes back reads less, about 3 ms into a wait of 1 µs reads. */
+#define TIMER_REFERENCE_DERAIL_STALL 10000u /**< Microseconds of a stall on a reference that derails during it. */
+#define TIMER_REFERENCE_PAUSE_AT     10u    /**< Milliseconds into a stall at which the machine pauses. */
+#define TIMER_REFERENCE_PAUSE        60u    /**< Milliseconds of that pause, past the 54.9 ms the reference holds. */
+#define REFERENCE_STATE(name)        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_##name
 
 /**
  * @brief A made-up machine whose time moves with each read made of it, its timer counting at its own
@@ -79,6 +85,7 @@ typedef struct TimerMachine {
 static TimerMachine_t timer_machine;
 static AdvancedConfigurationAndPowerInterfaceFixedDescription_t timer_fadt;
 static AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t timer_found;
+static AdvancedConfigurationAndPowerInterfaceReferenceWaits_t timer_reference_waits;
 
 /**
  * @brief What the made-up timer counts at @p nanoseconds of the machine's time.
@@ -1229,4 +1236,276 @@ KERNEL_TEST(each_timer_state_has_its_name)
         test,
         timer_name_is(advanced_configuration_and_power_interface_power_management_timer_state_name(9u), "unknown"),
         "and 9 is unknown");
+}
+
+/**
+ * @brief Resets the made-up machine as timer_open does, and the waits made on its reference to none.
+ */
+static void timer_open_reference(void)
+{
+    timer_open(0u);
+    memset(&timer_reference_waits, 0, sizeof(timer_reference_waits));
+}
+
+/**
+ * @brief Busy-waits @p microseconds on the made-up machine's reference through @p host, and gives the
+ *        nanoseconds that passed on the machine meanwhile.
+ */
+static uint64_t timer_reference_stall(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t microseconds,
+                                      uint32_t *out_waited)
+{
+    const uint64_t before = timer_machine.nanoseconds;
+
+    *out_waited =
+        advanced_configuration_and_power_interface_reference_stall(host, &timer_reference_waits, microseconds);
+    return timer_machine.nanoseconds - before;
+}
+
+/**
+ * @brief Sleeps @p microseconds on the made-up machine's reference, idling through timer_idle, and gives the
+ *        nanoseconds that passed on the machine meanwhile.
+ */
+static uint64_t timer_reference_sleep(uint32_t microseconds, uint32_t *out_waited)
+{
+    const uint64_t before = timer_machine.nanoseconds;
+
+    *out_waited = advanced_configuration_and_power_interface_reference_sleep(
+        &timer_host, &timer_reference_waits, microseconds, TIMER_IDLE_LONGEST, timer_idle);
+    return timer_machine.nanoseconds - before;
+}
+
+/**
+ * @brief Busy-waits TIMER_REFERENCE_DERAIL_STALL on the made-up machine's reference as it is set, and checks
+ *        that it derails there, that the host's own stall waits what it left, which @p whole says is all of
+ *        it, and that a later stall waits nothing, reads nothing and calls no stall of the host.
+ */
+static void timer_reference_derails(KernelTest_t *test, bool whole, const char *claim)
+{
+    uint32_t waited;
+    uint32_t later_waited;
+
+    (void) timer_reference_stall(&timer_host, TIMER_REFERENCE_DERAIL_STALL, &waited);
+
+    const uint32_t reads = timer_machine.reference_reads;
+    const uint32_t starts = timer_machine.reference_starts;
+    const uint64_t later = timer_reference_stall(&timer_host, TIMER_REFERENCE_DERAIL_STALL, &later_waited);
+
+    kernel_test_check(test,
+                      timer_reference_waits.state == REFERENCE_STATE(DERAILED) && timer_machine.host_stalls == 1u &&
+                          waited >= TIMER_REFERENCE_DERAIL_STALL &&
+                          (timer_machine.host_microseconds == TIMER_REFERENCE_DERAIL_STALL) == whole,
+                      claim);
+    kernel_test_check(test,
+                      later == 0u && later_waited == 0u && timer_machine.reference_reads == reads &&
+                          timer_machine.reference_starts == starts && timer_machine.host_stalls == 1u,
+                      "and a later stall waits nothing, neither reading nor starting it, nor calling the host's stall");
+}
+
+/**
+ * @brief A stall on the reference waits the microseconds asked as the machine's time counts them, and says
+ *        so: 1 µs and 50 µs, each from a start of the reference, which stays usable, without the host's stall.
+ */
+KERNEL_TEST(a_stall_waits_its_microseconds_on_the_reference)
+{
+    uint32_t one_waited;
+    uint32_t fifty_waited;
+    uint64_t one;
+    uint64_t fifty;
+
+    timer_open_reference();
+    timer_machine.access = TIMER_FAST_ACCESS;
+    one = timer_reference_stall(&timer_host, 1u, &one_waited);
+    fifty = timer_reference_stall(&timer_host, 50u, &fifty_waited);
+
+    kernel_test_check(test, one >= 1000u && one < 2000u, "1 µs lasts 1 µs to 2 µs");
+    kernel_test_check(test, one_waited >= 1u && one_waited <= 2u, "and says so");
+    kernel_test_check(test, fifty >= 50000u && fifty < 51000u, "50 µs lasts 50 µs to 51 µs");
+    kernel_test_check(test, fifty_waited >= 50u && fifty_waited <= 51u, "and says so");
+    kernel_test_check(test,
+                      timer_reference_waits.state == REFERENCE_STATE(USABLE) &&
+                          timer_reference_waits.hertz == TIMER_REFERENCE_HERTZ && timer_reference_waits.stalls == 2u &&
+                          timer_reference_waits.starts == 2u && timer_machine.reference_starts == 2u,
+                      "each starts the reference once, at the rate it gives, and it stays usable");
+    kernel_test_check(test, timer_machine.host_stalls == 0u && timer_machine.host_sleeps == 0u,
+                      "without leaning on the host's own waits");
+    kernel_test_measure(test, "fifty_waited", fifty_waited);
+    kernel_test_measure(test, "stall_reads", timer_reference_waits.stall_reads);
+}
+
+/**
+ * @brief A sleep on the reference waits the microseconds asked as the machine's time counts them, and says
+ *        so: 100 ms from 1 ms past a step of the clock idle through the nine steps before its last 11 ms and
+ *        busy-wait those, and start the reference again at the first read after each run of it counted 15 ms,
+ *        at 30, 50, 70, 90 and 105 ms; 1 ms never idles.
+ */
+KERNEL_TEST(a_sleep_on_the_reference_idles_through_whole_ticks_and_starts_it_again_every_15_ms)
+{
+    uint32_t long_waited;
+    uint32_t short_waited;
+    uint32_t long_idles;
+    uint64_t long_sleep;
+    uint64_t short_sleep;
+
+    timer_open_reference();
+    timer_machine.access = TIMER_FAST_ACCESS;
+    timer_after_a_step(TIMER_MILLISECOND);
+    long_sleep = timer_reference_sleep(100000u, &long_waited);
+    long_idles = timer_machine.idles;
+
+    const uint32_t long_starts = timer_machine.reference_starts;
+
+    short_sleep = timer_reference_sleep(1000u, &short_waited);
+
+    kernel_test_check(test, long_sleep >= 100000000u && long_sleep < 100010000u, "100 ms lasts 100 ms to 100.01 ms");
+    kernel_test_check(test, long_waited >= 100000u && long_waited <= 100010u, "and says so");
+    kernel_test_check(test, long_idles == 9u, "idling through the nine steps of the clock before its last 11 ms");
+    kernel_test_check(test, long_starts == 6u,
+                      "starting the reference again after each run of it that counted 15 ms, five times");
+    kernel_test_check(test, short_sleep >= 1000000u && short_sleep < 1001000u, "1 ms lasts 1 ms to 1.001 ms");
+    kernel_test_check(test, short_waited >= 1000u && short_waited <= 1001u, "and says so");
+    kernel_test_check(test, timer_machine.idles == long_idles, "without idling");
+    kernel_test_check(test,
+                      timer_reference_waits.sleeps == 2u && timer_reference_waits.sleep_idles == 9u &&
+                          timer_reference_waits.stalls == 0u && timer_reference_waits.stall_reads == 0u &&
+                          timer_reference_waits.starts == timer_machine.reference_starts &&
+                          timer_reference_waits.state == REFERENCE_STATE(USABLE),
+                      "two sleeps, their idles and their starts are counted, no busy-wait, and the reference stays "
+                      "usable");
+    kernel_test_check(test, timer_machine.host_sleeps == 0u && timer_machine.host_stalls == 0u,
+                      "without leaning on the host's own waits");
+    kernel_test_measure(test, "sleep_reads", timer_reference_waits.sleep_reads);
+}
+
+/**
+ * @brief A read that finds the reference spent, the machine paused past its range, counts the 30 ms a
+ *        reference holds at least, never more: a stall of 50 ms across a pause of 60 ms at its 10th ms lasts
+ *        90 ms, says it waited 50 ms, and starts the reference again after the pause and 15 ms later.
+ */
+KERNEL_TEST(a_reference_found_spent_counts_the_30_ms_it_holds_at_least)
+{
+    uint32_t waited;
+    uint64_t elapsed;
+
+    timer_open_reference();
+    timer_machine.access = TIMER_FAST_ACCESS;
+    timer_machine.pause_from = (uint64_t) TIMER_REFERENCE_PAUSE_AT * TIMER_MILLISECOND;
+    timer_machine.pause_nanoseconds = TIMER_REFERENCE_PAUSE * TIMER_MILLISECOND;
+    elapsed = timer_reference_stall(&timer_host, 50000u, &waited);
+
+    kernel_test_check(test, timer_machine.pauses == 1u && elapsed >= 90000000u && elapsed < 90010000u,
+                      "a stall of 50 ms across a pause of 60 ms at its 10th ms lasts 90 ms to 90.01 ms");
+    kernel_test_check(test, waited >= 50000u && waited <= 50010u, "and says it waited 50 ms");
+    kernel_test_check(test,
+                      timer_reference_waits.starts == 3u && timer_reference_waits.state == REFERENCE_STATE(USABLE) &&
+                          timer_machine.host_stalls == 0u,
+                      "starting the reference again after the pause and 15 ms later, without the host's stall");
+}
+
+/**
+ * @brief A reference that reads spent at once after its start, as a port nothing answers does, one that goes
+ *        back, and one that stands still for 10,000 reads derail: the host's own stall waits what each left,
+ *        all of it for the first and the last, and a later stall does not wait on them again.
+ */
+KERNEL_TEST(a_reference_spent_at_its_start_going_back_or_standing_still_derails)
+{
+    timer_open_reference();
+    timer_machine.reference_range = 0u;
+    timer_reference_derails(test, true, "a reference spent at once after its start derails, and the host waits all");
+    kernel_test_check(test, timer_machine.reference_starts == 1u && timer_machine.reference_reads == 1u,
+                      "after one start and one read");
+
+    timer_open_reference();
+    timer_machine.reference_back_at = TIMER_REFERENCE_BACK_READ;
+    timer_reference_derails(test, false, "one that goes back derails, and the host waits what it left");
+    kernel_test_check(test, timer_machine.reference_reads == TIMER_REFERENCE_BACK_READ, "at the read that went back");
+
+    timer_open_reference();
+    timer_machine.reference_still = true;
+    timer_reference_derails(test, true, "one that stands still derails, and the host waits all");
+    kernel_test_check(test,
+                      timer_machine.reference_reads ==
+                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS + 1u,
+                      "after the read at its start and 10,000 that read it again");
+}
+
+/**
+ * @brief A sleep on a reference that stands still while the clock steps twice derails at the second step it
+ *        idles through, as one on the timer does, and the host's own sleep waits the whole: 10,000 idles do not.
+ */
+KERNEL_TEST(a_sleep_on_a_reference_that_stands_still_while_the_clock_steps_twice_derails)
+{
+    uint32_t waited;
+
+    timer_open_reference();
+    timer_machine.reference_still = true;
+    (void) timer_reference_sleep(100000u, &waited);
+
+    kernel_test_check(test,
+                      timer_machine.idles == 2u && timer_reference_waits.sleep_idles == 2u &&
+                          timer_reference_waits.state == REFERENCE_STATE(DERAILED),
+                      "it derails at the second step of the clock it idles through");
+    kernel_test_check(test, timer_machine.host_sleeps == 1u && timer_machine.host_slept == 100000u && waited >= 100000u,
+                      "and the host's sleep waits the whole 100 ms");
+}
+
+/**
+ * @brief A host without a reference, and one whose reference gives no rate, have none: the first stall
+ *        finds it absent, reading nothing, and the host's own stall waits it; a later one waits nothing and
+ *        calls no stall of the host; a sleep of nothing starts no reference.
+ */
+KERNEL_TEST(a_host_without_a_reference_waits_on_its_own_and_tries_it_once)
+{
+    uint32_t first_waited;
+    uint32_t later_waited;
+    uint32_t nothing_waited;
+    uint64_t later;
+    uint64_t nothing;
+
+    timer_open_reference();
+    (void) timer_reference_stall(&timer_host_without_reference, 50u, &first_waited);
+    later = timer_reference_stall(&timer_host_without_reference, 50u, &later_waited);
+
+    kernel_test_check(test,
+                      timer_reference_waits.state == REFERENCE_STATE(ABSENT) && first_waited == 50u &&
+                          timer_machine.host_stalls == 1u && timer_machine.host_microseconds == 50u,
+                      "the first stall finds no reference, and the host's stall waits it");
+    kernel_test_check(test, later == 0u && later_waited == 0u && timer_machine.host_stalls == 1u,
+                      "a later one waits nothing, and does not call the host's stall again");
+
+    timer_open_reference();
+    timer_machine.reference_hertz = 0u;
+    (void) timer_reference_stall(&timer_host, 50u, &first_waited);
+
+    kernel_test_check(test,
+                      timer_reference_waits.state == REFERENCE_STATE(ABSENT) && timer_machine.reference_starts == 1u &&
+                          timer_machine.reference_reads == 0u && timer_machine.host_microseconds == 50u,
+                      "a reference whose start gives no rate is absent, read never, and the host waits");
+
+    timer_open_reference();
+    nothing = timer_reference_sleep(0u, &nothing_waited);
+
+    kernel_test_check(test,
+                      nothing == 0u && nothing_waited == 0u && timer_machine.reference_starts == 0u &&
+                          timer_reference_waits.state == REFERENCE_STATE(UNTRIED),
+                      "a sleep of nothing waits nothing and starts no reference");
+}
+
+/**
+ * @brief Each state of the reference waits has the name the boot's telemetry prints, and a value past them is
+ *        unknown.
+ */
+KERNEL_TEST(each_reference_waits_state_has_its_name)
+{
+    const char *const names[] = {"untried", "absent", "usable", "derailed"};
+    bool every_name_held = true;
+
+    for (uint8_t state = 0u; state < sizeof(names) / sizeof(names[0]); ++state)
+        every_name_held =
+            every_name_held &&
+            timer_name_is(advanced_configuration_and_power_interface_reference_waits_state_name(state), names[state]);
+
+    kernel_test_check(test, every_name_held, "untried, absent, usable, derailed");
+    kernel_test_check(
+        test, timer_name_is(advanced_configuration_and_power_interface_reference_waits_state_name(4u), "unknown"),
+        "and 4 is unknown");
 }

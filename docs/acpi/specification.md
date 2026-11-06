@@ -129,7 +129,7 @@ architecture supplies the host interface.
 | Path | Holds |
 |---|---|
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
-| `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode and the power management timer (§3.9), all behind the host interface |
+| `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode, the power management timer and the waits on the host's reference without one (§3.9), all behind the host interface |
 | `kernel/kernel/acpi/log.c`, `kernel/include/kernel/acpi/log.h` | the lines the layer writes to its host's log, and the level below which a build compiles their calls out (O16) |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
 | `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h`, `kernel/include/kernel/acpi/machine_language_regions.h`, `kernel/include/kernel/acpi/machine_language_services.h` | the decoder's, the namespace's, the objects', the interpreter's, the regions' and the services' interfaces, for the layers above them and the tests |
@@ -173,8 +173,8 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `port_read(port u16, width u8)`, `port_write(...)` | `asmutils` in and out routines | the simulated I/O space, zero-filled but for the ports a test gives a value; every access logged in order |
 | `pci_read(segment u16, bus u8, device u8, function u8, offset u16, width u8)`, `pci_write(...)` | the kernel's PCI accessor, one access of the width asked; offsets from 0x100 and segments other than 0 need ECAM (#58) and fail with `address_unreachable` until then | simulated configuration space; absent devices read all ones |
 | `clock_100ns()` | the kernel tick, scaled to 100 ns | the virtual clock (§2) |
-| `reference_start()` → its rate in hertz, or 0; `reference_read()` → what it counted since, or spent past its range: a count no interrupt drives, which the power management timer's rate is measured against (§3.9) | PIT channel 2 from 65,535 in mode 0, its latched count read by polling, spent once its output rises, 54.9 ms later | none; the timer's tests give their own |
-| `sleep_microseconds(u32)` → the microseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, on the ACPI power management timer the boot checked (§3.9), `Sleep` halts while more than a tick and an eighth remain, the eighth for the 5 % the timer's rate may stray and an interrupt taken late, then spins the rest on the timer, and `Stall` spins on it; without one, `Sleep` halts until a deadline on the tick and `Stall` spins on the tick, each rounded up to a whole tick; each returns what it waited; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
+| `reference_start()` → its rate in hertz, or 0; `reference_read()` → what it counted since, or spent past its range: a count no interrupt drives, which the power management timer's rate is measured against and waits count on without a usable timer (§3.9) | PIT channel 2 from 65,535 in mode 0, its latched count read by polling, spent once its output rises, 54.9 ms later | none; the timer's tests give their own |
+| `sleep_microseconds(u32)` → the microseconds waited, `stall_microseconds(u32)` → the microseconds waited | at boot, on the ACPI power management timer the boot checked (§3.9), `Sleep` halts while more than a tick and an eighth remain, the eighth for the 5 % the timer's rate may stray and an interrupt taken late, then spins the rest on the timer, and `Stall` spins on it; without one, both wait so on the reference, and only without a usable reference does `Sleep` halt until a deadline on the tick and `Stall` spin on the tick, each rounded up to a whole tick; each returns what it waited; after boot the worker thread blocks (#273) | advance the virtual clock, by whole ticks when a test gives it one |
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
 | `reserve_pages(count)` → address or NULL: address space, none of it usable; `commit_pages(address, count)` → whether `count` pages from `address`, each reserved and not committed yet, are now usable; `release_reservation(address, reserved, committed)`: the namespace's node array, reserved at open for the node cap and committed a 64 KiB run at a time | `kernel_vmm_reserve_pages`, `kernel_vmm_commit_pages`, `kernel_vmm_free_pages`, which gives back a reservation whatever part of it is committed | the same calls; the host harness maps a reservation with no access and opens the pages committed, so that a node past them faults as in ring 0; the host counts the pages committed |
@@ -186,8 +186,8 @@ they read through. Ring 0's is `advanced_configuration_and_power_interface_machi
 host beside it.
 
 AML runs at boot only once `clock_initialize` has started the tick. The `[LPLTLM] acpi.services` record reports
-the milliseconds `Sleep` and the microseconds `Stall` request at boot, and the time each waited as the tick or the
-power management timer counts it, since `instructions.sh` does not see that time.
+the milliseconds `Sleep` and the microseconds `Stall` request at boot, and the time each waited as the power
+management timer, the reference or the tick counts it, since `instructions.sh` does not see that time.
 
 No callback re-enters the interpreter. The evaluations a region access needs (`_ADR`, `_SEG`, `_BBN`, `_REG`) are
 pushed on the same explicit stack (§3.6).
@@ -441,8 +441,9 @@ Run once at boot by the bootstrap processor.
       (§5.3), skips it too, counted. A block too short to hold an enable register is absent.
    2. Clear every GPE enable bit and every PM1 fixed-event enable bit, and keep the SCI line (SCI_INT) masked in the
       8259 or the I/O APIC, so that no event raises an SCI that nothing handles.
-   3. Write ACPI_ENABLE to SMI_CMD from the bootstrap processor, and wait for SCI_EN ([§5.2.9]): polls 1 ms apart on
-      the kernel tick, at most 3,000 of them and 3,000 ms as the tick counts them, counted.
+   3. Write ACPI_ENABLE to SMI_CMD from the bootstrap processor, and wait for SCI_EN ([§5.2.9]): polls 1 ms apart as the
+      host's sleep waits them before the power management timer is checked, on the reference (§3.9), at most 3,000
+      of them and 3,000 ms as the host counts them, counted.
 1. **Load the DSDT, then every SSDT** of the root table in directory order, each as a table frame. A failing table
    is counted and the next one loads; a table whose checksum fails is loaded and counted (§3.9). The integer width
    is fixed from the DSDT's revision before the first byte runs.
@@ -568,9 +569,24 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   is going back, is `derailed`, and so is one that stands still while the halts of a `Sleep` see the tick step
   twice: the wait finishes on the tick, and so do the later ones. A pause between two reads of
   a wait reads modulo 4.69 s, the 24-bit range, so one of 2.34 s to 4.69 s demotes a healthy timer for the rest of
-  the boot, which is accepted: nothing at boot holds a wait off the processor that long. Otherwise, and on a hardware-reduced platform, `Sleep` and `Stall` wait on the tick. The boot prints one
-  `[LPLTLM] acpi.timer` line once its AML has run: the state, the port, the rate when it was measured, the reads and
-  the time the checks took, the stalls and the sleeps, their reads, and the sleeps' halts.
+  the boot, which is accepted: nothing at boot holds a wait off the processor that long.
+- **Without a usable timer**, and on a hardware-reduced platform, `Sleep` and `Stall` wait the same way on the host's
+  reference (§3.3), which counts at a known rate with no interrupt in between: PIT channel 2's 1.193182 MHz in ring 0.
+  The first wait finds it absent when the host has none or its start gives no rate. A wait starts it and reads it at
+  once, then reads it until it has counted the request, and starts it again at the first read after a run of it has
+  counted 15 ms, half the 30 ms a reference holds at least (§3.3), so that a read every tick never finds it spent; a
+  restart loses the moment between that read and the start, which only lengthens the wait. A read that finds it
+  spent, the processor kept away past its range, counts the run as the 30 ms it holds at least. A reference that
+  reads spent at once after a start, as a port nothing answers does, goes back, reads the same count 10,000 times in
+  a row, or stands still while the halts of a `Sleep` see the tick step twice is `derailed`: the wait finishes on the
+  tick, and so do the later ones, as on a host without a reference. The local APIC timer's count is not waited on:
+  it reloads at every tick, so a read pairs it with the tick count, which an interrupt taken late leaves a tick
+  behind; it counts only where the local timer keeps the tick; and its rate comes from eight interrupts of the PIT,
+  a clock the timer's checks refuse as a reference. The HPET and the TSC wait for #60.
+- **The boot prints one `[LPLTLM] acpi.timer` line** once its AML has run: the timer's state, its port, its rate
+  when it was measured, the reads and the time its checks took, its stalls and its sleeps, their reads, and the
+  sleeps' halts; then the reference's state, its starts, its stalls and its sleeps, their reads, and the sleeps'
+  halts.
 - **The switch to ACPI mode** is a routine of the tables layer: SCI_EN read, enables cleared, ACPI_ENABLE written,
   a bounded poll (§3.8 step 0).
 - **The MADT.** Types 0, 1, 2, 4, 5, 9 and 0xA are read. A CPU slot exists only for an entry whose Enabled flag is
@@ -949,8 +965,8 @@ Each row is a decision, and has at least one test (§8).
 
 | Topic | Rule | ACPI |
 |---|---|---|
-| `Sleep` | Gives up the processor for the requested milliseconds (at boot, halts then a spin on the power management timer, or a halt until a tick deadline without one, §3.3), with no 2 s cap. The request is charged to the evaluation's time budget first (§6.1), and a request that would exceed it fails the evaluation before sleeping. Real firmware asks for 3 s. | [§19.6.127] |
-| `Stall` | Busy-waits up to 255 µs, on the power management timer (§3.3); above, it becomes a sleep of its microseconds; both counted beyond 100 µs. The microseconds waited are counted next to those asked, so the boot time lost shows. | [§19.6.129] |
+| `Sleep` | Gives up the processor for the requested milliseconds (at boot, halts then a spin on the power management timer, or on the reference without one, §3.3), with no 2 s cap. The request is charged to the evaluation's time budget first (§6.1), and a request that would exceed it fails the evaluation before sleeping. Real firmware asks for 3 s. | [§19.6.127] |
+| `Stall` | Busy-waits up to 255 µs, on the power management timer, or on the reference without one (§3.3); above, it becomes a sleep of its microseconds; both counted beyond 100 µs. The microseconds waited are counted next to those asked, so the boot time lost shows. | [§19.6.129] |
 | `Timer` | 100 ns units, monotonic: the kernel tick in ring 0; in parity runs the virtual clock, which also advances by 100 µs on each read (§2). | [§19.6.136] |
 
 ---
@@ -990,11 +1006,12 @@ that reaches it. The corpus runs report the peaks.
 A table load is one evaluation: its table-level code and the methods it calls share these limits. The counts of
 back-edges, field accesses and requested time start again from zero with each evaluation, a table load or one the
 kernel asks for (§3.8); a `Load` that a method runs belongs to that method's evaluation, and resets nothing. The time
-requested also bounds the time waited: in ring 0, while the power management timer is usable and each halt ends
-within a tick and an eighth, each wait ends at the first read of the timer that has counted its request, so an
-evaluation waits at most its 30 s and a read of the timer per wait; a halt that lasts longer, such as one a late tick
-ends, makes its wait that much longer. Without a usable timer, each wait rounds up to whole ticks of 10 ms and the
-tick it starts in: a `Stall (256)` sleeps 10 to 20 ms, and the 117,187 an evaluation may request wait 20 to 39 min. The node and arena caps depend on the profile, and probe counts
+requested also bounds the time waited: in ring 0, while the power management timer, or without it the reference, is
+usable and each halt ends within a tick and an eighth, each wait ends at the first read that has counted its request,
+so an evaluation waits at most its 30 s and a read per wait, and on the reference the moments its restarts lose, at
+most one per 15 ms counted; a halt that lasts longer, such as one a late tick ends, makes its wait that much longer. Only
+without either does each wait round up to whole ticks of 10 ms and the tick it starts in: a `Stall (256)` then sleeps
+10 to 20 ms, and the 117,187 an evaluation may request wait 20 to 39 min. The node and arena caps depend on the profile, and probe counts
 follow the hash capacity. A parity run passes the target's caps to both sides and prints them in the record header
 (§8.7).
 

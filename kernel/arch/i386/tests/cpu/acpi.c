@@ -26,9 +26,11 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface, KERNEL_TEST_STAGE_
 #define ACPI_TEST_PAST_THE_REFERENCE                                                                                   \
     60000u /**< Microseconds of a sleep past the 54.9 ms the reference counts before it is spent. */
 #define ACPI_TEST_REFERENCE_READS 100000u /**< Reads of the reference made at most until it moves. */
-#define ACPI_TEST_PORT_B          0x61u /**< System control port B: gates PIT channel 2 and sends it to the speaker. */
-#define ACPI_TEST_CHANNEL_2_GATE  0x01u /**< Port B bit 0: channel 2 counts. */
-#define ACPI_TEST_SPEAKER_DATA    0x02u /**< Port B bit 1: channel 2 drives the speaker. */
+#define ACPI_TEST_REFERENCE_RUNS_SLEEP                                                                                 \
+    40000u /**< Microseconds of a sleep on the reference past two of its runs of 15 ms, a tick and an eighth too. */
+#define ACPI_TEST_PORT_B         0x61u /**< System control port B: gates PIT channel 2 and sends it to the speaker. */
+#define ACPI_TEST_CHANNEL_2_GATE 0x01u /**< Port B bit 0: channel 2 counts. */
+#define ACPI_TEST_SPEAKER_DATA   0x02u /**< Port B bit 1: channel 2 drives the speaker. */
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
 #    define ACPI_TEST_PROFILE_MAX_NODES       32768u               /**< §6.1's node cap off the server profile. */
 #    define ACPI_TEST_PROFILE_MAX_ARENA_BYTES (4u * 1024u * 1024u) /**< §6.1's arena off the server profile. */
@@ -70,6 +72,47 @@ static bool acpi_test_io_apic_routes_are_masked(uint32_t global_system_interrupt
             !input_output_advanced_programmable_interrupt_controller_get_programmed_route_is_masked(route))
             return false;
     return true;
+}
+
+/**
+ * @brief Whether the boot's power management timer is usable.
+ */
+static bool acpi_test_timer_is_usable(void)
+{
+    return advanced_configuration_and_power_interface_power_management_timer()->state ==
+           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
+}
+
+/**
+ * @brief Whether every wait of the boot made on its reference counted on it.
+ */
+static bool acpi_test_reference_is_usable(void)
+{
+    return advanced_configuration_and_power_interface_reference_waits()->state ==
+           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_USABLE;
+}
+
+/**
+ * @brief Gives up the processor until the next interrupt, as the machine host's sleeps do.
+ */
+static void acpi_test_halt(void *context)
+{
+    (void) context;
+    asmutils_halt();
+}
+
+/**
+ * @brief Halts until at least @p microseconds have passed as the tick counts them, a tick running: until one
+ *        tick more than they hold has stepped.
+ */
+static void acpi_test_halt_for_microseconds(uint32_t microseconds)
+{
+    const uint32_t hertz = clock_get_tick_hz();
+    const uint32_t ticks = (uint32_t) (((uint64_t) microseconds * hertz + 999999u) / 1000000u);
+    const uint32_t start = clock_get_tick_count();
+
+    while (clock_get_tick_count() - start <= ticks)
+        asmutils_halt();
 }
 
 /**
@@ -254,29 +297,44 @@ static bool acpi_test_firmware_names_a_timer(void)
 }
 
 /**
- * @brief Without a power management timer, the machine host's sleep waits at least a whole tick for
- *        1 ms, and says how many microseconds it waited, no more than the ticks that passed around it.
+ * @brief Without a usable power management timer, the machine host waits on the reference, not whole ticks:
+ *        a stall of 50 µs and a sleep of 1 ms each let at most one tick pass and say they waited at least what
+ *        they were asked and less than a tick, and the boot's reference waits count them and stay usable.
  */
-KERNEL_TEST(the_machine_host_sleeps_on_the_tick_and_says_how_long)
+KERNEL_TEST(without_a_usable_timer_the_machine_host_waits_on_the_reference)
 {
     const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *reference =
+        advanced_configuration_and_power_interface_reference_waits();
     const uint32_t hertz = clock_get_tick_hz();
 
-    if (hertz == 0u || acpi_test_firmware_names_a_timer())
+    if (hertz == 0u || acpi_test_timer_is_usable())
     {
-        kernel_test_skip(test, "no tick runs, or the sleep waits on the power management timer the FADT names");
+        kernel_test_skip(test, "no tick runs, or the machine host waits on the power management timer");
         return;
     }
 
-    const uint32_t before = clock_get_tick_count();
-    const uint32_t waited = host->sleep_microseconds(host->context, 1000u);
-    const uint32_t ticks = clock_get_tick_count() - before;
+    const uint32_t period = 1000000u / hertz;
+    const uint32_t stalls_before = reference->stalls;
+    const uint32_t sleeps_before = reference->sleeps;
+    const uint32_t stall_before = clock_get_tick_count();
+    const uint32_t stall_waited = host->stall_microseconds(host->context, ACPI_TEST_SHORT_STALL);
+    const uint32_t stall_ticks = clock_get_tick_count() - stall_before;
+    const uint32_t sleep_before = clock_get_tick_count();
+    const uint32_t sleep_waited = host->sleep_microseconds(host->context, 1000u);
+    const uint32_t sleep_ticks = clock_get_tick_count() - sleep_before;
 
-    kernel_test_check(test, ticks >= 2u, "a sleep of 1 ms lets a whole tick pass, the one it lands in not counted");
-    kernel_test_check(test, (uint64_t) waited * hertz >= 1000000u,
-                      "it says it waited at least as many microseconds as a tick lasts");
-    kernel_test_check(test, (uint64_t) waited * hertz <= (uint64_t) ticks * 1000000u,
-                      "it says no more than the ticks that passed around it");
+    kernel_test_check(test, stall_ticks <= 1u && sleep_ticks <= 1u,
+                      "a stall of 50 µs and a sleep of 1 ms each let at most one tick pass");
+    kernel_test_check(test, stall_waited >= ACPI_TEST_SHORT_STALL && stall_waited < period,
+                      "the stall says it waited at least 50 µs and less than a tick");
+    kernel_test_check(test, sleep_waited >= 1000u && sleep_waited < period,
+                      "the sleep at least 1 ms and less than a tick");
+    kernel_test_check(test, reference->stalls - stalls_before == 1u && reference->sleeps - sleeps_before == 1u,
+                      "the boot's reference waits count both");
+    kernel_test_check(test, acpi_test_reference_is_usable(), "and the reference stays usable");
+    kernel_test_measure(test, "stall_waited_us", stall_waited);
+    kernel_test_measure(test, "sleep_waited_us", sleep_waited);
 }
 
 /**
@@ -307,13 +365,14 @@ KERNEL_TEST(the_machine_host_clock_counts_100_ns_on_the_tick)
 
 /**
  * @brief The machine host's reference, PIT channel 2, says it counts 1,193,182 Hz, counts up from its start
- *        and reads as spent after a sleep of 60 ms, past the 54.9 ms it holds; its start, made from a port B
- *        whose gate was closed and that sent the channel to the speaker, opens the gate and takes the
+ *        and reads as spent after 60 ms of halts on the tick, past the 54.9 ms it holds; its start, made from a
+ *        port B whose gate was closed and that sent the channel to the speaker, opens the gate and takes the
  *        speaker off.
  *
  * @details QEMU counts in mode 0 whatever the gate, so the gate is checked on port B, where port B reads
  *          back what was written to it: an emulator that returns only its status bits, as v86 does, leaves
- *          the gate unchecked.
+ *          the gate unchecked. The 60 ms pass on the tick, not in the machine host's sleep, which waits on
+ *          the reference itself where no power management timer is usable (§3.9) and would start it again.
  */
 KERNEL_TEST(the_machine_host_reference_counts_up_then_reads_as_spent)
 {
@@ -338,7 +397,7 @@ KERNEL_TEST(the_machine_host_reference_counts_up_then_reads_as_spent)
 
     for (uint32_t read = 0u; read < ACPI_TEST_REFERENCE_READS && later == first; ++read)
         later = host->reference_read(host->context);
-    (void) host->sleep_microseconds(host->context, ACPI_TEST_PAST_THE_REFERENCE);
+    acpi_test_halt_for_microseconds(ACPI_TEST_PAST_THE_REFERENCE);
 
     const uint32_t spent = host->reference_read(host->context);
 
@@ -410,30 +469,61 @@ KERNEL_TEST(the_machine_host_stall_waits_its_microseconds)
 }
 
 /**
- * @brief Without a power management timer, the machine host's stall spins on the tick at least the
- *        microseconds asked, and says how many it waited: for 50 µs a whole tick passes, the one it lands
- *        in not counted.
+ * @brief The reference waits count their microseconds on PIT channel 2 on any machine, whatever clock the
+ *        machine host waits on, not whole ticks: ten stalls of 50 µs let at most one tick pass, each saying it
+ *        waited at least 50 µs and less than a tick; a sleep of 40 ms lets 40 ms of ticks pass to a tick, gives
+ *        up the processor on the way, says it waited that and less than a tick more, and starts the reference
+ *        again once a run of it counted 15 ms. The reference, which counts 1,193,182 Hz, stays usable.
  */
-KERNEL_TEST(the_machine_host_stall_spins_on_the_tick)
+KERNEL_TEST(the_reference_waits_count_their_microseconds_on_pit_channel_2)
 {
     const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
+    AdvancedConfigurationAndPowerInterfaceReferenceWaits_t waits = {0};
     const uint32_t hertz = clock_get_tick_hz();
-    const uint32_t before = clock_get_tick_count();
 
-    if (hertz == 0u || acpi_test_firmware_names_a_timer())
+    if (hertz == 0u)
     {
-        kernel_test_skip(test, "no tick runs, or the stall waits on the power management timer the FADT names");
+        kernel_test_skip(test, "no tick runs");
         return;
     }
 
-    const uint32_t waited = host->stall_microseconds(host->context, 50u);
-    const uint32_t ticks = clock_get_tick_count() - before;
+    const uint32_t period = 1000000u / hertz;
+    const uint32_t before = clock_get_tick_count();
+    bool each_short_held = true;
 
-    kernel_test_check(test, ticks >= 2u, "a stall of 50 µs lets a whole tick pass");
-    kernel_test_check(test, (uint64_t) waited * hertz >= 1000000u,
-                      "it says it waited at least as many microseconds as a tick lasts");
-    kernel_test_check(test, (uint64_t) waited * hertz <= (uint64_t) ticks * 1000000u,
-                      "and no more than the ticks that passed around it");
+    for (uint32_t stall = 0u; stall < ACPI_TEST_SHORT_STALLS; ++stall)
+    {
+        const uint32_t waited =
+            advanced_configuration_and_power_interface_reference_stall(host, &waits, ACPI_TEST_SHORT_STALL);
+
+        each_short_held = each_short_held && waited >= ACPI_TEST_SHORT_STALL && waited < period;
+    }
+
+    const uint32_t short_ticks = clock_get_tick_count() - before;
+    const uint32_t long_before = clock_get_tick_count();
+    const uint32_t long_waited = advanced_configuration_and_power_interface_reference_sleep(
+        host, &waits, ACPI_TEST_REFERENCE_RUNS_SLEEP, period, acpi_test_halt);
+    const uint32_t long_ticks = clock_get_tick_count() - long_before;
+
+    kernel_test_check(test, short_ticks <= 1u, "ten stalls of 50 µs let at most one tick pass");
+    kernel_test_check(test, each_short_held, "each says it waited at least 50 µs and less than a tick");
+    kernel_test_check(test,
+                      long_ticks * period + period >= ACPI_TEST_REFERENCE_RUNS_SLEEP &&
+                          long_ticks * period <= ACPI_TEST_REFERENCE_RUNS_SLEEP + 2u * period,
+                      "a sleep of 40 ms lets 40 ms of ticks pass, to a tick");
+    kernel_test_check(
+        test, long_waited >= ACPI_TEST_REFERENCE_RUNS_SLEEP && long_waited < ACPI_TEST_REFERENCE_RUNS_SLEEP + period,
+        "and says it waited that, and less than a tick more");
+    kernel_test_check(test, waits.sleep_idles > 0u, "giving up the processor until a tick on the way");
+    kernel_test_check(test, waits.starts > ACPI_TEST_SHORT_STALLS + 1u,
+                      "starting the reference again once a run of it counted 15 ms");
+    kernel_test_check(test,
+                      waits.state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_USABLE &&
+                          waits.hertz == ACPI_TEST_REFERENCE_HERTZ && waits.stalls == ACPI_TEST_SHORT_STALLS &&
+                          waits.sleeps == 1u,
+                      "the reference counts 1,193,182 Hz, counts each wait, and stays usable");
+    kernel_test_measure(test, "short_ticks", short_ticks);
+    kernel_test_measure(test, "long_ticks", long_ticks);
 }
 
 /**
@@ -480,31 +570,26 @@ KERNEL_TEST(the_machine_host_sleeps_its_microseconds_on_the_timer)
 }
 
 /**
- * @brief Evaluates SLP1 (@p sleeps) through the machine host on a made-up DSDT, and checks that its
- *        Sleep (1)s end within their bound on a usable power management timer, as the tick counts it: at
+ * @brief Evaluates SLP1 (@p sleeps) through the machine host on a made-up DSDT, a tick running, and checks
+ *        that its Sleep (1)s end within their bound on the clock the host waits on, as the tick counts it: at
  *        most half a tick per sleep, where a sleep that waits whole ticks lets two pass, the one it lands in
- *        not counted, since each wait ends at the first read of the timer that has counted its request
+ *        not counted, since each wait ends at the first read of that clock that has counted its request
  *        (§6.1) and under TCG a read costs what a busy host spares; and at least the milliseconds requested
- *        less the 5 % the timer's rate may stray. The timer stays usable throughout.
+ *        less the 5 % the power management timer's rate may stray. That clock stays usable throughout, as
+ *        @p clock_holds says, which @p clock_claim states.
  *
  * @details The tick counts an interval of length E as at least E less a tick and at most E and a tick: the
  *          lower bound gives a tick of slack; the upper one needs none, whole ticks being four times over it.
  */
-static void acpi_test_sleeps_end_within_their_bound(KernelTest_t *test, uint32_t sleeps)
+static void acpi_test_sleeps_end_within_their_bound(KernelTest_t *test, uint32_t sleeps, bool (*clock_holds)(void),
+                                                    const char *clock_claim)
 {
-    const AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t *timer =
-        advanced_configuration_and_power_interface_power_management_timer();
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
         .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
         .payload = sleeps};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
     const uint32_t hertz = clock_get_tick_hz();
 
-    if (hertz == 0u || timer->state != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE)
-    {
-        kernel_test_skip(test, "no tick runs, or no usable power management timer: a sleep waits whole ticks");
-        return;
-    }
     if (!made_up_load_on(test, &acpi_test_sleeps_load, &advanced_configuration_and_power_interface_machine_host,
                          acpi_test_sleeps_table, 2u, acpi_test_sleeps_aml, sizeof(acpi_test_sleeps_aml)))
         return;
@@ -530,8 +615,7 @@ static void acpi_test_sleeps_end_within_their_bound(KernelTest_t *test, uint32_t
                       "and no sooner than those milliseconds less 5 %");
     kernel_test_check(test, acpi_test_sleeps_load.services.sleep_waited_microseconds >= requested,
                       "the host says it waited at least the millisecond of each");
-    kernel_test_check(test, timer->state == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE,
-                      "and the timer stays usable");
+    kernel_test_check(test, clock_holds(), clock_claim);
     kernel_test_measure(test, "ticks", ticks);
     kernel_test_measure(test, "sleep_waited_us", (uint32_t) acpi_test_sleeps_load.services.sleep_waited_microseconds);
     kernel_test_measure(test, "us_per_sleep", (uint32_t) ((ticks * period) / sleeps));
@@ -544,7 +628,34 @@ static void acpi_test_sleeps_end_within_their_bound(KernelTest_t *test, uint32_t
  */
 KERNEL_TEST(three_hundred_sleeps_of_1_ms_wait_on_the_timer_not_whole_ticks)
 {
-    acpi_test_sleeps_end_within_their_bound(test, ACPI_TEST_SLEEPS);
+    if (clock_get_tick_hz() == 0u || !acpi_test_timer_is_usable())
+    {
+        kernel_test_skip(test, "no tick runs, or no usable power management timer");
+        return;
+    }
+    acpi_test_sleeps_end_within_their_bound(test, ACPI_TEST_SLEEPS, acpi_test_timer_is_usable,
+                                            "and the timer stays usable");
+}
+
+/**
+ * @brief Without a usable power management timer, an evaluation that runs 300 Sleep (1) on the machine host
+ *        lets at most 150 ticks pass, not the 600 whole ticks would: each sleep waits its millisecond on the
+ *        reference, PIT channel 2 (§3.3, §3.9), and the boot's reference waits count every one.
+ */
+KERNEL_TEST(three_hundred_sleeps_of_1_ms_wait_on_the_reference_without_a_timer)
+{
+    const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *reference =
+        advanced_configuration_and_power_interface_reference_waits();
+    const uint32_t sleeps_before = reference->sleeps;
+
+    if (clock_get_tick_hz() == 0u || acpi_test_timer_is_usable())
+    {
+        kernel_test_skip(test, "no tick runs, or the machine host waits on the power management timer");
+        return;
+    }
+    acpi_test_sleeps_end_within_their_bound(test, ACPI_TEST_SLEEPS, acpi_test_reference_is_usable,
+                                            "and the reference stays usable");
+    kernel_test_check(test, reference->sleeps - sleeps_before == ACPI_TEST_SLEEPS, "each sleep counted on it");
 }
 
 /**
@@ -554,5 +665,11 @@ KERNEL_TEST(three_hundred_sleeps_of_1_ms_wait_on_the_timer_not_whole_ticks)
  */
 KERNEL_TEST_MANUAL(sleeps_that_fill_the_30_s_budget_wait_on_the_timer_not_whole_ticks, "waits 30 s")
 {
-    acpi_test_sleeps_end_within_their_bound(test, ACPI_TEST_BUDGET_SLEEPS);
+    if (clock_get_tick_hz() == 0u || !acpi_test_timer_is_usable())
+    {
+        kernel_test_skip(test, "no tick runs, or no usable power management timer");
+        return;
+    }
+    acpi_test_sleeps_end_within_their_bound(test, ACPI_TEST_BUDGET_SLEEPS, acpi_test_timer_is_usable,
+                                            "and the timer stays usable");
 }
