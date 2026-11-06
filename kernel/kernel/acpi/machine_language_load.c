@@ -2628,9 +2628,27 @@ static void machine_language_begin_walk(MachineLanguageWalk_t *walk,
 }
 
 /**
+ * @brief Whether the statement at @p pc, before @p end, starts as one the declaration pass's decoder takes (O19), by
+ *        its lead bytes alone: a Name, a Method, a Scope, a Device, a Field or an OperationRegion, each a declaration,
+ *        which the interpreter never runs.
+ */
+static bool machine_language_leads_declaration(const uint8_t *bytes, uint32_t pc, uint32_t end)
+{
+    switch (bytes[pc])
+    {
+    case 0x08u:
+    case 0x10u:
+    case 0x14u: return true;
+    case 0x5Bu: return pc + 1u < end && (bytes[pc + 1u] == 0x80u || bytes[pc + 1u] == 0x81u || bytes[pc + 1u] == 0x82u);
+    default: return false;
+    }
+}
+
+/**
  * @brief Whether a walk's first construct ends at its pc, unless it is a TermList the walk entered (O21), which it
  *        leaves instead, or the statement there is one the interpreter runs: either ends the run of declarations the
- *        walk takes for the interpreter.
+ *        walk takes for the interpreter. A statement the declaration pass's decoder takes is told by its lead bytes,
+ *        unless the load takes no shortcut, which reads its opcode as any other.
  */
 static bool machine_language_code_follows(MachineLanguageWalk_t *walk)
 {
@@ -2640,6 +2658,8 @@ static bool machine_language_code_follows(MachineLanguageWalk_t *walk)
 
     if (walk->pc >= block->end)
         return walk->entered == 0u;
+    if (!walk->load->general_load && machine_language_leads_declaration(walk->bytes, walk->pc, block->end))
+        return false;
     if (advanced_configuration_and_power_interface_machine_language_starts_name(walk->bytes[walk->pc]))
         return true;
     return advanced_configuration_and_power_interface_machine_language_read_opcode(
