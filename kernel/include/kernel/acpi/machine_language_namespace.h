@@ -163,8 +163,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
     uint32_t node_count;       /**< Node indices used, the unused node 0 included. */
     uint32_t free_nodes;       /**< The last node removed, whose next_sibling links the others, or 0. */
     uint32_t insertion_limit;  /**< The first node index find_or_add_child does not create in line: 0 while the free
-                                    list holds a node, else the least of the node cap's end, half the slots and the end
-                                    of the runs committed. Kept in step by each change of the four. */
+                                    list holds a node, else insertion_room. Kept in step by each change of the four. */
+    uint32_t insertion_room;   /**< The least of the node cap's end, half the slots and the end of the runs committed:
+                                    the insertion limit once the free list is empty. */
     uint32_t live_nodes;       /**< Nodes in the namespace, the root included, the removed ones apart. */
     uint32_t max_nodes;        /**< The node cap. */
     uint32_t arena_bytes;      /**< Bytes taken from the host: runs and hash table. */

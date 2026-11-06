@@ -14,9 +14,9 @@ static uint32_t machine_language_namespace_segment(const char *characters)
 }
 
 /**
- * @brief Brings the insertion limit of @p space back in step with its free list, node cap, hash table and runs: 0
- *        while the free list holds a node, else the first index the node cap refuses, half the slots, or the first
- *        index past the runs committed, whichever comes first.
+ * @brief Brings the insertion room of @p space back in step with its node cap, hash table and runs, as the first index
+ *        the node cap refuses, half the slots, or the first index past the runs committed, whichever comes first, and
+ *        its insertion limit with them and its free list.
  */
 static void
 machine_language_namespace_keep_insertion_limit(AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space)
@@ -30,6 +30,7 @@ machine_language_namespace_keep_insertion_limit(AdvancedConfigurationAndPowerInt
         limit = runs_end;
     if (limit > root && limit - root > space->max_nodes)
         limit = root + space->max_nodes;
+    space->insertion_room = limit;
     space->insertion_limit = (space->free_nodes != 0u) ? 0u : limit;
 }
 
@@ -505,7 +506,7 @@ advanced_configuration_and_power_interface_machine_language_namespace_add_child(
     {
         space->free_nodes =
             advanced_configuration_and_power_interface_machine_language_namespace_node(space, index)->next_sibling;
-        machine_language_namespace_keep_insertion_limit(space);
+        space->insertion_limit = (space->free_nodes != 0u) ? 0u : space->insertion_room;
     }
     else
     {
