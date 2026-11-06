@@ -2624,14 +2624,17 @@ KERNEL_TEST(a_device_declared_over_an_external_a_later_loader_places_runs_its_in
 }
 
 /**
- * @brief The late walk of a device declared over an ancestor of the device step 4 is at leaves that device and what
- *        follows it to step 4 (§3.8): DEVA's _INI appends 3 and loads the table declaring \PCIX, whose _INI appends
- *        5; DEVA's child DEVB appends 7 and loads a table declaring \PCIX.DEVA.DEVB.DEVX, which appends 1; DEVC,
- *        DEVA's sibling, appends 9. Step 4 runs DEVX's _INI before DEVC's.
+ * @brief Builds the made-up machine of the tests below and initialises it: the DSDT names \PCIX by an External, then
+ *        declares in it Device (DEVA), whose _INI appends 3 to \TRAC and loads a table declaring Device (\PCIX),
+ *        whose _INI appends 5, then Device (DEVC), appending 9, and Device (DEVE), appending 2. When @p
+ * walking_has_child holds, DEVA holds Device (DEVB), whose _INI loads a table declaring Device (DEVX) in DEVB and
+ * appends 7; otherwise DEVC's _INI loads that table, declaring DEVX in DEVC. DEVX's _INI appends 1.
  *
  * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
+ *
+ * @return false, the load closed, when the tables were not loaded.
  */
-KERNEL_TEST(the_late_walk_over_an_ancestor_of_the_walking_device_leaves_the_rest_to_step_four)
+static bool load_walking_machine(KernelTest_t *test, bool walking_has_child)
 {
     static const uint8_t external[] = {0x15u, '\\', 'P', 'C', 'I', 'X', 0x06u, 0x00u};
     static MadeUpAml_t device;
@@ -2650,34 +2653,84 @@ KERNEL_TEST(the_late_walk_over_an_ancestor_of_the_walking_device_leaves_the_rest
     made_up_aml_begin(&inner);
     made_up_aml_device(&inner, "DEVX", &device);
     made_up_aml_begin(&scope);
-    made_up_aml_scope(&scope, "DEVB", &inner);
-    made_up_aml_begin(&inner);
-    made_up_aml_scope(&inner, "DEVA", &scope);
+    if (walking_has_child)
+    {
+        made_up_aml_scope(&scope, "DEVB", &inner);
+        made_up_aml_begin(&inner);
+        made_up_aml_scope(&inner, "DEVA", &scope);
+    }
+    else
+    {
+        made_up_aml_scope(&scope, "DEVC", &inner);
+        made_up_aml_begin(&inner);
+        made_up_aml_raw(&inner, scope.bytes, scope.length);
+    }
     made_up_aml_begin(&load_inner);
     made_up_aml_scope(&load_inner, "PCIX", &inner);
     load_region("OTHR", LOAD_OTHER_ADDRESS, load_place(&load_inner, load_other_table, LOAD_OTHER_ADDRESS));
     made_up_aml_raw(&load_aml, external, sizeof(external));
-    made_up_aml_begin(&child);
-    load_traced_method(&child, "_INI", 0x00u, load_step_seven_goes_second_aml, sizeof(load_step_seven_goes_second_aml),
-                       7u, false);
     made_up_aml_begin(&device);
     load_traced_method(&device, "_INI", 0x00u, load_loads_table_into_first_handle_aml,
                        sizeof(load_loads_table_into_first_handle_aml), 3u, false);
-    made_up_aml_device(&device, "DEVB", &child);
+    if (walking_has_child)
+    {
+        made_up_aml_begin(&child);
+        load_traced_method(&child, "_INI", 0x00u, load_step_seven_goes_second_aml,
+                           sizeof(load_step_seven_goes_second_aml), 7u, false);
+        made_up_aml_device(&device, "DEVB", &child);
+    }
     made_up_aml_begin(&scope);
     made_up_aml_device(&scope, "DEVA", &device);
     made_up_aml_begin(&device);
-    load_traced_method(&device, "_INI", 0x00u, NULL, 0u, 9u, false);
+    if (walking_has_child)
+        load_traced_method(&device, "_INI", 0x00u, NULL, 0u, 9u, false);
+    else
+        load_traced_method(&device, "_INI", 0x00u, load_step_seven_goes_second_aml,
+                           sizeof(load_step_seven_goes_second_aml), 9u, false);
     made_up_aml_device(&scope, "DEVC", &device);
+    made_up_aml_begin(&device);
+    load_traced_method(&device, "_INI", 0x00u, NULL, 0u, 2u, false);
+    made_up_aml_device(&scope, "DEVE", &device);
     made_up_aml_scope(&load_aml, "PCIX", &scope);
     if (!load_run(test))
-        return;
+        return false;
     load_initialize(0u);
-    kernel_test_check(
-        test, load_integer("HND1") == LOAD_ONES && load_integer("HC1_") == LOAD_ONES && load_load.tables_loaded == 2u,
-        "DEVA's _INI loads the table declaring PCIX, and DEVB's the one declaring DEVX");
-    kernel_test_check(test, load_integer("TRAC") == 0x35719u,
-                      "DEVA's _INI, PCIX's, late, then at step 4 DEVB's, DEVX's and DEVC's, each once");
+    if (kernel_test_check(test,
+                          load_integer("HND1") == LOAD_ONES && load_integer("HC1_") == LOAD_ONES &&
+                              load_load.tables_loaded == 2u,
+                          "DEVA's _INI loads the table declaring PCIX, then step 4 loads the one declaring DEVX"))
+        return true;
+    load_close(test);
+    return false;
+}
+
+/**
+ * @brief The late walk of a device declared over an ancestor of the device step 4 is at leaves that device's subtree
+ *        to step 4 (§3.8): DEVB, below DEVA, runs its _INI at step 4, and the device the table it loads declares in
+ *        it comes next, before DEVC.
+ */
+KERNEL_TEST(the_late_walk_over_an_ancestor_of_the_walking_device_leaves_its_subtree_to_step_four)
+{
+    if (!load_walking_machine(test, true))
+        return;
+    kernel_test_check(test, load_integer("TRAC") == 0x357192u,
+                      "DEVA's _INI, PCIX's, late, then at step 4 DEVB's, DEVX's, DEVC's and DEVE's, each once");
+    kernel_test_check(test, load_counts.initializations == 6u && load_counts.late_initializations == 1u,
+                      "six _INI run, one of them, PCIX's, in a late initialisation");
+    load_close(test);
+}
+
+/**
+ * @brief The late walk of a device declared over an ancestor of the device step 4 is at leaves what follows that
+ *        device to step 4 (§3.8): DEVA holds no device, DEVC runs its _INI at step 4, and the device the table it
+ *        loads declares in it comes next, before DEVE.
+ */
+KERNEL_TEST(the_late_walk_over_an_ancestor_of_the_walking_device_leaves_what_follows_it_to_step_four)
+{
+    if (!load_walking_machine(test, false))
+        return;
+    kernel_test_check(test, load_integer("TRAC") == 0x35912u,
+                      "DEVA's _INI, PCIX's, late, then at step 4 DEVC's, DEVX's and DEVE's, each once");
     kernel_test_check(test, load_counts.initializations == 5u && load_counts.late_initializations == 1u,
                       "five _INI run, one of them, PCIX's, in a late initialisation");
     load_close(test);
