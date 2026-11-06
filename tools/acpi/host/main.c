@@ -46,6 +46,9 @@
     "                                    executed\n"                                                                   \
     "       test-acpi --write-module <dump> <image>  writes the firmware an acpidump text file gives, as this\n"       \
     "                                    harness serves it, as an image: the Multiboot module of a debug kernel\n"     \
+    "       test-acpi --write-printed-module <log> <image>  the same from the serial log of a kernel booted\n"         \
+    "                                    with lpl.acpi.tables=print: the tables it read, as --firmware-log serves\n"   \
+    "                                    them\n"                                                                       \
     "       test-acpi --predecoding off ...  any of the above with the boot line lpl.acpi.predecoding=off: the\n"      \
     "                                    statements of loops that loop are decoded at each turn, never run from\n"     \
     "                                    records, so that the two runs compare\n"                                      \
@@ -1342,17 +1345,19 @@ static int harness_evaluate(const char *path, int count, char **paths)
 }
 
 /**
- * @brief Writes the firmware the dump at @p dump gives, as the harness serves it, as an image at @p path.
+ * @brief Writes the firmware the dump at @p dump gives, or the serial log of a kernel that printed its tables
+ *        when @p printed holds, as the harness serves it, as an image at @p path.
  *
  * @return 0 when the image is written, 1 otherwise.
  */
-static int harness_write_module(const char *dump, const char *path)
+static int harness_write_module(const char *dump, bool printed, const char *path)
 {
     static RecordedMachine_t machine;
     const char *error = NULL;
     int status = 1;
 
-    if (!recorded_machine_open(&machine, dump, &error))
+    if (!(printed ? recorded_machine_open_printed(&machine, dump, &error) :
+                    recorded_machine_open(&machine, dump, &error)))
         fprintf(stderr, "test-acpi: %s: %s\n", dump, error);
     else if (!recorded_machine_write_image(&machine, path, &error))
         fprintf(stderr, "test-acpi: %s: %s\n", path, error);
@@ -1519,7 +1524,9 @@ int main(int argc, char **argv)
     if (argc >= 4 && strcmp(argv[1], "--evaluate") == 0)
         return harness_evaluate(argv[2], argc - 3, argv + 3);
     if (argc == 4 && strcmp(argv[1], "--write-module") == 0)
-        return harness_write_module(argv[2], argv[3]);
+        return harness_write_module(argv[2], false, argv[3]);
+    if (argc == 4 && strcmp(argv[1], "--write-printed-module") == 0)
+        return harness_write_module(argv[2], true, argv[3]);
     if (harness_read_test_options(argc - 1, argv + 1, &module_path, &log_path))
         return harness_run_tests(module_path, log_path);
     fputs(HARNESS_USAGE, (argc == 2 && strcmp(argv[1], "--help") == 0) ? stdout : stderr);

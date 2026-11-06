@@ -1,0 +1,18 @@
+# Window W3 of the ACPI specification (§7.4) on a recorded machine, on the release path: step 8 of §3.8, the evaluation
+# of the _CST objects of the Lenovo IdeaPad Z470, a revision-2 Intel client whose _PDC Loads two SSDTs, once loaded as a
+# release kernel loads it (O2), inside the ring-0 corpus test the_boot_module_machine_loads_on_the_release_path, on a
+# debug server kernel (./build.sh --server). The boot runs the same function on q35's own tables first, hence skip=1.
+# tools/acpi-corpus.sh module 'Notebook/Lenovo/IdeaPad/IdeaPad Z470/C7F3CC0C50BF' writes the module. Its gap to a
+# release kernel, measured on q35's tables by tools/acpi-cst-q35.release-path.debug.budget: none on the walk to its
+# processors, which hold no _CST, so the gap of an evaluation is not measured. Checked by tools/instructions.sh --budget
+# tools/acpi-cst-ideapad-z470.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records the new
+# one.
+inside=advanced_configuration_and_power_interface_processor_idle_publish
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
+module=build/acpi-corpus/modules/Notebook_Lenovo_IdeaPad_IdeaPad_Z470_C7F3CC0C50BF.acpi
+instructions=359749
+accesses=171632
+tolerance=1
