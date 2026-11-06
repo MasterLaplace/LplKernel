@@ -42,7 +42,11 @@ extern uint32_t programmable_interval_timer_get_frequency_hz(void);
 
 /**
  * @brief Starts PIT channel 2 counting down from 65,535, in mode 0, its gate opened and its output kept
- *        from the speaker, as Linux does to check a clock against it.
+ *        from the speaker, as Linux does to check a clock against it, then reads its count once.
+ *
+ * @details The 8254 loads a count written to it at the next edge of its clock, 838 ns later, and a count
+ *          latched before then is the one it held before. The read lets that edge pass, as Linux's
+ *          quick_pit_calibrate does, so that a read made right after the start counts from the new count.
  *
  * @return The rate it counts at, 1,193,182 Hz; its count lasts 54.9 ms.
  */

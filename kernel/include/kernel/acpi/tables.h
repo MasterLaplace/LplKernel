@@ -250,6 +250,35 @@ typedef struct AdvancedConfigurationAndPowerInterfacePowerManagementTimer {
 } AdvancedConfigurationAndPowerInterfacePowerManagementTimer_t;
 
 /**
+ * @brief Whether the waits of a platform without a usable power management timer can count on the host's
+ *        reference (§3.9), and why not.
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceReferenceWaitsState {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_UNTRIED = 0,  /**< No wait has started it yet. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_ABSENT = 1,   /**< The host has none, or its start
+                                                                                  gives no rate. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_USABLE = 2,   /**< Every wait counted on it. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_DERAILED = 3, /**< A wait saw it read spent at once
+                                                                                  after a start, go back, or stand
+                                                                                  still: no longer waited on. */
+} AdvancedConfigurationAndPowerInterfaceReferenceWaitsState_t;
+
+/**
+ * @brief The waits a platform without a usable power management timer makes on the host's reference, a
+ *        count no interrupt drives (§3.3, §3.9), and what they did.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceReferenceWaits {
+    uint8_t state;        /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_* state. */
+    uint32_t hertz;       /**< The rate the reference's first start gave; 0 before it. */
+    uint32_t starts;      /**< Starts of the reference those waits made. */
+    uint32_t stalls;      /**< Busy-waits made on it. */
+    uint32_t stall_reads; /**< Reads of it those busy-waits made. */
+    uint32_t sleeps;      /**< Sleeps made on it. */
+    uint32_t sleep_reads; /**< Reads of it those sleeps made. */
+    uint32_t sleep_idles; /**< Times those sleeps gave up the processor until an interrupt. */
+} AdvancedConfigurationAndPowerInterfaceReferenceWaits_t;
+
+/**
  * @struct AdvancedConfigurationAndPowerInterfaceDirectory
  * @brief Every table a root system description pointer leads to: the entries of its root table,
  *        then the DSDT the FADT names.
@@ -715,6 +744,100 @@ advanced_configuration_and_power_interface_power_management_timer(void);
  * @return Its name, such as "usable", or "unknown" for a value that names none.
  */
 extern const char *advanced_configuration_and_power_interface_power_management_timer_state_name(uint8_t state);
+
+/**
+ * @brief Whether a wait may count on the reference @p waits describe: no wait has tried it yet, or every
+ *        wait has counted on it.
+ *
+ * @param waits The waits made on a host's reference.
+ * @return True when it is untried or usable.
+ */
+extern bool advanced_configuration_and_power_interface_reference_can_be_waited_on(
+    const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits);
+
+/**
+ * @brief Busy-waits on the host's reference until it has counted at least @p microseconds, where no
+ *        usable power management timer is (§3.9).
+ *
+ * @details The first wait finds the reference absent when the host has none or its start gives no rate.
+ *          A wait starts the reference and reads it at once, then reads it until it has counted the
+ *          request, and starts it again each time a run of it has counted 15 ms, half the 30 ms a reference
+ *          holds at least (§3.3); a read that finds it spent counts those 30 ms. A reference that reads
+ *          spent at once after a start, goes back, or reads the same count
+ *          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_READ_CHECKS times in a row
+ *          derails: it is marked derailed and no longer waited on. Then, as when the first wait finds it
+ *          absent, the rest of the wait goes to the host's stall_microseconds, which must wait without it.
+ *
+ * @param host         The host whose reference is read, and whose stall finishes a wait the reference left.
+ * @param waits        The waits made on that reference; one that cannot be waited on is not waited on.
+ * @param microseconds How long to wait.
+ * @return The microseconds waited, at least @p microseconds; 0 for a reference that cannot be waited on.
+ */
+extern uint32_t advanced_configuration_and_power_interface_reference_stall(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits, uint32_t microseconds);
+
+/**
+ * @brief Waits on the host's reference until it has counted at least @p microseconds, where no usable
+ *        power management timer is (§3.9): gives up the processor through @p idle while more than a tick
+ *        and an eighth remain, then busy-waits the rest on it.
+ *
+ * @details The reference is counted as advanced_configuration_and_power_interface_reference_stall counts
+ *          it, and is read after each idle, which must end at the next interrupt, a tick of
+ *          @p idle_microseconds at the latest. A reference that does not move while the host's clock steps
+ *          twice derails too, and the rest of the wait goes to the host's sleep_microseconds, which must
+ *          then wait without it.
+ *
+ * @param host              The host whose reference and clock are read, and whose sleep finishes a wait
+ *                          the reference left.
+ * @param waits             The waits made on that reference; one that cannot be waited on is not waited on.
+ * @param microseconds      How long to wait.
+ * @param idle_microseconds A tick of the host's clock: the longest one idle lasts.
+ * @param idle              Gives up the processor until the next interrupt, given the host's context.
+ * @return The microseconds waited, at least @p microseconds; 0 for a reference that cannot be waited on.
+ */
+extern uint32_t advanced_configuration_and_power_interface_reference_sleep(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+    AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *waits, uint32_t microseconds, uint32_t idle_microseconds,
+    void (*idle)(void *context));
+
+/**
+ * @brief Busy-waits on this machine's reference, as advanced_configuration_and_power_interface_reference_stall
+ *        does, through advanced_configuration_and_power_interface_machine_host.
+ *
+ * @param microseconds How long to wait.
+ * @return The microseconds waited; 0 unless the reference can be waited on.
+ */
+extern uint32_t advanced_configuration_and_power_interface_reference_machine_stall(uint32_t microseconds);
+
+/**
+ * @brief Sleeps on this machine's reference, as advanced_configuration_and_power_interface_reference_sleep
+ *        does, through advanced_configuration_and_power_interface_machine_host.
+ *
+ * @param microseconds      How long to wait.
+ * @param idle_microseconds A tick of the kernel's clock: the longest one idle lasts.
+ * @param idle              Gives up the processor until the next interrupt.
+ * @return The microseconds waited; 0 unless the reference can be waited on.
+ */
+extern uint32_t advanced_configuration_and_power_interface_reference_machine_sleep(uint32_t microseconds,
+                                                                                   uint32_t idle_microseconds,
+                                                                                   void (*idle)(void *context));
+
+/**
+ * @brief The waits this machine made on its reference.
+ *
+ * @return The boot's reference waits, never NULL; untried before the first.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceReferenceWaits_t *
+advanced_configuration_and_power_interface_reference_waits(void);
+
+/**
+ * @brief The name the boot's telemetry gives the state of a host's reference waits.
+ *
+ * @param state An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_REFERENCE_WAITS_* state.
+ * @return Its name, such as "usable", or "unknown" for a value that names none.
+ */
+extern const char *advanced_configuration_and_power_interface_reference_waits_state_name(uint8_t state);
 
 /**
  * @brief The last physical address the target of a host reaches (§3.3): 2^physical_address_bits - 1, every address

@@ -209,6 +209,12 @@ static bool acpi_host_timer_is_usable(void)
            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_POWER_MANAGEMENT_TIMER_USABLE;
 }
 
+static bool acpi_host_reference_can_be_waited_on(void)
+{
+    return advanced_configuration_and_power_interface_reference_can_be_waited_on(
+        advanced_configuration_and_power_interface_reference_waits());
+}
+
 static uint32_t acpi_host_sleep_microseconds(void *context, uint32_t microseconds)
 {
     const uint32_t hertz = clock_get_tick_hz();
@@ -216,6 +222,9 @@ static uint32_t acpi_host_sleep_microseconds(void *context, uint32_t microsecond
     (void) context;
     if (hertz != 0u && acpi_host_timer_is_usable())
         return advanced_configuration_and_power_interface_power_management_timer_machine_sleep(
+            microseconds, ACPI_HOST_MICROSECONDS_PER_SECOND / hertz, acpi_host_halt);
+    if (hertz != 0u && acpi_host_reference_can_be_waited_on())
+        return advanced_configuration_and_power_interface_reference_machine_sleep(
             microseconds, ACPI_HOST_MICROSECONDS_PER_SECOND / hertz, acpi_host_halt);
     return acpi_host_sleep_on_tick(microseconds);
 }
@@ -236,6 +245,8 @@ static uint32_t acpi_host_stall_microseconds(void *context, uint32_t microsecond
     (void) context;
     if (acpi_host_timer_is_usable())
         return advanced_configuration_and_power_interface_power_management_timer_machine_stall(microseconds);
+    if (acpi_host_reference_can_be_waited_on())
+        return advanced_configuration_and_power_interface_reference_machine_stall(microseconds);
     return acpi_host_stall_on_tick(microseconds);
 }
 
