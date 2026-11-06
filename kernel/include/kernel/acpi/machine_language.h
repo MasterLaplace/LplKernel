@@ -201,13 +201,16 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                        pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
     uint8_t first_load_error;   /**< The first of them. */
-    uint32_t table_load_failed; /**< Tables the root table lists whose load met a fault, counted once each, the next
-                                     table loaded all the same (§3.8 step 1). */
-    uint32_t faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT]; /**< Faults the
-                                                                                                   evaluations and the
-                                                                                                   passes met, per
-                                                                                                   status, each logged
-                                                                                                   once (§4.5). */
+    uint32_t table_load_failed; /**< Tables the load declares from the directory, the DSDT and the SSDTs of the root
+                                     table, whose load met a fault, counted once each, the next table loaded all the
+                                     same (§3.8 step 1). */
+    uint32_t faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT]; /**< The lines
+                                                                                                   logged per status
+                                                                                                   (§4.5): a debug
+                                                                                                   kernel's decoding
+                                                                                                   pass adds those it
+                                                                                                   meets in method
+                                                                                                   bodies. */
     uint32_t decode_errors;         /**< Faults the decoding pass met, over every table. */
     uint32_t data_faults;           /**< Data objects kept in their table (O20) that the check run once the bodies are
                                          decoded found would not build, a fault in their bytes or a term that needs the
@@ -354,8 +357,8 @@ extern void advanced_configuration_and_power_interface_machine_language_count_lo
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
 
 /**
- * @brief Marks a table whose load met a fault, counted once in table_load_failed when the root table lists it
- *        (§3.8 step 1).
+ * @brief Marks a table whose load met a fault, counted once in table_load_failed when the load declared it from the
+ *        directory, as the DSDT and the SSDTs of the root table are (§3.8 step 1).
  *
  * @param load  The load.
  * @param table The table, counted from 1; 0, which names none, is ignored.
@@ -372,15 +375,29 @@ extern void advanced_configuration_and_power_interface_machine_language_count_ta
  * @details The path is built here alone, from the node: a load that meets no fault builds none.
  * @param load   The load, which counts it, and whose host's log the line goes to.
  * @param status The fault, its counter's name.
- * @param table  The table the term lies in, counted from 1, or 0 for none, such as the frame of a host's evaluation.
+ * @param table  The table the term lies in, counted from 1, or 0 for none.
  * @param offset Where the term starts in that table.
+ * @param end    The end of the construct the term stands in: a term at or past it is named `End`.
  * @param method The node of the method whose body holds the term, or 0 for table-level code.
  * @param scope  The node the code runs in, named when @p method is 0.
  */
 extern void advanced_configuration_and_power_interface_machine_language_report_fault(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t table, uint32_t offset,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t table, uint32_t offset, uint32_t end,
     uint32_t method, uint32_t scope);
+
+/**
+ * @brief Counts in faults, under its status, a fault a host's evaluation meets outside any term, such as the read of a
+ *        field in a space without a handler, or a call of a method without a body, and logs it as an error: its
+ *        status, then the object the host evaluated, such as `space_unsupported object=\_SB_.PCI0.EC0_.FLD0`.
+ *
+ * @param load   The load, which counts it, and whose host's log the line goes to.
+ * @param status The fault, its counter's name.
+ * @param node   The object the host evaluated.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_report_object_fault(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t node);
 
 /**
  * @brief Reads a field unit (§5.3): one access per datum of its access width, in its region for a
@@ -788,6 +805,8 @@ advanced_configuration_and_power_interface_machine_language_evaluate(
  *        advanced_configuration_and_power_interface_machine_language_evaluate evaluates the one a path
  *        names.
  *
+ * @details A failure is logged once (§4.5): at the term that met it, or, when no term did, with the object
+ *          (advanced_configuration_and_power_interface_machine_language_report_object_fault).
  * @param load           A load whose tables are decoded, its stacks free.
  * @param node           The node, which holds the object.
  * @param arguments      The method's arguments, or NULL when it takes none.

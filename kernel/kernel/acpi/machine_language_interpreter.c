@@ -1652,7 +1652,7 @@ static MachineLanguageStatus_t machine_language_take_table_back_edge(MachineLang
                                    MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS));
     advanced_configuration_and_power_interface_machine_language_report_fault(
         load, MACHINE_LANGUAGE_STATUS(LIMIT_LOOP_ITERATIONS), machine_language_frame(evaluation)->table, block->start,
-        0u, block->scope);
+        block->end, 0u, block->scope);
     machine_language_frame(evaluation)->pc = block->end;
     return MACHINE_LANGUAGE_OK;
 }
@@ -2515,8 +2515,9 @@ static inline MachineLanguageStatus_t machine_language_open_construct(MachineLan
         return status;
     advanced_configuration_and_power_interface_machine_language_count_load_error(load, status);
     advanced_configuration_and_power_interface_machine_language_count_table_failure(load, frame->table);
-    advanced_configuration_and_power_interface_machine_language_report_fault(load, status, frame->table, start, 0u,
-                                                                             machine_language_block(evaluation)->scope);
+    advanced_configuration_and_power_interface_machine_language_report_fault(
+        load, status, frame->table, start, machine_language_block(evaluation)->end, 0u,
+        machine_language_block(evaluation)->scope);
     frame->pc = end;
     frame->else_rule = MACHINE_LANGUAGE_ELSE_SKIPPED;
     return MACHINE_LANGUAGE_OK;
@@ -5300,21 +5301,25 @@ static MachineLanguageStatus_t machine_language_fail_internal(MachineLanguageLoa
 /**
  * @brief Reports the failure the innermost frame met, counted under its status and logged (§4.5): at the operator or
  *        the name whose run failed, or at the term its pc decodes, in its method, or in the scope of its table-level
- *        code; the failure stays the one reported while the evaluation goes past it.
+ *        code; the failure stays the one reported while the evaluation goes past it. A host's frame, which runs no
+ *        term, reports nothing: the host's evaluation reports its failure with the object it evaluated.
  */
 static void machine_language_report_failure(MachineLanguageLoad_t *load, MachineLanguageStatus_t status)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const MachineLanguageFrame_t *frame =
         &evaluation->frames[(evaluation->frame_count != 0u) ? evaluation->frame_count - 1u : 0u];
+    const bool runs_code = evaluation->frame_count != 0u && (frame->method != 0u || frame->declares);
 
-    evaluation->logged_fault_table = (evaluation->frame_count != 0u) ? frame->table : 0u;
+    evaluation->logged_fault_table = runs_code ? frame->table : 0u;
     evaluation->logged_fault_offset = evaluation->term_failed ? evaluation->failed_term_start : frame->pc;
     evaluation->term_failed = false;
+    if (!runs_code)
+        return;
+    evaluation->failure_logged = true;
     advanced_configuration_and_power_interface_machine_language_report_fault(
-        load, status, evaluation->logged_fault_table, evaluation->logged_fault_offset, frame->method,
-        (evaluation->block_count != 0u) ? machine_language_block(evaluation)->scope :
-                                          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT);
+        load, status, frame->table, evaluation->logged_fault_offset, machine_language_block(evaluation)->end,
+        frame->method, machine_language_block(evaluation)->scope);
 }
 
 /**
@@ -5355,14 +5360,17 @@ static MachineLanguageStatus_t machine_language_go_past_failure(MachineLanguageL
 }
 
 /**
- * @brief Reports a failure met above frame @p base, then goes past it as machine_language_go_past_failure does.
+ * @brief Reports a failure met above frame @p base, then goes past it as machine_language_go_past_failure does; a
+ *        failure gone past, which the evaluation does not return, leaves the one it returns to be reported. Kept out
+ *        of line, so that the loops that step leave their registers to the steps that do not fail.
  */
-static MachineLanguageStatus_t machine_language_take_failure(MachineLanguageLoad_t *load, uint32_t base,
-                                                             MachineLanguageStatus_t status)
+__attribute__((noinline)) static MachineLanguageStatus_t
+machine_language_take_failure(MachineLanguageLoad_t *load, uint32_t base, MachineLanguageStatus_t status)
 {
     machine_language_report_failure(load, status);
     status = machine_language_go_past_failure(load, base, status);
     load->evaluation.logged_fault_table = 0u;
+    load->evaluation.failure_logged = load->evaluation.failure_logged && status != MACHINE_LANGUAGE_OK;
     return status;
 }
 
@@ -5430,6 +5438,8 @@ static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageL
                       ->value.handle);
         if (status == MACHINE_LANGUAGE_OK)
             status = machine_language_push_attach(load, region, method, 0u, 0u);
+        if (status != MACHINE_LANGUAGE_OK)
+            advanced_configuration_and_power_interface_machine_language_report_object_fault(load, status, method);
         if (status != MACHINE_LANGUAGE_OK && evaluation->operator_count > slot)
             status = machine_language_take_failure(load, base, status);
         while (status == MACHINE_LANGUAGE_OK && evaluation->operator_count > slot)
@@ -5442,28 +5452,15 @@ static MachineLanguageStatus_t machine_language_attach_for_host(MachineLanguageL
     return status;
 }
 
-MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_run_table_term(
-    MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit)
-{
-    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
-    const uint32_t base = evaluation->frame_count;
-    MachineLanguageStatus_t status = machine_language_push_table_frame(load, table, scope, start, limit);
-
-    if (status != MACHINE_LANGUAGE_OK)
-    {
-        machine_language_count_failure(load, table + 1u, status);
-        return status;
-    }
-    while (status == MACHINE_LANGUAGE_OK && evaluation->frame_count > base)
-        status = machine_language_step_above(load, base);
-    while (evaluation->frame_count > base)
-        machine_language_drop_frame(load);
-    return MACHINE_LANGUAGE_OK;
-}
-
-MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(
-    MachineLanguageLoad_t *load, uint32_t index, const MachineLanguageValue_t *arguments, uint32_t argument_count,
-    MachineLanguageValue_t *out_result)
+/**
+ * @brief Evaluates the object at node @p index for the host, as
+ *        advanced_configuration_and_power_interface_machine_language_evaluate_node does, without logging a failure
+ *        no term met.
+ */
+static MachineLanguageStatus_t machine_language_evaluate_object(MachineLanguageLoad_t *load, uint32_t index,
+                                                                const MachineLanguageValue_t *arguments,
+                                                                uint32_t argument_count,
+                                                                MachineLanguageValue_t *out_result)
 {
     MachineLanguageEvaluation_t *evaluation = &load->evaluation;
     const uint32_t base = evaluation->frame_count;
@@ -5528,6 +5525,40 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
         machine_language_drop_frame(load);
     machine_language_drop_frame(load);
     advanced_configuration_and_power_interface_machine_language_end_evaluation(load);
+    return status;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_run_table_term(
+    MachineLanguageLoad_t *load, uint32_t table, uint32_t scope, uint32_t start, uint32_t limit)
+{
+    MachineLanguageEvaluation_t *evaluation = &load->evaluation;
+    const uint32_t base = evaluation->frame_count;
+    MachineLanguageStatus_t status = machine_language_push_table_frame(load, table, scope, start, limit);
+
+    if (status != MACHINE_LANGUAGE_OK)
+    {
+        machine_language_count_failure(load, table + 1u, status);
+        return status;
+    }
+    while (status == MACHINE_LANGUAGE_OK && evaluation->frame_count > base)
+        status = machine_language_step_above(load, base);
+    while (evaluation->frame_count > base)
+        machine_language_drop_frame(load);
+    return MACHINE_LANGUAGE_OK;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_evaluate_node(
+    MachineLanguageLoad_t *load, uint32_t index, const MachineLanguageValue_t *arguments, uint32_t argument_count,
+    MachineLanguageValue_t *out_result)
+{
+    MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
+
+    status = machine_language_evaluate_object(load, index, arguments, argument_count, out_result);
+    if (status == MACHINE_LANGUAGE_OK)
+        return status;
+    if (!load->evaluation.failure_logged)
+        advanced_configuration_and_power_interface_machine_language_report_object_fault(load, status, index);
+    load->evaluation.failure_logged = false;
     return status;
 }
 
