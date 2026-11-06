@@ -150,6 +150,8 @@ advanced_configuration_and_power_interface_machine_language_read_constant(const 
 static inline uint32_t advanced_configuration_and_power_interface_machine_language_name_segment(const uint8_t *bytes,
                                                                                                 uint32_t offset)
 {
-    return (uint32_t) bytes[offset] | ((uint32_t) bytes[offset + 1u] << 8u) | ((uint32_t) bytes[offset + 2u] << 16u) |
-           ((uint32_t) bytes[offset + 3u] << 24u);
+    const uint8_t *segment = bytes + offset;
+
+    return (uint32_t) segment[0] | ((uint32_t) segment[1] << 8u) | ((uint32_t) segment[2] << 16u) |
+           ((uint32_t) segment[3] << 24u);
 }
