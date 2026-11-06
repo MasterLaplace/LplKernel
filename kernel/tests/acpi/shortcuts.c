@@ -17,6 +17,9 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_shortcuts, KERNEL_T
 #define SHORTCUTS_DEEP_DEVICES                                                                                         \
     480u /**< Devices nested around the deep case's package: with the table's own construct, 481 open, so that a       \
             package 32 deep passes the 512 of §6.1 by one, the guard's own boundary. */
+#define SHORTCUTS_LIMIT_DEVICES                                                                                        \
+    520u /**< Devices nested in the case that passes the 512 constructs an evaluation holds open (§6.1) at table      \
+            level: the table's own and 511 TermLists, the 512th refused. */
 #define SHORTCUTS_NODE_CAPS                                                                                            \
     80u /**< One past the highest node cap the statements load under, from 1, which the predefined objects alone       \
            pass, to one that holds every name. */
@@ -620,6 +623,8 @@ static void shortcuts_record(const ShortcutsCase_t *load_case, bool general, Sho
     out_record->taken.data_stepped_over = load->data_stepped_over;
     out_record->taken.declarations_decoded_directly = load->declarations_decoded_directly;
     out_record->taken.integers_built_directly = load->integers_built_directly;
+    out_record->taken.scopes_entered = load->scopes_entered;
+    out_record->taken.scopes_left = load->scopes_left;
     out_record->unbuilt = shortcuts_build_kept_data();
     out_record->built_fold = advanced_configuration_and_power_interface_machine_language_namespace_fold(load);
     out_record->built_padded = load->heap.packages_padded;
@@ -913,6 +918,7 @@ static const uint8_t *shortcuts_table_bytes(ShortcutsTable_t table, uint32_t *ou
     {
     case SHORTCUTS_TABLE_STATEMENTS: *out_length = sizeof(shortcuts_statements_aml); return shortcuts_statements_aml;
     case SHORTCUTS_TABLE_REGIONS: *out_length = sizeof(shortcuts_regions); return shortcuts_regions;
+    case SHORTCUTS_TABLE_SCOPES: *out_length = sizeof(shortcuts_scope_bodies_aml); return shortcuts_scope_bodies_aml;
     case SHORTCUTS_TABLE_DATA:
     default: *out_length = sizeof(shortcuts_constants); return shortcuts_constants;
     }
@@ -939,6 +945,8 @@ void shortcuts_change_bytes(KernelTest_t *test, ShortcutsTable_t table, uint32_t
             out_mutations->taken.declarations_decoded_directly += record.taken.declarations_decoded_directly;
             out_mutations->data_kept += record.data_kept;
             out_mutations->taken.integers_built_directly += record.taken.integers_built_directly;
+            out_mutations->taken.scopes_entered += record.taken.scopes_entered;
+            out_mutations->taken.scopes_left += record.taken.scopes_left;
             ++out_mutations->loads;
         }
     }
@@ -1206,6 +1214,84 @@ KERNEL_TEST(a_sample_of_one_byte_changes_of_a_table_of_statements_declares_the_s
                       "every change declares the same with the decoder and without");
     kernel_test_measure(test, "mutants", mutations.loads);
     kernel_test_measure(test, "declarations_decoded_directly", mutations.taken.declarations_decoded_directly);
+}
+
+/**
+ * @brief The declaration pass enters the TermList of each Scope, Device, Processor, PowerResource or ThermalZone the
+ *        table's code declares itself, the interpreter's construct for it opened, and leaves it at its end, down to
+ *        the first statement the interpreter runs (O21); a load with that shortcut ends with the namespace, the faults
+ *        and the counts of what it declared of a load without it, which hands each TermList back to the interpreter.
+ *        It enters the 13 TermLists of the nested scopes the table's code runs in, under revision 2 then 1, and leaves
+ *        9 of them itself, the interpreter closing the 4 that hold a statement it runs, but not the one an If whose
+ *        predicate fails holds, which is declared without running; none where
+ *        the declaration pass declares every branch itself; the one Device of the taken If of the table-level code,
+ *        left at its end; and, of 520 nested Devices, the 511 the 512 constructs an evaluation holds open leave room
+ *        for (§6.1), the table's own included, each left at its end, the 512th refused with limit_blocks, the load's
+ *        one fault.
+ */
+KERNEL_TEST(the_declaration_pass_enters_the_term_lists_of_table_level_code_itself)
+{
+    ShortcutsCase_t cases[] = {
+        {"nested scopes, under revision 2",                        shortcuts_scope_bodies_aml,     sizeof(shortcuts_scope_bodies_aml), 2u, NULL,
+         0u,                                                                                                                                         false, false, true, MADE_UP_MAX_NODES},
+        {"nested scopes, under revision 1",                        shortcuts_scope_bodies_aml,     sizeof(shortcuts_scope_bodies_aml), 1u, NULL,
+         0u,                                                                                                                                         false, false, true, MADE_UP_MAX_NODES},
+        {"nested scopes whose every branch the pass declares",     shortcuts_scope_bodies_aml,
+         sizeof(shortcuts_scope_bodies_aml),                                                                                           2u, NULL, 0u, false, true,  true, MADE_UP_MAX_NODES},
+        {"the declarations of table-level code it runs",           shortcuts_table_level_code_aml,
+         sizeof(shortcuts_table_level_code_aml),                                                                                       2u, NULL, 0u, false, false, true, MADE_UP_MAX_NODES},
+        {"Devices nested past the constructs an evaluation holds", NULL,                           0u,                                 2u, NULL, 0u, false, false, true,
+         MADE_UP_MAX_NODES                                                                                                                                                                },
+    };
+    const uint32_t entered[] = {13u, 13u, 0u, 1u,
+                                ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS - 1u};
+    const uint32_t left[] = {9u, 9u, 0u, 1u,
+                             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_EVALUATION_BLOCKS - 1u};
+    const uint32_t count = sizeof(cases) / sizeof(cases[0]);
+    uint32_t scopes_entered = 0u;
+    uint32_t scopes_left = 0u;
+
+    if (!shortcuts_nested_case(test, &cases[count - 1u], "DEEP", 0u, SHORTCUTS_LIMIT_DEVICES))
+        return;
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        ShortcutsRecord_t record;
+        const bool limited = index + 1u == count;
+
+        kernel_test_check(
+            test,
+            shortcuts_agree(test, &cases[index], &record) && record.taken.scopes_entered == entered[index] &&
+                record.taken.scopes_left == left[index] &&
+                (!limited || (record.load_errors == 1u &&
+                              record.first_load_error ==
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BLOCKS)),
+            cases[index].claim);
+        scopes_entered += record.taken.scopes_entered;
+        scopes_left += record.taken.scopes_left;
+    }
+    kernel_test_measure(test, "scopes_entered", scopes_entered);
+    kernel_test_measure(test, "scopes_left", scopes_left);
+}
+
+/**
+ * @brief A sample of one-byte changes of the nested scopes whose TermLists the declaration pass enters (O21), every
+ *        16th byte changed once, to its value with one bit flipped, to 0x00 or to 0xFF in turn, loads to the same
+ *        namespace, faults and counts of what it declared with the load's shortcuts and without, in ring 0 as on the
+ *        host; host_shortcuts changes every byte to each of the three.
+ */
+KERNEL_TEST(a_sample_of_one_byte_changes_of_nested_scopes_declares_the_same_both_ways)
+{
+    ShortcutsMutations_t mutations;
+
+    shortcuts_change_bytes(test, SHORTCUTS_TABLE_SCOPES, SHORTCUTS_SAMPLE_STRIDE, false, &mutations);
+    kernel_test_check(test,
+                      mutations.loads == (mutations.bytes + SHORTCUTS_SAMPLE_STRIDE - 1u) / SHORTCUTS_SAMPLE_STRIDE &&
+                          mutations.taken.scopes_entered != 0u,
+                      "every change of the sample was loaded both ways, and the declaration pass entered TermLists");
+    kernel_test_check(test, mutations.disagreements == 0u,
+                      "every change declares the same with the shortcut and without");
+    kernel_test_measure(test, "mutants", mutations.loads);
+    kernel_test_measure(test, "scopes_entered", mutations.taken.scopes_entered);
 }
 
 /**
