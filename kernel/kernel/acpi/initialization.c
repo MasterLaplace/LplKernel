@@ -477,16 +477,17 @@ static bool initialization_is_below(const InitializationLoad_t *load, uint32_t i
 
 /**
  * @brief Whether the walk of step 4 or step 7, at @p walking, still reaches @p index, which a table loaded
- *        meanwhile declares: below @p walking, or below a node the walk has not reached yet under the lowest
- *        node above both; never when @p walking is 0, which the late initialisation passes once no walk
- *        runs. A @p walking step 4 does not descend into is absent, which initialization_under_absent tells
- *        first; step 7's @p walking is a node the pre-pass marked, which it descends into.
+ *        meanwhile declares: @p walking itself, below it, or below a node the walk has not reached yet under
+ *        the lowest node above both; never a node above @p walking, which the walk has passed, nor any when
+ *        @p walking is 0, which the late initialisation passes once no walk runs. A @p walking step 4 does not
+ *        descend into is absent, which initialization_under_absent tells first; step 7's @p walking is a node
+ *        the pre-pass marked, which it descends into.
  */
 static bool initialization_reached_later(const InitializationLoad_t *load, uint32_t index, uint32_t walking)
 {
     uint32_t branch = walking;
 
-    if (walking == 0u)
+    if (walking == 0u || initialization_is_below(load, walking, index))
         return false;
     if (initialization_is_below(load, index, walking))
         return true;
@@ -541,9 +542,10 @@ static bool initialization_decide_above(InitializationLoad_t *load, Initializati
 /**
  * @brief Walks, as step 4 does, each device subtree the tables past the first @p first, up to the
  *        first @p last, declare that step 4, at @p walking, no longer reaches: from each device of theirs
- *        whose parent is not one of theirs, once the devices above it step 4 skipped are found present or
- *        functioning, unless a device above it is absent (§3.8). Step 4 initialises the others when it
- *        reaches them.
+ *        whose parent is not one of theirs, a device above @p walking included, once the devices above it
+ *        step 4 skipped are found present or functioning, unless a device above it is absent, up to the
+ *        nodes step 4 still reaches: @p walking, what lies below it and what follows it (§3.8). Step 4
+ *        initialises those, and the other devices of these tables, when it reaches them.
  */
 static void initialization_walk_late(InitializationLoad_t *load, Initialization_t *initialization, uint32_t first,
                                      uint32_t last, uint32_t walking)
@@ -561,7 +563,7 @@ static void initialization_walk_late(InitializationLoad_t *load, Initialization_
             initialization_under_absent(load, top) || initialization_reached_later(load, top, walking) ||
             !initialization_decide_above(load, initialization, top))
             continue;
-        for (uint32_t index = top; index != 0u;)
+        for (uint32_t index = top; index != 0u && !initialization_reached_later(load, index, walking);)
         {
             const bool below = !advanced_configuration_and_power_interface_machine_language_namespace_is_device_object(
                                    initialization_node(load, index)->type) ||
@@ -885,7 +887,7 @@ static bool initialization_negotiate_late(InitializationLoad_t *load, Initializa
     for (uint32_t index = initialization_next(load, INITIALIZATION_ROOT, true); index != 0u;
          index = initialization_next(load, index, initialization_capable(load, index)))
         if (initialization_capable(load, index) && initialization_capable_late(load, index, first, last) &&
-            (initialization_is_below(load, walking, index) || !initialization_reached_later(load, index, walking)))
+            !initialization_reached_later(load, index, walking))
             capabilities |= initialization_negotiate_bound(load, initialization, machine, index);
     return capabilities;
 }
