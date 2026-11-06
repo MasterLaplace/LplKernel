@@ -496,12 +496,14 @@ KERNEL_TEST(kept_data_rewritten_one_package_deeper_than_allowed_folds_as_unreada
 
 /**
  * @brief `Name (PKGX, Package (1) {One})`, the last node the namespace's fold walks, its One rewritten into a
- *        QWordPrefix with no bytes after it at the table's end: the fold is the intact one with the package's count
- *        and its Integer taken back out, then the count 0xFFFFFFFF, which no object has, and nothing after it.
+ *        QWordPrefix with no bytes after it at the table's end: the fold is the intact one with the package's count,
+ *        its element's type and its Integer taken back out, then the count 0xFFFFFFFF, which no object has, and
+ *        nothing after it.
  */
 KERNEL_TEST(unreadable_kept_data_folds_as_a_count_no_object_has)
 {
-    static const uint8_t value[] = {0x01u, 0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
+    static const uint8_t value[] = {0x01u, 0x00u, 0x00u, 0x00u, 0x01u, 0x01u, 0x00u,
+                                    0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
     const KeptDataRewrite_t intact = {KEPT_DATA_UNCHANGED, 0u};
     const KeptDataRewrite_t cut = {8u, 0x0Eu};
     uint32_t kept = 0u;

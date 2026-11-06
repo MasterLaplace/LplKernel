@@ -3,9 +3,10 @@
 # the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh --server). The boot runs the
 # same function on the tables it reads from the machine first, hence skip=1. tools/acpi-corpus.sh module qemu q35
 # kernel/lpl.kernel writes the module. It measures the gap of the other W1 windows on the release path to a release
-# kernel, on the same tables: this window counts 3,826 instructions (2.26 %) fewer than a release kernel's 169,619
-# (tools/instructions.sh --budget tools/acpi-load.budget), all of them in mapping the firmware's windows, which the
-# simulated host does without the kernel's page tables. Checked by tools/instructions.sh --budget
+# kernel, on the same tables: this window counts 65 instructions fewer than a release kernel's 169,619
+# (tools/instructions.sh --budget tools/acpi-load.budget): 3,826 fewer in mapping the firmware's windows, which the
+# simulated host does without the kernel's page tables, and 3,761 more in counting the bytes the walks decode, which a
+# release kernel does not count (§4.1). Checked by tools/instructions.sh --budget
 # tools/acpi-load-q35.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records the new one.
 inside=advanced_configuration_and_power_interface_machine_language_load_directory
 skip=1
@@ -13,6 +14,6 @@ times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
 module=build/acpi-corpus/modules/q35.acpi
-instructions=165793
-accesses=92902
+instructions=169554
+accesses=95836
 tolerance=1

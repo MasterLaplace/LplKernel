@@ -195,9 +195,23 @@ KERNEL_TEST(an_uninitialized_local_reads_as_integer_zero)
 }
 
 /**
+ * @brief Folds the evaluations record (§8.7) of RES0, RES1 and RES2, each of which must evaluate.
+ */
+static uint32_t evaluation_width_fold(KernelTest_t *test)
+{
+    static const char *const paths[] = {"\\RES0", "\\RES1", "\\RES2"};
+    uint32_t succeeded = 0u;
+    const uint32_t fold = advanced_configuration_and_power_interface_machine_language_evaluations_fold(
+        &evaluation_load, paths, sizeof(paths) / sizeof(paths[0]), &succeeded);
+
+    kernel_test_check(test, succeeded == sizeof(paths) / sizeof(paths[0]), "RES0, RES1 and RES2 evaluate");
+    return fold;
+}
+
+/**
  * @brief Under a revision-1 DSDT every integer is 32 bits: Ones is 0xFFFFFFFF, Add (Ones, One) wraps
  *        to 0, and True is 0xFFFFFFFF; the same table under revision 2, the control, comes out 64 bits
- *        wide.
+ *        wide, and so does the evaluations record of §8.7, which tells the two widths apart.
  */
 KERNEL_TEST(integers_are_32_bits_under_a_revision_1_definition_block)
 {
@@ -206,11 +220,20 @@ KERNEL_TEST(integers_are_32_bits_under_a_revision_1_definition_block)
     kernel_test_check(test, evaluation_integer("RES0") == 0u, "Add (Ones, One) is 0");
     kernel_test_check(test, evaluation_integer("RES1") == 0xFFFFFFFFu, "Ones is 0xFFFFFFFF");
     kernel_test_check(test, evaluation_integer("RES2") == 0xFFFFFFFFu, "LEqual (Ones, 0xFFFFFFFF) is True");
+
+    const uint32_t narrow = evaluation_width_fold(test);
+
     evaluation_close(test);
     if (!evaluation_run(test, 2u, evaluation_integer_width_aml, sizeof(evaluation_integer_width_aml)))
         return;
     kernel_test_check(test, evaluation_integer("RES1") == ~0ull && evaluation_integer("RES2") == 0u,
                       "under revision 2, Ones is 64 bits wide and differs from 0xFFFFFFFF");
+
+    const uint32_t wide = evaluation_width_fold(test);
+
+    kernel_test_check(test, narrow != wide, "the evaluations record of the other integer width differs");
+    kernel_test_measure_hexadecimal(test, "evaluations_fold_32_bits", narrow);
+    kernel_test_measure_hexadecimal(test, "evaluations_fold_64_bits", wide);
     evaluation_close(test);
 }
 
