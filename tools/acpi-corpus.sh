@@ -607,7 +607,7 @@ predecoding_check() {
             diff <(grep -v '^aml run predecoding ' "$off") <(grep -v '^aml run predecoding ' "$on") >"$tables/diff" || true
             head -6 "$tables/diff" | sed 's/^/    # /'
         fi
-        counts+="$(grep '^aml run predecoding \|^aml run namespace ' "$on")"$'\n'
+        counts+="$(grep '^aml run predecoding \|^aml run namespace ' "$on" || true)"$'\n'
     done < <(reports "$1")
     rm -rf "$on" "$off" "$tables"
     echo -n "# predecoding: $agree of $number machines leave the same lines with records and without;"
