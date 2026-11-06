@@ -334,7 +334,7 @@ initialize_check() {
             failed=$((failed + 1))
             continue
         fi
-        executed+="$(grep -E '^aml run (executed|unimplemented) ' "$output")"$'\n'
+        executed+="$(grep -E '^aml run (executed|unimplemented) ' "$output" || true)"$'\n'
         if grep -q '^aml run unimplemented ' "$output"; then
             echo "not ok $number $subject: the needs path executes what the interpreter does not:" \
                 $(grep '^aml run unimplemented ' "$output" | cut -d' ' -f4)
