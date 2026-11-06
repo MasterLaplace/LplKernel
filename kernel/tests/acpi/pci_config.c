@@ -1,3 +1,5 @@
+#include "fixtures/pci_config.h"
+#include "fixtures/common.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -113,6 +115,8 @@ static void pci_close(KernelTest_t *test)
 /**
  * @brief Appends Method (@p name) { Increment (\@p counter); Return (@p value) }, or without the
  *        Increment when @p counter is NULL.
+ *
+ * Its pieces are raw bytes: an Increment and a Return opened around @p counter and @p value, partial terms.
  */
 static void pci_method_returning(MadeUpAml_t *aml, const char *name, uint64_t value, const char *counter)
 {
@@ -170,6 +174,8 @@ static void pci_region(MadeUpAml_t *aml, const char *region, const MadeUpFieldUn
  * @brief Writes the tree of a_failing_attach_method_is_an_absent_object_and_runs_once with a _BBN whose PkgLength
  *        ends before its flags, which declares it without a body; the device's code reads VID_ twice when
  *        @p read_by_aml says so.
+ *
+ * Its _BBN is raw bytes: iasl does not emit a Method whose PkgLength ends before its flags.
  */
 static void pci_write_bodiless_bus_number(bool read_by_aml)
 {
@@ -406,7 +412,6 @@ KERNEL_TEST(an_attach_that_needs_its_own_region_takes_its_object_as_absent)
         {NULL,   200u},
         {"BUSN", 8u  },
     };
-    static const uint8_t return_bus[] = {0xA4u, 'B', 'U', 'S', 'N'};
 
     pci_begin();
     made_up_aml_name_integer(&pci_aml, "V1__", 7u);
@@ -414,7 +419,7 @@ KERNEL_TEST(an_attach_that_needs_its_own_region_takes_its_object_as_absent)
     made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
     pci_region(&pci_root_body, "HCFG", units, 2u);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, return_bus, sizeof(return_bus));
+    made_up_aml_raw(&pci_method_body, pci_return_bus_aml, sizeof(pci_return_bus_aml));
     made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
     made_up_aml_store_name(&pci_root_body, "BUSN", "V1__");
     made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
@@ -439,7 +444,6 @@ KERNEL_TEST(a_failing_attach_method_is_an_absent_object_and_runs_once)
     static const MadeUpFieldUnit_t units[] = {
         {"VID_", 16u},
     };
-    static const uint8_t divide_by_zero[] = {0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
 
     pci_begin();
     pci_other_space[0x00u] = 0x86u;
@@ -455,7 +459,7 @@ KERNEL_TEST(a_failing_attach_method_is_an_absent_object_and_runs_once)
     made_up_aml_begin(&pci_root_body);
     made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, divide_by_zero, sizeof(divide_by_zero));
+    made_up_aml_raw(&pci_method_body, common_return_divide_by_zero_aml, sizeof(common_return_divide_by_zero_aml));
     made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
     made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
     made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
@@ -513,18 +517,13 @@ KERNEL_TEST(a_failure_in_a_table_an_attach_method_loads_is_the_table_s)
     static const MadeUpFieldUnit_t units[] = {
         {"VID_", 16u},
     };
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', 0x60u, 0xA4u, 0x00u};
-    static const uint8_t fails[] = {0xA4u, '\\', 'N', 'O', 'P', 'E'};
-    static const uint8_t calls[] = {0x70u, '\\', 'F', 'A', 'L', 'T', '\\', 'V', '2', '_', '_'};
-    static const uint8_t reads[] = {0x70u, '\\', 0x2Fu, 0x03u, 'P', 'C',  'I', '0', 'D', 'E', 'V',
-                                    '_',   'V',  'I',   'D',   '_', '\\', 'V', '1', '_', '_'};
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
     pci_begin();
     pci_other_space[0x00u] = 0x86u;
     pci_other_space[0x01u] = 0x80u;
     advanced_configuration_and_power_interface_simulated_host_add_function(&pci_host, 0u, 0u, 3u, 1u, pci_other_space);
-    made_up_aml_raw(&pci_inner, calls, sizeof(calls));
+    made_up_aml_raw(&pci_inner, pci_stores_failing_call_aml, sizeof(pci_stores_failing_call_aml));
     made_up_aml_name_integer(&pci_inner, "AFTR", 7u);
 
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
@@ -536,10 +535,10 @@ KERNEL_TEST(a_failure_in_a_table_an_attach_method_loads_is_the_table_s)
     made_up_aml_name_integer(&pci_aml, "V2__", 0x55u);
     made_up_aml_region(&pci_aml, "TBLR", PCI_MEMORY_SPACE, PCI_TABLE_PLACE, header->length);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, fails, sizeof(fails));
+    made_up_aml_raw(&pci_method_body, common_return_missing_name_aml, sizeof(common_return_missing_name_aml));
     made_up_aml_method(&pci_aml, "FALT", 0x00u, &pci_method_body);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, reads, sizeof(reads));
+    made_up_aml_raw(&pci_method_body, pci_reads_vendor_aml, sizeof(pci_reads_vendor_aml));
     made_up_aml_method(&pci_aml, "RDIT", 0x00u, &pci_method_body);
     made_up_aml_begin(&pci_device_body);
     made_up_aml_name_integer(&pci_device_body, "_ADR", 0x00030001u);
@@ -547,7 +546,7 @@ KERNEL_TEST(a_failure_in_a_table_an_attach_method_loads_is_the_table_s)
     made_up_aml_begin(&pci_root_body);
     made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, loads, sizeof(loads));
+    made_up_aml_raw(&pci_method_body, pci_loads_table_and_returns_aml, sizeof(pci_loads_table_and_returns_aml));
     made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
     made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
     made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
@@ -582,11 +581,6 @@ KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_f
     static const MadeUpFieldUnit_t units[] = {
         {"VID_", 16u},
     };
-    static const uint8_t loads[] = {0x5Bu, 0x20u, '\\', 'T', 'B', 'L', 'R', 0x60u};
-    static const uint8_t fails[] = {0xA4u, '\\', 'N', 'O', 'P', 'E'};
-    static const uint8_t reads[] = {0x70u, 0x72u, 0x01u, 0x72u, 0x0Au, 0x02u, '\\', 0x2Fu, 0x03u, 'P',
-                                    'C',   'I',   '0',   'D',   'E',   'V',   '_',  'V',   'I',   'D',
-                                    '_',   0x00u, 0x00u, '\\',  'V',   '2',   '_',  '_'};
     const uint32_t preset = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_VALUES - 3u;
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
 
@@ -594,7 +588,7 @@ KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_f
     pci_other_space[0x00u] = 0x86u;
     pci_other_space[0x01u] = 0x80u;
     advanced_configuration_and_power_interface_simulated_host_add_function(&pci_host, 0u, 0u, 3u, 1u, pci_other_space);
-    made_up_aml_raw(&pci_inner, reads, sizeof(reads));
+    made_up_aml_raw(&pci_inner, pci_adds_vendor_aml, sizeof(pci_adds_vendor_aml));
     made_up_aml_name_integer(&pci_inner, "AFTR", 7u);
 
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
@@ -605,7 +599,7 @@ KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_f
     made_up_aml_name_integer(&pci_aml, "V2__", 0x55u);
     made_up_aml_region(&pci_aml, "TBLR", PCI_MEMORY_SPACE, PCI_TABLE_PLACE, header->length);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, loads, sizeof(loads));
+    made_up_aml_raw(&pci_method_body, pci_loads_table_aml, sizeof(pci_loads_table_aml));
     made_up_aml_method(&pci_aml, "LDIT", 0x00u, &pci_method_body);
     made_up_aml_begin(&pci_device_body);
     made_up_aml_name_integer(&pci_device_body, "_ADR", 0x00030001u);
@@ -613,7 +607,7 @@ KERNEL_TEST(an_attach_whose_recovery_finds_no_room_in_a_loaded_table_hands_its_f
     made_up_aml_begin(&pci_root_body);
     made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, fails, sizeof(fails));
+    made_up_aml_raw(&pci_method_body, common_return_missing_name_aml, sizeof(common_return_missing_name_aml));
     made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
     made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
     made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
@@ -648,7 +642,6 @@ KERNEL_TEST(a_limit_inside_an_attach_method_still_fails_the_access)
     static const MadeUpFieldUnit_t units[] = {
         {"VID_", 16u},
     };
-    static const uint8_t call_itself[] = {0xA4u, '_', 'B', 'B', 'N'};
 
     pci_begin();
     made_up_aml_name_integer(&pci_aml, "V1__", 7u);
@@ -659,7 +652,7 @@ KERNEL_TEST(a_limit_inside_an_attach_method_still_fails_the_access)
     made_up_aml_begin(&pci_root_body);
     made_up_aml_name_integer(&pci_root_body, "_HID", PCI_HOST_BRIDGE);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, call_itself, sizeof(call_itself));
+    made_up_aml_raw(&pci_method_body, pci_calls_itself_aml, sizeof(pci_calls_itself_aml));
     made_up_aml_method(&pci_root_body, "_BBN", 0x00u, &pci_method_body);
     made_up_aml_device(&pci_root_body, "DEV_", &pci_device_body);
     made_up_aml_device(&pci_aml, "PCI0", &pci_root_body);
@@ -714,10 +707,6 @@ KERNEL_TEST(a_host_read_of_a_field_unit_runs_the_attach_s_methods_first)
  */
 KERNEL_TEST(the_root_bridge_is_the_closest_device_whose_hid_or_cid_names_one)
 {
-    static const uint8_t hardware_identifier[] = {0x08u, '_', 'H', 'I', 'D', 0x0Du, 'A',  'C',
-                                                  'P',   'I', '0', '0', '1', '6',   0x00u};
-    static const uint8_t compatible_identifiers[] = {0x08u, '_', 'C', 'I', 'D', 0x12u, 0x0Bu, 0x01u, 0x0Du,
-                                                     'P',   'N', 'P', '0', 'A', '0',   '8',   0x00u};
     static const MadeUpFieldUnit_t units[] = {
         {"VID_", 16u},
     };
@@ -739,8 +728,8 @@ KERNEL_TEST(the_root_bridge_is_the_closest_device_whose_hid_or_cid_names_one)
     pci_region(&pci_device_body, "PCFG", units, 1u);
     made_up_aml_store_name(&pci_device_body, "VID_", "V1__");
     made_up_aml_begin(&pci_bridge_body);
-    made_up_aml_raw(&pci_bridge_body, hardware_identifier, sizeof(hardware_identifier));
-    made_up_aml_raw(&pci_bridge_body, compatible_identifiers, sizeof(compatible_identifiers));
+    made_up_aml_raw(&pci_bridge_body, pci_hid_acpi0016_aml, sizeof(pci_hid_acpi0016_aml));
+    made_up_aml_raw(&pci_bridge_body, pci_cid_pnp0a08_aml, sizeof(pci_cid_pnp0a08_aml));
     made_up_aml_name_integer(&pci_bridge_body, "_BBN", 4u);
     made_up_aml_name_integer(&pci_bridge_body, "_ADR", 0u);
     pci_region(&pci_bridge_body, "RCFG", root_units, 1u);
@@ -952,11 +941,10 @@ static void pci_level_device(MadeUpAml_t *aml, uint32_t depth, const char *name,
  */
 static void pci_level_root(const char *name, bool with_address, const char *target, const MadeUpAml_t *children)
 {
-    static const uint8_t express_root[] = {0x08u, '_', 'H', 'I', 'D', 0x0Du, 'P', 'N', 'P', '0', 'A', '0', '8', 0x00u};
     MadeUpAml_t *body = &pci_level[0];
 
     made_up_aml_begin(body);
-    made_up_aml_raw(body, express_root, sizeof(express_root));
+    made_up_aml_raw(body, pci_express_root_hid_aml, sizeof(pci_express_root_hid_aml));
     made_up_aml_name_integer(body, "_BBN", 0x10u);
     if (with_address)
         made_up_aml_name_integer(body, "_ADR", 0u);
@@ -979,7 +967,6 @@ KERNEL_TEST(the_walk_down_follows_uacpi_s_devices_below_bridges)
     static const char *const names[] = {"V00_", "V01_", "V02_", "V03_", "V04_", "V05_", "V06_",
                                         "V07_", "V08_", "V09_", "V10_", "V11_", "V12_", "V13_",
                                         "V14_", "V15_", "V16_", "V17_", "V18_", "V19_", "V20_"};
-    static const uint8_t method_with_one_argument[] = {0xA4u, 0x0Cu, 0x00u, 0x00u, 0x03u, 0x00u};
     static const uint32_t lost = 0xFFFFFFFFu;
     const uint32_t expected[] = {
         lost,
@@ -1053,7 +1040,7 @@ KERNEL_TEST(the_walk_down_follows_uacpi_s_devices_below_bridges)
     made_up_aml_raw(&pci_root_body, pci_inner.bytes, pci_inner.length);
     made_up_aml_begin(&pci_device_body);
     made_up_aml_begin(&pci_method_body);
-    made_up_aml_raw(&pci_method_body, method_with_one_argument, sizeof(method_with_one_argument));
+    made_up_aml_raw(&pci_method_body, pci_return_address_aml, sizeof(pci_return_address_aml));
     made_up_aml_method(&pci_device_body, "_ADR", 0x01u, &pci_method_body);
     pci_identity_region(&pci_device_body, "V18_");
     made_up_aml_device(&pci_root_body, "MARG", &pci_device_body);
@@ -1137,7 +1124,6 @@ static void pci_filtered_device(const char *name, uint64_t address)
  */
 KERNEL_TEST(the_header_write_filter_holds_at_each_edge_and_width)
 {
-    static const uint8_t express_root[] = {0x08u, '_', 'H', 'I', 'D', 0x0Du, 'P', 'N', 'P', '0', 'A', '0', '8', 0x00u};
     static const MadeUpFieldUnit_t word[] = {
         {"UWRD", 16u},
     };
@@ -1150,7 +1136,7 @@ KERNEL_TEST(the_header_write_filter_holds_at_each_edge_and_width)
     pci_begin();
     pci_add_bridges_and_endpoints();
     made_up_aml_begin(&pci_root_body);
-    made_up_aml_raw(&pci_root_body, express_root, sizeof(express_root));
+    made_up_aml_raw(&pci_root_body, pci_express_root_hid_aml, sizeof(pci_express_root_hid_aml));
     made_up_aml_name_integer(&pci_root_body, "_BBN", 0x10u);
     pci_filtered_device("EP00", 0x00020000u);
     pci_filtered_device("RP01", 0x001C0000u);

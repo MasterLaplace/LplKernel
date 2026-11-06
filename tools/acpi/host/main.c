@@ -28,8 +28,9 @@
     "       test-acpi --namespace-tables <table>...  the same from raw definition blocks, the DSDT first\n"            \
     "       test-acpi --closure <dump>   prints the opcodes the needs path of an acpidump text file reaches\n"         \
     "       test-acpi --closure-tables <table>...    the same from raw definition blocks, the DSDT first\n"            \
-    "       test-acpi --initialize <dump> [<presets>]  loads the definition blocks of an acpidump text file,\n"        \
-    "                                    initialises their namespace as the boot does, and prints what it ran and\n"   \
+    "       test-acpi --initialize <dump> [<presets>]  puts the machine of an acpidump text file in ACPI mode,\n"      \
+    "                                    loads its definition blocks, initialises their namespace as the boot\n"       \
+    "                                    does, and prints how the switch ended, what the initialisation ran and\n"     \
     "                                    counted, each status a failure ended with, and the first object that\n"       \
     "                                    failed; the SSDTs the dump's PmRef triples place wait for Load, and\n"        \
     "                                    <presets>, a path and a 0x-prefixed hexadecimal integer per line, #\n"        \
@@ -37,7 +38,8 @@
     "                                    gives NVS objects their values\n"                                             \
     "       test-acpi --loaded <dump> <presets> <directory>  the same, then prints the namespace and writes\n"         \
     "                                    each table it holds, Load's included, as a raw file of <directory>\n"         \
-    "       test-acpi --initialize-tables <table>...  the same from raw definition blocks, the DSDT first\n"           \
+    "       test-acpi --initialize-tables <table>...  the same from raw definition blocks, the DSDT first; they\n"     \
+    "                                    come without a FADT, so the platform is not switched to ACPI mode\n"          \
     "       test-acpi --evaluate <path> <table>...    loads raw definition blocks, the DSDT first, initialises\n"      \
     "                                    their namespace, and prints what evaluating the absolute path gives: its\n"   \
     "                                    status, then the result's type and value, and each opcode run but not\n"      \
@@ -757,12 +759,26 @@ typedef enum HarnessView {
 static NeedsPathClosure_t harness_closure;
 static AdvancedConfigurationAndPowerInterfaceInitialization_t harness_initialization;
 static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t harness_idle;
+static AdvancedConfigurationAndPowerInterfaceModeSwitch_t harness_mode;
 static uint32_t harness_unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT];
+
+/**
+ * @brief Puts the recorded machine @p simulated serves in ACPI mode, as step 0 does at boot before any AML
+ *        runs (§3.8), its firmware answering as the platform @p directory's FADT describes boots.
+ */
+static void harness_enter_mode(AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+                               const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
+{
+    advanced_configuration_and_power_interface_simulated_host_boot_platform(simulated, &directory->fixed_description);
+    advanced_configuration_and_power_interface_enter_mode(&simulated->host, &directory->fixed_description,
+                                                          &harness_mode);
+}
 
 /**
  * @brief The machine a namespace is initialised for: the CPU slots of @p directory's MADT and its FADT,
  *        none without a directory, a processor that implements MONITOR/MWAIT, since a recorded machine's
- *        processor is not recorded, and a platform step 0 never switched to ACPI mode.
+ *        processor is not recorded, and the platform as step 0 left it: not run for raw definition blocks,
+ *        which come without a FADT.
  */
 static const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *
 harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
@@ -777,6 +793,7 @@ harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directo
                        NULL;
     machine.monitor_wait = true;
     machine.fadt = (directory != NULL) ? &directory->fixed_description : NULL;
+    machine.mode = harness_mode.outcome;
     return &machine;
 }
 
@@ -894,8 +911,9 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
 
 /**
  * @brief Initialises a decoded load's namespace as the boot does, for the machine @p directory describes,
- *        and prints what it ran and counted, each status a failure ended with, each unimplemented opcode
- *        it reached, the first object whose evaluation failed, and the C-states it published.
+ *        and prints how step 0 left the platform, what the initialisation ran and counted, each status a
+ *        failure ended with, each unimplemented opcode it reached, the first object whose evaluation failed,
+ *        and the C-states it published.
  */
 static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                          const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
@@ -906,6 +924,10 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
     memcpy(harness_unimplemented, load->evaluation.unimplemented, sizeof(harness_unimplemented));
     advanced_configuration_and_power_interface_initialize_namespace(load, harness_machine(directory),
                                                                     &harness_initialization, &harness_idle);
+    printf("aml mode outcome=%s enables_cleared=%u polls=%u waited_ms=%u fadt_revision=%u\n",
+           advanced_configuration_and_power_interface_mode_outcome_name(harness_mode.outcome),
+           harness_mode.enable_registers_cleared, harness_mode.polls, harness_mode.waited_milliseconds,
+           (directory != NULL) ? directory->fixed_description.revision : 0u);
     printf("aml init initializations=%u initialization_failed=%u registrations=%u region_registration_failed=%u "
            "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u "
            "platform_capabilities=%s processor_capabilities=%u processor_capabilities_legacy=%u "
@@ -1140,6 +1162,7 @@ static int harness_dump_namespace(const char *path, HarnessView_t view, const ch
         {
             if (view == HARNESS_VIEW_INITIALIZATION)
             {
+                harness_enter_mode(&machine.simulated, &directory);
                 advanced_configuration_and_power_interface_machine_language_load_directory(&load, &directory);
                 printf("aml load placed=%u presets=%u\n", machine.placed_count,
                        (presets != NULL) ? harness_apply_presets(&load, presets) : 0u);

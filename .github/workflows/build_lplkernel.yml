@@ -25,6 +25,7 @@ on:
       - 'DEPENDENCIES.lock'
       - '**/build_lplkernel.yml'
       - 'tools/acpi/**'
+      - '**.asl'
 
 permissions:
   contents: read
@@ -227,3 +228,42 @@ jobs:
 
     - name: The kept data of the quick list and 4 mutated copies, which the check flags as its builds leave it unbuilt
       run: tools/acpi-corpus.sh kept quick 4
+
+  # The made-up ACPI tables against their ASL (specification §8.2): each generated header holds what the pinned
+  # iasl compiles its sources to, iasl running only in the sandbox of tools/acpi/sandbox.sh.
+  acpi_fixtures:
+    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    # Ubuntu 24.04 lets no unprivileged process make a user namespace, which bwrap needs without setuid
+    # (kernel.apparmor_restrict_unprivileged_userns=1). The runner is a throwaway machine: lifting the restriction
+    # there is what lets the sandbox run, and nothing falls back to running iasl outside it; inside the sandbox, no
+    # further user namespace can be made. It comes first, so that the sandbox works before anything is built.
+    - name: Bubblewrap, and user namespaces for it
+      run: |
+        set -e
+        sudo apt-get update
+        sudo apt-get install -y bubblewrap
+        setting=kernel.apparmor_restrict_unprivileged_userns
+        echo "$setting was $(sysctl -n "$setting")"
+        sudo sysctl -w "$setting=0"
+
+    - name: The sandbox holds its promises
+      run: tools/acpi/sandbox.sh --self-test
+
+    # Built on every run, never restored from a cache: a cache keyed on the commit would hide a change that breaks
+    # the build, and would put back a .git/config that git then reads outside the sandbox.
+    - name: Build iasl at the commit tools/acpi-corpus.sh pins
+      run: |
+        set -e
+        sudo apt-get install -y bison flex
+        tools/acpi-corpus.sh fetch acpica
+
+    - name: Every generated header holds what its ASL compiles to
+      run: tools/acpi/regenerate-fixtures.sh

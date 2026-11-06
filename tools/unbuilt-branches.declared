@@ -32,6 +32,8 @@ kernel/include/kernel/core/console.h | #else of #if defined(LPL_KERNEL_ENABLE_CO
 kernel/kernel/core/console.c | #else of #if defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/core/console.c | #if !defined(LPL_KERNEL_ENABLE_CONSOLE) | the image without a console, built by KERNEL_CONSOLE=0 or xmake -m release
 kernel/kernel/acpi/initialization.c | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel decodes no method body at load (§3.6), built by SMOKE_TESTS=0 or xmake -m release, on which tools/acpi-load.budget counts W1
+kernel/include/kernel/acpi/log.h | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel logs from the warning level up (O16), built by SMOKE_TESTS=0 or xmake -m release
+kernel/include/kernel/acpi/log.h | #else of #if ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_BUILD_LEVEL >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_DEBUG | a release kernel compiles out the calls that log at debug level (O16), built by SMOKE_TESTS=0 or xmake -m release
 kernel/include/kernel/acpi/machine_language_decoder.h | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel counts no executed opcode, space or access type (§4.1), built by SMOKE_TESTS=0 or xmake -m release, on which tools/acpi-initialization.budget counts W2
 
 # Planned and never written.

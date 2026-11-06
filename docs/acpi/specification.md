@@ -130,6 +130,7 @@ architecture supplies the host interface.
 |---|---|
 | `kernel/arch/i386/cpu/acpi.c`, `kernel/include/kernel/cpu/acpi.h` | the BIOS-area RSDP scan |
 | `kernel/kernel/acpi/tables.c`, `kernel/include/kernel/acpi/tables.h` | the table directory, the normalised FADT, the MADT, MCFG, HPET, the switch to ACPI mode and the power management timer (§3.9), all behind the host interface |
+| `kernel/kernel/acpi/log.c`, `kernel/include/kernel/acpi/log.h` | the lines the layer writes to its host's log, and the level below which a build compiles their calls out (O16) |
 | `kernel/include/kernel/acpi/machine_language.h` | the public interface: load, evaluate by path, read results, counters |
 | `kernel/include/kernel/acpi/machine_language_decoder.h`, `kernel/include/kernel/acpi/machine_language_namespace.h`, `kernel/include/kernel/acpi/machine_language_objects.h`, `kernel/include/kernel/acpi/machine_language_interpreter.h`, `kernel/include/kernel/acpi/machine_language_regions.h`, `kernel/include/kernel/acpi/machine_language_services.h` | the decoder's, the namespace's, the objects', the interpreter's, the regions' and the services' interfaces, for the layers above them and the tests |
 | `kernel/include/kernel/acpi/host.h` | the host interface the tables and the interpreter call (§3.3) |
@@ -150,6 +151,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/lib/asmutils.s`, `kernel/include/kernel/lib/asmutils.h` | the 8-, 16- and 32-bit port accesses of the ring-0 host |
 | `kernel/tests/acpi/simulated_host.c`, `simulated_host.h` | the simulated host: sparse memory, zero-filled ports, simulated PCI, virtual clock, target parameters; one source for the host harness and the ring-0 corpus test |
 | `kernel/tests/acpi/*.c` | `KERNEL_TEST`s with made-up AML, and the ring-0 corpus test; also compiled into the host harness |
+| `kernel/tests/acpi/fixtures/` | the made-up tables in ASL, one `<suite>/<name>.asl` per table, and the header `<suite>.h` that `tools/acpi/regenerate-fixtures.sh` compiles them to, iasl run in the sandbox of `tools/acpi/sandbox.sh`, and `<suite>.c` includes; a table several suites use is in `common/`, whose `common.h` each of them includes (§8.2) |
 | `tools/acpi/host/` | the host harness, an xmake target of this repository (`test-acpi`): its entry point, the acpidump reader, the corpus runner, the needs-path closure; it compiles the simulated host, `kernel/tests/acpi/` and the kernel's test runner, which prints its KTAP, from `kernel/` |
 | `tools/acpi-corpus.sh` | fetches the pinned corpora by commit into `build/acpi-corpus/` and writes the full list; checks each machine's directory (§8.4); builds one Multiboot module per machine; never commits their bytes |
 | `tools/acpi/` | the quick list and the corpus (§8.4); the rule that picks 90 machines of the corpus from the tree listing; the census of each dump; the directory each dump must give |
@@ -176,7 +178,7 @@ ring-0 corpus test, so that a fold compares the interpreter and nothing else (§
 | `target()` → physical address width (32 on i686, 52 in long mode), the profile caps of §6.1 | the build's values | given on the command line, printed in every record header |
 | `allocate_pages(count)`, `release_pages(address, count)` | `kernel_vmm_alloc_pages`, `kernel_vmm_free_pages` | the same calls, which the host harness serves from `aligned_alloc`; the host counts the pages still out |
 | `reserve_pages(count)` → address or NULL: address space, none of it usable; `commit_pages(address, count)` → whether `count` pages from `address`, each reserved and not committed yet, are now usable; `release_reservation(address, reserved, committed)`: the namespace's node array, reserved at open for the node cap and committed a 64 KiB run at a time | `kernel_vmm_reserve_pages`, `kernel_vmm_commit_pages`, `kernel_vmm_free_pages`, which gives back a reservation whatever part of it is committed | the same calls; the host harness maps a reservation with no access and opens the pages committed, so that a node past them faults as in ring 0; the host counts the pages committed |
-| `log(level, text)` | serial, compiled out below the build's level | stdout |
+| `log(level, text)`: one line, at the level `error` (a fault, §4.5), `warning` (firmware used all the same, such as a checksum that fails, §3.9) or `debug` (§5.2); a debug build keeps every level, a release build `warning` and `error` | serial, compiled out below the build's level | the first four lines, the others counted; a test prints those it checks as records, which `tools/parity.sh` compares (§8.7) |
 
 A host is a value, `AdvancedConfigurationAndPowerInterfaceHost_t` in `kernel/include/kernel/acpi/host.h`, with one
 function pointer per call, each given the host's context first. The tables and the interpreter are given the host
@@ -208,7 +210,7 @@ Every structure is the same size on i686 and x86-64 unless stated, because it ho
 | **Frame** | `code` pointer, `pc u32`, `end u32`, `method u32`, `scope u32`, `arguments[7]` and `locals[8]` (Values), bases into the shared stacks (`u16` × 4), `table u16`, `argument_count u8`, `serial u32` (which frame this is, so that a reference to one of its locals, its arguments or the names it creates dies with it), `looping_start u32` and `looping_end u32` (the While of the frame known to loop, whose statements run from records, or an empty loop at the start of a While whose statements all go to the loop, §3.6) | 296 on i686, 304 on x86-64 | The only pointer is the transient code pointer; frames are never folded. |
 | **Pending operator** | `opcode u16` (a descriptor, or a call), `operands_done u8`, `operand_count u8` (a call's is the method's argument count), `start u32`, `end u32` (its PkgLength end, or the limit it inherits), `node u32` (what its NameString declared or named) | 16 | |
 | **Block** | `kind u8` (a table, a TermList, a FieldList, a PackageElementList), `placement u8` (table level, in a method, a method body), `pending_base u16`, `end u32`, `scope u32`, `start u32` (the opcode that opened it) | 16 | |
-| **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8` | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
+| **Loaded table** | `bytes` (the kernel-owned copy for `Load`, the firmware window for static tables and `LoadTable`), `physical u64`, `length u32`, `checksum_valid u8`, `origin u8` (static, `Load`, `LoadTable`), `pages u16` (those of the copy), then what decoding found: `terms u32`, `decode_errors u32`, the first error's offset `u32`, opcode `u16` and status `u8`, and whether its load met a fault `u8` (§3.8 step 1) | 36 on i686, 40 on x86-64 | A registry of its own, apart from the table directory; the OEM table ID and the checksum are read in `bytes`. `bytes` is one of the two pointers of §2: printed, never folded. |
 | **Evaluation context** | 64 frames, 256 pending operators, 512 blocks, 1,024 values, 1,024 temporary nodes, 32 held mutexes, a 64-entry Notify ring | about 50 KiB, once per worker | Allocated once at initialisation and reused: no allocation and no zeroing per evaluation. |
 | **Pre-decoded record** | `pc u32`, `after u32`, `end u32`, `limit u32` (the end of the construct around the statement), `table u16`, `next u16` (the record at `after`), first operator `u16`, operators `u8`, shape `u8`, source operand `u32` (a predicate, or what a statement stores), target operand `u32`, value and operator depths `u8`, whether a While runs as a tight loop `u8`, for a record that runs nothing whether its statement always goes on to the next `u8`, first name `u16`, names `u8`, in a build that counts what the loop runs (§4.1) the opcode of its statement when no operator of it is one `u8` | 40 | A fact about the bytes at `pc` under `limit`; no pointer, the same on both targets. An operator is 12 bytes: descriptor `u16`, negated `u8`, two operands of `u32` (kind, slot, constant or name index). A name is 28 bytes: its NameString, where it ends `u32`, the node it named when last checked `u32` with the namespace's generation and the scope of that check `u32`, the values the loop held for the statement before reading it `u8`, and in a build that counts what the loop runs the operators of its record the loop runs before reading it `u8`. |
 | **Record cache** | 128 records, 256 operators, 256 constants (`u64`, masked to the width), 256 hash slots (`u16`), 64 names, the values the running record read by name, 64 recent slots (`u16`, the record last found or built at an offset of each, the offset modulo 64), the frame and loop start watched for a turn handed back whole, the integer width they were built under, what running them counted | about 10 KiB, the last member of the load | Opening the load empties the hash slots and the counters alone, word by word: a record is one only below the count and under its own key (table, `pc`), the one a recent slot names included. |
@@ -845,7 +847,12 @@ An opcode marked "executed" runs when the needs-path closure reaches it (§4.1),
 | `Connection` or a `BufferAcc` protocol on an unsupported space | same | same |
 
 "Loudly" means one log line naming the table, the offset, the opcode and the method path; the counter on the
-`[LPLTLM] acpi` boot line; and a typed error to the caller. Never a panic, never a silent no-op.
+`[LPLTLM] acpi` boot line; and a typed error to the caller. Never a panic, never a silent no-op. The line is
+`<counter> table=<signature>/<OEM table ID> offset=0x<8 digits> opcode=<name> method=<path>`, `scope=<path>` for
+table-level code, at the level `error`, for every fault an evaluation or a load meets, those of §6.2 included. Its term
+is the one that failed: the operator whose run failed, at its opcode, not past its operands; a name, at its first
+character. A fault met again is logged once: the declaration pass that steps over a statement that failed meets its
+fault again, and the decoding pass meets those of table-level code the declaration pass met.
 
 ---
 
@@ -1138,10 +1145,13 @@ published image. The made-up ASL is ours, under MIT.
 
 - Written in ASL, compiled with the pinned `iasl` in a sandbox, committed as the `.asl` source and a generated C
   array; `tools/acpi/regenerate-fixtures.sh` recompiles them and fails on a byte difference.
-- Raw-byte cases for what `iasl` does not emit: a crossing PkgLength, orphan `Package` terms at the root, `Noop`
-  runs, a 4-byte PkgLength, both forms of `CondRefOf` and `Load`, an unterminated string.
+- Raw-byte cases for what `iasl` does not emit: a crossing PkgLength, orphan `Package` terms at the root, a 4-byte
+  PkgLength, both forms of `CondRefOf` and `Load`, an unterminated string.
 - Region tests build their AML at run time, with the physical address of a frame the test owns patched into the
   region's base.
+- A table whose length or depth a test names, as a constant it also computes with or as a parameter (a run of
+  `Noop`s, a ladder, nested `If`s), is built at run time, so that the length has one source; its whole terms come
+  from fixtures.
 - Bit-exact field tests: every bit offset from 0 to 63 and length from 1 to 64, for buffer fields and for each
   access width of a SystemMemory field, read and write, on the host. Their expected values come from an independent
   bit model, checked once against `acpiexec`. Ring 0 runs a fixed stratified sample (each width, the boundary
@@ -1185,7 +1195,10 @@ published image. The made-up ASL is ours, under MIT.
   reads from the same dump, apart from the kernel's code.
 - **For each machine** the harness prints the decode errors, the namespace dump and its fold, the census counts,
   the needs-path closure, and the needs-path run (§3.8, steps 0 to 9) with the opcodes, spaces and access types it
-  executed.
+  executed. Step 0 meets the firmware the FADT describes, as it boots ([§4.8.2.5]): with a legacy mode, SMI_CMD and
+  ACPI_ENABLE both set, SCI_EN reads clear until ACPI_ENABLE is written to SMI_CMD, and set once the write returns,
+  the SMI handler's last action ([§5.2.9]); without one, SCI_EN reads set from the start, as on a platform that only
+  supports ACPI.
 - **The static tables**: the parsed FADT, MADT, MCFG and HPET fields of every machine equal the decoded `[xxxh]`
   lines that ship with each dump. The FADT also equals the local FADT ACPICA builds from the same bytes
   (`tools/acpi/acpica_fadt.c`), with ACPICA's rewrite of PM block widths (`AcpiGbl_UseDefaultRegisterWidths`)
@@ -1327,6 +1340,7 @@ its page.
 [§3.11.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=120
 [§4.8.1.2]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=138
 [§4.8.2.2.1.3]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=143
+[§4.8.2.5]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=148
 [§4.8.3.2.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=153
 [§5.2.9]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=182
 [§5.2.10.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=200

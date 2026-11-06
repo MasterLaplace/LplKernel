@@ -1,3 +1,5 @@
+#include "fixtures/microbenchmarks.h"
+#include "fixtures/common.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
 
@@ -151,6 +153,8 @@ static void microbenchmark_put_segment(MicrobenchmarkAml_t *aml, char letter, ui
 
 /**
  * @brief Appends `Name (Nxxx, Package () {...})`: 8 packages of an address, a pin, LNKA and a source index.
+ *
+ * Its pieces are raw bytes: partial terms around the name and the addresses it writes from @p index.
  */
 static void microbenchmark_put_package_name(MicrobenchmarkAml_t *aml, uint32_t index)
 {
@@ -175,6 +179,9 @@ static void microbenchmark_put_package_name(MicrobenchmarkAml_t *aml, uint32_t i
 /**
  * @brief Appends `Field (FREG, ByteAcc, NoLock, Preserve)` of 16 units of 8 bits, Fxxx from 16 * @p index:
  *        a PkgLength of 87, the region's name, its flags and 16 units of 5 bytes.
+ *
+ * Its pieces are raw bytes: the head of the Field and the widths of the units whose names it writes from @p index,
+ * partial terms.
  */
 static void microbenchmark_put_field_list(MicrobenchmarkAml_t *aml, uint32_t index)
 {
@@ -191,6 +198,9 @@ static void microbenchmark_put_field_list(MicrobenchmarkAml_t *aml, uint32_t ind
 
 /**
  * @brief Appends the declaration @p index of @p kind.
+ *
+ * Its pieces are raw bytes: partial terms around the names and the operands it writes from @p index; a String and a
+ * Buffer, which iasl's grammar refuses alone; and a bare External, which iasl emits only inside an If (Zero).
  */
 static void microbenchmark_put_declaration(MicrobenchmarkAml_t *aml, MicrobenchmarkKind_t kind, uint32_t index)
 {
@@ -199,7 +209,7 @@ static void microbenchmark_put_declaration(MicrobenchmarkAml_t *aml, Microbenchm
     static const uint8_t buffer[] = {0x11u, 0x10u, 0x0Au, 0x0Du, 0x47u, 0x01u, 0x60u, 0x00u, 0x60u,
                                      0x00u, 0x01u, 0x01u, 0x22u, 0x02u, 0x00u, 0x79u, 0x00u};
     static const uint8_t method[] = {0x14u, 0x08u};
-    static const uint8_t method_body[] = {0x01u, 0xA4u, 0x68u};
+    static const uint8_t method_flags = 0x01u;
     static const uint8_t device[] = {0x5Bu, 0x82u, 0x05u};
     static const uint8_t scope[] = {0x10u, 0x0Cu, '\\', '_', 'S', 'B', '_', 0x08u};
     static const uint8_t region[] = {0x5Bu, 0x80u};
@@ -227,7 +237,8 @@ static void microbenchmark_put_declaration(MicrobenchmarkAml_t *aml, Microbenchm
     case MICROBENCHMARK_METHODS:
         microbenchmark_put(aml, method, sizeof(method));
         microbenchmark_put_segment(aml, 'M', index);
-        microbenchmark_put(aml, method_body, sizeof(method_body));
+        microbenchmark_put(aml, &method_flags, 1u);
+        microbenchmark_put(aml, microbenchmark_return_arg0_aml, sizeof(microbenchmark_return_arg0_aml));
         return;
     case MICROBENCHMARK_DEVICES:
         microbenchmark_put(aml, device, sizeof(device));
@@ -255,23 +266,20 @@ static void microbenchmark_put_declaration(MicrobenchmarkAml_t *aml, Microbenchm
  */
 static void microbenchmark_write_declarations(MicrobenchmarkKind_t kind)
 {
-    static const uint8_t link[] = {0x5Bu, 0x82u, 0x05u, 'L', 'N', 'K', 'A'};
-    static const uint8_t last[] = {0x08u, 'L', 'A', 'S', 'T', 0x00u};
-    static const uint8_t field_region[] = {0x5Bu, 0x80u, 'F',   'R',   'E',   'G',  0x01u,
-                                           0x0Bu, 0x00u, 0x10u, 0x0Bu, 0x00u, 0x10u};
     const uint32_t count = (kind == MICROBENCHMARK_PACKAGE_NAMES) ? MICROBENCHMARK_PACKAGE_COUNT :
                            (kind == MICROBENCHMARK_FIELD_UNITS)   ? MICROBENCHMARK_FIELD_LISTS :
                                                                     MICROBENCHMARK_DECLARATIONS;
 
     memset(&microbenchmark_aml, 0, sizeof(microbenchmark_aml));
     if (kind == MICROBENCHMARK_PACKAGE_NAMES || kind == MICROBENCHMARK_EXTERNALS)
-        microbenchmark_put(&microbenchmark_aml, link, sizeof(link));
+        microbenchmark_put(&microbenchmark_aml, microbenchmark_link_device_aml, sizeof(microbenchmark_link_device_aml));
     if (kind == MICROBENCHMARK_FIELD_UNITS)
-        microbenchmark_put(&microbenchmark_aml, field_region, sizeof(field_region));
+        microbenchmark_put(&microbenchmark_aml, microbenchmark_field_region_aml,
+                           sizeof(microbenchmark_field_region_aml));
     for (uint32_t index = 0u; index < count; ++index)
         microbenchmark_put_declaration(&microbenchmark_aml, kind, index);
     if (kind == MICROBENCHMARK_EXTERNALS)
-        microbenchmark_put(&microbenchmark_aml, last, sizeof(last));
+        microbenchmark_put(&microbenchmark_aml, microbenchmark_last_name_aml, sizeof(microbenchmark_last_name_aml));
 }
 
 /**
@@ -340,30 +348,6 @@ static void microbenchmark_declarations(KernelTest_t *test, MicrobenchmarkKind_t
     advanced_configuration_and_power_interface_simulated_host_close(&microbenchmark_host);
 }
 
-/**
- * @brief The loop of window W4: LOOP sets Local0 to 0, then runs
- *        `While (LLess (Local0, 0x03E8)) { Increment (Local0) }` and returns Local0.
- */
-static const uint8_t microbenchmark_loop_aml[] = {
-    0x14u, 0x14u, 'L',   'O',   'O',   'P',   0x00u, 0x70u, 0x00u, 0x60u, 0xA2u,
-    0x08u, 0x95u, 0x60u, 0x0Bu, 0xE8u, 0x03u, 0x75u, 0x60u, 0xA4u, 0x60u,
-};
-
-/**
- * @brief The polling loop of window W4, shaped like the loops real firmware runs at boot but with no Stall
- *        nor Sleep, so that it counts the interpreter alone: STS, 8 bits of a DWordAcc field of a
- *        SystemMemory region at 0x10000, then POLL: `Local0 = 0; Local2 = 1000; While (Local0 < 1000)
- *        { Local1 = (STS & 0x10); If (Local1 == 0x10) { Break }; Local2--; Local0++ }; Return (Local0 +
- *        Local2)`, which gives 1000 when every turn runs its Decrement and its Increment.
- */
-static const uint8_t microbenchmark_polling_aml[] = {
-    0x5Bu, 0x80u, 'P',   'R',   'E',   'G',   0x00u, 0x0Cu, 0x00u, 0x00u, 0x01u, 0x00u, 0x0Au, 0x04u, 0x5Bu,
-    0x81u, 0x0Bu, 'P',   'R',   'E',   'G',   0x03u, 'S',   'T',   'S',   '_',   0x08u, 0x14u, 0x2Du, 'P',
-    'O',   'L',   'L',   0x00u, 0x70u, 0x00u, 0x60u, 0x70u, 0x0Bu, 0xE8u, 0x03u, 0x62u, 0xA2u, 0x19u, 0x95u,
-    0x60u, 0x0Bu, 0xE8u, 0x03u, 0x7Bu, 'S',   'T',   'S',   '_',   0x0Au, 0x10u, 0x61u, 0xA0u, 0x06u, 0x93u,
-    0x61u, 0x0Au, 0x10u, 0xA5u, 0x76u, 0x62u, 0x75u, 0x60u, 0xA4u, 0x72u, 0x60u, 0x62u, 0x00u,
-};
-
 _Static_assert(MADE_UP_TABLE_HEADER + sizeof(microbenchmark_polling_aml) <= MICROBENCHMARK_TABLE_CAPACITY,
                "the polling loop's DSDT fits the buffer it is written in");
 
@@ -389,7 +373,7 @@ static void microbenchmark_loop(KernelTest_t *test, uint8_t revision)
     uint32_t objects = 0u;
 
     if (!made_up_load_table(test, &microbenchmark_load, &microbenchmark_host, microbenchmark_table, revision,
-                            microbenchmark_loop_aml, sizeof(microbenchmark_loop_aml)))
+                            common_w4_loop_aml, sizeof(common_w4_loop_aml)))
         return;
     objects = microbenchmark_load.heap.objects;
     kernel_test_check(test,

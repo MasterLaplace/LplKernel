@@ -1,3 +1,4 @@
+#include "fixtures/global_lock.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -90,18 +91,6 @@ static bool global_lock_run(KernelTest_t *test, uint32_t firmware_control)
 
     return global_lock_run_with(test, firmware_control, ports);
 }
-
-/**
- * @brief Methods that acquire `\_GL`: TAKE acquires then releases it and returns what Acquire gave,
- *        HOLD acquires it and keeps it, NEST acquires it twice and releases it twice.
- */
-static const uint8_t global_lock_acquire_aml[] = {
-    0x14u, 0x1Au, 'T',   'A',   'K', 'E', 0x00u, 0x70u, 0x5Bu, 0x23u, 0x5Cu, '_',   'G', 'L', '_', 0xFFu, 0xFFu,
-    0x60u, 0x5Bu, 0x27u, 0x5Cu, '_', 'G', 'L',   '_',   0xA4u, 0x60u, 0x14u, 0x10u, 'H', 'O', 'L', 'D',   0x00u,
-    0xA4u, 0x5Bu, 0x23u, 0x5Cu, '_', 'G', 'L',   '_',   0xFFu, 0xFFu, 0x14u, 0x26u, 'N', 'E', 'S', 'T',   0x00u,
-    0x5Bu, 0x23u, 0x5Cu, '_',   'G', 'L', '_',   0xFFu, 0xFFu, 0x5Bu, 0x23u, 0x5Cu, '_', 'G', 'L', '_',   0xFFu,
-    0xFFu, 0x5Bu, 0x27u, 0x5Cu, '_', 'G', 'L',   '_',   0x5Bu, 0x27u, 0x5Cu, '_',   'G', 'L', '_',
-};
 
 /**
  * @brief Loads the methods that acquire `\_GL`, the load given the FACS at @p firmware_control and the

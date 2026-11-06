@@ -69,6 +69,7 @@ acpi_helper_write_initialization_record(Serial_t *serial,
             &load->space, initialization->first_failure_node, path, sizeof(path)) == 0u)
         memcpy(path, "too_deep", sizeof("too_deep"));
     kernel_telemetry_begin_record(serial, "acpi.init");
+    kernel_telemetry_write_unsigned("acpi_mode_failed", initialization->acpi_mode_failed);
     kernel_telemetry_write_unsigned("initializations", initialization->initializations);
     kernel_telemetry_write_unsigned("initialization_failed", initialization->initialization_failed);
     kernel_telemetry_write_unsigned("registrations", initialization->registrations);
@@ -268,6 +269,29 @@ acpi_helper_write_predecoding_record(Serial_t *serial,
 }
 
 /**
+ * @brief Writes the `[LPLTLM] acpi.unimplemented` record (§4.5): how many opcodes failed with unimplemented_operator,
+ *        then the count of each that did, under its name.
+ */
+static void acpi_helper_write_unimplemented_record(
+    Serial_t *serial, const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation)
+{
+    uint32_t opcodes = 0u;
+
+    for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        opcodes += (evaluation->unimplemented[opcode] != 0u) ? 1u : 0u;
+    kernel_telemetry_begin_record(serial, "acpi.unimplemented");
+    kernel_telemetry_write_unsigned("opcodes", opcodes);
+    for (uint32_t opcode = 0u; opcode < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT;
+         ++opcode)
+        if (evaluation->unimplemented[opcode] != 0u)
+            kernel_telemetry_write_unsigned(
+                advanced_configuration_and_power_interface_machine_language_opcode_name(opcode),
+                evaluation->unimplemented[opcode]);
+    kernel_telemetry_end_record();
+}
+
+/**
  * @brief Writes the counts the decoding pass fills, the terms of every table among them, which a load that skips
  *        bodies, or declared no table, leaves uncounted.
  */
@@ -294,7 +318,6 @@ void write_acpi_tables_info(Serial_t *serial)
         advanced_configuration_and_power_interface_directory();
     char signatures[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT * 5u + 1u];
     uint32_t length = 0u;
-    uint32_t bad_checksums = 0u;
 
     for (uint32_t index = 0u; index < directory->table_count; ++index)
     {
@@ -307,8 +330,6 @@ void write_acpi_tables_info(Serial_t *serial)
             const char character = table->signature[letter];
             signatures[length++] = (character > ' ' && character <= '~' && character != ',') ? character : '_';
         }
-        if (!table->checksum_valid)
-            ++bad_checksums;
     }
     signatures[length] = '\0';
 
@@ -318,7 +339,7 @@ void write_acpi_tables_info(Serial_t *serial)
     kernel_telemetry_write_text("root", directory->extended_root ? "XSDT" : "RSDT");
     kernel_telemetry_write_unsigned("tables", directory->table_count);
     kernel_telemetry_write_unsigned("unreachable", directory->unreachable_count);
-    kernel_telemetry_write_unsigned("bad_checksums", bad_checksums);
+    kernel_telemetry_write_unsigned("checksum_bad_parsed", directory->checksum_bad_parsed);
     kernel_telemetry_write_text("signatures", signatures);
     kernel_telemetry_end_record();
 }
@@ -418,7 +439,17 @@ void write_acpi_machine_language_record(Serial_t *serial)
     kernel_telemetry_write_unsigned("declarations", load->declarations);
     kernel_telemetry_write_unsigned("duplicates", load->duplicates);
     kernel_telemetry_write_unsigned("load_errors", load->load_errors);
+    kernel_telemetry_write_unsigned("table_load_failed", load->table_load_failed);
     kernel_telemetry_write_unsigned("checksum_bad_loaded", load->checksum_bad_loaded);
+    kernel_telemetry_write_unsigned(
+        "invalid_opcode",
+        load->faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_INVALID_OPCODE]);
+    kernel_telemetry_write_unsigned(
+        "load_form_unsupported",
+        load->faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LOAD_FORM_UNSUPPORTED]);
+    kernel_telemetry_write_unsigned(
+        "unimplemented_operator",
+        load->faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_UNIMPLEMENTED_OPERATOR]);
     if (!load->skips_bodies && load->table_count != 0u)
         acpi_helper_write_decoding_counts(load);
     kernel_telemetry_write_unsigned("nodes", load->space.live_nodes);
@@ -451,6 +482,7 @@ void write_acpi_machine_language_record(Serial_t *serial)
     acpi_helper_write_regions_record(serial, &load->regions);
     acpi_helper_write_services_record(serial, &load->services);
     acpi_helper_write_predecoding_record(serial, load);
+    acpi_helper_write_unimplemented_record(serial, &load->evaluation);
     kernel_telemetry_begin_record(serial, "acpi.values");
     kernel_telemetry_write_unsigned("objects", load->heap.objects);
     kernel_telemetry_write_unsigned("objects_freed", load->heap.objects_freed);

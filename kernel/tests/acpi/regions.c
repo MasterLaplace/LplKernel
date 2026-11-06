@@ -1,3 +1,4 @@
+#include "fixtures/regions.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -19,6 +20,8 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_regions, KERNEL_TES
 #define REGIONS_MEMORY       0x10000u /**< Where the simulated memory the tests read starts. */
 #define REGIONS_STATUS(name) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
 #define REGIONS_ACCESS(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_##kind
+
+#define REGIONS_METHOD_MEMORY (REGIONS_MEMORY + 0x40u) /**< Where the region MREG creates lies, which MADR names. */
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t regions_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t regions_load;
@@ -465,34 +468,21 @@ KERNEL_TEST(a_region_past_4_gib_is_unreachable)
 KERNEL_TEST(a_region_takes_computed_operands_when_its_declaration_runs)
 {
     static const uint8_t memory[] = {0xC3u};
-    static const uint8_t region_at_base[] = {0x5Bu, 0x80u, 'N', 'A', 'M',   'R',   0x00u, 0x72u,
-                                             'B',   'A',   'S', 'E', 0x00u, 0x00u, 0x01u};
-    static const uint8_t skipped_region[] = {0x5Bu, 0x80u, 'S', 'K', 'P',   'R',   0x00u, 0x72u,
-                                             'B',   'A',   'S', 'E', 0x00u, 0x00u, 0x01u};
     static const MadeUpFieldUnit_t named[] = {
         {"NMF_", 8u}
     };
     static const MadeUpFieldUnit_t controller[] = {
         {"ECF_", 8u}
     };
-    static const MadeUpFieldUnit_t skipped[] = {
-        {"SKF_", 8u}
-    };
-    MadeUpAml_t branch;
 
     regions_begin();
     advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY + 0x30u, memory, 1u);
     made_up_aml_name_integer(&regions_aml, "BASE", REGIONS_MEMORY + 0x30u);
-    made_up_aml_raw(&regions_aml, region_at_base, sizeof(region_at_base));
+    made_up_aml_raw(&regions_aml, regions_region_at_base_aml, sizeof(regions_region_at_base_aml));
     made_up_aml_field(&regions_aml, "NAMR", REGIONS_BYTE_ACCESS, named, 1u);
     made_up_aml_region(&regions_aml, "ECR_", 0x03u, 0u, 1u);
     made_up_aml_field(&regions_aml, "ECR_", REGIONS_BYTE_ACCESS, controller, 1u);
-    made_up_aml_begin(&branch);
-    made_up_aml_name(&branch, "ECF_");
-    made_up_aml_raw(&branch, skipped_region, sizeof(skipped_region));
-    made_up_aml_field(&branch, "SKPR", REGIONS_BYTE_ACCESS, skipped, 1u);
-    made_up_aml_raw(&regions_aml, (const uint8_t[]){0xA0u, (uint8_t) (branch.length + 1u)}, 2u);
-    made_up_aml_raw(&regions_aml, branch.bytes, branch.length);
+    made_up_aml_raw(&regions_aml, regions_skipped_branch_aml, sizeof(regions_skipped_branch_aml));
     made_up_aml_name_integer(&regions_aml, "RN__", 0u);
     made_up_aml_name_integer(&regions_aml, "RS__", 0xEEu);
     made_up_aml_store_name(&regions_aml, "NMF_", "RN__");
@@ -510,10 +500,14 @@ KERNEL_TEST(a_region_takes_computed_operands_when_its_declaration_runs)
 /**
  * @brief The mapping cache maps each page an access touches once, cached for ACPI NVS and uncached
  *        elsewhere; past its 64 entries it gives back the least recently used.
+ *
+ * Its Store opcode and the Local0 that closes it are raw bytes, partial terms around the unit it builds from an
+ * index.
  */
 KERNEL_TEST(the_mapping_cache_maps_each_page_once_and_follows_the_memory_type)
 {
     static const uint8_t store_to_local[] = {0x70u};
+    static const uint8_t local0[] = {0x60u};
     MadeUpFieldUnit_t units[2u * 65u];
     char names[65][5];
     uint32_t cached = 0u;
@@ -539,10 +533,9 @@ KERNEL_TEST(the_mapping_cache_maps_each_page_once_and_follows_the_memory_type)
     {
         made_up_aml_raw(&regions_aml, store_to_local, 1u);
         made_up_aml_name(&regions_aml, names[page]);
-        made_up_aml_raw(&regions_aml, (const uint8_t[]){0x60u}, 1u);
+        made_up_aml_raw(&regions_aml, local0, 1u);
     }
-    made_up_aml_raw(&regions_aml, (const uint8_t[]){0x70u, 'P', '0', '1', '_', 0x60u}, 6u);
-    made_up_aml_raw(&regions_aml, (const uint8_t[]){0x70u, 'P', '0', '0', '_', 0x60u}, 6u);
+    made_up_aml_raw(&regions_aml, regions_reads_pages_again_aml, sizeof(regions_reads_pages_again_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
@@ -1058,9 +1051,6 @@ static uint32_t regions_method_child(const char *method, const char *name)
 KERNEL_TEST(a_method_creates_its_region_and_field_at_each_call)
 {
     static const uint8_t memory[] = {0x5Au, 0xA5u};
-    static const uint8_t region_at_argument[] = {0x5Bu, 0x80u, 'M', 'R', '_', '_', 0x00u, 0x68u, 0x0Au, 0x02u};
-    static const uint8_t return_sum[] = {0xA4u, 0x72u, 'M', 'F', '0', '_', 'M', 'F', '1', '_', 0x00u};
-    static const uint8_t store_call[] = {0x70u, 'M', 'R', 'E', 'G', 0x0Cu, 0x40u, 0x00u, 0x01u, 0x00u};
     static const MadeUpFieldUnit_t units[] = {
         {"MF0_", 8u},
         {"MF1_", 8u}
@@ -1068,19 +1058,17 @@ KERNEL_TEST(a_method_creates_its_region_and_field_at_each_call)
     MadeUpAml_t body;
 
     regions_begin();
-    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_MEMORY + 0x40u, memory,
+    advanced_configuration_and_power_interface_simulated_host_place(&regions_host, REGIONS_METHOD_MEMORY, memory,
                                                                     sizeof(memory));
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, region_at_argument, sizeof(region_at_argument));
+    made_up_aml_raw(&body, regions_region_at_argument_aml, sizeof(regions_region_at_argument_aml));
     made_up_aml_field(&body, "MR__", REGIONS_BYTE_ACCESS, units, 2u);
-    made_up_aml_raw(&body, return_sum, sizeof(return_sum));
+    made_up_aml_raw(&body, regions_return_sum_aml, sizeof(regions_return_sum_aml));
     made_up_aml_method(&regions_aml, "MREG", 0x01u, &body);
+    made_up_aml_name_integer(&regions_aml, "MADR", REGIONS_METHOD_MEMORY);
     made_up_aml_name_integer(&regions_aml, "R1__", 0u);
     made_up_aml_name_integer(&regions_aml, "R2__", 0u);
-    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
-    made_up_aml_name(&regions_aml, "R1__");
-    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
-    made_up_aml_name(&regions_aml, "R2__");
+    made_up_aml_raw(&regions_aml, regions_store_two_calls_aml, sizeof(regions_store_two_calls_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test, regions_integer("R1__") == 0xFFu && regions_integer("R2__") == 0xFFu,
@@ -1094,7 +1082,7 @@ KERNEL_TEST(a_method_creates_its_region_and_field_at_each_call)
     const uint32_t nodes = regions_load.space.live_nodes;
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t base = {
         .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
-        .payload = REGIONS_MEMORY + 0x40u,
+        .payload = REGIONS_METHOD_MEMORY,
     };
     uint32_t sums = 0u;
 
@@ -1142,10 +1130,6 @@ KERNEL_TEST(a_method_creates_index_and_bank_fields_over_the_table_s_registers)
         {"BK0_", 8u},
         {"BK1_", 8u}
     };
-    static const uint8_t return_indexed[] = {0xA4u, 'U', '2', '_', '_'};
-    static const uint8_t return_banked[] = {0xA4u, 'B', 'K', '1', '_'};
-    static const uint8_t store_calls[] = {0x70u, 'M', 'I', 'D', 'X', 'R', 'I', '_', '_',
-                                          0x70u, 'M', 'B', 'N', 'K', 'R', 'B', '_', '_'};
     MadeUpAml_t body;
 
     regions_begin();
@@ -1159,15 +1143,16 @@ KERNEL_TEST(a_method_creates_index_and_bank_fields_over_the_table_s_registers)
     made_up_aml_region(&regions_aml, "BRAM", 0x00u, REGIONS_MEMORY, sizeof(memory));
     made_up_aml_begin(&body);
     made_up_aml_index_field(&body, "INDX", "DATA", REGIONS_BYTE_ACCESS, indexed, 2u);
-    made_up_aml_raw(&body, return_indexed, sizeof(return_indexed));
+    made_up_aml_raw(&body, regions_return_indexed_aml, sizeof(regions_return_indexed_aml));
     made_up_aml_method(&regions_aml, "MIDX", 0x00u, &body);
     made_up_aml_begin(&body);
     made_up_aml_bank_field(&body, "BRAM", "BSEL", 2u, REGIONS_BYTE_ACCESS, banked, 2u);
-    made_up_aml_raw(&body, return_banked, sizeof(return_banked));
+    made_up_aml_raw(&body, regions_return_banked_aml, sizeof(regions_return_banked_aml));
     made_up_aml_method(&regions_aml, "MBNK", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RI__", 0u);
     made_up_aml_name_integer(&regions_aml, "RB__", 0u);
-    made_up_aml_raw(&regions_aml, store_calls, sizeof(store_calls));
+    made_up_aml_raw(&regions_aml, regions_store_index_and_bank_calls_aml,
+                    sizeof(regions_store_index_and_bank_calls_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test, regions_integer("RI__") == 0x5Au && regions_integer("RB__") == 0x20u,
@@ -1187,6 +1172,9 @@ KERNEL_TEST(a_method_creates_index_and_bank_fields_over_the_table_s_registers)
  *        whose named element is `\` or `^` and NullName rather than a NameSeg fails with truncated, as
  *        at table level; a Connection to a name or to a Buffer is passed over, and the unit after each reads its
  *        byte.
+ *
+ * Three field lists are raw bytes: iasl's grammar refuses a Connection to a Buffer, and a unit named `\` or `^` and
+ * NullName.
  */
 KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_connection)
 {
@@ -1198,13 +1186,10 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
         0x5Bu, 0x81u, 0x1Du, 'R',   'A',   'M',   'R',   0x01u, 0x02u, 'R',   'A', 'M', 'R', 'C', 'U',   '_',
         '_',   0x08u, 0x02u, 0x11u, 0x06u, 0x0Au, 0x03u, 0x01u, 0x02u, 0x03u, 'C', 'B', '_', '_', 0x08u,
     };
-    static const uint8_t store_units[] = {0x70u, 'C', 'U', '_', '_', 'R', 'C', '_', '_',
-                                          0x70u, 'C', 'B', '_', '_', 'R', 'B', '_', '_'};
     static const uint8_t prefixed_field[] = {0x5Bu, 0x81u, 0x0Bu, 'R', 'A', 'M',  'R',
                                              0x01u, 0x5Cu, 0x00u, 'A', 'B', 0x08u};
     static const uint8_t caret_field[] = {0x5Bu, 0x81u, 0x0Bu, 'R', 'A', 'M',  'R',
                                           0x01u, 0x5Eu, 0x00u, 'A', 'B', 0x08u};
-    static const uint8_t calls[] = {'M', 'N', 'O', 'R', 'M', 'C', 'O', 'N', 'M', 'P', 'F', 'X', 'M', 'P', 'F', 'C'};
     MadeUpAml_t body;
 
     regions_begin();
@@ -1216,7 +1201,7 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
     made_up_aml_method(&regions_aml, "MNOR", 0x00u, &body);
     made_up_aml_begin(&body);
     made_up_aml_raw(&body, connection_field, sizeof(connection_field));
-    made_up_aml_raw(&body, store_units, sizeof(store_units));
+    made_up_aml_raw(&body, regions_store_connected_units_aml, sizeof(regions_store_connected_units_aml));
     made_up_aml_method(&regions_aml, "MCON", 0x00u, &body);
     made_up_aml_begin(&body);
     made_up_aml_raw(&body, prefixed_field, sizeof(prefixed_field));
@@ -1226,7 +1211,7 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
     made_up_aml_method(&regions_aml, "MPFC", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RC__", 0u);
     made_up_aml_name_integer(&regions_aml, "RB__", 0u);
-    made_up_aml_raw(&regions_aml, calls, sizeof(calls));
+    made_up_aml_raw(&regions_aml, regions_calls_field_lists_aml, sizeof(regions_calls_field_lists_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
@@ -1245,10 +1230,6 @@ KERNEL_TEST(a_field_list_in_a_method_refuses_a_missing_region_and_passes_over_a_
 KERNEL_TEST(an_access_as_in_a_method_s_field_list_widens_the_units_after_it)
 {
     static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u};
-    static const uint8_t field[] = {0x5Bu, 0x81u, 0x0Eu, 'R', 'A', 'M', 'R', 0x01u,
-                                    0x01u, 0x03u, 0x00u, 'D', 'W', '_', '_', 0x20u};
-    static const uint8_t return_unit[] = {0xA4u, 'D', 'W', '_', '_'};
-    static const uint8_t store_call[] = {0x70u, 'M', 'A', 'C', 'C', 'R', 'D', '_', '_'};
     MadeUpAml_t body;
 
     regions_begin();
@@ -1256,11 +1237,11 @@ KERNEL_TEST(an_access_as_in_a_method_s_field_list_widens_the_units_after_it)
                                                                     sizeof(memory));
     made_up_aml_region(&regions_aml, "RAMR", 0x00u, REGIONS_MEMORY, 4u);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, field, sizeof(field));
-    made_up_aml_raw(&body, return_unit, sizeof(return_unit));
+    made_up_aml_raw(&body, regions_dword_access_field_aml, sizeof(regions_dword_access_field_aml));
+    made_up_aml_raw(&body, regions_return_dword_unit_aml, sizeof(regions_return_dword_unit_aml));
     made_up_aml_method(&regions_aml, "MACC", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RD__", 0u);
-    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
+    made_up_aml_raw(&regions_aml, regions_store_access_call_aml, sizeof(regions_store_access_call_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
@@ -1279,15 +1260,6 @@ KERNEL_TEST(an_access_as_in_a_method_s_field_list_widens_the_units_after_it)
 KERNEL_TEST(a_method_s_field_list_keeps_extended_access_and_its_lock_and_update_rules)
 {
     static const uint8_t memory[] = {0x11u, 0x22u, 0x33u, 0x44u, 0x0Fu, 0xFFu};
-    static const uint8_t zeros_field[] = {0x5Bu, 0x81u, 0x0Du, 'R', 'A', 'M', 'R',  0x41u,
-                                          0x00u, 0x28u, 'Z',   'W', '_', '_', 0x04u};
-    static const uint8_t zeros_store[] = {0x70u, 0x00u, 'Z', 'W', '_', '_'};
-    static const uint8_t extended_field[] = {0x5Bu, 0x81u, 0x0Fu, 'R', 'A', 'M', 'R', 0x01u, 0x03u,
-                                             0x03u, 0x0Bu, 0x04u, 'D', 'X', '_', '_', 0x20u};
-    static const uint8_t locked_field[] = {0x5Bu, 0x81u, 0x0Du, 'R', 'A', 'M', 'R',  0x31u,
-                                           0x00u, 0x20u, 'L',   'W', '_', '_', 0x04u};
-    static const uint8_t stores[] = {0x70u, 'D', 'X', '_', '_', 'R', 'X', '_', '_', 0x70u, 0x00u, 'L', 'W', '_', '_'};
-    static const uint8_t call[] = {'M', 'E', 'X', 'T'};
     MadeUpAml_t body;
 
     regions_begin();
@@ -1295,14 +1267,14 @@ KERNEL_TEST(a_method_s_field_list_keeps_extended_access_and_its_lock_and_update_
                                                                     sizeof(memory));
     made_up_aml_region(&regions_aml, "RAMR", 0x00u, REGIONS_MEMORY, 8u);
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, extended_field, sizeof(extended_field));
-    made_up_aml_raw(&body, locked_field, sizeof(locked_field));
-    made_up_aml_raw(&body, zeros_field, sizeof(zeros_field));
-    made_up_aml_raw(&body, stores, sizeof(stores));
-    made_up_aml_raw(&body, zeros_store, sizeof(zeros_store));
+    made_up_aml_raw(&body, regions_extended_access_field_aml, sizeof(regions_extended_access_field_aml));
+    made_up_aml_raw(&body, regions_locked_field_aml, sizeof(regions_locked_field_aml));
+    made_up_aml_raw(&body, regions_write_as_zeros_field_aml, sizeof(regions_write_as_zeros_field_aml));
+    made_up_aml_raw(&body, regions_store_extended_and_locked_aml, sizeof(regions_store_extended_and_locked_aml));
+    made_up_aml_raw(&body, regions_store_zero_to_unit_aml, sizeof(regions_store_zero_to_unit_aml));
     made_up_aml_method(&regions_aml, "MEXT", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RX__", 0u);
-    made_up_aml_raw(&regions_aml, call, sizeof(call));
+    made_up_aml_raw(&regions_aml, regions_calls_extended_aml, sizeof(regions_calls_extended_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test,
@@ -1321,17 +1293,14 @@ KERNEL_TEST(a_method_s_field_list_keeps_extended_access_and_its_lock_and_update_
  */
 KERNEL_TEST(a_method_s_region_is_an_operation_region)
 {
-    static const uint8_t body_bytes[] = {0x5Bu, 0x80u, 'M',   'T',   '_',   '_',   0x00u, 0x0Cu, 0x00u, 0x00u,
-                                         0x01u, 0x00u, 0x0Au, 0x04u, 0xA4u, 0x8Eu, 'M',   'T',   '_',   '_'};
-    static const uint8_t store_call[] = {0x70u, 'M', 'T', 'Y', 'P', 'R', 'T', '_', '_'};
     MadeUpAml_t body;
 
     regions_begin();
     made_up_aml_begin(&body);
-    made_up_aml_raw(&body, body_bytes, sizeof(body_bytes));
+    made_up_aml_raw(&body, regions_region_object_type_aml, sizeof(regions_region_object_type_aml));
     made_up_aml_method(&regions_aml, "MTYP", 0x00u, &body);
     made_up_aml_name_integer(&regions_aml, "RT__", 0u);
-    made_up_aml_raw(&regions_aml, store_call, sizeof(store_call));
+    made_up_aml_raw(&regions_aml, regions_store_type_call_aml, sizeof(regions_store_type_call_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test, regions_integer("RT__") == 10u, "ObjectType (MT__) is 10, an OperationRegion");
@@ -1345,7 +1314,6 @@ KERNEL_TEST(a_method_s_region_is_an_operation_region)
 KERNEL_TEST(a_method_s_field_list_past_two_to_the_thirty_two_bits_is_refused)
 {
     static MadeUpFieldUnit_t units[18];
-    static const uint8_t call[] = {'M', 'O', 'V', 'F'};
     MadeUpAml_t body;
 
     for (uint32_t index = 0u; index < 17u; ++index)
@@ -1356,7 +1324,7 @@ KERNEL_TEST(a_method_s_field_list_past_two_to_the_thirty_two_bits_is_refused)
     made_up_aml_begin(&body);
     made_up_aml_field(&body, "RAMR", REGIONS_BYTE_ACCESS, units, 18u);
     made_up_aml_method(&regions_aml, "MOVF", 0x00u, &body);
-    made_up_aml_raw(&regions_aml, call, sizeof(call));
+    made_up_aml_raw(&regions_aml, regions_calls_overflow_aml, sizeof(regions_calls_overflow_aml));
     if (!regions_run(test, 2u))
         return;
     kernel_test_check(test, regions_failed(REGIONS_STATUS(INDEX_OUT_OF_RANGE)) == 1u,

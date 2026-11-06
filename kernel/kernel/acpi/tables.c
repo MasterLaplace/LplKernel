@@ -1,4 +1,5 @@
 #include <kernel/acpi/host.h>
+#include <kernel/acpi/log.h>
 #include <kernel/acpi/tables.h>
 
 #include <string.h>
@@ -234,7 +235,32 @@ static void acpi_unmap_table(const AdvancedConfigurationAndPowerInterfaceHost_t 
 }
 
 /**
- * @brief Records the table at @p physical_address in @p directory, mapped and checksummed.
+ * @brief Whether a table is a definition block, which the load reads as AML and whose checksum it counts as it
+ *        declares it (§3.9).
+ */
+static bool acpi_is_definition_block(const char *signature)
+{
+    return acpi_signature_matches(signature, "DSDT", 4u) || acpi_signature_matches(signature, "SSDT", 4u);
+}
+
+/**
+ * @brief Counts a table of @p directory whose checksum fails, read all the same, and logs it as a warning that names
+ *        it (§3.9).
+ */
+static void acpi_count_bad_checksum(AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
+                                    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
+{
+    AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    ++directory->checksum_bad_parsed;
+    advanced_configuration_and_power_interface_log_open(&line, "checksum_bad_parsed");
+    advanced_configuration_and_power_interface_log_table(&line, header);
+    advanced_configuration_and_power_interface_log_warning(directory->host, &line);
+}
+
+/**
+ * @brief Records the table at @p physical_address in @p directory, mapped and checksummed; a table that is no
+ *        definition block and whose checksum fails is counted and logged.
  *
  * @details A table past the directory's capacity, or that cannot be mapped, is counted unreachable.
  */
@@ -262,6 +288,8 @@ static void acpi_record_table(AdvancedConfigurationAndPowerInterfaceDirectory_t 
     table->revision = header->revision;
     table->checksum_valid = advanced_configuration_and_power_interface_checksum_holds(header, header->length);
     table->header = header;
+    if (!table->checksum_valid && !acpi_is_definition_block(table->signature))
+        acpi_count_bad_checksum(directory, header);
 }
 
 /**

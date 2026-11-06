@@ -1,15 +1,17 @@
+#include <kernel/acpi/log.h>
 #include <kernel/acpi/machine_language.h>
 
 #include <stddef.h>
 #include <string.h>
 
-#define MACHINE_LANGUAGE_CALL          ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
-#define MACHINE_LANGUAGE_OK            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK
-#define MACHINE_LANGUAGE_OPERAND(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_##kind
-#define MACHINE_LANGUAGE_OPCODE(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##name
-#define MACHINE_LANGUAGE_NODE(type)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
-#define MACHINE_LANGUAGE_STATUS(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
-#define MACHINE_LANGUAGE_BLOCK_NOT_RUN ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_NOT_RUN
+#define MACHINE_LANGUAGE_CALL             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT
+#define MACHINE_LANGUAGE_OK               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK
+#define MACHINE_LANGUAGE_OPERAND(kind)    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPERAND_##kind
+#define MACHINE_LANGUAGE_OPCODE(name)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_##name
+#define MACHINE_LANGUAGE_NODE(type)       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_##type
+#define MACHINE_LANGUAGE_STATUS(name)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
+#define MACHINE_LANGUAGE_BLOCK_NOT_RUN    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_BLOCK_NOT_RUN
+#define MACHINE_LANGUAGE_FAULT_PATH_BYTES 128u /**< Bytes of the path the line of a fault names: 25 levels deep. */
 #define MACHINE_LANGUAGE_ASKS                                                                                          \
     MACHINE_LANGUAGE_STATUS(COUNT) /**< What a step gives when its statement waits for a term the interpreter runs. */
 #define MACHINE_LANGUAGE_VALUE(kind) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_##kind
@@ -215,10 +217,52 @@ static void machine_language_count_load_error(AdvancedConfigurationAndPowerInter
 }
 
 /**
- * @brief Records a fault at the walk's pc: in load_errors for the declaration pass, in its table and
- *        in decode_errors for the decoding pass, in undeclared_faults for the decoding pass inside a
- *        construct the declaration pass did not declare; the Externals pass counts its own faults
- *        where it meets them.
+ * @brief The method a fault of the walk names: the one whose body the decoding pass decodes, or 0 for table-level
+ *        code, the scope the walk is in then naming it.
+ */
+static uint32_t machine_language_walk_method(const MachineLanguageWalk_t *walk)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load = walk->load;
+
+    return (walk->pass == MACHINE_LANGUAGE_PASS_DECODE && load->frame_count != 0u) ?
+               load->frame_methods[load->frame_count - 1u] :
+               0u;
+}
+
+/**
+ * @brief Reports a fault the walk meets at @p offset of its table, counted under its status and logged (§4.5), unless
+ *        it is the failure the interpreter reported and goes past, whose statement the walk steps over.
+ */
+static void machine_language_report_walk_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status,
+                                               uint32_t offset)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t *evaluation = &walk->load->evaluation;
+
+    if (evaluation->logged_fault_table == walk->table + 1u && evaluation->logged_fault_offset == offset)
+        return;
+    advanced_configuration_and_power_interface_machine_language_report_fault(walk->load, status, walk->table + 1u,
+                                                                             offset, machine_language_walk_method(walk),
+                                                                             machine_language_top_block(walk)->scope);
+}
+
+/**
+ * @brief Counts a fault of the declaration pass or of the Externals pass, the first one kept, against the walk's
+ *        table too, and logs it at @p offset of that table.
+ */
+static void machine_language_report_load_error(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status,
+                                               uint32_t offset)
+{
+    machine_language_count_load_error(walk->load, status);
+    advanced_configuration_and_power_interface_machine_language_count_table_failure(walk->load, walk->table + 1u);
+    machine_language_report_walk_fault(walk, status, offset);
+}
+
+/**
+ * @brief Records a fault at the walk's pc: in load_errors for the declaration pass, logged; in its table and in
+ *        decode_errors for the decoding pass, logged in a method body alone, since the declaration pass logged
+ *        those of table-level code; in undeclared_faults for the decoding pass inside a construct the declaration
+ *        pass did not declare, not logged, since its names resolve against objects that do not exist; the Externals
+ *        pass counts its own faults where it meets them.
  */
 static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status)
 {
@@ -228,7 +272,7 @@ static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLa
         return;
     if (walk->pass == MACHINE_LANGUAGE_PASS_DECLARE)
     {
-        machine_language_count_load_error(load, status);
+        machine_language_report_load_error(walk, status, walk->pc);
         return;
     }
 
@@ -241,6 +285,8 @@ static void machine_language_record_fault(MachineLanguageWalk_t *walk, MachineLa
     AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table = &load->tables[walk->table];
 
     ++load->decode_errors;
+    if (load->frame_count != 0u)
+        machine_language_report_walk_fault(walk, status, walk->pc);
     if (table->decode_errors++ == 0u)
     {
         table->first_error = (uint8_t) status;
@@ -622,6 +668,7 @@ static void machine_language_place_external(MachineLanguageWalk_t *walk, uint8_t
     uint32_t parent = 0u;
     uint32_t node = 0u;
     MachineLanguageStatus_t status = machine_language_external_parent(walk, &parent);
+    const uint32_t start = walk->external_start;
 
     walk->external_start = 0u;
     if (status == MACHINE_LANGUAGE_OK &&
@@ -633,7 +680,7 @@ static void machine_language_place_external(MachineLanguageWalk_t *walk, uint8_t
             &load->space, parent, segment, MACHINE_LANGUAGE_NODE(EXTERNAL), (uint16_t) (walk->table + 1u), &node);
     if (status != MACHINE_LANGUAGE_OK)
     {
-        machine_language_count_load_error(load, status);
+        machine_language_report_load_error(walk, status, start);
         return;
     }
     machine_language_node(walk, node)->value.auxiliary = object_type;
@@ -653,7 +700,7 @@ static void machine_language_keep_external(MachineLanguageWalk_t *walk, const Ma
 
     if (name->segment_count == 0u)
     {
-        machine_language_count_load_error(walk->load, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND));
+        machine_language_report_load_error(walk, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND), active->start);
         return;
     }
     if (advanced_configuration_and_power_interface_machine_language_namespace_creation_place(
@@ -888,16 +935,18 @@ static bool machine_language_builds(MachineLanguageWalk_t *walk, uint32_t index)
 
 /**
  * @brief What a builder does with a status: an exhausted arena stops the table; a malformed operand
- *        is left to the walk, which meets it on the same bytes; any other fault is counted here.
+ *        is left to the walk, which meets it on the same bytes; any other fault is counted here, and logged at
+ *        @p offset, where the declaration that builds starts.
  */
-static MachineLanguageStatus_t machine_language_build_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status)
+static MachineLanguageStatus_t machine_language_build_fault(MachineLanguageWalk_t *walk, MachineLanguageStatus_t status,
+                                                            uint32_t offset)
 {
     if (status == MACHINE_LANGUAGE_STATUS(OUT_OF_MEMORY))
         return status;
     if (status != MACHINE_LANGUAGE_OK && status != MACHINE_LANGUAGE_STATUS(TRUNCATED) &&
         status != MACHINE_LANGUAGE_STATUS(INVALID_OPCODE) &&
         status != MACHINE_LANGUAGE_STATUS(PACKAGE_LENGTH_OUT_OF_PARENT))
-        machine_language_count_load_error(walk->load, status);
+        machine_language_report_load_error(walk, status, offset);
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -921,7 +970,7 @@ static MachineLanguageStatus_t machine_language_build_name(MachineLanguageWalk_t
 
     *out_after = 0u;
     if (status != MACHINE_LANGUAGE_OK)
-        return machine_language_build_fault(walk, status);
+        return machine_language_build_fault(walk, status, active->start);
     if (!constant)
         ++load->values_deferred;
     else
@@ -1064,7 +1113,7 @@ static MachineLanguageStatus_t machine_language_build_region(MachineLanguageWalk
     if (status == MACHINE_LANGUAGE_OK)
         status =
             machine_language_place_region(walk, active->node, walk->bytes[walk->pc - 1u], constant, offset, length);
-    return machine_language_build_fault(walk, status);
+    return machine_language_build_fault(walk, status, active->start);
 }
 
 /**
@@ -1102,7 +1151,7 @@ machine_language_build_buffer_field(MachineLanguageWalk_t *walk, const MachineLa
     {
         status = advanced_configuration_and_power_interface_machine_language_materialize(load, buffer);
         if (status != MACHINE_LANGUAGE_OK)
-            return machine_language_build_fault(walk, status);
+            return machine_language_build_fault(walk, status, active->start);
         if (machine_language_node(walk, buffer)->type == MACHINE_LANGUAGE_NODE(BUFFER) &&
             advanced_configuration_and_power_interface_machine_language_evaluate_integer(
                 &load->space, &source, after, active->end, &index, &after, &constant) == MACHINE_LANGUAGE_OK &&
@@ -1131,7 +1180,7 @@ machine_language_build_buffer_field(MachineLanguageWalk_t *walk, const MachineLa
 
     if (index > 0xFFFFFFFFull || bit_offset > 0xFFFFFFFFull || bit_length > 0xFFFFFFFFull)
     {
-        machine_language_count_load_error(load, MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE));
+        machine_language_report_load_error(walk, MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE), active->start);
         return MACHINE_LANGUAGE_OK;
     }
 
@@ -1190,7 +1239,7 @@ static MachineLanguageStatus_t machine_language_begin_field_list(MachineLanguage
         field->builds = false;
     if (!field->builds)
     {
-        machine_language_count_load_error(load, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND));
+        machine_language_report_load_error(walk, MACHINE_LANGUAGE_STATUS(NAME_NOT_FOUND), active->start);
         return MACHINE_LANGUAGE_OK;
     }
     if (active->opcode == MACHINE_LANGUAGE_OPCODE(BANK_FIELD))
@@ -1235,7 +1284,8 @@ static MachineLanguageStatus_t machine_language_build_field_unit(MachineLanguage
     if (!field->builds)
         return MACHINE_LANGUAGE_OK;
     return machine_language_build_fault(
-        walk, advanced_configuration_and_power_interface_machine_language_field_unit_build(load, index, &unit));
+        walk, advanced_configuration_and_power_interface_machine_language_field_unit_build(load, index, &unit),
+        walk->pc);
 }
 
 /**
@@ -2258,7 +2308,7 @@ static MachineLanguageStatus_t machine_language_region_statement(MachineLanguage
         return MACHINE_LANGUAGE_OK;
     }
     status = machine_language_build_fault(
-        walk, machine_language_place_region(walk, state.node, walk->bytes[start + 6u], true, offset, length));
+        walk, machine_language_place_region(walk, state.node, walk->bytes[start + 6u], true, offset, length), start);
     if (status == MACHINE_LANGUAGE_OK)
     {
         walk->pc = after;
@@ -3210,6 +3260,59 @@ static bool machine_language_holds_table(const AdvancedConfigurationAndPowerInte
 }
 
 /**
+ * @brief The name of the term at @p offset of a table, as the line of a fault gives it: its opcode's, `NameString` for
+ *        a name, which a method call starts with, `Invalid` for a byte that starts no term, `End` past the table.
+ */
+static const char *machine_language_term_name(const AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *table,
+                                              uint32_t offset)
+{
+    const uint8_t *bytes = (const uint8_t *) table->header;
+    uint32_t opcode = MACHINE_LANGUAGE_OPCODE(INVALID);
+    uint32_t after = 0u;
+
+    if (offset >= table->length)
+        return "End";
+    if (advanced_configuration_and_power_interface_machine_language_read_opcode(bytes, offset, table->length, &opcode,
+                                                                                &after) == MACHINE_LANGUAGE_OK)
+        return advanced_configuration_and_power_interface_machine_language_opcode_name(opcode);
+    return advanced_configuration_and_power_interface_machine_language_starts_name(bytes[offset]) ? "NameString" :
+                                                                                                    "Invalid";
+}
+
+/**
+ * @brief Appends the field @p key with the path of @p node, or `too_deep` when MACHINE_LANGUAGE_FAULT_PATH_BYTES
+ *        cannot hold it.
+ */
+static void machine_language_log_path(AdvancedConfigurationAndPowerInterfaceLogLine_t *line,
+                                      const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                      const char *key, uint32_t node)
+{
+    char path[MACHINE_LANGUAGE_FAULT_PATH_BYTES];
+
+    advanced_configuration_and_power_interface_log_text(
+        line, key,
+        (advanced_configuration_and_power_interface_machine_language_namespace_path(&load->space, node, path,
+                                                                                    sizeof(path)) != 0u) ?
+            path :
+            "too_deep");
+}
+
+/**
+ * @brief Counts a definition block whose checksum fails, loaded all the same, and logs it as a warning that names
+ *        it (§3.9, §5.1).
+ */
+static void machine_language_count_bad_checksum(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                                const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header)
+{
+    AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    ++load->checksum_bad_loaded;
+    advanced_configuration_and_power_interface_log_open(&line, "checksum_bad_loaded");
+    advanced_configuration_and_power_interface_log_table(&line, header);
+    advanced_configuration_and_power_interface_log_warning(load->space.host, &line);
+}
+
+/**
  * @brief Adds a table Load or LoadTable brings to the registry, last, for the evaluation that runs the Load to run
  *        its code in a frame of its own. A table the load holds already is refused, counted.
  */
@@ -3237,7 +3340,8 @@ machine_language_add_table(AdvancedConfigurationAndPowerInterfaceMachineLanguage
     table->checksum_valid = advanced_configuration_and_power_interface_checksum_holds(header, length);
     table->origin = origin;
     table->pages = pages;
-    load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
+    if (!table->checksum_valid)
+        machine_language_count_bad_checksum(load, header);
     load->bytes += length - (uint32_t) sizeof(*header);
     ++load->tables_loaded;
     *out_added = true;
@@ -3403,7 +3507,8 @@ static void machine_language_declare_accepted_table(AdvancedConfigurationAndPowe
     table->header = header;
     table->length = header->length;
     table->checksum_valid = checksum_valid;
-    load->checksum_bad_loaded += table->checksum_valid ? 0u : 1u;
+    if (!checksum_valid)
+        machine_language_count_bad_checksum(load, header);
     load->bytes += header->length - (uint32_t) sizeof(*header);
     if (memcmp(header->signature, "DSDT", sizeof(header->signature)) == 0 && load->integer_bits == 0u)
         load->integer_bits = (header->revision < 2u) ? 32u : 64u;
@@ -3593,6 +3698,45 @@ void advanced_configuration_and_power_interface_machine_language_count_load_erro
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, MachineLanguageStatus_t status)
 {
     machine_language_count_load_error(load, status);
+}
+
+void advanced_configuration_and_power_interface_machine_language_count_table_failure(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table)
+{
+    if (table == 0u || table > load->table_count || load->tables[table - 1u].load_failed)
+        return;
+
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t *entry = &load->tables[table - 1u];
+
+    entry->load_failed = true;
+    load->table_load_failed +=
+        (entry->origin == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_TABLE_STATIC) ? 1u : 0u;
+}
+
+void advanced_configuration_and_power_interface_machine_language_report_fault(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, MachineLanguageStatus_t status, uint32_t table,
+    uint32_t offset, uint32_t method, uint32_t scope)
+{
+    AdvancedConfigurationAndPowerInterfaceLogLine_t line;
+
+    ++load->faults[status];
+
+    advanced_configuration_and_power_interface_log_open(
+        &line, advanced_configuration_and_power_interface_machine_language_status_name(status));
+    if (table == 0u || table > load->table_count)
+        advanced_configuration_and_power_interface_log_text(&line, "table", "none");
+    else
+    {
+        advanced_configuration_and_power_interface_log_table(&line, load->tables[table - 1u].header);
+        advanced_configuration_and_power_interface_log_hexadecimal(&line, "offset", offset, 8u);
+        advanced_configuration_and_power_interface_log_text(
+            &line, "opcode", machine_language_term_name(&load->tables[table - 1u], offset));
+    }
+    if (method != 0u)
+        machine_language_log_path(&line, load, "method", method);
+    else
+        machine_language_log_path(&line, load, "scope", scope);
+    advanced_configuration_and_power_interface_log_error(load->space.host, &line);
 }
 
 void advanced_configuration_and_power_interface_machine_language_close(

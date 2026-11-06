@@ -94,6 +94,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageTable {
     uint32_t first_error_offset; /**< Offset of the first fault's term, in the table. */
     uint16_t first_error_opcode; /**< The descriptor of the first fault's term, or the invalid one. */
     uint8_t first_error;         /**< The first fault's status. */
+    bool load_failed;            /**< Whether its load met a fault: a fault of a pass that declares it, or a failure
+                                      of its table-level code (§3.8 step 1). */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageTable_t;
 
 /**
@@ -198,7 +200,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t externals_unplaced;  /**< Externals the declaration pass had nowhere to place, which the Externals
                                        pass places once every table is declared. */
     uint32_t load_errors; /**< Faults the declaration and Externals passes met, a name they could not place included. */
-    uint8_t first_load_error;       /**< The first of them. */
+    uint8_t first_load_error;   /**< The first of them. */
+    uint32_t table_load_failed; /**< Tables the root table lists whose load met a fault, counted once each, the next
+                                     table loaded all the same (§3.8 step 1). */
+    uint32_t faults[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_COUNT]; /**< Faults the
+                                                                                                   evaluations and the
+                                                                                                   passes met, per
+                                                                                                   status, each logged
+                                                                                                   once (§4.5). */
     uint32_t decode_errors;         /**< Faults the decoding pass met, over every table. */
     uint32_t data_faults;           /**< Data objects kept in their table (O20) that the check run once the bodies are
                                          decoded found would not build, a fault in their bytes or a term that needs the
@@ -343,6 +352,35 @@ extern bool advanced_configuration_and_power_interface_machine_language_executes
 extern void advanced_configuration_and_power_interface_machine_language_count_load_error(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status);
+
+/**
+ * @brief Marks a table whose load met a fault, counted once in table_load_failed when the root table lists it
+ *        (§3.8 step 1).
+ *
+ * @param load  The load.
+ * @param table The table, counted from 1; 0, which names none, is ignored.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_count_table_failure(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table);
+
+/**
+ * @brief Counts a fault in faults, under its status, and logs it as an error, the line §4.5 calls loud: its status,
+ *        then the table and the offset of the term that met it and that term's opcode, then the method whose body
+ *        holds it, or the scope table-level code runs in, such as
+ *        `name_not_found table=SSDT/CpuPm offset=0x0000012F opcode=NameString method=\_PR_.CPU0._PDC`.
+ *
+ * @details The path is built here alone, from the node: a load that meets no fault builds none.
+ * @param load   The load, which counts it, and whose host's log the line goes to.
+ * @param status The fault, its counter's name.
+ * @param table  The table the term lies in, counted from 1, or 0 for none, such as the frame of a host's evaluation.
+ * @param offset Where the term starts in that table.
+ * @param method The node of the method whose body holds the term, or 0 for table-level code.
+ * @param scope  The node the code runs in, named when @p method is 0.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_report_fault(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status, uint32_t table, uint32_t offset,
+    uint32_t method, uint32_t scope);
 
 /**
  * @brief Reads a field unit (§5.3): one access per datum of its access width, in its region for a

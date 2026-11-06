@@ -1,3 +1,5 @@
+#include "fixtures/initialization.h"
+#include "fixtures/common.h"
 #include "made_up_aml.h"
 #include "made_up_table.h"
 #include "simulated_host.h"
@@ -16,6 +18,10 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_initialization, KER
 #define INITIALIZATION_SYSTEM_MEMORY 0x00u /**< The RegionSpace byte of SystemMemory. */
 #define INITIALIZATION_SYSTEM_IO     0x01u /**< The RegionSpace byte of SystemIO. */
 #define INITIALIZATION_STATUS(name)  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##name
+#define INITIALIZATION_ROUTER_INDEX  0x0C00u     /**< The index port of AMD's PCI interrupt router. */
+#define INITIALIZATION_ROUTER_DATA   0x0C01u     /**< Its data port. */
+#define INITIALIZATION_NVS_ADDRESS   0x00320000u /**< Where GNVS, the NVS region of Intel's HWP pattern, lies. */
+#define INITIALIZATION_HWP_ADDRESS   0x00330000u /**< Where the HWP table that pattern loads lies. */
 
 static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t initialization_host;
 static AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t initialization_load;
@@ -24,6 +30,8 @@ static AdvancedConfigurationAndPowerInterfaceMadtState_t initialization_madt;
 static AdvancedConfigurationAndPowerInterfaceInitializationMachine_t initialization_machine;
 static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t initialization_idle;
 static uint8_t initialization_table[MADE_UP_TABLE_HEADER + MADE_UP_AML_CAPACITY];
+static uint8_t initialization_hwp_table[MADE_UP_TABLE_HEADER + sizeof(initialization_hwp_table_aml)];
+static uint32_t initialization_nvs[3];
 static MadeUpAml_t initialization_aml;
 static MadeUpAml_t initialization_outer;
 static MadeUpAml_t initialization_inner;
@@ -122,6 +130,8 @@ static void initialization_close(KernelTest_t *test)
 /**
  * @brief Appends Store (Add (Multiply (\TRAC, 0x10), @p digit), \TRAC): @p digit, from 1 to 0xF,
  *        becomes the trace's last hexadecimal digit.
+ *
+ * Its pieces are raw bytes: the Store and the Add it opens around @p digit, partial terms.
  */
 static void initialization_trace(MadeUpAml_t *aml, uint64_t digit)
 {
@@ -156,6 +166,8 @@ static void initialization_method(MadeUpAml_t *aml, const char *name, uint8_t ar
 
 /**
  * @brief Appends Method (_STA) { Return (@p status) }.
+ *
+ * Its Return opcode is raw bytes: a partial term around @p status.
  */
 static void initialization_status(MadeUpAml_t *aml, uint64_t status)
 {
@@ -173,9 +185,11 @@ static void initialization_status(MadeUpAml_t *aml, uint64_t status)
  */
 static void initialization_failing(MadeUpAml_t *aml, const char *name, uint8_t arguments, bool returns)
 {
-    static const uint8_t divide[] = {0xA4u, 0x78u, 0x01u, 0x00u, 0x00u, 0x00u};
-
-    initialization_method(aml, name, arguments, returns ? divide : divide + 1, returns ? 6u : 5u);
+    if (returns)
+        initialization_method(aml, name, arguments, common_return_divide_by_zero_aml,
+                              sizeof(common_return_divide_by_zero_aml));
+    else
+        initialization_method(aml, name, arguments, common_divide_by_zero_aml, sizeof(common_divide_by_zero_aml));
 }
 
 /**
@@ -183,10 +197,7 @@ static void initialization_failing(MadeUpAml_t *aml, const char *name, uint8_t a
  */
 static void initialization_registration(MadeUpAml_t *aml)
 {
-    static const uint8_t body[] = {0x70u, 0x72u, 0x77u, 0x72u, 0x77u, '\\',  'T',   'R',  'A', 'C', 0x0Au, 0x10u, 0x00u,
-                                   0x68u, 0x00u, 0x0Au, 0x10u, 0x00u, 0x69u, 0x00u, '\\', 'T', 'R', 'A',   'C'};
-
-    initialization_method(aml, "_REG", 0x02u, body, sizeof(body));
+    initialization_method(aml, "_REG", 0x02u, common_traces_two_arguments_aml, sizeof(common_traces_two_arguments_aml));
 }
 
 /**
@@ -252,18 +263,18 @@ static void initialization_capabilities_names(MadeUpAml_t *aml, char record)
  * @brief Appends Method (_OSC, 4) { CopyObject Arg0, Arg1 and Arg2 to \@p record UID, REV and CNT;
  *        CreateDWordField (Arg3, 0, CDW1) and (Arg3, 4, CDW2); trace CDW1 + @p digit; \@p record CAP |=
  *        CDW2; CDW1 |= @p error_bits; Return (Arg3) }: the query traces @p digit + 1, the commit @p digit.
+ *
+ * Its whole terms come from fixtures; its other pieces are raw bytes: partial terms around the names of @p record,
+ * @p digit and @p error_bits.
  */
 static void initialization_capabilities_recorder(MadeUpAml_t *aml, char record, uint8_t digit, uint8_t error_bits)
 {
-    static const uint8_t first_field[] = {0x8Au, 0x6Bu, 0x00u, 'C', 'D', 'W', '1'};
-    static const uint8_t second_field[] = {0x8Au, 0x6Bu, 0x0Au, 0x04u, 'C', 'D', 'W', '2'};
     static const uint8_t trace_head[] = {0x70u, 0x72u, 0x77u, '\\', 'T', 'R', 'A', 'C',  0x0Au,
                                          0x10u, 0x00u, 0x72u, 'C',  'D', 'W', '1', 0x0Au};
     static const uint8_t trace_tail[] = {0x00u, 0x00u, '\\', 'T', 'R', 'A', 'C'};
     static const uint8_t or_byte = 0x7Du;
     static const uint8_t refuse_head[] = {0x7Du, 'C', 'D', 'W', '1', 0x0Au};
     static const uint8_t refuse_tail[] = {'C', 'D', 'W', '1'};
-    static const uint8_t give_back[] = {0xA4u, 0x6Bu};
     static const char *const kept[] = {"UID", "REV", "CNT"};
 
     made_up_aml_begin(&initialization_method_body);
@@ -274,14 +285,16 @@ static void initialization_capabilities_recorder(MadeUpAml_t *aml, char record, 
         made_up_aml_raw(&initialization_method_body, copy, sizeof(copy));
         initialization_root_name(&initialization_method_body, record, kept[argument]);
     }
-    made_up_aml_raw(&initialization_method_body, first_field, sizeof(first_field));
-    made_up_aml_raw(&initialization_method_body, second_field, sizeof(second_field));
+    made_up_aml_raw(&initialization_method_body, initialization_first_dword_field_aml,
+                    sizeof(initialization_first_dword_field_aml));
+    made_up_aml_raw(&initialization_method_body, initialization_second_dword_field_aml,
+                    sizeof(initialization_second_dword_field_aml));
     made_up_aml_raw(&initialization_method_body, trace_head, sizeof(trace_head));
     made_up_aml_raw(&initialization_method_body, &digit, 1u);
     made_up_aml_raw(&initialization_method_body, trace_tail, sizeof(trace_tail));
     made_up_aml_raw(&initialization_method_body, &or_byte, 1u);
     initialization_root_name(&initialization_method_body, record, "CAP");
-    made_up_aml_raw(&initialization_method_body, second_field + 4, 4u);
+    made_up_aml_raw(&initialization_method_body, (const uint8_t *) "CDW2", 4u);
     initialization_root_name(&initialization_method_body, record, "CAP");
     if (error_bits != 0u)
     {
@@ -289,12 +302,15 @@ static void initialization_capabilities_recorder(MadeUpAml_t *aml, char record, 
         made_up_aml_raw(&initialization_method_body, &error_bits, 1u);
         made_up_aml_raw(&initialization_method_body, refuse_tail, sizeof(refuse_tail));
     }
-    made_up_aml_raw(&initialization_method_body, give_back, sizeof(give_back));
+    made_up_aml_raw(&initialization_method_body, initialization_return_arg3_aml,
+                    sizeof(initialization_return_arg3_aml));
     made_up_aml_method(aml, "_OSC", 0x04u, &initialization_method_body);
 }
 
 /**
  * @brief Appends Method (_PDC, 1) { CopyObject (Arg0, \@p record PDC); trace @p digit }.
+ *
+ * Its CopyObject is raw bytes: a partial term around the name of @p record.
  */
 static void initialization_driver_capabilities_recorder(MadeUpAml_t *aml, char record, uint64_t digit)
 {
@@ -309,6 +325,8 @@ static void initialization_driver_capabilities_recorder(MadeUpAml_t *aml, char r
 
 /**
  * @brief Appends Name (_HID, @p identifier), a String of eight characters.
+ *
+ * Its Name is raw bytes: a partial term around @p identifier.
  */
 static void initialization_hardware_identifier(MadeUpAml_t *aml, const char *identifier)
 {
@@ -323,6 +341,8 @@ static void initialization_hardware_identifier(MadeUpAml_t *aml, const char *ide
 /**
  * @brief The 16 bytes ToUUID makes of @p text, "aabbccdd-eeff-gghh-iijj-kkllmmnnoopp": aa to hh land at
  *        offsets 3, 2, 1, 0, 5, 4, 7 and 6, ii to pp in the order written (ACPI 6.6 §19.6.144).
+ *
+ * Its written_at array is a UUID's byte order, not AML.
  */
 static void initialization_uuid(const char *text, uint8_t out_bytes[16])
 {
@@ -372,6 +392,75 @@ static void initialization_slots(const uint32_t *identifiers, uint32_t count)
     initialization_madt.processor_count = count;
     for (uint32_t slot = 0u; slot < count; ++slot)
         initialization_madt.processors[slot].processor_unique_identifier = identifiers[slot];
+}
+
+/**
+ * @brief How many writes to the I/O port @p port the simulated host logged from its access @p from on, of @p value,
+ *        or of any value when @p value is above 0xFF.
+ */
+static uint32_t initialization_port_writes(uint32_t from, uint16_t port, uint32_t value)
+{
+    const uint32_t logged =
+        initialization_host.access_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES ?
+            initialization_host.access_count :
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES;
+    uint32_t writes = 0u;
+
+    for (uint32_t index = from; index < logged; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &initialization_host.accesses[index];
+
+        if (access->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE && access->port == port &&
+            (value > 0xFFu || access->value == value))
+            ++writes;
+    }
+    return writes;
+}
+
+/**
+ * @brief Evaluates \_PIC with the Integer @p model, and gives back its status.
+ */
+static AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t initialization_interrupt_model(uint64_t model)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t argument = {
+        .kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER,
+        .payload = model};
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate(&initialization_load, "\\_PIC", &argument,
+                                                                             1u, &result);
+
+    advanced_configuration_and_power_interface_machine_language_value_release(&initialization_load.heap,
+                                                                              &initialization_load.space, &result);
+    return status;
+}
+
+/**
+ * @brief Loads Intel's HWP pattern on a machine whose one CPU slot binds CPU0, its GNVS, a page of ACPI NVS,
+ *        telling where the HWP table lies and the platform granting @p granted unasked, then runs the initialisation.
+ */
+static bool initialization_run_hardware_p_states(KernelTest_t *test, uint32_t granted)
+{
+    static const uint32_t identifiers[] = {1u};
+
+    initialization_begin();
+    initialization_slots(identifiers, 1u);
+    made_up_definition_block(initialization_hwp_table, "SSDT", 2u, initialization_hwp_table_aml,
+                             sizeof(initialization_hwp_table_aml));
+    initialization_nvs[0] = INITIALIZATION_HWP_ADDRESS;
+    initialization_nvs[1] = sizeof(initialization_hwp_table);
+    initialization_nvs[2] = granted;
+    advanced_configuration_and_power_interface_simulated_host_describe(
+        &initialization_host, INITIALIZATION_NVS_ADDRESS, 4096u,
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MEMORY_ACPI_NVS);
+    advanced_configuration_and_power_interface_simulated_host_place(&initialization_host, INITIALIZATION_NVS_ADDRESS,
+                                                                    initialization_nvs, sizeof(initialization_nvs));
+    advanced_configuration_and_power_interface_simulated_host_place(
+        &initialization_host, INITIALIZATION_HWP_ADDRESS, initialization_hwp_table, sizeof(initialization_hwp_table));
+    made_up_aml_region(&initialization_aml, "GNVS", 0x00u, INITIALIZATION_NVS_ADDRESS, sizeof(initialization_nvs));
+    made_up_aml_raw(&initialization_aml, initialization_intel_hardware_p_states_aml,
+                    sizeof(initialization_intel_hardware_p_states_aml));
+    return initialization_run(test, true);
 }
 
 /**
@@ -474,9 +563,6 @@ KERNEL_TEST(a_status_acpi_calls_invalid_is_counted_and_walked_by_presence_and_fu
  */
 KERNEL_TEST(a_status_that_fails_skips_the_initialization_but_not_the_children)
 {
-    static const uint8_t package_status[] = {0x08u, '_', 'S', 'T', 'A', 0x12u, 0x02u, 0x00u};
-    static const uint8_t empty_status[] = {0x08u, '_', 'S', 'T', 'A', 0x11u, 0x02u, 0x00u};
-
     initialization_begin();
     made_up_aml_begin(&initialization_inner);
     initialization_device(&initialization_inner, "CHLD", 2u, NULL);
@@ -487,11 +573,12 @@ KERNEL_TEST(a_status_that_fails_skips_the_initialization_but_not_the_children)
     made_up_aml_device(&initialization_aml, "DDIV", &initialization_outer);
     initialization_device(&initialization_aml, "NEXT", 3u, NULL);
     made_up_aml_begin(&initialization_outer);
-    made_up_aml_raw(&initialization_outer, package_status, sizeof(package_status));
+    made_up_aml_raw(&initialization_outer, initialization_package_status_aml,
+                    sizeof(initialization_package_status_aml));
     initialization_ini(&initialization_outer, 4u);
     initialization_device(&initialization_aml, "DPKG", 0u, &initialization_outer);
     made_up_aml_begin(&initialization_outer);
-    made_up_aml_raw(&initialization_outer, empty_status, sizeof(empty_status));
+    made_up_aml_raw(&initialization_outer, initialization_empty_status_aml, sizeof(initialization_empty_status_aml));
     initialization_ini(&initialization_outer, 5u);
     initialization_device(&initialization_aml, "DBUF", 0u, &initialization_outer);
     if (!initialization_run(test, true))
@@ -644,31 +731,27 @@ KERNEL_TEST(a_registration_runs_once_per_scope_of_pci_config_regions)
  */
 KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
 {
-    static const uint8_t creates[] = {0x5Bu, 0x80u, '^', 'D', 'Y', 'N', 'R',  0x02u, 0x00u, 0x0Au, 0x10u,
-                                      0x70u, '\\',  'T', 'R', 'A', 'C', '\\', 'S',   'N',   'A',   'P'};
-    static const uint8_t creates_own[] = {0x5Bu, 0x80u, 'D', 'Y', 'N', 'L', 0x02u, 0x00u, 0x0Au, 0x10u};
-    static const uint8_t creates_memory[] = {0x5Bu, 0x80u, '^',   'D',   'Y',   'N',  'M',
-                                             0x00u, 0x0Bu, 0x00u, 0x30u, 0x0Au, 0x10u};
-    static const uint8_t creates_other[] = {0x5Bu, 0x80u, '^',   'D',   'Y',  'N', 'R', 0x02u, 0x00u,
-                                            0x0Au, 0x10u, 0x70u, 0x01u, '\\', 'S', 'N', 'A',   'P'};
-    static const uint8_t traces[] = {0x70u, 0x72u, 0x77u, '\\',  'T',  'R', 'A', 'C', 0x0Au, 0x10u,
-                                     0x00u, 0x0Au, 0x0Fu, 0x00u, '\\', 'T', 'R', 'A', 'C'};
-
     initialization_begin();
     made_up_aml_name_integer(&initialization_aml, "SNAP", 0u);
     made_up_aml_begin(&initialization_inner);
     initialization_registration(&initialization_inner);
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates, sizeof(creates));
-    initialization_method(&initialization_inner, "MKRL", 0x00u, creates_own, sizeof(creates_own));
-    initialization_method(&initialization_inner, "MKMM", 0x00u, creates_memory, sizeof(creates_memory));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_parent_region_aml,
+                          sizeof(initialization_creates_parent_region_aml));
+    initialization_method(&initialization_inner, "MKRL", 0x00u, initialization_creates_own_region_aml,
+                          sizeof(initialization_creates_own_region_aml));
+    initialization_method(&initialization_inner, "MKMM", 0x00u, initialization_creates_parent_memory_region_aml,
+                          sizeof(initialization_creates_parent_memory_region_aml));
     initialization_device(&initialization_aml, "XDEV", 0u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
-    initialization_method(&initialization_inner, "_REG", 0x01u, traces, sizeof(traces));
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates_other, sizeof(creates_other));
+    initialization_method(&initialization_inner, "_REG", 0x01u, initialization_trace_f_aml,
+                          sizeof(initialization_trace_f_aml));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_parent_region_then_marks_aml,
+                          sizeof(initialization_creates_parent_region_then_marks_aml));
     initialization_device(&initialization_aml, "YDEV", 0u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
     initialization_failing(&initialization_inner, "_REG", 0x02u, false);
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates_other, sizeof(creates_other));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_parent_region_then_marks_aml,
+                          sizeof(initialization_creates_parent_region_then_marks_aml));
     initialization_device(&initialization_aml, "WDEV", 0u, &initialization_inner);
     if (!initialization_run(test, false))
         return;
@@ -716,14 +799,13 @@ KERNEL_TEST(a_region_a_method_creates_after_initialization_registers_at_once)
  * @brief A _REG whose SyncLevel keeps it from running at a region's creation, refused with mutex_order, takes back
  *        the two arguments it was given: the method that created the region still has the whole value stack, as it
  *        has before the initialisation, when no _REG is called, which a VarPackage and its count fill (§5.3, §6.1).
+ *
+ * The creator's Return opcode is raw bytes, a partial term around the VarPackage the test builds, and so are that
+ * VarPackage's opcode and its One initialisers: the test names their count.
  */
 KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back)
 {
-    static const uint8_t mutex[] = {0x5Bu, 0x01u, 'M', 'T', 'X', 'A', 0x01u};
-    static const uint8_t traces[] = {0x70u, 0x01u, '\\', 'T', 'R', 'A', 'C'};
-    static const uint8_t creates[] = {0x5Bu, 0x23u, '\\', 'M', 'T', 'X', 'A',   0xFFu, 0xFFu, 0x5Bu,
-                                      0x80u, '^',   'D',  'Y', 'N', 'R', 0x02u, 0x00u, 0x0Au, 0x10u,
-                                      0x5Bu, 0x27u, '\\', 'M', 'T', 'X', 'A',   0xA4u};
+    static const uint8_t return_byte = 0xA4u;
     static const uint8_t variable_package = 0x13u;
     static const uint8_t one = 0x01u;
     static MadeUpAml_t elements;
@@ -732,16 +814,19 @@ KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back
     const uint8_t count[] = {0x0Bu, (uint8_t) initialisers, (uint8_t) (initialisers >> 8u)};
 
     initialization_begin();
-    made_up_aml_raw(&initialization_aml, mutex, sizeof(mutex));
+    made_up_aml_raw(&initialization_aml, initialization_mutex_aml, sizeof(initialization_mutex_aml));
     made_up_aml_begin(&elements);
     made_up_aml_raw(&elements, count, sizeof(count));
     for (uint32_t element = 0u; element < initialisers; ++element)
         made_up_aml_raw(&elements, &one, 1u);
     made_up_aml_begin(&creator);
-    made_up_aml_raw(&creator, creates, sizeof(creates));
+    made_up_aml_raw(&creator, initialization_creates_region_under_mutex_aml,
+                    sizeof(initialization_creates_region_under_mutex_aml));
+    made_up_aml_raw(&creator, &return_byte, 1u);
     made_up_aml_construct(&creator, &variable_package, 1u, &elements);
     made_up_aml_begin(&initialization_inner);
-    initialization_method(&initialization_inner, "_REG", 0x0Au, traces, sizeof(traces));
+    initialization_method(&initialization_inner, "_REG", 0x0Au, initialization_trace_one_aml,
+                          sizeof(initialization_trace_one_aml));
     made_up_aml_method(&initialization_inner, "MKRG", 0x00u, &creator);
     initialization_device(&initialization_aml, "RDEV", 0u, &initialization_inner);
     if (!kernel_test_check(test, !elements.overflowed && !creator.overflowed, "the VarPackage fits") ||
@@ -770,18 +855,14 @@ KERNEL_TEST(a_registration_refused_at_a_region_creation_takes_its_arguments_back
  */
 KERNEL_TEST(a_registration_that_creates_a_region_in_its_scope_runs_once)
 {
-    static const uint8_t registers[] = {0x70u, 0x72u, 0x77u, 0x72u, 0x77u, '\\',  'T',   'R',   'A',
-                                        'C',   0x0Au, 0x10u, 0x00u, 0x68u, 0x00u, 0x0Au, 0x10u, 0x00u,
-                                        0x69u, 0x00u, '\\',  'T',   'R',   'A',   'C',   0x5Bu, 0x80u,
-                                        '^',   'D',   'Y',   'N',   'Z',   0x02u, 0x00u, 0x0Au, 0x10u};
-    static const uint8_t creates[] = {0x5Bu, 0x80u, '^', 'D', 'Y', 'N', 'R', 0x02u, 0x00u, 0x0Au, 0x10u};
-    static const uint8_t calls[] = {'_', 'R', 'E', 'G', 0x0Au, 0x02u, 0x01u};
-
     initialization_begin();
     made_up_aml_begin(&initialization_inner);
-    initialization_method(&initialization_inner, "_REG", 0x02u, registers, sizeof(registers));
-    initialization_method(&initialization_inner, "MKRG", 0x00u, creates, sizeof(creates));
-    initialization_method(&initialization_inner, "CALR", 0x00u, calls, sizeof(calls));
+    initialization_method(&initialization_inner, "_REG", 0x02u, initialization_registration_creates_region_aml,
+                          sizeof(initialization_registration_creates_region_aml));
+    initialization_method(&initialization_inner, "MKRG", 0x00u, initialization_creates_region_above_aml,
+                          sizeof(initialization_creates_region_above_aml));
+    initialization_method(&initialization_inner, "CALR", 0x00u, initialization_calls_registration_aml,
+                          sizeof(initialization_calls_registration_aml));
     initialization_device(&initialization_aml, "ZDEV", 0u, &initialization_inner);
     if (!initialization_run(test, true))
         return;
@@ -802,11 +883,10 @@ KERNEL_TEST(a_registration_that_creates_a_region_in_its_scope_runs_once)
  */
 KERNEL_TEST(the_interrupt_model_method_is_not_called)
 {
-    static const uint8_t stores[] = {0x70u, 0x68u, '\\', 'P', 'I', 'C', 'M'};
-
     initialization_begin();
     made_up_aml_name_integer(&initialization_aml, "PICM", 0xFFu);
-    initialization_method(&initialization_aml, "_PIC", 0x01u, stores, sizeof(stores));
+    initialization_method(&initialization_aml, "_PIC", 0x01u, initialization_stores_interrupt_model_aml,
+                          sizeof(initialization_stores_interrupt_model_aml));
     if (!initialization_run(test, true))
         return;
     kernel_test_check(test, initialization_integer("PICM") == 0xFFu, "\\_PIC never runs");
@@ -826,11 +906,10 @@ KERNEL_TEST(the_interrupt_model_method_is_not_called)
  */
 KERNEL_TEST(the_notifies_the_sequence_raises_are_dropped_at_its_end)
 {
-    static const uint8_t notifies[] = {0x86u, '\\', 'N', 'O', 'T', 'E', 0x0Au, 0x80u};
-
     initialization_begin();
     made_up_aml_begin(&initialization_inner);
-    initialization_method(&initialization_inner, "_INI", 0x00u, notifies, sizeof(notifies));
+    initialization_method(&initialization_inner, "_INI", 0x00u, initialization_notifies_aml,
+                          sizeof(initialization_notifies_aml));
     initialization_device(&initialization_aml, "NOTE", 0u, &initialization_inner);
     if (!initialization_run(test, true))
         return;
@@ -846,19 +925,20 @@ KERNEL_TEST(the_notifies_the_sequence_raises_are_dropped_at_its_end)
  * @brief A device whose subtree holds no _INI, or only an External one, has its _STA left
  *        unevaluated; one with an _INI two levels down has its _STA evaluated; an _INI that is an
  *        Alias runs what it names (§3.8 step 4, O14).
+ *
+ * Its External is raw bytes: iasl emits an External at the root only inside an If (Zero).
  */
 KERNEL_TEST(a_subtree_without_initialization_evaluates_no_status)
 {
-    static const uint8_t counts[] = {0x75u, '\\', 'S', 'T', 'A', 'C', 0xA4u, 0x0Au, 0x0Fu};
     static const uint8_t external[] = {0x15u, '_', 'I', 'N', 'I', 0x08u, 0x00u};
-    static const uint8_t alias[] = {0x06u, '\\', 'I', 'N', 'I', 'M', '_', 'I', 'N', 'I'};
 
     initialization_begin();
     made_up_aml_name_integer(&initialization_aml, "STAC", 0u);
     made_up_aml_begin(&initialization_inner);
     initialization_device(&initialization_inner, "CHLD", 0u, NULL);
     made_up_aml_begin(&initialization_outer);
-    initialization_method(&initialization_outer, "_STA", 0x00u, counts, sizeof(counts));
+    initialization_method(&initialization_outer, "_STA", 0x00u, initialization_counted_status_aml,
+                          sizeof(initialization_counted_status_aml));
     made_up_aml_raw(&initialization_outer, initialization_inner.bytes, initialization_inner.length);
     made_up_aml_device(&initialization_aml, "DNOI", &initialization_outer);
     made_up_aml_begin(&initialization_inner);
@@ -866,18 +946,21 @@ KERNEL_TEST(a_subtree_without_initialization_evaluates_no_status)
     made_up_aml_begin(&initialization_outer);
     initialization_device(&initialization_outer, "MID_", 0u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
-    initialization_method(&initialization_inner, "_STA", 0x00u, counts, sizeof(counts));
+    initialization_method(&initialization_inner, "_STA", 0x00u, initialization_counted_status_aml,
+                          sizeof(initialization_counted_status_aml));
     made_up_aml_raw(&initialization_inner, initialization_outer.bytes, initialization_outer.length);
     made_up_aml_device(&initialization_aml, "DDEP", &initialization_inner);
     made_up_aml_begin(&initialization_outer);
     made_up_aml_raw(&initialization_outer, external, sizeof(external));
-    initialization_method(&initialization_outer, "_STA", 0x00u, counts, sizeof(counts));
+    initialization_method(&initialization_outer, "_STA", 0x00u, initialization_counted_status_aml,
+                          sizeof(initialization_counted_status_aml));
     made_up_aml_device(&initialization_aml, "DEXT", &initialization_outer);
     made_up_aml_begin(&initialization_method_body);
     initialization_trace(&initialization_method_body, 2u);
     made_up_aml_method(&initialization_aml, "INIM", 0x00u, &initialization_method_body);
     made_up_aml_begin(&initialization_outer);
-    made_up_aml_raw(&initialization_outer, alias, sizeof(alias));
+    made_up_aml_raw(&initialization_outer, initialization_initialization_alias_aml,
+                    sizeof(initialization_initialization_alias_aml));
     made_up_aml_device(&initialization_aml, "DALI", &initialization_outer);
     if (!initialization_run(test, true))
         return;
@@ -900,13 +983,12 @@ KERNEL_TEST(each_evaluation_starts_its_budgets_from_zero)
     static const MadeUpFieldUnit_t unit[] = {
         {"FLD0", 8u}
     };
-    static const uint8_t reads[] = {0x70u, 'F',   'L',   'D',   '0',   0x60u, 0x70u, 0x00u, 0x61u,
-                                    0xA2u, 0x06u, 0x95u, 0x61u, 0x01u, 0x75u, 0x61u, 0xA4u, 0x60u};
 
     initialization_begin();
     made_up_aml_region(&initialization_aml, "MEM0", INITIALIZATION_SYSTEM_MEMORY, 0x1000u, 4u);
     made_up_aml_field(&initialization_aml, "MEM0", 0x01u, unit, 1u);
-    initialization_method(&initialization_aml, "READ", 0x00u, reads, sizeof(reads));
+    initialization_method(&initialization_aml, "READ", 0x00u, initialization_reads_field_aml,
+                          sizeof(initialization_reads_field_aml));
     if (!initialization_run(test, false))
         return;
     initialization_load.evaluation.field_accesses =
@@ -956,8 +1038,6 @@ KERNEL_TEST(the_platform_is_asked_for_nothing_with_a_query_then_a_commit)
 KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
 {
     static MadeUpAml_t system_bus;
-    static const uint8_t returns_one[] = {0xA4u, 0x01u};
-    static const uint8_t returns_short_buffer[] = {0xA4u, 0x11u, 0x03u, 0x0Au, 0x04u};
 
     initialization_begin();
     initialization_capabilities_names(&initialization_aml, 'P');
@@ -989,7 +1069,7 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
 
     initialization_begin();
     made_up_aml_begin(&system_bus);
-    initialization_method(&system_bus, "_OSC", 0x04u, returns_one, sizeof(returns_one));
+    initialization_method(&system_bus, "_OSC", 0x04u, common_return_one_aml, sizeof(common_return_one_aml));
     made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
     if (!initialization_run(test, true))
         return;
@@ -1002,7 +1082,8 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
 
     initialization_begin();
     made_up_aml_begin(&system_bus);
-    initialization_method(&system_bus, "_OSC", 0x04u, returns_short_buffer, sizeof(returns_short_buffer));
+    initialization_method(&system_bus, "_OSC", 0x04u, initialization_return_short_buffer_aml,
+                          sizeof(initialization_return_short_buffer_aml));
     made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
     if (!initialization_run(test, true))
         return;
@@ -1028,13 +1109,13 @@ KERNEL_TEST(the_platform_answers_absent_refused_or_failed_are_told_apart)
  *        Intel's UUID, a commit, or its _PDC with a buffer of revision 1 and one DWORD when it has no _OSC,
  *        inside a Device that has neither too; one bound to no slot, and Devices that are no processor, a
  *        PCI bridge and an ambient light sensor with the same _UID, get nothing (§3.8 step 7, §3.10).
+ *
+ * Its driver_capabilities array is the _PDC buffer the test expects, not AML.
  */
 KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
 {
     static const uint32_t identifiers[] = {1u, 2u};
     static const uint8_t driver_capabilities[] = {1u, 0u, 0u, 0u, 1u, 0u, 0u, 0u, 0x18u, 0u, 0u, 0u};
-    static const uint8_t unique_identifier[] = {0x08u, '_', 'U', 'I', 'D', 0x0Au, 0x02u};
-    static const uint8_t bridge_identifier[] = {0x08u, '_', 'H', 'I', 'D', 0x0Cu, 0x41u, 0xD0u, 0x0Au, 0x08u};
     uint8_t uuid[16];
 
     initialization_begin();
@@ -1051,7 +1132,8 @@ KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
     made_up_aml_processor(&initialization_aml, "CPU0", 1u, 0x410u, 6u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
     initialization_hardware_identifier(&initialization_inner, "ACPI0007");
-    made_up_aml_raw(&initialization_inner, unique_identifier, sizeof(unique_identifier));
+    made_up_aml_raw(&initialization_inner, initialization_unique_identifier_aml,
+                    sizeof(initialization_unique_identifier_aml));
     initialization_driver_capabilities_recorder(&initialization_inner, 'B', 4u);
     made_up_aml_begin(&initialization_outer);
     made_up_aml_device(&initialization_outer, "CPU1", &initialization_inner);
@@ -1060,12 +1142,14 @@ KERNEL_TEST(every_bound_processor_is_given_its_c_states_through_osc_or_pdc)
     initialization_capabilities_recorder(&initialization_inner, 'N', 5u, 0u);
     made_up_aml_processor(&initialization_aml, "CPU9", 9u, 0x410u, 6u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
-    made_up_aml_raw(&initialization_inner, bridge_identifier, sizeof(bridge_identifier));
+    made_up_aml_raw(&initialization_inner, initialization_bridge_identifier_aml,
+                    sizeof(initialization_bridge_identifier_aml));
     initialization_capabilities_recorder(&initialization_inner, 'C', 6u, 0u);
     made_up_aml_device(&initialization_aml, "PCI0", &initialization_inner);
     made_up_aml_begin(&initialization_inner);
     initialization_hardware_identifier(&initialization_inner, "ACPI0008");
-    made_up_aml_raw(&initialization_inner, unique_identifier, sizeof(unique_identifier));
+    made_up_aml_raw(&initialization_inner, initialization_unique_identifier_aml,
+                    sizeof(initialization_unique_identifier_aml));
     initialization_capabilities_recorder(&initialization_inner, 'S', 7u, 0u);
     made_up_aml_device(&initialization_aml, "ALSD", &initialization_inner);
     if (!initialization_run(test, true))
@@ -1166,17 +1250,18 @@ KERNEL_TEST(the_handshake_releases_every_buffer_it_builds)
 {
     static MadeUpAml_t system_bus;
     static const uint32_t identifiers[] = {1u, 2u, 3u};
-    static const uint8_t gives_back[] = {0xA4u, 0x6Bu};
     static const MadeUpAml_t nothing = {0};
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap = &initialization_load.heap;
 
     initialization_begin();
     initialization_slots(identifiers, 3u);
     made_up_aml_begin(&system_bus);
-    initialization_method(&system_bus, "_OSC", 0x04u, gives_back, sizeof(gives_back));
+    initialization_method(&system_bus, "_OSC", 0x04u, initialization_return_arg3_aml,
+                          sizeof(initialization_return_arg3_aml));
     made_up_aml_scope(&initialization_aml, "_SB_", &system_bus);
     made_up_aml_begin(&initialization_inner);
-    initialization_method(&initialization_inner, "_OSC", 0x04u, gives_back, sizeof(gives_back));
+    initialization_method(&initialization_inner, "_OSC", 0x04u, initialization_return_arg3_aml,
+                          sizeof(initialization_return_arg3_aml));
     made_up_aml_processor(&initialization_aml, "CPU0", 1u, 0x410u, 6u, &initialization_inner);
     made_up_aml_begin(&initialization_inner);
     made_up_aml_method(&initialization_inner, "_PDC", 0x01u, &nothing);
@@ -1199,5 +1284,76 @@ KERNEL_TEST(the_handshake_releases_every_buffer_it_builds)
                       "the platform granted, three processors handed the capabilities, one failed");
     kernel_test_check(test, heap->objects - heap->objects_freed == alive,
                       "as many objects alive after the handshake as before it");
+    initialization_close(test);
+}
+
+/**
+ * @brief AMD's _PIC, which rewrites the links of the PCI interrupt router when its argument is 1, is not called by an
+ *        initialisation that keeps the 8259: no port of the router is written, and the deferral is counted (§3.8 step
+ *        5). Called with 0 it writes no link; called with 1, as a switch to the APIC would, it writes 0x1F to each of
+ *        the four links through the index and data ports.
+ */
+KERNEL_TEST(an_amd_interrupt_model_rewrites_its_links_only_when_given_one)
+{
+    initialization_begin();
+    made_up_aml_raw(&initialization_aml, initialization_amd_interrupt_model_aml,
+                    sizeof(initialization_amd_interrupt_model_aml));
+    if (!initialization_run(test, true))
+        return;
+    kernel_test_check(test,
+                      initialization_integer("PICM") == 0u && initialization_counts.pic_mode_deferred == 1u &&
+                          initialization_port_writes(0u, INITIALIZATION_ROUTER_INDEX, 0x100u) == 0u &&
+                          initialization_port_writes(0u, INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
+                      "the initialisation leaves _PIC uncalled, counts its deferral, and writes no link");
+
+    const uint32_t before_classic = initialization_host.access_count;
+
+    kernel_test_check(test,
+                      initialization_interrupt_model(0u) == INITIALIZATION_STATUS(OK) &&
+                          initialization_integer("PICM") == 0u &&
+                          initialization_port_writes(before_classic, INITIALIZATION_ROUTER_DATA, 0x100u) == 0u,
+                      "_PIC (0) keeps the 8259's model and writes no link");
+
+    const uint32_t before_apic = initialization_host.access_count;
+
+    kernel_test_check(
+        test, initialization_interrupt_model(1u) == INITIALIZATION_STATUS(OK) && initialization_integer("PICM") == 1u,
+        "_PIC (1) runs and keeps the APIC's model in PICM");
+    kernel_test_check(test,
+                      initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 0u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 1u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 2u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_INDEX, 3u) == 1u &&
+                          initialization_port_writes(before_apic, INITIALIZATION_ROUTER_DATA, 0x1Fu) == 4u &&
+                          initialization_host.access_count <=
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES,
+                      "it selects links 0 to 3 and writes 0x1F to each");
+    initialization_close(test);
+}
+
+/**
+ * @brief Intel's GCAP, which CPU0's _PDC calls, Loads its HWP table from the place an NVS region names only when the
+ *        platform _OSC granted bit 6: a platform that grants what it is asked, which is never bit 6, leaves the table
+ *        unloaded; one that grants bit 6 unasked has it loaded at step 7 and declared (§3.8).
+ */
+KERNEL_TEST(an_intel_capabilities_method_loads_its_hwp_table_only_when_the_platform_grants_bit_6)
+{
+    if (!initialization_run_hardware_p_states(test, 0u))
+        return;
+    kernel_test_check(test,
+                      initialization_counts.processor_capabilities == 1u &&
+                          initialization_counts.processor_capabilities_legacy == 1u,
+                      "CPU0's _PDC is called");
+    kernel_test_check(test,
+                      (initialization_integer("OSCP") & 0x40u) == 0u && initialization_integer("HWPT") == 0xDEADu &&
+                          initialization_load.tables_loaded == 0u,
+                      "bit 6 not granted: the HWP table is not loaded");
+    initialization_close(test);
+    if (!initialization_run_hardware_p_states(test, 0x40u))
+        return;
+    kernel_test_check(test,
+                      (initialization_integer("OSCP") & 0x40u) != 0u && initialization_integer("HWPT") == 1u &&
+                          initialization_load.tables_loaded == 1u,
+                      "bit 6 granted: GCAP loads the HWP table, which declares HWPT");
     initialization_close(test);
 }
