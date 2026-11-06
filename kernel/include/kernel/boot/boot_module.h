@@ -33,6 +33,8 @@
 #ifndef BOOT_MODULE_H_
 #define BOOT_MODULE_H_
 
+#include <kernel/boot/multiboot_info.h>
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -79,6 +81,18 @@ uint32_t boot_module_count(void);
  * @return How many characters of @p text the copy dropped: 0 when it holds all of them.
  */
 uint32_t boot_command_line_copy(char *copy, uint32_t capacity, const char *text, uint32_t longest);
+
+/**
+ * @brief Where the bootloader left the command line of @p info, in the kernel's map.
+ *
+ * @details boot_command_line_capture() and the boot report both read the line there. GRUB leaves it
+ *          below the first MiB; QEMU's `-kernel` leaves it past the kernel, above it.
+ *
+ * @param info The multiboot information block, or NULL.
+ * @return The bootloader's text, or NULL when @p info is NULL, holds no command line, or holds one at
+ *         or past KERNEL_BOOT_MAPPED_END, which the boot map does not reach.
+ */
+const char *boot_command_line_source(const MultibootInfo_t *info);
 
 /**
  * @brief Copies the kernel's command line out of the memory the bootloader left it in.
