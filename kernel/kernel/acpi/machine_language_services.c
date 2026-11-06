@@ -324,8 +324,8 @@ void advanced_configuration_and_power_interface_machine_language_declare_mutex(M
     mutex->value.auxiliary = sync_flags & MACHINE_LANGUAGE_SYNC_LEVEL;
 }
 
-void advanced_configuration_and_power_interface_machine_language_drop_temporary_mutex(MachineLanguageLoad_t *load,
-                                                                                      uint32_t node)
+void advanced_configuration_and_power_interface_machine_language_release_temporary_mutex(MachineLanguageLoad_t *load,
+                                                                                         uint32_t node)
 {
     MachineLanguageServices_t *services = &load->services;
     const uint32_t position = machine_language_held_position(services, node);

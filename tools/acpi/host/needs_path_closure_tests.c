@@ -267,14 +267,14 @@ KERNEL_TEST(region_attach_methods_and_a_processor_uid_are_entries)
  * @brief The closure says which opcodes it reached the needs path does not execute where it reached them (§4.1):
  *        `Event (EVT0)` at table level, which the load declares, is executed, but not the Revision of
  *        `Store (Revision, VAL0)`, which nothing builds; in `_INI`, `Store (Nor (1, 1), Local0)` runs Store and reads
- *        One and Local0, but not Nor, and the Mutex _INI declares runs as its temporary (§5.1).
+ *        One and Local0, but not Nor, nor the Method MTH0 _INI declares, which a method never runs.
  */
 KERNEL_TEST(the_closure_compares_what_it_reaches_with_the_run_list)
 {
     static const uint8_t aml[] = {
         0x5Bu, 0x02u, 'E', 'V', 'T', '0', 0x08u, 'V',   'A',   'L',   '0',   0x00u, 0x70u,
         0x5Bu, 0x30u, 'V', 'A', 'L', '0', 0x14u, 0x13u, '_',   'I',   'N',   'I',   0x00u,
-        0x5Bu, 0x01u, 'M', 'U', 'T', '0', 0x00u, 0x70u, 0x7Eu, 0x01u, 0x01u, 0x00u, 0x60u,
+        0x14u, 0x06u, 'M', 'T', 'H', '0', 0x00u, 0x70u, 0x7Eu, 0x01u, 0x01u, 0x00u, 0x60u,
     };
 
     if (!closure_walk(test, aml, sizeof(aml)))
@@ -283,10 +283,10 @@ KERNEL_TEST(the_closure_compares_what_it_reaches_with_the_run_list)
                       needs_path_closure_reaches_opcode(
                           &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_EVENT) &&
                           needs_path_closure_reaches_opcode(
-                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_MUTEX) &&
+                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_METHOD) &&
                           needs_path_closure_reaches_opcode(
                               &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOR),
-                      "the walk reaches the Event, the Mutex and the Nor");
+                      "the walk reaches the Event, the Method and the Nor");
     kernel_test_check(
         test,
         needs_path_closure_executes(&closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_EVENT),
@@ -299,14 +299,12 @@ KERNEL_TEST(the_closure_compares_what_it_reaches_with_the_run_list)
                           needs_path_closure_executes(
                               &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_LOCAL0),
                       "_INI's Store, One and Local0 are executed");
-    kernel_test_check(
-        test,
-        !needs_path_closure_executes(&closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOR),
-        "_INI's Nor is not");
-    kernel_test_check(
-        test,
-        needs_path_closure_executes(&closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_MUTEX),
-        "the Mutex _INI declares is executed, as its temporary");
+    kernel_test_check(test,
+                      !needs_path_closure_executes(
+                          &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_NOR) &&
+                          !needs_path_closure_executes(
+                              &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_METHOD),
+                      "_INI's Nor and Method are not");
     kernel_test_check(test,
                       needs_path_closure_reaches_opcode(
                           &closure, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_REVISION) &&

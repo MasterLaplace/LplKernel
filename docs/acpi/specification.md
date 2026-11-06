@@ -637,8 +637,9 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
 2. **Execute what the needs path reaches.** The host harness computes the static closure of the needs path (§1.3)
    on every corpus machine. Being static, it covers every branch, so it is a superset of what runs. Every opcode the
    closure reaches on any machine is executed, and so is every opcode a row of §4.5, §5.2 or §6.3 gives a behaviour of
-   its own: `Unload`, `Fatal`, `BreakPoint`, `Wait`, `Reset`, `FindSetLeftBit` and `FindSetRightBit`; every other
-   fails with `unimplemented_operator`, counted, until a count asks for it. A later need adds the closure of its own
+   its own: `Unload`, `Fatal`, `BreakPoint`, `Wait`, `Reset`, `FindSetLeftBit` and `FindSetRightBit`, and in a method
+   `Mutex` and `Event`, which declare temporaries (§5.1); every other fails with `unimplemented_operator`, counted,
+   until a count asks for it. A later need adds the closure of its own
    entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure
    reaches with the run list where it reaches it: in a method body, what the interpreter runs; in table-level code,
    that and the declarations the load takes, but `DataTableRegion`, whose statement fails (§4.5). An opcode the run

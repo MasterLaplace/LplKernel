@@ -763,7 +763,7 @@ extern void advanced_configuration_and_power_interface_machine_language_declare_
  * @param load The load.
  * @param node The temporary node.
  */
-extern void advanced_configuration_and_power_interface_machine_language_drop_temporary_mutex(
+extern void advanced_configuration_and_power_interface_machine_language_release_temporary_mutex(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
 
 /**

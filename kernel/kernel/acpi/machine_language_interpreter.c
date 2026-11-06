@@ -1531,7 +1531,7 @@ static void machine_language_drop_frame(MachineLanguageLoad_t *load)
         const uint32_t temporary = load->temporaries[--load->temporary_count];
 
         if (load->services.held_count != 0u)
-            advanced_configuration_and_power_interface_machine_language_drop_temporary_mutex(load, temporary);
+            advanced_configuration_and_power_interface_machine_language_release_temporary_mutex(load, temporary);
         machine_language_release(
             load, &advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, temporary)
                        ->value);
