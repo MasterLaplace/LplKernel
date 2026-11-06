@@ -1,12 +1,17 @@
 #include <kernel/boot/boot_module.h>
+#include <kernel/cpu/paging.h>
 #include <kernel/testing/test.h>
 
 KERNEL_TEST_SUITE(boot_command_line, KERNEL_TEST_STAGE_BOOTED);
 
 #define BOOT_COMMAND_LINE_TEST_LONGEST 1024u /**< The longest line a test builds, sized apart from the capacity. */
 
+#define BOOT_COMMAND_LINE_TEST_FLAG     (1u << 2)   /**< The multiboot flag of a command line. */
+#define BOOT_COMMAND_LINE_TEST_MEBIBYTE 0x00100000u /**< The end of the first MiB. */
+
 static char boot_command_line_test_line[BOOT_COMMAND_LINE_TEST_LONGEST + 1u];
 static char boot_command_line_test_copy[BOOT_COMMAND_LINE_CAPACITY];
+static const char boot_command_line_test_source[] = "lpl.test=x"; /**< A line the kernel image holds, past 1 MiB. */
 
 /**
  * @brief Whether @p copy holds exactly the first @p length characters of @p text, then its NUL.
@@ -94,4 +99,26 @@ KERNEL_TEST(the_kernel_keeps_a_line_of_1023_characters)
                       boot_command_line_copy(boot_command_line_test_copy, BOOT_COMMAND_LINE_CAPACITY, line,
                                              BOOT_COMMAND_LINE_LONGEST) == 1u,
                       "the 1,024th character is dropped");
+}
+
+/**
+ * @brief The bootloader's command line is found wherever the boot map reaches it, past the first MiB
+ *        too, where QEMU's `-kernel` leaves it; a block without a line, or with one past the map, has none.
+ */
+KERNEL_TEST(the_line_is_found_wherever_the_boot_map_reaches_it)
+{
+    const uint32_t physical = (uint32_t) (uintptr_t) boot_command_line_test_source - KERNEL_VIRTUAL_BASE;
+    MultibootInfo_t info = {0};
+
+    info.flags = BOOT_COMMAND_LINE_TEST_FLAG;
+    info.cmdline = physical;
+    kernel_test_check(test, physical >= BOOT_COMMAND_LINE_TEST_MEBIBYTE,
+                      "the made-up line lies past the first MiB, as QEMU's does");
+    kernel_test_check(test, boot_command_line_source(&info) == boot_command_line_test_source,
+                      "a line past the first MiB is found where it lies");
+    info.cmdline = KERNEL_BOOT_MAPPED_END;
+    kernel_test_check(test, boot_command_line_source(&info) == NULL, "a line past the boot map is not reached");
+    info.cmdline = physical;
+    info.flags = 0u;
+    kernel_test_check(test, boot_command_line_source(&info) == NULL, "a block whose flags hold no line has none");
 }
