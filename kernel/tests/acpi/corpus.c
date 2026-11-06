@@ -362,8 +362,8 @@ static uint32_t corpus_terms_decoded(void)
 
 /**
  * @brief Prints the work record of §8.7 over what the load, and the initialisation when it ran, did: the operations
- *        executed and the maps the cache asked the host for, the counters that tell a run that did nothing apart, then
- *        the fold.
+ *        executed, the bytes decoded and the maps the cache asked the host for, the counters that tell a run that did
+ *        nothing apart, then the fold.
  */
 static void corpus_measure_work(KernelTest_t *test)
 {
@@ -373,6 +373,7 @@ static void corpus_measure_work(KernelTest_t *test)
          ++opcode)
         executed += corpus_load.evaluation.executed[opcode];
     kernel_test_measure(test, "operations_executed", executed);
+    kernel_test_measure(test, "bytes_decoded", corpus_load.bytes_decoded);
     kernel_test_measure(test, "map_calls", corpus_load.regions.map_calls);
     kernel_test_measure_hexadecimal(
         test, "work_fold", advanced_configuration_and_power_interface_machine_language_work_fold(&corpus_load));

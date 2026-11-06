@@ -11,7 +11,15 @@
 KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_records, KERNEL_TEST_STAGE_INITIALIZATION);
 
 #define RECORDS_TABLE_CAPACITY 256u /**< Bytes of the buffer the made-up DSDT is written in. */
-#define RECORDS_WORK_COUNTERS  5u   /**< The counters the work record folds after the operations executed. */
+#define RECORDS_DECLARED_BYTES                                                                                         \
+    36u /**< What the declaration pass decodes of the table of decoded bytes: INT_'s 7 bytes, BUF_'s 11 but the 2 of   \
+             its initialiser, DEV_'s 13, its head before the interpreter runs its body and its Name after, and LOOP's  \
+             head of 7 bytes but its body of 13. */
+#define RECORDS_TABLE_BYTES                                                                                            \
+    51u /**< The AML bytes of the table of decoded bytes, all of which the decoding pass decodes. */
+#define RECORDS_RECORDED_BYTES                                                                                         \
+    8u /**< What LOOP's records are decoded from: its While's head and predicate, 6 bytes, then its Increment, 2. */
+#define RECORDS_WORK_COUNTERS 5u /**< The counters the work record folds after the operations executed. */
 #define RECORDS_WORK_BYTES                                                                                             \
     (4u * (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT +                                  \
            RECORDS_WORK_COUNTERS)) /**< Bytes the work record folds. */
@@ -59,6 +67,45 @@ static void records_close(void)
 {
     advanced_configuration_and_power_interface_machine_language_close(&records_load);
     advanced_configuration_and_power_interface_simulated_host_close(&records_host);
+}
+
+/**
+ * @brief Loads the table of decoded bytes as a revision-2 DSDT, decoding no method body when @p skips_bodies holds as
+ *        a release kernel loads, and gives the bytes the load decoded then; @p out_recorded receives those LOOP adds
+ *        once it has run, which must give 3.
+ */
+static uint32_t records_decoded_by(KernelTest_t *test, bool skips_bodies, uint32_t *out_recorded)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t result;
+    uint32_t decoded = 0u;
+
+    *out_recorded = 0u;
+    advanced_configuration_and_power_interface_simulated_host_open(&records_host);
+    if (!kernel_test_check(test,
+                           advanced_configuration_and_power_interface_machine_language_open(
+                               &records_load, &records_host.host, MADE_UP_MAX_NODES, MADE_UP_MAX_ARENA_BYTES),
+                           "the namespace opens"))
+    {
+        records_close();
+        return 0u;
+    }
+    records_load.skips_bodies = skips_bodies;
+    advanced_configuration_and_power_interface_machine_language_declare_table(
+        &records_load, made_up_definition_block(records_table, "DSDT", 2u, records_decoded_bytes_aml,
+                                                sizeof(records_decoded_bytes_aml)));
+    advanced_configuration_and_power_interface_machine_language_decode_tables(&records_load);
+    decoded = records_load.bytes_decoded;
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_evaluate(&records_load, "\\LOOP",
+                                                                                           NULL, 0u, &result) ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          result.payload == 3u,
+                      "LOOP runs its While three times and returns 3");
+    advanced_configuration_and_power_interface_machine_language_value_release(&records_load.heap, &records_load.space,
+                                                                              &result);
+    *out_recorded = records_load.bytes_decoded - decoded;
+    records_close();
+    return decoded;
 }
 
 /**
@@ -118,7 +165,7 @@ KERNEL_TEST(the_evaluations_fold_covers_each_status_type_and_value)
 /**
  * @brief The work record of a load whose counters are set here equals FNV-1a over the bytes §8.7 lists, written out
  *        by hand: each opcode's operations executed in descriptor order, then the lookups, the probes, the objects
- *        allocated, the AML bytes and the map calls, four little-endian bytes each.
+ *        allocated, the bytes decoded, not the size of the tables, and the map calls, four little-endian bytes each.
  */
 KERNEL_TEST(the_work_fold_covers_every_counter)
 {
@@ -130,7 +177,8 @@ KERNEL_TEST(the_work_fold_covers_every_counter)
     records_load.space.lookups = 0x11u;
     records_load.space.probes = 0x22u;
     records_load.heap.objects = 0x33u;
-    records_load.bytes = 0x44u;
+    records_load.bytes = 0x66u;
+    records_load.bytes_decoded = 0x44u;
     records_load.regions.map_calls = 0x55u;
     records_work_length = 0u;
     for (uint32_t opcode = 0u; opcode <= last; ++opcode)
@@ -157,4 +205,28 @@ KERNEL_TEST(one_more_evaluation_changes_the_work_fold)
     kernel_test_check(test, once == records_work_after(test, 1u), "the same evaluations fold the same");
     kernel_test_check(test, once != records_work_after(test, 2u), "one more evaluation folds differently");
     kernel_test_measure_hexadecimal(test, "work_fold", once);
+}
+
+/**
+ * @brief The bytes decoded are those the walks decode and the loop records are decoded from, counted by hand from the
+ *        table's bytes: the declaration pass steps over a method body and the initialiser of data it keeps in its
+ *        table, the decoding pass decodes every byte, and a While that loops adds the statements its records hold,
+ *        unless the boot line asks for no record (lpl.acpi.predecoding=off).
+ */
+KERNEL_TEST(the_bytes_decoded_leave_out_what_the_walks_step_over)
+{
+    uint32_t release_recorded = 0u;
+    uint32_t debug_recorded = 0u;
+    const uint32_t release = records_decoded_by(test, true, &release_recorded);
+    const uint32_t debug = records_decoded_by(test, false, &debug_recorded);
+    const uint32_t recorded = records_load.predecodes_loops ? RECORDS_RECORDED_BYTES : 0u;
+
+    kernel_test_check(test, release == RECORDS_DECLARED_BYTES,
+                      "a load that decodes no body decodes the declarations, not LOOP's body nor BUF_'s initialiser");
+    kernel_test_check(test, debug == RECORDS_DECLARED_BYTES + RECORDS_TABLE_BYTES,
+                      "the decoding pass decodes the whole table once more");
+    kernel_test_check(test, release_recorded == recorded && debug_recorded == recorded,
+                      "LOOP's records add the bytes of its While's head and predicate and of its Increment");
+    kernel_test_measure(test, "bytes_decoded_release", release);
+    kernel_test_measure(test, "bytes_decoded_debug", debug);
 }

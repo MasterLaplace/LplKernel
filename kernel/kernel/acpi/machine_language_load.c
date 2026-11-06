@@ -207,6 +207,25 @@ static void machine_language_count_opcode(MachineLanguageWalk_t *walk, uint32_t 
 }
 
 /**
+ * @brief Counts as decoded, in a build that counts what runs (§4.1), the bytes a walk went over from @p from to its pc.
+ */
+static void machine_language_count_decoded(MachineLanguageWalk_t *walk, uint32_t from)
+{
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED)
+        walk->load->bytes_decoded += walk->pc - from;
+}
+
+/**
+ * @brief Takes back from the bytes decoded, in a build that counts what runs (§4.1), those from @p from to @p to, which
+ *        the walk steps over without decoding them.
+ */
+static void machine_language_count_stepped_over(MachineLanguageWalk_t *walk, uint32_t from, uint32_t to)
+{
+    if (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_COUNTS_EXECUTED && to > from)
+        walk->load->bytes_decoded -= to - from;
+}
+
+/**
  * @brief Counts a fault of the declaration pass or of the Externals pass.
  */
 static void machine_language_count_load_error(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
@@ -357,6 +376,7 @@ static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguag
             {
                 if ((flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) == 0u)
                     machine_language_forget_marks(walk);
+                machine_language_count_stepped_over(walk, walk->pc, pending->end);
                 walk->pc = pending->end;
                 walk->pending_count = index - 1u;
                 return;
@@ -365,6 +385,7 @@ static void machine_language_recover(MachineLanguageWalk_t *walk, MachineLanguag
         machine_language_forget_marks(walk);
         if (walk->block_count > 1u)
         {
+            machine_language_count_stepped_over(walk, walk->pc, block->end);
             walk->pc = block->end;
             walk->pending_count = block->pending_base;
             machine_language_close_block(walk);
@@ -1570,6 +1591,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
     {
         machine_language_forget_marks(walk);
         --walk->pending_count;
+        machine_language_count_stepped_over(walk, walk->pc, active.end);
         walk->pc = active.end;
         return MACHINE_LANGUAGE_OK;
     }
@@ -1579,6 +1601,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
         if (walk->pass != MACHINE_LANGUAGE_PASS_DECODE)
         {
             --walk->pending_count;
+            machine_language_count_stepped_over(walk, walk->pc, active.end);
             walk->pc = active.end;
             return MACHINE_LANGUAGE_OK;
         }
@@ -1612,6 +1635,7 @@ machine_language_open_list(MachineLanguageWalk_t *walk,
         walk->declaration->body = walk->pc;
         walk->declaration->scope = scope;
         --walk->pending_count;
+        machine_language_count_stepped_over(walk, walk->pc, active.end);
         walk->pc = active.end;
         return MACHINE_LANGUAGE_OK;
     }
@@ -2007,6 +2031,7 @@ static bool machine_language_keeps_data(MachineLanguageWalk_t *walk, uint32_t in
     node->value.payload = offset;
     ++load->data_kept;
     ++load->tables[walk->table].data_kept;
+    machine_language_count_stepped_over(walk, first, after);
     walk->pc = after;
     return true;
 }
@@ -2248,6 +2273,7 @@ static MachineLanguageStatus_t machine_language_method_statement(MachineLanguage
     }
     walk->pc = name_start + 5u;
     machine_language_record_method(walk, &state);
+    machine_language_count_stepped_over(walk, walk->pc, end);
     walk->pc = end;
     ++walk->load->declarations_decoded_directly;
     return MACHINE_LANGUAGE_OK;
@@ -2557,24 +2583,31 @@ static bool machine_language_statements_end(MachineLanguageWalk_t *walk, uint32_
 
 /**
  * @brief Takes the steps of a walk, past every fault, recorded, until its first construct ends; with
- *        @p statements, until it has taken the statements from @p start the interpreter hands the load.
+ *        @p statements, until it has taken the statements from @p start the interpreter hands the load. The bytes it
+ *        went over count as decoded, but for those its steps take back as stepped over.
  *
  * @return OK, or ASKS when a statement waits for a term the interpreter runs.
  */
 static MachineLanguageStatus_t machine_language_walk(MachineLanguageWalk_t *walk, uint32_t start, bool statements)
 {
+    const uint32_t from = walk->pc;
+
     while (walk->block_count != 0u && !(statements && machine_language_statements_end(walk, start)))
     {
         const MachineLanguageStatus_t status = machine_language_step(walk);
 
         if (status == MACHINE_LANGUAGE_ASKS)
+        {
+            machine_language_count_decoded(walk, from);
             return status;
+        }
         if (status != MACHINE_LANGUAGE_OK)
         {
             machine_language_record_fault(walk, status);
             machine_language_recover(walk, status);
         }
     }
+    machine_language_count_decoded(walk, from);
     return MACHINE_LANGUAGE_OK;
 }
 
@@ -4006,7 +4039,7 @@ uint32_t advanced_configuration_and_power_interface_machine_language_work_fold(
     fold = machine_language_fold_unsigned(fold, load->space.lookups, 4u);
     fold = machine_language_fold_unsigned(fold, load->space.probes, 4u);
     fold = machine_language_fold_unsigned(fold, load->heap.objects, 4u);
-    fold = machine_language_fold_unsigned(fold, load->bytes, 4u);
+    fold = machine_language_fold_unsigned(fold, load->bytes_decoded, 4u);
     return machine_language_fold_unsigned(fold, load->regions.map_calls, 4u);
 }
 

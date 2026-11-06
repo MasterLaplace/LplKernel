@@ -296,6 +296,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
                                                                                        accesses counted. */
     AdvancedConfigurationAndPowerInterfaceMachineLanguageServices_t services;     /**< What the operating system
                                                                                        services hold and counted. */
+    uint32_t bytes_decoded; /**< AML bytes the walks of every pass decoded, those they stepped over left out (a method
+                                 body the declaration pass records, data kept in its table past its head, a construct
+                                 left to the interpreter, a duplicate's list, what a fault skips), and the bytes of the
+                                 statements loop records were decoded from, in a build that counts what runs (§4.1). */
     AdvancedConfigurationAndPowerInterfaceMachineLanguagePredecoding_t
         predecoding; /**< The records of the loops that loop: last, past what opening the load zeroes. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t;
@@ -1133,11 +1137,10 @@ extern uint32_t advanced_configuration_and_power_interface_machine_language_eval
 /**
  * @brief Folds the work record of the specification (§8.7): FNV-1a, 32 bits, over the operations executed per
  *        opcode, four little-endian bytes each in descriptor order, then four bytes each of the lookups, the probes,
- *        the objects allocated, the AML bytes of the load's tables and the maps its cache asked the host for.
+ *        the objects allocated, the bytes decoded and the maps its cache asked the host for.
  *
- * @details The operations executed are counted only in a build that counts them (§4.1): elsewhere they fold as zeros.
- *          The bytes decoded the specification names are those of the tables the load decoded, which bytes counts;
- *          what the decoding pass made of method bodies is folded per opcode apart (opcodes).
+ * @details The operations executed and the bytes decoded are counted only in a build that counts what runs (§4.1):
+ *          elsewhere they fold as zeros.
  * @param load A load.
  * @return The fold.
  */
