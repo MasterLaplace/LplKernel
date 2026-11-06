@@ -90,6 +90,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageServices {
                                                    the one acquired last, ignored. */
     uint32_t released_at_end;                 /**< Mutexes still held when their evaluation ended. */
     uint32_t signals;                         /**< Signals of an Event. */
+    uint32_t fatals;                          /**< Fatals run, execution going on past each (§5.2). */
+    uint32_t break_points;                    /**< BreakPoints run, each a no-op (§5.2). */
     uint32_t notifications;                   /**< Notifies raised, those the full ring dropped included. */
     uint32_t notifications_dropped;           /**< Notifies the full ring could not take. */
     uint32_t notifications_taken;             /**< Notifies taken from the ring: by a consumer, or by the boot,

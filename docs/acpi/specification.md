@@ -630,11 +630,13 @@ step 7 only when step 7's walk still reaches that processor.
    `invalid_opcode`.
 2. **Execute what the needs path reaches.** The host harness computes the static closure of the needs path (§1.3)
    on every corpus machine. Being static, it covers every branch, so it is a superset of what runs. Every opcode the
-   closure reaches on any machine is executed; every other fails with `unimplemented_operator`, counted, until a
-   count asks for it. A later need adds the closure of its own entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and
-   `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure reaches with the run list where it reaches it:
-   in a method body, what the interpreter runs; in table-level code, that and the declarations the load takes. An
-   opcode the run list leaves out there fails it.
+   closure reaches on any machine is executed, and so is every opcode a row of §4.5, §5.2 or §6.3 gives a behaviour of
+   its own: `Unload`, `Fatal`, `BreakPoint`, `Wait`, `Reset`, `FindSetLeftBit` and `FindSetRightBit`; every other
+   fails with `unimplemented_operator`, counted, until a count asks for it. A later need adds the closure of its own
+   entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure
+   reaches with the run list where it reaches it: in a method body, what the interpreter runs; in table-level code,
+   that and the declarations the load takes, but `DataTableRegion`, whose statement fails (§4.5). An opcode the run
+   list leaves out there fails it.
 3. **Three region spaces have a handler:** SystemMemory, SystemIO and PCI_Config. Every other space decodes and
    fails loudly at access (§4.5).
 4. **The needs path is run too.** The host harness and the ring-0 corpus test run §3.8 and `_CST` on every corpus
@@ -675,8 +677,8 @@ step 7 only when step 7's walk still reaches that processor.
 
 ### 4.3 The opcodes
 
-An opcode marked "executed" runs when the needs-path closure reaches it (§4.1), and fails with
-`unimplemented_operator` otherwise.
+An opcode marked "executed" runs when the needs-path closure reaches it or a row of the specification gives it a
+behaviour of its own (§4.1), and fails with `unimplemented_operator` otherwise.
 
 **Data objects and constants**: built at load and in methods.
 

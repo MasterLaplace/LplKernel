@@ -173,6 +173,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad {
     uint32_t tables_loaded;       /**< Of those, the ones Load and LoadTable added. */
     uint32_t load_duplicates;     /**< Load and LoadTable calls refused, False returned, for a table the load holds. */
     uint32_t load_tables_missing; /**< LoadTable calls that found no table, False returned. */
+    uint32_t unload_refused;      /**< Unloads refused, their operand evaluated and nothing else done (§4.5). */
     uint32_t table_bytes_copied;  /**< Bytes Load copied. */
     uint32_t declaring;           /**< Passes and table frames that declare: not 0 while a table is declared. */
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory; /**< The directory LoadTable searches, and
@@ -746,6 +747,30 @@ advanced_configuration_and_power_interface_machine_language_signal(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
 
 /**
+ * @brief Runs Reset (§5.2): the Event's pending signals are cleared.
+ *
+ * @param load The load.
+ * @param node The object named.
+ * @return OK; TYPE_MISMATCH when the object is no Event.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_reset(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node);
+
+/**
+ * @brief Runs Wait (§5.2): takes one of the Event's pending signals, or, with none, reports a timeout at once,
+ *        whatever the timeout, since nothing else can signal while the only AML owner waits.
+ *
+ * @param load          The load.
+ * @param node          The object named.
+ * @param out_timed_out Receives whether no signal was pending; untouched on a refusal.
+ * @return OK; TYPE_MISMATCH when the object is no Event.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_wait(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t node, bool *out_timed_out);
+
+/**
  * @brief Enters a method whose MethodFlags are @p flags: a Serialized one raises the sync level to
  *        its SyncLevel, and is refused below the current level (§5.2).
  *
@@ -1052,6 +1077,20 @@ extern bool advanced_configuration_and_power_interface_machine_language_describe
  */
 extern uint32_t advanced_configuration_and_power_interface_machine_language_namespace_fold(
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load);
+
+/**
+ * @brief Logs a Fatal that code ran (§5.2) as an error under its counter, fatals, with the fields §4.5 gives a fault:
+ *        its table, its offset, its opcode, and its method or, in table-level code, its scope.
+ *
+ * @param load   The load, whose host's log the line goes to.
+ * @param table  The table the Fatal lies in, counted from 1.
+ * @param offset Where its opcode lies in that table.
+ * @param method The method that ran it, or 0 in table-level code.
+ * @param scope  The scope table-level code runs it in, named when @p method is 0.
+ */
+extern void advanced_configuration_and_power_interface_machine_language_log_fatal(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t table, uint32_t offset,
+    uint32_t method, uint32_t scope);
 
 /**
  * @brief Gives a load's pages back to its host.
