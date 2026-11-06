@@ -197,13 +197,15 @@ static void corpus_measure_executed(KernelTest_t *test)
 
 /**
  * @brief Prints what the load of the directory read built and counted, as the records both sides
- *        compare: the caps it ran under, its tables, its namespace and its fold, what its second pass
- *        decoded and its fold, its faults, and what waits for the interpreter.
+ *        compare: the target it ran for, its physical address width and its caps (§8.7), its tables, its
+ *        namespace and its fold, what its second pass decoded and its fold, its faults, and what waits for
+ *        the interpreter.
  */
 static void corpus_measure_load(KernelTest_t *test)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &corpus_load.space;
 
+    kernel_test_measure(test, "physical_address_bits", space->host->target(space->host->context).physical_address_bits);
     kernel_test_measure(test, "max_nodes", space->max_nodes);
     kernel_test_measure(test, "max_arena_bytes", space->max_arena_bytes);
     kernel_test_measure(test, "tables", corpus_directory.table_count);
@@ -361,19 +363,20 @@ static uint32_t corpus_terms_decoded(void)
 }
 
 /**
- * @brief Loads the definition blocks of the directory read, with the server profile's caps as the
- *        host harness does, decoding no method body when @p skips_bodies holds, as a release kernel
+ * @brief Loads the definition blocks of the directory read, with the caps of the target of the host it
+ *        was read through (§8.7), decoding no method body when @p skips_bodies holds, as a release kernel
  *        loads (O2), prints the records of the load, initialises its namespace when @p initialize
  *        holds, then closes it and releases the directory.
  */
 static void corpus_load_directory(KernelTest_t *test, bool initialize, bool skips_bodies)
 {
+    const AdvancedConfigurationAndPowerInterfaceTarget_t target =
+        corpus_directory.host->target(corpus_directory.host->context);
+
     if (kernel_test_check(test,
                           advanced_configuration_and_power_interface_machine_language_open(
-                              &corpus_load, corpus_directory.host,
-                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
-                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES),
-                          "the namespace opens with the server profile's caps"))
+                              &corpus_load, corpus_directory.host, target.max_nodes, target.max_arena_bytes),
+                          "the namespace opens with the caps of the host's target"))
     {
         corpus_load.skips_bodies = skips_bodies;
         advanced_configuration_and_power_interface_machine_language_load_directory(&corpus_load, &corpus_directory);

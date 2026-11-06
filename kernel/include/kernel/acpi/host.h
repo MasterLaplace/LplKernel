@@ -60,9 +60,20 @@ typedef enum AdvancedConfigurationAndPowerInterfaceMemoryType {
 } AdvancedConfigurationAndPowerInterfaceMemoryType_t;
 
 /**
+ * @brief What the ACPI layer runs for (§3.3): the physical addresses it reaches and the caps of §6.1 that depend on
+ *        the profile. An evaluation is a pure function of these and of what the firmware gives (§2).
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceTarget {
+    uint8_t physical_address_bits; /**< The width of a physical address, 32 to 64: 32 on i686, 52 in long mode. */
+    uint32_t max_nodes;            /**< Namespace nodes a load opens with (§6.1). */
+    uint32_t max_arena_bytes;      /**< Bytes of namespace arena a load opens with (§6.1). */
+} AdvancedConfigurationAndPowerInterfaceTarget_t;
+
+/**
  * @brief What the ACPI layer asks of the machine it runs on.
  *
- * @details Each call is given back the context first. map_firmware maps the length bytes the
+ * @details Each call is given back the context first. target gives what the layer runs for: in ring 0 the build's
+ *          values, in a simulated host those its command line gives. map_firmware maps the length bytes the
  *          firmware wrote at a physical address, cached and read-only, and returns their address,
  *          or NULL when the range cannot be mapped; unmap_firmware takes back what it returned,
  *          given the same length. map_firmware_writable maps memory cached and writable, map_device
@@ -129,7 +140,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceHost {
     bool (*commit_pages)(void *context, void *address, uint32_t count); /**< Makes pages of a reservation usable. */
     void (*release_reservation)(void *context, void *address, uint32_t reserved,
                                 uint32_t committed); /**< Gives a reservation back, its committed pages with it. */
-    void (*log)(void *context, uint8_t level, const char *text); /**< Writes a line of the layer's log. */
+    void (*log)(void *context, uint8_t level, const char *text);             /**< Writes a line of the layer's log. */
+    AdvancedConfigurationAndPowerInterfaceTarget_t (*target)(void *context); /**< What the layer runs for. */
 } AdvancedConfigurationAndPowerInterfaceHost_t;
 
 /**

@@ -15,15 +15,14 @@
 #define MACHINE_LANGUAGE_SYSTEM_IO     0x01u /**< The RegionSpace byte of SystemIO. */
 #define MACHINE_LANGUAGE_PCI_CONFIG                                                                                    \
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION
-#define MACHINE_LANGUAGE_UPDATE_ONES      1u            /**< UpdateRule WriteAsOnes. */
-#define MACHINE_LANGUAGE_UPDATE_ZEROS     2u            /**< UpdateRule WriteAsZeros. */
-#define MACHINE_LANGUAGE_ACCESS_LAST      5u            /**< AccessType BufferAcc, the last one not reserved. */
-#define MACHINE_LANGUAGE_REACHABLE_LAST   0xFFFFFFFFull /**< The last physical byte i686 reaches (§5.3). */
-#define MACHINE_LANGUAGE_LOCK_PENDING     0x1u          /**< GlobalLock bit Pending: the other side wants the lock. */
-#define MACHINE_LANGUAGE_LOCK_OWNED       0x2u          /**< GlobalLock bit Owned. */
-#define MACHINE_LANGUAGE_LOCK_RELEASE     0x4u          /**< GBL_RLS, bit 2 of a PM1 control register. */
-#define MACHINE_LANGUAGE_FACS_LOCK_OFFSET 16u           /**< Where the GlobalLock word lies in the FACS. */
-#define MACHINE_LANGUAGE_FACS_MINIMUM     24u           /**< The shortest FACS that holds a GlobalLock word. */
+#define MACHINE_LANGUAGE_UPDATE_ONES      1u   /**< UpdateRule WriteAsOnes. */
+#define MACHINE_LANGUAGE_UPDATE_ZEROS     2u   /**< UpdateRule WriteAsZeros. */
+#define MACHINE_LANGUAGE_ACCESS_LAST      5u   /**< AccessType BufferAcc, the last one not reserved. */
+#define MACHINE_LANGUAGE_LOCK_PENDING     0x1u /**< GlobalLock bit Pending: the other side wants the lock. */
+#define MACHINE_LANGUAGE_LOCK_OWNED       0x2u /**< GlobalLock bit Owned. */
+#define MACHINE_LANGUAGE_LOCK_RELEASE     0x4u /**< GBL_RLS, bit 2 of a PM1 control register. */
+#define MACHINE_LANGUAGE_FACS_LOCK_OFFSET 16u  /**< Where the GlobalLock word lies in the FACS. */
+#define MACHINE_LANGUAGE_FACS_MINIMUM     24u  /**< The shortest FACS that holds a GlobalLock word. */
 #define MACHINE_LANGUAGE_FACS_ALIGNMENT                                                                                \
     64u /**< The alignment ACPI gives a FACS, which keeps its lock word in one page. */
 #define MACHINE_LANGUAGE_CONTROL_WRITE_ONLY 0x2004u /**< SLP_EN and GBL_RLS: the write-only bits of PM1 control. */
@@ -378,7 +377,9 @@ static MachineLanguageStatus_t machine_language_aligned_memory(MachineLanguageLo
 /**
  * @brief One access of 1, 2 or 4 bytes to memory: one aligned access, or, at an address its width
  *        does not divide, one access per byte, counted, so that no access crosses a page or reads
- *        unaligned.
+ *        unaligned. One whose last byte lies past what the target reaches fails, never truncated: one
+ *        comparison with that last address less the width, which a target of 32 bits or more keeps from
+ *        wrapping.
  */
 static MachineLanguageStatus_t machine_language_memory(MachineLanguageLoad_t *load, uint64_t physical_address,
                                                        uint8_t width, bool write, uint32_t *value)
@@ -386,8 +387,7 @@ static MachineLanguageStatus_t machine_language_memory(MachineLanguageLoad_t *lo
     MachineLanguageStatus_t status = MACHINE_LANGUAGE_OK;
     uint32_t assembled = 0u;
 
-    if (physical_address > MACHINE_LANGUAGE_REACHABLE_LAST ||
-        width - 1u > MACHINE_LANGUAGE_REACHABLE_LAST - physical_address)
+    if (physical_address > load->regions.last_reachable_address - (width - 1u))
         return MACHINE_LANGUAGE_STATUS(ADDRESS_UNREACHABLE);
     if (physical_address % width == 0u)
         return machine_language_aligned_memory(load, physical_address, width, write, value);
@@ -1043,7 +1043,7 @@ advanced_configuration_and_power_interface_machine_language_field_unit_build(Mac
 }
 
 void advanced_configuration_and_power_interface_machine_language_use_global_lock(MachineLanguageLoad_t *load,
-                                                                                 uint32_t firmware_control,
+                                                                                 uint64_t firmware_control,
                                                                                  const uint16_t *control_ports)
 {
     MachineLanguageRegions_t *regions = &load->regions;
@@ -1066,7 +1066,7 @@ void advanced_configuration_and_power_interface_machine_language_use_global_lock
     usable = memcmp(facs, "FACS", 4u) == 0 && length >= MACHINE_LANGUAGE_FACS_MINIMUM;
     host->unmap_firmware(host->context, facs, MACHINE_LANGUAGE_FACS_MINIMUM);
 
-    const uint64_t address = (uint64_t) firmware_control + MACHINE_LANGUAGE_FACS_LOCK_OFFSET;
+    const uint64_t address = firmware_control + MACHINE_LANGUAGE_FACS_LOCK_OFFSET;
     const uint64_t page = address & ~(uint64_t) (MACHINE_LANGUAGE_PAGE_BYTES - 1u);
     uint8_t *mapped = usable ? machine_language_map_page(load, page, &regions->global_lock_mapping_kind) : NULL;
 

@@ -424,39 +424,126 @@ KERNEL_TEST(an_access_must_fit_its_region_rounded_to_its_width)
 }
 
 /**
- * @brief A region that reaches past 4 GiB fails with address_unreachable on i686, never truncated,
- *        and so does one whose offset wraps.
+ * @brief Loads, for a target of @p bits physical address bits, regions at 4 GiB and past it, at the last byte 52 bits
+ *        reach and the first they do not, and one whose offset wraps, each read into a Name that holds 0xEE before:
+ *        a byte placed at 0x100010000, a double word across 4 GiB, a byte placed at 2^52 - 1, a byte at 2^52.
+ *
+ * @return Whether the AML loaded; the load stays open for the caller to read and close.
  */
-KERNEL_TEST(a_region_past_4_gib_is_unreachable)
+static bool regions_load_past_4_gib(KernelTest_t *test, uint8_t bits)
 {
+    static const uint8_t above_byte[] = {0x5Au};
+    static const uint8_t last_byte[] = {0xA5u};
     static const MadeUpFieldUnit_t above[] = {
         {"HI__", 8u}
     };
     static const MadeUpFieldUnit_t across[] = {
         {"AC__", 32u}
     };
+    static const MadeUpFieldUnit_t last[] = {
+        {"LA__", 8u}
+    };
+    static const MadeUpFieldUnit_t past[] = {
+        {"PA__", 8u}
+    };
     static const MadeUpFieldUnit_t wrap[] = {
         {NULL,   32u},
         {"WR__", 8u }
     };
+    static const char *const names[][2] = {
+        {"HI__", "RHI_"},
+        {"AC__", "RAC_"},
+        {"LA__", "RLA_"},
+        {"PA__", "RPA_"},
+        {"WR__", "RWR_"}
+    };
 
     regions_begin();
+    regions_host.target.physical_address_bits = bits;
+    (void) advanced_configuration_and_power_interface_simulated_host_place(&regions_host, 0x100010000ull, above_byte,
+                                                                           sizeof(above_byte));
+    (void) advanced_configuration_and_power_interface_simulated_host_place(&regions_host, 0xFFFFFFFFFFFFFull, last_byte,
+                                                                           sizeof(last_byte));
     made_up_aml_region(&regions_aml, "HIGR", 0x00u, 0x100010000ull, 4u);
     made_up_aml_field(&regions_aml, "HIGR", REGIONS_BYTE_ACCESS, above, 1u);
     made_up_aml_region(&regions_aml, "ACRR", 0x00u, 0xFFFFFFFEull, 4u);
     made_up_aml_field(&regions_aml, "ACRR", REGIONS_DWORD_ACCESS, across, 1u);
+    made_up_aml_region(&regions_aml, "LASR", 0x00u, 0xFFFFFFFFFFFFFull, 1u);
+    made_up_aml_field(&regions_aml, "LASR", REGIONS_BYTE_ACCESS, last, 1u);
+    made_up_aml_region(&regions_aml, "PASR", 0x00u, 0x10000000000000ull, 1u);
+    made_up_aml_field(&regions_aml, "PASR", REGIONS_BYTE_ACCESS, past, 1u);
     made_up_aml_region(&regions_aml, "WRPR", 0x00u, 0xFFFFFFFFFFFFFFFCull, 8u);
     made_up_aml_field(&regions_aml, "WRPR", REGIONS_BYTE_ACCESS, wrap, 2u);
-    made_up_aml_name_integer(&regions_aml, "RH__", 0xEEu);
-    made_up_aml_store_name(&regions_aml, "HI__", "RH__");
-    made_up_aml_store_name(&regions_aml, "AC__", "RH__");
-    made_up_aml_store_name(&regions_aml, "WR__", "RH__");
-    if (!regions_run(test, 2u))
+    for (uint32_t index = 0u; index < sizeof(names) / sizeof(names[0]); ++index)
+    {
+        made_up_aml_name_integer(&regions_aml, names[index][1], 0xEEu);
+        made_up_aml_store_name(&regions_aml, names[index][0], names[index][1]);
+    }
+    return regions_run(test, 2u);
+}
+
+/**
+ * @brief The target decides what a region reaches (§3.3): at 32 bits, as on i686, a region past 4 GiB fails with
+ *        address_unreachable, never truncated, and maps nothing; at 52 bits, as in long mode, the same regions read
+ *        what lies there, up to the last byte 52 bits reach; at both, the first byte past them and an offset that
+ *        wraps fail.
+ */
+KERNEL_TEST(a_region_past_4_gib_is_reached_only_by_a_wider_target)
+{
+    if (!regions_load_past_4_gib(test, 32u))
         return;
     kernel_test_check(test,
-                      regions_integer("RH__") == 0xEEu && regions_failed(REGIONS_STATUS(ADDRESS_UNREACHABLE)) == 3u &&
-                          regions_host.access_count == 0u && regions_host.outstanding_maps == 0u,
-                      "the three reads fail with address_unreachable, and map nothing");
+                      regions_integer("RHI_") == 0xEEu && regions_integer("RAC_") == 0xEEu &&
+                          regions_integer("RLA_") == 0xEEu && regions_integer("RPA_") == 0xEEu &&
+                          regions_integer("RWR_") == 0xEEu,
+                      "at 32 bits, no region past 4 GiB is read");
+    kernel_test_check(test,
+                      regions_failed(REGIONS_STATUS(ADDRESS_UNREACHABLE)) == 5u && regions_host.access_count == 0u &&
+                          regions_host.outstanding_maps == 0u,
+                      "the five reads fail with address_unreachable, and map nothing");
+    regions_close(test);
+
+    if (!regions_load_past_4_gib(test, 52u))
+        return;
+    kernel_test_check(
+        test, regions_integer("RHI_") == 0x5Au && regions_integer("RAC_") == 0u && regions_integer("RLA_") == 0xA5u,
+        "at 52 bits, the byte past 4 GiB, the double word across it and the last byte 52 bits reach "
+        "read what lies there");
+    kernel_test_check(test,
+                      regions_integer("RPA_") == 0xEEu && regions_integer("RWR_") == 0xEEu &&
+                          regions_failed(REGIONS_STATUS(ADDRESS_UNREACHABLE)) == 2u,
+                      "the byte at 2^52 and the offset that wraps still fail with address_unreachable");
+    regions_close(test);
+}
+
+/**
+ * @brief A simulated host opens for the target its boot line gives (§3.3): 52 bits once the line holds
+ *        lpl.acpi.physical_address_bits=52, as `test-acpi --physical-address-bits 52` makes it, 32 otherwise; it then
+ *        reads the byte placed past 4 GiB at 52 only. The width is printed, so that two runs compare it.
+ */
+KERNEL_TEST(a_simulated_host_reaches_as_far_as_its_boot_line_says)
+{
+    static const uint8_t above_byte[] = {0x5Au};
+    static const MadeUpFieldUnit_t above[] = {
+        {"HI__", 8u}
+    };
+    const bool long_mode = advanced_configuration_and_power_interface_boot_line_holds(
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_LONG_MODE_OPTION);
+
+    regions_begin();
+    (void) advanced_configuration_and_power_interface_simulated_host_place(&regions_host, 0x100010000ull, above_byte,
+                                                                           sizeof(above_byte));
+    made_up_aml_region(&regions_aml, "HIGR", 0x00u, 0x100010000ull, 1u);
+    made_up_aml_field(&regions_aml, "HIGR", REGIONS_BYTE_ACCESS, above, 1u);
+    made_up_aml_name_integer(&regions_aml, "RHI_", 0xEEu);
+    made_up_aml_store_name(&regions_aml, "HI__", "RHI_");
+    if (!regions_run(test, 2u))
+        return;
+    kernel_test_check(test, regions_host.target.physical_address_bits == (long_mode ? 52u : 32u),
+                      "the host opens at the width its boot line gives");
+    kernel_test_check(test, regions_integer("RHI_") == (long_mode ? 0x5Au : 0xEEu),
+                      "and reads the byte past 4 GiB only at 52 bits");
+    kernel_test_measure(test, "physical_address_bits", regions_host.target.physical_address_bits);
     regions_close(test);
 }
 

@@ -2,6 +2,7 @@
 
 #include <kernel/acpi/host.h>
 #include <kernel/acpi/log.h>
+#include <kernel/acpi/machine_language_namespace.h>
 #include <kernel/boot/boot_module.h>
 #include <kernel/config.h>
 #include <kernel/drivers/serial.h>
@@ -13,6 +14,7 @@
 #include <sys/mman.h>
 
 #define PLATFORM_MAX_RESERVATIONS 64u /**< Reservations the build machine's stand-in for the VMM holds at once. */
+#define PLATFORM_MAX_BOOT_WORDS   2u  /**< Words of the boot line the harness holds: its options give two at most. */
 
 /**
  * @brief A run of address space kernel_vmm_reserve_pages gave on the build machine: mapped with no access, until
@@ -59,7 +61,8 @@ static const AdvancedConfigurationAndPowerInterfaceHost_t *platform_firmware;
 static const char *platform_module_name;
 static const uint8_t *platform_module_bytes;
 static uint32_t platform_module_length;
-static const char *platform_boot_word;
+static const char *platform_boot_words[PLATFORM_MAX_BOOT_WORDS];
+static uint32_t platform_boot_word_count;
 
 static uint64_t platform_root_system_description_pointer(void *context)
 {
@@ -235,6 +238,20 @@ static void platform_log(void *context, uint8_t level, const char *text)
            advanced_configuration_and_power_interface_log_level_name(level), text);
 }
 
+static AdvancedConfigurationAndPowerInterfaceTarget_t platform_target(void *context)
+{
+    static const AdvancedConfigurationAndPowerInterfaceTarget_t without_firmware = {
+        .physical_address_bits = 32u,
+        .max_nodes = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_NODES,
+        .max_arena_bytes = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_SERVER_MAX_ARENA_BYTES,
+    };
+
+    (void) context;
+    if (platform_firmware == NULL)
+        return without_firmware;
+    return platform_firmware->target(platform_firmware->context);
+}
+
 const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_power_interface_machine_host = {
     .context = NULL,
     .root_system_description_pointer = platform_root_system_description_pointer,
@@ -261,6 +278,7 @@ const AdvancedConfigurationAndPowerInterfaceHost_t advanced_configuration_and_po
     .commit_pages = platform_commit_pages,
     .release_reservation = platform_release_reservation,
     .log = platform_log,
+    .target = platform_target,
 };
 
 void *kernel_vmm_alloc_pages(uint32_t page_count)
@@ -345,7 +363,10 @@ uint32_t boot_command_line_dropped(void) { return 0u; }
 
 bool boot_command_line_holds(const char *word)
 {
-    return platform_boot_word != NULL && strcmp(platform_boot_word, word) == 0;
+    for (uint32_t index = 0u; index < platform_boot_word_count; ++index)
+        if (strcmp(platform_boot_words[index], word) == 0)
+            return true;
+    return false;
 }
 
 bool advanced_configuration_and_power_interface_boot_line_holds(const char *word)
@@ -353,7 +374,13 @@ bool advanced_configuration_and_power_interface_boot_line_holds(const char *word
     return boot_command_line_holds(word);
 }
 
-void platform_hold_boot_word(const char *word) { platform_boot_word = word; }
+void platform_hold_boot_word(const char *word)
+{
+    if (word == NULL)
+        platform_boot_word_count = 0u;
+    else if (platform_boot_word_count < PLATFORM_MAX_BOOT_WORDS)
+        platform_boot_words[platform_boot_word_count++] = word;
+}
 bool boot_module_find(const char *suffix, const uint8_t **out_bytes, uint32_t *out_size)
 {
     const size_t suffix_length = strlen(suffix);

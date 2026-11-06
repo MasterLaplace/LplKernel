@@ -51,8 +51,9 @@ extern void platform_serve_boot_module(const char *name, const uint8_t *bytes, u
 extern void platform_serve_firmware(const AdvancedConfigurationAndPowerInterfaceHost_t *firmware);
 
 /**
- * @brief Makes @p word the one word of the boot command line the harness was given, which
- *        boot_command_line_holds answers for, as a kernel booted with it would.
+ * @brief Adds @p word to the boot command line the harness was given, which boot_command_line_holds
+ *        answers for, as a kernel booted with it would; a line holds two words at most, one per option
+ *        that gives one.
  *
  * @param word A whole word, as in `lpl.acpi.predecoding=off`, kept by the caller; NULL gives an empty
  *             line again.

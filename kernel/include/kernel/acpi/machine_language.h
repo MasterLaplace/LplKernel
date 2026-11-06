@@ -600,7 +600,7 @@ advanced_configuration_and_power_interface_machine_language_field_unit_build(
  * @param control_ports    The PM1a and PM1b control ports GBL_RLS is written to, each 0 when absent.
  */
 extern void advanced_configuration_and_power_interface_machine_language_use_global_lock(
-    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t firmware_control,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint64_t firmware_control,
     const uint16_t *control_ports);
 
 /**
@@ -1042,7 +1042,8 @@ extern void advanced_configuration_and_power_interface_machine_language_finish_l
  * @param physical_address The first byte.
  * @param length           Bytes to read.
  * @param destination      Receives them.
- * @return OK; ADDRESS_UNREACHABLE for a byte past 4 GiB or a page the host does not map.
+ * @return OK; ADDRESS_UNREACHABLE for a byte past what the host's target reaches, 4 GiB on i686, or a page the host
+ *         does not map.
  */
 extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
 advanced_configuration_and_power_interface_machine_language_memory_read(

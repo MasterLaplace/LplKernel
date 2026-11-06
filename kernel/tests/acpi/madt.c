@@ -383,6 +383,34 @@ KERNEL_TEST(an_entry_shorter_than_its_type_is_counted_apart)
 }
 
 /**
+ * @brief A Local APIC Address Override replaces the header's 32-bit address, whole, one above 4 GiB included: the
+ *        reader maps nothing, so an address no 32-bit field holds is kept, never truncated, and the table and its
+ *        processors are not lost for it.
+ */
+KERNEL_TEST(a_local_apic_address_override_above_4_gib_is_kept_whole)
+{
+    static const uint64_t overrides[] = {0xFED00000ull, 0x123456789000ull};
+
+    for (uint32_t index = 0u; index < sizeof(overrides) / sizeof(overrides[0]); ++index)
+    {
+        MadeUpMadt_t madt = made_up_madt_begin();
+        const uint32_t offset = made_up_madt_entry(&madt, 0x5u, 12u);
+
+        made_up_madt_put(&madt, offset + 4u, (uint32_t) overrides[index], 4u);
+        made_up_madt_put(&madt, offset + 8u, (uint32_t) (overrides[index] >> 32u), 4u);
+        made_up_madt_local_apic(&madt, 7u, 3u, MADE_UP_MADT_ENABLED);
+
+        const bool read =
+            advanced_configuration_and_power_interface_read_madt(made_up_madt_seal(&madt), &made_up_madt_state);
+
+        kernel_test_check(test, read && made_up_madt_state.available && made_up_madt_state.processor_count == 1u,
+                          "the table is read to its end, its processor in its slot");
+        kernel_test_check(test, made_up_madt_state.local_apic_physical_base == overrides[index],
+                          "the local APICs' base is the override's, whole");
+    }
+}
+
+/**
  * @brief NMI connections past the capacity are counted, not written past it.
  */
 KERNEL_TEST(non_maskable_interrupts_past_the_capacity_are_counted)

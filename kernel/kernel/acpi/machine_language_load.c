@@ -3589,6 +3589,7 @@ bool advanced_configuration_and_power_interface_machine_language_open(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t max_nodes, uint32_t max_arena_bytes)
 {
     memset(load, 0, offsetof(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t, predecoding));
+    load->regions.last_reachable_address = advanced_configuration_and_power_interface_last_reachable_address(host);
     advanced_configuration_and_power_interface_machine_language_predecoding_open(&load->predecoding);
     load->predecodes_loops = !advanced_configuration_and_power_interface_boot_line_holds("lpl.acpi.predecoding=off");
     load->status = (uint8_t) advanced_configuration_and_power_interface_machine_language_namespace_open(

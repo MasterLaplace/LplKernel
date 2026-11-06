@@ -208,7 +208,7 @@ static uint8_t acpi_signature_matches(const char *lhs, const char *rhs, size_t l
  *         longer than ACPI_TABLE_MAXIMUM_LENGTH.
  */
 static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
-acpi_map_table(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t physical_address)
+acpi_map_table(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint64_t physical_address)
 {
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *header =
         host->map_firmware(host->context, physical_address, sizeof(*header));
@@ -264,7 +264,7 @@ static void acpi_count_bad_checksum(AdvancedConfigurationAndPowerInterfaceDirect
  *
  * @details A table past the directory's capacity, or that cannot be mapped, is counted unreachable.
  */
-static void acpi_record_table(AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, uint32_t physical_address)
+static void acpi_record_table(AdvancedConfigurationAndPowerInterfaceDirectory_t *directory, uint64_t physical_address)
 {
     if (directory->table_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_TABLE_COUNT)
     {
@@ -299,7 +299,7 @@ static void acpi_record_table(AdvancedConfigurationAndPowerInterfaceDirectory_t 
  * @return Its header, or NULL.
  */
 static const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *
-acpi_map_root(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t physical_address,
+acpi_map_root(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint64_t physical_address,
               const char *signature)
 {
     if (physical_address == 0u)
@@ -320,12 +320,12 @@ acpi_map_root(const AdvancedConfigurationAndPowerInterfaceHost_t *host, uint32_t
 /**
  * @brief Records every table the entries of @p root name, each @p entry_bytes wide.
  *
- * @details An entry above 4 GiB is counted unreachable rather than truncated, which would name
- *          another table.
+ * @details An entry past @p last, the last physical address the target reaches, is counted unreachable
+ *          rather than truncated, which would name another table.
  */
 static void acpi_record_root_entries(AdvancedConfigurationAndPowerInterfaceDirectory_t *directory,
                                      const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *root,
-                                     uint32_t entry_bytes)
+                                     uint32_t entry_bytes, uint64_t last)
 {
     const uint8_t *entries = (const uint8_t *) root + sizeof(AdvancedConfigurationAndPowerInterfaceSdtHeader_t);
     const uint32_t entry_count =
@@ -336,10 +336,10 @@ static void acpi_record_root_entries(AdvancedConfigurationAndPowerInterfaceDirec
         uint64_t physical_address = 0u;
 
         memcpy(&physical_address, entries + index * entry_bytes, entry_bytes);
-        if ((physical_address >> 32u) != 0u)
+        if (physical_address > last)
             ++directory->unreachable_count;
         else
-            acpi_record_table(directory, (uint32_t) physical_address);
+            acpi_record_table(directory, physical_address);
     }
 }
 
@@ -361,19 +361,19 @@ static void acpi_fadt_read_addresses(const AdvancedConfigurationAndPowerInterfac
 /**
  * @brief The DSDT a FADT names.
  *
- * @details X_DSDT wins when it is not 0, as in ACPICA's AcpiTbSelectAddress, unless it lies above
- *          4 GiB, which this kernel cannot map.
+ * @details X_DSDT wins when it is not 0, as in ACPICA's AcpiTbSelectAddress, unless it lies past
+ *          @p last, the last physical address the target reaches.
  *
- * @return Its address, or 0 when neither field gives one below 4 GiB.
+ * @return Its address, or 0 when neither field gives one within reach.
  */
-static uint32_t acpi_fadt_dsdt_address(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt)
+static uint64_t acpi_fadt_dsdt_address(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt, uint64_t last)
 {
     uint32_t address_32;
     uint64_t address_64;
 
     acpi_fadt_read_addresses(fadt, ACPI_FADT_DSDT_OFFSET, ACPI_FADT_EXTENDED_DSDT_OFFSET, &address_32, &address_64);
-    if (address_64 != 0u && (address_64 >> 32u) == 0u)
-        return (uint32_t) address_64;
+    if (address_64 != 0u && address_64 <= last)
+        return address_64;
     return address_32;
 }
 
@@ -382,11 +382,11 @@ static uint32_t acpi_fadt_dsdt_address(const AdvancedConfigurationAndPowerInterf
  *
  * @details FIRMWARE_CTRL wins when it is not 0, as ACPICA and uACPI choose by default because some
  *          machines fail to resume when the 64-bit address is taken; X_FIRMWARE_CTRL otherwise,
- *          unless it lies above 4 GiB.
+ *          unless it lies past @p last, the last physical address the target reaches.
  *
- * @return Its address, or 0 when neither field gives one below 4 GiB.
+ * @return Its address, or 0 when neither field gives one within reach.
  */
-static uint32_t acpi_fadt_facs_address(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt)
+static uint64_t acpi_fadt_facs_address(const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt, uint64_t last)
 {
     uint32_t address_32;
     uint64_t address_64;
@@ -395,8 +395,8 @@ static uint32_t acpi_fadt_facs_address(const AdvancedConfigurationAndPowerInterf
                              &address_32, &address_64);
     if (address_32 != 0u)
         return address_32;
-    if ((address_64 >> 32u) == 0u)
-        return (uint32_t) address_64;
+    if (address_64 <= last)
+        return address_64;
     return 0u;
 }
 
@@ -1445,6 +1445,14 @@ const char *advanced_configuration_and_power_interface_power_management_timer_st
     return acpi_timer_state_names[state];
 }
 
+uint64_t advanced_configuration_and_power_interface_last_reachable_address(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host)
+{
+    const uint8_t bits = host->target(host->context).physical_address_bits;
+
+    return (bits >= 64u) ? ~0ull : (1ull << bits) - 1u;
+}
+
 bool advanced_configuration_and_power_interface_read_directory(
     const AdvancedConfigurationAndPowerInterfaceHost_t *host,
     AdvancedConfigurationAndPowerInterfaceDirectory_t *out_directory)
@@ -1454,11 +1462,12 @@ bool advanced_configuration_and_power_interface_read_directory(
     memset(out_directory, 0, sizeof(*out_directory));
     out_directory->host = host;
 
+    const uint64_t last = advanced_configuration_and_power_interface_last_reachable_address(host);
     const uint64_t rsdp_physical_address = host->root_system_description_pointer(host->context);
 
     if (rsdp_physical_address == 0u)
         return false;
-    if ((rsdp_physical_address >> 32u) != 0u)
+    if (rsdp_physical_address > last)
     {
         ++out_directory->unreachable_count;
         return false;
@@ -1489,12 +1498,12 @@ bool advanced_configuration_and_power_interface_read_directory(
 
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *root = NULL;
 
-    if (xsdt_physical_address != 0u && (xsdt_physical_address >> 32u) == 0u)
-        root = acpi_map_root(host, (uint32_t) xsdt_physical_address, ACPI_XSDT_SIGNATURE);
+    if (xsdt_physical_address != 0u && xsdt_physical_address <= last)
+        root = acpi_map_root(host, xsdt_physical_address, ACPI_XSDT_SIGNATURE);
     if (root != NULL)
     {
         out_directory->extended_root = true;
-        out_directory->root_physical_address = (uint32_t) xsdt_physical_address;
+        out_directory->root_physical_address = xsdt_physical_address;
     }
     else
     {
@@ -1504,7 +1513,8 @@ bool advanced_configuration_and_power_interface_read_directory(
         out_directory->root_physical_address = rsdt_physical_address;
     }
 
-    acpi_record_root_entries(out_directory, root, out_directory->extended_root ? sizeof(uint64_t) : sizeof(uint32_t));
+    acpi_record_root_entries(out_directory, root, out_directory->extended_root ? sizeof(uint64_t) : sizeof(uint32_t),
+                             last);
     acpi_unmap_table(host, root);
 
     const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *fadt =
@@ -1512,11 +1522,11 @@ bool advanced_configuration_and_power_interface_read_directory(
 
     if (fadt != NULL)
     {
-        const uint32_t dsdt = acpi_fadt_dsdt_address(fadt);
+        const uint64_t dsdt = acpi_fadt_dsdt_address(fadt, last);
 
         if (dsdt != 0u)
             acpi_record_table(out_directory, dsdt);
-        out_directory->firmware_control_physical_address = acpi_fadt_facs_address(fadt);
+        out_directory->firmware_control_physical_address = acpi_fadt_facs_address(fadt, last);
         (void) advanced_configuration_and_power_interface_read_fixed_description(fadt,
                                                                                  &out_directory->fixed_description);
     }
@@ -1635,18 +1645,9 @@ bool advanced_configuration_and_power_interface_read_madt(
         else if (length < shortest)
             ++out_state->too_short_count;
         else if (type == ACPI_MADT_LOCAL_APIC_ADDRESS)
-        {
-            const uint64_t address =
+            out_state->local_apic_physical_base =
                 ((const AdvancedConfigurationAndPowerInterfaceMadtLocalApicAddressOverrideEntry_t *) entry)
                     ->local_apic_address;
-
-            if ((address >> 32u) != 0u)
-            {
-                out_state->state_name = "acpi-madt-lapic-addr-64bit-unsupported";
-                return false;
-            }
-            out_state->local_apic_physical_base = (uint32_t) address;
-        }
         else if (!acpi_madt_read_processor_entry(out_state, entry, local_apic_processors) &&
                  !acpi_madt_read_interrupt_entry(out_state, entry))
             ++out_state->skipped_count;
@@ -1674,7 +1675,7 @@ const char *advanced_configuration_and_power_interface_madt_get_state_name(void)
 
 uint8_t advanced_configuration_and_power_interface_madt_is_available(void) { return acpi_madt.available ? 1u : 0u; }
 
-uint32_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void)
+uint64_t advanced_configuration_and_power_interface_madt_get_local_apic_physical_base(void)
 {
     return acpi_madt.local_apic_physical_base;
 }
