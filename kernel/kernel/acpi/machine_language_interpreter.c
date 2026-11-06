@@ -5420,7 +5420,8 @@ static bool machine_language_exhausted(MachineLanguageStatus_t status)
     case MACHINE_LANGUAGE_STATUS(LIMIT_HELD_MUTEXES):
     case MACHINE_LANGUAGE_STATUS(LIMIT_TABLES):
     case MACHINE_LANGUAGE_STATUS(LIMIT_TABLE_BYTES):
-    case MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING): return true;
+    case MACHINE_LANGUAGE_STATUS(LIMIT_INTERNAL_NESTING):
+    case MACHINE_LANGUAGE_STATUS(NAME_RESOLUTION_LOOP): return true;
     default: return false;
     }
 }

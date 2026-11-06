@@ -94,6 +94,16 @@ static const uint8_t pci_loads_table_and_returns_aml[] = {
 };
 
 /**
+ * @brief The body of an attach method whose package element names a Name that refers back to that element, so that
+ *        reading it resolves names past the cap of 8 (§6.1).
+ */
+static const uint8_t pci_name_resolution_loop_aml[] = {
+    0x08u, 0x41u, 0x4Cu, 0x53u, 0x4Cu, 0x0Au, 0x00u, 0x08u, 0x50u, 0x4Bu, 0x47u, 0x4Cu, 0x12u, 0x06u,
+    0x01u, 0x41u, 0x4Cu, 0x53u, 0x4Cu, 0x9Du, 0x88u, 0x50u, 0x4Bu, 0x47u, 0x4Cu, 0x0Au, 0x00u, 0x00u,
+    0x41u, 0x4Cu, 0x53u, 0x4Cu, 0xA4u, 0x83u, 0x88u, 0x50u, 0x4Bu, 0x47u, 0x4Cu, 0x0Au, 0x00u, 0x00u,
+};
+
+/**
  * @brief Devices of \PCI0 whose _ADR reads a unit of the next one's PCI_Config region first: DEVA reads DEVB's, which
  *        reads DEVC's; DEVD reads DEVE's, which table-level code reads into RES_; RDEV's _REG reads DEVB's, and its
  *        MKRG creates the PCI_Config region DYNR in RDEV.
