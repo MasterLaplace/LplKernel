@@ -659,14 +659,8 @@ static uint32_t initialization_double_word(const uint8_t *bytes)
 static InitializationStatus_t initialization_buffer(InitializationLoad_t *load, const uint8_t *bytes, uint32_t length,
                                                     InitializationValue_t *out_value)
 {
-    const InitializationStatus_t status = advanced_configuration_and_power_interface_machine_language_value_allocate(
-        &load->heap, &load->space, INITIALIZATION_VALUE(BUFFER), length, out_value);
-
-    if (status == INITIALIZATION_OK)
-        memcpy(
-            advanced_configuration_and_power_interface_machine_language_object_payload(&load->heap, out_value->handle),
-            bytes, length);
-    return status;
+    return advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+        &load->heap, &load->space, INITIALIZATION_VALUE(BUFFER), length, bytes, length, out_value);
 }
 
 /**

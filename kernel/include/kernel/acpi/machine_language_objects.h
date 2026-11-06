@@ -242,6 +242,25 @@ advanced_configuration_and_power_interface_machine_language_object_allocate(
     uint32_t *out_handle);
 
 /**
+ * @brief Allocates an object as advanced_configuration_and_power_interface_machine_language_object_allocate does, its
+ *        payload the @p count bytes at @p bytes, then zeros: the bytes it copies are not zeroed first.
+ *
+ * @param heap       The heap.
+ * @param space      The namespace whose arena gives the pages.
+ * @param kind       An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_* kind.
+ * @param length     What the header's length holds: characters, bytes or elements.
+ * @param bytes      What the payload starts with.
+ * @param count      Its bytes, at most the payload's: a String's NUL is a byte of its payload.
+ * @param out_handle Receives the object's handle, never 0.
+ * @return What advanced_configuration_and_power_interface_machine_language_object_allocate returns.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint8_t kind, uint32_t length,
+    const void *bytes, uint32_t count, uint32_t *out_handle);
+
+/**
  * @brief Takes one more reference on an object; a count that reaches 0xFFFFFFFF stays there (§3.5).
  *
  * @param heap   The heap.
@@ -309,6 +328,26 @@ advanced_configuration_and_power_interface_machine_language_value_allocate(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint8_t kind, uint32_t length,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
+
+/**
+ * @brief Allocates a String or a Buffer as advanced_configuration_and_power_interface_machine_language_value_allocate
+ *        does, its payload the @p count bytes at @p bytes, then zeros, as
+ *        advanced_configuration_and_power_interface_machine_language_object_allocate_copy fills it.
+ *
+ * @param heap      The heap.
+ * @param space     The namespace whose arena gives the pages.
+ * @param kind      STRING or BUFFER.
+ * @param length    Its characters or bytes.
+ * @param bytes     What the payload starts with.
+ * @param count     Its bytes, at most the payload's: a String's NUL is a byte of its payload.
+ * @param out_value Receives the value, which holds the object's only reference.
+ * @return What advanced_configuration_and_power_interface_machine_language_object_allocate returns.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap,
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space, uint8_t kind, uint32_t length,
+    const void *bytes, uint32_t count, AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
 
 /**
  * @brief The bytes that follow an object's header: a String's characters, a Buffer's bytes, a

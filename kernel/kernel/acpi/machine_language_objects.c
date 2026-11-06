@@ -325,13 +325,13 @@ machine_language_string(AdvancedConfigurationAndPowerInterfaceMachineLanguageHea
     if (end - offset > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES;
 
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, end - offset, &handle);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+            heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, end - offset,
+            source->bytes + offset, end - offset, &handle);
 
     if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
         return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object(heap, handle) + 1, source->bytes + offset,
-           end - offset);
     out_value->kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING;
     out_value->handle = handle;
     *out_after = end + 1u;
@@ -361,13 +361,11 @@ machine_language_buffer(AdvancedConfigurationAndPowerInterfaceMachineLanguageHea
 
     if (length > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES;
-    status = advanced_configuration_and_power_interface_machine_language_object_allocate(
+    status = advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, (uint32_t) length,
-        &handle);
+        source->bytes + initialiser, end - initialiser, &handle);
     if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
         return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object(heap, handle) + 1,
-           source->bytes + initialiser, end - initialiser);
     out_value->kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER;
     out_value->handle = handle;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
@@ -621,13 +619,9 @@ static MachineLanguageStatus_t machine_language_string_of(MachineLanguageHeap_t 
                                                           MachineLanguageNamespace_t *space, const uint8_t *characters,
                                                           uint32_t length, MachineLanguageValue_t *out_value)
 {
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_allocate(
-        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, length, out_value);
-
-    if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-        memcpy(advanced_configuration_and_power_interface_machine_language_object_payload(heap, out_value->handle),
-               characters, length);
-    return status;
+    return advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, length, characters,
+        length, out_value);
 }
 
 /**
@@ -664,13 +658,9 @@ static MachineLanguageStatus_t machine_language_copy_bytes(MachineLanguageHeap_t
 {
     const MachineLanguageHeader_t *header =
         advanced_configuration_and_power_interface_machine_language_object(heap, value->handle);
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_allocate(
-        heap, space, value->kind, header->length, out_value);
 
-    if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-        memcpy(advanced_configuration_and_power_interface_machine_language_object_payload(heap, out_value->handle),
-               header + 1, header->length);
-    return status;
+    return advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+        heap, space, value->kind, header->length, header + 1, header->length, out_value);
 }
 
 /**
@@ -751,8 +741,14 @@ static MachineLanguageStatus_t machine_language_copy_package(MachineLanguageHeap
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
 
-MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_object_allocate(
-    MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length, uint32_t *out_handle)
+/**
+ * @brief Takes the block of an object of @p kind and @p length, gives it its header and one reference, and counts it;
+ *        its payload, which goes to @p out_payload and its size to @p out_payload_bytes, holds what the block held.
+ */
+static MachineLanguageStatus_t machine_language_take_object(MachineLanguageHeap_t *heap,
+                                                            MachineLanguageNamespace_t *space, uint8_t kind,
+                                                            uint32_t length, uint32_t *out_handle,
+                                                            uint8_t **out_payload, uint32_t *out_payload_bytes)
 {
     const uint64_t payload = machine_language_payload_bytes(kind, length);
     uint32_t handle = 0u;
@@ -785,7 +781,6 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     MachineLanguageHeader_t *header = advanced_configuration_and_power_interface_machine_language_object(heap, handle);
 
     *header = (MachineLanguageHeader_t){.references = 1u, .kind = kind, .length = length};
-    memset(header + 1, 0, (size_t) payload);
     if ((uint32_t) (kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING) <
             sizeof(heap->length_peaks) / sizeof(heap->length_peaks[0]) &&
         length > heap->length_peaks[kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING])
@@ -795,7 +790,39 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     if (heap->object_bytes > heap->object_bytes_peak)
         heap->object_bytes_peak = heap->object_bytes;
     *out_handle = handle;
+    *out_payload = (uint8_t *) (header + 1);
+    *out_payload_bytes = (uint32_t) payload;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_object_allocate(
+    MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length, uint32_t *out_handle)
+{
+    uint8_t *payload = NULL;
+    uint32_t payload_bytes = 0u;
+    const MachineLanguageStatus_t status =
+        machine_language_take_object(heap, space, kind, length, out_handle, &payload, &payload_bytes);
+
+    if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        memset(payload, 0, payload_bytes);
+    return status;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+    MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length, const void *bytes,
+    uint32_t count, uint32_t *out_handle)
+{
+    uint8_t *payload = NULL;
+    uint32_t payload_bytes = 0u;
+    const MachineLanguageStatus_t status =
+        machine_language_take_object(heap, space, kind, length, out_handle, &payload, &payload_bytes);
+
+    if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        return status;
+    memcpy(payload, bytes, count);
+    if (count < payload_bytes)
+        memset(payload + count, 0, payload_bytes - count);
+    return status;
 }
 
 MachineLanguageHeader_t *
@@ -895,6 +922,21 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
 
     const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, kind, length, &out_value->handle);
+
+    if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
+        out_value->kind = kind;
+    return status;
+}
+
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+    MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length, const void *bytes,
+    uint32_t count, MachineLanguageValue_t *out_value)
+{
+    *out_value = (MachineLanguageValue_t){0};
+
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+            heap, space, kind, length, bytes, count, &out_value->handle);
 
     if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
         out_value->kind = kind;
@@ -1036,12 +1078,9 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     const uint32_t size =
         length + ((value->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING) ? 1u : 0u);
 
-    status = advanced_configuration_and_power_interface_machine_language_value_allocate(
-        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, size, out_value);
-    if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-        memcpy(advanced_configuration_and_power_interface_machine_language_object_payload(heap, out_value->handle),
-               bytes, length);
-    return status;
+    return advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, size, bytes, length,
+        out_value);
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_value_copy(

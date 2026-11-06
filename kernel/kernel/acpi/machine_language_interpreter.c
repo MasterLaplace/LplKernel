@@ -2043,13 +2043,13 @@ static MachineLanguageStatus_t machine_language_string_literal(MachineLanguageLo
     if (end == limit)
         return MACHINE_LANGUAGE_STATUS(TRUNCATED);
 
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_value_allocate(
-        &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(STRING), end - after, &value);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+            &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(STRING), end - after, frame->code + after, end - after,
+            &value);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object_payload(&load->heap, value.handle),
-           frame->code + after, end - after);
     frame->pc = end + 1u;
     return machine_language_deliver(load, value);
 }
@@ -3037,12 +3037,11 @@ static MachineLanguageStatus_t machine_language_buffer(MachineLanguageLoad_t *lo
 
     if (length > ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_MAX_BUFFER_BYTES)
         return MACHINE_LANGUAGE_STATUS(LIMIT_BUFFER_BYTES);
-    status = advanced_configuration_and_power_interface_machine_language_value_allocate(
-        &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(BUFFER), (uint32_t) length, &buffer);
+    status = advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+        &load->heap, &load->space, MACHINE_LANGUAGE_VALUE(BUFFER), (uint32_t) length, frame->code + frame->pc,
+        initialiser, &buffer);
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object_payload(&load->heap, buffer.handle),
-           frame->code + frame->pc, initialiser);
     frame->pc = active->end;
     return machine_language_deliver(load, buffer);
 }
