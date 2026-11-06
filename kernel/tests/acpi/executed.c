@@ -300,8 +300,8 @@ KERNEL_TEST(an_opcode_the_loop_does_not_run_is_counted_unimplemented_only)
 /**
  * @brief The run list says which opcodes the needs path executes (§4.1): in a method, the operators the interpreter
  *        runs and the constants, locals and arguments it reads, never a declaration the load makes or an opcode that
- *        fails as unimplemented; at table level, those and every declaration and data object the load takes, never
- *        code the interpreter does not run.
+ *        fails as unimplemented; at table level, those and every declaration the load takes, never code the
+ *        interpreter does not run, nor a data object it does not build, such as Revision.
  */
 KERNEL_TEST(the_run_list_says_which_opcodes_the_needs_path_executes)
 {
@@ -335,6 +335,12 @@ KERNEL_TEST(the_run_list_says_which_opcodes_the_needs_path_executes)
         !advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(NOR), true) &&
             !advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(INVALID), true),
         "table-level code runs no Nor, and no byte that is no opcode");
+    kernel_test_check(
+        test,
+        !advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(REVISION), true) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(PACKAGE), true) &&
+            advanced_configuration_and_power_interface_machine_language_executes(EXECUTED_OPCODE(STRING_PREFIX), true),
+        "table-level code builds a Package and a String, but no Revision, which no one builds");
 }
 
 /**

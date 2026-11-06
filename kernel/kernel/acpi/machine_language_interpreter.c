@@ -1856,6 +1856,19 @@ static bool machine_language_takes_in_place(uint32_t opcode)
 }
 
 /**
+ * @brief Whether the load takes an opcode of table-level code without the interpreter: a declaration, a local, an
+ *        argument or Noop, but no data object, which a Name's object the load cannot build sends to the interpreter
+ *        (§3.6, §5.1).
+ */
+static bool machine_language_declared_at_table_level(uint32_t opcode)
+{
+    const uint8_t flags = advanced_configuration_and_power_interface_machine_language_descriptor(opcode)->flags;
+
+    return !advanced_configuration_and_power_interface_machine_language_runs_at_table_level(opcode) &&
+           (flags & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_FLAG_DATA_OBJECT) == 0u;
+}
+
+/**
  * @brief Pushes the operator whose opcode was read at @p start, after reading its PkgLength.
  */
 static MachineLanguageStatus_t machine_language_push_operator(MachineLanguageEvaluation_t *evaluation, uint32_t opcode,
@@ -5416,7 +5429,7 @@ bool advanced_configuration_and_power_interface_machine_language_executes(uint32
 {
     if (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT)
         return false;
-    if (table_level && !advanced_configuration_and_power_interface_machine_language_runs_at_table_level(opcode))
+    if (table_level && machine_language_declared_at_table_level(opcode))
         return true;
     return machine_language_takes_in_place(opcode) || machine_language_runs(opcode);
 }

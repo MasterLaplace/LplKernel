@@ -326,10 +326,11 @@ extern bool advanced_configuration_and_power_interface_machine_language_runs_at_
  *        compared with.
  *
  * @param opcode      A descriptor index.
- * @param table_level Whether it stands in table-level code, where the load takes the declarations and the data,
- *                    rather than in a method body.
+ * @param table_level Whether it stands in table-level code, where the load takes the declarations, rather than in a
+ *                    method body.
  * @return true when the interpreter runs it, reads it as a constant, a local, an argument or Debug, or, at table
- *         level, the load takes it; false when it fails with unimplemented_operator there.
+ *         level, the load declares it; false when it fails with unimplemented_operator there, a data object the
+ *         interpreter does not build, such as Revision, at table level too.
  */
 extern bool advanced_configuration_and_power_interface_machine_language_executes(uint32_t opcode, bool table_level);
 
