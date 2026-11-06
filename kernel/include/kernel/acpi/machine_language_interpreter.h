@@ -158,6 +158,13 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation {
                                                                                                           failed with
                                                                                                           unimplemented_
                                                                                                           operator. */
+    uint32_t failed_term_start;   /**< Where the term whose run failed starts, while term_failed holds. */
+    uint32_t logged_fault_table;  /**< The table of the failure being taken, counted from 1, while the evaluation goes
+                                       past it: the load that steps over its statement meets it again, and does not
+                                       log it twice; 0 otherwise. */
+    uint32_t logged_fault_offset; /**< Where that failure lies in its table. */
+    bool term_failed; /**< Whether the failure being taken is the run of an operator, or of a name, once the pc has
+                           left it: the line that logs it (§4.5) names that term rather than the pc, then clears it. */
 } AdvancedConfigurationAndPowerInterfaceMachineLanguageEvaluation_t;
 
 #endif /* KERNEL_ACPI_MACHINE_LANGUAGE_INTERPRETER_H */

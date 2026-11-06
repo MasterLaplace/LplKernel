@@ -28,6 +28,8 @@
 #define KERNEL_TESTS_ACPI_SIMULATED_HOST_H
 
 #include <kernel/acpi/host.h>
+#include <kernel/acpi/log.h>
+#include <kernel/acpi/tables.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -44,6 +46,8 @@
     32u /**< I/O ports one simulated host gives a value to read. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES                                         \
     256u /**< Accesses the log keeps: the first ones, the others only counted. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_LOG_LINES                                        \
+    4u /**< Lines of the ACPI layer's log one simulated host keeps: the first ones, the others only counted. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_TIMER_QUANTUM                                        \
     1000u /**< What a read of the virtual clock adds to it, in units of 100 ns: 100 µs (§2). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_FUNCTIONS                                        \
@@ -153,6 +157,14 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedAccess {
 } AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t;
 
 /**
+ * @brief One line of the ACPI layer's log, as the simulated host was given it.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedLogLine {
+    uint8_t level; /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_* level. */
+    char text[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_LINE_BYTES]; /**< The line, ended by a NUL. */
+} AdvancedConfigurationAndPowerInterfaceSimulatedLogLine_t;
+
+/**
  * @brief The value a simulated I/O port reads as; every other port reads as 0.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedPort {
@@ -188,7 +200,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedFunction {
  *          what is asked, or, when tick_milliseconds is not 0, by the whole ticks a deadline on the
  *          kernel tick counts: those the wait rounds up to, and the one it lands in. Each read of
  *          clock_100ns gives the clock, then advances it by timer_quantum, so that a loop that polls it
- *          ends the same way wherever it runs (docs/acpi/specification.md, §2).
+ *          ends the same way wherever it runs (docs/acpi/specification.md, §2). It keeps the first lines
+ *          of the layer's log and counts the others, and prints none: a test prints those it checks, so that
+ *          the host and ring 0 compare them.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     AdvancedConfigurationAndPowerInterfaceHost_t host; /**< What the ACPI layer is given. */
@@ -213,6 +227,7 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
     uint32_t port_count;                   /**< Ports given a value. */
     uint32_t function_count;               /**< PCI functions given a configuration space. */
     uint32_t access_count;                 /**< Accesses made, logged or not. */
+    uint32_t log_count;                    /**< Lines of the layer's log it was given, kept or not. */
     uint64_t firmware_lock_address;        /**< The global lock word the simulated firmware shares, or 0. */
     uint32_t firmware_holds_for_reads;     /**< Reads of that word the firmware keeps it owned for, then releases it. */
     bool firmware_wants_lock;              /**< Whether the firmware asks for the lock, setting pending, as soon as the
@@ -249,6 +264,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceSimulatedHost {
                                                                                                 space. */
     AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t
         accesses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES]; /**< The first accesses. */
+    AdvancedConfigurationAndPowerInterfaceSimulatedLogLine_t
+        log_lines[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_LOG_LINES]; /**< The first lines of
+                                                                                                the layer's log. */
 } AdvancedConfigurationAndPowerInterfaceSimulatedHost_t;
 
 /**
@@ -308,6 +326,24 @@ extern bool advanced_configuration_and_power_interface_simulated_host_add_functi
  */
 extern bool advanced_configuration_and_power_interface_simulated_host_set_port(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated, uint16_t port, uint32_t value);
+
+/**
+ * @brief Gives a simulated host the firmware of the platform a normalised FADT describes, as it boots
+ *        (ACPI 6.6 §4.8.2.5): a platform with a legacy mode, SMI_CMD and ACPI_ENABLE both not 0,
+ *        boots in it, SCI_EN clear in its PM1a control register until ACPI_ENABLE is written to
+ *        SMI_CMD, and set once the write returns, as an SMI handler sets it; a platform without one
+ *        reads SCI_EN set from the start.
+ *
+ * @details A platform without a FADT, a hardware-reduced one, and one whose PM1a control register
+ *          is not a port have no SCI_EN to give: their host is left as it is. An SMI_CMD past port
+ *          0xFFFF is answered at no port, not at its low 16 bits.
+ *
+ * @param simulated The host, opened.
+ * @param fadt      The platform's normalised FADT.
+ */
+extern void advanced_configuration_and_power_interface_simulated_host_boot_platform(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt);
 
 /**
  * @brief Reads simulated memory as read_memory would, without logging it.

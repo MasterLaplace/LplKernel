@@ -49,9 +49,11 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          it on, and which when they are five or fewer: the opcodes the interpreter executes
          (specification §4.1); a machine not read or a decode fault fails it
   initialize  loads each machine of a list, or each QEMU configuration, initialises its namespace with
-         `test-acpi --initialize` as the boot does, and sums what the initialisations ran and counted, the
-         C-states they published, then the statuses their failures ended with; a machine the harness fails on
-         fails it. The SSDTs a dump's firmware loads at run time wait for Load where
+         `test-acpi --initialize` as the boot does, a recorded machine put in ACPI mode first (step 0), and sums
+         how step 0 ended, what the initialisations ran and counted, the C-states they published, then the
+         statuses their failures ended with; a machine the harness fails on fails it, and so does one whose run
+         prints no outcome of step 0, whose step 0 did not run on the FADT read or found no SCI_EN set, or whose
+         CST_CNT step 8 skipped though step 0 switched it. The SSDTs a dump's firmware loads at run time wait for Load where
          tools/acpi/loaded_tables.py places them, and tools/acpi/presets.txt gives the NVS objects firmware
          fills at boot their values, which a dump lacks (specification §8.4)
   load  initialises each machine of a list whose firmware loads tables at run time, with
@@ -306,12 +308,28 @@ namespace_check() {
     [[ "$number" -gt 0 && "$agree" -eq "$((number - deferred))" ]]
 }
 
+# Prints what the initialisation run $1 does wrong at step 0 or at step 8's write of CST_CNT, and nothing when it
+# does nothing wrong: it prints no outcome of step 0, step 0 did not run though a FADT was read (fadt_revision is 0
+# without one, which §3.8 switches nothing for), the simulated firmware never answered ACPI_ENABLE, or step 8
+# skipped the CST_CNT of a platform step 0 switched, whose SMI_CMD the switch showed writable.
+step_zero_fault() {
+    if ! grep -q '^aml mode outcome=' "$1"; then
+        echo "the run printed no outcome of step 0"
+    elif grep -q '^aml mode outcome=not-run .* fadt_revision=[1-9]' "$1"; then
+        echo "step 0 did not run on the machine's FADT"
+    elif grep -q '^aml mode outcome=failed ' "$1"; then
+        echo "step 0 wrote ACPI_ENABLE, and the simulated firmware never set SCI_EN"
+    elif grep -q '^aml mode outcome=switched ' "$1" && grep -q '^aml idle control=skipped ' "$1"; then
+        echo "step 0 switched the platform, and step 8 skipped its CST_CNT"
+    fi
+}
+
 # Initialises the namespace of each machine of the list $1, or each QEMU configuration, with
-# `test-acpi --initialize`, and sums what the initialisations ran and counted; a machine the harness fails
-# on fails the run.
+# `test-acpi --initialize`, and sums how step 0 ended and what the initialisations ran and counted; a machine
+# the harness fails on, or whose step 0 or CST_CNT step_zero_fault finds wrong, fails the run.
 initialize_check() {
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 failed=0 subject output counts="" key
+    local number=0 failed=0 subject output counts="" modes="" key fault
     local -a tables
     output="$(mktemp)"
     while IFS= read -r subject; do
@@ -329,6 +347,13 @@ initialize_check() {
             failed=$((failed + 1))
             continue
         fi
+        fault="$(step_zero_fault "$output")"
+        if [[ -n "$fault" ]]; then
+            echo "not ok $number $subject: $fault"
+            failed=$((failed + 1))
+            continue
+        fi
+        modes+="$(grep '^aml mode ' "$output")"$'\n'
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
         counts+="$(grep -E '^aml (init|idle|load) |^aml run tables ' "$output")"$'\n'
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
@@ -357,6 +382,8 @@ initialize_check() {
         echo -n " $key=$(grep '^aml idle control=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
     done
     echo
+    echo "# step 0, machines per outcome:" \
+        $(grep -o '^aml mode outcome=[a-z-]*' <<<"$modes" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# CST_CNT, machines per outcome:" \
         $(grep -o '^aml idle control=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# machines with a failure: $(grep -c '^aml init first_failure ' <<<"$counts")"
@@ -938,8 +965,9 @@ modules() {
 
 # Boots the kernel $1 on the QEMU machine $2, its serial port written to the log $3, with the boot line $4
 # and the module $5 when there is one, until its tests print their totals or BOOT_SECONDS pass. Both are
-# copied under a short path first: QEMU puts the kernel's path at the head of the boot line, which the
-# kernel cuts at 255 characters (#553), and takes a space or a comma in a module's path for a separator.
+# copied under a short path first: QEMU puts the kernel's path at the head of the boot line, of which the
+# kernel keeps 1,023 characters (BOOT_COMMAND_LINE_CAPACITY) and fails a test run it cut, and takes a space
+# or a comma in a module's path for a separator.
 boot() {
     local kernel="$1" machine="$2" log="$3" line="$4" module="${5:-}" short pid
     local -a initrd=()

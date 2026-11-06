@@ -261,6 +261,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceDirectory {
     uint32_t table_count;           /**< Tables recorded. */
     uint32_t
         unreachable_count; /**< Tables above 4 GiB, the root pointer included, past the capacity, or not mappable. */
+    uint32_t checksum_bad_parsed; /**< Tables recorded whose checksum fails, read all the same and logged, the
+                                       definition blocks apart, which the load counts as it declares them (§3.9). */
     uint32_t firmware_control_physical_address; /**< The FACS, which has no table header, or 0: the 32-bit
                                                      FIRMWARE_CTRL when it is not 0, else X_FIRMWARE_CTRL. */
     AdvancedConfigurationAndPowerInterfaceFixedDescription_t

@@ -529,6 +529,26 @@ static const char *simulated_host_read_image(AdvancedConfigurationAndPowerInterf
     return simulated_host_place_image_ranges(simulated, image, length, header.range_count);
 }
 
+static void simulated_host_keep_log_line(void *context, uint8_t level, const char *text)
+{
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated = context;
+
+    if (simulated->log_count < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_LOG_LINES)
+    {
+        AdvancedConfigurationAndPowerInterfaceSimulatedLogLine_t *line = &simulated->log_lines[simulated->log_count];
+        uint32_t length = 0u;
+
+        while (text[length] != '\0' && length < sizeof(line->text) - 1u)
+        {
+            line->text[length] = text[length];
+            ++length;
+        }
+        line->text[length] = '\0';
+        line->level = level;
+    }
+    ++simulated->log_count;
+}
+
 void advanced_configuration_and_power_interface_simulated_host_open(
     AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated)
 {
@@ -556,6 +576,7 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->host.reserve_pages = simulated_host_reserve_pages;
     simulated->host.commit_pages = simulated_host_commit_pages;
     simulated->host.release_reservation = simulated_host_release_reservation;
+    simulated->host.log = simulated_host_keep_log_line;
     simulated->root_system_description_pointer = 0u;
     simulated->outstanding_maps = 0u;
     simulated->mismatched_unmaps = 0u;
@@ -570,6 +591,7 @@ void advanced_configuration_and_power_interface_simulated_host_open(
     simulated->port_count = 0u;
     simulated->function_count = 0u;
     simulated->access_count = 0u;
+    simulated->log_count = 0u;
     simulated->map_serial = 0u;
     simulated->inconsistent_accesses = 0u;
     simulated->firmware_lock_address = 0u;
@@ -635,6 +657,27 @@ bool advanced_configuration_and_power_interface_simulated_host_set_port(
     simulated->ports[simulated->port_count].value = value;
     ++simulated->port_count;
     return true;
+}
+
+void advanced_configuration_and_power_interface_simulated_host_boot_platform(
+    AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *simulated,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
+{
+    const uint16_t control =
+        advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_control_blocks[0], 2u);
+
+    if (!fadt->present || fadt->hardware_reduced || control == 0u)
+        return;
+    simulated->firmware_control_port = control;
+    simulated->firmware_enable_milliseconds = 0u;
+    if (fadt->system_management_interrupt_command == 0u || fadt->enable_command == 0u)
+    {
+        simulated->firmware_enabled_at = 0u;
+        return;
+    }
+    if (fadt->system_management_interrupt_command <= UINT16_MAX)
+        simulated->firmware_command_port = (uint16_t) fadt->system_management_interrupt_command;
+    simulated->firmware_enable_command = fadt->enable_command;
 }
 
 uint64_t advanced_configuration_and_power_interface_simulated_host_peek(
