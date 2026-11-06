@@ -21,7 +21,9 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
                   With a boot line that names lpl.test=, the run stops once the tests print their totals
                   and says how many calls began, when the window has not closed by then
   --until TEXT    without --from or --inside, stop when the serial output prints TEXT
-                  (default: "# Totals:")
+                  (default: "# Totals:"). The count ends with QEMU, which this script stops once
+                  it has seen TEXT, up to a second later: the count holds what the kernel ran
+                  meanwhile, so two runs differ and a budget refuses this mode
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line
   --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), named by its file
@@ -31,7 +33,10 @@ and two runs of the same image count the same numbers, on any machine, unlike a 
   --machine NAME  QEMU's machine, such as q35 (default: QEMU's own, pc)
   --cdrom ISO     boot ISO through GRUB instead of <kernel> alone: a client gets its display and its
                   cartridge only that way. <kernel> is still the image the ISO holds, which names
-                  the functions; GRUB passes no --append
+                  the functions; GRUB passes no --append. The BIOS that reads the ISO for GRUB
+                  runs another count on each run, so the kernel starts at another time, and a
+                  window that waits on a timer, as the calibrations of kernel_initialize do,
+                  counts differently: a budget refuses this mode
   --timeout S     give up after S seconds (default: 1800)
   --keep DIR      keep the serial log and the raw counts in DIR
   --budget FILE   check the counts against FILE, which records a window and the counts it held
@@ -140,6 +145,10 @@ if [ -n "$inside_symbol" ] && [ -n "$from_symbol" ]; then
     echo "--inside goes without --from, --to and --test" >&2
     exit 2
 fi
+[ -z "$budget" ] || [ -n "$from_symbol$inside_symbol" ] ||
+    { echo "$budget names no window, from and to or inside: --until counts until QEMU stops" >&2; exit 2; }
+[ -z "$budget" ] || [ -z "$cdrom" ] ||
+    { echo "--budget goes without --cdrom: the kernel GRUB boots starts at another time on each run" >&2; exit 2; }
 
 qemu_version="$(qemu-system-i386 --version | sed -n 's/^QEMU emulator version \([0-9.]*\).*/\1/p')"
 [ -n "$qemu_version" ] || { echo "qemu-system-i386 not found" >&2; exit 2; }
