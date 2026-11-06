@@ -124,6 +124,11 @@ On top of the shared C and C++ rules:
   `tools/acpi-corpus.sh ring0 quick <kernel>` then boots a debug kernel once per machine of the quick list, its
   tables a Multiboot module, and compares its records with the host's; `ring0 qemu <kernel>` compares QEMU's own
   tables, which the kernel prints.
+- A made-up table is an `.asl` in `kernel/tests/acpi/fixtures/<suite>/`, unless iasl cannot emit it: it then stays
+  raw bytes, and its test says why (§8.2).
+  `tools/acpi/regenerate-fixtures.sh --write` compiles it into `fixtures/<suite>.h`, and without an option checks
+  every header against its sources: run it after `tools/acpi-corpus.sh fetch acpica`, with bubblewrap installed,
+  since iasl runs only in the sandbox of `tools/acpi/sandbox.sh`. No CI job runs it yet.
 - A switch no gate profile turns on is code nothing compiles. `tools/unbuilt-branches.sh` lists every
   source, `#if` branch, object and `-D` macro the gate profiles leave out, and fails on one that
   `tools/unbuilt-branches.declared` does not explain: a new one gets a profile that builds it, or a

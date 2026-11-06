@@ -150,6 +150,7 @@ architecture supplies the host interface.
 | `kernel/arch/i386/lib/asmutils.s`, `kernel/include/kernel/lib/asmutils.h` | the 8-, 16- and 32-bit port accesses of the ring-0 host |
 | `kernel/tests/acpi/simulated_host.c`, `simulated_host.h` | the simulated host: sparse memory, zero-filled ports, simulated PCI, virtual clock, target parameters; one source for the host harness and the ring-0 corpus test |
 | `kernel/tests/acpi/*.c` | `KERNEL_TEST`s with made-up AML, and the ring-0 corpus test; also compiled into the host harness |
+| `kernel/tests/acpi/fixtures/` | the made-up tables in ASL, one `<suite>/<name>.asl` per table, and the header `<suite>.h` that `tools/acpi/regenerate-fixtures.sh` compiles them to, iasl run in the sandbox of `tools/acpi/sandbox.sh`, and `<suite>.c` includes (§8.2) |
 | `tools/acpi/host/` | the host harness, an xmake target of this repository (`test-acpi`): its entry point, the acpidump reader, the corpus runner, the needs-path closure; it compiles the simulated host, `kernel/tests/acpi/` and the kernel's test runner, which prints its KTAP, from `kernel/` |
 | `tools/acpi-corpus.sh` | fetches the pinned corpora by commit into `build/acpi-corpus/` and writes the full list; checks each machine's directory (§8.4); builds one Multiboot module per machine; never commits their bytes |
 | `tools/acpi/` | the quick list and the corpus (§8.4); the rule that picks 90 machines of the corpus from the tree listing; the census of each dump; the directory each dump must give |
