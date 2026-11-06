@@ -11,6 +11,6 @@ times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
 module=build/acpi-corpus/modules/Notebook_Lenovo_IdeaPad_IdeaPad_Z470_C7F3CC0C50BF.acpi
-instructions=2377101
-accesses=1193642
+instructions=2374759
+accesses=1192230
 tolerance=1
