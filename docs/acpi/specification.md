@@ -1304,8 +1304,10 @@ a `_CST` table with one latency changed by one.
   below 1 MiB, so this needs #278 and #279 first.
 - Under Linux on the same machine, `acpidump` goes through the host harness and `acpiexec`; the `_CST` packages
   match ours in structure (state count, register kinds, types). Latency and power come from NVS values a dump does
-  not hold, so they are compared with `/sys/devices/system/cpu/cpu0/cpuidle`, when
-  `/sys/devices/system/cpu/cpuidle/current_driver` says Linux took its states from ACPI.
+  not hold. The latency is compared with `/sys/devices/system/cpu/cpu0/cpuidle` (`tools/acpi/against_linux_cpuidle.py`),
+  when `/sys/devices/system/cpu/cpuidle/current_driver` says Linux took its states from ACPI; the power is compared
+  with nothing, since Linux publishes none of the `_CST`'s (v7.3 `acpi_processor_setup_cstates` sets no
+  `power_usage`).
 - The machines are named in no public document.
 
 ### 8.9 Failure first
