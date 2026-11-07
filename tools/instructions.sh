@@ -30,7 +30,7 @@ boots alone as a copy named kernel/lpl.kernel: the path it was given does not mo
   --append TEXT   kernel command line, after the kernel's name, kernel/lpl.kernel
   --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), named by its file
                   name alone, which the kernel reads up to 256 characters: a recorded machine of the
-                  ACPI corpus, which tools/acpi-corpus.sh module <machine> writes, is found by its .acpi
+                  ACPI corpus, which tools/acpi/corpus.sh module <machine> writes, is found by its .acpi
                   suffix
   --machine NAME  QEMU's machine, such as q35 (default: QEMU's own, pc)
   --cdrom ISO     boot ISO through GRUB instead of <kernel> alone: a client gets its display and its
@@ -135,7 +135,7 @@ skip="${skip:-0}"
 [[ "$skip" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "--skip takes a count of calls, in decimal" >&2; exit 2; }
 [ "$skip" -eq 0 ] || [ -n "$inside_symbol" ] || { echo "--skip goes with --inside" >&2; exit 2; }
 [ -z "$module" ] || [ -f "$module" ] ||
-    { echo "no module $module: tools/acpi-corpus.sh module <machine> writes a recorded machine's module" >&2; exit 2; }
+    { echo "no module $module: tools/acpi/corpus.sh module <machine> writes a recorded machine's module" >&2; exit 2; }
 [ -z "$module" ] || [ -z "$cdrom" ] ||
     { echo "--module reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }
 [ -z "$cdrom" ] || [ -z "$append" ] || { echo "--append reaches a kernel booted alone, not one GRUB boots" >&2; exit 2; }

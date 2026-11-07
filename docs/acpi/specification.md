@@ -153,7 +153,7 @@ architecture supplies the host interface.
 | `kernel/tests/acpi/*.c` | `KERNEL_TEST`s with made-up AML, and the ring-0 corpus test; also compiled into the host harness |
 | `kernel/tests/acpi/fixtures/` | the made-up tables in ASL, one `<suite>/<name>.asl` per table, and the header `<suite>.h` that `tools/acpi/regenerate-fixtures.sh` compiles them to, iasl run in the sandbox of `tools/acpi/sandbox.sh`, and `<suite>.c` includes; a table several suites use is in `common/`, whose `common.h` each of them includes (§8.2) |
 | `tools/acpi/host/` | the host harness, an xmake target of this repository (`test-acpi`): its entry point, the acpidump reader, the corpus runner, the needs-path closure; it compiles the simulated host, `kernel/tests/acpi/` and the kernel's test runner, which prints its KTAP, from `kernel/` |
-| `tools/acpi-corpus.sh` | fetches the pinned corpora by commit into `build/acpi-corpus/` and writes the full list; checks each machine's directory (§8.4); builds one Multiboot module per machine; never commits their bytes |
+| `tools/acpi/corpus.sh` | fetches the pinned corpora by commit into `build/acpi-corpus/` and writes the full list; checks each machine's directory (§8.4); builds one Multiboot module per machine; never commits their bytes |
 | `tools/acpi/` | the quick list and the corpus (§8.4); the rule that picks 90 machines of the corpus from the tree listing; the census of each dump; the directory each dump must give |
 
 ### 3.3 The host interface
@@ -659,7 +659,7 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
    its own: `Unload`, `Fatal`, `BreakPoint`, `Wait`, `Reset`, `FindSetLeftBit` and `FindSetRightBit`, and in a method
    `Mutex` and `Event`, which declare temporaries (§5.1); every other fails with `unimplemented_operator`, counted,
    until a count asks for it. A later need adds the closure of its own
-   entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and `\_S5`. `tools/acpi-corpus.sh closure` compares what the closure
+   entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and `\_S5`. `tools/acpi/corpus.sh closure` compares what the closure
    reaches with the run list where it reaches it: in a method body, what the interpreter runs; in table-level code,
    that and the declarations the load takes, but `DataTableRegion`, whose statement fails (§4.5). An opcode the run
    list leaves out there fails it.
@@ -667,7 +667,7 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
    fails loudly at access (§4.5).
 4. **The needs path is run too.** The host harness and the ring-0 corpus test run §3.8 and `_CST` on every corpus
    machine and print the opcodes, spaces and access types they executed. One executed and not implemented is a red
-   test: `tools/acpi-corpus.sh initialize` fails on the machine, and the ring-0 corpus test fails. An opcode is
+   test: `tools/acpi/corpus.sh initialize` fails on the machine, and the ring-0 corpus test fails. An opcode is
    executed each time the loop runs its operation: an operator once its operands are there, If and While each time
    they read their predicate, an Else when its body is entered, Break, Continue and Noop when they run; a constant,
    a String, a local, an argument and Debug are operands, and the declarations the load makes are not the loop's.
@@ -1123,7 +1123,7 @@ reads a table in kernel memory. The costs to cut are:
 ### 7.4 Measurement windows and budgets
 
 Counts come from `tools/instructions.sh` on QEMU's TCG with `-icount`, the same on every run and every machine.
-Budgets follow the format of `tools/server-tick.budget`, one file per window and build. Two builds, because a
+Budgets follow the format of `tools/budgets/server-tick.budget`, one file per window and build. Two builds, because a
 `KERNEL_TEST` exists only in a debug kernel:
 
 - **release** (`SMOKE_TESTS=0 ./build.sh --server`): the windows that run at boot, on QEMU's live tables;
@@ -1135,14 +1135,14 @@ Budgets follow the format of `tools/server-tick.budget`, one file per window and
   (`--module`). Their files end in `.debug.budget`. A second corpus test runs the release path on the same machines:
   it loads them as a release kernel loads (O2), so that a change made for the release kernel is judged on real
   firmware. Its files end in `.release-path.debug.budget`, q35's included: QEMU's own tables, given the same way
-  (`tools/acpi-corpus.sh module qemu q35 <kernel>`), measure its gap to a release kernel, which each header states.
+  (`tools/acpi/corpus.sh module qemu q35 <kernel>`), measure its gap to a release kernel, which each header states.
 
 | Window | Command | Budget files | First target |
 |---|---|---|---|
-| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside --skip 1` during the ring-0 corpus test, then during its release path | `tools/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget`; `tools/acpi-load-<machine>.release-path.debug.budget` | the count #584 closed on: 309,831 instructions on q35, 1,229 per declaration of its 252; 0 allocations per method declared |
-| W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same `--skip 1` during the ring-0 corpus test, then during its release path | `tools/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget`; `tools/acpi-initialization-<machine>.release-path.debug.budget` | its first measurement |
-| W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test, then during its release path; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/acpi-cst.debug.budget`; `tools/acpi-cst-<machine>.debug.budget`; `tools/acpi-cst-<machine>.release-path.debug.budget` | its first measurement |
-| W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT; a polling loop of 1,000 turns, shaped like those real firmware runs at boot, that masks a SystemMemory field into a local, tests it in an If, and steps two locals | debug: `--inside kernel_test_body_<test>`; the lookups `--inside microbenchmark_look_up_a_thousand_children`, without the scope their test builds first | `tools/acpi-microbenchmark.debug.budget`; `tools/acpi-microbenchmark-lookups.debug.budget` | at most 200 instructions per iteration of the counting loop, its first measurement for the polling loop and for the lookups, 0 allocations |
+| W1 load of the boot tables | release: `tools/instructions.sh --inside advanced_configuration_and_power_interface_machine_language_load_directory --times 1 --machine q35 kernel/lpl.kernel`, every pass of the load; debug: the same `--inside --skip 1` during the ring-0 corpus test, then during its release path | `tools/budgets/acpi-load.budget`; `tools/acpi-load-<machine>.debug.budget`; `tools/acpi-load-<machine>.release-path.debug.budget` | the count #584 closed on: 309,831 instructions on q35, 1,229 per declaration of its 252; 0 allocations per method declared |
+| W2 initialisation (§3.8, steps 2 to 9; the switch and the load run before it, the load measured by W1) | release: `--inside advanced_configuration_and_power_interface_initialize_namespace --times 1` on `q35`; debug: the same `--skip 1` during the ring-0 corpus test, then during its release path | `tools/budgets/acpi-initialization.budget`; `tools/acpi-initialization-<machine>.debug.budget`; `tools/acpi-initialization-<machine>.release-path.debug.budget` | its first measurement |
+| W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test, then during its release path; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/budgets/acpi-cst.debug.budget`; `tools/acpi-cst-<machine>.debug.budget`; `tools/acpi-cst-<machine>.release-path.debug.budget` | its first measurement |
+| W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT; a polling loop of 1,000 turns, shaped like those real firmware runs at boot, that masks a SystemMemory field into a local, tests it in an If, and steps two locals | debug: `--inside kernel_test_body_<test>`; the lookups `--inside microbenchmark_look_up_a_thousand_children`, without the scope their test builds first | `tools/budgets/acpi-microbenchmark.debug.budget`; `tools/budgets/acpi-microbenchmark-lookups.debug.budget` | at most 200 instructions per iteration of the counting loop, its first measurement for the polling loop and for the lookups, 0 allocations |
 
 W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
 instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
@@ -1151,7 +1151,7 @@ bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration
 the walk the declaration pass runs on: the walk alone costs 285 per declaration on q35, with the decoder of O19, the
 namespace's insertion (O5) and the check that ends a run in line in it, which leaves 15 for the rest of the load, which
 costs 256: the statements with a PkgLength, the lists the walk opens and the choice of the data a Name keeps first among
-them (`tools/instructions.sh --budget tools/acpi-load.budget kernel/lpl.kernel` lists them). Creating a node at its
+them (`tools/instructions.sh --budget tools/budgets/acpi-load.budget kernel/lpl.kernel` lists them). Creating a node at its
 first lookup saves nothing: step 3 of §3.8 walks every node for `_REG`, so W2 would create every node W1 no longer does.
 The debug windows of W1 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no
 count per declaration applies to them.
@@ -1177,7 +1177,7 @@ same work, not only reach the same result.
 | Real firmware in ring 0 | one corpus machine per boot, its tables given as a Multiboot module, run through the simulated host | ring 0, debug kernel | the host harness's records on the same bytes, compared by `tools/parity.sh` |
 | QEMU's live tables | the boot path: ACPI mode, load, initialisation | ring 0, on `pc` and `q35` | statuses and counters; the load's folds (namespace, opcodes decoded), against the host's on the printed bytes (§8.7) |
 | QEMU's reference tables | 42 `pc` and `q35` configurations, 5 `microvm` | host | `acpiexec` |
-| The load's shortcuts | that each shortcut of §3.6 ends where the general path ends: namespace, fold, faults and counts of what it declared, not its work (lookups, probes, the stacks' peaks), which falls; the fold again once every kept object is built, and what a method returns that reaches one | ring 0 and the host harness (`kernel/tests/acpi/shortcuts.c`), every one-byte change of its tables on the host (`host_shortcuts`) and a sample of them in ring 0; the corpus on the host, its bytes changed at random too (`tools/acpi-corpus.sh differential`) | the same load with `general_load`, which takes no shortcut |
+| The load's shortcuts | that each shortcut of §3.6 ends where the general path ends: namespace, fold, faults and counts of what it declared, not its work (lookups, probes, the stacks' peaks), which falls; the fold again once every kept object is built, and what a method returns that reaches one | ring 0 and the host harness (`kernel/tests/acpi/shortcuts.c`), every one-byte change of its tables on the host (`host_shortcuts`) and a sample of them in ring 0; the corpus on the host, its bytes changed at random too (`tools/acpi/corpus.sh differential`) | the same load with `general_load`, which takes no shortcut |
 | uACPI's test cases | Windows behaviours and edge cases | host | each case's `// Expect:` line |
 | Real machines | the full path to `_CST` | ring 0 | the same machine's tables through the host harness and `acpiexec`; Linux's cpuidle states |
 
@@ -1209,7 +1209,7 @@ published image. The made-up ASL is ours, under MIT.
 
 ### 8.3 QEMU
 
-- **Live boot.** A debug kernel on `-machine q35` and `pc` (`tools/acpi-corpus.sh ring0 qemu <kernel>`;
+- **Live boot.** A debug kernel on `-machine q35` and `pc` (`tools/acpi/corpus.sh ring0 qemu <kernel>`;
   `./qemu.sh --server` boots QEMU's default, `pc`): the kernel switches to ACPI mode, loads what QEMU generates, runs
   the initialisation and prints its counters and statuses. A debug kernel can also print each table as hex lines on
   COM1; `tools/acpi/host` reads them back from `serial.log`, so the host harness loads exactly the bytes ring 0 saw.
@@ -1224,7 +1224,7 @@ published image. The made-up ASL is ours, under MIT.
 
 ### 8.4 Real firmware: linuxhw/ACPI
 
-- `tools/acpi-corpus.sh fetch` clones [linuxhw/ACPI](https://github.com/linuxhw/ACPI/tree/d6d30c6ef6f45506567f25a302c64f009d8f5f4e)
+- `tools/acpi/corpus.sh fetch` clones [linuxhw/ACPI](https://github.com/linuxhw/ACPI/tree/d6d30c6ef6f45506567f25a302c64f009d8f5f4e)
   blobless at the pinned commit, and checks out only the listed reports into `build/acpi-corpus/`. It prints the
   attribution: "ACPI dumps collected by hw-probe users at linux-hardware.org, published by linuxhw under CC-BY-4.0;
   changed: converted from acpidump text to binary tables".
@@ -1236,7 +1236,7 @@ published image. The made-up ASL is ours, under MIT.
 - **A dump holds neither the root pointer nor the root tables**, and every address it prints is 0, but the FADT
   keeps the addresses it names. The harness serves the DSDT at each of them, the FACS where the FADT names it, every
   other table at an address of its own, and writes a root pointer and an XSDT that list them in the dump's order, but for the SSDTs
-  that `Load` places (below). The directory read from it is compared with one `tools/acpi/expected_directory.py`
+  that `Load` places (below). The directory read from it is compared with one `tools/acpi/oracles/expected_directory.py`
   reads from the same dump, apart from the kernel's code.
 - **For each machine** the harness prints the decode errors, the namespace dump and its fold, the census counts,
   the needs-path closure, and the needs-path run (§3.8, steps 0 to 9) with the opcodes, spaces and access types it
@@ -1246,16 +1246,16 @@ published image. The made-up ASL is ours, under MIT.
   supports ACPI.
 - **The static tables**: the parsed FADT, MADT, MCFG and HPET fields of every machine equal the decoded `[xxxh]`
   lines that ship with each dump. The FADT also equals the local FADT ACPICA builds from the same bytes
-  (`tools/acpi/acpica_fadt.c`), with ACPICA's rewrite of PM block widths (`AcpiGbl_UseDefaultRegisterWidths`)
+  (`tools/acpi/oracles/acpica_fadt.c`), with ACPICA's rewrite of PM block widths (`AcpiGbl_UseDefaultRegisterWidths`)
   turned off, since the kernel keeps the declared width (§3.9); the reset register is read only with RESET_REG_SUP,
   as `AcpiReset` does, and a GPE block's length only with its address, as `AcpiEvGpeInitialize` does. Left out are
   the length and the revision, which ACPICA replaces with its structure's size and keeps as written; the GPE block
   widths, which neither reads; and, on a hardware-reduced FADT, the fields ACPI tells OSPM to ignore, which ACPICA
   keeps.
-- **Ring 0**: `tools/acpi-corpus.sh module <machine>` writes that machine's tables as one Multiboot module. A debug
+- **Ring 0**: `tools/acpi/corpus.sh module <machine>` writes that machine's tables as one Multiboot module. A debug
   kernel booted with it runs two `KERNEL_TEST`s that load the tables through the simulated host, one as a debug
   kernel loads and one as a release kernel does (§3.6), and print the same records as the host harness; without a
-  module they are skipped, and `tools/acpi-corpus.sh ring0`, which passes one, names both on `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so
+  module they are skipped, and `tools/acpi/corpus.sh ring0`, which passes one, names both on `lpl.test.require`. Modules never enter a release or site ISO. The quick list runs this way, so
   the 64-bit integer paths, the 4-byte-pointer layouts and the arena limits meet real AML in ring 0.
 - **The census oracle**: every opcode count of every machine equals that of the census script, the tables loaded
   declaring every branch of table-level code and running none of it, as the census reads them; running it, which
@@ -1270,20 +1270,20 @@ published image. The made-up ASL is ours, under MIT.
 - **`Load` on the corpus.** Dumps hold the dynamic SSDTs, every table's address printed as 0. In a table that holds a
   `Load`, the harness finds the (label, address, length) triples that Intel's `PmRef` code reads, and the SystemMemory
   regions of constant address and length that a `Load` names; each places at that address the SSDT of that length whose
-  OEM table ID the label names, case apart, else the only SSDT of that length (`tools/acpi/loaded_tables.py` computes
+  OEM table ID the label names, case apart, else the only SSDT of that length (`tools/acpi/oracles/loaded_tables.py` computes
   the same apart from the harness). A placed table is left out of the XSDT; the views compared with the census or with
-  `acpiexec`'s load declare it statically after the SSDTs, as `acpiexec` does. `tools/acpi-corpus.sh load` gives
+  `acpiexec`'s load declare it statically after the SSDTs, as `acpiexec` does. `tools/acpi/corpus.sh load` gives
   `acpiexec` statically the tables an initialisation ended with, `Load`'s included, and compares the two namespaces as
   sorted path sets. The values firmware writes to NVS at boot, absent from dumps, come from one preset file of the
-  harness, `tools/acpi/presets.txt`, so that the `Load` and `_CST` branches run: `CFGD = 0x0076F6FF`, the static `Name
+  harness, `tools/acpi/lists/presets.txt`, so that the `Load` and `_CST` branches run: `CFGD = 0x0076F6FF`, the static `Name
   (CFGD, 0x0076F6FF)` of the IdeaPad Z470's CPU SSDT, on the 44 machines whose `CFGD` is an NVS field. A `Load` whose
   address firmware computes in a method, or whose `PmRef` package names a table the dump lacks, reads no table and fails
   as `region_bounds`, which ends the evaluation that runs it, as ACPICA's does: an artifact of the corpus.
-- **Pre-decoded loops on the corpus.** `tools/acpi-corpus.sh predecoding <list>` initialises each machine with records
+- **Pre-decoded loops on the corpus.** `tools/acpi/corpus.sh predecoding <list>` initialises each machine with records
   and without, and compares every line the harness prints, `aml run namespace` (lookups, probes and back-edges)
   included, but `aml run predecoding`, whose sums it prints, and the statements handed back for their shape per opcode,
   a call or a name under `MethodInvocation`, on each machine and over the list.
-- **What the records cost on the corpus.** `tools/acpi-corpus.sh records-cost <list>` counts, under callgrind, the
+- **What the records cost on the corpus.** `tools/acpi/corpus.sh records-cost <list>` counts, under callgrind, the
   instructions `test-acpi-cost --initialize` executes on each machine whose loops ask the records anything, with records
   and without, the harness `xmake build test-acpi-cost` builds without sanitizers. No machine costs more than 0.5 % more
   with records than without; the two runs print the same lines but `aml run predecoding`. It counts on the host, where
@@ -1296,8 +1296,8 @@ published image. The made-up ASL is ours, under MIT.
   fetched by commit and compiled with `iasl` in the sandbox.
 - Each starts with `// Name:` and `// Expect: <int|str> => <value>`; the harness initialises the namespace (§3.8), as uACPI's runner does, then evaluates `\MAIN` and compares.
   `check-*` expectations, which test uACPI's own API, are skipped and listed.
-- `tools/acpi-corpus.sh fetch uacpi` fetches them and `tools/acpi-corpus.sh uacpi` runs them, with
-  `test-acpi --evaluate`. A case passes; or diverges, listed in `tools/acpi/uacpi-divergences.list` with the section
+- `tools/acpi/corpus.sh fetch uacpi` fetches them and `tools/acpi/corpus.sh uacpi` runs them, with
+  `test-acpi --evaluate`. A case passes; or diverges, listed in `tools/acpi/lists/uacpi-divergences.list` with the section
   here that decides otherwise; or waits, for an opcode the kernel decodes but does not run yet or a field access,
   named on its line, or for the issue the list names. A listed case that passes fails the run.
 
@@ -1350,7 +1350,7 @@ a `_CST` table with one latency changed by one.
   below 1 MiB, so this needs #278 and #279 first.
 - Under Linux on the same machine, `acpidump` goes through the host harness and `acpiexec`; the `_CST` packages
   match ours in structure (state count, register kinds, types). Latency and power come from NVS values a dump does
-  not hold. The latency is compared with `/sys/devices/system/cpu/cpu0/cpuidle` (`tools/acpi/against_linux_cpuidle.py`),
+  not hold. The latency is compared with `/sys/devices/system/cpu/cpu0/cpuidle` (`tools/acpi/oracles/against_linux_cpuidle.py`),
   when `/sys/devices/system/cpu/cpuidle/current_driver` says Linux took its states from ACPI; the power is compared
   with nothing, since Linux publishes none of the `_CST`'s (v7.3 `acpi_processor_setup_cstates` sets no
   `power_usage`).
