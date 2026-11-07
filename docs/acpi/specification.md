@@ -302,9 +302,9 @@ at once read it as it declared it.
 
 1. If the top pending operator has all its operands, run its handler, pop it, and hand the result to the operator
    below (as its next operand), or drop it when the operator was a statement.
-2. Else, if `pc` reached the end of the innermost block, close the block: a `While` jumps back to its predicate, a
-   taken `If` skips a following `Else` by its PkgLength, a `Scope` or `Device` restores the scope, a method end
-   performs the implicit return (§5.2), a table end finishes the load frame.
+2. Else, if no operator is pending and `pc` reached the end of the innermost block, close the block: a `While` jumps
+   back to its predicate, a taken `If` skips a following `Else` by its PkgLength, a `Scope` or `Device` restores the
+   scope, a method end performs the implicit return (§5.2), a table end finishes the load frame.
 3. Else decode one term at `pc`:
    - a constant (`Zero`, `One`, `Ones`, the integer prefixes, `String`), a `LocalX` or an `ArgX` is a value pushed
      directly, with no operator record;
@@ -314,6 +314,26 @@ at once read it as it declared it.
      object becomes a value, a field unit becomes a field read, and an unresolved name is an error (§6.2).
 4. A call whose arguments are complete pushes a frame whose code is the method body inside its table, and moves the
    arguments from the value stack into the frame. `Return` pops frames up to the method's own.
+
+One step of the loop, and the statements other paths take:
+
+```mermaid
+flowchart TD
+  STEP(["one step of the loop"]) --> PENDING{"an operator<br/>is pending?"}
+  PENDING -->|"all its operands are there"| RUN["run its handler and pop it,<br/>hand its result below"]
+  RUN -.->|"a call"| FRAME["push a frame<br/>on the method body"]
+  PENDING -->|"an operand is missing"| TERM
+  PENDING -->|"none"| BLOCKEND{"pc at the end of<br/>the innermost block?"}
+  BLOCKEND -->|"yes"| CLOSE["close the block"]
+  BLOCKEND -->|"no"| WHO{"which statement?"}
+  WHO -->|"table-level code<br/>that declares"| DECLARE["the load declares it"]
+  WHO -->|"in the frame's<br/>pre-decoded While"| RECORD["its record runs it"]
+  WHO -->|"any other"| TERM["decode one term at pc"]
+  RECORD -.->|"a check fails"| TERM
+  TERM -->|"a constant,<br/>LocalX or ArgX"| VALUE["push a value,<br/>no operator record"]
+  TERM -->|"an opcode"| OPERATOR["read its fixed fields,<br/>push a pending operator"]
+  TERM -->|"a NameString"| NAME["a method: a call<br/>a data object: a value<br/>a field unit: a field read"]
+```
 
 **Operand kinds.** Each opcode descriptor lists its operands as 4-bit kinds packed in one `uint32_t`: TermArg,
 SuperName, Target, SimpleName, NameString, ByteData, WordData, DWordData, QWordData, PkgLength, FieldList,
@@ -354,6 +374,33 @@ a duplicate (§5.1), as any later declaration is. A table whose frame finds the 
 bottom of a deep recursion adds, is declared the same way, the refusal counted. The decoding pass still decodes the body
 of a construct the declaration pass did not declare, but counts its faults apart (`undeclared_faults`): its names
 resolve against objects that do not exist.
+
+The load of the boot tables, between the load, the loop and the declaration pass:
+
+```mermaid
+sequenceDiagram
+  participant D as the load
+  participant L as the loop
+  participant P as the declaration pass
+  loop the DSDT, then each SSDT in directory order
+    D->>L: push the table's frame
+    loop until the table's end
+      L->>L: run the control flow and the code (an If, a While, a call, a Store)
+      L->>P: hand the run of statements that declare or hold data
+      P->>P: declare each one, by its own decoder (O19) or the walk, entering a Scope's TermList (O21)
+      opt an OperationRegion's offset or length, or a BankValue, that is no constant
+        P->>L: run it
+        L-->>P: its value
+      end
+      P-->>L: give back the first statement it does not take
+    end
+  end
+  D->>D: place each External whose parent no table had declared
+  opt in a debug kernel and the host tools
+    D->>D: decode every method body, running nothing
+    D->>D: check every kept Package and VarPackage (O20)
+  end
+```
 
 **Pre-decoded loops.** A While of a method that takes a back-edge becomes the frame's loop, unless the loop the frame
 has holds it, and the statements of the frame's loop run from records, each built the first time the loop reaches its
@@ -485,6 +532,25 @@ Run once at boot by the bootstrap processor.
 
 Steps 5 to 8 follow the order firmware depends on: Intel's `GCAP` reads the platform `_OSC` result, and on Intel
 clients `_CST` exists only after step 7.
+
+```mermaid
+flowchart TD
+  MODE{"step 0: is a switch<br/>to ACPI mode needed?"}
+  MODE -->|"yes: SCI_EN clear, SMI_CMD and ACPI_ENABLE<br/>not 0, every register on a reachable port"| SWITCH["clear the GPE and PM1 enables,<br/>write ACPI_ENABLE to SMI_CMD,<br/>poll SCI_EN for at most 3,000 ms"]
+  MODE -->|"no: hardware-reduced, already switched,<br/>SMI_CMD or ACPI_ENABLE 0, or unreachable"| LOAD
+  SWITCH --> LOAD["step 1: load the DSDT, then each SSDT"]
+  LOAD --> MARK["mark the subtrees that hold<br/>an _INI, an _OSC or a _PDC"]
+  MARK --> INI["step 2: \_INI, then \_SB._INI"]
+  INI --> REG["step 3: _REG(PCI_Config, 1) in<br/>each scope that declares such a region"]
+  REG --> WALK["step 4: _STA and _INI over the marked<br/>devices, in declaration order"]
+  WALK --> PIC["step 5: \_PIC is not called"]
+  PIC --> OSC["step 6: \_SB._OSC, query then commit"]
+  OSC -->|"Intel's GCAP reads its result"| CAPABILITIES["step 7: each bound processor's<br/>_OSC, or else its _PDC"]
+  CAPABILITIES -->|"on Intel clients, its Load brings the _CST"| CST["step 8: CST_CNT to SMI_CMD if step 0<br/>left ACPI mode, then each _CST"]
+  CST --> DRAIN["step 9: drain the Notify ring,<br/>one more _CST per Notify 0x81"]
+  DRAIN -->|"a table loaded during<br/>step 8 or step 9"| LATE["its new processors get<br/>step 7, then step 8"]
+  LATE --> DRAIN
+```
 
 **When a step fails,** the sequence goes on; each failure is counted per status, and the first one is named in the
 `[LPLTLM] acpi.init` record.
@@ -1109,8 +1175,7 @@ reads a table in kernel memory. The costs to cut are:
 | O19 | The most frequent declarations decoded by the declaration pass's own decoder, not operand by operand through the walk: a Name or a Method of one NameSeg, a Device, a ThermalZone, a Scope and a Field, up to their data, body or list, a Name's integer constant built by the decoder itself, and an OperationRegion of one NameSeg whose offset and length need no interpreter | `declarations_decoded_directly`, `integers_built_directly`; W1 |
 | O20 | A Name's Package, VarPackage or Buffer kept in its table once its head reads, neither checked nor built until a name resolution reaches it or a write is about to land on its table's bytes; a debug kernel and the host tools check each one once they have decoded bodies (§3.5, §3.6, §5.3) | `data_kept`, `data_materialized`, `data_faults_read` in `acpi.aml`, and `data_faults`, `data_named_sizes` with its decoding counts; W1 |
 | O21 | The TermList of a table-level Scope, Device, Processor, PowerResource or ThermalZone entered by the declaration pass itself, the loop's construct for it opened, its statements taken as part of the run up to the first one the loop runs, instead of handed back to the loop, which hands each run back to the load; a load whose `general_load` is set hands it back (§3.6) | `scopes_entered`, and `scopes_left`, those the pass leaves itself; W1 |
-| C3 | Pre-decode the statements of a method's While that loops, and run them from records (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, and the names whose counted resolution found another node than the one their record checked (`stale_names`) |
-| C3 | A While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | `tight_turns` |
+| C3 | Pre-decode the statements of a method's While that loops, and run them from records; a While whose predicate compares two leaves and whose body is one statement a record writes runs as a tight loop: predicate, body and back-edge in one loop of C, its block never opened, decided once when its record is linked to its body's (§3.6) | W4; `[LPLTLM] acpi.predecoding` counts the statements run from records and those handed back, by reason, the searches of the hash for a statement neither a link nor its recent slot gave, the times a frame's loop was handed back whole, the names whose counted resolution found another node than the one their record checked (`stale_names`), and the turns run as a tight loop (`tight_turns`) |
 | C4 | A kept data object (O20) built without the general data decoder: each element decoded straight into its package, the objects allocated where the decoder allocates them; bytes that do not read as kept data, which the load did not check or AML has rewritten since, are built by the decoder (§3.6) | `data_built_directly` in `acpi.load`; W2 and W3 on the MS-7E16 |
 
 ### 7.3 Candidates, adopted only when a count asks for them
@@ -1144,11 +1209,8 @@ Budgets follow the format of `tools/budgets/server-tick.budget`, one file per wi
 | W3 `_CST`: two made-up processors (Intel's pattern, a Serialized method patching a package of buffers from NVS fields; AMD's static package) and the three corpus machines | debug: `--inside kernel_test_body_<test>`; on the corpus machines `--inside advanced_configuration_and_power_interface_processor_idle_publish --skip 1` during the ring-0 corpus test, then during its release path; release: through `-acpitable`, if QEMU places the table where the kernel finds it | `tools/budgets/acpi-cst.debug.budget`; `tools/budgets/acpi-cst-<machine>.debug.budget`; `tools/budgets/acpi-cst-<machine>.release-path.debug.budget` | its first measurement |
 | W4 microbenchmarks: `While (LLess (Local0, 0x03E8)) { Increment (Local0) }`; 1,000 lookups in a 3,346-child scope; the same loop under a revision-1 DSDT; a polling loop of 1,000 turns, shaped like those real firmware runs at boot, that masks a SystemMemory field into a local, tests it in an If, and steps two locals | debug: `--inside kernel_test_body_<test>`; the lookups `--inside microbenchmark_look_up_a_thousand_children`, without the scope their test builds first | `tools/budgets/acpi-microbenchmark.debug.budget`; `tools/budgets/acpi-microbenchmark-lookups.debug.budget` | at most 200 instructions per iteration of the counting loop, its first measurement for the polling loop and for the lookups, 0 allocations |
 
-W1's target is a count, not a cost per named object. When #584 closed, placing the names in the namespace cost 232
-instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
-more than the 300 per named object a first target set. That check has since left the load for the pass that decodes
-bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. 300 per declaration is out of reach of
-the walk the declaration pass runs on: the walk alone costs 285 per declaration on q35, with the decoder of O19, the
+W1's target is a count, not a cost per named object: 300 per declaration is out of reach of the walk the declaration
+pass runs on. The walk alone costs 285 per declaration on q35, with the decoder of O19, the
 namespace's insertion (O5) and the check that ends a run in line in it, which leaves 15 for the rest of the load, which
 costs 256: the statements with a PkgLength, the lists the walk opens and the choice of the data a Name keeps first among
 them (`tools/instructions.sh --budget tools/budgets/acpi-load.budget kernel/lpl.kernel` lists them). Creating a node at its
