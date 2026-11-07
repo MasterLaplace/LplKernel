@@ -753,6 +753,7 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     if (payload > MACHINE_LANGUAGE_MAX_PAYLOAD_BYTES)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES;
 
+    const uint32_t payload_bytes = (uint32_t) payload;
     const uint32_t bytes_taken = (uint32_t) machine_language_block_bytes(payload);
     uint32_t block_bytes = bytes_taken;
 
@@ -779,8 +780,8 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     *header = (MachineLanguageHeader_t){.references = 1u, .kind = kind, .length = length};
     if (count != 0u)
         memcpy(filled, bytes, count);
-    if (count < payload)
-        memset(filled + count, 0, (size_t) payload - count);
+    if (count < payload_bytes)
+        memset(filled + count, 0, payload_bytes - count);
     if ((uint32_t) (kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING) <
             sizeof(heap->length_peaks) / sizeof(heap->length_peaks[0]) &&
         length > heap->length_peaks[kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING])
