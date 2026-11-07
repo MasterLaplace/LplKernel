@@ -8,20 +8,19 @@
 #define MACHINE_LANGUAGE_ROOT             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT
 #define MACHINE_LANGUAGE_PCI_CONFIG                                                                                    \
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION
-#define MACHINE_LANGUAGE_PCI_REACHABLE                                                                                 \
-    0x100u /**< Configuration bytes the interpreter reaches, mechanism #1's (§1.4). */
-#define MACHINE_LANGUAGE_PCI_HEADER_TYPE  0x0Eu /**< The header type register. */
-#define MACHINE_LANGUAGE_PCI_LAYOUT       0x7Fu /**< The header type's layout, without the multi-function bit. */
-#define MACHINE_LANGUAGE_PCI_BRIDGE       0x01u /**< The layout of a PCI-to-PCI bridge. */
-#define MACHINE_LANGUAGE_PCI_CARDBUS      0x02u /**< The layout of a CardBus bridge. */
-#define MACHINE_LANGUAGE_PCI_ABSENT       0xFFu /**< What the header type of an absent function reads as. */
-#define MACHINE_LANGUAGE_PCI_SECONDARY    0x19u /**< A bridge's secondary bus number register. */
-#define MACHINE_LANGUAGE_PCI_HEADER       0x40u /**< The bytes of the predefined header. */
-#define MACHINE_LANGUAGE_PCI_SUBSYSTEM    0x2Cu /**< The subsystem vendor ID, the first byte AML may write. */
-#define MACHINE_LANGUAGE_PCI_ROM          0x30u /**< The expansion ROM base address. */
-#define MACHINE_LANGUAGE_PCI_LINE         0x3Cu /**< The interrupt line, the first byte after the ROM AML may write. */
-#define MACHINE_LANGUAGE_PCI_DEVICES      32u   /**< Devices on a bus. */
-#define MACHINE_LANGUAGE_PCI_FUNCTIONS    8u    /**< Functions of a device. */
+#define MACHINE_LANGUAGE_PCI_REACHABLE    0x100u /**< Configuration bytes the interpreter reaches (§1.4). */
+#define MACHINE_LANGUAGE_PCI_HEADER_TYPE  0x0Eu  /**< The header type register. */
+#define MACHINE_LANGUAGE_PCI_LAYOUT       0x7Fu  /**< The header type's layout, without the multi-function bit. */
+#define MACHINE_LANGUAGE_PCI_BRIDGE       0x01u  /**< The layout of a PCI-to-PCI bridge. */
+#define MACHINE_LANGUAGE_PCI_CARDBUS      0x02u  /**< The layout of a CardBus bridge. */
+#define MACHINE_LANGUAGE_PCI_ABSENT       0xFFu  /**< What the header type of an absent function reads as. */
+#define MACHINE_LANGUAGE_PCI_SECONDARY    0x19u  /**< A bridge's secondary bus number register. */
+#define MACHINE_LANGUAGE_PCI_HEADER       0x40u  /**< The bytes of the predefined header. */
+#define MACHINE_LANGUAGE_PCI_SUBSYSTEM    0x2Cu  /**< The subsystem vendor ID, the first byte AML may write. */
+#define MACHINE_LANGUAGE_PCI_ROM          0x30u  /**< The expansion ROM base address. */
+#define MACHINE_LANGUAGE_PCI_LINE         0x3Cu  /**< The interrupt line, the first byte after the ROM AML may write. */
+#define MACHINE_LANGUAGE_PCI_DEVICES      32u    /**< Devices on a bus. */
+#define MACHINE_LANGUAGE_PCI_FUNCTIONS    8u     /**< Functions of a device. */
 #define MACHINE_LANGUAGE_PCI_HOST_BRIDGE  0x030AD041u /**< EisaId ("PNP0A03"): a PCI host bridge. */
 #define MACHINE_LANGUAGE_PCI_EXPRESS_ROOT 0x080AD041u /**< EisaId ("PNP0A08"): a PCI Express root complex. */
 #define MACHINE_LANGUAGE_ATTACH_START     0u          /**< The attach has not begun. */
