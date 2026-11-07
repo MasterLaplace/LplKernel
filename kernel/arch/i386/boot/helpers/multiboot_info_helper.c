@@ -43,6 +43,17 @@ static inline void *physical_to_virtual_boot_mapped(uint32_t phys_addr, uint32_t
 }
 
 /**
+ * @brief Physical to virtual for a field of @p length bytes the multiboot block points to, wherever the boot map
+ *        reaches it: NULL when it starts at 0 or ends past the map.
+ */
+static void *physical_range_boot_mapped(uint32_t phys_addr, uint32_t length, uint32_t kernel_start)
+{
+    if (phys_addr == 0u || phys_addr >= KERNEL_BOOT_MAPPED_END || length > KERNEL_BOOT_MAPPED_END - phys_addr)
+        return NULL;
+    return physical_to_virtual_boot_mapped(phys_addr, kernel_start);
+}
+
+/**
  * @brief The module descriptor array, reached through the boot mapping.
  *
  * @note mods_addr is a PHYSICAL address despite its pointer type. Nothing dereferenced it
@@ -599,7 +610,8 @@ void write_multiboot_info_memory_map(Serial_t *serial, uint32_t kernel_start, Mu
     serial_write_hex32(serial, (uint32_t) (long) mbi->mmap_addr);
     serial_write_string(serial, "\n");
 
-    uint8_t *mmap_base = (uint8_t *) physical_to_virtual_low((uint32_t) (long) mbi->mmap_addr, kernel_start);
+    uint8_t *mmap_base =
+        (uint8_t *) physical_range_boot_mapped((uint32_t) (uintptr_t) mbi->mmap_addr, mbi->mmap_length, kernel_start);
     if (!mmap_base)
     {
         serial_write_string(serial, "  Memory map not accessible (physical->virtual failed)\n");
@@ -848,9 +860,12 @@ void write_multiboot_info(Serial_t *serial, uint32_t kernel_start, MultibootInfo
         serial_write_string(serial, "Drives Length: ");
         serial_write_int(serial, mbi->drives_length);
         serial_write_string(serial, " bytes\n");
-        DriveInfo_t *drive = mbi->drives_addr;
+        DriveInfo_t *drive = (DriveInfo_t *) physical_range_boot_mapped((uint32_t) (uintptr_t) mbi->drives_addr,
+                                                                        mbi->drives_length, kernel_start);
         uint32_t offset = 0;
-        while (offset < mbi->drives_length)
+        if (!drive)
+            serial_write_string(serial, "  Drive info not accessible (physical->virtual failed)\n");
+        while (drive && offset < mbi->drives_length && drive->size != 0u)
         {
             write_multiboot_info_drive_info(serial, drive);
             offset += drive->size;
@@ -871,17 +886,21 @@ void write_multiboot_info(Serial_t *serial, uint32_t kernel_start, MultibootInfo
 
     if (mbi->flags & (1 << 9))
     {
-        char *s = (char *) physical_to_virtual_low(mbi->boot_loader_name, kernel_start);
-        if (s)
-        {
-            serial_write_string(serial, "Boot Loader Name: ");
-            serial_write_string(serial, s);
-            serial_write_string(serial, "\n");
-        }
+        const char *name = boot_loader_name_source(mbi);
+        serial_write_string(serial, "Boot Loader Name: ");
+        serial_write_string(serial, name ? name : "(not accessible)");
+        serial_write_string(serial, "\n");
     }
 
     if (mbi->flags & (1 << 10) && mbi->apm_table)
-        write_multiboot_info_apm_table(serial, mbi->apm_table);
+    {
+        APMTable_t *apm_table = (APMTable_t *) physical_range_boot_mapped((uint32_t) (uintptr_t) mbi->apm_table,
+                                                                          sizeof(APMTable_t), kernel_start);
+        if (apm_table)
+            write_multiboot_info_apm_table(serial, apm_table);
+        else
+            serial_write_string(serial, "APM table not accessible (physical->virtual failed)\n");
+    }
 
     write_multiboot_info_vbe_info(serial, mbi);
     write_multiboot_info_framebuffer(serial, mbi);

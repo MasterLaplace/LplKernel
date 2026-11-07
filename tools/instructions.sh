@@ -29,7 +29,7 @@ boots alone as a copy named kernel/lpl.kernel: the path it was given does not mo
   --top N         functions listed, most instructions first (default: 25; 0 lists none)
   --append TEXT   kernel command line, after the kernel's name, kernel/lpl.kernel
   --module FILE   give FILE to the kernel as a Multiboot module (QEMU's -initrd), named by its file
-                  name alone, which the kernel reads up to 255 characters: a recorded machine of the
+                  name alone, which the kernel reads up to 256 characters: a recorded machine of the
                   ACPI corpus, which tools/acpi-corpus.sh module <machine> writes, is found by its .acpi
                   suffix
   --machine NAME  QEMU's machine, such as q35 (default: QEMU's own, pc)
