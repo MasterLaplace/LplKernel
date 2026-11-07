@@ -744,11 +744,13 @@ static MachineLanguageStatus_t machine_language_copy_package(MachineLanguageHeap
 /**
  * @brief Takes the block of an object of @p kind and @p length, gives it its header and one reference, and counts it;
  *        its payload, which goes to @p out_payload and its size to @p out_payload_bytes, holds what the block held.
+ *
+ * @details Always inlined in the two allocations, which fill the payload each its own way: a call costs each object
+ *          more than the payload it zeroes.
  */
-static MachineLanguageStatus_t machine_language_take_object(MachineLanguageHeap_t *heap,
-                                                            MachineLanguageNamespace_t *space, uint8_t kind,
-                                                            uint32_t length, uint32_t *out_handle,
-                                                            uint8_t **out_payload, uint32_t *out_payload_bytes)
+__attribute__((always_inline)) static inline MachineLanguageStatus_t
+machine_language_take_object(MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind,
+                             uint32_t length, uint32_t *out_handle, uint8_t **out_payload, uint32_t *out_payload_bytes)
 {
     const uint64_t payload = machine_language_payload_bytes(kind, length);
     uint32_t handle = 0u;
