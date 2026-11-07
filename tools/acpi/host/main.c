@@ -63,9 +63,9 @@
     "       test-acpi [--general-load] [--mutate <seed>] [--read-kept] <form above>  with --general-load, every\n"     \
     "                                    load takes none of its shortcuts (specification §3.6); with --mutate, a\n"   \
     "                                    dump's DSDT and SSDTs have bytes changed at random, seeded by <seed>,\n"      \
-    "                                    before loading; tools/acpi-corpus.sh differential compares the two loads;\n"  \
+    "                                    before loading; tools/acpi/corpus.sh differential compares the two loads;\n"  \
     "                                    with --read-kept, a view ends by building every data object the load\n"       \
-    "                                    still keeps (O20) and printing `aml kept`, which tools/acpi-corpus.sh kept\n" \
+    "                                    still keeps (O20) and printing `aml kept`, which tools/acpi/corpus.sh kept\n" \
     "                                    reads\n"
 
 static bool harness_general_load;      /**< Whether --general-load asks every load to take none of its shortcuts. */

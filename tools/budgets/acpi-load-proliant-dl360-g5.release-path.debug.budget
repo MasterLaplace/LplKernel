@@ -1,0 +1,19 @@
+# Window W1 of the ACPI specification (§7.4) on a recorded machine, on the release path: the load of the definition
+# blocks of the HP ProLiant DL360 G5, a server whose eight processors publish their _CST, as a release kernel loads them
+# (O2), inside the ring-0 corpus test the_boot_module_machine_loads_on_the_release_path, on a debug server kernel
+# (./build.sh --server). The boot runs the same function on q35's own tables first, hence skip=1. tools/acpi/corpus.sh
+# module 'Server/Hewlett-Packard/ProLiant/ProLiant DL360 G5/A8DA802364DF' writes the module. The gap to a release kernel
+# is measured on q35's tables only (tools/budgets/acpi-load-q35.release-path.debug.budget): 3,620 instructions (2.67 %) fewer in
+# mapping the firmware's windows, a cost that grows with the windows a machine maps, and 2,784 more in decoding, which
+# that file explains. Checked by tools/instructions.sh --budget
+# tools/budgets/acpi-load-proliant-dl360-g5.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records
+# the new one.
+inside=advanced_configuration_and_power_interface_machine_language_load_directory
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
+module=build/acpi-corpus/modules/Server_Hewlett-Packard_ProLiant_ProLiant_DL360_G5_A8DA802364DF.acpi
+instructions=421844
+accesses=232972
+tolerance=1

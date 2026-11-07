@@ -1,0 +1,18 @@
+# Window W3 of the ACPI specification (§7.4) on the release path, on QEMU's own q35 tables given as a module: step 8 of
+# §3.8, the evaluation of the _CST objects of q35, once loaded as a release kernel loads it (O2), inside the ring-0
+# corpus test the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh --server). The
+# boot runs the same function on the tables it reads from the machine first, hence skip=1. tools/acpi/corpus.sh module
+# qemu q35 kernel/lpl.kernel writes the module. It measures the gap of the other W3 windows on the release path to a
+# release kernel, on the same tables: this window counts the same 16,259 instructions as a release kernel
+# (tools/instructions.sh --inside advanced_configuration_and_power_interface_processor_idle_publish --machine q35), but
+# q35's processors hold no _CST, so the gap of an evaluation is not measured. Checked by tools/instructions.sh --budget
+# tools/budgets/acpi-cst-q35.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records the new one.
+inside=advanced_configuration_and_power_interface_processor_idle_publish
+skip=1
+times=1
+machine=q35
+append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
+module=build/acpi-corpus/modules/q35.acpi
+instructions=16259
+accesses=7452
+tolerance=1
