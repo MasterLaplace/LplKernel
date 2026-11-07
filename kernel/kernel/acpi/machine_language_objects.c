@@ -741,14 +741,9 @@ static MachineLanguageStatus_t machine_language_copy_package(MachineLanguageHeap
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
 
-/**
- * @brief Takes the block of an object of @p kind and @p length, gives it its header and one reference, and counts it;
- *        its payload, which goes to @p out_payload and its size to @p out_payload_bytes, holds what the block held.
- */
-static MachineLanguageStatus_t machine_language_take_object(MachineLanguageHeap_t *heap,
-                                                            MachineLanguageNamespace_t *space, uint8_t kind,
-                                                            uint32_t length, uint32_t *out_handle,
-                                                            uint8_t **out_payload, uint32_t *out_payload_bytes)
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+    MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length, const void *bytes,
+    uint32_t count, uint32_t *out_handle)
 {
     const uint64_t payload = machine_language_payload_bytes(kind, length);
     uint32_t handle = 0u;
@@ -758,29 +753,34 @@ static MachineLanguageStatus_t machine_language_take_object(MachineLanguageHeap_
     if (payload > MACHINE_LANGUAGE_MAX_PAYLOAD_BYTES)
         return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_LIMIT_BUFFER_BYTES;
 
-    const uint32_t bytes = (uint32_t) machine_language_block_bytes(payload);
-    uint32_t block_bytes = bytes;
+    const uint32_t bytes_taken = (uint32_t) machine_language_block_bytes(payload);
+    uint32_t block_bytes = bytes_taken;
 
-    if (bytes >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES)
+    if (bytes_taken >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_LARGE_OBJECT_BYTES)
     {
         status = machine_language_heap_take_run(
             heap, space,
-            (bytes + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES - 1u) /
+            (bytes_taken + ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES - 1u) /
                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PAGE_BYTES,
             &run);
         handle = (run + 1u) << MACHINE_LANGUAGE_OBJECT_OFFSET_BITS;
     }
     else
     {
-        block_bytes = machine_language_class_bytes(machine_language_size_class(bytes));
-        status = machine_language_heap_take_small_block(heap, space, machine_language_size_class(bytes), &handle);
+        block_bytes = machine_language_class_bytes(machine_language_size_class(bytes_taken));
+        status = machine_language_heap_take_small_block(heap, space, machine_language_size_class(bytes_taken), &handle);
     }
     if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
         return status;
 
     MachineLanguageHeader_t *header = advanced_configuration_and_power_interface_machine_language_object(heap, handle);
+    uint8_t *filled = (uint8_t *) (header + 1);
 
     *header = (MachineLanguageHeader_t){.references = 1u, .kind = kind, .length = length};
+    if (count != 0u)
+        memcpy(filled, bytes, count);
+    if (count < payload)
+        memset(filled + count, 0, (size_t) payload - count);
     if ((uint32_t) (kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING) <
             sizeof(heap->length_peaks) / sizeof(heap->length_peaks[0]) &&
         length > heap->length_peaks[kind - ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING])
@@ -790,39 +790,14 @@ static MachineLanguageStatus_t machine_language_take_object(MachineLanguageHeap_
     if (heap->object_bytes > heap->object_bytes_peak)
         heap->object_bytes_peak = heap->object_bytes;
     *out_handle = handle;
-    *out_payload = (uint8_t *) (header + 1);
-    *out_payload_bytes = (uint32_t) payload;
     return ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK;
 }
 
 MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_object_allocate(
     MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length, uint32_t *out_handle)
 {
-    uint8_t *payload = NULL;
-    uint32_t payload_bytes = 0u;
-    const MachineLanguageStatus_t status =
-        machine_language_take_object(heap, space, kind, length, out_handle, &payload, &payload_bytes);
-
-    if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-        memset(payload, 0, payload_bytes);
-    return status;
-}
-
-MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
-    MachineLanguageHeap_t *heap, MachineLanguageNamespace_t *space, uint8_t kind, uint32_t length, const void *bytes,
-    uint32_t count, uint32_t *out_handle)
-{
-    uint8_t *payload = NULL;
-    uint32_t payload_bytes = 0u;
-    const MachineLanguageStatus_t status =
-        machine_language_take_object(heap, space, kind, length, out_handle, &payload, &payload_bytes);
-
-    if (status != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
-        return status;
-    memcpy(payload, bytes, count);
-    if (count < payload_bytes)
-        memset(payload + count, 0, payload_bytes - count);
-    return status;
+    return advanced_configuration_and_power_interface_machine_language_object_allocate_copy(heap, space, kind, length,
+                                                                                            NULL, 0u, out_handle);
 }
 
 MachineLanguageHeader_t *
@@ -920,8 +895,9 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
 {
     *out_value = (MachineLanguageValue_t){0};
 
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        heap, space, kind, length, &out_value->handle);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_object_allocate_copy(heap, space, kind, length,
+                                                                                         NULL, 0u, &out_value->handle);
 
     if (status == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK)
         out_value->kind = kind;
