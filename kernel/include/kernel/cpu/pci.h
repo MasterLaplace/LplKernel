@@ -303,12 +303,54 @@ extern uint8_t peripheral_component_interconnect_find_capability(uint8_t bus, ui
     0x100u /**< Bytes of a function's configuration space configuration mechanism #1 reaches. */
 
 /**
- * @brief Declares the configuration space of every ECAM window the boot's MCFG kept, so that the virtual memory
+ * @brief What peripheral_component_interconnect_express_judge_window says of an ECAM window.
+ */
+typedef enum {
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_USABLE = 0, /**< Accesses may go through it once declared. */
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_PAST_REACH, /**< Its buses end past 4 GiB. */
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_OVER_RAM,   /**< Its buses cover usable RAM. */
+} PeripheralComponentInterconnectExpressWindow_t;
+
+/**
+ * @brief The ECAM windows of the boot's MCFG, as peripheral_component_interconnect_express_initialize sorted them.
+ */
+typedef struct {
+    uint32_t declared;   /**< Windows declared uncached, the only ones accesses go through. */
+    uint32_t past_reach; /**< Windows refused because their buses end past 4 GiB. */
+    uint32_t over_ram;   /**< Windows refused because their buses cover usable RAM. */
+    uint32_t no_room;    /**< Usable windows the virtual memory manager had no room to declare, refused too. */
+} PeripheralComponentInterconnectExpressWindowCounts_t;
+
+/**
+ * @brief Says whether accesses may go through an ECAM window, from its range alone.
+ *
+ * @details The window's configuration space runs from @p base_address plus @p start_bus MiB up to @p base_address
+ *          plus (@p end_bus + 1) MiB. It must end below 4 GiB, which this kernel's 32-bit physical space reaches
+ * (#569), the sum taken without wrapping whatever base the MCFG gives. It must cover no usable RAM either
+ *          (physical_memory_manager_reaches_ram): a window maps its frames uncached while the allocator maps RAM
+ *          write-back, and a page with two memory types is undefined (Intel SDM vol. 3, §14.12.4). Linux refuses more,
+ *          any range the E820 map or the ACPI motherboard resources do not reserve (pci_mmcfg_reserved, in
+ *          arch/x86/pci/mmconfig-shared.c); here a range in a hole is mapped uncached by every window, so it is kept.
+ *
+ * @param base_address The address bus 0 of the window's segment group would have, as the MCFG gives it.
+ * @param start_bus    The window's first bus.
+ * @param end_bus      Its last bus, at or past @p start_bus.
+ * @return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_PAST_REACH or
+ *         PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_OVER_RAM when it is refused, in that order of precedence;
+ *         PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_USABLE otherwise.
+ */
+extern PeripheralComponentInterconnectExpressWindow_t
+peripheral_component_interconnect_express_judge_window(uint64_t base_address, uint8_t start_bus, uint8_t end_bus);
+
+/**
+ * @brief Declares the configuration space of every usable ECAM window the boot's MCFG kept, so that the virtual memory
  *        manager maps it uncached, whatever the memory type range registers say over it.
  *
  * @details Called once, after advanced_configuration_and_power_interface_memory_mapped_configuration_initialize and
- *          before anything maps those frames. A window whose buses end past 4 GiB, which this kernel's 32-bit
- *          physical space cannot reach (#569), is refused and counted; so is one the manager has no room for.
+ *          before anything maps those frames. Each window is judged and counted by its verdict
+ *          (peripheral_component_interconnect_express_judge_window), and a usable one the manager has no room for is
+ *          refused too. Accesses go through the declared windows only: before this call, every access takes
+ *          configuration mechanism #1 or is refused.
  */
 extern void peripheral_component_interconnect_express_initialize(void);
 
@@ -316,10 +358,11 @@ extern void peripheral_component_interconnect_express_initialize(void);
  * @brief Reads one register of a function's configuration space, past its first 256 bytes and in any segment group
  *        too.
  *
- * @details The access goes through the ECAM window the boot's MCFG gives for @p segment_group and @p bus, which maps
- *          the function's 4 KiB once and keeps them mapped while the next access names the same function. Without a
- *          window, the first 256 bytes of segment group 0 go through configuration mechanism #1, and anything else
- *          is refused. Linux on x86 keeps mechanism #1 for those 256 bytes even with a window (raw_pci_read, in
+ * @details The access goes through the ECAM window peripheral_component_interconnect_express_initialize declared
+ *          over @p segment_group and @p bus, which maps the function's 4 KiB once and keeps them mapped while the next
+ *          access names the same function. Without a declared window, or when the function's 4 KiB cannot be mapped,
+ *          the first 256 bytes of segment group 0 go through configuration mechanism #1, and anything else is
+ *          refused. Linux on x86 keeps mechanism #1 for those 256 bytes even with a window (raw_pci_read, in
  *          arch/x86/pci/common.c), against chipsets whose ECAM misbehaves; here a test compares the two mechanisms
  *          over every function's first 256 bytes instead. One processor accesses the configuration space at a time,
  *          as for mechanism #1.
@@ -330,9 +373,10 @@ extern void peripheral_component_interconnect_express_initialize(void);
  * @param function      The function, below 8.
  * @param offset        The register's offset, which @p width divides, its last byte inside the 4 KiB.
  * @param width         1, 2 or 4 bytes.
- * @param out_value     What the register holds; all ones when the access is refused, as an absent function reads.
- * @return false when the access is refused: no window covers the bus and the offset or the segment group is past
- *         mechanism #1's reach, the window lies past 4 GiB or cannot be mapped, or an argument is out of range.
+ * @param out_value     What the register holds; when the access is refused, @p width bytes of ones, as an absent
+ *                      function reads, or 32 bits of ones for a width that is not 1, 2 or 4.
+ * @return false when the access is refused: an argument is out of range, or no declared window serves it and it lies
+ *         past mechanism #1's reach, an offset past 0xFF or a segment group other than 0.
  */
 extern bool peripheral_component_interconnect_express_read(uint16_t segment_group, uint8_t bus, uint8_t device,
                                                            uint8_t function, uint16_t offset, uint8_t width,
@@ -357,11 +401,12 @@ extern bool peripheral_component_interconnect_express_write(uint16_t segment_gro
                                                             uint32_t value);
 
 /**
- * @brief Whether an ECAM window the boot's MCFG gives covers @p bus of @p segment_group.
+ * @brief Whether an ECAM window peripheral_component_interconnect_express_initialize declared covers @p bus of
+ *        @p segment_group.
  *
  * @param segment_group The PCI segment group.
  * @param bus           The bus.
- * @return true when a window covers it, below 4 GiB.
+ * @return true when a declared window covers it.
  */
 extern bool peripheral_component_interconnect_express_reaches(uint16_t segment_group, uint8_t bus);
 
@@ -373,12 +418,13 @@ extern bool peripheral_component_interconnect_express_reaches(uint16_t segment_g
 extern uint32_t peripheral_component_interconnect_express_window_moves(void);
 
 /**
- * @brief ECAM windows peripheral_component_interconnect_express_initialize declared, and those it refused.
+ * @brief The ECAM windows peripheral_component_interconnect_express_initialize declared, and those it refused, by
+ *        reason.
  *
- * @param out_refused Where the refused count goes.
- * @return The declared count.
+ * @return The counts, all 0 before the call and on a machine without an MCFG.
  */
-extern uint32_t peripheral_component_interconnect_express_declared_windows(uint32_t *out_refused);
+extern const PeripheralComponentInterconnectExpressWindowCounts_t *
+peripheral_component_interconnect_express_window_counts(void);
 /** @} */
 
 /**

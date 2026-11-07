@@ -187,11 +187,13 @@ void write_peripheral_component_interconnect_function_records(Serial_t *serial)
 
 void write_peripheral_component_interconnect_express_record(Serial_t *serial)
 {
-    uint32_t refused = 0u;
-    const uint32_t declared = peripheral_component_interconnect_express_declared_windows(&refused);
+    const PeripheralComponentInterconnectExpressWindowCounts_t *counts =
+        peripheral_component_interconnect_express_window_counts();
 
     kernel_telemetry_begin_record(serial, "pci.express");
-    kernel_telemetry_write_unsigned("windows_declared", declared);
-    kernel_telemetry_write_unsigned("windows_refused", refused);
+    kernel_telemetry_write_unsigned("windows_declared", counts->declared);
+    kernel_telemetry_write_unsigned("windows_past_reach", counts->past_reach);
+    kernel_telemetry_write_unsigned("windows_over_ram", counts->over_ram);
+    kernel_telemetry_write_unsigned("windows_no_room", counts->no_room);
     kernel_telemetry_end_record();
 }

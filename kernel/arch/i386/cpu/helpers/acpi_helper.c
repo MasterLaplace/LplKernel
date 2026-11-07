@@ -407,7 +407,7 @@ void write_acpi_madt_record(Serial_t *serial)
     kernel_telemetry_end_record();
 }
 
-void write_acpi_memory_mapped_configuration_record(Serial_t *serial)
+void write_advanced_configuration_and_power_interface_memory_mapped_configuration_record(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *mcfg =
         advanced_configuration_and_power_interface_memory_mapped_configuration();
