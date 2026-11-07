@@ -16,6 +16,17 @@ static bool vmm_initialized = false;
 static uint32_t vmm_unmapped_range_count = 0u;
 static uint32_t vmm_device_windows_refused = 0u;
 
+/**
+ * @brief A range of frames every window maps uncached: its first frame and its last byte.
+ */
+typedef struct VmmUncachedRange {
+    uint32_t first; /**< The physical address of its first frame. */
+    uint32_t last;  /**< The physical address of its last byte. */
+} VmmUncachedRange_t;
+
+static VmmUncachedRange_t vmm_uncached_ranges[KERNEL_VMM_MAX_UNCACHED_RANGES];
+static uint32_t vmm_uncached_range_count = 0u;
+
 static void vmm_bitmap_set(uint32_t index) { vmm_bitmap[index / 8] |= (1 << (index % 8)); }
 
 static void vmm_bitmap_clear(uint32_t index) { vmm_bitmap[index / 8] &= ~(1 << (index % 8)); }
@@ -62,6 +73,17 @@ static bool vmm_frame_is_write_back(uint32_t frame)
 }
 
 /**
+ * @brief Whether @p frame lies inside a range kernel_vmm_declare_uncached_range declared.
+ */
+static bool vmm_frame_is_declared_uncached(uint32_t frame)
+{
+    for (uint32_t index = 0u; index < vmm_uncached_range_count; ++index)
+        if (frame >= vmm_uncached_ranges[index].first && frame <= vmm_uncached_ranges[index].last)
+            return true;
+    return false;
+}
+
+/**
  * @brief The entry @p frame gets in a window: @p pte_flags, with the memory type the frame decides, whatever kind of
  *        window asks, so that no page has two memory types (Intel SDM vol. 3, §14.12.4), between two windows either.
  *
@@ -79,7 +101,7 @@ static PageTableEntry_t vmm_window_page_flags(uint32_t frame, PageTableEntry_t p
     const bool held = frame < KERNEL_VMM_DYNAMIC_START - KERNEL_VIRTUAL_BASE &&
                       paging_get_page_table_entry(frame + KERNEL_VIRTUAL_BASE, &direct) &&
                       ((uint32_t) direct.page_frame_base << 12u) == frame;
-    const bool uncached = !held && !vmm_frame_is_write_back(frame);
+    const bool uncached = !held && (vmm_frame_is_declared_uncached(frame) || !vmm_frame_is_write_back(frame));
 
     pte_flags.write_through = held ? direct.write_through : uncached;
     pte_flags.cache_disable = held ? direct.cache_disable : uncached;
@@ -303,6 +325,17 @@ uint32_t kernel_vmm_map_firmware_writable_window(uint32_t physical_base, uint32_
     const PageTableEntry_t pte_flags = {.present = 1u, .read_write = 1u};
 
     return vmm_map_window(physical_base, size, pte_flags);
+}
+
+bool kernel_vmm_declare_uncached_range(uint64_t physical_base, uint64_t size)
+{
+    if (size == 0u || physical_base > UINT32_MAX || size - 1u > UINT32_MAX - physical_base ||
+        vmm_uncached_range_count == KERNEL_VMM_MAX_UNCACHED_RANGES)
+        return false;
+    vmm_uncached_ranges[vmm_uncached_range_count].first = (uint32_t) physical_base & ~(PAGE_SIZE - 1u);
+    vmm_uncached_ranges[vmm_uncached_range_count].last = (uint32_t) (physical_base + size - 1u);
+    ++vmm_uncached_range_count;
+    return true;
 }
 
 uint32_t kernel_vmm_get_unmapped_range_count(void) { return vmm_unmapped_range_count; }

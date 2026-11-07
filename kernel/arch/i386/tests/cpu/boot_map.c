@@ -1,3 +1,4 @@
+#include <kernel/acpi/tables.h>
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pmm.h>
@@ -391,16 +392,38 @@ static uint32_t boot_map_test_range_type(uint32_t page)
 static bool boot_map_test_type_is_memory(uint32_t type) { return type == 1u || type == 3u || type == 4u; }
 
 /**
+ * @brief Whether @p page lies in the configuration space of an ECAM window the boot's MCFG gives, read from the MCFG
+ *        reading itself rather than from what the virtual memory manager was told.
+ */
+static bool boot_map_test_page_is_configuration_space(uint32_t page)
+{
+    const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *mcfg =
+        advanced_configuration_and_power_interface_memory_mapped_configuration();
+
+    for (uint32_t index = 0u; index < mcfg->allocation_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *window = &mcfg->allocations[index];
+        const uint64_t first = window->base_address + ((uint64_t) window->start_bus << 20u);
+        const uint64_t end = window->base_address + (((uint64_t) window->end_bus + 1u) << 20u);
+
+        if (page >= first && page < end)
+            return true;
+    }
+    return false;
+}
+
+/**
  * @brief The memory type bits a window on @p page must carry past the first MiB: none, write-back, for usable RAM,
  *        ACPI reclaimable and ACPI NVS memory, and for a reserved page (2) the memory type range registers call
- *        write-back; uncached for any other page.
+ *        write-back, but for the PCI Express configuration space (#58); uncached for any other page.
  */
 static uint32_t boot_map_test_expected_bits(uint32_t page)
 {
     const uint32_t type = boot_map_test_page_type(page);
 
     if (boot_map_test_type_is_memory(type) ||
-        (type == 2u && boot_map_test_range_type(page) == BOOT_MAP_TEST_RANGE_WRITE_BACK))
+        (type == 2u && boot_map_test_range_type(page) == BOOT_MAP_TEST_RANGE_WRITE_BACK &&
+         !boot_map_test_page_is_configuration_space(page)))
         return 0u;
     return BOOT_MAP_TEST_UNCACHED_BITS;
 }
@@ -602,7 +625,8 @@ static void boot_map_test_check_reserved_pages(BootMapTestReservedPages_t *out)
             out->refused += agrees < 0;
             if (agrees < 0)
                 continue;
-            if (boot_map_test_range_type(pages[index]) == BOOT_MAP_TEST_RANGE_WRITE_BACK)
+            if (boot_map_test_range_type(pages[index]) == BOOT_MAP_TEST_RANGE_WRITE_BACK &&
+                !boot_map_test_page_is_configuration_space(pages[index]))
                 ++out->write_back;
             else
                 ++out->uncached;
@@ -907,7 +931,8 @@ KERNEL_TEST(the_windows_on_one_page_give_it_one_memory_type)
 
 /**
  * @brief The windows on a reserved page are write-back where the memory type range registers say write-back over it,
- *        as Linux maps ACPI memory, and uncached where they say anything else.
+ *        as Linux maps ACPI memory, and uncached where they say anything else, or where the PCI Express configuration
+ *        space lies, which SeaBIOS leaves write-back on q35 (#58).
  *
  * @details Linux v7.3 maps every ACPI table and AML region with ioremap_cache, and pat_x_mtrr_type keeps write-back
  *          only where the MTRR type over the range is write-back. SeaBIOS (src/fw/mtrr.c) makes memory write-back by

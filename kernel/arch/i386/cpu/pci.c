@@ -1,5 +1,7 @@
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/vmm.h>
 
 #include <stddef.h>
 
@@ -55,6 +57,16 @@ static uint32_t peripheral_component_interconnect_probe_writable_bits(uint8_t bu
     return probe;
 }
 
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_DEVICES   32u         /**< Devices on one bus. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_FUNCTIONS 8u          /**< Functions of one device. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES  0xFFFFFFFFu /**< What a refused read gives. */
+
+static uint32_t peripheral_component_interconnect_express_window = 0u;       /**< The mapped function's 4 KiB, or 0. */
+static uint32_t peripheral_component_interconnect_express_window_frame = 0u; /**< Their physical address. */
+static uint32_t peripheral_component_interconnect_express_moves = 0u;        /**< Window moves since boot. */
+static uint32_t peripheral_component_interconnect_express_declared = 0u;     /**< Windows declared uncached. */
+static uint32_t peripheral_component_interconnect_express_refused = 0u;      /**< Windows refused. */
+
 static PeripheralComponentInterconnectDevice_t
     peripheral_component_interconnect_devices[PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES];
 
@@ -87,6 +99,91 @@ static void peripheral_component_interconnect_record_function(uint8_t bus, uint8
     entry->header_type = (uint8_t) ((header >> 16u) & 0xFFu);
 
     ++peripheral_component_interconnect_device_count;
+}
+
+/**
+ * @brief The ECAM window the boot's MCFG gives over @p bus of @p segment_group, or NULL.
+ */
+static const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *
+peripheral_component_interconnect_express_allocation(uint16_t segment_group, uint8_t bus)
+{
+    const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *mcfg =
+        advanced_configuration_and_power_interface_memory_mapped_configuration();
+
+    for (uint32_t index = 0u; index < mcfg->allocation_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation =
+            &mcfg->allocations[index];
+
+        if (allocation->segment_group == segment_group && bus >= allocation->start_bus && bus <= allocation->end_bus)
+            return allocation;
+    }
+    return NULL;
+}
+
+/**
+ * @brief Whether every bus of @p allocation lies below 4 GiB, which this kernel's 32-bit physical space reaches.
+ */
+static bool peripheral_component_interconnect_express_is_reachable(
+    const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation)
+{
+    return allocation->base_address + (((uint64_t) allocation->end_bus + 1u) << 20u) - 1u <= UINT32_MAX;
+}
+
+/**
+ * @brief Whether a device, a function, an offset and a width name one register of a function's 4 KiB.
+ */
+static bool peripheral_component_interconnect_express_names_a_register(uint8_t device, uint8_t function,
+                                                                       uint16_t offset, uint8_t width)
+{
+    return (width == 1u || width == 2u || width == 4u) && offset % width == 0u &&
+           offset <= PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_CONFIGURATION_SIZE - width &&
+           device < PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_DEVICES &&
+           function < PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_FUNCTIONS;
+}
+
+/**
+ * @brief The register at @p offset of a function through its ECAM window, the window moved onto the function when
+ *        it held another, or NULL when no window below 4 GiB covers the bus or the function cannot be mapped.
+ */
+static volatile uint8_t *peripheral_component_interconnect_express_register(uint16_t segment_group, uint8_t bus,
+                                                                            uint8_t device, uint8_t function,
+                                                                            uint16_t offset)
+{
+    const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation =
+        peripheral_component_interconnect_express_allocation(segment_group, bus);
+
+    if (allocation == NULL || !peripheral_component_interconnect_express_is_reachable(allocation))
+        return NULL;
+
+    const uint32_t frame = (uint32_t) allocation->base_address +
+                           ((uint32_t) bus << 20u | (uint32_t) device << 15u | (uint32_t) function << 12u);
+
+    if (peripheral_component_interconnect_express_window == 0u ||
+        peripheral_component_interconnect_express_window_frame != frame)
+    {
+        const uint32_t window =
+            kernel_vmm_map_device_window(frame, PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_CONFIGURATION_SIZE);
+
+        if (window == 0u)
+            return NULL;
+        if (peripheral_component_interconnect_express_window != 0u)
+            kernel_vmm_unmap_device_window(peripheral_component_interconnect_express_window,
+                                           PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_CONFIGURATION_SIZE);
+        peripheral_component_interconnect_express_window = window;
+        peripheral_component_interconnect_express_window_frame = frame;
+        ++peripheral_component_interconnect_express_moves;
+    }
+    return (volatile uint8_t *) (uintptr_t) (peripheral_component_interconnect_express_window + offset);
+}
+
+/**
+ * @brief Whether configuration mechanism #1 reaches @p width bytes at @p offset of segment group @p segment_group.
+ */
+static bool peripheral_component_interconnect_express_ports_reach(uint16_t segment_group, uint16_t offset,
+                                                                  uint8_t width)
+{
+    return segment_group == 0u && offset + width <= PERIPHERAL_COMPONENT_INTERCONNECT_LEGACY_CONFIGURATION_SIZE;
 }
 
 uint32_t peripheral_component_interconnect_config_read_dword(uint8_t bus, uint8_t device, uint8_t function,
@@ -302,4 +399,95 @@ void peripheral_component_interconnect_disable_pin_interrupt(const PeripheralCom
     peripheral_component_interconnect_config_write_word(
         device->bus, device->device, device->function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_COMMAND,
         (uint16_t) (command | PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_INTERRUPT_DISABLE));
+}
+
+void peripheral_component_interconnect_express_initialize(void)
+{
+    const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *mcfg =
+        advanced_configuration_and_power_interface_memory_mapped_configuration();
+
+    for (uint32_t index = 0u; index < mcfg->allocation_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation =
+            &mcfg->allocations[index];
+        const uint64_t first = allocation->base_address + ((uint64_t) allocation->start_bus << 20u);
+        const uint64_t size = ((uint64_t) allocation->end_bus - allocation->start_bus + 1u) << 20u;
+
+        if (peripheral_component_interconnect_express_is_reachable(allocation) &&
+            kernel_vmm_declare_uncached_range(first, size))
+            ++peripheral_component_interconnect_express_declared;
+        else
+            ++peripheral_component_interconnect_express_refused;
+    }
+}
+
+bool peripheral_component_interconnect_express_read(uint16_t segment_group, uint8_t bus, uint8_t device,
+                                                    uint8_t function, uint16_t offset, uint8_t width,
+                                                    uint32_t *out_value)
+{
+    *out_value = PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES;
+    if (!peripheral_component_interconnect_express_names_a_register(device, function, offset, width))
+        return false;
+
+    volatile uint8_t *const register_address =
+        peripheral_component_interconnect_express_register(segment_group, bus, device, function, offset);
+
+    if (register_address != NULL)
+    {
+        switch (width)
+        {
+        case 1u: *out_value = *register_address; break;
+        case 2u: *out_value = *(volatile uint16_t *) register_address; break;
+        default: *out_value = *(volatile uint32_t *) register_address; break;
+        }
+        return true;
+    }
+    if (!peripheral_component_interconnect_express_ports_reach(segment_group, offset, width))
+        return false;
+    *out_value = peripheral_component_interconnect_config_read(bus, device, function, (uint8_t) offset, width);
+    return true;
+}
+
+bool peripheral_component_interconnect_express_write(uint16_t segment_group, uint8_t bus, uint8_t device,
+                                                     uint8_t function, uint16_t offset, uint8_t width, uint32_t value)
+{
+    if (!peripheral_component_interconnect_express_names_a_register(device, function, offset, width))
+        return false;
+
+    volatile uint8_t *const register_address =
+        peripheral_component_interconnect_express_register(segment_group, bus, device, function, offset);
+
+    if (register_address != NULL)
+    {
+        switch (width)
+        {
+        case 1u: *register_address = (uint8_t) value; break;
+        case 2u: *(volatile uint16_t *) register_address = (uint16_t) value; break;
+        default: *(volatile uint32_t *) register_address = value; break;
+        }
+        return true;
+    }
+    if (!peripheral_component_interconnect_express_ports_reach(segment_group, offset, width))
+        return false;
+    peripheral_component_interconnect_config_write(bus, device, function, (uint8_t) offset, width, value);
+    return true;
+}
+
+bool peripheral_component_interconnect_express_reaches(uint16_t segment_group, uint8_t bus)
+{
+    const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation =
+        peripheral_component_interconnect_express_allocation(segment_group, bus);
+
+    return allocation != NULL && peripheral_component_interconnect_express_is_reachable(allocation);
+}
+
+uint32_t peripheral_component_interconnect_express_window_moves(void)
+{
+    return peripheral_component_interconnect_express_moves;
+}
+
+uint32_t peripheral_component_interconnect_express_declared_windows(uint32_t *out_refused)
+{
+    *out_refused = peripheral_component_interconnect_express_refused;
+    return peripheral_component_interconnect_express_declared;
 }

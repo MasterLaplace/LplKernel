@@ -1,6 +1,7 @@
 #include <kernel/config.h>
 #include <kernel/cpu/helpers/pci_helper.h>
 #include <kernel/cpu/pci.h>
+#include <kernel/diag/telemetry.h>
 
 static const char *peripheral_component_interconnect_class_name(uint8_t class_code)
 {
@@ -90,4 +91,15 @@ void write_peripheral_component_interconnect_info(Serial_t *serial)
 
         peripheral_component_interconnect_write_base_address_registers(serial, device);
     }
+}
+
+void write_peripheral_component_interconnect_express_record(Serial_t *serial)
+{
+    uint32_t refused = 0u;
+    const uint32_t declared = peripheral_component_interconnect_express_declared_windows(&refused);
+
+    kernel_telemetry_begin_record(serial, "pci.express");
+    kernel_telemetry_write_unsigned("windows_declared", declared);
+    kernel_telemetry_write_unsigned("windows_refused", refused);
+    kernel_telemetry_end_record();
 }

@@ -265,4 +265,92 @@ extern uint8_t peripheral_component_interconnect_read_base_address_register(
 extern bool peripheral_component_interconnect_memory_window_is_reachable(
     const PeripheralComponentInterconnectBaseAddressRegister_t *bar);
 
+/**
+ * @name The configuration space through ECAM, the memory-mapped windows the MCFG gives
+ * @{
+ */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_CONFIGURATION_SIZE                                                   \
+    0x1000u /**< Bytes of one function's configuration space through ECAM. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_LEGACY_CONFIGURATION_SIZE                                                    \
+    0x100u /**< Bytes of a function's configuration space configuration mechanism #1 reaches. */
+
+/**
+ * @brief Declares the configuration space of every ECAM window the boot's MCFG kept, so that the virtual memory
+ *        manager maps it uncached, whatever the memory type range registers say over it.
+ *
+ * @details Called once, after advanced_configuration_and_power_interface_memory_mapped_configuration_initialize and
+ *          before anything maps those frames. A window whose buses end past 4 GiB, which this kernel's 32-bit
+ *          physical space cannot reach (#569), is refused and counted; so is one the manager has no room for.
+ */
+extern void peripheral_component_interconnect_express_initialize(void);
+
+/**
+ * @brief Reads one register of a function's configuration space, past its first 256 bytes and in any segment group
+ *        too.
+ *
+ * @details The access goes through the ECAM window the boot's MCFG gives for @p segment_group and @p bus, which maps
+ *          the function's 4 KiB once and keeps them mapped while the next access names the same function. Without a
+ *          window, the first 256 bytes of segment group 0 go through configuration mechanism #1, and anything else
+ *          is refused. Linux on x86 keeps mechanism #1 for those 256 bytes even with a window (raw_pci_read, in
+ *          arch/x86/pci/common.c), against chipsets whose ECAM misbehaves; here a test compares the two mechanisms
+ *          over every function's first 256 bytes instead. One processor accesses the configuration space at a time,
+ *          as for mechanism #1.
+ *
+ * @param segment_group The PCI segment group, which _SEG names.
+ * @param bus           The bus.
+ * @param device        The device, below 32.
+ * @param function      The function, below 8.
+ * @param offset        The register's offset, which @p width divides, its last byte inside the 4 KiB.
+ * @param width         1, 2 or 4 bytes.
+ * @param out_value     What the register holds; all ones when the access is refused, as an absent function reads.
+ * @return false when the access is refused: no window covers the bus and the offset or the segment group is past
+ *         mechanism #1's reach, the window lies past 4 GiB or cannot be mapped, or an argument is out of range.
+ */
+extern bool peripheral_component_interconnect_express_read(uint16_t segment_group, uint8_t bus, uint8_t device,
+                                                           uint8_t function, uint16_t offset, uint8_t width,
+                                                           uint32_t *out_value);
+
+/**
+ * @brief Writes one register of a function's configuration space, by the path
+ *        peripheral_component_interconnect_express_read takes.
+ *
+ * @param segment_group The PCI segment group.
+ * @param bus           The bus.
+ * @param device        The device, below 32.
+ * @param function      The function, below 8.
+ * @param offset        The register's offset, which @p width divides, its last byte inside the 4 KiB.
+ * @param width         1, 2 or 4 bytes.
+ * @param value         What to write, its low @p width bytes.
+ * @return false when the access is refused, for the reasons peripheral_component_interconnect_express_read gives;
+ *         nothing is written then.
+ */
+extern bool peripheral_component_interconnect_express_write(uint16_t segment_group, uint8_t bus, uint8_t device,
+                                                            uint8_t function, uint16_t offset, uint8_t width,
+                                                            uint32_t value);
+
+/**
+ * @brief Whether an ECAM window the boot's MCFG gives covers @p bus of @p segment_group.
+ *
+ * @param segment_group The PCI segment group.
+ * @param bus           The bus.
+ * @return true when a window covers it, below 4 GiB.
+ */
+extern bool peripheral_component_interconnect_express_reaches(uint16_t segment_group, uint8_t bus);
+
+/**
+ * @brief How often an ECAM access named another function than the one before, and moved the window.
+ *
+ * @return The count since boot.
+ */
+extern uint32_t peripheral_component_interconnect_express_window_moves(void);
+
+/**
+ * @brief ECAM windows peripheral_component_interconnect_express_initialize declared, and those it refused.
+ *
+ * @param out_refused Where the refused count goes.
+ * @return The declared count.
+ */
+extern uint32_t peripheral_component_interconnect_express_declared_windows(uint32_t *out_refused);
+/** @} */
+
 #endif /* KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_H */

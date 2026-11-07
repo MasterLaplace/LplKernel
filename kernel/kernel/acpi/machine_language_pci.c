@@ -8,7 +8,7 @@
 #define MACHINE_LANGUAGE_ROOT             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT
 #define MACHINE_LANGUAGE_PCI_CONFIG                                                                                    \
     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_PERIPHERAL_COMPONENT_INTERCONNECT_CONFIGURATION
-#define MACHINE_LANGUAGE_PCI_REACHABLE    0x100u /**< Configuration bytes reachable before ECAM (#58). */
+#define MACHINE_LANGUAGE_PCI_REACHABLE    0x100u /**< Configuration bytes the interpreter reaches, mechanism #1's (§1.4). */
 #define MACHINE_LANGUAGE_PCI_HEADER_TYPE  0x0Eu  /**< The header type register. */
 #define MACHINE_LANGUAGE_PCI_LAYOUT       0x7Fu  /**< The header type's layout, without the multi-function bit. */
 #define MACHINE_LANGUAGE_PCI_BRIDGE       0x01u  /**< The layout of a PCI-to-PCI bridge. */
