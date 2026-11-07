@@ -53,7 +53,7 @@ extern void write_acpi_madt_record(Serial_t *serial);
  *
  * @param serial The port the records are written to.
  */
-extern void write_acpi_memory_mapped_configuration_record(Serial_t *serial);
+extern void write_advanced_configuration_and_power_interface_memory_mapped_configuration_record(Serial_t *serial);
 
 /**
  * @brief Writes the `[LPLTLM] acpi.mode` record: how the boot's switch to ACPI mode ended, the enable
