@@ -1148,9 +1148,10 @@ W1's target is a count, not a cost per named object. When #584 closed, placing t
 instructions per declaration on q35, and checking the data the Names keep in their table (O20) 207: those two alone took
 more than the 300 per named object a first target set. That check has since left the load for the pass that decodes
 bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. 300 per declaration is out of reach of
-the walk the declaration pass runs on: the walk alone costs 310 per declaration on q35, with the decoder of O19, the
-namespace's insertion (O5) and the check that ends a run in line in it (`tools/instructions.sh --budget
-tools/acpi-load.budget kernel/lpl.kernel` lists it). Creating a node at its first lookup saves nothing: step 3 of §3.8
+the walk the declaration pass runs on: the walk alone costs 285 per declaration on q35, with the decoder of O19, the
+namespace's insertion (O5) and the check that ends a run in line in it, and the rest of the load 256 more, the package
+statements, the lists the walk opens and the choice of the data a Name keeps first among them (`tools/instructions.sh
+--budget tools/acpi-load.budget kernel/lpl.kernel` lists them). Creating a node at its first lookup saves nothing: step 3 of §3.8
 walks every node for `_REG`, so W2 would create every node W1 no longer does. The
 debug windows of W1 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no
 count per declaration applies to them.
