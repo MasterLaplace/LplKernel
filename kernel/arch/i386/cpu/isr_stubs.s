@@ -123,6 +123,12 @@ ISR_NOERR 128   # 0x80: syscall gate (DPL3)
 #   [esp+36]  int_no
 #   [esp+40]  err_code
 #   [esp+44]  eip, cs, eflags  (CPU pushed)
+#
+# Below the frame, at the call to the dispatcher (high→low):
+#
+#   0 to 15 bytes      left by aligning the save area down to 16
+#   512 bytes          this interrupt's FXSAVE area, 16-aligned
+#   12 bytes, then 4   padding, then the frame pointer: ESP is 16-aligned at the call
 
 .type isr_common_stub, @function
 isr_common_stub:

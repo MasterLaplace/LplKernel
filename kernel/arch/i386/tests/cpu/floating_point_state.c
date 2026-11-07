@@ -14,7 +14,12 @@ KERNEL_TEST_SUITE(floating_point_state, KERNEL_TEST_STAGE_PUBLISHED);
 #define FLOATING_POINT_STATE_TEST_HANDLER                                                                              \
     0x3F80u /**< The MXCSR a handler sets: every exception masked, rounding down. */
 
+#define FLOATING_POINT_STATE_TEST_VECTOR_DWORDS 32u /**< XMM0-XMM7, four dwords each. */
+
 static volatile uint32_t floating_point_state_test_entries = 0u; /**< Entries into the test's breakpoint handler. */
+static uint32_t floating_point_state_test_held[FLOATING_POINT_STATE_TEST_VECTOR_DWORDS];    /**< What XMM0-7 hold. */
+static uint32_t floating_point_state_test_handler[FLOATING_POINT_STATE_TEST_VECTOR_DWORDS]; /**< What a handler puts. */
+static uint32_t floating_point_state_test_after[FLOATING_POINT_STATE_TEST_VECTOR_DWORDS];   /**< What came back. */
 
 /**
  * @brief The MXCSR of this processor, which FXSAVE and FXRSTOR carry with the SSE registers.
@@ -38,6 +43,7 @@ static void floating_point_state_test_fault_inside(const InterruptFrame_t *frame
     if (floating_point_state_test_entries++ != 0u)
         return;
     floating_point_state_test_write(FLOATING_POINT_STATE_TEST_HANDLER);
+    exception_trigger_fill_vector_registers(floating_point_state_test_handler);
     exception_trigger_breakpoint();
 }
 
@@ -52,7 +58,8 @@ static void floating_point_state_test_others_interrupted(const InterruptFrame_t 
 }
 
 /**
- * @brief Takes a breakpoint, handled by @p handler, while the MXCSR holds FLOATING_POINT_STATE_TEST_INTERRUPTED.
+ * @brief Takes a breakpoint, handled by @p handler, while the MXCSR holds FLOATING_POINT_STATE_TEST_INTERRUPTED and
+ *        XMM0-XMM7 floating_point_state_test_held; what XMM0-XMM7 hold after goes to floating_point_state_test_after.
  *
  * @return The MXCSR once the breakpoint returned; the MXCSR and the breakpoint's handler are restored after.
  */
@@ -63,9 +70,16 @@ static uint32_t floating_point_state_test_interrupt(isr_handler_t handler)
     uint32_t after = 0u;
 
     floating_point_state_test_entries = 0u;
+    for (uint32_t dword = 0u; dword < FLOATING_POINT_STATE_TEST_VECTOR_DWORDS; ++dword)
+    {
+        floating_point_state_test_held[dword] = 0xA5A50000u + dword;
+        floating_point_state_test_handler[dword] = 0x5A5A0000u + dword;
+        floating_point_state_test_after[dword] = 0u;
+    }
     interrupt_service_routine_register_handler(FLOATING_POINT_STATE_TEST_BREAKPOINT, handler);
     floating_point_state_test_write(FLOATING_POINT_STATE_TEST_INTERRUPTED);
-    exception_trigger_breakpoint();
+    exception_trigger_breakpoint_holding_vector_registers(floating_point_state_test_held,
+                                                          floating_point_state_test_after);
     after = floating_point_state_test_read();
     floating_point_state_test_write(before);
     interrupt_service_routine_register_handler(FLOATING_POINT_STATE_TEST_BREAKPOINT, kept);
@@ -73,8 +87,20 @@ static uint32_t floating_point_state_test_interrupt(isr_handler_t handler)
 }
 
 /**
- * @brief A fault taken inside a handler, which saves the state that handler changed, leaves the state of the code the
- *        handler interrupted intact once both return.
+ * @brief The dwords of XMM0-XMM7 that came back different from what they held.
+ */
+static uint32_t floating_point_state_test_vector_mismatches(void)
+{
+    uint32_t mismatches = 0u;
+
+    for (uint32_t dword = 0u; dword < FLOATING_POINT_STATE_TEST_VECTOR_DWORDS; ++dword)
+        mismatches += floating_point_state_test_after[dword] != floating_point_state_test_held[dword] ? 1u : 0u;
+    return mismatches;
+}
+
+/**
+ * @brief A fault taken inside a handler, which saves the state that handler changed, leaves the MXCSR and XMM0-XMM7
+ *        of the code the handler interrupted intact once both return.
  */
 KERNEL_TEST(a_fault_inside_a_handler_returns_the_interrupted_state_intact)
 {
@@ -83,12 +109,15 @@ KERNEL_TEST(a_fault_inside_a_handler_returns_the_interrupted_state_intact)
     kernel_test_check(test, floating_point_state_test_entries == 2u, "the handler ran, then the fault inside it");
     kernel_test_check(test, after == FLOATING_POINT_STATE_TEST_INTERRUPTED,
                       "the interrupted code gets its MXCSR back, not the handler's");
+    kernel_test_check(test, floating_point_state_test_vector_mismatches() == 0u,
+                      "and its XMM0-XMM7, not the handler's");
     kernel_test_measure_hexadecimal(test, "mxcsr_after", after);
+    kernel_test_measure(test, "xmm_dwords_changed", floating_point_state_test_vector_mismatches());
 }
 
 /**
- * @brief Other processors taking an interrupt while this one is inside a handler leave this one's interrupted state
- *        intact: each saved its own.
+ * @brief Other processors taking an interrupt while this one is inside a handler leave the MXCSR and XMM0-XMM7 this
+ *        one's handler interrupted intact: each saved its own.
  */
 KERNEL_TEST(other_processors_interrupted_meanwhile_return_the_interrupted_state_intact)
 {
@@ -96,9 +125,14 @@ KERNEL_TEST(other_processors_interrupted_meanwhile_return_the_interrupted_state_
     const uint32_t broadcasts = advanced_pic_ipi_get_tlb_shootdown_broadcast_count();
     const uint32_t timeouts = advanced_pic_ipi_get_tlb_shootdown_timeout_count();
 
-    if (online < 2u || !advanced_pic_ipi_is_ready())
+    if (online < 2u)
     {
         kernel_test_skip(test, "no other processor online: boot with -smp 2");
+        return;
+    }
+    if (!advanced_pic_ipi_is_ready())
+    {
+        kernel_test_skip(test, "the local APIC sends no interprocessor interrupt");
         return;
     }
 
@@ -111,6 +145,9 @@ KERNEL_TEST(other_processors_interrupted_meanwhile_return_the_interrupted_state_
                       "every other processor took the flush and answered it");
     kernel_test_check(test, after == FLOATING_POINT_STATE_TEST_INTERRUPTED,
                       "the interrupted code gets its MXCSR back, not another processor's");
+    kernel_test_check(test, floating_point_state_test_vector_mismatches() == 0u,
+                      "and its XMM0-XMM7, not another processor's");
+    kernel_test_measure(test, "xmm_dwords_changed", floating_point_state_test_vector_mismatches());
     kernel_test_measure(test, "online", online);
     kernel_test_measure_hexadecimal(test, "mxcsr_after", after);
 }
