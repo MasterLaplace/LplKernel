@@ -1,4 +1,5 @@
 #include <kernel/cpu/apic.h>
+#include <kernel/cpu/cpu_identity.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/msi.h>
@@ -7,7 +8,8 @@
 #include <stddef.h>
 
 #define MESSAGE_SIGNALED_INTERRUPT_FIRST_VECTOR            0x10u   /**< Vectors 0 to 15 are reserved for messages. */
-#define MESSAGE_SIGNALED_INTERRUPT_LARGEST_DESTINATION     0xFFu   /**< The destination field's 8 bits. */
+#define MESSAGE_SIGNALED_INTERRUPT_LAST_VECTOR             0xFEu   /**< The last vector a message may carry. */
+#define MESSAGE_SIGNALED_INTERRUPT_LARGEST_DESTINATION     0xFEu   /**< 8 bits, 0xFF the broadcast. */
 #define MESSAGE_SIGNALED_INTERRUPT_DESTINATION_SHIFT       12u     /**< Where the destination sits in the address. */
 #define MESSAGE_SIGNALED_INTERRUPT_EXTENDED_CONTROL        0x02u   /**< Message Control, from the capability. */
 #define MESSAGE_SIGNALED_INTERRUPT_EXTENDED_TABLE          0x04u   /**< Table Offset and Table BIR, from it. */
@@ -60,6 +62,33 @@ message_signaled_interrupt_extended_field(const MessageSignaledInterruptExtended
 }
 
 /**
+ * @brief Masks entry @p entry of an open table, or unmasks it, its other Vector Control bits kept.
+ */
+static void message_signaled_interrupt_extended_mask(const MessageSignaledInterruptExtendedTable_t *table,
+                                                     uint16_t entry, bool masked)
+{
+    volatile uint32_t *const control =
+        message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_VECTOR_CONTROL);
+
+    *control = (*control & ~MESSAGE_SIGNALED_INTERRUPT_EXTENDED_MASKED) |
+               (masked ? MESSAGE_SIGNALED_INTERRUPT_EXTENDED_MASKED : 0u);
+}
+
+/**
+ * @brief Whether a device's message can reach a local APIC: in xAPIC mode always, in x2APIC mode only under a
+ *        hypervisor, since bare metal needs interrupt remapping there.
+ */
+static bool message_signaled_interrupt_platform_delivers(void)
+{
+    CpuIdentity_t identity;
+
+    if (!apic_is_x2apic_active())
+        return true;
+    cpu_identity_read(&identity);
+    return identity.hypervisor;
+}
+
+/**
  * @brief Writes the Message Control register of the MSI-X capability of @p table's function.
  */
 static void message_signaled_interrupt_extended_control(const MessageSignaledInterruptExtendedTable_t *table,
@@ -72,7 +101,8 @@ static void message_signaled_interrupt_extended_control(const MessageSignaledInt
 
 bool message_signaled_interrupt_compose(uint32_t apic_id, uint8_t vector, uint32_t *out_address, uint32_t *out_data)
 {
-    if (apic_id > MESSAGE_SIGNALED_INTERRUPT_LARGEST_DESTINATION || vector < MESSAGE_SIGNALED_INTERRUPT_FIRST_VECTOR)
+    if (apic_id > MESSAGE_SIGNALED_INTERRUPT_LARGEST_DESTINATION || vector < MESSAGE_SIGNALED_INTERRUPT_FIRST_VECTOR ||
+        vector > MESSAGE_SIGNALED_INTERRUPT_LAST_VECTOR)
         return false;
     *out_address = MESSAGE_SIGNALED_INTERRUPT_ADDRESS_BASE | apic_id << MESSAGE_SIGNALED_INTERRUPT_DESTINATION_SHIFT;
     *out_data = vector;
@@ -156,8 +186,7 @@ bool message_signaled_interrupt_extended_open(const PeripheralComponentInterconn
                                                                  MESSAGE_SIGNALED_INTERRUPT_EXTENDED_FUNCTION_MASK |
                                                                  MESSAGE_SIGNALED_INTERRUPT_EXTENDED_ENABLE));
     for (uint16_t entry = 0u; entry < out->entries; ++entry)
-        *message_signaled_interrupt_extended_field(out, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_VECTOR_CONTROL) =
-            MESSAGE_SIGNALED_INTERRUPT_EXTENDED_MASKED;
+        message_signaled_interrupt_extended_mask(out, entry, true);
     message_signaled_interrupt_extended_control(out,
                                                 (uint16_t) ((control | MESSAGE_SIGNALED_INTERRUPT_EXTENDED_ENABLE) &
                                                             ~MESSAGE_SIGNALED_INTERRUPT_EXTENDED_FUNCTION_MASK));
@@ -170,15 +199,15 @@ bool message_signaled_interrupt_extended_aim(const MessageSignaledInterruptExten
     uint32_t address = 0u;
     uint32_t data = 0u;
 
-    if (table->table == 0u || entry >= table->entries ||
+    if (table->table == 0u || entry >= table->entries)
+        return false;
+    message_signaled_interrupt_extended_mask(table, entry, true);
+    if (!message_signaled_interrupt_platform_delivers() ||
         !message_signaled_interrupt_compose(cpu_topology_get_apic_id_at_slot(slot), vector, &address, &data))
         return false;
-
-    *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_VECTOR_CONTROL) =
-        MESSAGE_SIGNALED_INTERRUPT_EXTENDED_MASKED;
     *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_ADDRESS) = address;
     *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_UPPER_ADDRESS) = 0u;
     *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_DATA) = data;
-    *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_VECTOR_CONTROL) = 0u;
+    message_signaled_interrupt_extended_mask(table, entry, false);
     return true;
 }

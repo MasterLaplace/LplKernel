@@ -52,14 +52,14 @@ extern "C" {
 /** Bytes kept of the model number Identify Controller reports, its terminating NUL included. */
 #define NON_VOLATILE_MEMORY_EXPRESS_MODEL_NUMBER_CAPACITY 41u
 
+#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS 5u /**< I/O queue pairs: 5 x 63 commands in flight. */
+
 /**
  * @brief How far the bring-up went, and what the controller said about itself.
  *
  * @details Each flag is set once its step succeeded, so a failed bring-up still says which step
  *          stopped it.
  */
-#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS 5u /**< I/O queue pairs: 5 x 63 commands in flight. */
-
 typedef struct NonVolatileMemoryExpressState {
     bool controller_present;             /**< A controller of class 01h, subclass 08h, interface 02h is on the bus. */
     bool controller_ready;               /**< It came out of reset with the admin queues it was given. */
@@ -77,9 +77,9 @@ typedef struct NonVolatileMemoryExpressState {
     uint32_t most_in_flight;             /**< The most commands a batch had in flight at once. */
     uint32_t interrupting_queues;        /**< I/O completion queues whose completions interrupt a core (MSI-X). */
     uint8_t interrupt_vectors[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS]; /**< Each pair's vector, or 0. */
-    uint32_t interrupt_slots[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS];  /**< The CPU slot it interrupts. */
-    char serial_number[NON_VOLATILE_MEMORY_EXPRESS_SERIAL_NUMBER_CAPACITY];    /**< Without its padding spaces. */
-    char model_number[NON_VOLATILE_MEMORY_EXPRESS_MODEL_NUMBER_CAPACITY];      /**< Without its padding spaces. */
+    uint32_t interrupt_slots[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS]; /**< Its slot, or CPU_TOPOLOGY_NO_SLOT. */
+    char serial_number[NON_VOLATILE_MEMORY_EXPRESS_SERIAL_NUMBER_CAPACITY];   /**< Without its padding spaces. */
+    char model_number[NON_VOLATILE_MEMORY_EXPRESS_MODEL_NUMBER_CAPACITY];     /**< Without its padding spaces. */
 } NonVolatileMemoryExpressState_t;
 
 /**
