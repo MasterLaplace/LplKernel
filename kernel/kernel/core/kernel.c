@@ -36,7 +36,6 @@
 #include <kernel/drivers/keyboard.h>
 #include <kernel/drivers/ps2_keyboard.h>
 #include <kernel/drivers/ps2_mouse.h>
-#include <kernel/drivers/tty.h>
 #include <kernel/hal/hal.h>
 #include <kernel/memory/backpressure.h>
 #include <kernel/memory/frame_arena.h>
