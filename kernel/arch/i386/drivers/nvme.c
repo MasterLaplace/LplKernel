@@ -64,14 +64,15 @@
 #define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES            0x09u     /**< Set Features. */
 #define NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES       0x07u     /**< Number of Queues. */
 #define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS    (1u << 0) /**< PC, in dword 11 of both creations. */
-#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_INTERRUPTS_ENABLED       (1u << 1) /**< IEN, in dword 11 of a completion queue's. \
-                                                                              */
-#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY      0x06u               /**< Identify. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE   0x00u               /**< CNS 00h: a namespace. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER  0x01u               /**< CNS 01h: the controller. */
-#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE      1u                  /**< The namespace identified. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE     (1u << 16)          /**< Phase tag, in dword 3. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT 0xFFFFu /**< No status: the command never completed. */
+#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_INTERRUPTS_ENABLED                                                           \
+    (1u << 1)                                                       /**< IEN, in dword 11 of a completion queue's.     \
+                                                                     */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY      0x06u      /**< Identify. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE   0x00u      /**< CNS 00h: a namespace. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER  0x01u      /**< CNS 01h: the controller. */
+#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE      1u         /**< The namespace identified. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE     (1u << 16) /**< Phase tag, in dword 3. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT 0xFFFFu    /**< No status: the command never completed. */
 /** @} */
 
 /**
