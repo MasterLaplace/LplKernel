@@ -895,12 +895,12 @@ static MachineLanguageStatus_t machine_language_build_object(MachineLanguageLoad
                                                              const void *shape, uint32_t bytes)
 {
     uint32_t handle = 0u;
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        &load->heap, &load->space, kind, bytes, &handle);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+            &load->heap, &load->space, kind, bytes, shape, bytes, &handle);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1, shape, bytes);
 
     MachineLanguageNode_t *target =
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node);

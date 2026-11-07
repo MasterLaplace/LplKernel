@@ -605,6 +605,9 @@ advanced_configuration_and_power_interface_machine_language_read_name_string(
  * @brief The NameSeg at @p offset as one integer, its first character in the lowest byte, so that two
  *        NameSegs compare as integers.
  *
+ * @details Its four bytes are read through a pointer to the first, which GCC and Clang merge into one 32-bit load on
+ *          a little-endian target, i686 and x86-64 among them; indexed from @p offset, GCC reads them on i686 as four
+ *          loads, shifts and ors.
  * @param bytes  The AML.
  * @param offset Where the NameSeg starts; the caller has checked its 4 bytes.
  * @return The NameSeg.

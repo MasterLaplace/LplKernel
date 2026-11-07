@@ -162,6 +162,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace {
     uint32_t run_count;        /**< Runs of nodes committed, from the reservation's start. */
     uint32_t node_count;       /**< Node indices used, the unused node 0 included. */
     uint32_t free_nodes;       /**< The last node removed, whose next_sibling links the others, or 0. */
+    uint32_t insertion_limit;  /**< The first node index find_or_add_child does not create in line: 0 while the free
+                                    list holds a node, else insertion_room. Kept in step by each change of the four. */
+    uint32_t insertion_room;   /**< The least of the node cap's end, half the slots and the end of the runs committed:
+                                    the insertion limit once the free list is empty. */
     uint32_t live_nodes;       /**< Nodes in the namespace, the root included, the removed ones apart. */
     uint32_t max_nodes;        /**< The node cap. */
     uint32_t arena_bytes;      /**< Bytes taken from the host: runs and hash table. */
@@ -337,8 +341,9 @@ advanced_configuration_and_power_interface_machine_language_namespace_add_child(
  *
  * @details The child it creates takes the next unused index and the empty slot that ended the probe sequence, the one
  *          add_child would place it in. A creation that would take a node from the free list, grow the hash table,
- *          take a run of nodes or meet the node cap goes through add_child. Always in line: it is the declaration
- *          pass's insertion (§7.2, O5).
+ *          take a run of nodes or meet the node cap goes through add_child, which the one comparison of that index
+ *          with the namespace's insertion_limit tells. Always in line: it is the declaration pass's insertion (§7.2,
+ *          O5).
  *
  * @param space       The namespace.
  * @param parent      The parent's index: a node, never 0.

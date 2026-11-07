@@ -210,6 +210,30 @@ static void values_close_with(KernelTest_t *test, uint32_t unreachable)
 static void values_close(KernelTest_t *test) { values_close_with(test, 0u); }
 
 /**
+ * @brief Writes 0xFF over the first @p bytes after the header of the object @p handle, as an object that wrote its
+ *        payload, and the block past it, leaves them.
+ */
+static void values_scribble(uint32_t handle, uint32_t bytes)
+{
+    memset(advanced_configuration_and_power_interface_machine_language_object_payload(&values_load.heap, handle), 0xFF,
+           bytes);
+}
+
+/**
+ * @brief Whether the @p bytes after the first @p first of the payload of the object @p handle are all zero.
+ */
+static bool values_payload_is_zero(uint32_t handle, uint32_t first, uint32_t bytes)
+{
+    const uint8_t *payload =
+        advanced_configuration_and_power_interface_machine_language_object_payload(&values_load.heap, handle);
+
+    for (uint32_t byte = first; byte < first + bytes; ++byte)
+        if (payload[byte] != 0u)
+            return false;
+    return true;
+}
+
+/**
  * @brief Strings, buffers and packages are built while methods run (§4.3): a String literal; a Buffer
  *        whose size an argument gives, longer than its initialiser or shorter; a VarPackage of an
  *        argument's size, padded with Uninitialized past its initialisers or cut short, each counted;
@@ -718,8 +742,9 @@ KERNEL_TEST(an_evaluation_gives_back_every_object_it_built)
 
 /**
  * @brief The object heap reuses what it frees (§3.5): a freed block of a size class serves the next
- *        object of that class, a freed object of 4 KiB or more gives its pages back and its run to the
- *        next one, and releasing a Package frees what it nests.
+ *        object of that class, all zero after its header whatever the freed one wrote there, a freed object of
+ *        4 KiB or more gives its pages back and its run to the next one, and releasing a Package frees what it
+ *        nests.
  */
 KERNEL_TEST(the_object_heap_reuses_what_it_frees)
 {
@@ -738,17 +763,23 @@ KERNEL_TEST(the_object_heap_reuses_what_it_frees)
 
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 10u, &first);
+    values_scribble(first, 13u);
     advanced_configuration_and_power_interface_machine_language_object_release(heap, space, first);
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 12u, &second);
     kernel_test_check(test, second == first, "a String of 12 takes the block a String of 10 gave back");
+    kernel_test_check(test, values_payload_is_zero(second, 0u, 13u),
+                      "its 12 characters and its NUL are zero, though the String of 10 wrote over them");
     advanced_configuration_and_power_interface_machine_language_object_release(heap, space, second);
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, 300u, &first);
+    values_scribble(first, 303u);
     advanced_configuration_and_power_interface_machine_language_object_release(heap, space, first);
     advanced_configuration_and_power_interface_machine_language_object_allocate(
         heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, 303u, &second);
     kernel_test_check(test, second == first, "a Buffer of 303 takes the block a Buffer of 300 gave back");
+    kernel_test_check(test, values_payload_is_zero(second, 0u, 303u),
+                      "its 303 bytes are zero, though the Buffer of 300 wrote over them");
     advanced_configuration_and_power_interface_machine_language_object_release(heap, space, second);
 
     const uint32_t arena = space->arena_bytes;
@@ -783,6 +814,63 @@ KERNEL_TEST(the_object_heap_reuses_what_it_frees)
     kernel_test_check(test, values_live_objects() == live + 3u, "the Package, its Package and its String live");
     advanced_configuration_and_power_interface_machine_language_object_release(heap, space, outer);
     kernel_test_check(test, values_live_objects() == live, "releasing the outer Package frees all three");
+    values_close(test);
+}
+
+/**
+ * @brief An object allocated with the bytes it starts with holds them, then zeros to its payload's end, though the
+ *        block it takes held other bytes (§3.5): a String's NUL after the characters it copies, a Buffer's bytes past
+ *        those it copies, and a value that copies its whole payload.
+ */
+KERNEL_TEST(an_object_allocated_with_its_bytes_holds_them_then_zeros)
+{
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageHeap_t *heap = &values_load.heap;
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageNamespace_t *space = &values_load.space;
+    static const uint8_t bytes[] = "ABCDEFGHIJ";
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t value = {0};
+    uint32_t first = 0u;
+    uint32_t second = 0u;
+
+    if (!values_run(test, 2u, common_result_zero_aml, sizeof(common_result_zero_aml)))
+        return;
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 12u, &first);
+    values_scribble(first, 13u);
+    advanced_configuration_and_power_interface_machine_language_object_release(heap, space, first);
+    advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING, 5u, bytes, 5u, &second);
+    kernel_test_check(
+        test,
+        second == first &&
+            memcmp(advanced_configuration_and_power_interface_machine_language_object_payload(heap, second), "ABCDE",
+                   6u) == 0,
+        "a String of 5 copied into the block a String of 12 wrote over holds its 5 characters and its NUL");
+    advanced_configuration_and_power_interface_machine_language_object_release(heap, space, second);
+    advanced_configuration_and_power_interface_machine_language_object_allocate(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, 300u, &first);
+    values_scribble(first, 303u);
+    advanced_configuration_and_power_interface_machine_language_object_release(heap, space, first);
+    advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+        heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, 303u, bytes, 10u,
+        &second);
+    kernel_test_check(
+        test,
+        second == first &&
+            memcmp(advanced_configuration_and_power_interface_machine_language_object_payload(heap, second), bytes,
+                   10u) == 0 &&
+            values_payload_is_zero(second, 10u, 293u),
+        "a Buffer of 303 that copies 10 bytes into the block a Buffer of 300 wrote over holds them, then "
+        "293 zeros");
+    advanced_configuration_and_power_interface_machine_language_object_release(heap, space, second);
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_machine_language_value_allocate_copy(
+                          heap, space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER, 4u,
+                          bytes, 4u, &value) == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK &&
+                          values_value_holds(&value,
+                                             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_BUFFER,
+                                             bytes, 4u),
+                      "a Buffer value that copies its 4 bytes names a Buffer of 4 that holds them");
+    advanced_configuration_and_power_interface_machine_language_value_release(heap, space, &value);
     values_close(test);
 }
 

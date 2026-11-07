@@ -3005,13 +3005,12 @@ machine_language_kept_bytes(AdvancedConfigurationAndPowerInterfaceMachineLanguag
                             const uint8_t *bytes, uint32_t copied, uint32_t length,
                             AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value)
 {
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        &load->heap, &load->space, kind, length, &out_value->handle);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+            &load->heap, &load->space, kind, length, bytes, copied, &out_value->handle);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object(&load->heap, out_value->handle) + 1,
-           bytes, copied);
     out_value->kind = kind;
     return MACHINE_LANGUAGE_OK;
 }
@@ -3460,14 +3459,13 @@ machine_language_answer_identity(AdvancedConfigurationAndPowerInterfaceMachineLa
             &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_ROOT,
             advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "_OS_", 0u)));
     uint32_t handle = 0u;
-    const MachineLanguageStatus_t status = advanced_configuration_and_power_interface_machine_language_object_allocate(
-        &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING,
-        (uint32_t) sizeof(operating_system) - 1u, &handle);
+    const MachineLanguageStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_object_allocate_copy(
+            &load->heap, &load->space, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING,
+            (uint32_t) sizeof(operating_system) - 1u, operating_system, (uint32_t) sizeof(operating_system), &handle);
 
     if (status != MACHINE_LANGUAGE_OK)
         return status;
-    memcpy(advanced_configuration_and_power_interface_machine_language_object(&load->heap, handle) + 1,
-           operating_system, sizeof(operating_system));
     name->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING;
     name->value.handle = handle;
     revision->value.kind = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER;
