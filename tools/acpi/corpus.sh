@@ -32,9 +32,10 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          (apt install bubblewrap); qemu fetches the reference tables of QEMU at a pinned release, its 47
          x86 configurations; uacpi fetches uACPI's test cases at a pinned commit
   check  walks each machine of a list with `test-acpi --machine`, built here, and compares its
-         directory with what tools/acpi/oracles/expected_directory.py reads from the same dump, its FADT
-         and its MADT with what tools/acpi/oracles/expected_fadt.py and tools/acpi/oracles/expected_madt.py read
-         from the report's decoded tables, and the opcodes and method calls its definition blocks
+         directory with what tools/acpi/oracles/expected_directory.py reads from the same dump, its FADT,
+         its MADT and its MCFG with what tools/acpi/oracles/expected_fadt.py, tools/acpi/oracles/expected_madt.py
+         and tools/acpi/oracles/expected_mcfg.py read from the report's decoded tables, and the opcodes and
+         method calls its definition blocks
          decode with what tools/acpi/oracles/aml_census.py counts, once tools/acpi/oracles/check_census.py has
          checked that census against hand-made tables, and fails on a data object a Name kept in its
          table that the check of kept data finds would not build (`aml faults data_faults=`); then
@@ -971,9 +972,9 @@ decoded() {
     GIT_NO_LAZY_FETCH=1 git -C "$LINUXHW" cat-file blob "$LINUXHW_COMMIT:$1"
 }
 
-# Compares the directory, the FADT and the MADT the kernel's code reads from each dump of the list $1 with the
-# expected ones, then says how many FADTs, registers, CPU slots, I/O APICs, overrides and NMI connections the
-# comparison held; fails on kept data the check of kept data finds would not build.
+# Compares the directory, the FADT, the MADT and the MCFG the kernel's code reads from each dump of the list $1 with
+# the expected ones, then says how many FADTs, registers, CPU slots, I/O APICs, overrides, NMI connections and ECAM
+# windows the comparison held; fails on kept data the check of kept data finds would not build.
 check() {
     (cd "$ROOT" && xmake build -q test-acpi)
     local number=0 agree=0 compared="" disassembly="" faults="" machine dump actual expected tables census
@@ -1002,6 +1003,7 @@ check() {
         expected="$(python3 -I "$ROOT/tools/acpi/oracles/expected_directory.py" "$dump")
 $(decoded "$machine" | python3 -I "$ROOT/tools/acpi/oracles/expected_fadt.py" "$dump" -)
 $(decoded "$machine" | python3 -I "$ROOT/tools/acpi/oracles/expected_madt.py" "$dump" -)
+$(decoded "$machine" | python3 -I "$ROOT/tools/acpi/oracles/expected_mcfg.py" "$dump" -)
 $(python3 -I "$ROOT/tools/acpi/oracles/expected_machine_language.py" "$dump")" || true
         disassembly+="$(decoded "$machine" | python3 -I "$ROOT/tools/acpi/oracles/check_against_iasl.py" "$dump" - |
             sed "s|^|$machine |")"$'\n' || true
@@ -1020,7 +1022,7 @@ $(python3 -I "$ROOT/tools/acpi/oracles/expected_machine_language.py" "$dump")" |
             [[ "$verdict" == "fadt acpica agrees"* ]] || sed 's/^ */    # /' <<<"$verdict"
         fi
     done < <(reports "$1")
-    echo "# directory, FADT and MADT: $agree of $number machines agree"
+    echo "# directory, FADT, MADT and MCFG: $agree of $number machines agree"
     if [[ "$oracle" -eq 0 ]]; then
         echo "# FADT against ACPICA's: $(grep -c '^fadt acpica agrees' <<<"$acpica") of $number agree, the fields" \
             "ACPI says to ignore left out of the $(grep -c ' hardware-reduced$' <<<"$acpica") hardware-reduced ones"
@@ -1031,7 +1033,8 @@ $(python3 -I "$ROOT/tools/acpi/oracles/expected_machine_language.py" "$dump")" |
         "$(grep -c '^fadt [a-z0-9_]* space=[0-9]* width=[0-9]* offset=[0-9]* access=[0-9]* address=0x[1-9A-F]' <<<"$compared") registers present," \
         "$(grep -c '^processor ' <<<"$compared") CPU slots," \
         "$(grep -c '^io_apic ' <<<"$compared") I/O APICs, $(grep -c '^override ' <<<"$compared") overrides," \
-        "$(grep -c '^nmi ' <<<"$compared") NMI connections, $(grep -c '^aml opcode ' <<<"$compared") opcode counts," \
+        "$(grep -c '^nmi ' <<<"$compared") NMI connections, $(grep -c '^mcfg read=1 ' <<<"$compared") MCFGs, $(grep -c '^window ' <<<"$compared") ECAM windows," \
+        "$(grep -c '^aml opcode ' <<<"$compared") opcode counts," \
         "$(grep -o ' calls=[0-9]*' <<<"$compared" | cut -d= -f2 | paste -sd+ | bc) method calls"
     tables="$(grep -o '^aml tables=[0-9]*' <<<"$compared" | cut -d= -f2 | paste -sd+ | bc)"
     echo "# iASL disassembly: $(grep -c ' iasl agrees ' <<<"$disassembly") tables declare as many objects," \

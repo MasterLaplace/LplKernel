@@ -13,8 +13,8 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file tables.h
- * @brief The firmware's ACPI tables: the directory of every table, the normalised FADT, and the MADT's
- *        processors, NMI connections, I/O APICs and interrupt overrides.
+ * @brief The firmware's ACPI tables: the directory of every table, the normalised FADT, the MADT's
+ *        processors, NMI connections, I/O APICs and interrupt overrides, and the MCFG's ECAM windows.
  *
  * Architecture-free: the tables are mapped, and the root system description pointer found, through
  * the host interface of kernel/acpi/host.h.
@@ -41,6 +41,8 @@
     256u /**< CPU slots one MADT reading keeps; the largest server of the corpus enables 208. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_NON_MASKABLE_INTERRUPT_COUNT                                    \
     256u /**< NMI connections one MADT reading keeps; firmware lists up to one per processor. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_CONFIGURATION_SPACE_ALLOCATION_COUNT                            \
+    16u /**< ECAM windows one MCFG reading keeps; the MCFGs of the corpus list one each. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ENABLED 0x1u /**< Local APIC flag: ready for use. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MADT_ONLINE_CAPABLE                                                 \
     0x2u /**< Local APIC flag: not enabled, but can be enabled at run time. */
@@ -441,6 +443,47 @@ typedef struct AdvancedConfigurationAndPowerInterfaceMadtState {
 
 typedef struct __attribute__((packed)) {
     AdvancedConfigurationAndPowerInterfaceSdtHeader_t header;
+    uint64_t reserved;
+} AdvancedConfigurationAndPowerInterfaceMemoryMappedConfiguration_t;
+
+typedef struct __attribute__((packed)) {
+    uint64_t base_address;
+    uint16_t segment_group;
+    uint8_t start_bus;
+    uint8_t end_bus;
+    uint32_t reserved;
+} AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocationEntry_t;
+
+/**
+ * @brief One ECAM window an MCFG gives: the configuration space of a range of buses in a segment group.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation {
+    uint64_t
+        base_address;       /**< The physical address bus 0 of the group would have, whatever the start bus: the
+                                 function at bus b, device d, function f starts at base + (b << 20 | d << 15 | f << 12). */
+    uint16_t segment_group; /**< The PCI segment group, which _SEG names. */
+    uint8_t start_bus;      /**< The first bus the window decodes. */
+    uint8_t end_bus;        /**< The last bus the window decodes, at least the first. */
+} AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t;
+
+/**
+ * @brief What one reading of an MCFG found.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState {
+    const char *state_name;       /**< How the reading went, as the boot reports it. */
+    bool available;               /**< Whether the table was read, to the last whole allocation. */
+    bool checksum_valid;          /**< Whether its bytes sum to zero; one that fails is read all the same. */
+    uint32_t allocation_count;    /**< Windows kept, in the order the table lists them. */
+    uint32_t allocations_dropped; /**< Valid windows past the capacity, counted. */
+    uint32_t invalid_count;       /**< Allocations whose base is 0 or whose end bus is below its start bus. */
+    uint32_t trailing_bytes;      /**< Bytes past the last whole allocation, which no allocation holds. */
+    AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t
+        allocations[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_CONFIGURATION_SPACE_ALLOCATION_COUNT]; /**< The
+                                                                                                             windows. */
+} AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t;
+
+typedef struct __attribute__((packed)) {
+    AdvancedConfigurationAndPowerInterfaceSdtHeader_t header;
     uint32_t reserved1;
     uint64_t reserved2;
 } AdvancedConfigurationAndPowerInterfaceSrat_t;
@@ -541,6 +584,41 @@ advanced_configuration_and_power_interface_read_madt(const AdvancedConfiguration
  * @return The state, never NULL.
  */
 extern const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configuration_and_power_interface_madt(void);
+
+/**
+ * @brief Reads every allocation of an MCFG (PCI Firmware Specification 3.3, §4.1.2).
+ *
+ * @details The table holds one allocation of 16 bytes after its header and 8 reserved bytes, as many as its
+ *          length holds whole; the bytes past the last whole one are counted. An allocation whose base is 0 or
+ *          whose end bus is below its start bus is counted invalid and dropped; a valid one past the capacity is
+ *          counted. A base above 4 GiB is kept whole: the reader maps nothing. A table whose checksum fails is
+ *          read all the same, and recorded.
+ *
+ * @param table     The table, every byte of its length readable.
+ * @param out_state Emptied, then filled with what the table holds.
+ * @return false when @p table is NULL or shorter than an MCFG's header and reserved bytes; @p out_state then says
+ *         why.
+ */
+extern bool advanced_configuration_and_power_interface_read_memory_mapped_configuration(
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *table,
+    AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *out_state);
+
+/**
+ * @brief Reads the firmware's MCFG into the boot's MCFG state.
+ *
+ * @details The state names the MCFG as not found when the directory has none, and otherwise holds what
+ *          advanced_configuration_and_power_interface_read_memory_mapped_configuration found in it.
+ */
+extern void advanced_configuration_and_power_interface_memory_mapped_configuration_initialize(void);
+
+/**
+ * @brief The boot's MCFG state, which advanced_configuration_and_power_interface_memory_mapped_configuration_initialize
+ *        fills.
+ *
+ * @return The state, never NULL.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *
+advanced_configuration_and_power_interface_memory_mapped_configuration(void);
 
 /**
  * @brief Normalises a FADT (§3.9), as the directory reads it.

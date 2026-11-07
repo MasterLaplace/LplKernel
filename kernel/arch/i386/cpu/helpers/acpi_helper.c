@@ -407,6 +407,35 @@ void write_acpi_madt_record(Serial_t *serial)
     kernel_telemetry_end_record();
 }
 
+void write_acpi_memory_mapped_configuration_record(Serial_t *serial)
+{
+    const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *mcfg =
+        advanced_configuration_and_power_interface_memory_mapped_configuration();
+
+    kernel_telemetry_begin_record(serial, "acpi.mcfg");
+    kernel_telemetry_write_boolean("read", mcfg->available);
+    kernel_telemetry_write_text("state", mcfg->state_name);
+    kernel_telemetry_write_boolean("checksum_valid", mcfg->checksum_valid);
+    kernel_telemetry_write_unsigned("windows", mcfg->allocation_count);
+    kernel_telemetry_write_unsigned("windows_dropped", mcfg->allocations_dropped);
+    kernel_telemetry_write_unsigned("invalid", mcfg->invalid_count);
+    kernel_telemetry_write_unsigned("trailing_bytes", mcfg->trailing_bytes);
+    kernel_telemetry_end_record();
+    for (uint32_t index = 0u; index < mcfg->allocation_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *window = &mcfg->allocations[index];
+
+        kernel_telemetry_begin_record(serial, "acpi.mcfg.window");
+        kernel_telemetry_write_unsigned("index", index);
+        kernel_telemetry_write_unsigned("segment_group", window->segment_group);
+        kernel_telemetry_write_unsigned("start_bus", window->start_bus);
+        kernel_telemetry_write_unsigned("end_bus", window->end_bus);
+        kernel_telemetry_write_hexadecimal("base_high", (uint32_t) (window->base_address >> 32u));
+        kernel_telemetry_write_hexadecimal("base", (uint32_t) window->base_address);
+        kernel_telemetry_end_record();
+    }
+}
+
 void write_acpi_mode_record(Serial_t *serial)
 {
     const AdvancedConfigurationAndPowerInterfaceModeSwitch_t *mode = advanced_configuration_and_power_interface_mode();
