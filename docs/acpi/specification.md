@@ -1149,11 +1149,11 @@ instructions per declaration on q35, and checking the data the Names keep in the
 more than the 300 per named object a first target set. That check has since left the load for the pass that decodes
 bodies (§3.6), which a release kernel skips, and W1 fell by 140 per declaration. 300 per declaration is out of reach of
 the walk the declaration pass runs on: the walk alone costs 285 per declaration on q35, with the decoder of O19, the
-namespace's insertion (O5) and the check that ends a run in line in it, and the rest of the load 256 more, the package
-statements, the lists the walk opens and the choice of the data a Name keeps first among them (`tools/instructions.sh
---budget tools/acpi-load.budget kernel/lpl.kernel` lists them). Creating a node at its first lookup saves nothing: step 3 of §3.8
-walks every node for `_REG`, so W2 would create every node W1 no longer does. The
-debug windows of W1 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no
+namespace's insertion (O5) and the check that ends a run in line in it, which leaves 15 for the rest of the load, which
+costs 256: the statements with a PkgLength, the lists the walk opens and the choice of the data a Name keeps first among
+them (`tools/instructions.sh --budget tools/acpi-load.budget kernel/lpl.kernel` lists them). Creating a node at its
+first lookup saves nothing: step 3 of §3.8 walks every node for `_REG`, so W2 would create every node W1 no longer does.
+The debug windows of W1 count the pass that decodes every method body (§3.6) too, which a release kernel never runs: no
 count per declaration applies to them.
 
 `_PRT` gets a window once #59 gives it a boot consumer.

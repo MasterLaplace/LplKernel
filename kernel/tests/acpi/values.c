@@ -210,6 +210,30 @@ static void values_close_with(KernelTest_t *test, uint32_t unreachable)
 static void values_close(KernelTest_t *test) { values_close_with(test, 0u); }
 
 /**
+ * @brief Writes 0xFF over the first @p bytes after the header of the object @p handle, as an object that wrote its
+ *        payload, and the block past it, leaves them.
+ */
+static void values_scribble(uint32_t handle, uint32_t bytes)
+{
+    memset(advanced_configuration_and_power_interface_machine_language_object_payload(&values_load.heap, handle), 0xFF,
+           bytes);
+}
+
+/**
+ * @brief Whether the @p bytes after the first @p first of the payload of the object @p handle are all zero.
+ */
+static bool values_payload_is_zero(uint32_t handle, uint32_t first, uint32_t bytes)
+{
+    const uint8_t *payload =
+        advanced_configuration_and_power_interface_machine_language_object_payload(&values_load.heap, handle);
+
+    for (uint32_t byte = first; byte < first + bytes; ++byte)
+        if (payload[byte] != 0u)
+            return false;
+    return true;
+}
+
+/**
  * @brief Strings, buffers and packages are built while methods run (§4.3): a String literal; a Buffer
  *        whose size an argument gives, longer than its initialiser or shorter; a VarPackage of an
  *        argument's size, padded with Uninitialized past its initialisers or cut short, each counted;
@@ -714,30 +738,6 @@ KERNEL_TEST(an_evaluation_gives_back_every_object_it_built)
                 1u,
         "VarPackage (0xFFFFFFFF) fails with limit_package_elements");
     values_close(test);
-}
-
-/**
- * @brief Writes 0xFF over the first @p bytes after the header of the object @p handle, as an object that wrote its
- *        payload, and the block past it, leaves them.
- */
-static void values_scribble(uint32_t handle, uint32_t bytes)
-{
-    memset(advanced_configuration_and_power_interface_machine_language_object_payload(&values_load.heap, handle), 0xFF,
-           bytes);
-}
-
-/**
- * @brief Whether the @p bytes after the first @p first of the payload of the object @p handle are all zero.
- */
-static bool values_payload_is_zero(uint32_t handle, uint32_t first, uint32_t bytes)
-{
-    const uint8_t *payload =
-        advanced_configuration_and_power_interface_machine_language_object_payload(&values_load.heap, handle);
-
-    for (uint32_t byte = first; byte < first + bytes; ++byte)
-        if (payload[byte] != 0u)
-            return false;
-    return true;
 }
 
 /**
