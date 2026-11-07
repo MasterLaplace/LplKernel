@@ -33,6 +33,14 @@
 extern void write_peripheral_component_interconnect_info(Serial_t *serial);
 
 /**
+ * @brief Writes one `[LPLTLM] pci.function` record per function the last scan found: its identity, whether it is a
+ *        PCI Express function, and for one the extended capabilities its list holds through ECAM, at most 16 named.
+ *
+ * @param serial The port the records are written to.
+ */
+extern void write_peripheral_component_interconnect_function_records(Serial_t *serial);
+
+/**
  * @brief Writes the `[LPLTLM] pci.express` record: the ECAM windows declared uncached at boot, and those refused.
  *
  * @param serial The port the record is written to.

@@ -6,6 +6,7 @@
 #include <kernel/testing/test.h>
 
 #include <stdint.h>
+#include <string.h>
 
 KERNEL_TEST_SUITE(peripheral_component_interconnect_express, KERNEL_TEST_STAGE_BOOTED);
 
@@ -14,6 +15,7 @@ KERNEL_TEST_SUITE(peripheral_component_interconnect_express, KERNEL_TEST_STAGE_B
 #define PCI_EXPRESS_TEST_INTERRUPT_LINE       0x3Cu       /**< A byte software may write, as the BIOS does. */
 #define PCI_EXPRESS_TEST_CAPABILITY_EXPRESS   0x10u       /**< The PCI Express capability's identifier. */
 #define PCI_EXPRESS_TEST_MAXIMUM_CAPABILITIES 48u         /**< Capabilities the first 256 bytes can hold. */
+#define PCI_EXPRESS_TEST_SPACE_DWORDS         1024u       /**< Dwords of one function's 4 KiB. */
 #define PCI_EXPRESS_TEST_ABSENT               0xFFFFFFFFu /**< What an absent register reads. */
 
 /**
@@ -64,6 +66,71 @@ static const PeripheralComponentInterconnectDevice_t *pci_express_test_first_rea
             return device;
     }
     return NULL;
+}
+
+/**
+ * @brief A made-up configuration space the walk reads, a dword at a time, and how many reads it took.
+ */
+typedef struct PciExpressTestSpace {
+    uint32_t dwords[PCI_EXPRESS_TEST_SPACE_DWORDS]; /**< The 4 KiB. */
+    uint16_t refused_from;                          /**< Reads at and past this offset are refused, or 0. */
+    uint32_t reads;                                 /**< Reads the walk made. */
+} PciExpressTestSpace_t;
+
+static PciExpressTestSpace_t pci_express_test_space;
+static PeripheralComponentInterconnectExpressExtendedCapability_t
+    pci_express_test_capabilities[PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_MAX_EXTENDED_CAPABILITIES];
+
+/**
+ * @brief Reads one dword of the made-up space, counted.
+ */
+static bool pci_express_test_read_space(void *context, uint16_t offset, uint32_t *out_value)
+{
+    PciExpressTestSpace_t *space = context;
+
+    ++space->reads;
+    if ((space->refused_from != 0u && offset >= space->refused_from) || offset % 4u != 0u ||
+        offset >= PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_CONFIGURATION_SIZE)
+        return false;
+    *out_value = space->dwords[offset / 4u];
+    return true;
+}
+
+/**
+ * @brief Empties the made-up space: no extended capability, every read served.
+ */
+static PciExpressTestSpace_t *pci_express_test_empty_space(void)
+{
+    memset(&pci_express_test_space, 0, sizeof(pci_express_test_space));
+    return &pci_express_test_space;
+}
+
+/**
+ * @brief Writes an extended capability header at @p offset: its ID, its version and the next header's offset.
+ */
+static void pci_express_test_header(PciExpressTestSpace_t *space, uint16_t offset, uint16_t identifier, uint8_t version,
+                                    uint16_t next)
+{
+    space->dwords[offset / 4u] = (uint32_t) identifier | (uint32_t) (version & 0xFu) << 16u | (uint32_t) next << 20u;
+}
+
+/**
+ * @brief Walks the made-up space, room for @p capacity capabilities.
+ */
+static PeripheralComponentInterconnectExpressWalk_t pci_express_test_walk(uint32_t capacity, uint32_t *out_count)
+{
+    return peripheral_component_interconnect_express_walk_extended_capabilities(
+        pci_express_test_read_space, &pci_express_test_space, pci_express_test_capabilities, capacity, out_count);
+}
+
+/**
+ * @brief Whether capability @p index of the last walk lies at @p offset with @p identifier and @p version.
+ */
+static bool pci_express_test_capability_is(uint32_t index, uint16_t offset, uint16_t identifier, uint8_t version)
+{
+    return pci_express_test_capabilities[index].offset == offset &&
+           pci_express_test_capabilities[index].identifier == identifier &&
+           pci_express_test_capabilities[index].version == version;
 }
 
 /**
@@ -368,4 +435,178 @@ KERNEL_TEST(the_configuration_space_is_mapped_uncached)
     kernel_test_check(test, entry.cache_disable && entry.write_through, "its page is cache-disabled and write-through");
     kernel_test_measure(test, "registers_say_write_back",
                         memory_type_range_registers_frame_is_write_back(base) ? 1u : 0u);
+}
+
+/**
+ * @brief A list of three capabilities, out of offset order, one of version 10 and one whose next offset has its
+ *        reserved low bits set, is walked in list order to its end: the low bits are masked, as Linux masks them.
+ */
+KERNEL_TEST(a_list_is_walked_in_its_own_order_to_a_next_offset_of_0)
+{
+    PciExpressTestSpace_t *space = pci_express_test_empty_space();
+    uint32_t count = 0u;
+
+    pci_express_test_header(space, 0x100u, 0x0001u, 2u, 0x200u);
+    pci_express_test_header(space, 0x200u, 0x000Eu, 0xAu, 0x143u);
+    pci_express_test_header(space, 0x140u, 0x0003u, 1u, 0x000u);
+
+    const PeripheralComponentInterconnectExpressWalk_t walk = pci_express_test_walk(4u, &count);
+
+    kernel_test_check(test, walk == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LISTED, "the walk ends listed");
+    kernel_test_check(test, count == 3u, "it passes 3 capabilities");
+    kernel_test_check(test,
+                      pci_express_test_capability_is(0u, 0x100u, 0x0001u, 2u) &&
+                          pci_express_test_capability_is(1u, 0x200u, 0x000Eu, 0xAu) &&
+                          pci_express_test_capability_is(2u, 0x140u, 0x0003u, 1u),
+                      "each keeps its offset, its ID and its version, in list order");
+    kernel_test_check(test, space->reads == 3u, "it reads one dword per header");
+}
+
+/**
+ * @brief A header of 0 at 0x100 means no capability, and all ones, or a refused read, no extended space at all: three
+ *        ends told apart.
+ */
+KERNEL_TEST(no_capability_and_no_extended_space_are_two_ends)
+{
+    uint32_t none_count = 1u;
+    uint32_t absent_count = 1u;
+    uint32_t refused_count = 1u;
+    PciExpressTestSpace_t *space = pci_express_test_empty_space();
+
+    const PeripheralComponentInterconnectExpressWalk_t none = pci_express_test_walk(4u, &none_count);
+
+    space->dwords[0x100u / 4u] = 0xFFFFFFFFu;
+
+    const PeripheralComponentInterconnectExpressWalk_t absent = pci_express_test_walk(4u, &absent_count);
+
+    space = pci_express_test_empty_space();
+    space->refused_from = 0x100u;
+
+    const PeripheralComponentInterconnectExpressWalk_t refused = pci_express_test_walk(4u, &refused_count);
+
+    kernel_test_check(test, none == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NONE && none_count == 0u,
+                      "a header of 0 lists no capability");
+    kernel_test_check(test, absent == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NO_SPACE && absent_count == 0u,
+                      "all ones at 0x100 is no extended space");
+    kernel_test_check(test, refused == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NO_SPACE && refused_count == 0u,
+                      "a refused read at 0x100 is no extended space");
+}
+
+/**
+ * @brief A next offset below 0x100 that is not 0, and a header past the first that reads all ones or is refused, end
+ *        the walk malformed, the capabilities before them kept.
+ */
+KERNEL_TEST(a_link_below_the_extended_space_or_an_absent_header_is_malformed)
+{
+    uint32_t low_count = 0u;
+    uint32_t absent_count = 0u;
+    uint32_t refused_count = 0u;
+    PciExpressTestSpace_t *space = pci_express_test_empty_space();
+
+    pci_express_test_header(space, 0x100u, 0x0001u, 2u, 0x0F8u);
+
+    const PeripheralComponentInterconnectExpressWalk_t low = pci_express_test_walk(4u, &low_count);
+
+    pci_express_test_header(space, 0x100u, 0x0001u, 2u, 0x180u);
+    space->dwords[0x180u / 4u] = 0xFFFFFFFFu;
+
+    const PeripheralComponentInterconnectExpressWalk_t absent = pci_express_test_walk(4u, &absent_count);
+
+    space->refused_from = 0x180u;
+
+    const PeripheralComponentInterconnectExpressWalk_t refused = pci_express_test_walk(4u, &refused_count);
+
+    kernel_test_check(test, low == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_MALFORMED && low_count == 1u,
+                      "a next offset of 0xF8 is malformed, after the first capability");
+    kernel_test_check(test, absent == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_MALFORMED && absent_count == 1u,
+                      "a second header of all ones is malformed");
+    kernel_test_check(test, refused == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_MALFORMED && refused_count == 1u,
+                      "a second header the read refuses is malformed");
+    kernel_test_check(test, pci_express_test_capability_is(0u, 0x100u, 0x0001u, 2u), "the first capability is kept");
+}
+
+/**
+ * @brief A list that points back at itself ends at the bound of 480 headers, a list longer than the room the caller
+ *        gave keeps that many and counts the rest, and one as long as the room is listed.
+ */
+KERNEL_TEST(a_loop_ends_at_the_bound_and_a_long_list_is_counted_past_the_room)
+{
+    uint32_t loop_count = 0u;
+    uint32_t long_count = 0u;
+    PciExpressTestSpace_t *space = pci_express_test_empty_space();
+
+    pci_express_test_header(space, 0x100u, 0x0019u, 1u, 0x100u);
+
+    const PeripheralComponentInterconnectExpressWalk_t loop =
+        pci_express_test_walk(PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_MAX_EXTENDED_CAPABILITIES, &loop_count);
+    const uint32_t loop_reads = space->reads;
+
+    space = pci_express_test_empty_space();
+    pci_express_test_header(space, 0x100u, 0x0001u, 2u, 0x140u);
+    pci_express_test_header(space, 0x140u, 0x0003u, 1u, 0x180u);
+    pci_express_test_header(space, 0x180u, 0x000Du, 1u, 0x000u);
+
+    const PeripheralComponentInterconnectExpressWalk_t truncated = pci_express_test_walk(2u, &long_count);
+    uint32_t fitting_count = 0u;
+    const PeripheralComponentInterconnectExpressWalk_t fitting = pci_express_test_walk(3u, &fitting_count);
+
+    kernel_test_check(test,
+                      loop == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LOOPED &&
+                          loop_count == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_MAX_EXTENDED_CAPABILITIES,
+                      "a header that names itself ends looped after 480 headers");
+    kernel_test_check(test, loop_reads == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_MAX_EXTENDED_CAPABILITIES,
+                      "the loop reads no more than the bound");
+    kernel_test_check(test, truncated == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_TRUNCATED && long_count == 3u,
+                      "three capabilities with room for two end truncated, all three counted");
+    kernel_test_check(test, fitting == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LISTED && fitting_count == 3u,
+                      "three capabilities with room for three end listed");
+    kernel_test_check(test,
+                      pci_express_test_capability_is(0u, 0x100u, 0x0001u, 2u) &&
+                          pci_express_test_capability_is(1u, 0x140u, 0x0003u, 1u),
+                      "the first two are kept");
+}
+
+/**
+ * @brief Through ECAM, the walk of every PCI Express function a window covers ends listed or with no capability, and
+ *        a conventional function, whose extended space reads all ones, with none.
+ */
+KERNEL_TEST(every_express_function_lists_its_extended_capabilities_to_their_end)
+{
+    uint32_t express = 0u;
+    uint32_t well_ended = 0u;
+    uint32_t capabilities = 0u;
+    uint32_t count = 0u;
+
+    if (pci_express_test_first_reached() == NULL)
+    {
+        kernel_test_skip(test, "no MCFG window covers a scanned function: the machine has no ECAM");
+        return;
+    }
+    for (uint32_t index = 0u; index < peripheral_component_interconnect_get_device_count(); ++index)
+    {
+        const PeripheralComponentInterconnectDevice_t *device = peripheral_component_interconnect_get_device(index);
+
+        if (!pci_express_test_reaches(device) || !pci_express_test_is_express(device))
+            continue;
+        ++express;
+
+        const PeripheralComponentInterconnectExpressWalk_t walk =
+            peripheral_component_interconnect_express_list_extended_capabilities(
+                0u, device->bus, device->device, device->function, pci_express_test_capabilities,
+                PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_MAX_EXTENDED_CAPABILITIES, &count);
+
+        well_ended += (walk == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LISTED ||
+                       walk == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NONE) ?
+                          1u :
+                          0u;
+        capabilities += count;
+    }
+    if (express == 0u)
+    {
+        kernel_test_skip(test, "no function a window covers has the PCI Express capability");
+        return;
+    }
+    kernel_test_check(test, well_ended == express, "each walk ends listed or with no capability");
+    kernel_test_measure(test, "express_functions", express);
+    kernel_test_measure(test, "extended_capabilities", capabilities);
 }
