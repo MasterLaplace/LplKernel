@@ -6,6 +6,9 @@
 #define IDT_IRQ_VECTOR_COUNT       16u
 #define IDT_TOTAL_VECTOR_COUNT     256u
 
+_Static_assert(INTERRUPT_SERVICE_ROUTINE_MESSAGE_SIGNALED_STUBS == MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT,
+               "isr_stubs.s lists one stub per message-signaled vector");
+
 /** The table the bootstrap processor loaded, which every other processor loads too. */
 static InterruptDescriptorTable_t *idt_loaded = NULL;
 

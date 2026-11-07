@@ -41,7 +41,8 @@ static uint32_t message_signaled_interrupts_test_wait(uint8_t vector, uint32_t s
 
 /**
  * @brief A message names its local APIC in bits 19:12 of 0xFEExxxxx and carries its vector as data, edge-triggered
- *        and fixed; an identifier past 0xFF, which needs interrupt remapping, and the reserved vectors are refused.
+ *        and fixed; the broadcast 0xFF, an identifier past it, which needs interrupt remapping, and the vectors
+ *        outside 0x10-0xFE are refused.
  */
 KERNEL_TEST(a_message_names_its_core_and_carries_its_vector)
 {
@@ -52,13 +53,18 @@ KERNEL_TEST(a_message_names_its_core_and_carries_its_vector)
                       "APIC 0x12, vector 0x51 composes");
     kernel_test_check(test, address == 0xFEE12000u, "its address is 0xFEE12000");
     kernel_test_check(test, data == 0x51u, "its data is the vector alone: fixed, edge, asserted");
-    kernel_test_check(test, message_signaled_interrupt_compose(0xFFu, 0x10u, &address, &data) && address == 0xFEEFF000u,
-                      "APIC 0xFF and vector 0x10, the last and the first allowed, compose");
+    kernel_test_check(test, message_signaled_interrupt_compose(0xFEu, 0x10u, &address, &data) && address == 0xFEEFE000u,
+                      "APIC 0xFE and vector 0x10, the last destination and the first vector, compose");
+    kernel_test_check(test, message_signaled_interrupt_compose(0u, 0xFEu, &address, &data) && data == 0xFEu,
+                      "vector 0xFE, the last one, composes");
     address = 0u;
-    kernel_test_check(test, !message_signaled_interrupt_compose(0x100u, 0x51u, &address, &data) && address == 0u,
-                      "APIC 0x100 is refused, nothing written");
+    kernel_test_check(test, !message_signaled_interrupt_compose(0xFFu, 0x51u, &address, &data) && address == 0u,
+                      "APIC 0xFF, the broadcast, is refused, nothing written");
+    kernel_test_check(test, !message_signaled_interrupt_compose(0x100u, 0x51u, &address, &data),
+                      "APIC 0x100 is refused");
     kernel_test_check(test, !message_signaled_interrupt_compose(0u, 0x0Fu, &address, &data),
                       "vector 0x0F, a reserved one, is refused");
+    kernel_test_check(test, !message_signaled_interrupt_compose(0u, 0xFFu, &address, &data), "vector 0xFF is refused");
 }
 
 /**
@@ -108,14 +114,24 @@ KERNEL_TEST(vectors_are_given_once_until_none_is_left)
 }
 
 /**
- * @brief A message-signaled vector runs its handler with its context on the core it reaches, counted on that core's
- *        slot alone: sent by this core to itself, then to another one when one is online.
+ * @brief An online slot other than @p here, or CPU_TOPOLOGY_NO_SLOT.
+ */
+static uint32_t message_signaled_interrupts_test_other_slot(uint32_t here)
+{
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        if (slot != here && cpu_topology_is_logical_slot_online(slot))
+            return slot;
+    return CPU_TOPOLOGY_NO_SLOT;
+}
+
+/**
+ * @brief A message-signaled vector this core sends itself runs its handler once, with its context, counted on this
+ *        core's slot.
  */
 KERNEL_TEST(a_vector_runs_its_handler_on_the_core_it_reaches)
 {
     uint8_t vector = 0u;
     const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
-    uint32_t other = CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC;
 
     if (!advanced_pic_ipi_is_ready())
     {
@@ -140,22 +156,43 @@ KERNEL_TEST(a_vector_runs_its_handler_on_the_core_it_reaches)
                       message_signaled_interrupts_test_runs == 1u &&
                           message_signaled_interrupts_test_context == (void *) &vector,
                       "its handler ran once, with its context");
-    for (uint32_t slot = 0u;
-         slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC && other == CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
-        if (slot != here && cpu_topology_is_logical_slot_online(slot))
-            other = slot;
-    if (other != CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC)
-    {
-        const uint32_t there = message_signaled_interrupt_count(vector, other);
-        const uint32_t here_now = message_signaled_interrupt_count(vector, here);
-
-        kernel_test_check(test, advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(other), vector, 0u) != 0u,
-                          "the vector is sent to another core");
-        kernel_test_check(test, message_signaled_interrupts_test_wait(vector, other, there) == there + 1u,
-                          "it is counted once on that core's slot");
-        kernel_test_check(test, message_signaled_interrupt_count(vector, here) == here_now, "and not on this one's");
-        kernel_test_measure(test, "other_slot", other);
-    }
     message_signaled_interrupt_release(vector);
     kernel_test_measure(test, "vector", vector);
+}
+
+/**
+ * @brief A message-signaled vector sent to another core is counted on that core's slot, and not on the sender's.
+ */
+KERNEL_TEST(a_vector_sent_to_another_core_is_counted_on_that_core)
+{
+    uint8_t vector = 0u;
+    const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
+    const uint32_t other = message_signaled_interrupts_test_other_slot(here);
+
+    if (other == CPU_TOPOLOGY_NO_SLOT)
+    {
+        kernel_test_skip(test, "no other processor is online: boot with -smp 2");
+        return;
+    }
+    if (!advanced_pic_ipi_is_ready())
+    {
+        kernel_test_skip(test, "the local APIC sends no interprocessor interrupt");
+        return;
+    }
+    if (!message_signaled_interrupt_allocate(message_signaled_interrupts_test_handler, &vector, &vector))
+    {
+        kernel_test_check(test, false, "a vector is free");
+        return;
+    }
+
+    const uint32_t there = message_signaled_interrupt_count(vector, other);
+    const uint32_t here_before = message_signaled_interrupt_count(vector, here);
+
+    kernel_test_check(test, advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(other), vector, 0u) != 0u,
+                      "the vector is sent to another core");
+    kernel_test_check(test, message_signaled_interrupts_test_wait(vector, other, there) == there + 1u,
+                      "it is counted once on that core's slot");
+    kernel_test_check(test, message_signaled_interrupt_count(vector, here) == here_before, "and not on this one's");
+    message_signaled_interrupt_release(vector);
+    kernel_test_measure(test, "other_slot", other);
 }

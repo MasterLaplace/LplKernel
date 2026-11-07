@@ -64,15 +64,13 @@
 #define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES            0x09u     /**< Set Features. */
 #define NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES       0x07u     /**< Number of Queues. */
 #define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS    (1u << 0) /**< PC, in dword 11 of both creations. */
-#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_INTERRUPTS_ENABLED                                                           \
-    (1u << 1)                                                       /**< IEN, in dword 11 of a completion queue's.     \
-                                                                     */
-#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY      0x06u      /**< Identify. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE   0x00u      /**< CNS 00h: a namespace. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER  0x01u      /**< CNS 01h: the controller. */
-#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE      1u         /**< The namespace identified. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE     (1u << 16) /**< Phase tag, in dword 3. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT 0xFFFFu    /**< No status: the command never completed. */
+#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_INTERRUPTS_ENABLED       (1u << 1) /**< IEN, a completion queue's dword 11. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY                0x06u     /**< Identify. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE             0x00u     /**< CNS 00h: a namespace. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER            0x01u     /**< CNS 01h: the controller. */
+#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE                1u        /**< The namespace identified. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE               (1u << 16) /**< Phase tag, in dword 3. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT           0xFFFFu /**< No status: the command never completed. */
 /** @} */
 
 /**
@@ -132,6 +130,7 @@ static volatile uint32_t *non_volatile_memory_express_page_list = NULL;
 static uint32_t non_volatile_memory_express_page_list_physical = 0u;
 static uint16_t non_volatile_memory_express_next_command = 0u;
 static MessageSignaledInterruptExtendedTable_t non_volatile_memory_express_interrupts = {0};
+static const PeripheralComponentInterconnectDevice_t *non_volatile_memory_express_device = NULL;
 static uint8_t non_volatile_memory_express_vectors[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS] = {0u};
 
 /**
@@ -472,10 +471,11 @@ static uint32_t non_volatile_memory_express_queue_slot(uint32_t ordinal)
  * @details A pair whose entry cannot be aimed, or a controller without MSI-X, keeps a queue that raises no
  *          interrupt, which the driver polls as before. Vectors are kept across bring-ups.
  */
-static void non_volatile_memory_express_aim_interrupts(const PeripheralComponentInterconnectDevice_t *device)
+static void non_volatile_memory_express_aim_interrupts(void)
 {
     if (non_volatile_memory_express_interrupts.table == 0u &&
-        !message_signaled_interrupt_extended_open(device, &non_volatile_memory_express_interrupts))
+        !message_signaled_interrupt_extended_open(non_volatile_memory_express_device,
+                                                  &non_volatile_memory_express_interrupts))
         return;
     for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
     {
@@ -517,7 +517,7 @@ static bool non_volatile_memory_express_find(void)
 
     peripheral_component_interconnect_enable_memory_and_bus_mastering(device);
     peripheral_component_interconnect_disable_pin_interrupt(device);
-    non_volatile_memory_express_aim_interrupts(device);
+    non_volatile_memory_express_device = device;
     if (non_volatile_memory_express_registers == 0u)
         non_volatile_memory_express_registers =
             kernel_vmm_map_device_window((uint32_t) window.base, (uint32_t) window.size);
@@ -667,11 +667,11 @@ static bool non_volatile_memory_express_create_pair(NonVolatileMemoryExpressQueu
 }
 
 /**
- * @brief Asks for the I/O queue pairs, and creates each.
+ * @brief Aims each pair's interrupt at a core, asks for the I/O queue pairs, and creates each.
  *
- * @details Each pair is one page per queue: QEMU, like many controllers, requires physically
- *          contiguous queues, and one page is the contiguous memory this kernel can always give.
- *          Depth comes from several pairs instead of one long queue.
+ * @details The interrupts are aimed only now, once the controller was found fit. Each pair is one page per queue: QEMU,
+ * like many controllers, requires physically contiguous queues, and one page is the contiguous memory this kernel can
+ * always give. Depth comes from several pairs instead of one long queue.
  *
  * @return false when the controller allocates fewer pairs, a command fails, or no page is left.
  */
@@ -681,6 +681,7 @@ static bool non_volatile_memory_express_create_input_output_queues(void)
     uint32_t features[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
     uint32_t allocated = 0u;
 
+    non_volatile_memory_express_aim_interrupts();
     features[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES;
     features[10] = NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES;
     features[11] = (wanted << 16) | wanted;
@@ -700,6 +701,8 @@ static bool non_volatile_memory_express_create_input_output_queues(void)
 bool non_volatile_memory_express_initialize(void)
 {
     memset(&non_volatile_memory_express_found, 0, sizeof(non_volatile_memory_express_found));
+    for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
+        non_volatile_memory_express_found.interrupt_slots[pair] = CPU_TOPOLOGY_NO_SLOT;
     return non_volatile_memory_express_find() && non_volatile_memory_express_reset() &&
            non_volatile_memory_express_identify_controller_and_namespace() &&
            non_volatile_memory_express_create_input_output_queues();
