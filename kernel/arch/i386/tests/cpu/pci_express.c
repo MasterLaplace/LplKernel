@@ -2,6 +2,7 @@
 #include <kernel/cpu/mtrr.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pci.h>
+#include <kernel/cpu/pmm.h>
 #include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
@@ -12,9 +13,11 @@ KERNEL_TEST_SUITE(peripheral_component_interconnect_express, KERNEL_TEST_STAGE_B
 #define PCI_EXPRESS_TEST_STATUS_CAPABILITIES  0x10u       /**< Status bit: the function has a capability list. */
 #define PCI_EXPRESS_TEST_CAPABILITIES_POINTER 0x34u       /**< The offset of the first capability's offset. */
 #define PCI_EXPRESS_TEST_INTERRUPT_LINE       0x3Cu       /**< A byte software may write, as the BIOS does. */
+#define PCI_EXPRESS_TEST_INTERRUPT_PIN        0x3Du       /**< Nonzero when the function uses an interrupt pin. */
 #define PCI_EXPRESS_TEST_CAPABILITY_EXPRESS   0x10u       /**< The PCI Express capability's identifier. */
 #define PCI_EXPRESS_TEST_MAXIMUM_CAPABILITIES 48u         /**< Capabilities the first 256 bytes can hold. */
 #define PCI_EXPRESS_TEST_ABSENT               0xFFFFFFFFu /**< What an absent register reads. */
+#define PCI_EXPRESS_TEST_MEBIBYTE             0x100000u   /**< One bus of ECAM, and where the kernel's RAM starts. */
 
 /**
  * @brief Whether the boot's MCFG gives a window over the bus of @p device, so that its ECAM is reachable.
@@ -67,6 +70,36 @@ static const PeripheralComponentInterconnectDevice_t *pci_express_test_first_rea
 }
 
 /**
+ * @brief The first scanned function whose bus a window covers and that uses an interrupt pin, so that its Interrupt
+ *        Line register is writable (PCI Local Bus Specification 3.0, §6.2.4), or NULL.
+ */
+static const PeripheralComponentInterconnectDevice_t *pci_express_test_first_reached_with_a_pin(void)
+{
+    for (uint32_t index = 0u; index < peripheral_component_interconnect_get_device_count(); ++index)
+    {
+        const PeripheralComponentInterconnectDevice_t *device = peripheral_component_interconnect_get_device(index);
+
+        if (pci_express_test_reaches(device) &&
+            peripheral_component_interconnect_config_read_byte(device->bus, device->device, device->function,
+                                                               PCI_EXPRESS_TEST_INTERRUPT_PIN) != 0u)
+            return device;
+    }
+    return NULL;
+}
+
+/**
+ * @brief Whether @p header, read at 0x100, is an extended capability header and not the identity dword at 0x00 an
+ *        offset truncated to the first 256 bytes would read: its next offset is 0 or past the first 256 bytes, its
+ *        two low bits 0 (PCI Express Base Specification, §7.6.3).
+ */
+static bool pci_express_test_is_extended_header(uint32_t header, uint32_t identity)
+{
+    const uint32_t next = header >> 20u;
+
+    return header != identity && (next == 0u || (next >= 0x100u && (next & 3u) == 0u));
+}
+
+/**
  * @brief Every function's first 256 bytes read the same through ECAM as through configuration mechanism #1: the two
  *        mechanisms address the same registers, which a wrong bus, device, function or offset shift would break.
  */
@@ -114,9 +147,11 @@ KERNEL_TEST(every_function_reads_its_first_256_bytes_alike_through_ecam_and_the_
  * @brief A function behind a bridge, on a bus past 0, reads its first 256 bytes the same through ECAM as through the
  *        ports: on bus 0 a wrong bus shift reads the right function all the same.
  *
- * @details q35 puts every default device on bus 0; a root port and a device behind it put one past it:
- *          `qemu-system-i386 -machine q35 -device pcie-root-port,id=lplport,chassis=1 -device e1000e,bus=lplport
- *          -kernel kernel/lpl.kernel -append lpl.test.require=peripheral_component_interconnect_express.*`.
+ * @details q35 puts every default device on bus 0; a root port and a device behind it put one past it. This bench
+ *          runs every test of the suite, the uncached one included:
+ *          `qemu-system-i386 -machine q35 -cpu max -device pcie-root-port,id=lplport,chassis=1
+ *          -device e1000e,bus=lplport -kernel kernel/lpl.kernel
+ *          -append lpl.test.require=peripheral_component_interconnect_express.*`.
  */
 KERNEL_TEST(a_function_behind_a_bridge_reads_alike_through_ecam_and_the_ports)
 {
@@ -189,12 +224,15 @@ KERNEL_TEST(bytes_and_words_are_the_parts_of_their_dword)
 
 /**
  * @brief Past the first 256 bytes, which configuration mechanism #1 cannot address, a PCI Express function's
- *        extended space reads through ECAM: its first header is never all ones, which an absent register reads.
+ *        extended space reads through ECAM: its first header is never all ones, which an absent register reads, and
+ *        is an extended capability header rather than the function's identity, which an offset that lost its ninth
+ *        bit would read.
  */
 KERNEL_TEST(the_extended_space_of_an_express_function_reads_through_ecam)
 {
     uint32_t express = 0u;
     uint32_t read = 0u;
+    uint32_t well_formed = 0u;
     uint32_t with_capability = 0u;
 
     if (pci_express_test_first_reached() == NULL)
@@ -215,6 +253,11 @@ KERNEL_TEST(the_extended_space_of_an_express_function_reads_through_ecam)
                                                            4u, &header) &&
             header != PCI_EXPRESS_TEST_ABSENT)
             ++read;
+        well_formed +=
+            pci_express_test_is_extended_header(header, peripheral_component_interconnect_config_read_dword(
+                                                            device->bus, device->device, device->function, 0x00u)) ?
+                1u :
+                0u;
         with_capability += (header != PCI_EXPRESS_TEST_ABSENT && header != 0u) ? 1u : 0u;
     }
     if (express == 0u)
@@ -223,20 +266,25 @@ KERNEL_TEST(the_extended_space_of_an_express_function_reads_through_ecam)
         return;
     }
     kernel_test_check(test, read == express, "the header at 0x100 of every PCI Express function reads");
+    kernel_test_check(test, well_formed == express,
+                      "each is an extended capability header, not the identity dword at 0x00");
     kernel_test_measure(test, "express_functions", express);
     kernel_test_measure(test, "with_extended_capability", with_capability);
 }
 
 /**
  * @brief A byte written through ECAM reads back through configuration mechanism #1, and the register is restored.
+ *
+ * @details The byte is the Interrupt Line of a function that uses an interrupt pin: a function without one, a host
+ *          bridge often, need not implement that register.
  */
 KERNEL_TEST(a_write_through_ecam_reads_back_through_the_ports)
 {
-    const PeripheralComponentInterconnectDevice_t *device = pci_express_test_first_reached();
+    const PeripheralComponentInterconnectDevice_t *device = pci_express_test_first_reached_with_a_pin();
 
     if (device == NULL)
     {
-        kernel_test_skip(test, "no MCFG window covers a scanned function: the machine has no ECAM");
+        kernel_test_skip(test, "no function a window covers uses an interrupt pin");
         return;
     }
 
@@ -252,12 +300,15 @@ KERNEL_TEST(a_write_through_ecam_reads_back_through_the_ports)
                                                         PCI_EXPRESS_TEST_INTERRUPT_LINE, original);
     kernel_test_check(test, wrote, "the write is not refused");
     kernel_test_check(test, read_back == written, "the ports read the byte ECAM wrote");
+    kernel_test_measure(test, "bus", device->bus);
+    kernel_test_measure(test, "device", device->device);
+    kernel_test_measure(test, "function", device->function);
 }
 
 /**
- * @brief Accesses no window can serve are refused and read all ones, whether or not the machine has ECAM: a bad
- *        width, an offset its width does not divide, one past the 4 KiB, a device or a function out of range, and
- *        a segment group no window covers.
+ * @brief Accesses no window can serve are refused and read their width of ones, as an absent function reads, whether
+ *        or not the machine has ECAM: a bad width, an offset its width does not divide, one past the 4 KiB, a device
+ *        or a function out of range, and a segment group no window covers.
  */
 KERNEL_TEST(accesses_no_window_serves_are_refused)
 {
@@ -270,14 +321,15 @@ KERNEL_TEST(accesses_no_window_serves_are_refused)
         uint8_t function;
         uint16_t offset;
         uint8_t width;
+        uint32_t ones;
     } cases[] = {
-        {0u,      0u,  0u, 0x00u,   3u},
-        {0u,      0u,  0u, 0x101u,  2u},
-        {0u,      0u,  0u, 0xFFEu,  4u},
-        {0u,      0u,  0u, 0x1000u, 1u},
-        {0u,      32u, 0u, 0x00u,   4u},
-        {0u,      0u,  8u, 0x00u,   4u},
-        {0xFFFFu, 0u,  0u, 0x00u,   4u},
+        {0u,      0u,  0u, 0x00u,   3u, PCI_EXPRESS_TEST_ABSENT},
+        {0u,      0u,  0u, 0x101u,  2u, 0xFFFFu                },
+        {0u,      0u,  0u, 0xFFEu,  4u, PCI_EXPRESS_TEST_ABSENT},
+        {0u,      0u,  0u, 0x1000u, 1u, 0xFFu                  },
+        {0u,      32u, 0u, 0x00u,   4u, PCI_EXPRESS_TEST_ABSENT},
+        {0u,      0u,  8u, 0x00u,   4u, PCI_EXPRESS_TEST_ABSENT},
+        {0xFFFFu, 0u,  0u, 0x00u,   4u, PCI_EXPRESS_TEST_ABSENT},
     };
 
     for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
@@ -288,10 +340,10 @@ KERNEL_TEST(accesses_no_window_serves_are_refused)
                                                                   cases[index].width, &value) ?
                        0u :
                        1u;
-        all_ones += (value == PCI_EXPRESS_TEST_ABSENT) ? 1u : 0u;
+        all_ones += (value == cases[index].ones) ? 1u : 0u;
     }
     kernel_test_check(test, refused == sizeof(cases) / sizeof(cases[0]), "each of the 7 accesses is refused");
-    kernel_test_check(test, all_ones == sizeof(cases) / sizeof(cases[0]), "each refused read gives all ones");
+    kernel_test_check(test, all_ones == sizeof(cases) / sizeof(cases[0]), "each refused read gives its width of ones");
     kernel_test_check(test, !peripheral_component_interconnect_express_write(0xFFFFu, 0u, 0u, 0u, 0x3Cu, 1u, 0u),
                       "a write to a segment group no window covers is refused");
 }
@@ -343,6 +395,10 @@ KERNEL_TEST(the_window_moves_once_per_change_of_function)
 /**
  * @brief The configuration space is mapped uncached, even where the memory type range registers say write-back, as
  *        SeaBIOS leaves q35's: a cached read of a status register would return what the line held when it was filled.
+ *
+ * @details Where the registers do not say write-back, every window over a reserved page is uncached already, so the
+ *          test could not fail: QEMU's default processor has no memory type range registers, and the test needs
+ *          `qemu-system-i386 -machine q35 -cpu max -kernel kernel/lpl.kernel`.
  */
 KERNEL_TEST(the_configuration_space_is_mapped_uncached)
 {
@@ -358,6 +414,13 @@ KERNEL_TEST(the_configuration_space_is_mapped_uncached)
 
     const uint32_t base =
         (uint32_t) mcfg->allocations[0].base_address + ((uint32_t) mcfg->allocations[0].start_bus << 20u);
+
+    if (!memory_type_range_registers_frame_is_write_back(base))
+    {
+        kernel_test_skip(test, "the memory type range registers do not say write-back over it: boot with -cpu max");
+        return;
+    }
+
     const uint32_t window =
         kernel_vmm_map_device_window(base, PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_CONFIGURATION_SIZE);
     const bool mapped = window != 0u && paging_get_page_table_entry(window, &entry);
@@ -366,6 +429,76 @@ KERNEL_TEST(the_configuration_space_is_mapped_uncached)
         kernel_vmm_unmap_device_window(window, PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_CONFIGURATION_SIZE);
     kernel_test_check(test, mapped, "a window over the first function's 4 KiB is mapped");
     kernel_test_check(test, entry.cache_disable && entry.write_through, "its page is cache-disabled and write-through");
-    kernel_test_measure(test, "registers_say_write_back",
-                        memory_type_range_registers_frame_is_write_back(base) ? 1u : 0u);
+}
+
+/**
+ * @brief A window is refused when its buses end past 4 GiB, the sum taken without wrapping however near 2^64 the
+ *        base lies, or when they cover usable RAM; one that ends at 4 GiB exactly, over no RAM, is usable.
+ */
+KERNEL_TEST(a_window_past_4_gib_or_over_ram_is_refused)
+{
+    const struct {
+        uint64_t base_address;
+        uint8_t start_bus;
+        uint8_t end_bus;
+        PeripheralComponentInterconnectExpressWindow_t verdict;
+    } cases[] = {
+        {0xFFFFFFFFFFF00000ull, 1u, 1u,    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_PAST_REACH},
+        {0x0000000100000000ull, 0u, 0u,    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_PAST_REACH},
+        {0x00000000F0000000ull, 0u, 0xFFu, PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_USABLE    },
+        {0x00000000F0100000ull, 0u, 0xFFu, PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_PAST_REACH},
+        {0x0000000000100000ull, 0u, 0u,    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_OVER_RAM  },
+    };
+    uint32_t agreeing = 0u;
+
+    if (!physical_memory_manager_reaches_ram(PCI_EXPRESS_TEST_MEBIBYTE, PCI_EXPRESS_TEST_MEBIBYTE))
+    {
+        kernel_test_skip(test, "the boot memory map gives no usable RAM at 1 MiB");
+        return;
+    }
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+        agreeing +=
+            peripheral_component_interconnect_express_judge_window(cases[index].base_address, cases[index].start_bus,
+                                                                   cases[index].end_bus) == cases[index].verdict ?
+                1u :
+                0u;
+    kernel_test_check(test, agreeing == sizeof(cases) / sizeof(cases[0]), "each of the 5 windows gets its verdict");
+}
+
+/**
+ * @brief The boot declared exactly the windows of its MCFG the judge calls usable, and accesses reach the buses of
+ *        those windows and of no other.
+ */
+KERNEL_TEST(the_boot_declares_the_usable_windows_and_reaches_through_them_alone)
+{
+    const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *mcfg =
+        advanced_configuration_and_power_interface_memory_mapped_configuration();
+    const PeripheralComponentInterconnectExpressWindowCounts_t *counts =
+        peripheral_component_interconnect_express_window_counts();
+    uint32_t usable = 0u;
+    uint32_t agreeing = 0u;
+
+    for (uint32_t index = 0u; index < mcfg->allocation_count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *window = &mcfg->allocations[index];
+        const bool judged_usable = peripheral_component_interconnect_express_judge_window(
+                                       window->base_address, window->start_bus, window->end_bus) ==
+                                   PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_USABLE;
+
+        const bool first_reached =
+            peripheral_component_interconnect_express_reaches(window->segment_group, window->start_bus);
+        const bool last_reached =
+            peripheral_component_interconnect_express_reaches(window->segment_group, window->end_bus);
+
+        usable += judged_usable ? 1u : 0u;
+        agreeing += (first_reached == judged_usable && last_reached == judged_usable) ? 1u : 0u;
+    }
+    kernel_test_check(
+        test, counts->declared + counts->past_reach + counts->over_ram + counts->no_room == mcfg->allocation_count,
+        "every window the MCFG keeps is counted once");
+    kernel_test_check(test, counts->declared == usable, "every usable window is declared");
+    kernel_test_check(test, agreeing == mcfg->allocation_count,
+                      "accesses reach a window's first and last bus exactly when it is usable");
+    kernel_test_measure(test, "windows", mcfg->allocation_count);
+    kernel_test_measure(test, "declared", counts->declared);
 }

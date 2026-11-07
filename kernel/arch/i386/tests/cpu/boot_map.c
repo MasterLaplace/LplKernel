@@ -1,6 +1,7 @@
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/multiboot_info.h>
 #include <kernel/cpu/paging.h>
+#include <kernel/cpu/pci.h>
 #include <kernel/cpu/pmm.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
@@ -392,8 +393,9 @@ static uint32_t boot_map_test_range_type(uint32_t page)
 static bool boot_map_test_type_is_memory(uint32_t type) { return type == 1u || type == 3u || type == 4u; }
 
 /**
- * @brief Whether @p page lies in the configuration space of an ECAM window the boot's MCFG gives, read from the MCFG
- *        reading itself rather than from what the virtual memory manager was told.
+ * @brief Whether @p page lies in the configuration space of an ECAM window the boot's MCFG gives and
+ *        peripheral_component_interconnect_express_judge_window calls usable, read from the MCFG reading itself
+ *        rather than from what the virtual memory manager was told.
  */
 static bool boot_map_test_page_is_configuration_space(uint32_t page)
 {
@@ -406,7 +408,10 @@ static bool boot_map_test_page_is_configuration_space(uint32_t page)
         const uint64_t first = window->base_address + ((uint64_t) window->start_bus << 20u);
         const uint64_t end = window->base_address + (((uint64_t) window->end_bus + 1u) << 20u);
 
-        if (page >= first && page < end)
+        if (page >= first && page < end &&
+            peripheral_component_interconnect_express_judge_window(window->base_address, window->start_bus,
+                                                                   window->end_bus) ==
+                PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_USABLE)
             return true;
     }
     return false;

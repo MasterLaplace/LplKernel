@@ -1,5 +1,6 @@
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/pci.h>
+#include <kernel/cpu/pmm.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
 
@@ -59,13 +60,20 @@ static uint32_t peripheral_component_interconnect_probe_writable_bits(uint8_t bu
 
 #define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_DEVICES   32u         /**< Devices on one bus. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_FUNCTIONS 8u          /**< Functions of one device. */
-#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES  0xFFFFFFFFu /**< What a refused read gives. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES  0xFFFFFFFFu /**< What a refused dword read gives. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_BUS_SHIFT 20u         /**< One bus spans 1 MiB of ECAM. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALLOCATIONS                                                          \
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_CONFIGURATION_SPACE_ALLOCATION_COUNT
+
+_Static_assert(KERNEL_VMM_MAX_UNCACHED_RANGES >= PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALLOCATIONS,
+               "the virtual memory manager holds a range for every window the MCFG keeps");
 
 static uint32_t peripheral_component_interconnect_express_window = 0u;       /**< The mapped function's 4 KiB, or 0. */
 static uint32_t peripheral_component_interconnect_express_window_frame = 0u; /**< Their physical address. */
 static uint32_t peripheral_component_interconnect_express_moves = 0u;        /**< Window moves since boot. */
-static uint32_t peripheral_component_interconnect_express_declared = 0u;     /**< Windows declared uncached. */
-static uint32_t peripheral_component_interconnect_express_refused = 0u;      /**< Windows refused. */
+static PeripheralComponentInterconnectExpressWindowCounts_t peripheral_component_interconnect_express_counts = {0};
+static bool peripheral_component_interconnect_express_declared[PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALLOCATIONS] =
+    {false}; /**< Whether the MCFG's window of the same index was declared, so that accesses may use it. */
 
 static PeripheralComponentInterconnectDevice_t
     peripheral_component_interconnect_devices[PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES];
@@ -102,7 +110,8 @@ static void peripheral_component_interconnect_record_function(uint8_t bus, uint8
 }
 
 /**
- * @brief The ECAM window the boot's MCFG gives over @p bus of @p segment_group, or NULL.
+ * @brief The declared ECAM window over @p bus of @p segment_group, or NULL: the first the boot's MCFG lists over it,
+ *        when peripheral_component_interconnect_express_initialize declared it.
  */
 static const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *
 peripheral_component_interconnect_express_allocation(uint16_t segment_group, uint8_t bus)
@@ -116,18 +125,48 @@ peripheral_component_interconnect_express_allocation(uint16_t segment_group, uin
             &mcfg->allocations[index];
 
         if (allocation->segment_group == segment_group && bus >= allocation->start_bus && bus <= allocation->end_bus)
-            return allocation;
+            return peripheral_component_interconnect_express_declared[index] ? allocation : NULL;
     }
     return NULL;
 }
 
 /**
- * @brief Whether every bus of @p allocation lies below 4 GiB, which this kernel's 32-bit physical space reaches.
+ * @brief Whether the configuration space of the buses up to @p end_bus, from @p base_address, ends below 4 GiB,
+ *        which this kernel's 32-bit physical space reaches, without wrapping whatever the base.
  */
-static bool peripheral_component_interconnect_express_is_reachable(
-    const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation)
+static bool peripheral_component_interconnect_express_is_reachable(uint64_t base_address, uint8_t end_bus)
 {
-    return allocation->base_address + (((uint64_t) allocation->end_bus + 1u) << 20u) - 1u <= UINT32_MAX;
+    return base_address <= UINT32_MAX &&
+           base_address + (((uint64_t) end_bus + 1u) << PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_BUS_SHIFT) - 1u <=
+               UINT32_MAX;
+}
+
+/**
+ * @brief The first byte of the configuration space of the buses from @p start_bus, from @p base_address.
+ */
+static uint64_t peripheral_component_interconnect_express_window_first(uint64_t base_address, uint8_t start_bus)
+{
+    return base_address + ((uint64_t) start_bus << PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_BUS_SHIFT);
+}
+
+/**
+ * @brief The bytes of the configuration space of the buses from @p start_bus to @p end_bus.
+ */
+static uint64_t peripheral_component_interconnect_express_window_size(uint8_t start_bus, uint8_t end_bus)
+{
+    return ((uint64_t) end_bus - start_bus + 1u) << PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_BUS_SHIFT;
+}
+
+/**
+ * @brief The value a refused read of @p width bytes gives: that many bytes of ones, as an absent function reads.
+ */
+static uint32_t peripheral_component_interconnect_express_all_ones(uint8_t width)
+{
+    if (width == 1u)
+        return 0xFFu;
+    if (width == 2u)
+        return 0xFFFFu;
+    return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES;
 }
 
 /**
@@ -153,11 +192,12 @@ static volatile uint8_t *peripheral_component_interconnect_express_register(uint
     const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation =
         peripheral_component_interconnect_express_allocation(segment_group, bus);
 
-    if (allocation == NULL || !peripheral_component_interconnect_express_is_reachable(allocation))
+    if (allocation == NULL)
         return NULL;
 
-    const uint32_t frame = (uint32_t) allocation->base_address +
-                           ((uint32_t) bus << 20u | (uint32_t) device << 15u | (uint32_t) function << 12u);
+    const uint32_t frame =
+        (uint32_t) allocation->base_address + ((uint32_t) bus << PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_BUS_SHIFT |
+                                               (uint32_t) device << 15u | (uint32_t) function << 12u);
 
     if (peripheral_component_interconnect_express_window == 0u ||
         peripheral_component_interconnect_express_window_frame != frame)
@@ -401,23 +441,49 @@ void peripheral_component_interconnect_disable_pin_interrupt(const PeripheralCom
         (uint16_t) (command | PERIPHERAL_COMPONENT_INTERCONNECT_COMMAND_INTERRUPT_DISABLE));
 }
 
+PeripheralComponentInterconnectExpressWindow_t
+peripheral_component_interconnect_express_judge_window(uint64_t base_address, uint8_t start_bus, uint8_t end_bus)
+{
+    if (!peripheral_component_interconnect_express_is_reachable(base_address, end_bus))
+        return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_PAST_REACH;
+
+    if (physical_memory_manager_reaches_ram(
+            peripheral_component_interconnect_express_window_first(base_address, start_bus),
+            peripheral_component_interconnect_express_window_size(start_bus, end_bus)))
+        return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_OVER_RAM;
+    return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_USABLE;
+}
+
 void peripheral_component_interconnect_express_initialize(void)
 {
     const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *mcfg =
         advanced_configuration_and_power_interface_memory_mapped_configuration();
+    PeripheralComponentInterconnectExpressWindowCounts_t *const counts =
+        &peripheral_component_interconnect_express_counts;
 
     for (uint32_t index = 0u; index < mcfg->allocation_count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation =
             &mcfg->allocations[index];
-        const uint64_t first = allocation->base_address + ((uint64_t) allocation->start_bus << 20u);
-        const uint64_t size = ((uint64_t) allocation->end_bus - allocation->start_bus + 1u) << 20u;
+        const PeripheralComponentInterconnectExpressWindow_t verdict =
+            peripheral_component_interconnect_express_judge_window(allocation->base_address, allocation->start_bus,
+                                                                   allocation->end_bus);
+        const uint64_t first =
+            peripheral_component_interconnect_express_window_first(allocation->base_address, allocation->start_bus);
+        const uint64_t size =
+            peripheral_component_interconnect_express_window_size(allocation->start_bus, allocation->end_bus);
 
-        if (peripheral_component_interconnect_express_is_reachable(allocation) &&
-            kernel_vmm_declare_uncached_range(first, size))
-            ++peripheral_component_interconnect_express_declared;
+        if (verdict == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_PAST_REACH)
+            ++counts->past_reach;
+        else if (verdict == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WINDOW_OVER_RAM)
+            ++counts->over_ram;
+        else if (!kernel_vmm_declare_uncached_range(first, size))
+            ++counts->no_room;
         else
-            ++peripheral_component_interconnect_express_refused;
+        {
+            peripheral_component_interconnect_express_declared[index] = true;
+            ++counts->declared;
+        }
     }
 }
 
@@ -425,7 +491,7 @@ bool peripheral_component_interconnect_express_read(uint16_t segment_group, uint
                                                     uint8_t function, uint16_t offset, uint8_t width,
                                                     uint32_t *out_value)
 {
-    *out_value = PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES;
+    *out_value = peripheral_component_interconnect_express_all_ones(width);
     if (!peripheral_component_interconnect_express_names_a_register(device, function, offset, width))
         return false;
 
@@ -475,10 +541,7 @@ bool peripheral_component_interconnect_express_write(uint16_t segment_group, uin
 
 bool peripheral_component_interconnect_express_reaches(uint16_t segment_group, uint8_t bus)
 {
-    const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *allocation =
-        peripheral_component_interconnect_express_allocation(segment_group, bus);
-
-    return allocation != NULL && peripheral_component_interconnect_express_is_reachable(allocation);
+    return peripheral_component_interconnect_express_allocation(segment_group, bus) != NULL;
 }
 
 uint32_t peripheral_component_interconnect_express_window_moves(void)
@@ -486,8 +549,8 @@ uint32_t peripheral_component_interconnect_express_window_moves(void)
     return peripheral_component_interconnect_express_moves;
 }
 
-uint32_t peripheral_component_interconnect_express_declared_windows(uint32_t *out_refused)
+const PeripheralComponentInterconnectExpressWindowCounts_t *
+peripheral_component_interconnect_express_window_counts(void)
 {
-    *out_refused = peripheral_component_interconnect_express_refused;
-    return peripheral_component_interconnect_express_declared;
+    return &peripheral_component_interconnect_express_counts;
 }
