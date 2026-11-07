@@ -1,5 +1,6 @@
 #include <kernel/drivers/hda.h>
 
+#include <kernel/cpu/msi.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/cpu/pmm.h>
@@ -1062,6 +1063,14 @@ bool intel_high_definition_audio_initialize(IntelHighDefinitionAudioState_t *out
 const IntelHighDefinitionAudioState_t *intel_high_definition_audio_state(void) { return &hda_state; }
 
 uint8_t intel_high_definition_audio_capture_interrupt_line(void) { return hda_state.interrupt_line; }
+
+bool intel_high_definition_audio_aim_capture_message(uint32_t slot, uint8_t vector)
+{
+    const PeripheralComponentInterconnectDevice_t *const device =
+        peripheral_component_interconnect_find_by_class(HDA_PCI_CLASS, HDA_PCI_SUBCLASS);
+
+    return device != NULL && message_signaled_interrupt_enable(device, slot, vector);
+}
 
 bool intel_high_definition_audio_enable_capture_interrupt(void)
 {

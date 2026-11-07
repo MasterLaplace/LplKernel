@@ -39,6 +39,7 @@
 #define MESSAGE_SIGNALED_INTERRUPT_ADDRESS_BASE                                                                        \
     0xFEE00000u /**< The address every message is written to, the destination in bits 19:12 (Intel SDM vol. 3,         \
                    §13.11.1). */
+#define MESSAGE_SIGNALED_INTERRUPT_CAPABILITY          0x05u /**< The MSI capability's identifier. */
 #define MESSAGE_SIGNALED_INTERRUPT_CAPABILITY_EXTENDED 0x11u /**< The MSI-X capability's identifier. */
 /** @} */
 
@@ -132,5 +133,23 @@ extern bool message_signaled_interrupt_extended_open(const PeripheralComponentIn
  */
 extern bool message_signaled_interrupt_extended_aim(const MessageSignaledInterruptExtendedTable_t *table,
                                                     uint16_t entry, uint32_t slot, uint8_t vector);
+
+/**
+ * @brief Aims the one message of @p device's MSI capability at the processor of logical slot @p slot with @p vector,
+ *        and enables MSI.
+ *
+ * @details One message: Multiple Message Enable stays 0. The 64-bit form gets an upper address of 0, and a per-vector
+ *          mask is cleared. MSI is off while the address and data are written, then on (PCI Local Bus Specification
+ *          3.0, §6.8.1). Bus mastering is turned on, since the message is a write the function makes, and the pin
+ *          interrupt off, as MSI replaces it.
+ *
+ * @param device The function.
+ * @param slot   The logical CPU slot whose local APIC the message interrupts.
+ * @param vector The vector, from message_signaled_interrupt_allocate.
+ * @return false, MSI left as it was, when the function has no MSI capability, the slot holds no processor, or the
+ *         message cannot name it (message_signaled_interrupt_compose).
+ */
+extern bool message_signaled_interrupt_enable(const PeripheralComponentInterconnectDevice_t *device, uint32_t slot,
+                                              uint8_t vector);
 
 #endif /* KERNEL_CPU_MESSAGE_SIGNALED_INTERRUPT_H */
