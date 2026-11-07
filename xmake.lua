@@ -794,9 +794,9 @@ target_end()
 -- and the firmware a debug kernel read; `--machine <dump>` walks a recorded machine's tables instead.
 -- test-acpi-cost is the same harness without the sanitizers, which valgrind cannot run under, nor the
 -- test that undefined behaviour stops the harness, which only they make true:
--- `tools/acpi-corpus.sh records-cost` counts its instructions under callgrind. Under the sanitizers,
+-- `tools/acpi/corpus.sh records-cost` counts its instructions under callgrind. Under the sanitizers,
 -- undefined behaviour stops the run, as an AddressSanitizer error does: the CI step fails on it, and so
--- do the runs of tools/acpi-corpus.sh, which build test-acpi, wherever they read its exit status or
+-- do the runs of tools/acpi/corpus.sh, which build test-acpi, wherever they read its exit status or
 -- its output.
 -- ===========================================================================
 local function acpi_host_target(name, targetdir, sanitized)

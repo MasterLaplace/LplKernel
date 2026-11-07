@@ -19,7 +19,7 @@ iasl's __EXPECT__(<id>): the ones its table makes on purpose. Remarks are not re
                byte for byte; a header that differs is printed as a diff
   --write      writes the headers, once a source is added or changed
 
-iasl is the one `tools/acpi-corpus.sh fetch acpica` builds in build/acpi-corpus/acpica/, whose checkout
+iasl is the one `tools/acpi/corpus.sh fetch acpica` builds in build/acpi-corpus/acpica/, whose checkout
 must stand at the commit that script pins, unchanged: another iasl may emit other bytes. fetch acpica
 rebuilds iasl whenever it moves the checkout; the binary itself is not compared. A documentation line
 is at most 120 columns wide, which clang-format would otherwise rewrap in the header. A header keeps
@@ -47,9 +47,9 @@ WORK="$(mktemp -d)"
 readonly WORK
 trap 'rm -rf "$WORK"' EXIT
 
-# The ACPICA commit tools/acpi-corpus.sh pins.
+# The ACPICA commit tools/acpi/corpus.sh pins.
 pinned_acpica_commit() {
-    sed -n 's/^readonly ACPICA_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' "$ROOT/tools/acpi-corpus.sh"
+    sed -n 's/^readonly ACPICA_COMMIT="\([0-9a-f]\{40\}\)"$/\1/p' "$ROOT/tools/acpi/corpus.sh"
 }
 
 # Exits when iasl is missing, or when its checkout stands at another commit than the pinned one or is changed.
@@ -57,21 +57,21 @@ require_pinned_iasl() {
     local pinned built
     pinned="$(pinned_acpica_commit)"
     if [[ -z "$pinned" ]]; then
-        echo "not ok: tools/acpi-corpus.sh pins no ACPICA commit" >&2
+        echo "not ok: tools/acpi/corpus.sh pins no ACPICA commit" >&2
         exit 1
     fi
     if [[ ! -x "$IASL" ]]; then
-        echo "not ok: no iasl at ${IASL#"$ROOT"/}: run tools/acpi-corpus.sh fetch acpica first" >&2
+        echo "not ok: no iasl at ${IASL#"$ROOT"/}: run tools/acpi/corpus.sh fetch acpica first" >&2
         exit 1
     fi
     built="$(git -C "$ACPICA" rev-parse HEAD)"
     if [[ "$built" != "$pinned" ]]; then
         echo "not ok: iasl's checkout stands at ACPICA $built, not at the pinned $pinned: run" \
-            "tools/acpi-corpus.sh fetch acpica" >&2
+            "tools/acpi/corpus.sh fetch acpica" >&2
         exit 1
     fi
     if ! git -C "$ACPICA" diff --quiet HEAD; then
-        echo "not ok: iasl's checkout ${ACPICA#"$ROOT"/} is changed: restore it, then run tools/acpi-corpus.sh" \
+        echo "not ok: iasl's checkout ${ACPICA#"$ROOT"/} is changed: restore it, then run tools/acpi/corpus.sh" \
             "fetch acpica" >&2
         exit 1
     fi

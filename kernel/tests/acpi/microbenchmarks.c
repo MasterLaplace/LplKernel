@@ -508,7 +508,7 @@ static void microbenchmark_lookups(KernelTest_t *test)
 /**
  * @brief Window W4 of §7.4, counted in ring 0 with `tools/instructions.sh --inside
  *        kernel_test_body_the_window_w4_loop_of_a_thousand_turns` against
- *        tools/acpi-microbenchmark.debug.budget: the loop of 1,000 turns under revision 2, then the same
+ *        tools/budgets/acpi-microbenchmark.debug.budget: the loop of 1,000 turns under revision 2, then the same
  *        under revision 1, then the polling loop of 1,000 turns, none allocating.
  */
 KERNEL_TEST(the_window_w4_loop_of_a_thousand_turns)
@@ -521,7 +521,7 @@ KERNEL_TEST(the_window_w4_loop_of_a_thousand_turns)
 /**
  * @brief The third microbenchmark of window W4: 1,000 lookups in a scope of 3,346 children, counted
  *        with `tools/instructions.sh --inside microbenchmark_look_up_a_thousand_children` against
- *        tools/acpi-microbenchmark-lookups.debug.budget, without the scope it builds first, which costs more.
+ *        tools/budgets/acpi-microbenchmark-lookups.debug.budget, without the scope it builds first, which costs more.
  */
 KERNEL_TEST(a_thousand_lookups_in_a_wide_scope) { microbenchmark_lookups(test); }
 

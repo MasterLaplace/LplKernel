@@ -86,8 +86,8 @@ that spent them. `--inside <function> --times <n>` counts `<n>` calls of a funct
 what runs between them: the loop that paces the ticks fills whatever time the work leaves, so a window
 from one call to the next stops shrinking once the work fits in a tick.
 
-The server's tick has a budget, `tools/server-tick.budget`: on a release server kernel,
-`tools/instructions.sh --budget tools/server-tick.budget kernel/lpl.kernel` fails when a count passes
+The server's tick has a budget, `tools/budgets/server-tick.budget`: on a release server kernel,
+`tools/instructions.sh --budget tools/budgets/server-tick.budget kernel/lpl.kernel` fails when a count passes
 the recorded one by more than its tolerance. A pull request that moves `DEPENDENCIES.lock` records the
 new counts.
 
@@ -118,16 +118,16 @@ On top of the shared C and C++ rules:
   `lpl.test.require=<patterns>`: skipped, it fails. `LPL_BOOT_OPTIONS` puts options on an ISO's boot line.
 - The ACPI layer also runs on the build machine: `xmake build test-acpi && build/acpi-host/test-acpi > acpi.log`
   runs `kernel/tests/acpi/` through the kernel's own runner, and `tools/parity.sh acpi.log serial.log` compares it
-  with ring 0. `tools/acpi-corpus.sh fetch` then `check` walk the tables of recorded machines
+  with ring 0. `tools/acpi/corpus.sh fetch` then `check` walk the tables of recorded machines
   ([specification](../docs/acpi/specification.md#84-real-firmware-linuxhwacpi), §8.4). A test of a host tool, which ring 0
   never runs, belongs to a suite named `host_*`, which `tools/parity.sh` leaves out.
-  `tools/acpi-corpus.sh ring0 quick <kernel>` then boots a debug kernel once per machine of the quick list, its
+  `tools/acpi/corpus.sh ring0 quick <kernel>` then boots a debug kernel once per machine of the quick list, its
   tables a Multiboot module, and compares its records with the host's; `ring0 qemu <kernel>` compares QEMU's own
   tables, which the kernel prints.
 - A made-up table is an `.asl` in `kernel/tests/acpi/fixtures/<suite>/`, or in `fixtures/common/` once a second
   suite uses it, unless iasl cannot emit it: it then stays raw bytes, and its test says why (§8.2).
   `tools/acpi/regenerate-fixtures.sh --write` compiles it into `fixtures/<suite>.h`, and without an option checks
-  every header against its sources: run it after `tools/acpi-corpus.sh fetch acpica`, with bubblewrap installed,
+  every header against its sources: run it after `tools/acpi/corpus.sh fetch acpica`, with bubblewrap installed,
   since ACPICA builds and iasl runs only in the sandbox of `tools/acpi/sandbox.sh`. CI's `acpi_fixtures` job runs
   the check, after the sandbox's `--self-test`.
 - A switch no gate profile turns on is code nothing compiles. `tools/unbuilt-branches.sh` lists every
