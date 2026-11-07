@@ -88,3 +88,10 @@ void apic_write_icr(uint32_t high, uint32_t low)
 void apic_send_eoi(void) { apic_write(LAPIC_REG_EOI, 0u); }
 
 bool apic_is_x2apic_active(void) { return g_x2apic_active; }
+
+uint32_t apic_get_id(void)
+{
+    const uint32_t identifier = apic_read(LAPIC_REG_ID);
+
+    return g_x2apic_active ? identifier : identifier >> 24u;
+}

@@ -1,6 +1,8 @@
 #include <kernel/drivers/nvme.h>
 
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/irq.h>
+#include <kernel/cpu/msi.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/lib/asmutils.h>
@@ -48,7 +50,6 @@
 #define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES        64u      /**< Entries in each queue, admin and I/O. */
 #define NON_VOLATILE_MEMORY_EXPRESS_ADMIN_QUEUE          0u       /**< The admin queue pair's identifier. */
 #define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE   1u       /**< The first I/O queue pair's identifier. */
-#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS   5u       /**< I/O queue pairs: 5 x 63 commands in flight. */
 #define NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS    16u      /**< Dwords in a submission entry. */
 #define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_DWORDS    4u       /**< Dwords in a completion entry. */
 #define NON_VOLATILE_MEMORY_EXPRESS_COMMAND_MICROSECONDS 1000000u /**< How long a command may take. */
@@ -58,17 +59,19 @@
  * @name Admin commands and their fields
  * @{
  */
-#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_SUBMISSION_QUEUE 0x01u      /**< Create I/O Submission Queue. */
-#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_COMPLETION_QUEUE 0x05u      /**< Create I/O Completion Queue. */
-#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES            0x09u      /**< Set Features. */
-#define NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES       0x07u      /**< Number of Queues. */
-#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS    (1u << 0)  /**< PC, in dword 11 of both creations. */
-#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY                0x06u      /**< Identify. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE             0x00u      /**< CNS 00h: a namespace. */
-#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER            0x01u      /**< CNS 01h: the controller. */
-#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE                1u         /**< The namespace identified. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE               (1u << 16) /**< Phase tag, in dword 3. */
-#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT           0xFFFFu /**< No status: the command never completed. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_SUBMISSION_QUEUE 0x01u     /**< Create I/O Submission Queue. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_COMPLETION_QUEUE 0x05u     /**< Create I/O Completion Queue. */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_SET_FEATURES            0x09u     /**< Set Features. */
+#define NON_VOLATILE_MEMORY_EXPRESS_FEATURE_NUMBER_OF_QUEUES       0x07u     /**< Number of Queues. */
+#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS    (1u << 0) /**< PC, in dword 11 of both creations. */
+#define NON_VOLATILE_MEMORY_EXPRESS_QUEUE_INTERRUPTS_ENABLED       (1u << 1) /**< IEN, in dword 11 of a completion queue's. \
+                                                                              */
+#define NON_VOLATILE_MEMORY_EXPRESS_OPCODE_IDENTIFY      0x06u               /**< Identify. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_NAMESPACE   0x00u               /**< CNS 00h: a namespace. */
+#define NON_VOLATILE_MEMORY_EXPRESS_IDENTIFY_CONTROLLER  0x01u               /**< CNS 01h: the controller. */
+#define NON_VOLATILE_MEMORY_EXPRESS_FIRST_NAMESPACE      1u                  /**< The namespace identified. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_PHASE     (1u << 16)          /**< Phase tag, in dword 3. */
+#define NON_VOLATILE_MEMORY_EXPRESS_COMPLETION_TIMED_OUT 0xFFFFu /**< No status: the command never completed. */
 /** @} */
 
 /**
@@ -127,6 +130,8 @@ static uint32_t non_volatile_memory_express_identify_physical = 0u;
 static volatile uint32_t *non_volatile_memory_express_page_list = NULL;
 static uint32_t non_volatile_memory_express_page_list_physical = 0u;
 static uint16_t non_volatile_memory_express_next_command = 0u;
+static MessageSignaledInterruptExtendedTable_t non_volatile_memory_express_interrupts = {0};
+static uint8_t non_volatile_memory_express_vectors[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS] = {0u};
 
 /**
  * @brief Reads a 32-bit controller register.
@@ -440,6 +445,55 @@ static bool non_volatile_memory_express_transfer(uint32_t opcode, uint64_t first
 }
 
 /**
+ * @brief What a completion queue's vector runs: nothing, as the driver still polls each completion; the interrupt
+ *        says on which core the controller signals it.
+ */
+static void non_volatile_memory_express_completion_interrupt(void *context) { (void) context; }
+
+/**
+ * @brief The logical slot of the online processor of rank @p ordinal, the ranks taken modulo the online count.
+ */
+static uint32_t non_volatile_memory_express_queue_slot(uint32_t ordinal)
+{
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+    uint32_t rank = online == 0u ? 0u : ordinal % online;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        if (cpu_topology_is_logical_slot_online(slot) && rank-- == 0u)
+            return slot;
+    return 0u;
+}
+
+/**
+ * @brief Aims the MSI-X entry of each I/O completion queue, the entry its identifier names, at a core: pair 0 at
+ *        the first online processor, pair 1 at the next, and so on round them.
+ *
+ * @details A pair whose entry cannot be aimed, or a controller without MSI-X, keeps a queue that raises no
+ *          interrupt, which the driver polls as before. Vectors are kept across bring-ups.
+ */
+static void non_volatile_memory_express_aim_interrupts(const PeripheralComponentInterconnectDevice_t *device)
+{
+    if (non_volatile_memory_express_interrupts.table == 0u &&
+        !message_signaled_interrupt_extended_open(device, &non_volatile_memory_express_interrupts))
+        return;
+    for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
+    {
+        const uint32_t slot = non_volatile_memory_express_queue_slot(pair);
+
+        if (non_volatile_memory_express_vectors[pair] == 0u &&
+            !message_signaled_interrupt_allocate(non_volatile_memory_express_completion_interrupt, NULL,
+                                                 &non_volatile_memory_express_vectors[pair]))
+            continue;
+        if (!message_signaled_interrupt_extended_aim(&non_volatile_memory_express_interrupts,
+                                                     (uint16_t) (NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE + pair),
+                                                     slot, non_volatile_memory_express_vectors[pair]))
+            continue;
+        non_volatile_memory_express_found.interrupt_vectors[pair] = non_volatile_memory_express_vectors[pair];
+        non_volatile_memory_express_found.interrupt_slots[pair] = slot;
+    }
+}
+
+/**
  * @brief Finds the controller, maps its registers and reads its capabilities.
  *
  * @return false when there is none, or when this kernel cannot drive it.
@@ -462,6 +516,7 @@ static bool non_volatile_memory_express_find(void)
 
     peripheral_component_interconnect_enable_memory_and_bus_mastering(device);
     peripheral_component_interconnect_disable_pin_interrupt(device);
+    non_volatile_memory_express_aim_interrupts(device);
     if (non_volatile_memory_express_registers == 0u)
         non_volatile_memory_express_registers =
             kernel_vmm_map_device_window((uint32_t) window.base, (uint32_t) window.size);
@@ -575,13 +630,16 @@ static bool non_volatile_memory_express_identify_controller_and_namespace(void)
  * @brief Creates I/O queue pair @p identifier: its completion queue, then its submission queue.
  *
  * @details The completion queue comes first: the submission queue names it. Both are physically
- *          contiguous, one page each, and the completion queue raises no interrupt.
+ *          contiguous, one page each. The completion queue interrupts through the MSI-X entry its identifier
+ *          names when non_volatile_memory_express_aim_interrupts aimed it, and raises no interrupt otherwise.
  *
  * @return false when a command fails or no page is left.
  */
 static bool non_volatile_memory_express_create_pair(NonVolatileMemoryExpressQueuePair_t *pair, uint32_t identifier)
 {
     const uint32_t size_and_identifier = ((NON_VOLATILE_MEMORY_EXPRESS_QUEUE_ENTRIES - 1u) << 16) | identifier;
+    const bool interrupts = non_volatile_memory_express_found
+                                .interrupt_vectors[identifier - NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE] != 0u;
     uint32_t completion_queue[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
     uint32_t submission_queue[NON_VOLATILE_MEMORY_EXPRESS_SUBMISSION_DWORDS] = {0u};
 
@@ -591,7 +649,9 @@ static bool non_volatile_memory_express_create_pair(NonVolatileMemoryExpressQueu
     completion_queue[0] = NON_VOLATILE_MEMORY_EXPRESS_OPCODE_CREATE_COMPLETION_QUEUE;
     completion_queue[6] = pair->completions_physical;
     completion_queue[10] = size_and_identifier;
-    completion_queue[11] = NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS;
+    completion_queue[11] =
+        NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS |
+        (interrupts ? (identifier << 16) | NON_VOLATILE_MEMORY_EXPRESS_QUEUE_INTERRUPTS_ENABLED : 0u);
     if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, completion_queue, NULL) != 0u)
         return non_volatile_memory_express_fail("Create I/O Completion Queue failed");
 
@@ -601,6 +661,7 @@ static bool non_volatile_memory_express_create_pair(NonVolatileMemoryExpressQueu
     submission_queue[11] = (identifier << 16) | NON_VOLATILE_MEMORY_EXPRESS_QUEUE_PHYSICALLY_CONTIGUOUS;
     if (non_volatile_memory_express_run(&non_volatile_memory_express_admin, submission_queue, NULL) != 0u)
         return non_volatile_memory_express_fail("Create I/O Submission Queue failed");
+    non_volatile_memory_express_found.interrupting_queues += interrupts ? 1u : 0u;
     return true;
 }
 

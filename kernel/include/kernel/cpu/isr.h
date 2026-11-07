@@ -118,6 +118,11 @@ extern void isr64(void);
 extern void isr128(void);
 
 /**
+ * @brief The 32 stubs of the message-signaled vectors, MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE and on, in order.
+ */
+extern void (*const interrupt_service_routine_message_signaled_stubs[32])(void);
+
+/**
  * @brief Register a handler for a given interrupt vector.
  *
  * Replaces the default panic handler for that vector.  Use vector 0-31 for

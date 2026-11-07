@@ -1,0 +1,136 @@
+/**************************************************************************
+ * LplKernel - A Simple C Kernel for Laplace
+ *
+ * LplKernel is a C kernel iso for Laplace. It is a simple kernel that
+ * provides a basic set of features to run a C program.
+ *
+ * This file is part of the LplKernel project that is under the MIT License.
+ * https://opensource.org/license/mit
+ * Copyright © 2026 by @MasterLaplace, All rights reserved.
+ *
+ * LplKernel is free software: you can use, copy, modify, merge, publish and
+ * distribute it under the terms of the MIT License, provided this copyright
+ * notice and the permission notice are kept. See the LICENSE file.
+ *
+ * @file msi.h
+ * @brief Message-signaled interrupts (MSI-X): a device writes a vector to the local APIC of a chosen core.
+ *
+ * @author @MasterLaplace
+ * @version 0.0.0
+ * @date 2026-11-07
+ **************************************************************************/
+
+#ifndef KERNEL_CPU_MESSAGE_SIGNALED_INTERRUPT_H
+#define KERNEL_CPU_MESSAGE_SIGNALED_INTERRUPT_H
+
+#include <kernel/cpu/pci.h>
+
+#include <stdbool.h>
+#include <stdint.h>
+
+/**
+ * @name The vectors message-signaled interrupts take
+ * @{
+ */
+#define MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE 0x50u /**< The first vector a device's message may carry. */
+#define MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT                                                                        \
+    32u /**< Vectors from it: 0x50 to 0x6F, under the 0x80 syscall gate.                                               \
+         */
+#define MESSAGE_SIGNALED_INTERRUPT_ADDRESS_BASE                                                                        \
+    0xFEE00000u /**< The address every message is written to, the destination in bits 19:12 (Intel SDM vol. 3,         \
+                   §13.11.1). */
+#define MESSAGE_SIGNALED_INTERRUPT_CAPABILITY_EXTENDED 0x11u /**< The MSI-X capability's identifier. */
+/** @} */
+
+/**
+ * @brief What a message-signaled vector runs, on the core the message names, before the kernel ends the interrupt.
+ *
+ * @param context What the driver gave message_signaled_interrupt_allocate.
+ */
+typedef void (*MessageSignaledInterruptHandler_t)(void *context);
+
+/**
+ * @brief The MSI-X table of one function, mapped, as message_signaled_interrupt_extended_open leaves it.
+ */
+typedef struct {
+    uint8_t bus;        /**< The function's bus. */
+    uint8_t device;     /**< Its device. */
+    uint8_t function;   /**< Its function. */
+    uint8_t capability; /**< The offset of its MSI-X capability. */
+    uint16_t entries;   /**< Entries its table holds. */
+    uint32_t table;     /**< The virtual address of the table's first entry, or 0 when it is not mapped. */
+} MessageSignaledInterruptExtendedTable_t;
+
+/**
+ * @brief The address and data of a message that interrupts the local APIC @p apic_id with @p vector.
+ *
+ * @details Fixed delivery, edge-triggered, physical destination (Intel SDM vol. 3, 325384-093US, §13.11.1 and
+ * §13.11.2). The destination field holds 8 bits: an x2APIC identifier past 0xFF needs interrupt remapping, which this
+ *          kernel does not program, so it is refused.
+ *
+ * @param apic_id     The local APIC the message interrupts.
+ * @param vector      The vector it delivers, 0x10 or more: 0 to 15 are reserved.
+ * @param out_address Where the address goes.
+ * @param out_data    Where the data goes.
+ * @return false, with nothing written, when @p apic_id is past 0xFF or @p vector below 0x10.
+ */
+extern bool message_signaled_interrupt_compose(uint32_t apic_id, uint8_t vector, uint32_t *out_address,
+                                               uint32_t *out_data);
+
+/**
+ * @brief Gives a free message-signaled vector to @p handler.
+ *
+ * @param handler    What the vector runs; not NULL.
+ * @param context    What @p handler receives.
+ * @param out_vector Where the vector goes.
+ * @return false when every vector is taken or @p handler is NULL.
+ */
+extern bool message_signaled_interrupt_allocate(MessageSignaledInterruptHandler_t handler, void *context,
+                                                uint8_t *out_vector);
+
+/**
+ * @brief Gives @p vector back, which message_signaled_interrupt_allocate gave; its counts are kept.
+ *
+ * @param vector The vector; another is ignored.
+ */
+extern void message_signaled_interrupt_release(uint8_t vector);
+
+/**
+ * @brief Interrupts @p vector delivered on the processor of logical slot @p slot since boot.
+ *
+ * @param vector A message-signaled vector.
+ * @param slot   A logical CPU slot: the one cpu_topology_get_slot_for_apic_id gives for the processor's APIC ID.
+ * @return The count, or 0 for a vector or a slot out of range.
+ */
+extern uint32_t message_signaled_interrupt_count(uint8_t vector, uint32_t slot);
+
+/**
+ * @brief Finds the MSI-X capability of @p device, maps its table and enables MSI-X with every entry masked.
+ *
+ * @details The table lies in the memory window its Base Address Register Indicator names, at the offset the
+ *          capability gives (PCI Local Bus Specification 3.0, §6.8.2). Every entry is masked and the function mask
+ *          set before MSI-X is enabled, then the function mask is cleared: an entry interrupts only once aimed. The
+ *          function's pin interrupt is disabled too, as MSI-X replaces it.
+ *
+ * @param device The function.
+ * @param out    Where the table goes; its table field is 0 when this fails.
+ * @return false when the function has no MSI-X capability, or its table lies outside a memory window below 4 GiB,
+ *         or the window cannot be mapped.
+ */
+extern bool message_signaled_interrupt_extended_open(const PeripheralComponentInterconnectDevice_t *device,
+                                                     MessageSignaledInterruptExtendedTable_t *out);
+
+/**
+ * @brief Aims entry @p entry of @p table at the processor of logical slot @p slot with @p vector, and unmasks it.
+ *
+ * @param table  A table message_signaled_interrupt_extended_open opened.
+ * @param entry  The entry, below the table's count.
+ * @param slot   The logical CPU slot whose local APIC the message interrupts.
+ * @param vector The vector, from message_signaled_interrupt_allocate.
+ * @return false, the entry left masked, when the table is not open, the entry is past it, the slot holds no
+ *         processor, or the message cannot name it (message_signaled_interrupt_compose).
+ */
+extern bool message_signaled_interrupt_extended_aim(const MessageSignaledInterruptExtendedTable_t *table,
+                                                    uint16_t entry, uint32_t slot, uint8_t vector);
+
+#endif /* KERNEL_CPU_MESSAGE_SIGNALED_INTERRUPT_H */
